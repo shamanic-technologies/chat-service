@@ -93,6 +93,31 @@ app.post("/chat", async (req, res) => {
     let fullResponse = "";
     const toolCalls: ToolCallRecord[] = [];
 
+    // Line buffer: hold back trailing lines that match button syntax
+    // so they aren't streamed as tokens (only sent as buttons event)
+    const BUTTON_RE = /^[-*]\s*\[.+?\]\s*$/;
+    let lineBuf = "";
+    let held = "";
+
+    function bufferToken(chunk: string): void {
+      fullResponse += chunk;
+      for (const ch of chunk) {
+        lineBuf += ch;
+        if (ch === "\n") {
+          if (BUTTON_RE.test(lineBuf.trimEnd())) {
+            held += lineBuf;
+          } else {
+            if (held) {
+              sendSSE(res, { type: "token", content: held });
+              held = "";
+            }
+            sendSSE(res, { type: "token", content: lineBuf });
+          }
+          lineBuf = "";
+        }
+      }
+    }
+
     const stream = gemini.streamChat(
       geminiHistory,
       message.trim(),
@@ -101,8 +126,7 @@ app.post("/chat", async (req, res) => {
 
     for await (const event of stream) {
       if (event.type === "token") {
-        fullResponse += event.content;
-        sendSSE(res, { type: "token", content: event.content });
+        bufferToken(event.content);
       }
 
       if (event.type === "function_call" && mcpConn) {
@@ -148,8 +172,7 @@ app.post("/chat", async (req, res) => {
             if (!candidate) continue;
             for (const part of candidate.content.parts) {
               if (part.text) {
-                fullResponse += part.text;
-                sendSSE(res, { type: "token", content: part.text });
+                bufferToken(part.text);
               }
             }
           }
@@ -162,17 +185,39 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    // Detect button suggestions in response
-    const buttons = extractButtons(fullResponse);
+    // Finalize buffer: handle any remaining incomplete line
+    if (lineBuf) {
+      if (BUTTON_RE.test(lineBuf.trim())) {
+        held += lineBuf;
+      } else {
+        if (held) {
+          sendSSE(res, { type: "token", content: held });
+          held = "";
+        }
+        sendSSE(res, { type: "token", content: lineBuf });
+      }
+      lineBuf = "";
+    }
+
+    // Process held content as buttons
+    const buttons: ButtonRecord[] = held
+      ? extractButtons(held)
+      : [];
+    if (held && buttons.length === 0) {
+      sendSSE(res, { type: "token", content: held });
+    }
     if (buttons.length > 0) {
       sendSSE(res, { type: "buttons", buttons });
     }
 
-    // Save assistant message
+    // Save assistant message with cleaned response
+    const cleanedResponse = buttons.length > 0
+      ? stripButtons(fullResponse)
+      : fullResponse;
     await db.insert(messages).values({
       sessionId: currentSessionId,
       role: "assistant",
-      content: fullResponse,
+      content: cleanedResponse,
       toolCalls: toolCalls.length > 0 ? toolCalls : null,
       buttons: buttons.length > 0 ? buttons : null,
     });
@@ -211,6 +256,17 @@ function extractButtons(text: string): ButtonRecord[] {
   }
 
   return buttons;
+}
+
+function stripButtons(text: string): string {
+  const lines = text.split("\n");
+  let end = lines.length;
+  while (end > 0 && lines[end - 1].trim() === "") end--;
+  const beforeButtons = end;
+  while (end > 0 && /^[-*]\s*\[.+?\]\s*$/.test(lines[end - 1])) end--;
+  if (end === beforeButtons) return text;
+  while (end > 0 && lines[end - 1].trim() === "") end--;
+  return lines.slice(0, end).join("\n");
 }
 
 // Only start server if not in test environment
