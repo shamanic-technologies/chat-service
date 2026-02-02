@@ -74,3 +74,45 @@ More text.
     ]);
   });
 });
+
+// Inline stripButtons for unit testing
+function stripButtons(text: string): string {
+  const lines = text.split("\n");
+  let end = lines.length;
+  while (end > 0 && lines[end - 1].trim() === "") end--;
+  const beforeButtons = end;
+  while (end > 0 && /^[-*]\s*\[.+?\]\s*$/.test(lines[end - 1])) end--;
+  if (end === beforeButtons) return text;
+  while (end > 0 && lines[end - 1].trim() === "") end--;
+  return lines.slice(0, end).join("\n");
+}
+
+describe("stripButtons", () => {
+  it("strips trailing button lines from text", () => {
+    const text = `Here are some options:
+- [Create a campaign]
+- [Search for leads]`;
+
+    expect(stripButtons(text)).toBe("Here are some options:");
+  });
+
+  it("returns original text when no buttons present", () => {
+    const text = "Just a normal response.";
+    expect(stripButtons(text)).toBe("Just a normal response.");
+  });
+
+  it("strips buttons and trailing blank lines", () => {
+    const text = "Some text\n\n- [Yes]\n- [No]\n";
+    expect(stripButtons(text)).toBe("Some text");
+  });
+
+  it("only strips trailing buttons, preserves earlier content", () => {
+    const text = "Check [this] link\n- [Button]";
+    expect(stripButtons(text)).toBe("Check [this] link");
+  });
+
+  it("handles asterisk bullets", () => {
+    const text = "Pick one:\n* [Yes]\n* [No]";
+    expect(stripButtons(text)).toBe("Pick one:");
+  });
+});
