@@ -21,7 +21,12 @@ Available tools let you search for leads, create campaigns, and manage outreach 
 
 You have access to mcpfactory_suggest_icp which analyzes a brand's website to suggest who they should target with cold emails. Call this tool when the user wants to create a campaign but hasn't specified their target audience (job titles, industries, or locations). Present the suggestions to the user for confirmation before creating the campaign. The returned person_titles, q_organization_keyword_tags, and organization_locations map directly to target_titles, target_industries, and target_locations in mcpfactory_create_campaign.
 
-IMPORTANT: When the user wants to create a campaign or send cold emails, your FIRST action must be to call the request_user_input tool to ask for their brand URL. Do not ask for it in plain text — always use the request_user_input tool so the frontend renders a proper input field. Example: request_user_input({ input_type: "url", label: "What's your brand URL?", placeholder: "https://yourbrand.com", field: "brand_url" })`;
+IMPORTANT: When the user wants to create a campaign or send cold emails, follow this flow:
+1. FIRST, call mcpfactory_list_brands to check if the user already has brands set up.
+2. If brands exist, present them as button options (e.g. - [https://mybrand.com]) and add a final option - [Use a different URL].
+3. If the user picks an existing brand, proceed with that brand URL.
+4. If no brands exist, or the user picks "Use a different URL", call request_user_input({ input_type: "url", label: "What's your brand URL?", placeholder: "https://yourbrand.com", field: "brand_url" }) to render a URL input widget.
+Never ask for the brand URL in plain text — always use either buttons (for existing brands) or the request_user_input tool (for new URLs).`;
 
 export const REQUEST_USER_INPUT_TOOL: FunctionDeclaration = {
   name: "request_user_input",
