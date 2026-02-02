@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { createGeminiClient, REQUEST_USER_INPUT_TOOL } from "./lib/gemini.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import type { ChatRequest } from "./types.js";
-import type { Content } from "@google/generative-ai";
+import type { Content } from "@google/genai";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 
@@ -182,20 +182,16 @@ app.post("/chat", async (req, res) => {
             },
           ];
 
-          const contResult = await gemini.sendFunctionResult(
+          const contStream = gemini.sendFunctionResult(
             updatedHistory,
             call.name,
             result,
             allTools
           );
 
-          for await (const chunk of contResult.stream) {
-            const candidate = chunk.candidates?.[0];
-            if (!candidate) continue;
-            for (const part of candidate.content.parts) {
-              if (part.text) {
-                bufferToken(part.text);
-              }
+          for await (const contEvent of contStream) {
+            if (contEvent.type === "token") {
+              bufferToken(contEvent.content);
             }
           }
         } catch (toolErr) {

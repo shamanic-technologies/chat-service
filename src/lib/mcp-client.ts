@@ -1,10 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import {
-  FunctionDeclarationSchemaType,
-  type FunctionDeclaration,
-  type FunctionDeclarationSchema,
-} from "@google/generative-ai";
+import { Type, type FunctionDeclaration } from "@google/genai";
 
 const MCP_SERVER_URL = process.env.MCP_SERVER_URL || "https://mcp.mcpfactory.org";
 
@@ -30,7 +26,7 @@ export async function connectMcp(apiKey: string): Promise<McpConnection> {
   const tools: FunctionDeclaration[] = mcpTools.map((tool) => ({
     name: tool.name,
     description: tool.description || "",
-    parameters: tool.inputSchema as unknown as FunctionDeclarationSchema,
+    parameters: tool.inputSchema as unknown as FunctionDeclaration["parameters"],
   }));
 
   const callTool = async (

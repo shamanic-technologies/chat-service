@@ -1,19 +1,18 @@
 import { describe, it, expect, vi } from "vitest";
 
-const mockGetGenerativeModel = vi.fn().mockReturnValue({
-  startChat: () => ({
-    sendMessageStream: async () => ({
-      stream: (async function* () {})(),
-    }),
-  }),
-});
+const mockGenerateContentStream = vi.fn().mockResolvedValue(
+  (async function* () {})()
+);
 
-vi.mock("@google/generative-ai", () => ({
-  GoogleGenerativeAI: vi.fn().mockImplementation(() => ({
-    getGenerativeModel: mockGetGenerativeModel,
+vi.mock("@google/genai", () => ({
+  GoogleGenAI: vi.fn().mockImplementation(() => ({
+    models: {
+      generateContentStream: mockGenerateContentStream,
+    },
   })),
-  FunctionCallingMode: { AUTO: "AUTO" },
-  SchemaType: { OBJECT: "OBJECT", STRING: "STRING" },
+  Type: { OBJECT: "OBJECT", STRING: "STRING" },
+  FunctionCallingConfigMode: { AUTO: "AUTO" },
+  ThinkingLevel: { HIGH: "HIGH", LOW: "LOW", MEDIUM: "MEDIUM", MINIMAL: "MINIMAL" },
 }));
 
 import { createGeminiClient, REQUEST_USER_INPUT_TOOL } from "../../src/lib/gemini.js";
@@ -22,12 +21,11 @@ describe("createGeminiClient", () => {
   it("defaults to gemini-3-flash-preview model", async () => {
     const client = createGeminiClient({ apiKey: "test-key" });
     const gen = client.streamChat([], "hello");
-    // consume the generator to trigger getGenerativeModel
     for await (const _ of gen) {
       /* drain */
     }
 
-    expect(mockGetGenerativeModel).toHaveBeenCalledWith(
+    expect(mockGenerateContentStream).toHaveBeenCalledWith(
       expect.objectContaining({ model: "gemini-3-flash-preview" })
     );
   });
@@ -42,8 +40,24 @@ describe("createGeminiClient", () => {
       /* drain */
     }
 
-    expect(mockGetGenerativeModel).toHaveBeenCalledWith(
+    expect(mockGenerateContentStream).toHaveBeenCalledWith(
       expect.objectContaining({ model: "gemini-3-pro-preview" })
+    );
+  });
+
+  it("enables thinking level HIGH", async () => {
+    const client = createGeminiClient({ apiKey: "test-key" });
+    const gen = client.streamChat([], "hello");
+    for await (const _ of gen) {
+      /* drain */
+    }
+
+    expect(mockGenerateContentStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          thinkingConfig: { thinkingLevel: "HIGH" },
+        }),
+      })
     );
   });
 });
