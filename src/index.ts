@@ -3,7 +3,7 @@ import cors from "cors";
 import { db } from "./db/index.js";
 import { sessions, messages } from "./db/schema.js";
 import { eq } from "drizzle-orm";
-import { createGeminiClient } from "./lib/gemini.js";
+import { createGeminiClient, REQUEST_USER_INPUT_TOOL } from "./lib/gemini.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import type { ChatRequest } from "./types.js";
 import type { Content } from "@google/generative-ai";
@@ -118,10 +118,16 @@ app.post("/chat", async (req, res) => {
       }
     }
 
+    // Merge MCP tools with local client-side tools
+    const allTools = [
+      ...(mcpConn?.tools ?? []),
+      REQUEST_USER_INPUT_TOOL,
+    ];
+
     const stream = gemini.streamChat(
       geminiHistory,
       message.trim(),
-      mcpConn?.tools
+      allTools
     );
 
     for await (const event of stream) {
@@ -129,8 +135,24 @@ app.post("/chat", async (req, res) => {
         bufferToken(event.content);
       }
 
-      if (event.type === "function_call" && mcpConn) {
+      if (event.type === "function_call") {
         const { call } = event;
+
+        // Client-side tool: emit input_request and end stream
+        if (call.name === "request_user_input") {
+          const args = (call.args as Record<string, unknown>) || {};
+          sendSSE(res, {
+            type: "input_request",
+            input_type: args.input_type ?? "text",
+            label: args.label ?? "Please provide input",
+            ...(args.placeholder ? { placeholder: args.placeholder } : {}),
+            field: args.field ?? "input",
+          });
+          break;
+        }
+
+        if (!mcpConn) continue;
+
         sendSSE(res, {
           type: "tool_call",
           name: call.name,
@@ -164,7 +186,7 @@ app.post("/chat", async (req, res) => {
             updatedHistory,
             call.name,
             result,
-            mcpConn.tools
+            allTools
           );
 
           for await (const chunk of contResult.stream) {

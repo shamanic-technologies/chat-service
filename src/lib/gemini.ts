@@ -5,6 +5,7 @@ import {
   type GenerateContentStreamResult,
   FunctionCallingMode,
   type FunctionCall,
+  SchemaType,
 } from "@google/generative-ai";
 
 const SYSTEM_PROMPT = `You are Foxy, the MCP Factory AI assistant. You help users set up and use MCP Factory's tools for sales outreach.
@@ -18,7 +19,38 @@ Key behaviors:
 
 Available tools let you search for leads, create campaigns, and manage outreach on behalf of the user.
 
-You have access to mcpfactory_suggest_icp which analyzes a brand's website to suggest who they should target with cold emails. Call this tool when the user wants to create a campaign but hasn't specified their target audience (job titles, industries, or locations). Present the suggestions to the user for confirmation before creating the campaign. The returned person_titles, q_organization_keyword_tags, and organization_locations map directly to target_titles, target_industries, and target_locations in mcpfactory_create_campaign.`;
+You have access to mcpfactory_suggest_icp which analyzes a brand's website to suggest who they should target with cold emails. Call this tool when the user wants to create a campaign but hasn't specified their target audience (job titles, industries, or locations). Present the suggestions to the user for confirmation before creating the campaign. The returned person_titles, q_organization_keyword_tags, and organization_locations map directly to target_titles, target_industries, and target_locations in mcpfactory_create_campaign.
+
+IMPORTANT: When the user wants to create a campaign or send cold emails, your FIRST action must be to call the request_user_input tool to ask for their brand URL. Do not ask for it in plain text — always use the request_user_input tool so the frontend renders a proper input field. Example: request_user_input({ input_type: "url", label: "What's your brand URL?", placeholder: "https://yourbrand.com", field: "brand_url" })`;
+
+export const REQUEST_USER_INPUT_TOOL: FunctionDeclaration = {
+  name: "request_user_input",
+  description:
+    "Ask the user for structured input via a frontend widget. Use this instead of asking in plain text when you need a specific data type like a URL, email, or text field.",
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      input_type: {
+        type: SchemaType.STRING,
+        description: "The type of input widget to render: url, text, or email",
+      },
+      label: {
+        type: SchemaType.STRING,
+        description: "The label/question shown above the input field",
+      },
+      placeholder: {
+        type: SchemaType.STRING,
+        description: "Placeholder text inside the input field",
+      },
+      field: {
+        type: SchemaType.STRING,
+        description:
+          "A key identifying what this input is for, e.g. brand_url",
+      },
+    },
+    required: ["input_type", "label", "field"],
+  },
+};
 
 export interface GeminiOptions {
   apiKey: string;
