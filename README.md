@@ -121,7 +121,7 @@ docker build -t chat-service .
 docker run -p 3002:3002 --env-file .env chat-service
 ```
 
-Multi-stage build using `node:20-slim`. Requires Node >= 20.
+Uses `node:20-alpine`. Requires Node >= 20.
 
 ## Architecture
 
