@@ -3,10 +3,10 @@ import cors from "cors";
 import { db } from "./db/index.js";
 import { sessions, messages } from "./db/schema.js";
 import { eq } from "drizzle-orm";
-import { createGeminiClient } from "./lib/gemini.js";
+import { createGeminiClient, REQUEST_USER_INPUT_TOOL } from "./lib/gemini.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import type { ChatRequest } from "./types.js";
-import type { Content } from "@google/generative-ai";
+import type { Content } from "@google/genai";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 
@@ -93,20 +93,66 @@ app.post("/chat", async (req, res) => {
     let fullResponse = "";
     const toolCalls: ToolCallRecord[] = [];
 
+    // Line buffer: hold back trailing lines that match button syntax
+    // so they aren't streamed as tokens (only sent as buttons event)
+    const BUTTON_RE = /^[-*]\s*\[.+?\]\s*$/;
+    let lineBuf = "";
+    let held = "";
+
+    function bufferToken(chunk: string): void {
+      fullResponse += chunk;
+      for (const ch of chunk) {
+        lineBuf += ch;
+        if (ch === "\n") {
+          if (BUTTON_RE.test(lineBuf.trimEnd())) {
+            held += lineBuf;
+          } else {
+            if (held) {
+              sendSSE(res, { type: "token", content: held });
+              held = "";
+            }
+            sendSSE(res, { type: "token", content: lineBuf });
+          }
+          lineBuf = "";
+        }
+      }
+    }
+
+    // Merge MCP tools with local client-side tools
+    const allTools = [
+      ...(mcpConn?.tools ?? []),
+      REQUEST_USER_INPUT_TOOL,
+    ];
+
     const stream = gemini.streamChat(
       geminiHistory,
       message.trim(),
-      mcpConn?.tools
+      allTools
     );
 
     for await (const event of stream) {
       if (event.type === "token") {
-        fullResponse += event.content;
-        sendSSE(res, { type: "token", content: event.content });
+        bufferToken(event.content);
       }
 
-      if (event.type === "function_call" && mcpConn) {
+      if (event.type === "function_call") {
         const { call } = event;
+
+        // Client-side tool: emit input_request and end stream
+        if (call.name === "request_user_input") {
+          const args = (call.args as Record<string, unknown>) || {};
+          sendSSE(res, {
+            type: "input_request",
+            input_type: args.input_type ?? "text",
+            label: args.label ?? "Please provide input",
+            ...(args.placeholder ? { placeholder: args.placeholder } : {}),
+            field: args.field ?? "input",
+          });
+          break;
+        }
+
+        if (!mcpConn) continue;
+
         sendSSE(res, {
           type: "tool_call",
           name: call.name,
@@ -136,21 +182,16 @@ app.post("/chat", async (req, res) => {
             },
           ];
 
-          const contResult = await gemini.sendFunctionResult(
+          const contStream = gemini.sendFunctionResult(
             updatedHistory,
             call.name,
             result,
-            mcpConn.tools
+            allTools
           );
 
-          for await (const chunk of contResult.stream) {
-            const candidate = chunk.candidates?.[0];
-            if (!candidate) continue;
-            for (const part of candidate.content.parts) {
-              if (part.text) {
-                fullResponse += part.text;
-                sendSSE(res, { type: "token", content: part.text });
-              }
+          for await (const contEvent of contStream) {
+            if (contEvent.type === "token") {
+              bufferToken(contEvent.content);
             }
           }
         } catch (toolErr) {
@@ -162,17 +203,39 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    // Detect button suggestions in response
-    const buttons = extractButtons(fullResponse);
+    // Finalize buffer: handle any remaining incomplete line
+    if (lineBuf) {
+      if (BUTTON_RE.test(lineBuf.trim())) {
+        held += lineBuf;
+      } else {
+        if (held) {
+          sendSSE(res, { type: "token", content: held });
+          held = "";
+        }
+        sendSSE(res, { type: "token", content: lineBuf });
+      }
+      lineBuf = "";
+    }
+
+    // Process held content as buttons
+    const buttons: ButtonRecord[] = held
+      ? extractButtons(held)
+      : [];
+    if (held && buttons.length === 0) {
+      sendSSE(res, { type: "token", content: held });
+    }
     if (buttons.length > 0) {
       sendSSE(res, { type: "buttons", buttons });
     }
 
-    // Save assistant message
+    // Save assistant message with cleaned response
+    const cleanedResponse = buttons.length > 0
+      ? stripButtons(fullResponse)
+      : fullResponse;
     await db.insert(messages).values({
       sessionId: currentSessionId,
       role: "assistant",
-      content: fullResponse,
+      content: cleanedResponse,
       toolCalls: toolCalls.length > 0 ? toolCalls : null,
       buttons: buttons.length > 0 ? buttons : null,
     });
@@ -211,6 +274,17 @@ function extractButtons(text: string): ButtonRecord[] {
   }
 
   return buttons;
+}
+
+function stripButtons(text: string): string {
+  const lines = text.split("\n");
+  let end = lines.length;
+  while (end > 0 && lines[end - 1].trim() === "") end--;
+  const beforeButtons = end;
+  while (end > 0 && /^[-*]\s*\[.+?\]\s*$/.test(lines[end - 1])) end--;
+  if (end === beforeButtons) return text;
+  while (end > 0 && lines[end - 1].trim() === "") end--;
+  return lines.slice(0, end).join("\n");
 }
 
 // Only start server if not in test environment

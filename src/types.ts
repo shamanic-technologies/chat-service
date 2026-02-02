@@ -27,6 +27,14 @@ export interface SSEToolResultEvent {
   result: unknown;
 }
 
+export interface SSEInputRequestEvent {
+  type: "input_request";
+  input_type: "url" | "text" | "email";
+  label: string;
+  placeholder?: string;
+  field: string;
+}
+
 export interface SSESessionEvent {
   sessionId: string;
 }
@@ -36,6 +44,7 @@ export type SSEEvent =
   | SSEButtonsEvent
   | SSEToolCallEvent
   | SSEToolResultEvent
+  | SSEInputRequestEvent
   | SSESessionEvent;
 
 export interface GeminiTool {

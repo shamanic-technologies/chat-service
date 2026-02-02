@@ -1,15 +1,21 @@
-FROM node:20-slim AS builder
+FROM node:20-alpine
+
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm install
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source code
 COPY . .
+
+# Build TypeScript
 RUN npm run build
 
-FROM node:20-slim
-WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/drizzle ./drizzle
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./
+# Expose port
 EXPOSE 3002
+
+# Start the server
 CMD ["node", "dist/index.js"]
