@@ -98,6 +98,15 @@ npm run db:generate
 | `npm run db:migrate` | Run migrations via drizzle-kit |
 | `npm run db:push` | Push schema directly (dev only) |
 
+## Testing Policy
+
+Every PR that touches `src/` must include corresponding tests. CI enforces this:
+
+- **`test-check`** — fails if source files change without new or updated test files
+- **`run-tests`** — runs `npm run test:unit` on every PR
+
+Bug fixes must include a regression test that reproduces the issue. New features need unit tests covering the happy path and edge cases.
+
 ## Docker
 
 ```bash

@@ -1,0 +1,50 @@
+name: Test Coverage Check
+
+on:
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  check-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if tests were added or updated
+        run: |
+          BASE_REF="${{ github.event.pull_request.base.sha }}"
+          CHANGED_FILES=$(git diff --name-only "$BASE_REF"...HEAD)
+
+          # Check if any source files changed
+          SRC_CHANGED=$(echo "$CHANGED_FILES" | grep "^src/" || true)
+
+          # Check if any test files changed
+          TEST_CHANGED=$(echo "$CHANGED_FILES" | grep "^tests/.*\.test\.ts$" || true)
+
+          if [ -n "$SRC_CHANGED" ] && [ -z "$TEST_CHANGED" ]; then
+            echo "::warning::Source files changed but no test files were added or updated:"
+            echo "$SRC_CHANGED"
+            echo ""
+            echo "Every PR that changes src/ should include regression tests."
+            echo "Add tests in tests/unit/ or tests/integration/ to prevent regressions."
+            exit 1
+          else
+            echo "Test check passed."
+          fi
+
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:unit
