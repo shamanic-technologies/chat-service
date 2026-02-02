@@ -1,0 +1,51 @@
+name: README Freshness Check
+
+on:
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  check-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if README may need updating
+        run: |
+          # Files that, when changed, likely require a README update
+          WATCHED_PATTERNS=(
+            "src/index.ts"
+            "src/types.ts"
+            "src/db/schema.ts"
+            "src/lib/"
+            "package.json"
+            "Dockerfile"
+            ".env.example"
+            "tsconfig.json"
+          )
+
+          BASE_REF="${{ github.event.pull_request.base.sha }}"
+          CHANGED_FILES=$(git diff --name-only "$BASE_REF"...HEAD)
+
+          NEEDS_UPDATE=false
+          MATCHED_FILES=""
+          for pattern in "${WATCHED_PATTERNS[@]}"; do
+            MATCHES=$(echo "$CHANGED_FILES" | grep "^${pattern}" || true)
+            if [ -n "$MATCHES" ]; then
+              NEEDS_UPDATE=true
+              MATCHED_FILES="${MATCHED_FILES}${MATCHES}\n"
+            fi
+          done
+
+          README_CHANGED=$(echo "$CHANGED_FILES" | grep "^README.md$" || true)
+
+          if [ "$NEEDS_UPDATE" = true ] && [ -z "$README_CHANGED" ]; then
+            echo "::warning::The following files changed but README.md was not updated:"
+            echo -e "$MATCHED_FILES"
+            echo ""
+            echo "Please verify the README is still accurate. If no update is needed, this is just a reminder."
+          else
+            echo "README check passed."
+          fi
