@@ -25,7 +25,7 @@ export interface GeminiOptions {
   model?: string;
 }
 
-export function createGeminiClient({ apiKey, model = "gemini-2.0-flash" }: GeminiOptions) {
+export function createGeminiClient({ apiKey, model = "gemini-3-flash-preview" }: GeminiOptions) {
   const genAI = new GoogleGenerativeAI(apiKey);
 
   return {
