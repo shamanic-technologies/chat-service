@@ -42,14 +42,21 @@ data: {"type":"tool_result","name":"search_leads","result":{...}}
 ```
 After a tool result, more `token` events follow with the AI's continuation.
 
-### 4. Buttons (optional)
+### 4. Input Request (optional)
+When the AI needs structured user input (e.g., a URL), it emits an input request instead of asking in plain text:
+```
+data: {"type":"input_request","input_type":"url","label":"What's your brand URL?","placeholder":"https://yourbrand.com","field":"brand_url"}
+```
+The frontend should render an appropriate input widget based on `input_type` (`url`, `text`, or `email`). When the user submits, send the value as a regular `/chat` message. The `field` key identifies what the input is for.
+
+### 5. Buttons (optional)
 AI-generated quick-reply buttons, sent after all tokens are done:
 ```
 data: {"type":"buttons","buttons":[{"label":"Send Cold Emails","value":"Send Cold Emails"}]}
 ```
 Buttons are extracted from the AI response when it ends with lines formatted as `- [Button Text]`. The button `label` and `value` are both set to the text inside the brackets. Button lines are stripped from the token stream to prevent duplication.
 
-### 5. Done
+### 6. Done
 ```
 data: "[DONE]"
 ```
