@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { createGeminiClient, REQUEST_USER_INPUT_TOOL } from "./lib/gemini.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import type { ChatRequest } from "./types.js";
-import type { Content } from "@google/genai";
+import type { Content, Part } from "@google/genai";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 
@@ -173,12 +173,19 @@ app.post("/chat", async (req, res) => {
           sendSSE(res, { type: "tool_result", name: call.name, result });
 
           // Send function result back to Gemini and stream continuation
+          // Gemini 3 with thinking requires thoughtSignature on functionCall parts
+          const functionCallPart: Record<string, unknown> = {
+            functionCall: { name: call.name, args: call.args || {} },
+          };
+          if (call.thoughtSignature) {
+            functionCallPart.thoughtSignature = call.thoughtSignature;
+          }
           const updatedHistory: Content[] = [
             ...geminiHistory,
             { role: "user", parts: [{ text: message.trim() }] },
             {
               role: "model",
-              parts: [{ functionCall: { name: call.name, args: call.args || {} } }],
+              parts: [functionCallPart as Part],
             },
           ];
 
