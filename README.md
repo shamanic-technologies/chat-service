@@ -134,5 +134,5 @@ src/
     schema.ts       # sessions + messages table definitions
   lib/
     gemini.ts       # Gemini AI client, streaming + function calling
-    mcp-client.ts   # MCP server connection + tool execution
+    mcp-client.ts   # MCP server connection via Streamable HTTP transport + tool execution
 ```
