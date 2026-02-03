@@ -155,6 +155,9 @@ export function createGeminiClient({ apiKey, model = "gemini-3-flash-preview" }:
           tools: tools?.length
             ? [{ functionDeclarations: tools }]
             : undefined,
+          toolConfig: tools?.length
+            ? { functionCallingConfig: { mode: FunctionCallingConfigMode.AUTO } }
+            : undefined,
           thinkingConfig: {
             thinkingLevel: ThinkingLevel.HIGH,
           },

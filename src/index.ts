@@ -194,8 +194,11 @@ app.post("/chat", async (req, res) => {
               bufferToken(contEvent.content);
             }
           }
-        } catch (toolErr) {
-          console.error(`Tool call ${call.name} failed:`, toolErr);
+        } catch (toolErr: unknown) {
+          const errDetail = toolErr instanceof Error
+            ? { message: toolErr.message, ...Object.fromEntries(Object.entries(toolErr as unknown as Record<string, unknown>)) }
+            : toolErr;
+          console.error(`Tool call ${call.name} failed:`, JSON.stringify(errDetail, null, 2));
           const errorMsg = " (Tool call failed, continuing without result.)";
           fullResponse += errorMsg;
           sendSSE(res, { type: "token", content: errorMsg });

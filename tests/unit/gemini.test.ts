@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockGenerateContentStream = vi.fn().mockResolvedValue(
   (async function* () {})()
@@ -56,6 +56,33 @@ describe("createGeminiClient", () => {
       expect.objectContaining({
         config: expect.objectContaining({
           thinkingConfig: { thinkingLevel: "HIGH" },
+        }),
+      })
+    );
+  });
+});
+
+describe("sendFunctionResult", () => {
+  beforeEach(() => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {})()
+    );
+  });
+
+  it("includes toolConfig when tools are provided", async () => {
+    const client = createGeminiClient({ apiKey: "test-key" });
+    const tools = [{ name: "test_tool", description: "test", parameters: {} }];
+    const gen = client.sendFunctionResult([], "test_tool", { data: "ok" }, tools);
+    for await (const _ of gen) {
+      /* drain */
+    }
+
+    expect(mockGenerateContentStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          toolConfig: {
+            functionCallingConfig: { mode: "AUTO" },
+          },
         }),
       })
     );
