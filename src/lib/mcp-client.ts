@@ -1,5 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Type, type FunctionDeclaration } from "@google/genai";
 
 const MCP_SERVER_URL = process.env.MCP_SERVER_URL || "https://mcp.mcpfactory.org";
@@ -12,7 +12,7 @@ export interface McpConnection {
 }
 
 export async function connectMcp(apiKey: string): Promise<McpConnection> {
-  const transport = new SSEClientTransport(new URL(`${MCP_SERVER_URL}/sse`), {
+  const transport = new StreamableHTTPClientTransport(new URL(`${MCP_SERVER_URL}/mcp`), {
     requestInit: {
       headers: { "X-API-Key": apiKey },
     },
