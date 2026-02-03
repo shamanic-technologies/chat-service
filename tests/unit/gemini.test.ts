@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockGenerateContentStream = vi.fn().mockResolvedValue(
   (async function* () {})()
@@ -59,6 +59,89 @@ describe("createGeminiClient", () => {
         }),
       })
     );
+  });
+});
+
+describe("sendFunctionResult", () => {
+  beforeEach(() => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {})()
+    );
+  });
+
+  it("includes toolConfig when tools are provided", async () => {
+    const client = createGeminiClient({ apiKey: "test-key" });
+    const tools = [{ name: "test_tool", description: "test", parameters: {} }];
+    const gen = client.sendFunctionResult([], "test_tool", { data: "ok" }, tools);
+    for await (const _ of gen) {
+      /* drain */
+    }
+
+    expect(mockGenerateContentStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          toolConfig: {
+            functionCallingConfig: { mode: "AUTO" },
+          },
+        }),
+      })
+    );
+  });
+});
+
+describe("thoughtSignature preservation", () => {
+  it("yields thoughtSignature from function call parts", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          candidates: [{
+            content: {
+              parts: [{
+                functionCall: { name: "test_fn", args: { x: 1 } },
+                thoughtSignature: "sig_abc123",
+              }],
+            },
+          }],
+        };
+      })()
+    );
+
+    const client = createGeminiClient({ apiKey: "test-key" });
+    const tools = [{ name: "test_fn", description: "test", parameters: {} }];
+    const events = [];
+    for await (const event of client.streamChat([], "hello", tools)) {
+      events.push(event);
+    }
+
+    const fcEvent = events.find((e) => e.type === "function_call");
+    expect(fcEvent).toBeDefined();
+    expect(fcEvent!.type === "function_call" && fcEvent!.call.thoughtSignature).toBe("sig_abc123");
+  });
+
+  it("omits thoughtSignature when not present", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          candidates: [{
+            content: {
+              parts: [{
+                functionCall: { name: "test_fn", args: {} },
+              }],
+            },
+          }],
+        };
+      })()
+    );
+
+    const client = createGeminiClient({ apiKey: "test-key" });
+    const events = [];
+    for await (const event of client.streamChat([], "hello")) {
+      events.push(event);
+    }
+
+    const fcEvent = events.find((e) => e.type === "function_call");
+    expect(fcEvent).toBeDefined();
+    expect(fcEvent!.type === "function_call" && fcEvent!.call.thoughtSignature).toBeUndefined();
   });
 });
 
