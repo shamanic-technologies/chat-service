@@ -60,6 +60,7 @@ export const REQUEST_USER_INPUT_TOOL: FunctionDeclaration = {
 export interface FunctionCall {
   name: string;
   args: Record<string, unknown>;
+  thoughtSignature?: string;
 }
 
 export interface GeminiOptions {
@@ -115,6 +116,7 @@ export function createGeminiClient({ apiKey, model = "gemini-3-flash-preview" }:
               call: {
                 name: part.functionCall.name!,
                 args: (part.functionCall.args as Record<string, unknown>) ?? {},
+                ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
               },
             };
           }
@@ -179,6 +181,7 @@ export function createGeminiClient({ apiKey, model = "gemini-3-flash-preview" }:
               call: {
                 name: part.functionCall.name!,
                 args: (part.functionCall.args as Record<string, unknown>) ?? {},
+                ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
               },
             };
           }

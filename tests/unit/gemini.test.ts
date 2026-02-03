@@ -89,6 +89,62 @@ describe("sendFunctionResult", () => {
   });
 });
 
+describe("thoughtSignature preservation", () => {
+  it("yields thoughtSignature from function call parts", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          candidates: [{
+            content: {
+              parts: [{
+                functionCall: { name: "test_fn", args: { x: 1 } },
+                thoughtSignature: "sig_abc123",
+              }],
+            },
+          }],
+        };
+      })()
+    );
+
+    const client = createGeminiClient({ apiKey: "test-key" });
+    const tools = [{ name: "test_fn", description: "test", parameters: {} }];
+    const events = [];
+    for await (const event of client.streamChat([], "hello", tools)) {
+      events.push(event);
+    }
+
+    const fcEvent = events.find((e) => e.type === "function_call");
+    expect(fcEvent).toBeDefined();
+    expect(fcEvent!.type === "function_call" && fcEvent!.call.thoughtSignature).toBe("sig_abc123");
+  });
+
+  it("omits thoughtSignature when not present", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          candidates: [{
+            content: {
+              parts: [{
+                functionCall: { name: "test_fn", args: {} },
+              }],
+            },
+          }],
+        };
+      })()
+    );
+
+    const client = createGeminiClient({ apiKey: "test-key" });
+    const events = [];
+    for await (const event of client.streamChat([], "hello")) {
+      events.push(event);
+    }
+
+    const fcEvent = events.find((e) => e.type === "function_call");
+    expect(fcEvent).toBeDefined();
+    expect(fcEvent!.type === "function_call" && fcEvent!.call.thoughtSignature).toBeUndefined();
+  });
+});
+
 describe("REQUEST_USER_INPUT_TOOL", () => {
   it("has correct name and required parameters", () => {
     expect(REQUEST_USER_INPUT_TOOL.name).toBe("request_user_input");
