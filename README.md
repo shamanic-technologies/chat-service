@@ -109,8 +109,16 @@ npm run db:generate
 
 Every PR that touches `src/` must include corresponding tests. CI enforces this:
 
-- **`test-check`** — fails if source files change without new or updated test files
+- **`check-tests`** — fails if source files change without new or updated test files
 - **`run-tests`** — runs `npm run test:unit` on every PR
+- **`test-integration`** — creates an isolated Neon database branch per PR, pushes the schema, and runs `npm run test:integration`
+
+Integration tests use Neon's branch-per-PR pattern: each PR gets a copy-on-write database branch (`pr-<number>`), so concurrent PRs never interfere with each other. Branches are automatically deleted when the PR closes (via `neon-cleanup.yml`).
+
+**CI secrets/variables:**
+- `NEON_API_KEY` (secret) — Neon API key for branch creation/deletion
+- `NEON_PROJECT_ID` (variable) — Neon project ID (`billowing-art-88336019`)
+- `CHAT_SERVICE_DATABASE_URL_DEV` (secret) — dev database connection string
 
 Bug fixes must include a regression test that reproduces the issue. New features need unit tests covering the happy path and edge cases.
 
