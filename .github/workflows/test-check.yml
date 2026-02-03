@@ -3,6 +3,14 @@ name: Test Coverage Check
 on:
   pull_request:
     branches: [main, dev]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'vitest.config.ts'
+      - 'drizzle.config.ts'
 
 jobs:
   check-tests:
