@@ -65,6 +65,10 @@ data: "[DONE]"
 
 `GET /health` returns `{"status":"ok"}`.
 
+### OpenAPI Spec
+
+`GET /openapi.json` returns the auto-generated OpenAPI 3.0 specification. Used by the API Registry Service for automatic service discovery.
+
 ## Rendering Buttons on the Frontend
 
 Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token streaming is complete and **before** `[DONE]`. Each button has a `label` (display text) and `value` (text to send back as the next user message). Only render buttons when `buttons.length > 0`.
@@ -96,7 +100,8 @@ npm run db:generate
 | Command | Description |
 |---|---|
 | `npm run dev` | Start dev server with hot reload |
-| `npm run build` | Compile TypeScript to `dist/` |
+| `npm run build` | Compile TypeScript to `dist/` and generate `openapi.json` |
+| `npm run generate:openapi` | Regenerate `openapi.json` from route annotations |
 | `npm start` | Run compiled server |
 | `npm test` | Run all tests |
 | `npm run test:unit` | Run unit tests only |
@@ -135,7 +140,7 @@ Uses `node:20-alpine`. Requires Node >= 20.
 
 ```
 src/
-  index.ts          # Express server, /chat and /health endpoints
+  index.ts          # Express server, /chat, /health, and /openapi.json endpoints
   types.ts          # Request/response TypeScript interfaces
   db/
     index.ts        # Drizzle client init
@@ -143,4 +148,6 @@ src/
   lib/
     gemini.ts       # Gemini AI client, streaming + function calling
     mcp-client.ts   # MCP server connection via Streamable HTTP transport + tool execution
+scripts/
+  generate-openapi.ts  # Auto-generates openapi.json from route annotations
 ```

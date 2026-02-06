@@ -1,5 +1,8 @@
 import express from "express";
 import cors from "cors";
+import { readFileSync, existsSync } from "fs";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import { db } from "./db/index.js";
 import { sessions, messages } from "./db/schema.js";
 import { eq } from "drizzle-orm";
@@ -9,6 +12,10 @@ import type { ChatRequest } from "./types.js";
 import type { Content } from "@google/genai";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const openapiPath = join(__dirname, "..", "openapi.json");
 
 const app = express();
 app.use(cors());
@@ -25,11 +32,96 @@ function sendSSE(res: express.Response, data: unknown) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+app.get("/openapi.json", (_req, res) => {
+  // #swagger.ignore = true
+  if (existsSync(openapiPath)) {
+    res.json(JSON.parse(readFileSync(openapiPath, "utf-8")));
+  } else {
+    res.status(404).json({
+      error: "OpenAPI spec not generated. Run: npm run generate:openapi",
+    });
+  }
+});
+
 app.get("/health", (_req, res) => {
+  /*
+    #swagger.tags = ['Health']
+    #swagger.summary = 'Health check'
+    #swagger.description = 'Returns service health status'
+    #swagger.responses[200] = {
+      description: 'Service is healthy',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              status: { type: 'string', example: 'ok' }
+            }
+          }
+        }
+      }
+    }
+  */
   res.json({ status: "ok" });
 });
 
 app.post("/chat", async (req, res) => {
+  /*
+    #swagger.tags = ['Chat']
+    #swagger.summary = 'Stream AI chat response'
+    #swagger.description = 'Send a message and receive a streamed AI response via Server-Sent Events (SSE). Supports MCP tool calling and quick-reply buttons.'
+    #swagger.parameters['X-API-Key'] = {
+      in: 'header',
+      required: true,
+      type: 'string',
+      description: 'API key used to scope sessions by organization'
+    }
+    #swagger.requestBody = {
+      required: true,
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            required: ['message'],
+            properties: {
+              message: { type: 'string', description: 'The user message to send', example: 'Hello' },
+              sessionId: { type: 'string', format: 'uuid', description: 'Existing session ID to continue a conversation' }
+            }
+          }
+        }
+      }
+    }
+    #swagger.responses[200] = {
+      description: 'SSE stream of chat events (token, tool_call, tool_result, input_request, buttons, [DONE])',
+      content: {
+        'text/event-stream': {
+          schema: { type: 'string' }
+        }
+      }
+    }
+    #swagger.responses[401] = {
+      description: 'Missing X-API-Key header',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: { error: { type: 'string', example: 'X-API-Key header required' } }
+          }
+        }
+      }
+    }
+    #swagger.responses[400] = {
+      description: 'Missing or empty message',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: { error: { type: 'string', example: 'message is required' } }
+          }
+        }
+      }
+    }
+  */
   const apiKey = req.headers["x-api-key"] as string | undefined;
   if (!apiKey) {
     return res.status(401).json({ error: "X-API-Key header required" });
