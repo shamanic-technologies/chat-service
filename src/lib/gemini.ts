@@ -87,19 +87,28 @@ export interface GeminiOptions {
   model?: string;
 }
 
+export interface UsageMetadata {
+  promptTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+export type GeminiEvent =
+  | { type: "token"; content: string }
+  | { type: "function_call"; call: FunctionCall }
+  | { type: "done"; usage?: UsageMetadata };
+
 export function createGeminiClient({ apiKey, model = "gemini-3-flash-preview" }: GeminiOptions) {
   const ai = new GoogleGenAI({ apiKey });
 
   return {
+    model,
+
     async *streamChat(
       history: Content[],
       userMessage: string,
       tools?: FunctionDeclaration[]
-    ): AsyncGenerator<
-      | { type: "token"; content: string }
-      | { type: "function_call"; call: FunctionCall }
-      | { type: "done" }
-    > {
+    ): AsyncGenerator<GeminiEvent> {
       const response = await ai.models.generateContentStream({
         model,
         contents: [
@@ -120,7 +129,15 @@ export function createGeminiClient({ apiKey, model = "gemini-3-flash-preview" }:
         },
       });
 
+      let usage: UsageMetadata | undefined;
       for await (const chunk of response) {
+        if (chunk.usageMetadata) {
+          usage = {
+            promptTokens: chunk.usageMetadata.promptTokenCount ?? 0,
+            outputTokens: chunk.usageMetadata.candidatesTokenCount ?? 0,
+            totalTokens: chunk.usageMetadata.totalTokenCount ?? 0,
+          };
+        }
         const candidate = chunk.candidates?.[0];
         if (!candidate) continue;
 
@@ -142,7 +159,7 @@ export function createGeminiClient({ apiKey, model = "gemini-3-flash-preview" }:
         }
       }
 
-      yield { type: "done" };
+      yield { type: "done", usage };
     },
 
     async *sendFunctionResult(
@@ -150,11 +167,7 @@ export function createGeminiClient({ apiKey, model = "gemini-3-flash-preview" }:
       functionName: string,
       result: unknown,
       tools?: FunctionDeclaration[]
-    ): AsyncGenerator<
-      | { type: "token"; content: string }
-      | { type: "function_call"; call: FunctionCall }
-      | { type: "done" }
-    > {
+    ): AsyncGenerator<GeminiEvent> {
       const response = await ai.models.generateContentStream({
         model,
         contents: [
@@ -185,7 +198,15 @@ export function createGeminiClient({ apiKey, model = "gemini-3-flash-preview" }:
         },
       });
 
+      let usage: UsageMetadata | undefined;
       for await (const chunk of response) {
+        if (chunk.usageMetadata) {
+          usage = {
+            promptTokens: chunk.usageMetadata.promptTokenCount ?? 0,
+            outputTokens: chunk.usageMetadata.candidatesTokenCount ?? 0,
+            totalTokens: chunk.usageMetadata.totalTokenCount ?? 0,
+          };
+        }
         const candidate = chunk.candidates?.[0];
         if (!candidate) continue;
 
@@ -207,7 +228,7 @@ export function createGeminiClient({ apiKey, model = "gemini-3-flash-preview" }:
         }
       }
 
-      yield { type: "done" };
+      yield { type: "done", usage };
     },
   };
 }
