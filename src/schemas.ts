@@ -45,6 +45,26 @@ registry.registerPath({
   },
 });
 
+// --- OpenAPI ---
+
+registry.registerPath({
+  method: "get",
+  path: "/openapi.json",
+  tags: ["Docs"],
+  summary: "OpenAPI specification",
+  description: "Returns the OpenAPI 3.0 JSON specification for this service",
+  responses: {
+    200: {
+      description: "OpenAPI spec",
+      content: { "application/json": { schema: z.object({}).passthrough() } },
+    },
+    404: {
+      description: "Spec not generated",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // --- Chat ---
 
 export const ChatRequestSchema = z
@@ -85,7 +105,9 @@ registry.registerPath({
     },
     400: {
       description: "Missing or empty message",
-      content: { "application/json": { schema: ErrorResponseSchema } },
+      content: {
+        "application/json": { schema: ValidationErrorResponseSchema },
+      },
     },
     401: {
       description: "Missing X-API-Key header",

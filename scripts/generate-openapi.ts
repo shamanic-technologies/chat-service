@@ -19,7 +19,7 @@ const document = generator.generateDocument({
     version: "1.0.0",
   },
   servers: [
-    { url: process.env.SERVICE_URL || "http://localhost:3002" },
+    { url: process.env.CHAT_SERVICE_URL || "http://localhost:3002" },
   ],
 });
 
