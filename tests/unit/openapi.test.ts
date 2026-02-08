@@ -46,9 +46,12 @@ describe("openapi.json", () => {
     expect(chat.responses["400"]).toBeDefined();
   });
 
-  it("does not expose /openapi.json as a documented path", () => {
+  it("documents GET /openapi.json", () => {
     const spec = JSON.parse(readFileSync(openapiPath, "utf-8"));
-    expect(spec.paths["/openapi.json"]).toBeUndefined();
+    expect(spec.paths["/openapi.json"]).toBeDefined();
+    expect(spec.paths["/openapi.json"].get).toBeDefined();
+    expect(spec.paths["/openapi.json"].get.responses["200"]).toBeDefined();
+    expect(spec.paths["/openapi.json"].get.responses["404"]).toBeDefined();
   });
 
   it("includes component schemas from zod definitions", () => {
