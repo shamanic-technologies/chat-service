@@ -8,7 +8,7 @@ import { sessions, messages } from "./db/schema.js";
 import { eq } from "drizzle-orm";
 import { createGeminiClient, REQUEST_USER_INPUT_TOOL } from "./lib/gemini.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
-import type { ChatRequest } from "./types.js";
+import { ChatRequestSchema } from "./schemas.js";
 import type { Content } from "@google/genai";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -33,7 +33,6 @@ function sendSSE(res: express.Response, data: unknown) {
 }
 
 app.get("/openapi.json", (_req, res) => {
-  // #swagger.ignore = true
   if (existsSync(openapiPath)) {
     res.json(JSON.parse(readFileSync(openapiPath, "utf-8")));
   } else {
@@ -44,93 +43,23 @@ app.get("/openapi.json", (_req, res) => {
 });
 
 app.get("/health", (_req, res) => {
-  /*
-    #swagger.tags = ['Health']
-    #swagger.summary = 'Health check'
-    #swagger.description = 'Returns service health status'
-    #swagger.responses[200] = {
-      description: 'Service is healthy',
-      content: {
-        'application/json': {
-          schema: {
-            type: 'object',
-            properties: {
-              status: { type: 'string', example: 'ok' }
-            }
-          }
-        }
-      }
-    }
-  */
   res.json({ status: "ok" });
 });
 
 app.post("/chat", async (req, res) => {
-  /*
-    #swagger.tags = ['Chat']
-    #swagger.summary = 'Stream AI chat response'
-    #swagger.description = 'Send a message and receive a streamed AI response via Server-Sent Events (SSE). Supports MCP tool calling and quick-reply buttons.'
-    #swagger.parameters['X-API-Key'] = {
-      in: 'header',
-      required: true,
-      type: 'string',
-      description: 'API key used to scope sessions by organization'
-    }
-    #swagger.requestBody = {
-      required: true,
-      content: {
-        'application/json': {
-          schema: {
-            type: 'object',
-            required: ['message'],
-            properties: {
-              message: { type: 'string', description: 'The user message to send', example: 'Hello' },
-              sessionId: { type: 'string', format: 'uuid', description: 'Existing session ID to continue a conversation' }
-            }
-          }
-        }
-      }
-    }
-    #swagger.responses[200] = {
-      description: 'SSE stream of chat events (token, tool_call, tool_result, input_request, buttons, [DONE])',
-      content: {
-        'text/event-stream': {
-          schema: { type: 'string' }
-        }
-      }
-    }
-    #swagger.responses[401] = {
-      description: 'Missing X-API-Key header',
-      content: {
-        'application/json': {
-          schema: {
-            type: 'object',
-            properties: { error: { type: 'string', example: 'X-API-Key header required' } }
-          }
-        }
-      }
-    }
-    #swagger.responses[400] = {
-      description: 'Missing or empty message',
-      content: {
-        'application/json': {
-          schema: {
-            type: 'object',
-            properties: { error: { type: 'string', example: 'message is required' } }
-          }
-        }
-      }
-    }
-  */
   const apiKey = req.headers["x-api-key"] as string | undefined;
   if (!apiKey) {
     return res.status(401).json({ error: "X-API-Key header required" });
   }
 
-  const { message, sessionId } = req.body as ChatRequest;
-  if (!message?.trim()) {
-    return res.status(400).json({ error: "message is required" });
+  const parsed = ChatRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
+
+  const { message, sessionId } = parsed.data;
 
   // SSE headers
   res.setHeader("Content-Type", "text/event-stream");

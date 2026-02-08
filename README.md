@@ -67,7 +67,7 @@ data: "[DONE]"
 
 ### OpenAPI Spec
 
-`GET /openapi.json` returns the auto-generated OpenAPI 3.0 specification. Used by the API Registry Service for automatic service discovery.
+`GET /openapi.json` returns the OpenAPI 3.0 specification generated from zod schemas via `@asteasolutions/zod-to-openapi`. Used by the API Registry Service for automatic service discovery.
 
 ## Rendering Buttons on the Frontend
 
@@ -101,7 +101,7 @@ npm run db:generate
 |---|---|
 | `npm run dev` | Start dev server with hot reload |
 | `npm run build` | Compile TypeScript to `dist/` and generate `openapi.json` |
-| `npm run generate:openapi` | Regenerate `openapi.json` from route annotations |
+| `npm run generate:openapi` | Regenerate `openapi.json` from zod schemas |
 | `npm start` | Run compiled server |
 | `npm test` | Run all tests |
 | `npm run test:unit` | Run unit tests only |
@@ -141,7 +141,8 @@ Uses `node:20-alpine`. Requires Node >= 20.
 ```
 src/
   index.ts          # Express server, /chat, /health, and /openapi.json endpoints
-  types.ts          # Request/response TypeScript interfaces
+  types.ts          # SSE event TypeScript interfaces
+  schemas.ts        # Zod schemas, OpenAPI registry, and request/response types
   db/
     index.ts        # Drizzle client init
     schema.ts       # sessions + messages table definitions
@@ -149,5 +150,5 @@ src/
     gemini.ts       # Gemini AI client, streaming + function calling
     mcp-client.ts   # MCP server connection via Streamable HTTP transport + tool execution
 scripts/
-  generate-openapi.ts  # Auto-generates openapi.json from route annotations
+  generate-openapi.ts  # Generates openapi.json from zod schemas via OpenApiGeneratorV3
 ```
