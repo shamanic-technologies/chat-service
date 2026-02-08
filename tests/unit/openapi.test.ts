@@ -50,4 +50,19 @@ describe("openapi.json", () => {
     const spec = JSON.parse(readFileSync(openapiPath, "utf-8"));
     expect(spec.paths["/openapi.json"]).toBeUndefined();
   });
+
+  it("includes component schemas from zod definitions", () => {
+    const spec = JSON.parse(readFileSync(openapiPath, "utf-8"));
+    expect(spec.components?.schemas?.ChatRequest).toBeDefined();
+    expect(spec.components?.schemas?.HealthResponse).toBeDefined();
+    expect(spec.components?.schemas?.ErrorResponse).toBeDefined();
+  });
+
+  it("ChatRequest schema requires message field", () => {
+    const spec = JSON.parse(readFileSync(openapiPath, "utf-8"));
+    const chatReq = spec.components.schemas.ChatRequest;
+    expect(chatReq.required).toContain("message");
+    expect(chatReq.properties.message.type).toBe("string");
+    expect(chatReq.properties.sessionId.type).toBe("string");
+  });
 });

@@ -18,13 +18,14 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^8.4.0",
     "@google/genai": "^1.39.0",
     "@modelcontextprotocol/sdk": "^1.25.0",
     "cors": "^2.8.5",
     "drizzle-orm": "^0.38.0",
     "express": "^4.21.0",
     "postgres": "^3.4.0",
-    "swagger-autogen": "^2.23.7"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
