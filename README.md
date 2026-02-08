@@ -12,7 +12,7 @@ npm run dev            # starts on port 3002
 
 ## SSE Protocol
 
-`POST /chat` with headers `Content-Type: application/json` and `X-API-Key: <your-key>`.
+`POST /chat` with headers `Content-Type: application/json` and `Authorization: Bearer <your-key>`.
 
 Request body:
 ```json

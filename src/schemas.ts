@@ -85,8 +85,8 @@ registry.registerPath({
     "Send a message and receive a streamed AI response via Server-Sent Events (SSE). Supports MCP tool calling and quick-reply buttons.",
   request: {
     headers: z.object({
-      "x-api-key": z.string().openapi({
-        description: "API key used to scope sessions by organization",
+      authorization: z.string().openapi({
+        description: "Bearer token used to scope sessions by organization (format: Bearer <key>)",
       }),
     }),
     body: {
@@ -110,7 +110,7 @@ registry.registerPath({
       },
     },
     401: {
-      description: "Missing X-API-Key header",
+      description: "Missing or invalid Authorization Bearer header",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },

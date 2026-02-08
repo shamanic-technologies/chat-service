@@ -14,7 +14,7 @@ export interface McpConnection {
 export async function connectMcp(apiKey: string): Promise<McpConnection> {
   const transport = new StreamableHTTPClientTransport(new URL(`${MCP_SERVER_URL}/mcp`), {
     requestInit: {
-      headers: { "X-API-Key": apiKey },
+      headers: { Authorization: `Bearer ${apiKey}` },
     },
   });
 
