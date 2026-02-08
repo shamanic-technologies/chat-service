@@ -47,9 +47,10 @@ app.get("/health", (_req, res) => {
 });
 
 app.post("/chat", async (req, res) => {
-  const apiKey = req.headers["x-api-key"] as string | undefined;
+  const authHeader = req.headers["authorization"];
+  const apiKey = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
   if (!apiKey) {
-    return res.status(401).json({ error: "X-API-Key header required" });
+    return res.status(401).json({ error: "Authorization: Bearer <key> header required" });
   }
 
   const parsed = ChatRequestSchema.safeParse(req.body);
