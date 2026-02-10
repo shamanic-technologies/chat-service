@@ -53,7 +53,7 @@ describe("connectMcp", () => {
       }),
       expect.objectContaining({
         requestInit: {
-          headers: { "X-API-Key": "test-api-key" },
+          headers: { Authorization: "Bearer test-api-key" },
         },
       })
     );

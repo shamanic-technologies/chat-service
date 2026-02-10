@@ -6,8 +6,9 @@ import { dirname, join } from "path";
 import { db } from "./db/index.js";
 import { sessions, messages } from "./db/schema.js";
 import { eq } from "drizzle-orm";
-import { createGeminiClient, REQUEST_USER_INPUT_TOOL } from "./lib/gemini.js";
+import { createGeminiClient, REQUEST_USER_INPUT_TOOL, type UsageMetadata } from "./lib/gemini.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
+import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { ChatRequestSchema } from "./schemas.js";
 import type { Content, Part } from "@google/genai";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
@@ -47,9 +48,10 @@ app.get("/health", (_req, res) => {
 });
 
 app.post("/chat", async (req, res) => {
-  const apiKey = req.headers["x-api-key"] as string | undefined;
+  const authHeader = req.headers["authorization"];
+  const apiKey = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
   if (!apiKey) {
-    return res.status(401).json({ error: "X-API-Key header required" });
+    return res.status(401).json({ error: "Authorization: Bearer <key> header required" });
   }
 
   const parsed = ChatRequestSchema.safeParse(req.body);
@@ -67,7 +69,12 @@ app.post("/chat", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
+  const gemini = createGeminiClient({ apiKey: GEMINI_API_KEY });
   let mcpConn: McpConnection | null = null;
+  let runId: string | undefined;
+  let chatFailed = false;
+  let totalPromptTokens = 0;
+  let totalOutputTokens = 0;
 
   try {
     // Get or create session
@@ -81,6 +88,15 @@ app.post("/chat", async (req, res) => {
     }
 
     sendSSE(res, { sessionId: currentSessionId });
+
+    // Register run in RunsService
+    const run = await createRun({
+      clerkOrgId: apiKey,
+      appId: "mcpfactory",
+      serviceName: "chat-service",
+      taskName: "chat",
+    });
+    if (run) runId = run.id;
 
     // Load conversation history
     const history = await db.query.messages.findMany({
@@ -110,7 +126,6 @@ app.post("/chat", async (req, res) => {
     });
 
     // Stream response from Gemini
-    const gemini = createGeminiClient({ apiKey: GEMINI_API_KEY });
     let fullResponse = "";
     const toolCalls: ToolCallRecord[] = [];
 
@@ -151,9 +166,19 @@ app.post("/chat", async (req, res) => {
       allTools
     );
 
+    function accumulateUsage(usage?: UsageMetadata) {
+      if (!usage) return;
+      totalPromptTokens += usage.promptTokens;
+      totalOutputTokens += usage.outputTokens;
+    }
+
     for await (const event of stream) {
       if (event.type === "token") {
         bufferToken(event.content);
+      }
+
+      if (event.type === "done") {
+        accumulateUsage(event.usage);
       }
 
       if (event.type === "function_call") {
@@ -221,6 +246,9 @@ app.post("/chat", async (req, res) => {
             if (contEvent.type === "token") {
               bufferToken(contEvent.content);
             }
+            if (contEvent.type === "done") {
+              accumulateUsage(contEvent.usage);
+            }
           }
         } catch (toolErr: unknown) {
           const errDetail = toolErr instanceof Error
@@ -269,10 +297,13 @@ app.post("/chat", async (req, res) => {
       content: cleanedResponse,
       toolCalls: toolCalls.length > 0 ? toolCalls : null,
       buttons: buttons.length > 0 ? buttons : null,
+      tokenCount: totalPromptTokens + totalOutputTokens || null,
+      runId: runId ?? null,
     });
 
     sendSSE(res, "[DONE]");
   } catch (err) {
+    chatFailed = true;
     console.error("Chat error:", err);
     sendSSE(res, {
       type: "token",
@@ -283,6 +314,24 @@ app.post("/chat", async (req, res) => {
     if (mcpConn) {
       mcpConn.close().catch(() => {});
     }
+
+    // Report run status and costs (fire-and-forget)
+    if (runId) {
+      const costModel = gemini.model.replace(/-preview$/, "");
+      const costItems = [
+        ...(totalPromptTokens > 0
+          ? [{ costName: `${costModel}-tokens-input`, quantity: totalPromptTokens }]
+          : []),
+        ...(totalOutputTokens > 0
+          ? [{ costName: `${costModel}-tokens-output`, quantity: totalOutputTokens }]
+          : []),
+      ];
+      Promise.all([
+        updateRunStatus(runId, chatFailed ? "failed" : "completed"),
+        addRunCosts(runId, costItems),
+      ]).catch(() => {});
+    }
+
     res.end();
   }
 });

@@ -145,6 +145,95 @@ describe("thoughtSignature preservation", () => {
   });
 });
 
+describe("usage metadata", () => {
+  it("includes usage in done event from streamChat", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          usageMetadata: {
+            promptTokenCount: 10,
+            candidatesTokenCount: 20,
+            totalTokenCount: 30,
+          },
+          candidates: [{ content: { parts: [{ text: "hi" }] } }],
+        };
+      })()
+    );
+
+    const client = createGeminiClient({ apiKey: "test-key" });
+    const events = [];
+    for await (const event of client.streamChat([], "hello")) {
+      events.push(event);
+    }
+
+    const doneEvent = events.find((e) => e.type === "done");
+    expect(doneEvent).toEqual({
+      type: "done",
+      usage: { promptTokens: 10, outputTokens: 20, totalTokens: 30 },
+    });
+  });
+
+  it("includes usage in done event from sendFunctionResult", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          usageMetadata: {
+            promptTokenCount: 50,
+            candidatesTokenCount: 100,
+            totalTokenCount: 150,
+          },
+          candidates: [{ content: { parts: [{ text: "result" }] } }],
+        };
+      })()
+    );
+
+    const client = createGeminiClient({ apiKey: "test-key" });
+    const events = [];
+    for await (const event of client.sendFunctionResult([], "tool", { data: "ok" })) {
+      events.push(event);
+    }
+
+    const doneEvent = events.find((e) => e.type === "done");
+    expect(doneEvent).toEqual({
+      type: "done",
+      usage: { promptTokens: 50, outputTokens: 100, totalTokens: 150 },
+    });
+  });
+
+  it("exposes model property", () => {
+    const client = createGeminiClient({ apiKey: "test-key" });
+    expect(client.model).toBe("gemini-3-flash-preview");
+  });
+});
+
+describe("system prompt references all MCP campaign tools", () => {
+  it("passes system prompt mentioning all campaign MCP tools to Gemini", async () => {
+    const client = createGeminiClient({ apiKey: "test-key" });
+    const gen = client.streamChat([], "hello");
+    for await (const _ of gen) {
+      /* drain */
+    }
+
+    const callArgs = mockGenerateContentStream.mock.calls.at(-1)?.[0];
+    const systemInstruction = callArgs?.config?.systemInstruction as string;
+
+    const expectedTools = [
+      "mcpfactory_list_brands",
+      "mcpfactory_suggest_icp",
+      "mcpfactory_create_campaign",
+      "mcpfactory_list_campaigns",
+      "mcpfactory_campaign_stats",
+      "mcpfactory_stop_campaign",
+      "mcpfactory_resume_campaign",
+      "mcpfactory_campaign_debug",
+    ];
+
+    for (const tool of expectedTools) {
+      expect(systemInstruction).toContain(tool);
+    }
+  });
+});
+
 describe("REQUEST_USER_INPUT_TOOL", () => {
   it("has correct name and required parameters", () => {
     expect(REQUEST_USER_INPUT_TOOL.name).toBe("request_user_input");

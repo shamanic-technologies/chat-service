@@ -12,7 +12,7 @@ npm run dev            # starts on port 3002
 
 ## SSE Protocol
 
-`POST /chat` with headers `Content-Type: application/json` and `X-API-Key: <your-key>`.
+`POST /chat` with headers `Content-Type: application/json` and `Authorization: Bearer <your-key>`.
 
 Request body:
 ```json
@@ -80,6 +80,8 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `GEMINI_API_KEY` | Yes | Google Gemini API key |
 | `CHAT_SERVICE_DATABASE_URL` | Yes | PostgreSQL connection string |
 | `MCP_SERVER_URL` | No | MCP server endpoint (default: `https://mcp.mcpfactory.org`) |
+| `RUNS_SERVICE_URL` | No | RunsService endpoint (default: `https://runs.mcpfactory.org`) |
+| `RUNS_SERVICE_API_KEY` | No | API key for RunsService (runs tracking disabled if unset) |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
@@ -87,7 +89,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 Uses PostgreSQL via Drizzle ORM. Two tables:
 
 - **sessions** - conversation sessions scoped by `orgId` (from the API key)
-- **messages** - chat messages with role, content, optional `toolCalls` and `buttons` JSONB
+- **messages** - chat messages with role, content, optional `toolCalls`, `buttons` JSONB, and `runId` linking to RunsService
 
 Migrations run automatically on server start. To generate new migrations after schema changes:
 
@@ -149,6 +151,7 @@ src/
   lib/
     gemini.ts       # Gemini AI client, streaming + function calling
     mcp-client.ts   # MCP server connection via Streamable HTTP transport + tool execution
+    runs-client.ts  # RunsService HTTP client for run tracking and cost reporting
 scripts/
   generate-openapi.ts  # Generates openapi.json from zod schemas via OpenApiGeneratorV3
 ```

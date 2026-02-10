@@ -8,6 +8,13 @@
       "when": 1770013953733,
       "tag": "0000_legal_naoko",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1770560977671,
+      "tag": "0001_deep_richard_fisk",
+      "breakpoints": true
     }
   ]
 }
