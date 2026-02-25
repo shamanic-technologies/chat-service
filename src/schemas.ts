@@ -71,6 +71,7 @@ export const ChatRequestSchema = z
   .object({
     message: z.string().min(1, "message is required"),
     sessionId: z.string().uuid().optional(),
+    appId: z.string().min(1, "appId is required"),
   })
   .openapi("ChatRequest");
 

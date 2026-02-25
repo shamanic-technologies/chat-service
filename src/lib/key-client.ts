@@ -2,7 +2,6 @@ const KEY_SERVICE_URL =
   process.env.KEY_SERVICE_URL || "https://key.mcpfactory.org";
 const KEY_SERVICE_API_KEY = process.env.KEY_SERVICE_API_KEY;
 
-const APP_ID = "mcpfactory";
 const CALLER_SERVICE = "chat";
 
 export interface CallerInfo {
@@ -17,6 +16,7 @@ export interface DecryptedKey {
 
 export async function decryptAppKey(
   provider: string,
+  appId: string,
   caller: CallerInfo,
 ): Promise<DecryptedKey> {
   if (!KEY_SERVICE_API_KEY) {
@@ -25,7 +25,7 @@ export async function decryptAppKey(
     );
   }
 
-  const url = `${KEY_SERVICE_URL}/internal/app-keys/${encodeURIComponent(provider)}/decrypt?appId=${encodeURIComponent(APP_ID)}`;
+  const url = `${KEY_SERVICE_URL}/internal/app-keys/${encodeURIComponent(provider)}/decrypt?appId=${encodeURIComponent(appId)}`;
 
   const res = await fetch(url, {
     method: "GET",
