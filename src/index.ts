@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { createGeminiClient, REQUEST_USER_INPUT_TOOL, type UsageMetadata } from "./lib/gemini.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
+import { decryptAppKey } from "./lib/key-client.js";
 import { ChatRequestSchema } from "./schemas.js";
 import type { Content, Part } from "@google/genai";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
@@ -23,11 +24,8 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = parseInt(process.env.PORT || "3002", 10);
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-if (!GEMINI_API_KEY) {
-  throw new Error("GEMINI_API_KEY is required");
-}
+let geminiApiKey: string;
 
 function sendSSE(res: express.Response, data: unknown) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -69,7 +67,7 @@ app.post("/chat", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  const gemini = createGeminiClient({ apiKey: GEMINI_API_KEY });
+  const gemini = createGeminiClient({ apiKey: geminiApiKey });
   let mcpConn: McpConnection | null = null;
   let runId: string | undefined;
   let chatFailed = false;
@@ -370,14 +368,20 @@ function stripButtons(text: string): string {
 // Only start server if not in test environment
 if (process.env.NODE_ENV !== "test") {
   migrate(db, { migrationsFolder: "./drizzle" })
-    .then(() => {
+    .then(async () => {
       console.log("Migrations complete");
+      const decrypted = await decryptAppKey("gemini", {
+        method: "POST",
+        path: "/chat",
+      });
+      geminiApiKey = decrypted.key;
+      console.log("Gemini API key resolved via key-service");
       app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });
     })
     .catch((err) => {
-      console.error("Migration failed:", err);
+      console.error("Startup failed:", err);
       process.exit(1);
     });
 }

@@ -77,8 +77,9 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 | Variable | Required | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | Yes | Google Gemini API key |
+| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to decrypt the Gemini API key at startup) |
 | `CHAT_SERVICE_DATABASE_URL` | Yes | PostgreSQL connection string |
+| `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |
 | `MCP_SERVER_URL` | No | MCP server endpoint (default: `https://mcp.mcpfactory.org`) |
 | `RUNS_SERVICE_URL` | No | RunsService endpoint (default: `https://runs.mcpfactory.org`) |
 | `RUNS_SERVICE_API_KEY` | No | API key for RunsService (runs tracking disabled if unset) |
@@ -151,6 +152,7 @@ src/
   lib/
     gemini.ts       # Gemini AI client, streaming + function calling
     mcp-client.ts   # MCP server connection via Streamable HTTP transport + tool execution
+    key-client.ts   # Key-service client for decrypting app keys (Gemini API key)
     runs-client.ts  # RunsService HTTP client for run tracking and cost reporting
 scripts/
   generate-openapi.ts  # Generates openapi.json from zod schemas via OpenApiGeneratorV3
