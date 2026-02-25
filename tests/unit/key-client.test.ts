@@ -26,13 +26,13 @@ describe("decryptAppKey", () => {
     });
 
     const { decryptAppKey } = await loadModule();
-    const result = await decryptAppKey("gemini", {
+    const result = await decryptAppKey("gemini", "mcpfactory", {
       method: "POST",
       path: "/chat",
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/internal/app-keys/gemini/decrypt?appId=chat",
+      "https://key.test.local/internal/app-keys/gemini/decrypt?appId=mcpfactory",
       expect.objectContaining({
         method: "GET",
         headers: {
@@ -55,7 +55,7 @@ describe("decryptAppKey", () => {
 
     const { decryptAppKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      decryptAppKey("gemini", "mcpfactory", { method: "POST", path: "/chat" }),
     ).rejects.toThrow(/returned 404/);
   });
 
@@ -68,7 +68,7 @@ describe("decryptAppKey", () => {
 
     const { decryptAppKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      decryptAppKey("gemini", "mcpfactory", { method: "POST", path: "/chat" }),
     ).rejects.toThrow(/returned 400/);
   });
 
@@ -81,7 +81,7 @@ describe("decryptAppKey", () => {
 
     const { decryptAppKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      decryptAppKey("gemini", "mcpfactory", { method: "POST", path: "/chat" }),
     ).rejects.toThrow(/returned 500/);
   });
 
@@ -92,7 +92,7 @@ describe("decryptAppKey", () => {
 
     const { decryptAppKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      decryptAppKey("gemini", "mcpfactory", { method: "POST", path: "/chat" }),
     ).rejects.toThrow("ECONNREFUSED");
   });
 
@@ -101,7 +101,7 @@ describe("decryptAppKey", () => {
 
     const { decryptAppKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      decryptAppKey("gemini", "mcpfactory", { method: "POST", path: "/chat" }),
     ).rejects.toThrow(/KEY_SERVICE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
@@ -115,10 +115,10 @@ describe("decryptAppKey", () => {
     });
 
     const { decryptAppKey } = await loadModule();
-    await decryptAppKey("gemini", { method: "POST", path: "/chat" });
+    await decryptAppKey("gemini", "mcpfactory", { method: "POST", path: "/chat" });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.mcpfactory.org/internal/app-keys/gemini/decrypt?appId=chat",
+      "https://key.mcpfactory.org/internal/app-keys/gemini/decrypt?appId=mcpfactory",
       expect.anything(),
     );
   });
