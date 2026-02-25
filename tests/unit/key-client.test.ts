@@ -32,7 +32,7 @@ describe("decryptAppKey", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/internal/app-keys/gemini/decrypt?appId=chat",
+      "https://key.test.local/internal/app-keys/gemini/decrypt?appId=mcpfactory",
       expect.objectContaining({
         method: "GET",
         headers: {
@@ -118,7 +118,7 @@ describe("decryptAppKey", () => {
     await decryptAppKey("gemini", { method: "POST", path: "/chat" });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.mcpfactory.org/internal/app-keys/gemini/decrypt?appId=chat",
+      "https://key.mcpfactory.org/internal/app-keys/gemini/decrypt?appId=mcpfactory",
       expect.anything(),
     );
   });

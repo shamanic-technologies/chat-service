@@ -2,7 +2,7 @@ const KEY_SERVICE_URL =
   process.env.KEY_SERVICE_URL || "https://key.mcpfactory.org";
 const KEY_SERVICE_API_KEY = process.env.KEY_SERVICE_API_KEY;
 
-const APP_ID = "chat";
+const APP_ID = "mcpfactory";
 const CALLER_SERVICE = "chat";
 
 export interface CallerInfo {
