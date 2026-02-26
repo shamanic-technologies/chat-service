@@ -44,8 +44,11 @@ describe("connectMcp", () => {
     vi.clearAllMocks();
   });
 
-  it("uses StreamableHTTPClientTransport with /mcp endpoint", async () => {
-    await connectMcp("test-api-key");
+  it("uses StreamableHTTPClientTransport with provided serverUrl /mcp endpoint", async () => {
+    await connectMcp({
+      serverUrl: "https://mcp.example.com",
+      bearerToken: "test-token",
+    });
 
     expect(MockStreamableHTTPClientTransport).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -53,14 +56,31 @@ describe("connectMcp", () => {
       }),
       expect.objectContaining({
         requestInit: {
-          headers: { Authorization: "Bearer test-api-key" },
+          headers: { Authorization: "Bearer test-token" },
         },
-      })
+      }),
     );
+
+    const url = MockStreamableHTTPClientTransport.mock.calls[0][0] as URL;
+    expect(url.origin).toBe("https://mcp.example.com");
+  });
+
+  it("uses different serverUrl when provided", async () => {
+    await connectMcp({
+      serverUrl: "https://custom-mcp.io",
+      bearerToken: "custom-token",
+    });
+
+    const url = MockStreamableHTTPClientTransport.mock.calls[0][0] as URL;
+    expect(url.origin).toBe("https://custom-mcp.io");
+    expect(url.pathname).toBe("/mcp");
   });
 
   it("does not use legacy /sse endpoint", async () => {
-    await connectMcp("test-api-key");
+    await connectMcp({
+      serverUrl: "https://mcp.example.com",
+      bearerToken: "test-token",
+    });
 
     const url = MockStreamableHTTPClientTransport.mock.calls[0][0] as URL;
     expect(url.pathname).not.toBe("/sse");
@@ -68,7 +88,10 @@ describe("connectMcp", () => {
   });
 
   it("returns tools mapped to FunctionDeclaration format", async () => {
-    const conn = await connectMcp("test-api-key");
+    const conn = await connectMcp({
+      serverUrl: "https://mcp.example.com",
+      bearerToken: "test-token",
+    });
 
     expect(conn.tools).toHaveLength(1);
     expect(conn.tools[0]).toEqual({
@@ -79,7 +102,10 @@ describe("connectMcp", () => {
   });
 
   it("callTool delegates to MCP client", async () => {
-    const conn = await connectMcp("test-api-key");
+    const conn = await connectMcp({
+      serverUrl: "https://mcp.example.com",
+      bearerToken: "test-token",
+    });
     const result = await conn.callTool("test_tool", { arg: "value" });
 
     expect(mockCallTool).toHaveBeenCalledWith({
@@ -90,7 +116,10 @@ describe("connectMcp", () => {
   });
 
   it("close delegates to MCP client", async () => {
-    const conn = await connectMcp("test-api-key");
+    const conn = await connectMcp({
+      serverUrl: "https://mcp.example.com",
+      bearerToken: "test-token",
+    });
     await conn.close();
 
     expect(mockClose).toHaveBeenCalled();

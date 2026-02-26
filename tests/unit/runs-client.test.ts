@@ -29,8 +29,9 @@ describe("createRun", () => {
 
     const { createRun } = await loadModule();
     const result = await createRun({
-      orgId: "org_123",
-      appId: "mcpfactory",
+      orgId: "org-uuid-123",
+      userId: "user-uuid-456",
+      appId: "sales-cold-emails",
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -44,44 +45,15 @@ describe("createRun", () => {
           "X-API-Key": "test-runs-key",
         },
         body: JSON.stringify({
-          orgId: "org_123",
-          appId: "mcpfactory",
+          orgId: "org-uuid-123",
+          userId: "user-uuid-456",
+          appId: "sales-cold-emails",
           serviceName: "chat-service",
           taskName: "chat",
         }),
       }),
     );
     expect(result).toEqual(mockRun);
-  });
-
-  it("includes userId in wire body when provided", async () => {
-    const mockRun = { id: "run-1", status: "running" };
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(mockRun),
-    });
-
-    const { createRun } = await loadModule();
-    await createRun({
-      orgId: "org_456",
-      userId: "user_789",
-      appId: "mcpfactory",
-      serviceName: "chat-service",
-      taskName: "chat",
-    });
-
-    expect(fetch).toHaveBeenCalledWith(
-      "https://runs.test.local/v1/runs",
-      expect.objectContaining({
-        body: JSON.stringify({
-          orgId: "org_456",
-          userId: "user_789",
-          appId: "mcpfactory",
-          serviceName: "chat-service",
-          taskName: "chat",
-        }),
-      }),
-    );
   });
 
   it("returns null and logs on HTTP error", async () => {
@@ -94,8 +66,8 @@ describe("createRun", () => {
 
     const { createRun } = await loadModule();
     const result = await createRun({
-      orgId: "org_123",
-      appId: "mcpfactory",
+      orgId: "org-123",
+      appId: "my-app",
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -112,8 +84,8 @@ describe("createRun", () => {
 
     const { createRun } = await loadModule();
     const result = await createRun({
-      orgId: "org_123",
-      appId: "mcpfactory",
+      orgId: "org-123",
+      appId: "my-app",
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -215,8 +187,8 @@ describe("missing RUNS_SERVICE_API_KEY", () => {
 
     const { createRun } = await loadModule();
     const result = await createRun({
-      orgId: "org_123",
-      appId: "mcpfactory",
+      orgId: "org-123",
+      appId: "my-app",
       serviceName: "chat-service",
       taskName: "chat",
     });

@@ -15,6 +15,13 @@
       "when": 1770560977671,
       "tag": "0001_deep_richard_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772086797154,
+      "tag": "0002_nice_molecule_man",
+      "breakpoints": true
     }
   ]
 }
