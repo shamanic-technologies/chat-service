@@ -14,8 +14,8 @@ export interface RunsRun {
 }
 
 export interface CreateRunParams {
-  clerkOrgId: string;
-  clerkUserId?: string;
+  orgId: string;
+  userId?: string;
   appId: string;
   serviceName: string;
   taskName: string;

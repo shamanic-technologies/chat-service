@@ -100,7 +100,7 @@ app.post("/chat", async (req, res) => {
 
     // Register run in RunsService
     const run = await createRun({
-      clerkOrgId: apiKey,
+      orgId: apiKey,
       appId: "mcpfactory",
       serviceName: "chat-service",
       taskName: "chat",
