@@ -22,7 +22,8 @@ describe("decryptAppKey", () => {
   it("sends GET with correct URL, query params, and caller headers", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ provider: "gemini", key: "decrypted-key" }),
+      json: () =>
+        Promise.resolve({ provider: "gemini", key: "decrypted-key" }),
     });
 
     const { decryptAppKey } = await loadModule();
@@ -121,5 +122,65 @@ describe("decryptAppKey", () => {
       "https://key.mcpfactory.org/internal/app-keys/gemini/decrypt?appId=chat",
       expect.anything(),
     );
+  });
+});
+
+describe("decryptOrgKey", () => {
+  it("sends GET with correct URL including orgId query param", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({ provider: "mcpfactory", key: "org-mcp-key" }),
+    });
+
+    const { decryptOrgKey } = await loadModule();
+    const result = await decryptOrgKey("mcpfactory", "org-uuid-123", {
+      method: "POST",
+      path: "/chat",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://key.test.local/internal/keys/mcpfactory/decrypt?orgId=org-uuid-123",
+      expect.objectContaining({
+        method: "GET",
+        headers: {
+          "x-api-key": "test-key-svc-key",
+          "X-Caller-Service": "chat",
+          "X-Caller-Method": "POST",
+          "X-Caller-Path": "/chat",
+        },
+      }),
+    );
+    expect(result).toEqual({ provider: "mcpfactory", key: "org-mcp-key" });
+  });
+
+  it("throws on HTTP 404 (org key not configured)", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve("Key not configured for this org"),
+    });
+
+    const { decryptOrgKey } = await loadModule();
+    await expect(
+      decryptOrgKey("mcpfactory", "org-123", {
+        method: "POST",
+        path: "/chat",
+      }),
+    ).rejects.toThrow(/returned 404/);
+  });
+
+  it("throws when KEY_SERVICE_API_KEY is not set", async () => {
+    delete process.env.KEY_SERVICE_API_KEY;
+
+    const { decryptOrgKey } = await loadModule();
+    await expect(
+      decryptOrgKey("mcpfactory", "org-123", {
+        method: "POST",
+        path: "/chat",
+      }),
+    ).rejects.toThrow(/KEY_SERVICE_API_KEY is required/);
+
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

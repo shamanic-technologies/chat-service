@@ -1,6 +1,6 @@
 # Chat Service
 
-Backend chat service powering Foxy, the MCP Factory AI assistant. Streams Gemini AI responses via SSE with MCP tool calling support.
+Multi-app AI chat service. Streams Gemini AI responses via SSE with configurable system prompts and optional MCP tool calling per app.
 
 ## Quick Start
 
@@ -10,14 +10,72 @@ npm install
 npm run dev            # starts on port 3002
 ```
 
-## SSE Protocol
+## Authentication
 
-`POST /chat` with headers `Content-Type: application/json` and `Authorization: Bearer <your-key>`.
+All endpoints (except `/health` and `/openapi.json`) require three headers:
+
+| Header | Description |
+|---|---|
+| `Authorization` | `Bearer <chat-service-api-key>` — service-to-service auth |
+| `x-org-id` | Internal org UUID from client-service |
+| `x-user-id` | Internal user UUID from client-service |
+
+## App Config Registration
+
+Before using `/chat`, apps must register their configuration via:
+
+`PUT /apps/:appId/config`
 
 Request body:
 ```json
-{ "message": "Hello", "sessionId": "optional-uuid" }
+{
+  "systemPrompt": "You are a helpful assistant for cold email campaigns...",
+  "mcpServerUrl": "https://mcp.mcpfactory.org",
+  "mcpKeyName": "mcpfactory"
+}
 ```
+
+- `systemPrompt` (required) — the system prompt sent to Gemini for this app
+- `mcpServerUrl` (optional) — MCP server URL to connect to for tool calling
+- `mcpKeyName` (optional) — BYOK provider name in key-service; the org's key is decrypted at runtime and used as Bearer token for the MCP server
+
+This endpoint is **idempotent** (upsert on `appId + orgId`). Call it on every cold start.
+
+Response:
+```json
+{
+  "appId": "sales-cold-emails",
+  "orgId": "org-uuid",
+  "systemPrompt": "...",
+  "mcpServerUrl": "https://mcp.mcpfactory.org",
+  "mcpKeyName": "mcpfactory",
+  "createdAt": "2026-02-26T00:00:00.000Z",
+  "updatedAt": "2026-02-26T00:00:00.000Z"
+}
+```
+
+## SSE Protocol
+
+`POST /chat` with headers `Content-Type: application/json`, `Authorization: Bearer <key>`, `x-org-id`, `x-user-id`.
+
+Request body:
+```json
+{
+  "message": "Hello",
+  "appId": "sales-cold-emails",
+  "sessionId": "optional-uuid",
+  "context": {
+    "brandUrl": "https://example.com",
+    "objective": "clicks",
+    "budgetAmount": 500
+  }
+}
+```
+
+- `message` (required) — the user's chat message
+- `appId` (required) — identifies which app config (system prompt, MCP) to use
+- `sessionId` (optional) — resume an existing session; omit to start a new one
+- `context` (optional) — free-form JSON injected into the system prompt for this request only (not stored)
 
 The response is a stream of SSE events in this order:
 
@@ -77,20 +135,20 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 | Variable | Required | Description |
 |---|---|---|
-| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to decrypt the Gemini API key at startup) |
+| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to decrypt the Gemini API key at startup and org MCP keys at runtime) |
 | `CHAT_SERVICE_DATABASE_URL` | Yes | PostgreSQL connection string |
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |
-| `MCP_SERVER_URL` | No | MCP server endpoint (default: `https://mcp.mcpfactory.org`) |
 | `RUNS_SERVICE_URL` | No | RunsService endpoint (default: `https://runs.mcpfactory.org`) |
 | `RUNS_SERVICE_API_KEY` | No | API key for RunsService (runs tracking disabled if unset) |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
 
-Uses PostgreSQL via Drizzle ORM. Two tables:
+Uses PostgreSQL via Drizzle ORM. Three tables:
 
-- **sessions** - conversation sessions scoped by `orgId` (from the API key)
-- **messages** - chat messages with role, content, optional `toolCalls`, `buttons` JSONB, and `runId` linking to RunsService
+- **sessions** — conversation sessions scoped by `orgId`, `userId`, and `appId`
+- **messages** — chat messages with role, content, optional `toolCalls`, `buttons` JSONB, and `runId` linking to RunsService
+- **app_configs** — per-app configuration (system prompt, MCP settings) with unique constraint on `(appId, orgId)`
 
 Migrations run automatically on server start. To generate new migrations after schema changes:
 
@@ -123,11 +181,6 @@ Every PR that touches `src/` must include corresponding tests. CI enforces this:
 
 Integration tests use Neon's branch-per-PR pattern: each PR gets a copy-on-write database branch (`pr-<number>`), so concurrent PRs never interfere with each other. Branches are automatically deleted when the PR closes (via `neon-cleanup.yml`).
 
-**CI secrets/variables:**
-- `NEON_API_KEY` (secret) — Neon API key for branch creation/deletion
-- `NEON_PROJECT_ID` (variable) — Neon project ID (`billowing-art-88336019`)
-- `CHAT_SERVICE_DATABASE_URL_DEV` (secret) — dev database connection string
-
 Bug fixes must include a regression test that reproduces the issue. New features need unit tests covering the happy path and edge cases.
 
 ## Docker
@@ -143,16 +196,18 @@ Uses `node:20-alpine`. Requires Node >= 20.
 
 ```
 src/
-  index.ts          # Express server, /chat, /health, and /openapi.json endpoints
+  index.ts          # Express server, /chat, /apps/:appId/config, /health, /openapi.json
   types.ts          # SSE event TypeScript interfaces
   schemas.ts        # Zod schemas, OpenAPI registry, and request/response types
+  middleware/
+    auth.ts         # requireAuth middleware (Authorization, x-org-id, x-user-id)
   db/
     index.ts        # Drizzle client init
-    schema.ts       # sessions + messages table definitions
+    schema.ts       # sessions + messages + app_configs table definitions
   lib/
-    gemini.ts       # Gemini AI client, streaming + function calling
+    gemini.ts       # Gemini AI client, streaming + function calling, buildSystemPrompt helper
     mcp-client.ts   # MCP server connection via Streamable HTTP transport + tool execution
-    key-client.ts   # Key-service client for decrypting app keys (Gemini API key)
+    key-client.ts   # Key-service client for decrypting app keys (Gemini) and org BYOK keys (MCP)
     runs-client.ts  # RunsService HTTP client for run tracking and cost reporting
 scripts/
   generate-openapi.ts  # Generates openapi.json from zod schemas via OpenApiGeneratorV3

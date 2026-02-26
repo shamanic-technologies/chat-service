@@ -15,7 +15,7 @@ const document = generator.generateDocument({
   info: {
     title: "Chat Service",
     description:
-      "Backend chat service powering Foxy, the MCP Factory AI assistant. Streams Gemini AI responses via SSE with MCP tool calling support.",
+      "Multi-app AI chat service. Streams Gemini AI responses via SSE with configurable system prompts and optional MCP tool calling per app.",
     version: "1.0.0",
   },
   servers: [

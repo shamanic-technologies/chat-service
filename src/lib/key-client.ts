@@ -46,3 +46,36 @@ export async function decryptAppKey(
 
   return (await res.json()) as DecryptedKey;
 }
+
+export async function decryptOrgKey(
+  provider: string,
+  orgId: string,
+  caller: CallerInfo,
+): Promise<DecryptedKey> {
+  if (!KEY_SERVICE_API_KEY) {
+    throw new Error(
+      "[key-client] KEY_SERVICE_API_KEY is required to decrypt org keys",
+    );
+  }
+
+  const url = `${KEY_SERVICE_URL}/internal/keys/${encodeURIComponent(provider)}/decrypt?orgId=${encodeURIComponent(orgId)}`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      "x-api-key": KEY_SERVICE_API_KEY,
+      "X-Caller-Service": CALLER_SERVICE,
+      "X-Caller-Method": caller.method,
+      "X-Caller-Path": caller.path,
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[key-client] GET /internal/keys/${provider}/decrypt returned ${res.status}: ${text}`,
+    );
+  }
+
+  return (await res.json()) as DecryptedKey;
+}

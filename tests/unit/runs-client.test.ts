@@ -29,8 +29,9 @@ describe("createRun", () => {
 
     const { createRun } = await loadModule();
     const result = await createRun({
-      clerkOrgId: "org_123",
-      appId: "mcpfactory",
+      orgId: "org-uuid-123",
+      userId: "user-uuid-456",
+      appId: "sales-cold-emails",
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -44,8 +45,9 @@ describe("createRun", () => {
           "X-API-Key": "test-runs-key",
         },
         body: JSON.stringify({
-          clerkOrgId: "org_123",
-          appId: "mcpfactory",
+          orgId: "org-uuid-123",
+          userId: "user-uuid-456",
+          appId: "sales-cold-emails",
           serviceName: "chat-service",
           taskName: "chat",
         }),
@@ -64,8 +66,8 @@ describe("createRun", () => {
 
     const { createRun } = await loadModule();
     const result = await createRun({
-      clerkOrgId: "org_123",
-      appId: "mcpfactory",
+      orgId: "org-123",
+      appId: "my-app",
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -82,8 +84,8 @@ describe("createRun", () => {
 
     const { createRun } = await loadModule();
     const result = await createRun({
-      clerkOrgId: "org_123",
-      appId: "mcpfactory",
+      orgId: "org-123",
+      appId: "my-app",
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -185,8 +187,8 @@ describe("missing RUNS_SERVICE_API_KEY", () => {
 
     const { createRun } = await loadModule();
     const result = await createRun({
-      clerkOrgId: "org_123",
-      appId: "mcpfactory",
+      orgId: "org-123",
+      appId: "my-app",
       serviceName: "chat-service",
       taskName: "chat",
     });

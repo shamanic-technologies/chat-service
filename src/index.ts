@@ -4,13 +4,19 @@ import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { db } from "./db/index.js";
-import { sessions, messages } from "./db/schema.js";
-import { eq } from "drizzle-orm";
-import { createGeminiClient, REQUEST_USER_INPUT_TOOL, type UsageMetadata } from "./lib/gemini.js";
+import { sessions, messages, appConfigs } from "./db/schema.js";
+import { eq, and } from "drizzle-orm";
+import {
+  createGeminiClient,
+  buildSystemPrompt,
+  REQUEST_USER_INPUT_TOOL,
+  type UsageMetadata,
+} from "./lib/gemini.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
-import { decryptAppKey } from "./lib/key-client.js";
-import { ChatRequestSchema } from "./schemas.js";
+import { decryptAppKey, decryptOrgKey } from "./lib/key-client.js";
+import { ChatRequestSchema, AppConfigRequestSchema } from "./schemas.js";
+import { requireAuth, type AuthLocals } from "./middleware/auth.js";
 import type { Content, Part } from "@google/genai";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -45,12 +51,56 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-app.post("/chat", async (req, res) => {
-  const authHeader = req.headers["authorization"];
-  const apiKey = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
-  if (!apiKey) {
-    return res.status(401).json({ error: "Authorization: Bearer <key> header required" });
+// --- App Config Registration ---
+
+app.put("/apps/:appId/config", requireAuth, async (req, res) => {
+  const { appId } = req.params;
+  const { orgId } = res.locals as AuthLocals;
+
+  const parsed = AppConfigRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
+
+  const { systemPrompt, mcpServerUrl, mcpKeyName } = parsed.data;
+
+  const [config] = await db
+    .insert(appConfigs)
+    .values({
+      appId,
+      orgId,
+      systemPrompt,
+      mcpServerUrl: mcpServerUrl ?? null,
+      mcpKeyName: mcpKeyName ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [appConfigs.appId, appConfigs.orgId],
+      set: {
+        systemPrompt,
+        mcpServerUrl: mcpServerUrl ?? null,
+        mcpKeyName: mcpKeyName ?? null,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+
+  res.json({
+    appId: config.appId,
+    orgId: config.orgId,
+    systemPrompt: config.systemPrompt,
+    mcpServerUrl: config.mcpServerUrl,
+    mcpKeyName: config.mcpKeyName,
+    createdAt: config.createdAt.toISOString(),
+    updatedAt: config.updatedAt.toISOString(),
+  });
+});
+
+// --- Chat ---
+
+app.post("/chat", requireAuth, async (req, res) => {
+  const { orgId, userId } = res.locals as AuthLocals;
 
   const parsed = ChatRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -59,7 +109,19 @@ app.post("/chat", async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, sessionId } = parsed.data;
+  const { message, sessionId, appId, context } = parsed.data;
+
+  // Look up app config
+  const [appConfig] = await db
+    .select()
+    .from(appConfigs)
+    .where(and(eq(appConfigs.appId, appId), eq(appConfigs.orgId, orgId)));
+
+  if (!appConfig) {
+    return res.status(404).json({
+      error: `App config not found for appId="${appId}". Register via PUT /apps/${appId}/config first.`,
+    });
+  }
 
   // SSE headers
   res.setHeader("Content-Type", "text/event-stream");
@@ -67,7 +129,10 @@ app.post("/chat", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  const gemini = createGeminiClient({ apiKey: geminiApiKey });
+  // Build system prompt with optional context
+  const systemPrompt = buildSystemPrompt(appConfig.systemPrompt, context);
+  const gemini = createGeminiClient({ apiKey: geminiApiKey, systemPrompt });
+
   let mcpConn: McpConnection | null = null;
   let runId: string | undefined;
   let chatFailed = false;
@@ -75,22 +140,38 @@ app.post("/chat", async (req, res) => {
   let totalOutputTokens = 0;
 
   try {
-    // Get or create session
+    // Get or create session (scoped by org + user + app)
     let currentSessionId = sessionId;
     if (!currentSessionId) {
       const [session] = await db
         .insert(sessions)
-        .values({ orgId: apiKey })
+        .values({ orgId, userId, appId })
         .returning();
       currentSessionId = session.id;
+    } else {
+      // Validate session ownership
+      const [existing] = await db
+        .select()
+        .from(sessions)
+        .where(eq(sessions.id, currentSessionId));
+      if (!existing || existing.orgId !== orgId) {
+        sendSSE(res, {
+          type: "token",
+          content: "Session not found.",
+        });
+        sendSSE(res, "[DONE]");
+        res.end();
+        return;
+      }
     }
 
     sendSSE(res, { sessionId: currentSessionId });
 
     // Register run in RunsService
     const run = await createRun({
-      clerkOrgId: apiKey,
-      appId: "mcpfactory",
+      orgId,
+      userId,
+      appId,
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -109,11 +190,21 @@ app.post("/chat", async (req, res) => {
         parts: [{ text: m.content }],
       }));
 
-    // Connect to MCP to get available tools
-    try {
-      mcpConn = await connectMcp(apiKey);
-    } catch (err) {
-      console.warn("MCP connection failed, proceeding without tools:", err);
+    // Connect to MCP if app config has MCP settings
+    if (appConfig.mcpServerUrl && appConfig.mcpKeyName) {
+      try {
+        const decrypted = await decryptOrgKey(
+          appConfig.mcpKeyName,
+          orgId,
+          { method: "POST", path: "/chat" },
+        );
+        mcpConn = await connectMcp({
+          serverUrl: appConfig.mcpServerUrl,
+          bearerToken: decrypted.key,
+        });
+      } catch (err) {
+        console.warn("MCP connection failed, proceeding without tools:", err);
+      }
     }
 
     // Save user message
@@ -161,7 +252,7 @@ app.post("/chat", async (req, res) => {
     const stream = gemini.streamChat(
       geminiHistory,
       message.trim(),
-      allTools
+      allTools,
     );
 
     function accumulateUsage(usage?: UsageMetadata) {
@@ -206,7 +297,7 @@ app.post("/chat", async (req, res) => {
         try {
           const result = await mcpConn.callTool(
             call.name,
-            (call.args as Record<string, unknown>) || {}
+            (call.args as Record<string, unknown>) || {},
           );
           toolCalls.push({
             name: call.name,
@@ -237,7 +328,7 @@ app.post("/chat", async (req, res) => {
             updatedHistory,
             call.name,
             result,
-            allTools
+            allTools,
           );
 
           for await (const contEvent of contStream) {
@@ -249,11 +340,23 @@ app.post("/chat", async (req, res) => {
             }
           }
         } catch (toolErr: unknown) {
-          const errDetail = toolErr instanceof Error
-            ? { message: toolErr.message, ...Object.fromEntries(Object.entries(toolErr as unknown as Record<string, unknown>)) }
-            : toolErr;
-          console.error(`Tool call ${call.name} failed:`, JSON.stringify(errDetail, null, 2));
-          const errorMsg = " (Tool call failed, continuing without result.)";
+          const errDetail =
+            toolErr instanceof Error
+              ? {
+                  message: toolErr.message,
+                  ...Object.fromEntries(
+                    Object.entries(
+                      toolErr as unknown as Record<string, unknown>,
+                    ),
+                  ),
+                }
+              : toolErr;
+          console.error(
+            `Tool call ${call.name} failed:`,
+            JSON.stringify(errDetail, null, 2),
+          );
+          const errorMsg =
+            " (Tool call failed, continuing without result.)";
           fullResponse += errorMsg;
           sendSSE(res, { type: "token", content: errorMsg });
         }
@@ -275,9 +378,7 @@ app.post("/chat", async (req, res) => {
     }
 
     // Process held content as buttons
-    const buttons: ButtonRecord[] = held
-      ? extractButtons(held)
-      : [];
+    const buttons: ButtonRecord[] = held ? extractButtons(held) : [];
     if (held && buttons.length === 0) {
       sendSSE(res, { type: "token", content: held });
     }
@@ -286,9 +387,8 @@ app.post("/chat", async (req, res) => {
     }
 
     // Save assistant message with cleaned response
-    const cleanedResponse = buttons.length > 0
-      ? stripButtons(fullResponse)
-      : fullResponse;
+    const cleanedResponse =
+      buttons.length > 0 ? stripButtons(fullResponse) : fullResponse;
     await db.insert(messages).values({
       sessionId: currentSessionId,
       role: "assistant",
@@ -318,10 +418,20 @@ app.post("/chat", async (req, res) => {
       const costModel = gemini.model.replace(/-preview$/, "");
       const costItems = [
         ...(totalPromptTokens > 0
-          ? [{ costName: `${costModel}-tokens-input`, quantity: totalPromptTokens }]
+          ? [
+              {
+                costName: `${costModel}-tokens-input`,
+                quantity: totalPromptTokens,
+              },
+            ]
           : []),
         ...(totalOutputTokens > 0
-          ? [{ costName: `${costModel}-tokens-output`, quantity: totalOutputTokens }]
+          ? [
+              {
+                costName: `${costModel}-tokens-output`,
+                quantity: totalOutputTokens,
+              },
+            ]
           : []),
       ];
       Promise.all([
@@ -335,7 +445,7 @@ app.post("/chat", async (req, res) => {
 });
 
 /**
- * Extract button suggestions from Foxy's response.
+ * Extract button suggestions from the AI response.
  * Looks for lines like "- [Button Label]" at the end of the response.
  */
 function extractButtons(text: string): ButtonRecord[] {
