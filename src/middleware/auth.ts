@@ -10,11 +10,9 @@ export function requireAuth(
   res: Response,
   next: NextFunction,
 ): void {
-  const authHeader = req.headers["authorization"];
-  if (!authHeader?.startsWith("Bearer ")) {
-    res
-      .status(401)
-      .json({ error: "Authorization: Bearer <key> header required" });
+  const apiKey = req.headers["x-api-key"];
+  if (!apiKey || typeof apiKey !== "string") {
+    res.status(401).json({ error: "x-api-key header is required" });
     return;
   }
 

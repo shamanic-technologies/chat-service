@@ -16,7 +16,7 @@ All endpoints (except `/health` and `/openapi.json`) require three headers:
 
 | Header | Description |
 |---|---|
-| `Authorization` | `Bearer <chat-service-api-key>` — service-to-service auth |
+| `x-api-key` | Service-to-service API key |
 | `x-org-id` | Internal org UUID from client-service |
 | `x-user-id` | Internal user UUID from client-service |
 
@@ -56,7 +56,7 @@ Response:
 
 ## SSE Protocol
 
-`POST /chat` with headers `Content-Type: application/json`, `Authorization: Bearer <key>`, `x-org-id`, `x-user-id`.
+`POST /chat` with headers `Content-Type: application/json`, `x-api-key`, `x-org-id`, `x-user-id`.
 
 Request body:
 ```json
@@ -200,7 +200,7 @@ src/
   types.ts          # SSE event TypeScript interfaces
   schemas.ts        # Zod schemas, OpenAPI registry, and request/response types
   middleware/
-    auth.ts         # requireAuth middleware (Authorization, x-org-id, x-user-id)
+    auth.ts         # requireAuth middleware (x-api-key, x-org-id, x-user-id)
   db/
     index.ts        # Drizzle client init
     schema.ts       # sessions + messages + app_configs table definitions

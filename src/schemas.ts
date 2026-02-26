@@ -99,8 +99,8 @@ registry.registerPath({
   request: {
     params: z.object({ appId: z.string() }),
     headers: z.object({
-      authorization: z.string().openapi({
-        description: "Bearer token for service-to-service auth",
+      "x-api-key": z.string().openapi({
+        description: "Service-to-service API key",
       }),
       "x-org-id": z.string().openapi({
         description: "Internal org UUID from client-service",
@@ -127,7 +127,7 @@ registry.registerPath({
       },
     },
     401: {
-      description: "Missing or invalid Authorization Bearer header",
+      description: "Missing or invalid x-api-key header",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },
@@ -155,8 +155,8 @@ registry.registerPath({
     "Send a message and receive a streamed AI response via Server-Sent Events (SSE). Supports MCP tool calling and quick-reply buttons. Requires app config to be registered first via PUT /apps/{appId}/config.",
   request: {
     headers: z.object({
-      authorization: z.string().openapi({
-        description: "Bearer token for service-to-service auth",
+      "x-api-key": z.string().openapi({
+        description: "Service-to-service API key",
       }),
       "x-org-id": z.string().openapi({
         description: "Internal org UUID from client-service",
@@ -186,7 +186,7 @@ registry.registerPath({
       },
     },
     401: {
-      description: "Missing or invalid Authorization Bearer header",
+      description: "Missing or invalid x-api-key header",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     404: {
