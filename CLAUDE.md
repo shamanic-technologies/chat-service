@@ -1,5 +1,17 @@
 # Chat Service - Claude Agent Instructions
 
+## Commands
+
+- `npm test` — run all tests
+- `npm run test:unit` — run unit tests only
+- `npm run test:integration` — run integration tests only
+- `npm run build` — compile TypeScript + generate OpenAPI spec
+- `npm run dev` — local dev server with hot reload (port 3002)
+- `npm run generate:openapi` — regenerate openapi.json from Zod schemas
+- `npm run db:generate` — generate Drizzle migrations
+- `npm run db:migrate` — run migrations
+- `npm run db:push` — push schema directly (dev only)
+
 ## README Maintenance (MANDATORY)
 
 **Every PR that changes functionality must include a README.md update.** This is a hard rule.
@@ -28,12 +40,21 @@ After completing your code changes, re-read README.md and verify every section i
 
 CI will warn if source files change without corresponding test changes. Do not skip this.
 
-## Project Overview
+## Architecture
 
-- Express + TypeScript service streaming Gemini AI responses via SSE
-- MCP tool calling via `@modelcontextprotocol/sdk`
-- PostgreSQL with Drizzle ORM for sessions/messages
-- Buttons extracted from AI response for quick-reply UX
+- `src/index.ts` — Express server, `/chat`, `/apps/:appId/config`, `/health`, `/openapi.json`
+- `src/schemas.ts` — Zod schemas (source of truth for validation + OpenAPI)
+- `src/types.ts` — SSE event TypeScript interfaces
+- `src/middleware/auth.ts` — Auth middleware (Authorization Bearer + x-org-id + x-user-id)
+- `src/db/schema.ts` — Drizzle table definitions (sessions, messages, app_configs)
+- `src/db/index.ts` — Drizzle client init
+- `src/lib/gemini.ts` — Gemini AI client, streaming + function calling
+- `src/lib/mcp-client.ts` — MCP server connection via Streamable HTTP + tool execution
+- `src/lib/key-client.ts` — Key-service client for app-key and org-key decryption
+- `src/lib/runs-client.ts` — RunsService HTTP client for run tracking and cost reporting
+- `scripts/generate-openapi.ts` — Generates openapi.json from Zod schemas
+- `tests/` — Test files (`*.test.ts`)
+- `openapi.json` — Auto-generated, do NOT edit manually
 
 ## Code Conventions
 

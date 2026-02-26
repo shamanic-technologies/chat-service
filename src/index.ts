@@ -480,7 +480,7 @@ if (process.env.NODE_ENV !== "test") {
   migrate(db, { migrationsFolder: "./drizzle" })
     .then(async () => {
       console.log("Migrations complete");
-      const decrypted = await decryptAppKey("gemini", {
+      const decrypted = await decryptAppKey("gemini", "chat", {
         method: "POST",
         path: "/chat",
       });
