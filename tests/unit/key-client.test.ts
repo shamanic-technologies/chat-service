@@ -26,13 +26,13 @@ describe("decryptAppKey", () => {
     });
 
     const { decryptAppKey } = await loadModule();
-    const result = await decryptAppKey("gemini", {
+    const result = await decryptAppKey("gemini", "mcpfactory", {
       method: "POST",
       path: "/chat",
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/internal/app-keys/gemini/decrypt?appId=chat",
+      "https://key.test.local/internal/app-keys/gemini/decrypt?appId=mcpfactory",
       expect.objectContaining({
         method: "GET",
         headers: {
@@ -46,6 +46,24 @@ describe("decryptAppKey", () => {
     expect(result).toEqual({ provider: "gemini", key: "decrypted-key" });
   });
 
+  it("uses the provided appId in the query string", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ provider: "gemini", key: "key-abc" }),
+    });
+
+    const { decryptAppKey } = await loadModule();
+    await decryptAppKey("gemini", "sales-cold-emails", {
+      method: "POST",
+      path: "/chat",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://key.test.local/internal/app-keys/gemini/decrypt?appId=sales-cold-emails",
+      expect.anything(),
+    );
+  });
+
   it("throws on HTTP 404 (key not configured)", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
@@ -55,7 +73,7 @@ describe("decryptAppKey", () => {
 
     const { decryptAppKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      decryptAppKey("gemini", "unknown-app", { method: "POST", path: "/chat" }),
     ).rejects.toThrow(/returned 404/);
   });
 
@@ -68,7 +86,7 @@ describe("decryptAppKey", () => {
 
     const { decryptAppKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      decryptAppKey("gemini", "mcpfactory", { method: "POST", path: "/chat" }),
     ).rejects.toThrow(/returned 400/);
   });
 
@@ -81,7 +99,7 @@ describe("decryptAppKey", () => {
 
     const { decryptAppKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      decryptAppKey("gemini", "mcpfactory", { method: "POST", path: "/chat" }),
     ).rejects.toThrow(/returned 500/);
   });
 
@@ -92,7 +110,7 @@ describe("decryptAppKey", () => {
 
     const { decryptAppKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      decryptAppKey("gemini", "mcpfactory", { method: "POST", path: "/chat" }),
     ).rejects.toThrow("ECONNREFUSED");
   });
 
@@ -101,7 +119,7 @@ describe("decryptAppKey", () => {
 
     const { decryptAppKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      decryptAppKey("gemini", "mcpfactory", { method: "POST", path: "/chat" }),
     ).rejects.toThrow(/KEY_SERVICE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
@@ -115,10 +133,10 @@ describe("decryptAppKey", () => {
     });
 
     const { decryptAppKey } = await loadModule();
-    await decryptAppKey("gemini", { method: "POST", path: "/chat" });
+    await decryptAppKey("gemini", "mcpfactory", { method: "POST", path: "/chat" });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.mcpfactory.org/internal/app-keys/gemini/decrypt?appId=chat",
+      "https://key.mcpfactory.org/internal/app-keys/gemini/decrypt?appId=mcpfactory",
       expect.anything(),
     );
   });

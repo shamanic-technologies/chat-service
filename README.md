@@ -16,8 +16,10 @@ npm run dev            # starts on port 3002
 
 Request body:
 ```json
-{ "message": "Hello", "sessionId": "optional-uuid" }
+{ "message": "Hello", "appId": "your-app-id", "sessionId": "optional-uuid" }
 ```
+
+- `appId` (required) — identifies which app registered the Gemini key with key-service. The key is resolved per-request, so each calling app must register its own Gemini key at startup.
 
 The response is a stream of SSE events in this order:
 
@@ -77,7 +79,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 | Variable | Required | Description |
 |---|---|---|
-| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to decrypt the Gemini API key at startup) |
+| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to decrypt the Gemini API key per-request) |
 | `CHAT_SERVICE_DATABASE_URL` | Yes | PostgreSQL connection string |
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |
 | `MCP_SERVER_URL` | No | MCP server endpoint (default: `https://mcp.mcpfactory.org`) |
