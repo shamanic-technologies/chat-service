@@ -14,26 +14,19 @@ function mockReqRes(headers: Record<string, string> = {}) {
 }
 
 describe("requireAuth middleware", () => {
-  it("returns 401 when Authorization header is missing", () => {
+  it("returns 401 when x-api-key header is missing", () => {
     const { req, res, next } = mockReqRes({});
     requireAuth(req, res, next);
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({
-      error: "Authorization: Bearer <key> header required",
+      error: "x-api-key header is required",
     });
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it("returns 401 when Authorization header is not Bearer", () => {
-    const { req, res, next } = mockReqRes({ authorization: "Basic abc123" });
-    requireAuth(req, res, next);
-    expect(res.status).toHaveBeenCalledWith(401);
     expect(next).not.toHaveBeenCalled();
   });
 
   it("returns 400 when x-org-id is missing", () => {
     const { req, res, next } = mockReqRes({
-      authorization: "Bearer test-key",
+      "x-api-key": "test-key",
       "x-user-id": "user-123",
     });
     requireAuth(req, res, next);
@@ -46,7 +39,7 @@ describe("requireAuth middleware", () => {
 
   it("returns 400 when x-user-id is missing", () => {
     const { req, res, next } = mockReqRes({
-      authorization: "Bearer test-key",
+      "x-api-key": "test-key",
       "x-org-id": "org-123",
     });
     requireAuth(req, res, next);
@@ -59,7 +52,7 @@ describe("requireAuth middleware", () => {
 
   it("calls next and sets locals when all headers are present", () => {
     const { req, res, next } = mockReqRes({
-      authorization: "Bearer test-key",
+      "x-api-key": "test-key",
       "x-org-id": "org-123",
       "x-user-id": "user-456",
     });
