@@ -31,8 +31,6 @@ app.use(express.json());
 
 const PORT = parseInt(process.env.PORT || "3002", 10);
 
-let geminiApiKey: string;
-
 function sendSSE(res: express.Response, data: unknown) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
@@ -123,6 +121,21 @@ app.post("/chat", requireAuth, async (req, res) => {
     });
   }
 
+  // Resolve Gemini API key for this app
+  let geminiKey: string;
+  try {
+    const decrypted = await decryptAppKey("gemini", appId, {
+      method: "POST",
+      path: "/chat",
+    });
+    geminiKey = decrypted.key;
+  } catch (err) {
+    console.error(`Failed to resolve Gemini key for appId="${appId}":`, err);
+    return res.status(500).json({
+      error: `Failed to resolve Gemini API key for appId="${appId}". Ensure the key is registered in key-service.`,
+    });
+  }
+
   // SSE headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -131,7 +144,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   // Build system prompt with optional context
   const systemPrompt = buildSystemPrompt(appConfig.systemPrompt, context);
-  const gemini = createGeminiClient({ apiKey: geminiApiKey, systemPrompt });
+  const gemini = createGeminiClient({ apiKey: geminiKey, systemPrompt });
 
   let mcpConn: McpConnection | null = null;
   let runId: string | undefined;
@@ -478,14 +491,8 @@ function stripButtons(text: string): string {
 // Only start server if not in test environment
 if (process.env.NODE_ENV !== "test") {
   migrate(db, { migrationsFolder: "./drizzle" })
-    .then(async () => {
+    .then(() => {
       console.log("Migrations complete");
-      const decrypted = await decryptAppKey("gemini", "chat", {
-        method: "POST",
-        path: "/chat",
-      });
-      geminiApiKey = decrypted.key;
-      console.log("Gemini API key resolved via key-service");
       app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });
