@@ -61,10 +61,11 @@ app.post("/chat", async (req, res) => {
 
   const { message, sessionId } = parsed.data;
 
-  // SSE headers
+  // SSE headers — disable proxy buffering so tokens stream immediately
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
   const gemini = createGeminiClient({ apiKey: geminiApiKey });
@@ -135,20 +136,37 @@ app.post("/chat", async (req, res) => {
 
     function bufferToken(chunk: string): void {
       fullResponse += chunk;
-      for (const ch of chunk) {
-        lineBuf += ch;
-        if (ch === "\n") {
-          if (BUTTON_RE.test(lineBuf.trimEnd())) {
-            held += lineBuf;
-          } else {
-            if (held) {
-              sendSSE(res, { type: "token", content: held });
-              held = "";
-            }
-            sendSSE(res, { type: "token", content: lineBuf });
+
+      // Split combined buffer + chunk on newlines
+      const combined = lineBuf + chunk;
+      const parts = combined.split("\n");
+      // Last element is the remaining partial line (empty string if chunk ended with \n)
+      const partial = parts.pop()!;
+
+      // Process each complete line (terminated by \n)
+      for (const line of parts) {
+        const fullLine = line + "\n";
+        if (BUTTON_RE.test(line.trimEnd())) {
+          held += fullLine;
+        } else {
+          if (held) {
+            sendSSE(res, { type: "token", content: held });
+            held = "";
           }
-          lineBuf = "";
+          sendSSE(res, { type: "token", content: fullLine });
         }
+      }
+
+      lineBuf = partial;
+
+      // Flush partial line immediately unless it could be the start of a button line
+      if (lineBuf && !/^[-*]\s*\[/.test(lineBuf)) {
+        if (held) {
+          sendSSE(res, { type: "token", content: held });
+          held = "";
+        }
+        sendSSE(res, { type: "token", content: lineBuf });
+        lineBuf = "";
       }
     }
 
