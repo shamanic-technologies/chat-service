@@ -14,7 +14,7 @@ import {
 } from "./lib/gemini.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
-import { decryptAppKey, decryptOrgKey } from "./lib/key-client.js";
+import { resolveKey, decryptOrgKey, type ResolvedKey } from "./lib/key-client.js";
 import { ChatRequestSchema, AppConfigRequestSchema } from "./schemas.js";
 import { requireAuth, type AuthLocals } from "./middleware/auth.js";
 import type { Content, Part } from "@google/genai";
@@ -107,7 +107,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, sessionId, appId, context } = parsed.data;
+  const { message, sessionId, appId, context, parentRunId } = parsed.data;
 
   // Look up app config
   const [appConfig] = await db
@@ -121,18 +121,19 @@ app.post("/chat", requireAuth, async (req, res) => {
     });
   }
 
-  // Resolve Gemini API key for this app
-  let geminiKey: string;
+  // Resolve Gemini API key per-request (supports BYOK per org)
+  let resolvedKey: ResolvedKey;
   try {
-    const decrypted = await decryptAppKey("gemini", appId, {
-      method: "POST",
-      path: "/chat",
+    resolvedKey = await resolveKey({
+      provider: "gemini",
+      orgId,
+      userId,
+      caller: { method: "POST", path: "/chat" },
     });
-    geminiKey = decrypted.key;
   } catch (err) {
-    console.error(`Failed to resolve Gemini key for appId="${appId}":`, err);
-    return res.status(500).json({
-      error: `Failed to resolve Gemini API key for appId="${appId}". Ensure the key is registered in key-service.`,
+    console.error(`Failed to resolve Gemini key for org="${orgId}":`, err);
+    return res.status(502).json({
+      error: `Failed to resolve Gemini API key. Ensure the key is configured in key-service.`,
     });
   }
 
@@ -145,7 +146,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   // Build system prompt with optional context
   const systemPrompt = buildSystemPrompt(appConfig.systemPrompt, context);
-  const gemini = createGeminiClient({ apiKey: geminiKey, systemPrompt });
+  const gemini = createGeminiClient({ apiKey: resolvedKey.key, systemPrompt });
 
   let mcpConn: McpConnection | null = null;
   let runId: string | undefined;
@@ -188,6 +189,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       appId,
       serviceName: "chat-service",
       taskName: "chat",
+      ...(parentRunId ? { parentRunId } : {}),
     });
     if (run) runId = run.id;
 
@@ -447,12 +449,15 @@ app.post("/chat", requireAuth, async (req, res) => {
     // Report run status and costs (fire-and-forget)
     if (runId) {
       const costModel = gemini.model.replace(/-preview$/, "");
+      const costSource: "platform" | "org" =
+        resolvedKey.keySource === "org" ? "org" : "platform";
       const costItems = [
         ...(totalPromptTokens > 0
           ? [
               {
                 costName: `${costModel}-tokens-input`,
                 quantity: totalPromptTokens,
+                costSource,
               },
             ]
           : []),
@@ -461,6 +466,7 @@ app.post("/chat", requireAuth, async (req, res) => {
               {
                 costName: `${costModel}-tokens-output`,
                 quantity: totalOutputTokens,
+                costSource,
               },
             ]
           : []),

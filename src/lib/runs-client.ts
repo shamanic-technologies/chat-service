@@ -19,14 +19,13 @@ export interface CreateRunParams {
   appId: string;
   serviceName: string;
   taskName: string;
-  brandId?: string;
-  campaignId?: string;
   parentRunId?: string;
 }
 
 export interface CostItem {
   costName: string;
   quantity: number;
+  costSource: "platform" | "org";
 }
 
 async function runsRequest<T>(

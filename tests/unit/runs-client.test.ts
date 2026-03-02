@@ -56,6 +56,38 @@ describe("createRun", () => {
     expect(result).toEqual(mockRun);
   });
 
+  it("forwards parentRunId when provided", async () => {
+    const mockRun = { id: "run-2", status: "running" };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockRun),
+    });
+
+    const { createRun } = await loadModule();
+    await createRun({
+      orgId: "org-uuid-123",
+      userId: "user-uuid-456",
+      appId: "sales-cold-emails",
+      serviceName: "chat-service",
+      taskName: "chat",
+      parentRunId: "parent-run-uuid",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://runs.test.local/v1/runs",
+      expect.objectContaining({
+        body: JSON.stringify({
+          orgId: "org-uuid-123",
+          userId: "user-uuid-456",
+          appId: "sales-cold-emails",
+          serviceName: "chat-service",
+          taskName: "chat",
+          parentRunId: "parent-run-uuid",
+        }),
+      }),
+    );
+  });
+
   it("returns null and logs on HTTP error", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -138,8 +170,8 @@ describe("addRunCosts", () => {
 
     const { addRunCosts } = await loadModule();
     await addRunCosts("run-1", [
-      { costName: "gemini-3-flash-tokens-input", quantity: 100 },
-      { costName: "gemini-3-flash-tokens-output", quantity: 50 },
+      { costName: "gemini-3-flash-tokens-input", quantity: 100, costSource: "platform" },
+      { costName: "gemini-3-flash-tokens-output", quantity: 50, costSource: "platform" },
     ]);
 
     expect(fetch).toHaveBeenCalledWith(
@@ -148,8 +180,8 @@ describe("addRunCosts", () => {
         method: "POST",
         body: JSON.stringify({
           items: [
-            { costName: "gemini-3-flash-tokens-input", quantity: 100 },
-            { costName: "gemini-3-flash-tokens-output", quantity: 50 },
+            { costName: "gemini-3-flash-tokens-input", quantity: 100, costSource: "platform" },
+            { costName: "gemini-3-flash-tokens-output", quantity: 50, costSource: "platform" },
           ],
         }),
       }),
@@ -173,7 +205,7 @@ describe("addRunCosts", () => {
 
     const { addRunCosts } = await loadModule();
     await addRunCosts("run-1", [
-      { costName: "unknown-cost", quantity: 10 },
+      { costName: "unknown-cost", quantity: 10, costSource: "platform" as const },
     ]);
 
     expect(warnSpy).toHaveBeenCalled();
