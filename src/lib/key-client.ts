@@ -1,8 +1,6 @@
 const KEY_SERVICE_URL =
   process.env.KEY_SERVICE_URL || "https://key.mcpfactory.org";
 const KEY_SERVICE_API_KEY = process.env.KEY_SERVICE_API_KEY;
-
-const APP_ID = "chat";
 const CALLER_SERVICE = "chat";
 
 export interface CallerInfo {
@@ -10,22 +8,31 @@ export interface CallerInfo {
   path: string;
 }
 
-export interface DecryptedKey {
+export interface KeyResolutionParams {
   provider: string;
-  key: string;
+  orgId: string;
+  userId: string;
+  caller: CallerInfo;
 }
 
-export async function decryptAppKey(
-  provider: string,
-  caller: CallerInfo,
-): Promise<DecryptedKey> {
+export interface ResolvedKey {
+  provider: string;
+  key: string;
+  keySource: "org" | "platform";
+}
+
+export async function resolveKey(
+  params: KeyResolutionParams,
+): Promise<ResolvedKey> {
   if (!KEY_SERVICE_API_KEY) {
     throw new Error(
-      "[key-client] KEY_SERVICE_API_KEY is required to decrypt app keys",
+      "[key-client] KEY_SERVICE_API_KEY is required to resolve keys",
     );
   }
 
-  const url = `${KEY_SERVICE_URL}/internal/app-keys/${encodeURIComponent(provider)}/decrypt?appId=${encodeURIComponent(APP_ID)}`;
+  const { provider, orgId, userId, caller } = params;
+  const qs = new URLSearchParams({ orgId, userId });
+  const url = `${KEY_SERVICE_URL}/keys/${encodeURIComponent(provider)}/decrypt?${qs}`;
 
   const res = await fetch(url, {
     method: "GET",
@@ -40,9 +47,9 @@ export async function decryptAppKey(
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[key-client] GET /internal/app-keys/${provider}/decrypt returned ${res.status}: ${text}`,
+      `[key-client] GET /keys/${provider}/decrypt returned ${res.status}: ${text}`,
     );
   }
 
-  return (await res.json()) as DecryptedKey;
+  return (await res.json()) as ResolvedKey;
 }

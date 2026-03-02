@@ -9,7 +9,7 @@ import { eq } from "drizzle-orm";
 import { createGeminiClient, REQUEST_USER_INPUT_TOOL, type UsageMetadata } from "./lib/gemini.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
-import { decryptAppKey } from "./lib/key-client.js";
+import { resolveKey, type ResolvedKey } from "./lib/key-client.js";
 import { ChatRequestSchema } from "./schemas.js";
 import type { Content, Part } from "@google/genai";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
@@ -24,8 +24,6 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = parseInt(process.env.PORT || "3002", 10);
-
-let geminiApiKey: string;
 
 function sendSSE(res: express.Response, data: unknown) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -46,9 +44,20 @@ app.get("/health", (_req, res) => {
 });
 
 app.post("/chat", async (req, res) => {
+  // Identity headers (required)
+  const orgId = req.headers["x-org-id"];
+  const userId = req.headers["x-user-id"];
+  if (typeof orgId !== "string" || !orgId) {
+    return res.status(401).json({ error: "x-org-id header is required" });
+  }
+  if (typeof userId !== "string" || !userId) {
+    return res.status(401).json({ error: "x-user-id header is required" });
+  }
+
+  // Bearer token (still required for MCP auth pass-through)
   const authHeader = req.headers["authorization"];
-  const apiKey = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
-  if (!apiKey) {
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+  if (!bearerToken) {
     return res.status(401).json({ error: "Authorization: Bearer <key> header required" });
   }
 
@@ -59,7 +68,21 @@ app.post("/chat", async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, sessionId } = parsed.data;
+  const { message, sessionId, parentRunId } = parsed.data;
+
+  // Resolve Gemini key per-request (supports BYOK per org)
+  let resolvedKey: ResolvedKey;
+  try {
+    resolvedKey = await resolveKey({
+      provider: "gemini",
+      orgId,
+      userId,
+      caller: { method: "POST", path: "/chat" },
+    });
+  } catch (err) {
+    console.error("Key resolution failed:", err);
+    return res.status(502).json({ error: "Failed to resolve API key" });
+  }
 
   // SSE headers
   res.setHeader("Content-Type", "text/event-stream");
@@ -67,7 +90,7 @@ app.post("/chat", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
-  const gemini = createGeminiClient({ apiKey: geminiApiKey });
+  const gemini = createGeminiClient({ apiKey: resolvedKey.key });
   let mcpConn: McpConnection | null = null;
   let runId: string | undefined;
   let chatFailed = false;
@@ -80,7 +103,7 @@ app.post("/chat", async (req, res) => {
     if (!currentSessionId) {
       const [session] = await db
         .insert(sessions)
-        .values({ orgId: apiKey })
+        .values({ orgId, userId })
         .returning();
       currentSessionId = session.id;
     }
@@ -89,10 +112,12 @@ app.post("/chat", async (req, res) => {
 
     // Register run in RunsService
     const run = await createRun({
-      clerkOrgId: apiKey,
-      appId: "mcpfactory",
+      orgId,
+      userId,
+      appId: "chat",
       serviceName: "chat-service",
       taskName: "chat",
+      ...(parentRunId ? { parentRunId } : {}),
     });
     if (run) runId = run.id;
 
@@ -111,7 +136,7 @@ app.post("/chat", async (req, res) => {
 
     // Connect to MCP to get available tools
     try {
-      mcpConn = await connectMcp(apiKey);
+      mcpConn = await connectMcp(bearerToken);
     } catch (err) {
       console.warn("MCP connection failed, proceeding without tools:", err);
     }
@@ -316,12 +341,13 @@ app.post("/chat", async (req, res) => {
     // Report run status and costs (fire-and-forget)
     if (runId) {
       const costModel = gemini.model.replace(/-preview$/, "");
+      const costSource = resolvedKey.keySource;
       const costItems = [
         ...(totalPromptTokens > 0
-          ? [{ costName: `${costModel}-tokens-input`, quantity: totalPromptTokens }]
+          ? [{ costName: `${costModel}-tokens-input`, costSource, quantity: totalPromptTokens }]
           : []),
         ...(totalOutputTokens > 0
-          ? [{ costName: `${costModel}-tokens-output`, quantity: totalOutputTokens }]
+          ? [{ costName: `${costModel}-tokens-output`, costSource, quantity: totalOutputTokens }]
           : []),
       ];
       Promise.all([
@@ -368,14 +394,8 @@ function stripButtons(text: string): string {
 // Only start server if not in test environment
 if (process.env.NODE_ENV !== "test") {
   migrate(db, { migrationsFolder: "./drizzle" })
-    .then(async () => {
+    .then(() => {
       console.log("Migrations complete");
-      const decrypted = await decryptAppKey("gemini", {
-        method: "POST",
-        path: "/chat",
-      });
-      geminiApiKey = decrypted.key;
-      console.log("Gemini API key resolved via key-service");
       app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });

@@ -29,8 +29,8 @@ describe("createRun", () => {
 
     const { createRun } = await loadModule();
     const result = await createRun({
-      clerkOrgId: "org_123",
-      appId: "mcpfactory",
+      orgId: "org_123",
+      appId: "chat",
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -44,14 +44,46 @@ describe("createRun", () => {
           "X-API-Key": "test-runs-key",
         },
         body: JSON.stringify({
-          clerkOrgId: "org_123",
-          appId: "mcpfactory",
+          orgId: "org_123",
+          appId: "chat",
           serviceName: "chat-service",
           taskName: "chat",
         }),
       }),
     );
     expect(result).toEqual(mockRun);
+  });
+
+  it("passes parentRunId when provided", async () => {
+    const mockRun = { id: "run-1", status: "running" };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockRun),
+    });
+
+    const { createRun } = await loadModule();
+    await createRun({
+      orgId: "org_123",
+      userId: "user_456",
+      appId: "chat",
+      serviceName: "chat-service",
+      taskName: "chat",
+      parentRunId: "parent-run-id",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({
+          orgId: "org_123",
+          userId: "user_456",
+          appId: "chat",
+          serviceName: "chat-service",
+          taskName: "chat",
+          parentRunId: "parent-run-id",
+        }),
+      }),
+    );
   });
 
   it("returns null and logs on HTTP error", async () => {
@@ -64,8 +96,8 @@ describe("createRun", () => {
 
     const { createRun } = await loadModule();
     const result = await createRun({
-      clerkOrgId: "org_123",
-      appId: "mcpfactory",
+      orgId: "org_123",
+      appId: "chat",
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -82,8 +114,8 @@ describe("createRun", () => {
 
     const { createRun } = await loadModule();
     const result = await createRun({
-      clerkOrgId: "org_123",
-      appId: "mcpfactory",
+      orgId: "org_123",
+      appId: "chat",
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -128,7 +160,7 @@ describe("updateRunStatus", () => {
 });
 
 describe("addRunCosts", () => {
-  it("sends POST /v1/runs/{id}/costs with items", async () => {
+  it("sends POST /v1/runs/{id}/costs with items including costSource", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ costs: [] }),
@@ -136,8 +168,8 @@ describe("addRunCosts", () => {
 
     const { addRunCosts } = await loadModule();
     await addRunCosts("run-1", [
-      { costName: "gemini-3-flash-tokens-input", quantity: 100 },
-      { costName: "gemini-3-flash-tokens-output", quantity: 50 },
+      { costName: "gemini-3-flash-tokens-input", costSource: "platform", quantity: 100 },
+      { costName: "gemini-3-flash-tokens-output", costSource: "platform", quantity: 50 },
     ]);
 
     expect(fetch).toHaveBeenCalledWith(
@@ -146,8 +178,31 @@ describe("addRunCosts", () => {
         method: "POST",
         body: JSON.stringify({
           items: [
-            { costName: "gemini-3-flash-tokens-input", quantity: 100 },
-            { costName: "gemini-3-flash-tokens-output", quantity: 50 },
+            { costName: "gemini-3-flash-tokens-input", costSource: "platform", quantity: 100 },
+            { costName: "gemini-3-flash-tokens-output", costSource: "platform", quantity: 50 },
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("sends costSource 'org' for BYOK costs", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ costs: [] }),
+    });
+
+    const { addRunCosts } = await loadModule();
+    await addRunCosts("run-1", [
+      { costName: "gemini-3-flash-tokens-input", costSource: "org", quantity: 100 },
+    ]);
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: JSON.stringify({
+          items: [
+            { costName: "gemini-3-flash-tokens-input", costSource: "org", quantity: 100 },
           ],
         }),
       }),
@@ -171,7 +226,7 @@ describe("addRunCosts", () => {
 
     const { addRunCosts } = await loadModule();
     await addRunCosts("run-1", [
-      { costName: "unknown-cost", quantity: 10 },
+      { costName: "unknown-cost", costSource: "platform", quantity: 10 },
     ]);
 
     expect(warnSpy).toHaveBeenCalled();
@@ -185,8 +240,8 @@ describe("missing RUNS_SERVICE_API_KEY", () => {
 
     const { createRun } = await loadModule();
     const result = await createRun({
-      clerkOrgId: "org_123",
-      appId: "mcpfactory",
+      orgId: "org_123",
+      appId: "chat",
       serviceName: "chat-service",
       taskName: "chat",
     });

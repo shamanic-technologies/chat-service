@@ -3,6 +3,7 @@ import { pgTable, uuid, text, timestamp, jsonb, integer } from "drizzle-orm/pg-c
 export const sessions = pgTable("sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
   orgId: text("org_id").notNull(),
+  userId: text("user_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

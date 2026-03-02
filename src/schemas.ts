@@ -71,6 +71,7 @@ export const ChatRequestSchema = z
   .object({
     message: z.string().min(1, "message is required"),
     sessionId: z.string().uuid().optional(),
+    parentRunId: z.string().uuid().optional(),
   })
   .openapi("ChatRequest");
 
@@ -86,7 +87,13 @@ registry.registerPath({
   request: {
     headers: z.object({
       authorization: z.string().openapi({
-        description: "Bearer token used to scope sessions by organization (format: Bearer <key>)",
+        description: "Bearer token for MCP server authentication (format: Bearer <key>)",
+      }),
+      "x-org-id": z.string().openapi({
+        description: "Internal organization UUID (from client-service)",
+      }),
+      "x-user-id": z.string().openapi({
+        description: "Internal user UUID (from client-service)",
       }),
     }),
     body: {

@@ -18,21 +18,28 @@ async function loadModule() {
   return import("../../src/lib/key-client.js");
 }
 
-describe("decryptAppKey", () => {
+describe("resolveKey", () => {
   it("sends GET with correct URL, query params, and caller headers", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ provider: "gemini", key: "decrypted-key" }),
+      json: () =>
+        Promise.resolve({
+          provider: "gemini",
+          key: "decrypted-key",
+          keySource: "platform",
+        }),
     });
 
-    const { decryptAppKey } = await loadModule();
-    const result = await decryptAppKey("gemini", {
-      method: "POST",
-      path: "/chat",
+    const { resolveKey } = await loadModule();
+    const result = await resolveKey({
+      provider: "gemini",
+      orgId: "org-uuid-1",
+      userId: "user-uuid-1",
+      caller: { method: "POST", path: "/chat" },
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/internal/app-keys/gemini/decrypt?appId=chat",
+      "https://key.test.local/keys/gemini/decrypt?orgId=org-uuid-1&userId=user-uuid-1",
       expect.objectContaining({
         method: "GET",
         headers: {
@@ -43,7 +50,33 @@ describe("decryptAppKey", () => {
         },
       }),
     );
-    expect(result).toEqual({ provider: "gemini", key: "decrypted-key" });
+    expect(result).toEqual({
+      provider: "gemini",
+      key: "decrypted-key",
+      keySource: "platform",
+    });
+  });
+
+  it("returns keySource 'org' for BYOK keys", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          provider: "gemini",
+          key: "user-own-key",
+          keySource: "org",
+        }),
+    });
+
+    const { resolveKey } = await loadModule();
+    const result = await resolveKey({
+      provider: "gemini",
+      orgId: "org-uuid-1",
+      userId: "user-uuid-1",
+      caller: { method: "POST", path: "/chat" },
+    });
+
+    expect(result.keySource).toBe("org");
   });
 
   it("throws on HTTP 404 (key not configured)", async () => {
@@ -53,9 +86,14 @@ describe("decryptAppKey", () => {
       text: () => Promise.resolve("Key not configured"),
     });
 
-    const { decryptAppKey } = await loadModule();
+    const { resolveKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      resolveKey({
+        provider: "gemini",
+        orgId: "org-1",
+        userId: "user-1",
+        caller: { method: "POST", path: "/chat" },
+      }),
     ).rejects.toThrow(/returned 404/);
   });
 
@@ -66,9 +104,14 @@ describe("decryptAppKey", () => {
       text: () => Promise.resolve("Missing required caller headers"),
     });
 
-    const { decryptAppKey } = await loadModule();
+    const { resolveKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      resolveKey({
+        provider: "gemini",
+        orgId: "org-1",
+        userId: "user-1",
+        caller: { method: "POST", path: "/chat" },
+      }),
     ).rejects.toThrow(/returned 400/);
   });
 
@@ -79,9 +122,14 @@ describe("decryptAppKey", () => {
       text: () => Promise.resolve("Internal Server Error"),
     });
 
-    const { decryptAppKey } = await loadModule();
+    const { resolveKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      resolveKey({
+        provider: "gemini",
+        orgId: "org-1",
+        userId: "user-1",
+        caller: { method: "POST", path: "/chat" },
+      }),
     ).rejects.toThrow(/returned 500/);
   });
 
@@ -90,18 +138,28 @@ describe("decryptAppKey", () => {
       new Error("ECONNREFUSED"),
     );
 
-    const { decryptAppKey } = await loadModule();
+    const { resolveKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      resolveKey({
+        provider: "gemini",
+        orgId: "org-1",
+        userId: "user-1",
+        caller: { method: "POST", path: "/chat" },
+      }),
     ).rejects.toThrow("ECONNREFUSED");
   });
 
   it("throws when KEY_SERVICE_API_KEY is not set", async () => {
     delete process.env.KEY_SERVICE_API_KEY;
 
-    const { decryptAppKey } = await loadModule();
+    const { resolveKey } = await loadModule();
     await expect(
-      decryptAppKey("gemini", { method: "POST", path: "/chat" }),
+      resolveKey({
+        provider: "gemini",
+        orgId: "org-1",
+        userId: "user-1",
+        caller: { method: "POST", path: "/chat" },
+      }),
     ).rejects.toThrow(/KEY_SERVICE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
@@ -111,14 +169,26 @@ describe("decryptAppKey", () => {
     delete process.env.KEY_SERVICE_URL;
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ provider: "gemini", key: "key-123" }),
+      json: () =>
+        Promise.resolve({
+          provider: "gemini",
+          key: "key-123",
+          keySource: "platform",
+        }),
     });
 
-    const { decryptAppKey } = await loadModule();
-    await decryptAppKey("gemini", { method: "POST", path: "/chat" });
+    const { resolveKey } = await loadModule();
+    await resolveKey({
+      provider: "gemini",
+      orgId: "org-1",
+      userId: "user-1",
+      caller: { method: "POST", path: "/chat" },
+    });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.mcpfactory.org/internal/app-keys/gemini/decrypt?appId=chat",
+      expect.stringContaining(
+        "https://key.mcpfactory.org/keys/gemini/decrypt",
+      ),
       expect.anything(),
     );
   });

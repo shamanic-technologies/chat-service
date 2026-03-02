@@ -13,6 +13,11 @@ describe("types", () => {
     expect(req.sessionId).toBe("abc-123");
   });
 
+  it("ChatRequest with parentRunId", () => {
+    const req: ChatRequest = { message: "hi", parentRunId: "run-123" };
+    expect(req.parentRunId).toBe("run-123");
+  });
+
   it("SSETokenEvent shape", () => {
     const event: SSETokenEvent = { type: "token", content: "Hello" };
     expect(event.type).toBe("token");

@@ -37,6 +37,27 @@ describe("ChatRequestSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts valid request with parentRunId", () => {
+    const result = ChatRequestSchema.safeParse({
+      message: "Hello",
+      parentRunId: "550e8400-e29b-41d4-a716-446655440000",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.parentRunId).toBe(
+        "550e8400-e29b-41d4-a716-446655440000",
+      );
+    }
+  });
+
+  it("rejects non-uuid parentRunId", () => {
+    const result = ChatRequestSchema.safeParse({
+      message: "Hello",
+      parentRunId: "not-a-uuid",
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("strips extra fields", () => {
     const result = ChatRequestSchema.safeParse({
       message: "Hello",

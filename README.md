@@ -12,11 +12,15 @@ npm run dev            # starts on port 3002
 
 ## SSE Protocol
 
-`POST /chat` with headers `Content-Type: application/json` and `Authorization: Bearer <your-key>`.
+`POST /chat` with headers:
+- `Content-Type: application/json`
+- `Authorization: Bearer <mcp-auth-key>` (passed through to MCP server)
+- `x-org-id: <org-uuid>` (internal org UUID from client-service)
+- `x-user-id: <user-uuid>` (internal user UUID from client-service)
 
 Request body:
 ```json
-{ "message": "Hello", "sessionId": "optional-uuid" }
+{ "message": "Hello", "sessionId": "optional-uuid", "parentRunId": "optional-uuid" }
 ```
 
 The response is a stream of SSE events in this order:
@@ -77,7 +81,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 | Variable | Required | Description |
 |---|---|---|
-| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to decrypt the Gemini API key at startup) |
+| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to resolve Gemini API keys per request) |
 | `CHAT_SERVICE_DATABASE_URL` | Yes | PostgreSQL connection string |
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |
 | `MCP_SERVER_URL` | No | MCP server endpoint (default: `https://mcp.mcpfactory.org`) |
@@ -89,7 +93,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 Uses PostgreSQL via Drizzle ORM. Two tables:
 
-- **sessions** - conversation sessions scoped by `orgId` (from the API key)
+- **sessions** - conversation sessions scoped by `orgId` and `userId` (from identity headers)
 - **messages** - chat messages with role, content, optional `toolCalls`, `buttons` JSONB, and `runId` linking to RunsService
 
 Migrations run automatically on server start. To generate new migrations after schema changes:
@@ -152,8 +156,8 @@ src/
   lib/
     gemini.ts       # Gemini AI client, streaming + function calling
     mcp-client.ts   # MCP server connection via Streamable HTTP transport + tool execution
-    key-client.ts   # Key-service client for decrypting app keys (Gemini API key)
-    runs-client.ts  # RunsService HTTP client for run tracking and cost reporting
+    key-client.ts   # Key-service client for per-request key resolution (supports BYOK per org)
+    runs-client.ts  # RunsService HTTP client for run tracking and cost reporting (with costSource)
 scripts/
   generate-openapi.ts  # Generates openapi.json from zod schemas via OpenApiGeneratorV3
 ```

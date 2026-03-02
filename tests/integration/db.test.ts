@@ -30,11 +30,12 @@ describe("database integration", () => {
   it("should create, read, and delete a session", async () => {
     const [created] = await db
       .insert(schema.sessions)
-      .values({ orgId: "test-org-integration" })
+      .values({ orgId: "test-org-integration", userId: "test-user-integration" })
       .returning();
 
     expect(created.id).toBeDefined();
     expect(created.orgId).toBe("test-org-integration");
+    expect(created.userId).toBe("test-user-integration");
     expect(created.createdAt).toBeInstanceOf(Date);
 
     const [found] = await db
@@ -58,7 +59,7 @@ describe("database integration", () => {
   it("should create a message linked to a session and cascade delete", async () => {
     const [session] = await db
       .insert(schema.sessions)
-      .values({ orgId: "test-org-msg" })
+      .values({ orgId: "test-org-msg", userId: "test-user-msg" })
       .returning();
 
     const [message] = await db
@@ -89,7 +90,7 @@ describe("database integration", () => {
   it("should store and retrieve toolCalls and buttons JSONB", async () => {
     const [session] = await db
       .insert(schema.sessions)
-      .values({ orgId: "test-org-jsonb" })
+      .values({ orgId: "test-org-jsonb", userId: "test-user-jsonb" })
       .returning();
 
     const toolCalls = [{ name: "search", args: { q: "test" }, result: { hits: 1 } }];
