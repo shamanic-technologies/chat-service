@@ -68,7 +68,8 @@ Request body:
     "brandUrl": "https://example.com",
     "objective": "clicks",
     "budgetAmount": 500
-  }
+  },
+  "parentRunId": "optional-parent-run-uuid"
 }
 ```
 
@@ -76,6 +77,7 @@ Request body:
 - `appId` (required) — identifies which app config (system prompt, MCP) to use
 - `sessionId` (optional) — resume an existing session; omit to start a new one
 - `context` (optional) — free-form JSON injected into the system prompt for this request only (not stored)
+- `parentRunId` (optional, uuid) — links this chat run to a parent run in RunsService for hierarchical cost tracking
 
 The response is a stream of SSE events in this order:
 
@@ -135,7 +137,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 | Variable | Required | Description |
 |---|---|---|
-| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to decrypt the Gemini API key at startup and org MCP keys at runtime) |
+| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to resolve the Gemini API key per-request and org MCP keys at runtime) |
 | `CHAT_SERVICE_DATABASE_URL` | Yes | PostgreSQL connection string |
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |
 | `RUNS_SERVICE_URL` | No | RunsService endpoint (default: `https://runs.mcpfactory.org`) |
@@ -207,7 +209,7 @@ src/
   lib/
     gemini.ts       # Gemini AI client, streaming + function calling, buildSystemPrompt helper
     mcp-client.ts   # MCP server connection via Streamable HTTP transport + tool execution
-    key-client.ts   # Key-service client for decrypting app keys (Gemini) and org BYOK keys (MCP)
+    key-client.ts   # Key-service client for resolving Gemini keys (platform or BYOK per org) and org MCP keys
     runs-client.ts  # RunsService HTTP client for run tracking and cost reporting
 scripts/
   generate-openapi.ts  # Generates openapi.json from zod schemas via OpenApiGeneratorV3

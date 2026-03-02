@@ -80,6 +80,40 @@ describe("ChatRequestSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts valid parentRunId (uuid)", () => {
+    const result = ChatRequestSchema.safeParse({
+      message: "Hello",
+      appId: "my-app",
+      parentRunId: "550e8400-e29b-41d4-a716-446655440000",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.parentRunId).toBe(
+        "550e8400-e29b-41d4-a716-446655440000",
+      );
+    }
+  });
+
+  it("rejects non-uuid parentRunId", () => {
+    const result = ChatRequestSchema.safeParse({
+      message: "Hello",
+      appId: "my-app",
+      parentRunId: "not-a-uuid",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts request without parentRunId", () => {
+    const result = ChatRequestSchema.safeParse({
+      message: "Hello",
+      appId: "my-app",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.parentRunId).toBeUndefined();
+    }
+  });
+
   it("strips extra fields", () => {
     const result = ChatRequestSchema.safeParse({
       message: "Hello",

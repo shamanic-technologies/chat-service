@@ -141,6 +141,7 @@ export const ChatRequestSchema = z
     sessionId: z.string().uuid().optional(),
     appId: z.string().min(1, "appId is required"),
     context: z.record(z.string(), z.unknown()).optional(),
+    parentRunId: z.string().uuid().optional(),
   })
   .openapi("ChatRequest");
 

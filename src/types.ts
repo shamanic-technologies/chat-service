@@ -5,6 +5,7 @@ export interface ChatRequest {
   sessionId?: string;
   appId: string;
   context?: Record<string, unknown>;
+  parentRunId?: string;
 }
 
 export interface SSETokenEvent {
