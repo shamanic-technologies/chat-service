@@ -86,7 +86,16 @@ registry.registerPath({
   request: {
     headers: z.object({
       authorization: z.string().openapi({
-        description: "Bearer token used to scope sessions by organization (format: Bearer <key>)",
+        description: "Bearer token for authentication (format: Bearer <key>)",
+      }),
+      "x-org-id": z.string().uuid().openapi({
+        description: "Internal org UUID (from client-service)",
+      }),
+      "x-user-id": z.string().uuid().openapi({
+        description: "Internal user UUID (from client-service)",
+      }),
+      "x-run-id": z.string().uuid().openapi({
+        description: "Caller's run ID (used as parentRunId when creating this service's own run)",
       }),
     }),
     body: {

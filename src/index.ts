@@ -52,6 +52,22 @@ app.post("/chat", async (req, res) => {
     return res.status(401).json({ error: "Authorization: Bearer <key> header required" });
   }
 
+  // Required inter-service headers
+  const orgId = req.headers["x-org-id"] as string | undefined;
+  const userId = req.headers["x-user-id"] as string | undefined;
+  const callerRunId = req.headers["x-run-id"] as string | undefined;
+
+  const missingHeaders = [
+    ...(!orgId ? ["x-org-id"] : []),
+    ...(!userId ? ["x-user-id"] : []),
+    ...(!callerRunId ? ["x-run-id"] : []),
+  ];
+  if (missingHeaders.length > 0) {
+    return res.status(400).json({
+      error: `Missing required headers: ${missingHeaders.join(", ")}`,
+    });
+  }
+
   const parsed = ChatRequestSchema.safeParse(req.body);
   if (!parsed.success) {
     return res
@@ -80,19 +96,21 @@ app.post("/chat", async (req, res) => {
     if (!currentSessionId) {
       const [session] = await db
         .insert(sessions)
-        .values({ orgId: apiKey })
+        .values({ orgId })
         .returning();
       currentSessionId = session.id;
     }
 
     sendSSE(res, { sessionId: currentSessionId });
 
-    // Register run in RunsService
+    // Register run in RunsService (caller's runId becomes our parentRunId)
     const run = await createRun({
-      clerkOrgId: apiKey,
+      clerkOrgId: orgId,
+      clerkUserId: userId,
       appId: "mcpfactory",
       serviceName: "chat-service",
       taskName: "chat",
+      parentRunId: callerRunId,
     });
     if (run) runId = run.id;
 

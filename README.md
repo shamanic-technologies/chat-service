@@ -12,7 +12,15 @@ npm run dev            # starts on port 3002
 
 ## SSE Protocol
 
-`POST /chat` with headers `Content-Type: application/json` and `Authorization: Bearer <your-key>`.
+`POST /chat` with the following headers:
+
+| Header | Required | Description |
+|---|---|---|
+| `Content-Type` | Yes | `application/json` |
+| `Authorization` | Yes | `Bearer <your-key>` |
+| `x-org-id` | Yes | Internal org UUID (from client-service) |
+| `x-user-id` | Yes | Internal user UUID (from client-service) |
+| `x-run-id` | Yes | Caller's run ID (used as `parentRunId` when creating this service's own run in runs-service) |
 
 Request body:
 ```json
@@ -89,7 +97,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 Uses PostgreSQL via Drizzle ORM. Two tables:
 
-- **sessions** - conversation sessions scoped by `orgId` (from the API key)
+- **sessions** - conversation sessions scoped by `orgId` (from the `x-org-id` header)
 - **messages** - chat messages with role, content, optional `toolCalls`, `buttons` JSONB, and `runId` linking to RunsService
 
 Migrations run automatically on server start. To generate new migrations after schema changes:

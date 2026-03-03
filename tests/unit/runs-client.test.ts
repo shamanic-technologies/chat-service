@@ -54,6 +54,40 @@ describe("createRun", () => {
     expect(result).toEqual(mockRun);
   });
 
+  it("includes parentRunId in body when provided", async () => {
+    const mockRun = { id: "run-2", status: "running" };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockRun),
+    });
+
+    const { createRun } = await loadModule();
+    const result = await createRun({
+      clerkOrgId: "org_123",
+      clerkUserId: "user_456",
+      appId: "mcpfactory",
+      serviceName: "chat-service",
+      taskName: "chat",
+      parentRunId: "caller-run-789",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://runs.test.local/v1/runs",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          clerkOrgId: "org_123",
+          clerkUserId: "user_456",
+          appId: "mcpfactory",
+          serviceName: "chat-service",
+          taskName: "chat",
+          parentRunId: "caller-run-789",
+        }),
+      }),
+    );
+    expect(result).toEqual(mockRun);
+  });
+
   it("returns null and logs on HTTP error", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
