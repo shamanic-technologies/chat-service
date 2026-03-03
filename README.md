@@ -12,13 +12,14 @@ npm run dev            # starts on port 3002
 
 ## Authentication
 
-All endpoints (except `/health` and `/openapi.json`) require three headers:
+All endpoints (except `/health` and `/openapi.json`) require these headers:
 
 | Header | Description |
 |---|---|
 | `x-api-key` | Service-to-service API key |
 | `x-org-id` | Internal org UUID from client-service |
 | `x-user-id` | Internal user UUID from client-service |
+| `x-run-id` | Caller's run ID — used as `parentRunId` when creating this service's own run in runs-service |
 
 ## App Config Registration
 
@@ -68,8 +69,7 @@ Request body:
     "brandUrl": "https://example.com",
     "objective": "clicks",
     "budgetAmount": 500
-  },
-  "parentRunId": "optional-parent-run-uuid"
+  }
 }
 ```
 
@@ -77,7 +77,6 @@ Request body:
 - `appId` (required) — identifies which app config (system prompt, MCP) to use
 - `sessionId` (optional) — resume an existing session; omit to start a new one
 - `context` (optional) — free-form JSON injected into the system prompt for this request only (not stored)
-- `parentRunId` (optional, uuid) — links this chat run to a parent run in RunsService for hierarchical cost tracking
 
 The response is a stream of SSE events in this order:
 
@@ -202,7 +201,7 @@ src/
   types.ts          # SSE event TypeScript interfaces
   schemas.ts        # Zod schemas, OpenAPI registry, and request/response types
   middleware/
-    auth.ts         # requireAuth middleware (x-api-key, x-org-id, x-user-id)
+    auth.ts         # requireAuth middleware (x-api-key, x-org-id, x-user-id, x-run-id)
   db/
     index.ts        # Drizzle client init
     schema.ts       # sessions + messages + app_configs table definitions

@@ -50,16 +50,32 @@ describe("requireAuth middleware", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("calls next and sets locals when all headers are present", () => {
+  it("returns 400 when x-run-id is missing", () => {
     const { req, res, next } = mockReqRes({
       "x-api-key": "test-key",
       "x-org-id": "org-123",
       "x-user-id": "user-456",
     });
     requireAuth(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: "x-run-id header is required",
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("calls next and sets locals when all headers are present", () => {
+    const { req, res, next } = mockReqRes({
+      "x-api-key": "test-key",
+      "x-org-id": "org-123",
+      "x-user-id": "user-456",
+      "x-run-id": "run-789",
+    });
+    requireAuth(req, res, next);
     expect(next).toHaveBeenCalled();
     expect(res.locals.orgId).toBe("org-123");
     expect(res.locals.userId).toBe("user-456");
+    expect(res.locals.runId).toBe("run-789");
     expect(res.status).not.toHaveBeenCalled();
   });
 });

@@ -98,7 +98,7 @@ app.put("/apps/:appId/config", requireAuth, async (req, res) => {
 // --- Chat ---
 
 app.post("/chat", requireAuth, async (req, res) => {
-  const { orgId, userId } = res.locals as AuthLocals;
+  const { orgId, userId, runId: callerRunId } = res.locals as AuthLocals;
 
   const parsed = ChatRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -107,7 +107,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, sessionId, appId, context, parentRunId } = parsed.data;
+  const { message, sessionId, appId, context } = parsed.data;
 
   // Look up app config
   const [appConfig] = await db
@@ -182,14 +182,14 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     sendSSE(res, { sessionId: currentSessionId });
 
-    // Register run in RunsService
+    // Register run in RunsService (caller's runId becomes our parentRunId)
     const run = await createRun({
       orgId,
       userId,
       appId,
       serviceName: "chat-service",
       taskName: "chat",
-      ...(parentRunId ? { parentRunId } : {}),
+      parentRunId: callerRunId,
     });
     if (run) runId = run.id;
 
