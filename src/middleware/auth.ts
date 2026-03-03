@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 export interface AuthLocals {
   orgId: string;
   userId: string;
+  runId: string;
 }
 
 export function requireAuth(
@@ -28,7 +29,14 @@ export function requireAuth(
     return;
   }
 
+  const runId = req.headers["x-run-id"];
+  if (!runId || typeof runId !== "string") {
+    res.status(400).json({ error: "x-run-id header is required" });
+    return;
+  }
+
   res.locals.orgId = orgId;
   res.locals.userId = userId;
+  res.locals.runId = runId;
   next();
 }

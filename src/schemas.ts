@@ -108,6 +108,9 @@ registry.registerPath({
       "x-user-id": z.string().openapi({
         description: "Internal user UUID from client-service",
       }),
+      "x-run-id": z.string().uuid().openapi({
+        description: "Caller's run ID",
+      }),
     }),
     body: {
       content: { "application/json": { schema: AppConfigRequestSchema } },
@@ -141,7 +144,6 @@ export const ChatRequestSchema = z
     sessionId: z.string().uuid().optional(),
     appId: z.string().min(1, "appId is required"),
     context: z.record(z.string(), z.unknown()).optional(),
-    parentRunId: z.string().uuid().optional(),
   })
   .openapi("ChatRequest");
 
@@ -164,6 +166,10 @@ registry.registerPath({
       }),
       "x-user-id": z.string().openapi({
         description: "Internal user UUID from client-service",
+      }),
+      "x-run-id": z.string().uuid().openapi({
+        description:
+          "Caller's run ID — used as parentRunId when creating this service's own run in runs-service",
       }),
     }),
     body: {
