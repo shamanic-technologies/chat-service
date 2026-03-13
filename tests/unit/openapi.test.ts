@@ -47,14 +47,16 @@ describe("openapi.json", () => {
     expect(chat.responses["404"]).toBeDefined();
   });
 
-  it("documents PUT /apps/{appId}/config", () => {
+  it("documents PUT /config (org-scoped, no appId in path)", () => {
     const spec = JSON.parse(readFileSync(openapiPath, "utf-8"));
-    const appConfig = spec.paths["/apps/{appId}/config"]?.put;
+    const appConfig = spec.paths["/config"]?.put;
     expect(appConfig).toBeDefined();
     expect(appConfig.requestBody.content["application/json"]).toBeDefined();
     expect(appConfig.responses["200"]).toBeDefined();
     expect(appConfig.responses["400"]).toBeDefined();
     expect(appConfig.responses["401"]).toBeDefined();
+    // Old path should not exist
+    expect(spec.paths["/apps/{appId}/config"]).toBeUndefined();
   });
 
   it("documents GET /openapi.json", () => {
@@ -74,13 +76,13 @@ describe("openapi.json", () => {
     expect(spec.components?.schemas?.AppConfigResponse).toBeDefined();
   });
 
-  it("ChatRequest schema requires message and appId fields", () => {
+  it("ChatRequest schema requires only message (appId removed)", () => {
     const spec = JSON.parse(readFileSync(openapiPath, "utf-8"));
     const chatReq = spec.components.schemas.ChatRequest;
     expect(chatReq.required).toContain("message");
-    expect(chatReq.required).toContain("appId");
+    expect(chatReq.required).not.toContain("appId");
     expect(chatReq.properties.message.type).toBe("string");
-    expect(chatReq.properties.appId.type).toBe("string");
+    expect(chatReq.properties.appId).toBeUndefined();
     expect(chatReq.properties.sessionId.type).toBe("string");
   });
 });

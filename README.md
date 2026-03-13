@@ -1,6 +1,6 @@
 # Chat Service
 
-Multi-app AI chat service. Streams Gemini AI responses via SSE with configurable system prompts and optional MCP tool calling per app.
+Multi-org AI chat service. Streams Gemini AI responses via SSE with configurable system prompts and optional MCP tool calling per org.
 
 ## Quick Start
 
@@ -23,9 +23,9 @@ All endpoints (except `/health` and `/openapi.json`) require these headers:
 
 ## App Config Registration
 
-Before using `/chat`, apps must register their configuration via:
+Before using `/chat`, orgs must register their configuration via:
 
-`PUT /apps/:appId/config`
+`PUT /config`
 
 Request body:
 ```json
@@ -36,16 +36,15 @@ Request body:
 }
 ```
 
-- `systemPrompt` (required) — the system prompt sent to Gemini for this app
+- `systemPrompt` (required) — the system prompt sent to Gemini for this org
 - `mcpServerUrl` (optional) — MCP server URL to connect to for tool calling
 - `mcpKeyName` (optional) — BYOK provider name in key-service; the org's key is decrypted at runtime and used as Bearer token for the MCP server
 
-This endpoint is **idempotent** (upsert on `appId + orgId`). Call it on every cold start.
+This endpoint is **idempotent** (upsert on `orgId` from the `x-org-id` header). Call it on every cold start.
 
 Response:
 ```json
 {
-  "appId": "sales-cold-emails",
   "orgId": "org-uuid",
   "systemPrompt": "...",
   "mcpServerUrl": "https://mcp.mcpfactory.org",
@@ -63,7 +62,6 @@ Request body:
 ```json
 {
   "message": "Hello",
-  "appId": "sales-cold-emails",
   "sessionId": "optional-uuid",
   "context": {
     "brandUrl": "https://example.com",
@@ -74,7 +72,6 @@ Request body:
 ```
 
 - `message` (required) — the user's chat message
-- `appId` (required) — identifies which app config (system prompt, MCP) to use
 - `sessionId` (optional) — resume an existing session; omit to start a new one
 - `context` (optional) — free-form JSON injected into the system prompt for this request only (not stored)
 
@@ -147,9 +144,9 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 Uses PostgreSQL via Drizzle ORM. Three tables:
 
-- **sessions** — conversation sessions scoped by `orgId`, `userId`, and `appId`
+- **sessions** — conversation sessions scoped by `orgId` and `userId`
 - **messages** — chat messages with role, content, optional `toolCalls`, `buttons` JSONB, and `runId` linking to RunsService
-- **app_configs** — per-app configuration (system prompt, MCP settings) with unique constraint on `(appId, orgId)`
+- **app_configs** — per-org configuration (system prompt, MCP settings) with unique constraint on `orgId`
 
 Migrations run automatically on server start. To generate new migrations after schema changes:
 
@@ -197,7 +194,7 @@ Uses `node:20-alpine`. Requires Node >= 20.
 
 ```
 src/
-  index.ts          # Express server, /chat, /apps/:appId/config, /health, /openapi.json
+  index.ts          # Express server, /chat, /config, /health, /openapi.json
   types.ts          # SSE event TypeScript interfaces
   schemas.ts        # Zod schemas, OpenAPI registry, and request/response types
   middleware/

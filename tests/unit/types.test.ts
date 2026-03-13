@@ -7,10 +7,9 @@ import type {
 } from "../../src/types.js";
 
 describe("types", () => {
-  it("ChatRequest shape requires appId", () => {
-    const req: ChatRequest = { message: "hello", appId: "my-app" };
+  it("ChatRequest shape requires only message", () => {
+    const req: ChatRequest = { message: "hello" };
     expect(req.message).toBe("hello");
-    expect(req.appId).toBe("my-app");
     expect(req.sessionId).toBeUndefined();
     expect(req.context).toBeUndefined();
   });
@@ -18,7 +17,6 @@ describe("types", () => {
   it("ChatRequest with all optional fields", () => {
     const req: ChatRequest = {
       message: "hi",
-      appId: "my-app",
       sessionId: "abc-123",
       context: { brandUrl: "https://example.com" },
     };

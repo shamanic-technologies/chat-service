@@ -42,7 +42,7 @@ CI will warn if source files change without corresponding test changes. Do not s
 
 ## Architecture
 
-- `src/index.ts` — Express server, `/chat`, `/apps/:appId/config`, `/health`, `/openapi.json`
+- `src/index.ts` — Express server, `/chat`, `/config`, `/health`, `/openapi.json`
 - `src/schemas.ts` — Zod schemas (source of truth for validation + OpenAPI)
 - `src/types.ts` — SSE event TypeScript interfaces
 - `src/middleware/auth.ts` — Auth middleware (Authorization Bearer + x-org-id + x-user-id)

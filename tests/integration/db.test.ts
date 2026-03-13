@@ -59,18 +59,16 @@ describe("database integration", () => {
     expect(gone).toBeUndefined();
   });
 
-  it("should create session with userId and appId", async () => {
+  it("should create session with userId (appId removed)", async () => {
     const [created] = await db
       .insert(schema.sessions)
       .values({
         orgId: "test-org-new",
         userId: "test-user-123",
-        appId: "test-app",
       })
       .returning();
 
     expect(created.userId).toBe("test-user-123");
-    expect(created.appId).toBe("test-app");
 
     await db
       .delete(schema.sessions)
@@ -143,12 +141,11 @@ describe("database integration", () => {
       .where(eq(schema.sessions.id, session.id));
   });
 
-  it("should create and upsert app_configs", async () => {
+  it("should create and upsert app_configs by orgId", async () => {
     // Insert
     const [config] = await db
       .insert(schema.appConfigs)
       .values({
-        appId: "test-app-config",
         orgId: "test-org-config",
         systemPrompt: "You are a test assistant.",
         mcpServerUrl: "https://mcp.test.local",
@@ -156,20 +153,19 @@ describe("database integration", () => {
       })
       .returning();
 
-    expect(config.appId).toBe("test-app-config");
+    expect(config.orgId).toBe("test-org-config");
     expect(config.systemPrompt).toBe("You are a test assistant.");
     expect(config.mcpServerUrl).toBe("https://mcp.test.local");
 
-    // Upsert (update on conflict)
+    // Upsert (update on conflict by orgId)
     const [updated] = await db
       .insert(schema.appConfigs)
       .values({
-        appId: "test-app-config",
         orgId: "test-org-config",
         systemPrompt: "Updated prompt.",
       })
       .onConflictDoUpdate({
-        target: [schema.appConfigs.appId, schema.appConfigs.orgId],
+        target: [schema.appConfigs.orgId],
         set: {
           systemPrompt: "Updated prompt.",
           mcpServerUrl: null,
@@ -186,11 +182,6 @@ describe("database integration", () => {
     // Cleanup
     await db
       .delete(schema.appConfigs)
-      .where(
-        and(
-          eq(schema.appConfigs.appId, "test-app-config"),
-          eq(schema.appConfigs.orgId, "test-org-config"),
-        ),
-      );
+      .where(eq(schema.appConfigs.orgId, "test-org-config"));
   });
 });

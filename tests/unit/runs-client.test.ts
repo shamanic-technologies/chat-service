@@ -31,7 +31,6 @@ describe("createRun", () => {
     const result = await createRun({
       orgId: "org-uuid-123",
       userId: "user-uuid-456",
-      appId: "sales-cold-emails",
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -47,7 +46,6 @@ describe("createRun", () => {
         body: JSON.stringify({
           orgId: "org-uuid-123",
           userId: "user-uuid-456",
-          appId: "sales-cold-emails",
           serviceName: "chat-service",
           taskName: "chat",
         }),
@@ -67,7 +65,6 @@ describe("createRun", () => {
     await createRun({
       orgId: "org-uuid-123",
       userId: "user-uuid-456",
-      appId: "sales-cold-emails",
       serviceName: "chat-service",
       taskName: "chat",
       parentRunId: "parent-run-uuid",
@@ -79,7 +76,6 @@ describe("createRun", () => {
         body: JSON.stringify({
           orgId: "org-uuid-123",
           userId: "user-uuid-456",
-          appId: "sales-cold-emails",
           serviceName: "chat-service",
           taskName: "chat",
           parentRunId: "parent-run-uuid",
@@ -99,7 +95,6 @@ describe("createRun", () => {
     const { createRun } = await loadModule();
     const result = await createRun({
       orgId: "org-123",
-      appId: "my-app",
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -117,7 +112,6 @@ describe("createRun", () => {
     const { createRun } = await loadModule();
     const result = await createRun({
       orgId: "org-123",
-      appId: "my-app",
       serviceName: "chat-service",
       taskName: "chat",
     });
@@ -220,7 +214,6 @@ describe("missing RUNS_SERVICE_API_KEY", () => {
     const { createRun } = await loadModule();
     const result = await createRun({
       orgId: "org-123",
-      appId: "my-app",
       serviceName: "chat-service",
       taskName: "chat",
     });

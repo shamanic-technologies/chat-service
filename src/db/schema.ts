@@ -4,7 +4,6 @@ export const sessions = pgTable("sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
   orgId: text("org_id").notNull(),
   userId: text("user_id"),
-  appId: text("app_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -27,7 +26,6 @@ export const appConfigs = pgTable(
   "app_configs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    appId: text("app_id").notNull(),
     orgId: text("org_id").notNull(),
     systemPrompt: text("system_prompt").notNull(),
     mcpServerUrl: text("mcp_server_url"),
@@ -35,7 +33,7 @@ export const appConfigs = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [unique("app_configs_app_id_org_id_unique").on(table.appId, table.orgId)],
+  (table) => [unique("app_configs_org_id_unique").on(table.orgId)],
 );
 
 export interface ToolCallRecord {
