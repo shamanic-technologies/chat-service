@@ -77,7 +77,6 @@ export const AppConfigRequestSchema = z
 
 export const AppConfigResponseSchema = z
   .object({
-    appId: z.string(),
     orgId: z.string(),
     systemPrompt: z.string(),
     mcpServerUrl: z.string().nullable(),
@@ -91,13 +90,12 @@ export type AppConfigRequest = z.infer<typeof AppConfigRequestSchema>;
 
 registry.registerPath({
   method: "put",
-  path: "/apps/{appId}/config",
+  path: "/config",
   tags: ["App Config"],
   summary: "Register or update app configuration",
   description:
-    "Idempotent upsert of app configuration including system prompt and optional MCP settings. Call on every cold start.",
+    "Idempotent upsert of app configuration scoped by org (via x-org-id header). Includes system prompt and optional MCP settings. Call on every cold start.",
   request: {
-    params: z.object({ appId: z.string() }),
     headers: z.object({
       "x-api-key": z.string().openapi({
         description: "Service-to-service API key",
@@ -142,7 +140,6 @@ export const ChatRequestSchema = z
   .object({
     message: z.string().min(1, "message is required"),
     sessionId: z.string().uuid().optional(),
-    appId: z.string().min(1, "appId is required"),
     context: z.record(z.string(), z.unknown()).optional(),
   })
   .openapi("ChatRequest");
@@ -155,7 +152,7 @@ registry.registerPath({
   tags: ["Chat"],
   summary: "Stream AI chat response",
   description:
-    "Send a message and receive a streamed AI response via Server-Sent Events (SSE). Supports MCP tool calling and quick-reply buttons. Requires app config to be registered first via PUT /apps/{appId}/config.",
+    "Send a message and receive a streamed AI response via Server-Sent Events (SSE). Supports MCP tool calling and quick-reply buttons. Requires app config to be registered first via PUT /config.",
   request: {
     headers: z.object({
       "x-api-key": z.string().openapi({
@@ -197,7 +194,7 @@ registry.registerPath({
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     404: {
-      description: "App config not found — register via PUT /apps/{appId}/config first",
+      description: "App config not found — register via PUT /config first",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },

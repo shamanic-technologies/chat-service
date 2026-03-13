@@ -5,7 +5,6 @@ const RUNS_SERVICE_API_KEY = process.env.RUNS_SERVICE_API_KEY;
 export interface RunsRun {
   id: string;
   organizationId: string;
-  appId: string;
   serviceName: string;
   taskName: string;
   status: string;
@@ -16,7 +15,6 @@ export interface RunsRun {
 export interface CreateRunParams {
   orgId: string;
   userId?: string;
-  appId: string;
   serviceName: string;
   taskName: string;
   parentRunId?: string;

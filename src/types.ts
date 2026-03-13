@@ -3,9 +3,7 @@ import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 export interface ChatRequest {
   message: string;
   sessionId?: string;
-  appId: string;
   context?: Record<string, unknown>;
-  parentRunId?: string;
 }
 
 export interface SSETokenEvent {

@@ -51,8 +51,7 @@ app.get("/health", (_req, res) => {
 
 // --- App Config Registration ---
 
-app.put("/apps/:appId/config", requireAuth, async (req, res) => {
-  const { appId } = req.params;
+app.put("/config", requireAuth, async (req, res) => {
   const { orgId } = res.locals as AuthLocals;
 
   const parsed = AppConfigRequestSchema.safeParse(req.body);
@@ -67,14 +66,13 @@ app.put("/apps/:appId/config", requireAuth, async (req, res) => {
   const [config] = await db
     .insert(appConfigs)
     .values({
-      appId,
       orgId,
       systemPrompt,
       mcpServerUrl: mcpServerUrl ?? null,
       mcpKeyName: mcpKeyName ?? null,
     })
     .onConflictDoUpdate({
-      target: [appConfigs.appId, appConfigs.orgId],
+      target: [appConfigs.orgId],
       set: {
         systemPrompt,
         mcpServerUrl: mcpServerUrl ?? null,
@@ -85,7 +83,6 @@ app.put("/apps/:appId/config", requireAuth, async (req, res) => {
     .returning();
 
   res.json({
-    appId: config.appId,
     orgId: config.orgId,
     systemPrompt: config.systemPrompt,
     mcpServerUrl: config.mcpServerUrl,
@@ -107,17 +104,17 @@ app.post("/chat", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, sessionId, appId, context } = parsed.data;
+  const { message, sessionId, context } = parsed.data;
 
-  // Look up app config
+  // Look up app config by orgId
   const [appConfig] = await db
     .select()
     .from(appConfigs)
-    .where(and(eq(appConfigs.appId, appId), eq(appConfigs.orgId, orgId)));
+    .where(eq(appConfigs.orgId, orgId));
 
   if (!appConfig) {
     return res.status(404).json({
-      error: `App config not found for appId="${appId}". Register via PUT /apps/${appId}/config first.`,
+      error: `App config not found for org="${orgId}". Register via PUT /config first.`,
     });
   }
 
@@ -160,7 +157,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     if (!currentSessionId) {
       const [session] = await db
         .insert(sessions)
-        .values({ orgId, userId, appId })
+        .values({ orgId, userId })
         .returning();
       currentSessionId = session.id;
     } else {
@@ -186,7 +183,6 @@ app.post("/chat", requireAuth, async (req, res) => {
     const run = await createRun({
       orgId,
       userId,
-      appId,
       serviceName: "chat-service",
       taskName: "chat",
       parentRunId: callerRunId,
