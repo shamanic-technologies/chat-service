@@ -36,6 +36,16 @@ export const appConfigs = pgTable(
   (table) => [unique("app_configs_org_id_unique").on(table.orgId)],
 );
 
+export const platformConfigs = pgTable("platform_configs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  key: text("key").notNull().unique(),
+  systemPrompt: text("system_prompt").notNull(),
+  mcpServerUrl: text("mcp_server_url"),
+  mcpKeyName: text("mcp_key_name"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export interface ToolCallRecord {
   name: string;
   args: Record<string, unknown>;
@@ -53,3 +63,5 @@ export type Message = typeof messages.$inferSelect;
 export type NewMessage = typeof messages.$inferInsert;
 export type AppConfig = typeof appConfigs.$inferSelect;
 export type NewAppConfig = typeof appConfigs.$inferInsert;
+export type PlatformConfig = typeof platformConfigs.$inferSelect;
+export type NewPlatformConfig = typeof platformConfigs.$inferInsert;

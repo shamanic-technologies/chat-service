@@ -54,6 +54,42 @@ Response:
 }
 ```
 
+## Platform Config Registration
+
+Register a global (non-org-scoped) chat configuration used as fallback when no per-org config exists:
+
+`PUT /platform-config`
+
+**Auth:** `X-API-Key` only — no `x-org-id`, `x-user-id`, or `x-run-id` headers required.
+
+Request body:
+```json
+{
+  "systemPrompt": "You are a helpful assistant...",
+  "mcpServerUrl": "https://mcp.example.com",
+  "mcpKeyName": "platform-mcp"
+}
+```
+
+- `systemPrompt` (required) — the default system prompt for all orgs without a per-org config
+- `mcpServerUrl` (optional) — default MCP server URL
+- `mcpKeyName` (optional) — default MCP key name
+
+This endpoint is **idempotent** (upsert). Called on every cold start by api-service.
+
+**Config resolution in POST /chat:** Per-org config (from `PUT /config`) takes priority. If none exists, the platform config (from `PUT /platform-config`) is used. If neither exists, the request fails with 404. There is no merging — it's one or the other.
+
+Response:
+```json
+{
+  "systemPrompt": "...",
+  "mcpServerUrl": "https://mcp.example.com",
+  "mcpKeyName": "platform-mcp",
+  "createdAt": "2026-02-26T00:00:00.000Z",
+  "updatedAt": "2026-02-26T00:00:00.000Z"
+}
+```
+
 ## SSE Protocol
 
 `POST /chat` with headers `Content-Type: application/json`, `x-api-key`, `x-org-id`, `x-user-id`.
@@ -147,6 +183,7 @@ Uses PostgreSQL via Drizzle ORM. Three tables:
 - **sessions** — conversation sessions scoped by `orgId` and `userId`
 - **messages** — chat messages with role, content, optional `toolCalls`, `buttons` JSONB, and `runId` linking to RunsService
 - **app_configs** — per-org configuration (system prompt, MCP settings) with unique constraint on `orgId`
+- **platform_configs** — global platform-wide chat configuration (fallback when no per-org config exists)
 
 Migrations run automatically on server start. To generate new migrations after schema changes:
 
@@ -194,14 +231,14 @@ Uses `node:20-alpine`. Requires Node >= 20.
 
 ```
 src/
-  index.ts          # Express server, /chat, /config, /health, /openapi.json
+  index.ts          # Express server, /chat, /config, /platform-config, /health, /openapi.json
   types.ts          # SSE event TypeScript interfaces
   schemas.ts        # Zod schemas, OpenAPI registry, and request/response types
   middleware/
-    auth.ts         # requireAuth middleware (x-api-key, x-org-id, x-user-id, x-run-id)
+    auth.ts         # requireAuth middleware (x-api-key, x-org-id, x-user-id, x-run-id) + requireInternalAuth (x-api-key only)
   db/
     index.ts        # Drizzle client init
-    schema.ts       # sessions + messages + app_configs table definitions
+    schema.ts       # sessions + messages + app_configs + platform_configs table definitions
   lib/
     gemini.ts       # Gemini AI client, streaming + function calling, buildSystemPrompt helper
     mcp-client.ts   # MCP server connection via Streamable HTTP transport + tool execution
