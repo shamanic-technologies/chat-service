@@ -1,9 +1,16 @@
 import type { Request, Response, NextFunction } from "express";
 
+export interface WorkflowTrackingHeaders {
+  campaignId?: string;
+  brandId?: string;
+  workflowName?: string;
+}
+
 export interface AuthLocals {
   orgId: string;
   userId: string;
   runId: string;
+  workflowTracking: WorkflowTrackingHeaders;
 }
 
 export function requireAuth(
@@ -38,7 +45,19 @@ export function requireAuth(
   res.locals.orgId = orgId;
   res.locals.userId = userId;
   res.locals.runId = runId;
+  res.locals.workflowTracking = extractWorkflowTracking(req);
   next();
+}
+
+function extractWorkflowTracking(req: Request): WorkflowTrackingHeaders {
+  const tracking: WorkflowTrackingHeaders = {};
+  const campaignId = req.headers["x-campaign-id"];
+  if (typeof campaignId === "string") tracking.campaignId = campaignId;
+  const brandId = req.headers["x-brand-id"];
+  if (typeof brandId === "string") tracking.brandId = brandId;
+  const workflowName = req.headers["x-workflow-name"];
+  if (typeof workflowName === "string") tracking.workflowName = workflowName;
+  return tracking;
 }
 
 export function requireInternalAuth(

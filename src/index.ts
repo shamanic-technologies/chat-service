@@ -137,7 +137,13 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
 // --- Chat ---
 
 app.post("/chat", requireAuth, async (req, res) => {
-  const { orgId, userId, runId: callerRunId } = res.locals as AuthLocals;
+  const { orgId, userId, runId: callerRunId, workflowTracking } = res.locals as AuthLocals;
+
+  // Build tracking headers to forward to downstream services
+  const trackingHeaders: Record<string, string> = {};
+  if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
+  if (workflowTracking.brandId) trackingHeaders["x-brand-id"] = workflowTracking.brandId;
+  if (workflowTracking.workflowName) trackingHeaders["x-workflow-name"] = workflowTracking.workflowName;
 
   const parsed = ChatRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -174,6 +180,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       orgId,
       userId,
       caller: { method: "POST", path: "/chat" },
+      trackingHeaders,
     });
   } catch (err) {
     console.error(`Failed to resolve Gemini key for org="${orgId}":`, err);
@@ -234,7 +241,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       serviceName: "chat-service",
       taskName: "chat",
       parentRunId: callerRunId,
-    });
+    }, trackingHeaders);
     if (run) runId = run.id;
 
     // Load conversation history
@@ -257,6 +264,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           appConfig.mcpKeyName,
           orgId,
           { method: "POST", path: "/chat" },
+          trackingHeaders,
         );
         mcpConn = await connectMcp({
           serverUrl: appConfig.mcpServerUrl,
@@ -272,6 +280,9 @@ app.post("/chat", requireAuth, async (req, res) => {
       sessionId: currentSessionId,
       role: "user",
       content: message.trim(),
+      campaignId: workflowTracking.campaignId ?? null,
+      brandId: workflowTracking.brandId ?? null,
+      workflowName: workflowTracking.workflowName ?? null,
     });
 
     // Stream response from Gemini
@@ -474,6 +485,9 @@ app.post("/chat", requireAuth, async (req, res) => {
       buttons: buttons.length > 0 ? buttons : null,
       tokenCount: totalPromptTokens + totalOutputTokens || null,
       runId: runId ?? null,
+      campaignId: workflowTracking.campaignId ?? null,
+      brandId: workflowTracking.brandId ?? null,
+      workflowName: workflowTracking.workflowName ?? null,
     });
 
     sendSSE(res, "[DONE]");
@@ -516,8 +530,8 @@ app.post("/chat", requireAuth, async (req, res) => {
           : []),
       ];
       Promise.all([
-        updateRunStatus(runId, chatFailed ? "failed" : "completed"),
-        addRunCosts(runId, costItems),
+        updateRunStatus(runId, chatFailed ? "failed" : "completed", trackingHeaders),
+        addRunCosts(runId, costItems, trackingHeaders),
       ]).catch(() => {});
     }
 

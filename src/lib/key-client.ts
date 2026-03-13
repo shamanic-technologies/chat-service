@@ -14,11 +14,18 @@ export interface DecryptedKey {
   key: string;
 }
 
+export interface TrackingHeaders {
+  "x-campaign-id"?: string;
+  "x-brand-id"?: string;
+  "x-workflow-name"?: string;
+}
+
 export interface KeyResolutionParams {
   provider: string;
   orgId: string;
   userId: string;
   caller: CallerInfo;
+  trackingHeaders?: TrackingHeaders;
 }
 
 export interface ResolvedKey {
@@ -36,18 +43,25 @@ export async function resolveKey(
     );
   }
 
-  const { provider, orgId, userId, caller } = params;
+  const { provider, orgId, userId, caller, trackingHeaders } = params;
   const qs = new URLSearchParams({ orgId, userId });
   const url = `${KEY_SERVICE_URL}/keys/${encodeURIComponent(provider)}/decrypt?${qs}`;
 
+  const headers: Record<string, string> = {
+    "x-api-key": KEY_SERVICE_API_KEY,
+    "X-Caller-Service": CALLER_SERVICE,
+    "X-Caller-Method": caller.method,
+    "X-Caller-Path": caller.path,
+  };
+  if (trackingHeaders) {
+    for (const [k, v] of Object.entries(trackingHeaders)) {
+      if (v) headers[k] = v;
+    }
+  }
+
   const res = await fetch(url, {
     method: "GET",
-    headers: {
-      "x-api-key": KEY_SERVICE_API_KEY,
-      "X-Caller-Service": CALLER_SERVICE,
-      "X-Caller-Method": caller.method,
-      "X-Caller-Path": caller.path,
-    },
+    headers,
   });
 
   if (!res.ok) {
@@ -64,6 +78,7 @@ export async function decryptOrgKey(
   provider: string,
   orgId: string,
   caller: CallerInfo,
+  trackingHeaders?: TrackingHeaders,
 ): Promise<DecryptedKey> {
   if (!KEY_SERVICE_API_KEY) {
     throw new Error(
@@ -73,14 +88,21 @@ export async function decryptOrgKey(
 
   const url = `${KEY_SERVICE_URL}/internal/keys/${encodeURIComponent(provider)}/decrypt?orgId=${encodeURIComponent(orgId)}`;
 
+  const headers: Record<string, string> = {
+    "x-api-key": KEY_SERVICE_API_KEY,
+    "X-Caller-Service": CALLER_SERVICE,
+    "X-Caller-Method": caller.method,
+    "X-Caller-Path": caller.path,
+  };
+  if (trackingHeaders) {
+    for (const [k, v] of Object.entries(trackingHeaders)) {
+      if (v) headers[k] = v;
+    }
+  }
+
   const res = await fetch(url, {
     method: "GET",
-    headers: {
-      "x-api-key": KEY_SERVICE_API_KEY,
-      "X-Caller-Service": CALLER_SERVICE,
-      "X-Caller-Method": caller.method,
-      "X-Caller-Path": caller.path,
-    },
+    headers,
   });
 
   if (!res.ok) {

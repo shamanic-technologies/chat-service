@@ -26,22 +26,35 @@ export interface CostItem {
   costSource: "platform" | "org";
 }
 
+export interface TrackingHeaders {
+  "x-campaign-id"?: string;
+  "x-brand-id"?: string;
+  "x-workflow-name"?: string;
+}
+
 async function runsRequest<T>(
   method: string,
   path: string,
   body?: unknown,
+  trackingHeaders?: TrackingHeaders,
 ): Promise<T | null> {
   if (!RUNS_SERVICE_API_KEY) {
     console.warn("[runs-client] RUNS_SERVICE_API_KEY not set, skipping");
     return null;
   }
   try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-API-Key": RUNS_SERVICE_API_KEY,
+    };
+    if (trackingHeaders) {
+      for (const [k, v] of Object.entries(trackingHeaders)) {
+        if (v) headers[k] = v;
+      }
+    }
     const res = await fetch(`${RUNS_SERVICE_URL}${path}`, {
       method,
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-Key": RUNS_SERVICE_API_KEY,
-      },
+      headers,
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     if (!res.ok) {
@@ -60,21 +73,24 @@ async function runsRequest<T>(
 
 export async function createRun(
   params: CreateRunParams,
+  trackingHeaders?: TrackingHeaders,
 ): Promise<RunsRun | null> {
-  return runsRequest<RunsRun>("POST", "/v1/runs", params);
+  return runsRequest<RunsRun>("POST", "/v1/runs", params, trackingHeaders);
 }
 
 export async function updateRunStatus(
   id: string,
   status: "completed" | "failed",
+  trackingHeaders?: TrackingHeaders,
 ): Promise<RunsRun | null> {
-  return runsRequest<RunsRun>("PATCH", `/v1/runs/${id}`, { status });
+  return runsRequest<RunsRun>("PATCH", `/v1/runs/${id}`, { status }, trackingHeaders);
 }
 
 export async function addRunCosts(
   id: string,
   items: CostItem[],
+  trackingHeaders?: TrackingHeaders,
 ): Promise<void> {
   if (items.length === 0) return;
-  await runsRequest("POST", `/v1/runs/${id}/costs`, { items });
+  await runsRequest("POST", `/v1/runs/${id}/costs`, { items }, trackingHeaders);
 }
