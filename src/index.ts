@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { db } from "./db/index.js";
-import { sessions, messages, appConfigs } from "./db/schema.js";
+import { sessions, messages, appConfigs, platformConfigs } from "./db/schema.js";
 import { eq, and } from "drizzle-orm";
 import {
   createGeminiClient,
@@ -15,8 +15,8 @@ import {
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { resolveKey, decryptOrgKey, type ResolvedKey } from "./lib/key-client.js";
-import { ChatRequestSchema, AppConfigRequestSchema } from "./schemas.js";
-import { requireAuth, type AuthLocals } from "./middleware/auth.js";
+import { ChatRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
+import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { Content, Part } from "@google/genai";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -92,6 +92,48 @@ app.put("/config", requireAuth, async (req, res) => {
   });
 });
 
+// --- Platform Config Registration ---
+
+const PLATFORM_CONFIG_KEY = "default";
+
+app.put("/platform-config", requireInternalAuth, async (req, res) => {
+  const parsed = PlatformConfigRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+
+  const { systemPrompt, mcpServerUrl, mcpKeyName } = parsed.data;
+
+  const [config] = await db
+    .insert(platformConfigs)
+    .values({
+      key: PLATFORM_CONFIG_KEY,
+      systemPrompt,
+      mcpServerUrl: mcpServerUrl ?? null,
+      mcpKeyName: mcpKeyName ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [platformConfigs.key],
+      set: {
+        systemPrompt,
+        mcpServerUrl: mcpServerUrl ?? null,
+        mcpKeyName: mcpKeyName ?? null,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+
+  res.json({
+    systemPrompt: config.systemPrompt,
+    mcpServerUrl: config.mcpServerUrl,
+    mcpKeyName: config.mcpKeyName,
+    createdAt: config.createdAt.toISOString(),
+    updatedAt: config.updatedAt.toISOString(),
+  });
+});
+
 // --- Chat ---
 
 app.post("/chat", requireAuth, async (req, res) => {
@@ -106,15 +148,21 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   const { message, sessionId, context } = parsed.data;
 
-  // Look up app config by orgId
-  const [appConfig] = await db
+  // Look up app config by orgId, fall back to platform config
+  const [orgConfig] = await db
     .select()
     .from(appConfigs)
     .where(eq(appConfigs.orgId, orgId));
 
+  const appConfig = orgConfig ?? (await db
+    .select()
+    .from(platformConfigs)
+    .where(eq(platformConfigs.key, PLATFORM_CONFIG_KEY))
+    .then(([row]) => row ?? null));
+
   if (!appConfig) {
     return res.status(404).json({
-      error: `App config not found for org="${orgId}". Register via PUT /config first.`,
+      error: `No chat config found for org="${orgId}". Register via PUT /config or PUT /platform-config.`,
     });
   }
 

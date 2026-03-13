@@ -134,6 +134,65 @@ registry.registerPath({
   },
 });
 
+// --- Platform Config ---
+
+export const PlatformConfigRequestSchema = z
+  .object({
+    systemPrompt: z.string().min(1, "systemPrompt is required"),
+    mcpServerUrl: z.string().url().optional(),
+    mcpKeyName: z.string().min(1).optional(),
+  })
+  .openapi("PlatformConfigRequest");
+
+export const PlatformConfigResponseSchema = z
+  .object({
+    systemPrompt: z.string(),
+    mcpServerUrl: z.string().nullable(),
+    mcpKeyName: z.string().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi("PlatformConfigResponse");
+
+export type PlatformConfigRequest = z.infer<typeof PlatformConfigRequestSchema>;
+
+registry.registerPath({
+  method: "put",
+  path: "/platform-config",
+  tags: ["Platform Config"],
+  summary: "Register or update platform-wide chat configuration",
+  description:
+    "Idempotent upsert of a global chat configuration (not scoped to any org). Used as fallback when no per-org config exists. Auth: X-API-Key only — no x-org-id, x-user-id, or x-run-id required. Called on every cold start by api-service.",
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({
+        description: "Service-to-service API key",
+      }),
+    }),
+    body: {
+      content: { "application/json": { schema: PlatformConfigRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Platform config saved",
+      content: {
+        "application/json": { schema: PlatformConfigResponseSchema },
+      },
+    },
+    400: {
+      description: "Invalid request",
+      content: {
+        "application/json": { schema: ValidationErrorResponseSchema },
+      },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // --- Chat ---
 
 export const ChatRequestSchema = z
