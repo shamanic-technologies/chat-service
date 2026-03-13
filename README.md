@@ -20,6 +20,9 @@ All endpoints (except `/health` and `/openapi.json`) require these headers:
 | `x-org-id` | Internal org UUID from client-service |
 | `x-user-id` | Internal user UUID from client-service |
 | `x-run-id` | Caller's run ID — used as `parentRunId` when creating this service's own run in runs-service |
+| `x-campaign-id` | _(optional)_ Campaign ID — injected automatically by workflow-service |
+| `x-brand-id` | _(optional)_ Brand ID — injected automatically by workflow-service |
+| `x-workflow-name` | _(optional)_ Workflow name — injected automatically by workflow-service |
 
 ## App Config Registration
 
@@ -181,7 +184,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 Uses PostgreSQL via Drizzle ORM. Three tables:
 
 - **sessions** — conversation sessions scoped by `orgId` and `userId`
-- **messages** — chat messages with role, content, optional `toolCalls`, `buttons` JSONB, and `runId` linking to RunsService
+- **messages** — chat messages with role, content, optional `toolCalls`, `buttons` JSONB, `runId` linking to RunsService, and optional `campaign_id`, `brand_id`, `workflow_name` for workflow tracking
 - **app_configs** — per-org configuration (system prompt, MCP settings) with unique constraint on `orgId`
 - **platform_configs** — global platform-wide chat configuration (fallback when no per-org config exists)
 

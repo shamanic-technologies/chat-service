@@ -19,6 +19,9 @@ export const messages = pgTable("messages", {
   buttons: jsonb("buttons").$type<ButtonRecord[]>(),
   tokenCount: integer("token_count"),
   runId: uuid("run_id"),
+  campaignId: text("campaign_id"),
+  brandId: text("brand_id"),
+  workflowName: text("workflow_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

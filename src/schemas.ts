@@ -8,6 +8,20 @@ extendZodWithOpenApi(z);
 
 export const registry = new OpenAPIRegistry();
 
+// --- Workflow tracking headers (optional, injected by workflow-service) ---
+
+const workflowTrackingHeaders = {
+  "x-campaign-id": z.string().optional().openapi({
+    description: "Campaign ID — injected automatically by workflow-service",
+  }),
+  "x-brand-id": z.string().optional().openapi({
+    description: "Brand ID — injected automatically by workflow-service",
+  }),
+  "x-workflow-name": z.string().optional().openapi({
+    description: "Workflow name — injected automatically by workflow-service",
+  }),
+};
+
 // --- Shared schemas ---
 
 export const ErrorResponseSchema = z
@@ -109,6 +123,7 @@ registry.registerPath({
       "x-run-id": z.string().uuid().openapi({
         description: "Caller's run ID",
       }),
+      ...workflowTrackingHeaders,
     }),
     body: {
       content: { "application/json": { schema: AppConfigRequestSchema } },
@@ -227,6 +242,7 @@ registry.registerPath({
         description:
           "Caller's run ID — used as parentRunId when creating this service's own run in runs-service",
       }),
+      ...workflowTrackingHeaders,
     }),
     body: {
       content: { "application/json": { schema: ChatRequestSchema } },
