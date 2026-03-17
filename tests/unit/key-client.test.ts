@@ -19,7 +19,7 @@ async function loadModule() {
 }
 
 describe("resolveKey", () => {
-  it("sends GET with correct URL, query params, and caller headers", async () => {
+  it("sends GET with orgId and userId as headers (not query params)", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () =>
@@ -39,11 +39,13 @@ describe("resolveKey", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/keys/gemini/decrypt?orgId=org-uuid-123&userId=user-uuid-456",
+      "https://key.test.local/keys/gemini/decrypt",
       expect.objectContaining({
         method: "GET",
         headers: {
           "x-api-key": "test-key-svc-key",
+          "x-org-id": "org-uuid-123",
+          "x-user-id": "user-uuid-456",
           "X-Caller-Service": "chat",
           "X-Caller-Method": "POST",
           "X-Caller-Path": "/chat",
@@ -186,14 +188,14 @@ describe("resolveKey", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.mcpfactory.org/keys/gemini/decrypt?orgId=org-123&userId=user-123",
+      "https://key.mcpfactory.org/keys/gemini/decrypt",
       expect.anything(),
     );
   });
 });
 
 describe("decryptOrgKey", () => {
-  it("sends GET with correct URL including orgId query param", async () => {
+  it("sends GET with correct URL and orgId header", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () =>
@@ -207,11 +209,12 @@ describe("decryptOrgKey", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/internal/keys/mcpfactory/decrypt?orgId=org-uuid-123",
+      "https://key.test.local/internal/keys/mcpfactory/decrypt",
       expect.objectContaining({
         method: "GET",
         headers: {
           "x-api-key": "test-key-svc-key",
+          "x-org-id": "org-uuid-123",
           "X-Caller-Service": "chat",
           "X-Caller-Method": "POST",
           "X-Caller-Path": "/chat",

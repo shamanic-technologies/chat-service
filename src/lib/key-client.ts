@@ -44,11 +44,12 @@ export async function resolveKey(
   }
 
   const { provider, orgId, userId, caller, trackingHeaders } = params;
-  const qs = new URLSearchParams({ orgId, userId });
-  const url = `${KEY_SERVICE_URL}/keys/${encodeURIComponent(provider)}/decrypt?${qs}`;
+  const url = `${KEY_SERVICE_URL}/keys/${encodeURIComponent(provider)}/decrypt`;
 
   const headers: Record<string, string> = {
     "x-api-key": KEY_SERVICE_API_KEY,
+    "x-org-id": orgId,
+    "x-user-id": userId,
     "X-Caller-Service": CALLER_SERVICE,
     "X-Caller-Method": caller.method,
     "X-Caller-Path": caller.path,
@@ -86,10 +87,11 @@ export async function decryptOrgKey(
     );
   }
 
-  const url = `${KEY_SERVICE_URL}/internal/keys/${encodeURIComponent(provider)}/decrypt?orgId=${encodeURIComponent(orgId)}`;
+  const url = `${KEY_SERVICE_URL}/internal/keys/${encodeURIComponent(provider)}/decrypt`;
 
   const headers: Record<string, string> = {
     "x-api-key": KEY_SERVICE_API_KEY,
+    "x-org-id": orgId,
     "X-Caller-Service": CALLER_SERVICE,
     "X-Caller-Method": caller.method,
     "X-Caller-Path": caller.path,
