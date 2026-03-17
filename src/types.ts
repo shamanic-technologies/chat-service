@@ -11,6 +11,19 @@ export interface SSETokenEvent {
   content: string;
 }
 
+export interface SSEThinkingStartEvent {
+  type: "thinking_start";
+}
+
+export interface SSEThinkingDeltaEvent {
+  type: "thinking_delta";
+  thinking: string;
+}
+
+export interface SSEThinkingStopEvent {
+  type: "thinking_stop";
+}
+
 export interface SSEButtonsEvent {
   type: "buttons";
   buttons: ButtonRecord[];
@@ -18,12 +31,14 @@ export interface SSEButtonsEvent {
 
 export interface SSEToolCallEvent {
   type: "tool_call";
+  id: string;
   name: string;
   args: Record<string, unknown>;
 }
 
 export interface SSEToolResultEvent {
   type: "tool_result";
+  id: string;
   name: string;
   result: unknown;
 }
@@ -42,6 +57,9 @@ export interface SSESessionEvent {
 
 export type SSEEvent =
   | SSETokenEvent
+  | SSEThinkingStartEvent
+  | SSEThinkingDeltaEvent
+  | SSEThinkingStopEvent
   | SSEButtonsEvent
   | SSEToolCallEvent
   | SSEToolResultEvent

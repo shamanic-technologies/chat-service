@@ -1,0 +1,560 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Chat Service",
+    "description": "Multi-app AI chat service. Streams Gemini AI responses via SSE with configurable system prompts and optional MCP tool calling per app.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3002"
+    }
+  ],
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "AppConfigResponse": {
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string"
+          },
+          "systemPrompt": {
+            "type": "string"
+          },
+          "mcpServerUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "mcpKeyName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "orgId",
+          "systemPrompt",
+          "mcpServerUrl",
+          "mcpKeyName",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ValidationErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            }
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "AppConfigRequest": {
+        "type": "object",
+        "properties": {
+          "systemPrompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mcpServerUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "mcpKeyName": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "systemPrompt"
+        ]
+      },
+      "PlatformConfigResponse": {
+        "type": "object",
+        "properties": {
+          "systemPrompt": {
+            "type": "string"
+          },
+          "mcpServerUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "mcpKeyName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "systemPrompt",
+          "mcpServerUrl",
+          "mcpKeyName",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PlatformConfigRequest": {
+        "type": "object",
+        "properties": {
+          "systemPrompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mcpServerUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "mcpKeyName": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "systemPrompt"
+        ]
+      },
+      "ChatRequest": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "context": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            }
+          }
+        },
+        "required": [
+          "message"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check",
+        "description": "Returns service health status",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "Docs"
+        ],
+        "summary": "OpenAPI specification",
+        "description": "Returns the OpenAPI 3.0 JSON specification for this service",
+        "responses": {
+          "200": {
+            "description": "OpenAPI spec",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Spec not generated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/config": {
+      "put": {
+        "tags": [
+          "App Config"
+        ],
+        "summary": "Register or update app configuration",
+        "description": "Idempotent upsert of app configuration scoped by org (via x-org-id header). Includes system prompt and optional MCP settings. Call on every cold start.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal org UUID from client-service",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal user UUID from client-service",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Caller's run ID"
+            },
+            "required": true,
+            "description": "Caller's run ID",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Campaign ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Campaign ID — injected automatically by workflow-service",
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Brand ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Brand ID — injected automatically by workflow-service",
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Workflow name — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Workflow name — injected automatically by workflow-service",
+            "name": "x-workflow-name",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "App config saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppConfigResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform-config": {
+      "put": {
+        "tags": [
+          "Platform Config"
+        ],
+        "summary": "Register or update platform-wide chat configuration",
+        "description": "Idempotent upsert of a global chat configuration (not scoped to any org). Used as fallback when no per-org config exists. Auth: X-API-Key only — no x-org-id, x-user-id, or x-run-id required. Called on every cold start by api-service.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Platform config saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformConfigResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Stream AI chat response",
+        "description": "Send a message and receive a streamed AI response via Server-Sent Events (SSE). Supports MCP tool calling and quick-reply buttons. Requires app config to be registered first via PUT /config.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal org UUID from client-service",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal user UUID from client-service",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Caller's run ID — used as parentRunId when creating this service's own run in runs-service"
+            },
+            "required": true,
+            "description": "Caller's run ID — used as parentRunId when creating this service's own run in runs-service",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Campaign ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Campaign ID — injected automatically by workflow-service",
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Brand ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Brand ID — injected automatically by workflow-service",
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Workflow name — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Workflow name — injected automatically by workflow-service",
+            "name": "x-workflow-name",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSE stream of chat events (token, thinking_start, thinking_delta, thinking_stop, tool_call, tool_result, input_request, buttons, [DONE])",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "App config not found — register via PUT /config first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

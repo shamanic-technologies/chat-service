@@ -57,6 +57,9 @@ export interface UsageMetadata {
 
 export type GeminiEvent =
   | { type: "token"; content: string }
+  | { type: "thinking_start" }
+  | { type: "thinking_delta"; thinking: string }
+  | { type: "thinking_stop" }
   | { type: "function_call"; call: FunctionCall }
   | { type: "done"; usage?: UsageMetadata };
 
@@ -108,6 +111,7 @@ export function createGeminiClient({
       });
 
       let usage: UsageMetadata | undefined;
+      let inThinking = false;
       for await (const chunk of response) {
         if (chunk.usageMetadata) {
           usage = {
@@ -120,7 +124,20 @@ export function createGeminiClient({
         if (!candidate) continue;
 
         for (const part of candidate.content?.parts ?? []) {
-          if (part.thought) continue;
+          if (part.thought) {
+            if (!inThinking) {
+              inThinking = true;
+              yield { type: "thinking_start" } as const;
+            }
+            if (part.text) {
+              yield { type: "thinking_delta", thinking: part.text } as const;
+            }
+            continue;
+          }
+          if (inThinking) {
+            inThinking = false;
+            yield { type: "thinking_stop" } as const;
+          }
           if (part.text) {
             yield { type: "token", content: part.text };
           }
@@ -138,6 +155,9 @@ export function createGeminiClient({
             };
           }
         }
+      }
+      if (inThinking) {
+        yield { type: "thinking_stop" } as const;
       }
 
       yield { type: "done", usage };
@@ -184,6 +204,7 @@ export function createGeminiClient({
       });
 
       let usage: UsageMetadata | undefined;
+      let inThinking = false;
       for await (const chunk of response) {
         if (chunk.usageMetadata) {
           usage = {
@@ -196,7 +217,20 @@ export function createGeminiClient({
         if (!candidate) continue;
 
         for (const part of candidate.content?.parts ?? []) {
-          if (part.thought) continue;
+          if (part.thought) {
+            if (!inThinking) {
+              inThinking = true;
+              yield { type: "thinking_start" } as const;
+            }
+            if (part.text) {
+              yield { type: "thinking_delta", thinking: part.text } as const;
+            }
+            continue;
+          }
+          if (inThinking) {
+            inThinking = false;
+            yield { type: "thinking_stop" } as const;
+          }
           if (part.text) {
             yield { type: "token", content: part.text };
           }
@@ -214,6 +248,9 @@ export function createGeminiClient({
             };
           }
         }
+      }
+      if (inThinking) {
+        yield { type: "thinking_stop" } as const;
       }
 
       yield { type: "done", usage };
