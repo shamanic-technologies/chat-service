@@ -251,7 +251,7 @@ registry.registerPath({
   responses: {
     200: {
       description:
-        "SSE stream of chat events (token, tool_call, tool_result, input_request, buttons, [DONE])",
+        "SSE stream of chat events (token, thinking_start, thinking_delta, thinking_stop, tool_call, tool_result, input_request, buttons, [DONE])",
       content: {
         "text/event-stream": {
           schema: z.string(),

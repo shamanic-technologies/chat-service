@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import crypto from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -354,6 +355,10 @@ app.post("/chat", requireAuth, async (req, res) => {
         bufferToken(event.content);
       }
 
+      if (event.type === "thinking_start" || event.type === "thinking_delta" || event.type === "thinking_stop") {
+        sendSSE(res, event);
+      }
+
       if (event.type === "done") {
         accumulateUsage(event.usage);
       }
@@ -376,8 +381,10 @@ app.post("/chat", requireAuth, async (req, res) => {
 
         if (!mcpConn) continue;
 
+        const toolCallId = `tc_${crypto.randomUUID()}`;
         sendSSE(res, {
           type: "tool_call",
+          id: toolCallId,
           name: call.name,
           args: call.args,
         });
@@ -393,7 +400,7 @@ app.post("/chat", requireAuth, async (req, res) => {
             result,
           });
 
-          sendSSE(res, { type: "tool_result", name: call.name, result });
+          sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result });
 
           // Send function result back to Gemini and stream continuation
           // Gemini 3 with thinking requires thoughtSignature on functionCall parts
@@ -422,6 +429,9 @@ app.post("/chat", requireAuth, async (req, res) => {
           for await (const contEvent of contStream) {
             if (contEvent.type === "token") {
               bufferToken(contEvent.content);
+            }
+            if (contEvent.type === "thinking_start" || contEvent.type === "thinking_delta" || contEvent.type === "thinking_stop") {
+              sendSSE(res, contEvent);
             }
             if (contEvent.type === "done") {
               accumulateUsage(contEvent.usage);

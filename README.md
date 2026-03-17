@@ -121,7 +121,17 @@ The response is a stream of SSE events in this order:
 data: {"sessionId":"uuid"}
 ```
 
-### 2. Streaming tokens
+### 2. Thinking (optional)
+When Gemini uses internal reasoning, thinking events are streamed progressively:
+```
+data: {"type":"thinking_start"}
+data: {"type":"thinking_delta","thinking":"Let me analyze the user's request..."}
+data: {"type":"thinking_delta","thinking":"I should check their campaign data first."}
+data: {"type":"thinking_stop"}
+```
+Thinking blocks may appear before tokens and before/after tool calls. The frontend can render these as collapsible "Thinking…" blocks.
+
+### 3. Streaming tokens
 Streamed incrementally as the AI generates its response:
 ```
 data: {"type":"token","content":"Here's"}
@@ -129,29 +139,34 @@ data: {"type":"token","content":" what I"}
 data: {"type":"token","content":" suggest..."}
 ```
 
-### 3. Tool calls (optional)
+### 4. Tool calls (optional)
 If the AI invokes an MCP tool:
 ```
-data: {"type":"tool_call","name":"search_leads","args":{"query":"..."}}
-data: {"type":"tool_result","name":"search_leads","result":{...}}
+data: {"type":"tool_call","id":"tc_550e8400-e29b-41d4-a716-446655440000","name":"search_leads","args":{"query":"..."}}
+data: {"type":"tool_result","id":"tc_550e8400-e29b-41d4-a716-446655440000","name":"search_leads","result":{...}}
 ```
+- `id` — unique identifier matching a `tool_call` to its `tool_result`
+- `name` — the tool name
+- `args` — input arguments as an object
+- `result` — the tool output (string or object)
+
 After a tool result, more `token` events follow with the AI's continuation.
 
-### 4. Input Request (optional)
+### 5. Input Request (optional)
 When the AI needs structured user input (e.g., a URL), it emits an input request instead of asking in plain text:
 ```
 data: {"type":"input_request","input_type":"url","label":"What's your brand URL?","placeholder":"https://yourbrand.com","field":"brand_url"}
 ```
 The frontend should render an appropriate input widget based on `input_type` (`url`, `text`, or `email`). When the user submits, send the value as a regular `/chat` message. The `field` key identifies what the input is for.
 
-### 5. Buttons (optional)
+### 6. Buttons (optional)
 AI-generated quick-reply buttons, sent after all tokens are done:
 ```
 data: {"type":"buttons","buttons":[{"label":"Send Cold Emails","value":"Send Cold Emails"}]}
 ```
 Buttons are extracted from the AI response when it ends with lines formatted as `- [Button Text]`. The button `label` and `value` are both set to the text inside the brackets. Button lines are stripped from the token stream to prevent duplication.
 
-### 6. Done
+### 7. Done
 ```
 data: "[DONE]"
 ```

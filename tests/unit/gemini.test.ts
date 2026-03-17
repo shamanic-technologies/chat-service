@@ -155,6 +155,174 @@ describe("sendFunctionResult", () => {
   });
 });
 
+describe("thinking events", () => {
+  it("yields thinking_start, thinking_delta, thinking_stop for thought parts", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { thought: true, text: "Let me think about this..." },
+                ],
+              },
+            },
+          ],
+        };
+        yield {
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { thought: true, text: "I should check the data." },
+                ],
+              },
+            },
+          ],
+        };
+        yield {
+          candidates: [
+            {
+              content: {
+                parts: [{ text: "Here is my response." }],
+              },
+            },
+          ],
+        };
+      })(),
+    );
+
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const events = [];
+    for await (const event of client.streamChat([], "hello")) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "thinking_start" },
+      { type: "thinking_delta", thinking: "Let me think about this..." },
+      { type: "thinking_delta", thinking: "I should check the data." },
+      { type: "thinking_stop" },
+      { type: "token", content: "Here is my response." },
+      { type: "done", usage: undefined },
+    ]);
+  });
+
+  it("closes thinking block at end of stream if still open", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          candidates: [
+            {
+              content: {
+                parts: [{ thought: true, text: "Thinking..." }],
+              },
+            },
+          ],
+        };
+      })(),
+    );
+
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const events = [];
+    for await (const event of client.streamChat([], "hello")) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "thinking_start" },
+      { type: "thinking_delta", thinking: "Thinking..." },
+      { type: "thinking_stop" },
+      { type: "done", usage: undefined },
+    ]);
+  });
+
+  it("emits no thinking events when no thought parts present", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          candidates: [
+            {
+              content: {
+                parts: [{ text: "Direct response." }],
+              },
+            },
+          ],
+        };
+      })(),
+    );
+
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const events = [];
+    for await (const event of client.streamChat([], "hello")) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "token", content: "Direct response." },
+      { type: "done", usage: undefined },
+    ]);
+  });
+
+  it("yields thinking events in sendFunctionResult too", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { thought: true, text: "Processing the result..." },
+                ],
+              },
+            },
+          ],
+        };
+        yield {
+          candidates: [
+            {
+              content: {
+                parts: [{ text: "Based on the tool result..." }],
+              },
+            },
+          ],
+        };
+      })(),
+    );
+
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const events = [];
+    for await (const event of client.sendFunctionResult(
+      [],
+      "tool",
+      { data: "ok" },
+    )) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: "thinking_start" },
+      { type: "thinking_delta", thinking: "Processing the result..." },
+      { type: "thinking_stop" },
+      { type: "token", content: "Based on the tool result..." },
+      { type: "done", usage: undefined },
+    ]);
+  });
+});
+
 describe("thoughtSignature preservation", () => {
   it("yields thoughtSignature from function call parts", async () => {
     mockGenerateContentStream.mockResolvedValue(

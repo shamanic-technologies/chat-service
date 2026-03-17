@@ -4,6 +4,11 @@ import type {
   SSETokenEvent,
   SSEButtonsEvent,
   SSEInputRequestEvent,
+  SSEThinkingStartEvent,
+  SSEThinkingDeltaEvent,
+  SSEThinkingStopEvent,
+  SSEToolCallEvent,
+  SSEToolResultEvent,
 } from "../../src/types.js";
 
 describe("types", () => {
@@ -58,5 +63,46 @@ describe("types", () => {
       field: "some_field",
     };
     expect(event.placeholder).toBeUndefined();
+  });
+
+  it("SSEThinkingStartEvent shape", () => {
+    const event: SSEThinkingStartEvent = { type: "thinking_start" };
+    expect(event.type).toBe("thinking_start");
+  });
+
+  it("SSEThinkingDeltaEvent shape", () => {
+    const event: SSEThinkingDeltaEvent = {
+      type: "thinking_delta",
+      thinking: "Let me analyze...",
+    };
+    expect(event.type).toBe("thinking_delta");
+    expect(event.thinking).toBe("Let me analyze...");
+  });
+
+  it("SSEThinkingStopEvent shape", () => {
+    const event: SSEThinkingStopEvent = { type: "thinking_stop" };
+    expect(event.type).toBe("thinking_stop");
+  });
+
+  it("SSEToolCallEvent includes id field", () => {
+    const event: SSEToolCallEvent = {
+      type: "tool_call",
+      id: "tc_abc-123",
+      name: "search_leads",
+      args: { query: "tech companies" },
+    };
+    expect(event.id).toBe("tc_abc-123");
+    expect(event.name).toBe("search_leads");
+  });
+
+  it("SSEToolResultEvent includes matching id field", () => {
+    const event: SSEToolResultEvent = {
+      type: "tool_result",
+      id: "tc_abc-123",
+      name: "search_leads",
+      result: { leads: [] },
+    };
+    expect(event.id).toBe("tc_abc-123");
+    expect(event.name).toBe("search_leads");
   });
 });
