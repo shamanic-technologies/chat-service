@@ -149,6 +149,7 @@ After a tool result, more `token` events follow with the AI's continuation.
 | `validate_workflow` | Validates a workflow's DAG structure via workflow-service `POST /workflows/{id}/validate` |
 | `get_prompt_template` | Retrieves a stored prompt template by type from content-generation `GET /prompts?type=...` |
 | `update_prompt_template` | Creates a new version of an existing prompt template via content-generation `PUT /prompts` (auto-versions: e.g. `cold-email` → `cold-email-v2`) |
+| `list_available_services` | Lists all available microservices and their API endpoints from api-registry `GET /llm-context`. Use before modifying DAGs to know valid `http.call` targets. |
 | `request_user_input` | Asks the user for structured input (see Input Request below) |
 
 **Native Gemini tools** (always enabled, invoked automatically by the model):
@@ -219,6 +220,8 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `WORKFLOW_SERVICE_API_KEY` | No | API key for workflow-service (built-in workflow tools fail if unset) |
 | `CONTENT_GENERATION_SERVICE_URL` | No | Content-generation service endpoint (default: `https://content-generation.distribute.you`) |
 | `CONTENT_GENERATION_SERVICE_API_KEY` | No | API key for content-generation service (get_prompt_template tool fails if unset) |
+| `API_REGISTRY_SERVICE_URL` | No | API registry service endpoint (default: `https://api-registry.distribute.you`) |
+| `API_REGISTRY_SERVICE_API_KEY` | No | API key for api-registry service (list_available_services tool fails if unset) |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
