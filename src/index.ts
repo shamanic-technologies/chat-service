@@ -24,6 +24,7 @@ import {
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { listAvailableServices } from "./lib/api-registry-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
+import { formatToolError } from "./lib/tool-errors.js";
 import { resolveKey, type ResolvedKey } from "./lib/key-client.js";
 import { ChatRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
@@ -612,11 +613,12 @@ app.post("/chat", requireAuth, async (req, res) => {
             await processStream(contStream, depth + 1);
             return; // Continuation handled the rest of the turn
           } catch (toolErr: unknown) {
-            const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
-            console.error(`Tool call ${call.name} failed:`, errMsg);
-            const errorContent = ` (Tool call failed: ${errMsg})`;
+            const rawMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
+            console.error(`Tool call ${call.name} failed:`, rawMsg);
+            const friendly = formatToolError(call.name, rawMsg);
+            const errorContent = ` (Tool call failed: ${friendly.error})`;
             fullResponse += errorContent;
-            sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result: { error: errMsg } });
+            sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result: friendly });
           }
         }
       }
