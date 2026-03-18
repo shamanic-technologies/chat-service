@@ -157,6 +157,10 @@ export function createGeminiClient({
       userMessage: string,
       tools?: FunctionDeclaration[],
     ): AsyncGenerator<GeminiEvent> {
+      // Gemini does not allow combining built-in tools (google_search, url_context)
+      // with function calling in the same request. Use function calling when we have
+      // tool declarations, otherwise enable google search + URL context.
+      const hasTools = tools && tools.length > 0;
       const response = await ai.models.generateContentStream({
         model,
         contents: [
@@ -165,12 +169,10 @@ export function createGeminiClient({
         ],
         config: {
           systemInstruction: systemPrompt,
-          tools: [
-            ...(tools?.length ? [{ functionDeclarations: tools }] : []),
-            { googleSearch: {} },
-            { urlContext: {} },
-          ],
-          toolConfig: tools?.length
+          tools: hasTools
+            ? [{ functionDeclarations: tools }]
+            : [{ googleSearch: {} }, { urlContext: {} }],
+          toolConfig: hasTools
             ? {
                 functionCallingConfig: {
                   mode: FunctionCallingConfigMode.AUTO,
@@ -253,6 +255,7 @@ export function createGeminiClient({
       result: unknown,
       tools?: FunctionDeclaration[],
     ): AsyncGenerator<GeminiEvent> {
+      const hasTools = tools && tools.length > 0;
       const response = await ai.models.generateContentStream({
         model,
         contents: [
@@ -271,12 +274,10 @@ export function createGeminiClient({
         ],
         config: {
           systemInstruction: systemPrompt,
-          tools: [
-            ...(tools?.length ? [{ functionDeclarations: tools }] : []),
-            { googleSearch: {} },
-            { urlContext: {} },
-          ],
-          toolConfig: tools?.length
+          tools: hasTools
+            ? [{ functionDeclarations: tools }]
+            : [{ googleSearch: {} }, { urlContext: {} }],
+          toolConfig: hasTools
             ? {
                 functionCallingConfig: {
                   mode: FunctionCallingConfigMode.AUTO,
