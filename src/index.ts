@@ -11,8 +11,10 @@ import {
   createGeminiClient,
   buildSystemPrompt,
   REQUEST_USER_INPUT_TOOL,
+  UPDATE_WORKFLOW_TOOL,
   type UsageMetadata,
 } from "./lib/gemini.js";
+import { updateWorkflow } from "./lib/workflow-client.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { resolveKey, decryptOrgKey, type ResolvedKey } from "./lib/key-client.js";
@@ -337,6 +339,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     const allTools = [
       ...(mcpConn?.tools ?? []),
       REQUEST_USER_INPUT_TOOL,
+      UPDATE_WORKFLOW_TOOL,
     ];
 
     const stream = gemini.streamChat(
@@ -376,9 +379,77 @@ app.post("/chat", requireAuth, async (req, res) => {
             label: args.label ?? "Please provide input",
             ...(args.placeholder ? { placeholder: args.placeholder } : {}),
             field: args.field ?? "input",
+            ...(args.value ? { value: args.value } : {}),
           });
           emittedInputRequest = true;
           break;
+        }
+
+        // Client-side tool: update workflow via workflow-service
+        if (call.name === "update_workflow") {
+          const args = (call.args as Record<string, unknown>) || {};
+          const workflowId = args.workflow_id as string;
+          const toolCallId = `tc_${crypto.randomUUID()}`;
+          sendSSE(res, {
+            type: "tool_call",
+            id: toolCallId,
+            name: call.name,
+            args: call.args,
+          });
+
+          const result = await updateWorkflow(
+            workflowId,
+            {
+              ...(args.name ? { name: args.name as string } : {}),
+              ...(args.description ? { description: args.description as string } : {}),
+              ...(args.tags ? { tags: args.tags as string[] } : {}),
+            },
+            {
+              orgId,
+              userId,
+              runId,
+              trackingHeaders,
+            },
+          );
+
+          toolCalls.push({ name: call.name, args: call.args, result });
+          sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result });
+
+          // Send result back to Gemini for continuation
+          const functionCallPart: Record<string, unknown> = {
+            functionCall: { name: call.name, args: call.args || {} },
+          };
+          if (call.thoughtSignature) {
+            functionCallPart.thoughtSignature = call.thoughtSignature;
+          }
+          const updatedHistory: Content[] = [
+            ...geminiHistory,
+            { role: "user", parts: [{ text: message.trim() }] },
+            {
+              role: "model",
+              parts: [functionCallPart as Part],
+            },
+          ];
+
+          const contStream = gemini.sendFunctionResult(
+            updatedHistory,
+            call.name,
+            result,
+            allTools,
+          );
+
+          for await (const contEvent of contStream) {
+            if (contEvent.type === "token") {
+              bufferToken(contEvent.content);
+            }
+            if (contEvent.type === "thinking_start" || contEvent.type === "thinking_delta" || contEvent.type === "thinking_stop") {
+              sendSSE(res, contEvent);
+            }
+            if (contEvent.type === "done") {
+              accumulateUsage(contEvent.usage);
+            }
+          }
+          continue;
         }
 
         if (!mcpConn) continue;

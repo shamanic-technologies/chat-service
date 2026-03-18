@@ -32,8 +32,42 @@ export const REQUEST_USER_INPUT_TOOL: FunctionDeclaration = {
         description:
           "A key identifying what this input is for, e.g. brand_url",
       },
+      value: {
+        type: Type.STRING,
+        description:
+          "Optional pre-filled value for the input field. When you already have a suggested value (e.g. a description you generated), set this so the user only has to confirm. Omit to leave the field empty.",
+      },
     },
     required: ["input_type", "label", "field"],
+  },
+};
+
+export const UPDATE_WORKFLOW_TOOL: FunctionDeclaration = {
+  name: "update_workflow",
+  description:
+    "Update an existing workflow's name, description, or tags. Use this to directly modify workflow metadata instead of asking the user to do it manually.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      workflow_id: {
+        type: Type.STRING,
+        description: "The UUID of the workflow to update",
+      },
+      name: {
+        type: Type.STRING,
+        description: "New name for the workflow (optional)",
+      },
+      description: {
+        type: Type.STRING,
+        description: "New description for the workflow (optional)",
+      },
+      tags: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: "New tags for the workflow (optional)",
+      },
+    },
+    required: ["workflow_id"],
   },
 };
 
