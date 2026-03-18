@@ -18,7 +18,8 @@ import {
   validateWorkflow,
   updateWorkflowNodeConfig,
   getWorkflow,
-  generateWorkflow,
+  getWorkflowRequiredProviders,
+  listWorkflows,
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { listAvailableServices } from "./lib/api-registry-client.js";
@@ -374,26 +375,6 @@ app.post("/chat", requireAuth, async (req, res) => {
         return { name: call.name, result };
       }
 
-      // Built-in workflow generate tool
-      if (call.name === "generate_workflow") {
-        const args = (call.args as Record<string, unknown>) || {};
-        const result = await generateWorkflow(
-          {
-            description: args.description as string,
-            hints: args.hints as { services?: string[]; nodeTypes?: string[]; expectedInputs?: string[] } | undefined,
-          },
-          {
-            orgId,
-            userId,
-            runId: runId!,
-            trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
-          },
-        );
-
-        toolCalls.push({ name: call.name, args, result });
-        return { name: call.name, result };
-      }
-
       // Built-in workflow tools
       if (call.name === "update_workflow" || call.name === "validate_workflow") {
         const wfParams = {
@@ -409,7 +390,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           const { workflowId, ...updateBody } = args;
           result = await updateWorkflow(
             workflowId as string,
-            updateBody as { name?: string; description?: string; tags?: string[] },
+            updateBody as import("./lib/workflow-client.js").UpdateWorkflowBody,
             wfParams,
           );
         } else {
@@ -418,6 +399,45 @@ app.post("/chat", requireAuth, async (req, res) => {
             wfParams,
           );
         }
+
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // Built-in workflow required providers tool
+      if (call.name === "get_workflow_required_providers") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await getWorkflowRequiredProviders(
+          args.workflowId as string,
+          {
+            orgId,
+            userId,
+            runId: runId!,
+            trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+          },
+        );
+
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // Built-in list workflows tool
+      if (call.name === "list_workflows") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await listWorkflows(
+          {
+            category: args.category as string | undefined,
+            channel: args.channel as string | undefined,
+            tags: args.tags as string[] | undefined,
+            search: args.search as string | undefined,
+          },
+          {
+            orgId,
+            userId,
+            runId: runId!,
+            trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+          },
+        );
 
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };

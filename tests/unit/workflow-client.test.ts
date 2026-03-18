@@ -370,3 +370,96 @@ describe("generateWorkflow", () => {
     expect(body.hints).toBeUndefined();
   });
 });
+
+describe("getWorkflowRequiredProviders", () => {
+  it("sends GET to /workflows/{id}/required-providers", async () => {
+    const mockProviders = { providers: ["stripe", "anthropic"] };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockProviders),
+    });
+
+    const { getWorkflowRequiredProviders } = await loadModule();
+    const result = await getWorkflowRequiredProviders("wf-1", {
+      orgId: "org-1",
+      userId: "user-1",
+      runId: "run-1",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://workflow.test.local/workflows/wf-1/required-providers",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          "x-api-key": "test-wf-key",
+          "x-org-id": "org-1",
+        }),
+      }),
+    );
+    expect(result).toEqual(mockProviders);
+  });
+
+  it("throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve("Not found"),
+    });
+
+    const { getWorkflowRequiredProviders } = await loadModule();
+    await expect(
+      getWorkflowRequiredProviders("wf-bad", { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 404/);
+  });
+});
+
+describe("listWorkflows", () => {
+  it("sends GET /workflows with query params", async () => {
+    const mockWorkflows = [{ id: "wf-1", name: "sales-email" }];
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockWorkflows),
+    });
+
+    const { listWorkflows } = await loadModule();
+    const result = await listWorkflows(
+      { category: "sales", channel: "email", tags: ["cold", "outreach"], search: "lead" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain("/workflows?");
+    expect(calledUrl).toContain("category=sales");
+    expect(calledUrl).toContain("channel=email");
+    expect(calledUrl).toContain("tags=cold");
+    expect(calledUrl).toContain("tags=outreach");
+    expect(calledUrl).toContain("search=lead");
+    expect(result).toEqual(mockWorkflows);
+  });
+
+  it("sends GET /workflows without query params when no filters", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([]),
+    });
+
+    const { listWorkflows } = await loadModule();
+    await listWorkflows({}, { orgId: "o", userId: "u", runId: "r" });
+
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toBe("https://workflow.test.local/workflows");
+  });
+
+  it("throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve("Server error"),
+    });
+
+    const { listWorkflows } = await loadModule();
+    await expect(
+      listWorkflows({ category: "sales" }, { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 500/);
+  });
+});

@@ -145,8 +145,9 @@ After a tool result, more `token` events follow with the AI's continuation.
 | Tool | Description |
 |---|---|
 | `get_workflow_details` | Fetches full workflow details (DAG, metadata, status) via workflow-service `GET /workflows/{id}` |
-| `generate_workflow` | Generates a new workflow from natural language description via workflow-service `POST /workflows/generate`. Auto-validates and deploys. |
-| `update_workflow` | Updates a workflow's metadata (name, description, tags) via workflow-service `PUT /workflows/{id}` |
+| `get_workflow_required_providers` | Returns BYOK providers needed to execute a workflow via `GET /workflows/{id}/required-providers`. Proactively warns about missing keys. |
+| `list_workflows` | Lists/searches workflows by category, channel, tags, or free-text search via `GET /workflows` |
+| `update_workflow` | Updates a workflow's metadata (name, description, tags) and/or DAG structure via workflow-service `PUT /workflows/{id}` |
 | `update_workflow_node_config` | Updates a specific node's config in a workflow's DAG (e.g. change prompt type on `email-generate` node). Fetches, merges, and saves. |
 | `validate_workflow` | Validates a workflow's DAG structure via workflow-service `POST /workflows/{id}/validate` |
 | `get_prompt_template` | Retrieves a stored prompt template by type from content-generation `GET /prompts?type=...` |

@@ -45,7 +45,7 @@ export const REQUEST_USER_INPUT_TOOL: FunctionDeclaration = {
 export const UPDATE_WORKFLOW_TOOL: FunctionDeclaration = {
   name: "update_workflow",
   description:
-    "Update a workflow's metadata (name, description, tags). Use this to directly modify a workflow when the user asks — do not use input_request to confirm values you already know.",
+    "Update a workflow's metadata (name, description, tags) and/or its DAG structure. Use this to directly modify a workflow when the user asks — do not use input_request to confirm values you already know. For structural changes (adding/removing nodes or edges), pass the full dag object.",
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -66,6 +66,11 @@ export const UPDATE_WORKFLOW_TOOL: FunctionDeclaration = {
         type: Type.ARRAY,
         items: { type: Type.STRING },
         description: "New tags for the workflow (optional)",
+      },
+      dag: {
+        type: Type.OBJECT,
+        description:
+          "Full DAG definition with nodes and edges. Use for structural changes like adding/removing nodes or edges. Must include the complete DAG — partial updates are not supported. Use get_workflow_details first to read the current DAG, then modify and pass the full result.",
       },
     },
     required: ["workflowId"],
@@ -210,6 +215,51 @@ export const GENERATE_WORKFLOW_TOOL: FunctionDeclaration = {
   },
 };
 
+export const GET_WORKFLOW_REQUIRED_PROVIDERS_TOOL: FunctionDeclaration = {
+  name: "get_workflow_required_providers",
+  description:
+    "Get the BYOK (Bring Your Own Key) providers required to execute a workflow. Returns which external API keys the user needs to configure before running the workflow (e.g. Stripe, Anthropic). Use this proactively to warn users about missing keys before they try to execute.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      workflowId: {
+        type: Type.STRING,
+        description:
+          "UUID of the workflow. If available in context, use it directly — do NOT ask the user for it.",
+      },
+    },
+    required: ["workflowId"],
+  },
+};
+
+export const LIST_WORKFLOWS_TOOL: FunctionDeclaration = {
+  name: "list_workflows",
+  description:
+    "List or search existing workflows. Use this when the user asks to see their workflows, find a specific workflow, or check if a workflow already exists for a given purpose.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      category: {
+        type: Type.STRING,
+        description: "Filter by category: 'sales' or 'pr' (optional)",
+      },
+      channel: {
+        type: Type.STRING,
+        description: "Filter by channel: 'email' (optional)",
+      },
+      tags: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: "Filter by tags (optional)",
+      },
+      search: {
+        type: Type.STRING,
+        description: "Free-text search across workflow names and descriptions (optional)",
+      },
+    },
+  },
+};
+
 export const BUILTIN_TOOLS: FunctionDeclaration[] = [
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
@@ -219,7 +269,8 @@ export const BUILTIN_TOOLS: FunctionDeclaration[] = [
   UPDATE_WORKFLOW_NODE_CONFIG_TOOL,
   LIST_AVAILABLE_SERVICES_TOOL,
   GET_WORKFLOW_DETAILS_TOOL,
-  GENERATE_WORKFLOW_TOOL,
+  GET_WORKFLOW_REQUIRED_PROVIDERS_TOOL,
+  LIST_WORKFLOWS_TOOL,
 ];
 
 export interface FunctionCall {
