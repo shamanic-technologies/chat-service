@@ -152,12 +152,20 @@ data: {"type":"tool_result","id":"tc_550e8400-e29b-41d4-a716-446655440000","name
 
 After a tool result, more `token` events follow with the AI's continuation.
 
+The service includes a built-in `update_workflow` tool that the AI can invoke to update workflow metadata (name, description, tags) directly via workflow-service, without requiring the user to type it manually.
+
 ### 5. Input Request (optional)
 When the AI needs structured user input (e.g., a URL), it emits an input request instead of asking in plain text:
 ```
 data: {"type":"input_request","input_type":"url","label":"What's your brand URL?","placeholder":"https://yourbrand.com","field":"brand_url"}
 ```
 The frontend should render an appropriate input widget based on `input_type` (`url`, `text`, or `email`). When the user submits, send the value as a regular `/chat` message. The `field` key identifies what the input is for.
+
+An optional `value` field can pre-fill the input when the AI already has a suggested value:
+```
+data: {"type":"input_request","input_type":"text","label":"New description","placeholder":"...","field":"new_description","value":"Automated cold email outreach campaign..."}
+```
+If `value` is present, the frontend should render the input pre-filled so the user can confirm with a single click. If absent, the field starts empty.
 
 ### 6. Buttons (optional)
 AI-generated quick-reply buttons, sent after all tokens are done:
@@ -199,6 +207,8 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |
 | `RUNS_SERVICE_URL` | No | RunsService endpoint (default: `https://runs.mcpfactory.org`) |
 | `RUNS_SERVICE_API_KEY` | No | API key for RunsService (runs tracking disabled if unset) |
+| `WORKFLOW_SERVICE_URL` | No | Workflow-service endpoint (default: `https://windmill.distribute.org`) |
+| `WORKFLOW_SERVICE_API_KEY` | No | API key for workflow-service (update_workflow tool disabled if unset) |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database

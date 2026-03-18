@@ -64,6 +64,21 @@ describe("types", () => {
       field: "some_field",
     };
     expect(event.placeholder).toBeUndefined();
+    expect(event.value).toBeUndefined();
+  });
+
+  it("SSEInputRequestEvent with pre-filled value", () => {
+    const event: SSEInputRequestEvent = {
+      type: "input_request",
+      input_type: "text",
+      label: "New description",
+      placeholder: "Enter description...",
+      field: "new_description",
+      value: "Automated cold email outreach campaign",
+    };
+    expect(event.type).toBe("input_request");
+    expect(event.value).toBe("Automated cold email outreach campaign");
+    expect(event.field).toBe("new_description");
   });
 
   it("SSEThinkingStartEvent shape", () => {

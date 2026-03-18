@@ -24,6 +24,7 @@ import {
   createGeminiClient,
   buildSystemPrompt,
   REQUEST_USER_INPUT_TOOL,
+  UPDATE_WORKFLOW_TOOL,
 } from "../../src/lib/gemini.js";
 
 const TEST_PROMPT = "You are a test assistant.";
@@ -504,6 +505,22 @@ describe("REQUEST_USER_INPUT_TOOL", () => {
     expect(props).toHaveProperty("label");
     expect(props).toHaveProperty("field");
     expect(props).toHaveProperty("placeholder");
+    expect(props).toHaveProperty("value");
     expect(params.required).toEqual(["input_type", "label", "field"]);
+  });
+});
+
+describe("UPDATE_WORKFLOW_TOOL", () => {
+  it("has correct name and required parameters", () => {
+    expect(UPDATE_WORKFLOW_TOOL.name).toBe("update_workflow");
+    expect(UPDATE_WORKFLOW_TOOL.parameters).toBeDefined();
+
+    const params = UPDATE_WORKFLOW_TOOL.parameters as Record<string, unknown>;
+    const props = params.properties as Record<string, unknown>;
+    expect(props).toHaveProperty("workflow_id");
+    expect(props).toHaveProperty("name");
+    expect(props).toHaveProperty("description");
+    expect(props).toHaveProperty("tags");
+    expect(params.required).toEqual(["workflow_id"]);
   });
 });

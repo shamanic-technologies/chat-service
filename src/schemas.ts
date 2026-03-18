@@ -335,6 +335,12 @@ const SSEInputRequestEventSchema = z
       description: "Identifier for what the input represents",
       example: "brand_url",
     }),
+    value: z.string().optional().openapi({
+      description:
+        "Pre-filled value for the input field. When present, the frontend renders the field " +
+        "already populated so the user can confirm with a single click. When absent, the field is empty.",
+      example: "Automated cold email outreach campaign targeting SaaS founders",
+    }),
   })
   .openapi("SSEInputRequestEvent");
 

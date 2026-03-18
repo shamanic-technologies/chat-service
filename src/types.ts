@@ -49,6 +49,7 @@ export interface SSEInputRequestEvent {
   label: string;
   placeholder?: string;
   field: string;
+  value?: string;
 }
 
 export interface SSEErrorEvent {
