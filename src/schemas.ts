@@ -85,6 +85,7 @@ export const AppConfigRequestSchema = z
   .object({
     systemPrompt: z.string().min(1, "systemPrompt is required"),
   })
+  .strict()
   .openapi("AppConfigRequest");
 
 export const AppConfigResponseSchema = z
@@ -151,6 +152,7 @@ export const PlatformConfigRequestSchema = z
   .object({
     systemPrompt: z.string().min(1, "systemPrompt is required"),
   })
+  .strict()
   .openapi("PlatformConfigRequest");
 
 export const PlatformConfigResponseSchema = z
