@@ -11,7 +11,7 @@ import {
 export const REQUEST_USER_INPUT_TOOL: FunctionDeclaration = {
   name: "request_user_input",
   description:
-    "Ask the user for structured input via a frontend widget. Use this instead of asking in plain text when you need a specific data type like a URL, email, or text field.",
+    "Ask the user for structured input via a frontend widget. ONLY use this when you genuinely need information that you do not already have — check your context and conversation history first. NEVER use this for confirmations, yes/no questions, or to echo back values the user already provided. If the user confirms an action (e.g. says 'yes' or 'go ahead'), execute the action directly using the appropriate tool instead of sending another form.",
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -45,21 +45,22 @@ export const REQUEST_USER_INPUT_TOOL: FunctionDeclaration = {
 export const UPDATE_WORKFLOW_TOOL: FunctionDeclaration = {
   name: "update_workflow",
   description:
-    "Update an existing workflow's name, description, or tags. Use this to directly modify workflow metadata instead of asking the user to do it manually.",
+    "Update a workflow's metadata (name, description, tags). Use this to directly modify a workflow when the user asks — do not use input_request to confirm values you already know.",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      workflow_id: {
+      workflowId: {
         type: Type.STRING,
-        description: "The UUID of the workflow to update",
+        description:
+          "UUID of the workflow to update. If available in context, use it directly — do NOT ask the user for it.",
       },
       name: {
         type: Type.STRING,
-        description: "New name for the workflow (optional)",
+        description: "New workflow name (optional)",
       },
       description: {
         type: Type.STRING,
-        description: "New description for the workflow (optional)",
+        description: "New workflow description (optional)",
       },
       tags: {
         type: Type.ARRAY,
@@ -67,9 +68,32 @@ export const UPDATE_WORKFLOW_TOOL: FunctionDeclaration = {
         description: "New tags for the workflow (optional)",
       },
     },
-    required: ["workflow_id"],
+    required: ["workflowId"],
   },
 };
+
+export const VALIDATE_WORKFLOW_TOOL: FunctionDeclaration = {
+  name: "validate_workflow",
+  description:
+    "Validate a workflow's DAG structure. Returns whether the workflow is valid and any errors found. Use this when the user asks to check or validate a workflow.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      workflowId: {
+        type: Type.STRING,
+        description:
+          "UUID of the workflow to validate. If available in context, use it directly — do NOT ask the user for it.",
+      },
+    },
+    required: ["workflowId"],
+  },
+};
+
+export const BUILTIN_TOOLS: FunctionDeclaration[] = [
+  REQUEST_USER_INPUT_TOOL,
+  UPDATE_WORKFLOW_TOOL,
+  VALIDATE_WORKFLOW_TOOL,
+];
 
 export interface FunctionCall {
   name: string;
@@ -102,7 +126,19 @@ export function buildSystemPrompt(
   context?: Record<string, unknown>,
 ): string {
   if (!context || Object.keys(context).length === 0) return basePrompt;
-  return `${basePrompt}\n\n---\n## Additional Context (this request only)\n${JSON.stringify(context, null, 2)}`;
+
+  const contextKeys = Object.keys(context);
+  const contextInstructions = [
+    `\n\n---\n## Additional Context (this request only)`,
+    JSON.stringify(context, null, 2),
+    `\n## IMPORTANT: Context Usage Rules`,
+    `The values above (${contextKeys.join(", ")}) are already known — use them directly when calling tools.`,
+    `Do NOT call request_user_input to ask for any value that is already present in this context.`,
+    `For example, if workflowId is in context and you need to update or validate the workflow, pass it directly to the tool.`,
+    `Only use request_user_input when you genuinely need information that is NOT available in context or conversation history.`,
+  ].join("\n");
+
+  return `${basePrompt}${contextInstructions}`;
 }
 
 export function createGeminiClient({

@@ -152,10 +152,18 @@ data: {"type":"tool_result","id":"tc_550e8400-e29b-41d4-a716-446655440000","name
 
 After a tool result, more `token` events follow with the AI's continuation.
 
-The service includes a built-in `update_workflow` tool that the AI can invoke to update workflow metadata (name, description, tags) directly via workflow-service, without requiring the user to type it manually.
+**Built-in tools** (always available, no MCP server needed):
+
+| Tool | Description |
+|---|---|
+| `update_workflow` | Updates a workflow's metadata (name, description, tags) via workflow-service `PUT /workflows/{id}` |
+| `validate_workflow` | Validates a workflow's DAG structure via workflow-service `POST /workflows/{id}/validate` |
+| `request_user_input` | Asks the user for structured input (see Input Request below) |
+
+Built-in tools emit `tool_call` and `tool_result` events like MCP tools. The frontend should render them the same way (e.g., collapsible tool call blocks).
 
 ### 5. Input Request (optional)
-When the AI needs structured user input (e.g., a URL), it emits an input request instead of asking in plain text:
+When the AI genuinely needs information it does not have, it emits an input request:
 ```
 data: {"type":"input_request","input_type":"url","label":"What's your brand URL?","placeholder":"https://yourbrand.com","field":"brand_url"}
 ```
@@ -166,6 +174,8 @@ An optional `value` field can pre-fill the input when the AI already has a sugge
 data: {"type":"input_request","input_type":"text","label":"New description","placeholder":"...","field":"new_description","value":"Automated cold email outreach campaign..."}
 ```
 If `value` is present, the frontend should render the input pre-filled so the user can confirm with a single click. If absent, the field starts empty.
+
+**Note:** The AI is instructed to only use `input_request` when it genuinely lacks information. Values already present in the `context` parameter or conversation history are used directly — the AI will not re-ask for them.
 
 ### 6. Buttons (optional)
 AI-generated quick-reply buttons, sent after all tokens are done:
@@ -207,8 +217,8 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |
 | `RUNS_SERVICE_URL` | No | RunsService endpoint (default: `https://runs.mcpfactory.org`) |
 | `RUNS_SERVICE_API_KEY` | No | API key for RunsService (runs tracking disabled if unset) |
-| `WORKFLOW_SERVICE_URL` | No | Workflow-service endpoint (default: `https://windmill.distribute.org`) |
-| `WORKFLOW_SERVICE_API_KEY` | No | API key for workflow-service (update_workflow tool disabled if unset) |
+| `WORKFLOW_SERVICE_URL` | No | Workflow-service endpoint (default: `https://workflow.mcpfactory.org`) |
+| `WORKFLOW_SERVICE_API_KEY` | No | API key for workflow-service (built-in workflow tools fail if unset) |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
@@ -275,10 +285,11 @@ src/
     index.ts        # Drizzle client init
     schema.ts       # sessions + messages + app_configs + platform_configs table definitions
   lib/
-    gemini.ts       # Gemini AI client, streaming + function calling, buildSystemPrompt helper
-    mcp-client.ts   # MCP server connection via Streamable HTTP transport + tool execution
-    key-client.ts   # Key-service client for resolving Gemini keys (platform or BYOK per org) and org MCP keys
-    runs-client.ts  # RunsService HTTP client for run tracking and cost reporting
+    gemini.ts          # Gemini AI client, streaming + function calling, buildSystemPrompt helper, built-in tool declarations
+    mcp-client.ts      # MCP server connection via Streamable HTTP transport + tool execution
+    key-client.ts      # Key-service client for resolving Gemini keys (platform or BYOK per org) and org MCP keys
+    runs-client.ts     # RunsService HTTP client for run tracking and cost reporting
+    workflow-client.ts # Workflow-service client for update_workflow and validate_workflow built-in tools
 scripts/
   generate-openapi.ts  # Generates openapi.json from zod schemas via OpenApiGeneratorV3
 ```

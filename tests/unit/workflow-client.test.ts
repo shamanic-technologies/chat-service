@@ -1,143 +1,176 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// Store original env
 const originalEnv = { ...process.env };
 
+beforeEach(() => {
+  process.env.WORKFLOW_SERVICE_API_KEY = "test-wf-key";
+  process.env.WORKFLOW_SERVICE_URL = "https://workflow.test.local";
+  vi.stubGlobal("fetch", vi.fn());
+});
+
+afterEach(() => {
+  process.env = { ...originalEnv };
+  vi.restoreAllMocks();
+});
+
+async function loadModule() {
+  vi.resetModules();
+  return import("../../src/lib/workflow-client.js");
+}
+
 describe("updateWorkflow", () => {
-  let fetchSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    process.env.WORKFLOW_SERVICE_URL = "https://test-workflow.example.com";
-    process.env.WORKFLOW_SERVICE_API_KEY = "test-api-key";
-    fetchSpy = vi.spyOn(globalThis, "fetch");
-  });
-
-  afterEach(() => {
-    process.env = { ...originalEnv };
-    vi.restoreAllMocks();
-    vi.resetModules();
-  });
-
-  async function loadModule() {
-    return import("../../src/lib/workflow-client.js");
-  }
-
-  it("sends PUT request with correct headers and body", async () => {
-    fetchSpy.mockResolvedValue(
-      new Response(JSON.stringify({ id: "wf-123", name: "Updated" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
+  it("sends PUT with correct URL, headers, and body", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: "wf-123", description: "Updated" }),
+    });
 
     const { updateWorkflow } = await loadModule();
     const result = await updateWorkflow(
       "wf-123",
-      { name: "New Name", description: "New desc" },
+      { description: "Updated description" },
       { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
 
-    expect(result.success).toBe(true);
-    expect(result.data).toEqual({ id: "wf-123", name: "Updated" });
-
-    expect(fetchSpy).toHaveBeenCalledWith(
-      "https://test-workflow.example.com/workflows/wf-123",
+    expect(fetch).toHaveBeenCalledWith(
+      "https://workflow.test.local/workflows/wf-123",
       expect.objectContaining({
         method: "PUT",
-        body: JSON.stringify({ name: "New Name", description: "New desc" }),
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          "x-api-key": "test-wf-key",
+          "x-org-id": "org-1",
+          "x-user-id": "user-1",
+          "x-run-id": "run-1",
+        }),
+        body: JSON.stringify({ description: "Updated description" }),
       }),
     );
-
-    const callHeaders = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
-    expect(callHeaders["x-api-key"]).toBe("test-api-key");
-    expect(callHeaders["x-org-id"]).toBe("org-1");
-    expect(callHeaders["x-user-id"]).toBe("user-1");
-    expect(callHeaders["x-run-id"]).toBe("run-1");
+    expect(result).toEqual({ id: "wf-123", description: "Updated" });
   });
 
-  it("forwards tracking headers", async () => {
-    fetchSpy.mockResolvedValue(
-      new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
-    );
+  it("always sends x-run-id header (regression: workflow-service 400)", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: "wf-123" }),
+    });
 
     const { updateWorkflow } = await loadModule();
     await updateWorkflow(
       "wf-123",
-      { tags: ["email", "outreach"] },
+      { name: "test" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    const callHeaders = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
+    expect(callHeaders["x-run-id"]).toBe("run-1");
+    expect(callHeaders["x-org-id"]).toBe("org-1");
+    expect(callHeaders["x-user-id"]).toBe("user-1");
+    expect(callHeaders["x-api-key"]).toBe("test-wf-key");
+  });
+
+  it("forwards tracking headers", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: "wf-123" }),
+    });
+
+    const { updateWorkflow } = await loadModule();
+    await updateWorkflow(
+      "wf-123",
+      { name: "new-name" },
       {
         orgId: "org-1",
         userId: "user-1",
         runId: "run-1",
-        trackingHeaders: { "x-campaign-id": "camp-1", "x-brand-id": "brand-1" },
+        trackingHeaders: { "x-campaign-id": "camp-1" },
       },
     );
 
-    const callHeaders = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
+    const callHeaders = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
     expect(callHeaders["x-campaign-id"]).toBe("camp-1");
-    expect(callHeaders["x-brand-id"]).toBe("brand-1");
   });
 
-  it("returns error when API key is not configured", async () => {
+  it("throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve("Not found"),
+    });
+
+    const { updateWorkflow } = await loadModule();
+    await expect(
+      updateWorkflow("wf-bad", { description: "x" }, { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 404/);
+  });
+
+  it("throws when WORKFLOW_SERVICE_API_KEY is not set", async () => {
     delete process.env.WORKFLOW_SERVICE_API_KEY;
 
     const { updateWorkflow } = await loadModule();
-    const result = await updateWorkflow(
-      "wf-123",
-      { name: "test" },
-      { orgId: "org-1", userId: "user-1", runId: "run-1" },
-    );
+    await expect(
+      updateWorkflow("wf-1", { description: "x" }, { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/WORKFLOW_SERVICE_API_KEY is required/);
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("WORKFLOW_SERVICE_API_KEY not configured");
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("validateWorkflow", () => {
+  it("sends POST with correct URL and headers", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ valid: true, errors: [] }),
+    });
+
+    const { validateWorkflow } = await loadModule();
+    const result = await validateWorkflow("wf-456", {
+      orgId: "org-1",
+      userId: "user-1",
+      runId: "run-1",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://workflow.test.local/workflows/wf-456/validate",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "x-api-key": "test-wf-key",
+          "x-org-id": "org-1",
+          "x-user-id": "user-1",
+          "x-run-id": "run-1",
+        }),
+      }),
+    );
+    expect(result).toEqual({ valid: true, errors: [] });
   });
 
-  it("returns error on non-ok response", async () => {
-    fetchSpy.mockResolvedValue(
-      new Response("Not Found", { status: 404 }),
-    );
+  it("throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve("Internal error"),
+    });
 
-    const { updateWorkflow } = await loadModule();
-    const result = await updateWorkflow(
-      "wf-999",
-      { name: "test" },
-      { orgId: "org-1", userId: "user-1", runId: "run-1" },
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("404");
+    const { validateWorkflow } = await loadModule();
+    await expect(
+      validateWorkflow("wf-bad", { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 500/);
   });
 
-  it("always sends x-run-id header (regression: workflow-service 400)", async () => {
-    fetchSpy.mockResolvedValue(
-      new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
+  it("uses default WORKFLOW_SERVICE_URL when not set", async () => {
+    delete process.env.WORKFLOW_SERVICE_URL;
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ valid: true }),
+    });
+
+    const { validateWorkflow } = await loadModule();
+    await validateWorkflow("wf-1", { orgId: "o", userId: "u", runId: "r" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://workflow.mcpfactory.org/workflows/wf-1/validate",
+      expect.anything(),
     );
-
-    const { updateWorkflow } = await loadModule();
-    await updateWorkflow(
-      "wf-123",
-      { name: "test" },
-      { orgId: "org-1", userId: "user-1", runId: "run-1" },
-    );
-
-    const callHeaders = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
-    expect(callHeaders["x-run-id"]).toBe("run-1");
-    expect(callHeaders["x-org-id"]).toBe("org-1");
-    expect(callHeaders["x-user-id"]).toBe("user-1");
-    expect(callHeaders["x-api-key"]).toBe("test-api-key");
-  });
-
-  it("returns error on network failure", async () => {
-    fetchSpy.mockRejectedValue(new Error("Connection refused"));
-
-    const { updateWorkflow } = await loadModule();
-    const result = await updateWorkflow(
-      "wf-123",
-      { name: "test" },
-      { orgId: "org-1", userId: "user-1", runId: "run-1" },
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain("Connection refused");
   });
 });

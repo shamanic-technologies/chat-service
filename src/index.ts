@@ -10,11 +10,13 @@ import { eq, and } from "drizzle-orm";
 import {
   createGeminiClient,
   buildSystemPrompt,
-  REQUEST_USER_INPUT_TOOL,
-  UPDATE_WORKFLOW_TOOL,
+  BUILTIN_TOOLS,
   type UsageMetadata,
 } from "./lib/gemini.js";
-import { updateWorkflow } from "./lib/workflow-client.js";
+import {
+  updateWorkflow,
+  validateWorkflow,
+} from "./lib/workflow-client.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { resolveKey, decryptOrgKey, type ResolvedKey } from "./lib/key-client.js";
@@ -335,11 +337,10 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
 
-    // Merge MCP tools with local client-side tools
+    // Merge MCP tools with built-in tools
     const allTools = [
       ...(mcpConn?.tools ?? []),
-      REQUEST_USER_INPUT_TOOL,
-      UPDATE_WORKFLOW_TOOL,
+      ...BUILTIN_TOOLS,
     ];
 
     const stream = gemini.streamChat(
@@ -385,10 +386,8 @@ app.post("/chat", requireAuth, async (req, res) => {
           break;
         }
 
-        // Client-side tool: update workflow via workflow-service
-        if (call.name === "update_workflow") {
-          const args = (call.args as Record<string, unknown>) || {};
-          const workflowId = args.workflow_id as string;
+        // Built-in workflow tools: execute directly via workflow-service
+        if (call.name === "update_workflow" || call.name === "validate_workflow") {
           const toolCallId = `tc_${crypto.randomUUID()}`;
           sendSSE(res, {
             type: "tool_call",
@@ -397,57 +396,73 @@ app.post("/chat", requireAuth, async (req, res) => {
             args: call.args,
           });
 
-          const result = await updateWorkflow(
-            workflowId,
-            {
-              ...(args.name ? { name: args.name as string } : {}),
-              ...(args.description ? { description: args.description as string } : {}),
-              ...(args.tags ? { tags: args.tags as string[] } : {}),
-            },
-            {
+          try {
+            const wfParams = {
               orgId,
               userId,
               runId: runId ?? callerRunId,
-              trackingHeaders,
-            },
-          );
+              trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+            };
+            const args = (call.args as Record<string, unknown>) || {};
+            let result: unknown;
 
-          toolCalls.push({ name: call.name, args: call.args, result });
-          sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result });
-
-          // Send result back to Gemini for continuation
-          const functionCallPart: Record<string, unknown> = {
-            functionCall: { name: call.name, args: call.args || {} },
-          };
-          if (call.thoughtSignature) {
-            functionCallPart.thoughtSignature = call.thoughtSignature;
-          }
-          const updatedHistory: Content[] = [
-            ...geminiHistory,
-            { role: "user", parts: [{ text: message.trim() }] },
-            {
-              role: "model",
-              parts: [functionCallPart as Part],
-            },
-          ];
-
-          const contStream = gemini.sendFunctionResult(
-            updatedHistory,
-            call.name,
-            result,
-            allTools,
-          );
-
-          for await (const contEvent of contStream) {
-            if (contEvent.type === "token") {
-              bufferToken(contEvent.content);
+            if (call.name === "update_workflow") {
+              const { workflowId, ...updateBody } = args;
+              result = await updateWorkflow(
+                workflowId as string,
+                updateBody as { name?: string; description?: string; tags?: string[] },
+                wfParams,
+              );
+            } else {
+              result = await validateWorkflow(
+                args.workflowId as string,
+                wfParams,
+              );
             }
-            if (contEvent.type === "thinking_start" || contEvent.type === "thinking_delta" || contEvent.type === "thinking_stop") {
-              sendSSE(res, contEvent);
+
+            toolCalls.push({ name: call.name, args, result });
+            sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result });
+
+            // Continue conversation with tool result
+            const functionCallPart: Record<string, unknown> = {
+              functionCall: { name: call.name, args: call.args || {} },
+            };
+            if (call.thoughtSignature) {
+              functionCallPart.thoughtSignature = call.thoughtSignature;
             }
-            if (contEvent.type === "done") {
-              accumulateUsage(contEvent.usage);
+            const updatedHistory: Content[] = [
+              ...geminiHistory,
+              { role: "user", parts: [{ text: message.trim() }] },
+              {
+                role: "model",
+                parts: [functionCallPart as Part],
+              },
+            ];
+
+            const contStream = gemini.sendFunctionResult(
+              updatedHistory,
+              call.name,
+              result,
+              allTools,
+            );
+
+            for await (const contEvent of contStream) {
+              if (contEvent.type === "token") {
+                bufferToken(contEvent.content);
+              }
+              if (contEvent.type === "thinking_start" || contEvent.type === "thinking_delta" || contEvent.type === "thinking_stop") {
+                sendSSE(res, contEvent);
+              }
+              if (contEvent.type === "done") {
+                accumulateUsage(contEvent.usage);
+              }
             }
+          } catch (toolErr: unknown) {
+            const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
+            console.error(`Built-in tool ${call.name} failed:`, errMsg);
+            const errorContent = ` (Tool call failed: ${errMsg})`;
+            fullResponse += errorContent;
+            sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result: { error: errMsg } });
           }
           continue;
         }
