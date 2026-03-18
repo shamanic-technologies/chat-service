@@ -19,6 +19,7 @@ export interface KeyResolutionParams {
   provider: string;
   orgId: string;
   userId: string;
+  runId: string;
   caller: CallerInfo;
   trackingHeaders?: TrackingHeaders;
 }
@@ -38,13 +39,14 @@ export async function resolveKey(
     );
   }
 
-  const { provider, orgId, userId, caller, trackingHeaders } = params;
+  const { provider, orgId, userId, runId, caller, trackingHeaders } = params;
   const url = `${KEY_SERVICE_URL}/keys/${encodeURIComponent(provider)}/decrypt`;
 
   const headers: Record<string, string> = {
     "x-api-key": KEY_SERVICE_API_KEY,
     "x-org-id": orgId,
     "x-user-id": userId,
+    "x-run-id": runId,
     "X-Caller-Service": CALLER_SERVICE,
     "X-Caller-Method": caller.method,
     "X-Caller-Path": caller.path,

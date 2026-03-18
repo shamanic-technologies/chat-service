@@ -184,6 +184,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       provider: "gemini",
       orgId,
       userId,
+      runId: callerRunId,
       caller: { method: "POST", path: "/chat" },
       trackingHeaders,
     });
@@ -278,6 +279,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           provider: appConfig.mcpKeyName,
           orgId,
           userId,
+          runId,
           caller: { method: "POST", path: "/chat" },
           trackingHeaders,
         });
