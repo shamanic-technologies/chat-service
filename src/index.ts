@@ -616,9 +616,44 @@ app.post("/chat", requireAuth, async (req, res) => {
             const rawMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
             console.error(`Tool call ${call.name} failed:`, rawMsg);
             const friendly = formatToolError(call.name, rawMsg);
-            const errorContent = ` (Tool call failed: ${friendly.error})`;
-            fullResponse += errorContent;
             sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result: friendly });
+
+            // Feed the error back to Gemini so it can self-correct
+            if (depth < MAX_TOOL_CHAIN_DEPTH) {
+              const functionCallPart: Record<string, unknown> = {
+                functionCall: { name: call.name, args: call.args || {} },
+              };
+              if (call.thoughtSignature) {
+                functionCallPart.thoughtSignature = call.thoughtSignature;
+              }
+
+              turnParts.push({
+                role: "model",
+                parts: [functionCallPart as Part],
+              });
+
+              const contStream = gemini.sendFunctionResult(
+                [...geminiHistory, { role: "user", parts: [{ text: message.trim() }] }, ...turnParts],
+                call.name,
+                friendly,
+                allTools,
+              );
+
+              turnParts.push({
+                role: "user",
+                parts: [
+                  {
+                    functionResponse: {
+                      name: call.name,
+                      response: { result: friendly },
+                    },
+                  } as Part,
+                ],
+              });
+
+              await processStream(contStream, depth + 1);
+              return;
+            }
           }
         }
       }
