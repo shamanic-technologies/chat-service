@@ -9,6 +9,7 @@ import type {
   SSEThinkingStopEvent,
   SSEToolCallEvent,
   SSEToolResultEvent,
+  SSEErrorEvent,
 } from "../../src/types.js";
 
 describe("types", () => {
@@ -104,5 +105,14 @@ describe("types", () => {
     };
     expect(event.id).toBe("tc_abc-123");
     expect(event.name).toBe("search_leads");
+  });
+
+  it("SSEErrorEvent shape", () => {
+    const event: SSEErrorEvent = {
+      type: "error",
+      message: "The AI model returned an empty response.",
+    };
+    expect(event.type).toBe("error");
+    expect(event.message).toBe("The AI model returned an empty response.");
   });
 });

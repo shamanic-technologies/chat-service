@@ -355,6 +355,18 @@ const SSEButtonsEventSchema = z
   })
   .openapi("SSEButtonsEvent");
 
+const SSEErrorEventSchema = z
+  .object({
+    type: z.literal("error"),
+    message: z.string().openapi({
+      description:
+        "Human-readable error message explaining what went wrong",
+      example:
+        "The AI model returned an empty response. This may happen when the conversation is too long or the message content triggers a safety filter.",
+    }),
+  })
+  .openapi("SSEErrorEvent");
+
 // Register all SSE event schemas so they appear in the OpenAPI components
 registry.register("SSESessionEvent", SSESessionEventSchema);
 registry.register("SSETokenEvent", SSETokenEventSchema);
@@ -365,6 +377,7 @@ registry.register("SSEToolCallEvent", SSEToolCallEventSchema);
 registry.register("SSEToolResultEvent", SSEToolResultEventSchema);
 registry.register("SSEInputRequestEvent", SSEInputRequestEventSchema);
 registry.register("SSEButtonsEvent", SSEButtonsEventSchema);
+registry.register("SSEErrorEvent", SSEErrorEventSchema);
 
 registry.registerPath({
   method: "post",
@@ -387,9 +400,10 @@ Each \`data:\` line contains a JSON object. Events arrive in this order:
 4. **Tool calls** _(optional, repeatable)_ — \`tool_call\` followed by \`tool_result\`, then more thinking/tokens as the AI continues.
 5. **Input request** _(optional)_ — \`input_request\` when the AI needs structured user input (terminates the response).
 6. **Buttons** _(optional)_ — \`{"type":"buttons","buttons":[...]}\` with quick-reply options, sent after all tokens.
-7. **Done** — \`"[DONE]"\` (always last).
+7. **Error** _(optional)_ — \`{"type":"error","message":"..."}\` if the AI model returns an empty response (context overflow, safety filter) or an unexpected error occurs. Sent before \`[DONE]\`.
+8. **Done** — \`"[DONE]"\` (always last).
 
-See the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent) in components/schemas for exact payload shapes.
+See the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent, SSEErrorEvent) in components/schemas for exact payload shapes.
 
 Requires app config to be registered first via PUT /config (or platform config via PUT /platform-config as fallback).`,
   request: {
@@ -418,7 +432,7 @@ Requires app config to be registered first via PUT /config (or platform config v
       description:
         "SSE stream of chat events. Each `data:` line is a JSON object matching one of the SSE event schemas " +
         "(SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, " +
-        'SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent), except the final `data: "[DONE]"` which is a plain string.',
+        'SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent, SSEErrorEvent), except the final `data: "[DONE]"` which is a plain string.',
       content: {
         "text/event-stream": {
           schema: z.string(),

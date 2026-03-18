@@ -235,6 +235,26 @@
           "buttons"
         ]
       },
+      "SSEErrorEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "error"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error message explaining what went wrong",
+            "example": "The AI model returned an empty response. This may happen when the conversation is too long or the message content triggers a safety filter."
+          }
+        },
+        "required": [
+          "type",
+          "message"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -662,7 +682,7 @@
           "Chat"
         ],
         "summary": "Stream AI chat response",
-        "description": "Send a message and receive a streamed AI response via Server-Sent Events (SSE).\n\n**Session lifecycle:**\n- To start a new conversation, omit `sessionId`. The first SSE event will be `{\"sessionId\":\"<uuid>\"}` — store this ID.\n- To continue a conversation, pass that `sessionId` in subsequent requests.\n- If a provided `sessionId` does not exist or belongs to a different org, the stream returns an error and closes.\n\n**SSE event order:**\nEach `data:` line contains a JSON object. Events arrive in this order:\n\n1. **Session** — `{\"sessionId\":\"<uuid>\"}` (always first)\n2. **Thinking** _(optional)_ — `thinking_start` → one or more `thinking_delta` → `thinking_stop`. May appear before tokens and after tool results.\n3. **Tokens** — `{\"type\":\"token\",\"content\":\"...\"}` streamed incrementally as the AI generates text.\n4. **Tool calls** _(optional, repeatable)_ — `tool_call` followed by `tool_result`, then more thinking/tokens as the AI continues.\n5. **Input request** _(optional)_ — `input_request` when the AI needs structured user input (terminates the response).\n6. **Buttons** _(optional)_ — `{\"type\":\"buttons\",\"buttons\":[...]}` with quick-reply options, sent after all tokens.\n7. **Done** — `\"[DONE]\"` (always last).\n\nSee the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent) in components/schemas for exact payload shapes.\n\nRequires app config to be registered first via PUT /config (or platform config via PUT /platform-config as fallback).",
+        "description": "Send a message and receive a streamed AI response via Server-Sent Events (SSE).\n\n**Session lifecycle:**\n- To start a new conversation, omit `sessionId`. The first SSE event will be `{\"sessionId\":\"<uuid>\"}` — store this ID.\n- To continue a conversation, pass that `sessionId` in subsequent requests.\n- If a provided `sessionId` does not exist or belongs to a different org, the stream returns an error and closes.\n\n**SSE event order:**\nEach `data:` line contains a JSON object. Events arrive in this order:\n\n1. **Session** — `{\"sessionId\":\"<uuid>\"}` (always first)\n2. **Thinking** _(optional)_ — `thinking_start` → one or more `thinking_delta` → `thinking_stop`. May appear before tokens and after tool results.\n3. **Tokens** — `{\"type\":\"token\",\"content\":\"...\"}` streamed incrementally as the AI generates text.\n4. **Tool calls** _(optional, repeatable)_ — `tool_call` followed by `tool_result`, then more thinking/tokens as the AI continues.\n5. **Input request** _(optional)_ — `input_request` when the AI needs structured user input (terminates the response).\n6. **Buttons** _(optional)_ — `{\"type\":\"buttons\",\"buttons\":[...]}` with quick-reply options, sent after all tokens.\n7. **Error** _(optional)_ — `{\"type\":\"error\",\"message\":\"...\"}` if the AI model returns an empty response (context overflow, safety filter) or an unexpected error occurs. Sent before `[DONE]`.\n8. **Done** — `\"[DONE]\"` (always last).\n\nSee the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent, SSEErrorEvent) in components/schemas for exact payload shapes.\n\nRequires app config to be registered first via PUT /config (or platform config via PUT /platform-config as fallback).",
         "parameters": [
           {
             "schema": {
@@ -747,7 +767,7 @@
         },
         "responses": {
           "200": {
-            "description": "SSE stream of chat events. Each `data:` line is a JSON object matching one of the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent), except the final `data: \"[DONE]\"` which is a plain string.",
+            "description": "SSE stream of chat events. Each `data:` line is a JSON object matching one of the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent, SSEErrorEvent), except the final `data: \"[DONE]\"` which is a plain string.",
             "content": {
               "text/event-stream": {
                 "schema": {

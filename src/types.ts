@@ -51,6 +51,11 @@ export interface SSEInputRequestEvent {
   field: string;
 }
 
+export interface SSEErrorEvent {
+  type: "error";
+  message: string;
+}
+
 export interface SSESessionEvent {
   sessionId: string;
 }
@@ -64,6 +69,7 @@ export type SSEEvent =
   | SSEToolCallEvent
   | SSEToolResultEvent
   | SSEInputRequestEvent
+  | SSEErrorEvent
   | SSESessionEvent;
 
 export interface GeminiTool {
