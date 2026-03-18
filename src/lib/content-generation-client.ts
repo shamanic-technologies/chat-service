@@ -52,3 +52,49 @@ export async function getPromptTemplate(
 
   return (await res.json()) as PromptTemplate;
 }
+
+export interface UpdatePromptBody {
+  sourceType: string;
+  prompt: string;
+  variables: string[];
+}
+
+export async function updatePromptTemplate(
+  body: UpdatePromptBody,
+  params: ContentGenerationCallParams,
+): Promise<PromptTemplate> {
+  if (!CONTENT_GENERATION_SERVICE_API_KEY) {
+    throw new Error(
+      "[content-generation-client] CONTENT_GENERATION_SERVICE_API_KEY is required",
+    );
+  }
+
+  const url = `${CONTENT_GENERATION_SERVICE_URL}/prompts`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "x-api-key": CONTENT_GENERATION_SERVICE_API_KEY,
+    "x-org-id": params.orgId,
+    "x-user-id": params.userId,
+    "x-run-id": params.runId,
+  };
+  if (params.trackingHeaders) {
+    for (const [k, v] of Object.entries(params.trackingHeaders)) {
+      if (v) headers[k] = v;
+    }
+  }
+
+  const res = await fetch(url, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[content-generation-client] PUT /prompts returned ${res.status}: ${text}`,
+    );
+  }
+
+  return (await res.json()) as PromptTemplate;
+}
