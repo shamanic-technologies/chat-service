@@ -104,6 +104,40 @@ describe("updateWorkflow", () => {
     ).rejects.toThrow(/returned 404/);
   });
 
+  it("strips null config and inputMapping from DAG nodes before sending", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: "wf-1" }),
+    });
+
+    const { updateWorkflow } = await loadModule();
+    await updateWorkflow(
+      "wf-1",
+      {
+        dag: {
+          nodes: [
+            { id: "step-1", type: "http.call", config: null as unknown as Record<string, unknown>, inputMapping: null as unknown as Record<string, string>, retries: 0 },
+            { id: "step-2", type: "condition" },
+            { id: "step-3", type: "http.call", config: { path: "/send" }, inputMapping: { "body.to": "$ref:step-1.output.email" } },
+          ],
+          edges: [{ from: "step-1", to: "step-2" }],
+        },
+      },
+      { orgId: "o", userId: "u", runId: "r" },
+    );
+
+    const sentBody = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    // Null fields stripped
+    expect(sentBody.dag.nodes[0]).toEqual({ id: "step-1", type: "http.call", retries: 0 });
+    expect(sentBody.dag.nodes[0].config).toBeUndefined();
+    expect(sentBody.dag.nodes[0].inputMapping).toBeUndefined();
+    // Nodes without config/inputMapping stay clean
+    expect(sentBody.dag.nodes[1]).toEqual({ id: "step-2", type: "condition" });
+    // Non-null fields preserved
+    expect(sentBody.dag.nodes[2].config).toEqual({ path: "/send" });
+    expect(sentBody.dag.nodes[2].inputMapping).toEqual({ "body.to": "$ref:step-1.output.email" });
+  });
+
   it("throws when WORKFLOW_SERVICE_API_KEY is not set", async () => {
     delete process.env.WORKFLOW_SERVICE_API_KEY;
 
