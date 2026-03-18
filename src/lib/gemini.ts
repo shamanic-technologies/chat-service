@@ -134,12 +134,40 @@ export const UPDATE_PROMPT_TEMPLATE_TOOL: FunctionDeclaration = {
   },
 };
 
+export const UPDATE_WORKFLOW_NODE_CONFIG_TOOL: FunctionDeclaration = {
+  name: "update_workflow_node_config",
+  description:
+    "Update the static config of a specific node in a workflow's DAG. Fetches the current DAG, merges your config changes into the target node, and saves. Use this to change node parameters like prompt type, target URL, call-to-action, etc.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      workflowId: {
+        type: Type.STRING,
+        description:
+          "UUID of the workflow to update. If available in context, use it directly.",
+      },
+      nodeId: {
+        type: Type.STRING,
+        description:
+          "ID of the node to update (e.g. 'email-generate', 'email-send')",
+      },
+      configUpdates: {
+        type: Type.OBJECT,
+        description:
+          "Key-value pairs to merge into the node's config. Only specified keys are changed; others are preserved. Example: {\"body\": {\"type\": \"cold-email-v3\"}}",
+      },
+    },
+    required: ["workflowId", "nodeId", "configUpdates"],
+  },
+};
+
 export const BUILTIN_TOOLS: FunctionDeclaration[] = [
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
   VALIDATE_WORKFLOW_TOOL,
   GET_PROMPT_TEMPLATE_TOOL,
   UPDATE_PROMPT_TEMPLATE_TOOL,
+  UPDATE_WORKFLOW_NODE_CONFIG_TOOL,
 ];
 
 export interface FunctionCall {

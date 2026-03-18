@@ -16,6 +16,7 @@ import {
 import {
   updateWorkflow,
   validateWorkflow,
+  updateWorkflowNodeConfig,
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
@@ -377,6 +378,25 @@ app.post("/chat", requireAuth, async (req, res) => {
             wfParams,
           );
         }
+
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // Built-in workflow node config update tool
+      if (call.name === "update_workflow_node_config") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await updateWorkflowNodeConfig(
+          args.workflowId as string,
+          args.nodeId as string,
+          args.configUpdates as Record<string, unknown>,
+          {
+            orgId,
+            userId,
+            runId: runId!,
+            trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+          },
+        );
 
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };

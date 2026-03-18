@@ -31,10 +31,47 @@ function buildHeaders(params: WorkflowCallParams): Record<string, string> {
   return headers;
 }
 
+export interface WorkflowResponse {
+  id: string;
+  dag: {
+    nodes: Array<{
+      id: string;
+      type: string;
+      config?: Record<string, unknown>;
+      inputMapping?: Record<string, string>;
+      retries?: number;
+    }>;
+    edges: Array<{ from: string; to: string; condition?: string }>;
+    onError?: string;
+  };
+  [key: string]: unknown;
+}
+
+export async function getWorkflow(
+  workflowId: string,
+  params: WorkflowCallParams,
+): Promise<WorkflowResponse> {
+  const url = `${WORKFLOW_SERVICE_URL}/workflows/${encodeURIComponent(workflowId)}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: buildHeaders(params),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[workflow-client] GET /workflows/${workflowId} returned ${res.status}: ${text}`,
+    );
+  }
+
+  return (await res.json()) as WorkflowResponse;
+}
+
 export interface UpdateWorkflowBody {
   name?: string;
   description?: string;
   tags?: string[];
+  dag?: WorkflowResponse["dag"];
 }
 
 export async function updateWorkflow(
@@ -57,6 +94,35 @@ export async function updateWorkflow(
   }
 
   return await res.json();
+}
+
+export async function updateWorkflowNodeConfig(
+  workflowId: string,
+  nodeId: string,
+  configUpdates: Record<string, unknown>,
+  params: WorkflowCallParams,
+): Promise<unknown> {
+  // 1. Fetch the current workflow to get the full DAG
+  const workflow = await getWorkflow(workflowId, params);
+
+  if (!workflow.dag) {
+    throw new Error(`[workflow-client] Workflow ${workflowId} has no DAG`);
+  }
+
+  // 2. Find the target node
+  const nodeIndex = workflow.dag.nodes.findIndex((n) => n.id === nodeId);
+  if (nodeIndex === -1) {
+    throw new Error(
+      `[workflow-client] Node "${nodeId}" not found in workflow ${workflowId}. Available nodes: ${workflow.dag.nodes.map((n) => n.id).join(", ")}`,
+    );
+  }
+
+  // 3. Merge config updates into the node's existing config
+  const node = workflow.dag.nodes[nodeIndex];
+  node.config = { ...node.config, ...configUpdates };
+
+  // 4. PUT the updated DAG back
+  return updateWorkflow(workflowId, { dag: workflow.dag }, params);
 }
 
 export async function validateWorkflow(
