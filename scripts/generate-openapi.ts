@@ -15,7 +15,7 @@ const document = generator.generateDocument({
   info: {
     title: "Chat Service",
     description:
-      "Multi-app AI chat service. Streams Gemini AI responses via SSE with configurable system prompts and optional MCP tool calling per app.",
+      "Multi-org AI chat service. Streams Gemini AI responses via SSE with configurable system prompts and built-in workflow tools.",
     version: "1.0.0",
   },
   servers: [
