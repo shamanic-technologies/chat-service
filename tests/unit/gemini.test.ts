@@ -725,8 +725,10 @@ describe("BUILTIN_TOOLS", () => {
     expect(names).toContain("update_workflow_node_config");
     expect(names).toContain("list_available_services");
     expect(names).toContain("get_workflow_details");
-    expect(names).toContain("generate_workflow");
-    expect(BUILTIN_TOOLS).toHaveLength(9);
+    expect(names).toContain("get_workflow_required_providers");
+    expect(names).toContain("list_workflows");
+    expect(names).not.toContain("generate_workflow");
+    expect(BUILTIN_TOOLS).toHaveLength(10);
   });
 });
 

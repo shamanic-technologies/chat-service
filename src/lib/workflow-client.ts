@@ -161,6 +161,62 @@ export async function generateWorkflow(
   return await res.json();
 }
 
+export async function getWorkflowRequiredProviders(
+  workflowId: string,
+  params: WorkflowCallParams,
+): Promise<unknown> {
+  const url = `${WORKFLOW_SERVICE_URL}/workflows/${encodeURIComponent(workflowId)}/required-providers`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: buildHeaders(params),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[workflow-client] GET /workflows/${workflowId}/required-providers returned ${res.status}: ${text}`,
+    );
+  }
+
+  return await res.json();
+}
+
+export interface ListWorkflowsParams {
+  category?: string;
+  channel?: string;
+  tags?: string[];
+  search?: string;
+}
+
+export async function listWorkflows(
+  filters: ListWorkflowsParams,
+  params: WorkflowCallParams,
+): Promise<unknown> {
+  const query = new URLSearchParams();
+  if (filters.category) query.set("category", filters.category);
+  if (filters.channel) query.set("channel", filters.channel);
+  if (filters.tags?.length) {
+    for (const tag of filters.tags) query.append("tags", tag);
+  }
+  if (filters.search) query.set("search", filters.search);
+
+  const qs = query.toString();
+  const url = `${WORKFLOW_SERVICE_URL}/workflows${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: buildHeaders(params),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[workflow-client] GET /workflows returned ${res.status}: ${text}`,
+    );
+  }
+
+  return await res.json();
+}
+
 export async function validateWorkflow(
   workflowId: string,
   params: WorkflowCallParams,
