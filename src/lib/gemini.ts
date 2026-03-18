@@ -161,6 +161,16 @@ export const UPDATE_WORKFLOW_NODE_CONFIG_TOOL: FunctionDeclaration = {
   },
 };
 
+export const LIST_AVAILABLE_SERVICES_TOOL: FunctionDeclaration = {
+  name: "list_available_services",
+  description:
+    "List all available microservices and their API endpoints. Returns a compact summary of every service (name, base URL, description) and each endpoint (method, path, summary, parameters). Use this before modifying a workflow DAG to know which services and endpoints can be used in http.call nodes.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {},
+  },
+};
+
 export const BUILTIN_TOOLS: FunctionDeclaration[] = [
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
@@ -168,6 +178,7 @@ export const BUILTIN_TOOLS: FunctionDeclaration[] = [
   GET_PROMPT_TEMPLATE_TOOL,
   UPDATE_PROMPT_TEMPLATE_TOOL,
   UPDATE_WORKFLOW_NODE_CONFIG_TOOL,
+  LIST_AVAILABLE_SERVICES_TOOL,
 ];
 
 export interface FunctionCall {

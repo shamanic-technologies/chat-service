@@ -19,6 +19,7 @@ import {
   updateWorkflowNodeConfig,
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
+import { listAvailableServices } from "./lib/api-registry-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { resolveKey, type ResolvedKey } from "./lib/key-client.js";
 import { ChatRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
@@ -437,6 +438,18 @@ app.post("/chat", requireAuth, async (req, res) => {
         );
 
         toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // Built-in api-registry tool
+      if (call.name === "list_available_services") {
+        const result = await listAvailableServices({
+          orgId,
+          userId,
+          runId: runId!,
+        });
+
+        toolCalls.push({ name: call.name, args: {}, result });
         return { name: call.name, result };
       }
 
