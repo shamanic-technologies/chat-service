@@ -35,7 +35,7 @@ describe("createGeminiClient", () => {
     );
   });
 
-  it("defaults to gemini-3-flash-preview model", async () => {
+  it("defaults to gemini-3.1-pro-preview model", async () => {
     const client = createGeminiClient({
       apiKey: "test-key",
       systemPrompt: TEST_PROMPT,
@@ -46,7 +46,7 @@ describe("createGeminiClient", () => {
     }
 
     expect(mockGenerateContentStream).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "gemini-3-flash-preview" }),
+      expect.objectContaining({ model: "gemini-3.1-pro-preview" }),
     );
   });
 
@@ -465,7 +465,7 @@ describe("usage metadata", () => {
       apiKey: "test-key",
       systemPrompt: TEST_PROMPT,
     });
-    expect(client.model).toBe("gemini-3-flash-preview");
+    expect(client.model).toBe("gemini-3.1-pro-preview");
   });
 });
 
