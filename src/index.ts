@@ -241,13 +241,11 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     // Register run in RunsService (mandatory — fail request if unavailable)
     try {
-      const run = await createRun({
-        orgId,
-        userId,
-        serviceName: "chat-service",
-        taskName: "chat",
-        parentRunId: callerRunId,
-      }, trackingHeaders);
+      const run = await createRun(
+        { serviceName: "chat-service", taskName: "chat" },
+        { orgId, userId, runId: callerRunId },
+        trackingHeaders,
+      );
       runId = run.id;
     } catch (runErr) {
       console.error("Failed to create run:", runErr);
@@ -657,9 +655,10 @@ app.post("/chat", requireAuth, async (req, res) => {
             ]
           : []),
       ];
+      const runIdentity = { orgId, userId, runId };
       Promise.all([
-        updateRunStatus(runId, chatFailed ? "failed" : "completed", trackingHeaders),
-        addRunCosts(runId, costItems, trackingHeaders),
+        updateRunStatus(runId, chatFailed ? "failed" : "completed", runIdentity, trackingHeaders),
+        addRunCosts(runId, costItems, runIdentity, trackingHeaders),
       ]).catch(() => {});
     }
 

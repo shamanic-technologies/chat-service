@@ -90,6 +90,8 @@ describe("runs-client forwards tracking headers", () => {
     return import("../../src/lib/runs-client.js");
   }
 
+  const identity = { orgId: "org-1", userId: "user-1", runId: "run-caller" };
+
   it("forwards tracking headers on createRun", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
@@ -98,7 +100,8 @@ describe("runs-client forwards tracking headers", () => {
 
     const { createRun } = await loadModule();
     await createRun(
-      { orgId: "org-1", serviceName: "chat-service", taskName: "chat" },
+      { serviceName: "chat-service", taskName: "chat" },
+      identity,
       { "x-campaign-id": "camp-1", "x-brand-id": "brand-1", "x-workflow-name": "flow-1" },
     );
 
@@ -106,6 +109,9 @@ describe("runs-client forwards tracking headers", () => {
       "https://runs.test.local/v1/runs",
       expect.objectContaining({
         headers: expect.objectContaining({
+          "x-org-id": "org-1",
+          "x-user-id": "user-1",
+          "x-run-id": "run-caller",
           "x-campaign-id": "camp-1",
           "x-brand-id": "brand-1",
           "x-workflow-name": "flow-1",
@@ -121,7 +127,7 @@ describe("runs-client forwards tracking headers", () => {
     });
 
     const { createRun } = await loadModule();
-    await createRun({ orgId: "org-1", serviceName: "chat-service", taskName: "chat" });
+    await createRun({ serviceName: "chat-service", taskName: "chat" }, identity);
 
     const callHeaders = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
     expect(callHeaders["x-campaign-id"]).toBeUndefined();
@@ -136,7 +142,7 @@ describe("runs-client forwards tracking headers", () => {
     });
 
     const { updateRunStatus } = await loadModule();
-    await updateRunStatus("run-1", "completed", { "x-campaign-id": "camp-2" });
+    await updateRunStatus("run-1", "completed", identity, { "x-campaign-id": "camp-2" });
 
     expect(fetch).toHaveBeenCalledWith(
       expect.any(String),
@@ -158,6 +164,7 @@ describe("runs-client forwards tracking headers", () => {
     await addRunCosts(
       "run-1",
       [{ costName: "gemini-3-flash-tokens-input", quantity: 100, costSource: "platform" as const }],
+      identity,
       { "x-brand-id": "brand-3" },
     );
 

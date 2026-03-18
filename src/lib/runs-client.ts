@@ -12,12 +12,15 @@ export interface RunsRun {
   createdAt: string;
 }
 
-export interface CreateRunParams {
+export interface RunIdentityHeaders {
   orgId: string;
-  userId?: string;
+  userId: string;
+  runId: string;
+}
+
+export interface CreateRunParams {
   serviceName: string;
   taskName: string;
-  parentRunId?: string;
 }
 
 export interface CostItem {
@@ -32,13 +35,19 @@ export interface TrackingHeaders {
   "x-workflow-name"?: string;
 }
 
-function buildHeaders(trackingHeaders?: TrackingHeaders): Record<string, string> {
+function buildHeaders(
+  identity: RunIdentityHeaders,
+  trackingHeaders?: TrackingHeaders,
+): Record<string, string> {
   if (!RUNS_SERVICE_API_KEY) {
     throw new Error("[runs-client] RUNS_SERVICE_API_KEY is required");
   }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-API-Key": RUNS_SERVICE_API_KEY,
+    "x-api-key": RUNS_SERVICE_API_KEY,
+    "x-org-id": identity.orgId,
+    "x-user-id": identity.userId,
+    "x-run-id": identity.runId,
   };
   if (trackingHeaders) {
     for (const [k, v] of Object.entries(trackingHeaders)) {
@@ -51,12 +60,13 @@ function buildHeaders(trackingHeaders?: TrackingHeaders): Record<string, string>
 async function runsRequest<T>(
   method: string,
   path: string,
+  identity: RunIdentityHeaders,
   body?: unknown,
   trackingHeaders?: TrackingHeaders,
 ): Promise<T> {
   const res = await fetch(`${RUNS_SERVICE_URL}${path}`, {
     method,
-    headers: buildHeaders(trackingHeaders),
+    headers: buildHeaders(identity, trackingHeaders),
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) {
@@ -70,24 +80,27 @@ async function runsRequest<T>(
 
 export async function createRun(
   params: CreateRunParams,
+  identity: RunIdentityHeaders,
   trackingHeaders?: TrackingHeaders,
 ): Promise<RunsRun> {
-  return runsRequest<RunsRun>("POST", "/v1/runs", params, trackingHeaders);
+  return runsRequest<RunsRun>("POST", "/v1/runs", identity, params, trackingHeaders);
 }
 
 export async function updateRunStatus(
   id: string,
   status: "completed" | "failed",
+  identity: RunIdentityHeaders,
   trackingHeaders?: TrackingHeaders,
 ): Promise<RunsRun> {
-  return runsRequest<RunsRun>("PATCH", `/v1/runs/${id}`, { status }, trackingHeaders);
+  return runsRequest<RunsRun>("PATCH", `/v1/runs/${id}`, identity, { status }, trackingHeaders);
 }
 
 export async function addRunCosts(
   id: string,
   items: CostItem[],
+  identity: RunIdentityHeaders,
   trackingHeaders?: TrackingHeaders,
 ): Promise<void> {
   if (items.length === 0) return;
-  await runsRequest("POST", `/v1/runs/${id}/costs`, { items }, trackingHeaders);
+  await runsRequest("POST", `/v1/runs/${id}/costs`, identity, { items }, trackingHeaders);
 }
