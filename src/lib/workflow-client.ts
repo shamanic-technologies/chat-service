@@ -33,6 +33,9 @@ function buildHeaders(params: WorkflowCallParams): Record<string, string> {
 
 export interface WorkflowResponse {
   id: string;
+  name?: string;
+  signatureName?: string;
+  forkedFrom?: string;
   dag: {
     nodes: Array<{
       id: string;
@@ -45,6 +48,17 @@ export interface WorkflowResponse {
     onError?: string;
   };
   [key: string]: unknown;
+}
+
+export interface UpdateWorkflowResult {
+  workflow: WorkflowResponse;
+  /** "updated" = in-place 200, "forked" = new workflow 201 */
+  outcome: "updated" | "forked";
+}
+
+export interface WorkflowConflictError {
+  existingWorkflowId: string;
+  existingWorkflowName: string;
 }
 
 export async function getWorkflow(
@@ -96,7 +110,7 @@ export async function updateWorkflow(
   workflowId: string,
   body: UpdateWorkflowBody,
   params: WorkflowCallParams,
-): Promise<unknown> {
+): Promise<UpdateWorkflowResult> {
   const sanitized = body.dag ? { ...body, dag: sanitizeDag(body.dag) } : body;
   const url = `${WORKFLOW_SERVICE_URL}/workflows/${encodeURIComponent(workflowId)}`;
   const res = await fetch(url, {
@@ -105,6 +119,13 @@ export async function updateWorkflow(
     body: JSON.stringify(sanitized),
   });
 
+  if (res.status === 409) {
+    const conflict = (await res.json()) as WorkflowConflictError;
+    throw new Error(
+      `[workflow-client] A workflow with this DAG signature already exists: "${conflict.existingWorkflowName}" (${conflict.existingWorkflowId}). Use the existing workflow instead of creating a duplicate.`,
+    );
+  }
+
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
@@ -112,7 +133,9 @@ export async function updateWorkflow(
     );
   }
 
-  return await res.json();
+  const workflow = (await res.json()) as WorkflowResponse;
+  const outcome = res.status === 201 ? "forked" : "updated";
+  return { workflow, outcome };
 }
 
 export async function updateWorkflowNodeConfig(
@@ -120,7 +143,7 @@ export async function updateWorkflowNodeConfig(
   nodeId: string,
   configUpdates: Record<string, unknown>,
   params: WorkflowCallParams,
-): Promise<unknown> {
+): Promise<UpdateWorkflowResult> {
   // 1. Fetch the current workflow to get the full DAG
   const workflow = await getWorkflow(workflowId, params);
 

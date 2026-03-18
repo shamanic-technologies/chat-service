@@ -46,7 +46,47 @@ describe("updateWorkflow", () => {
         body: JSON.stringify({ description: "Updated description" }),
       }),
     );
-    expect(result).toEqual({ id: "wf-123", description: "Updated" });
+    expect(result).toEqual({
+      workflow: { id: "wf-123", description: "Updated" },
+      outcome: "updated",
+    });
+  });
+
+  it("returns outcome 'forked' on HTTP 201", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({ id: "wf-new", name: "sales-email-v2", forkedFrom: "wf-123", signatureName: "sales-email-v2" }),
+    });
+
+    const { updateWorkflow } = await loadModule();
+    const result = await updateWorkflow(
+      "wf-123",
+      { dag: { nodes: [{ id: "step-1", type: "http.call" }], edges: [] } },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    expect(result.outcome).toBe("forked");
+    expect(result.workflow.id).toBe("wf-new");
+    expect(result.workflow.forkedFrom).toBe("wf-123");
+    expect(result.workflow.signatureName).toBe("sales-email-v2");
+  });
+
+  it("throws with existing workflow info on HTTP 409", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () => Promise.resolve({ existingWorkflowId: "wf-existing", existingWorkflowName: "sales-email-v2" }),
+    });
+
+    const { updateWorkflow } = await loadModule();
+    await expect(
+      updateWorkflow(
+        "wf-123",
+        { dag: { nodes: [{ id: "step-1", type: "http.call" }], edges: [] } },
+        { orgId: "org-1", userId: "user-1", runId: "run-1" },
+      ),
+    ).rejects.toThrow(/sales-email-v2.*wf-existing/);
   });
 
   it("always sends x-run-id header (regression: workflow-service 400)", async () => {
@@ -287,7 +327,35 @@ describe("updateWorkflowNodeConfig", () => {
     // Other nodes unchanged
     expect(putBody.dag.nodes[1].id).toBe("email-send");
 
-    expect(result).toEqual(updatedWorkflow);
+    expect(result).toEqual({ workflow: updatedWorkflow, outcome: "updated" });
+  });
+
+  it("returns forked outcome when node config change triggers a fork", async () => {
+    const existingWorkflow = {
+      id: "wf-1",
+      dag: {
+        nodes: [{ id: "step-1", type: "http.call", config: { path: "/old" } }],
+        edges: [],
+      },
+    };
+
+    const forkedWorkflow = { id: "wf-forked", name: "wf-1-custom", forkedFrom: "wf-1", dag: existingWorkflow.dag };
+
+    (fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(existingWorkflow) }) // GET
+      .mockResolvedValueOnce({ ok: true, status: 201, json: () => Promise.resolve(forkedWorkflow) }); // PUT (fork)
+
+    const { updateWorkflowNodeConfig } = await loadModule();
+    const result = await updateWorkflowNodeConfig(
+      "wf-1",
+      "step-1",
+      { path: "/new" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    expect(result.outcome).toBe("forked");
+    expect(result.workflow.id).toBe("wf-forked");
+    expect(result.workflow.forkedFrom).toBe("wf-1");
   });
 
   it("throws when node is not found in DAG", async () => {
