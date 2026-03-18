@@ -398,6 +398,149 @@ describe("thoughtSignature preservation", () => {
   });
 });
 
+describe("chained function calls", () => {
+  it("sendFunctionResult yields function_call events (enables chaining)", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    functionCall: { name: "validate_workflow", args: { workflowId: "wf-1" } },
+                    thoughtSignature: "sig_chain_123",
+                  },
+                ],
+              },
+            },
+          ],
+        };
+      })(),
+    );
+
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const events = [];
+    for await (const event of client.sendFunctionResult(
+      [
+        { role: "user", parts: [{ text: "update and validate" }] },
+        {
+          role: "model",
+          parts: [
+            {
+              functionCall: { name: "update_workflow", args: { workflowId: "wf-1" } },
+              thoughtSignature: "sig_first_abc",
+            },
+          ],
+        },
+      ],
+      "update_workflow",
+      { success: true },
+    )) {
+      events.push(event);
+    }
+
+    const fcEvent = events.find((e) => e.type === "function_call");
+    expect(fcEvent).toBeDefined();
+    expect(fcEvent!.type === "function_call" && fcEvent!.call.name).toBe("validate_workflow");
+    expect(fcEvent!.type === "function_call" && fcEvent!.call.thoughtSignature).toBe("sig_chain_123");
+  });
+
+  it("passes incremental history including prior function calls to continuation", async () => {
+    // Simulate: first call for streamChat returns update_workflow,
+    // then sendFunctionResult should receive history with the prior call + response
+    let capturedContents: unknown[] = [];
+
+    mockGenerateContentStream.mockImplementation((opts: { contents: unknown[] }) => {
+      capturedContents = opts.contents;
+      return Promise.resolve(
+        (async function* () {
+          yield {
+            candidates: [
+              { content: { parts: [{ text: "All done!" }] } },
+            ],
+          };
+        })(),
+      );
+    });
+
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+
+    // Build history that mimics what processStream builds incrementally:
+    // [userMessage, model(update_workflow+sig), user(functionResponse(update_workflow)),
+    //  model(validate_workflow+sig)]
+    const history = [
+      { role: "user", parts: [{ text: "update and validate my workflow" }] },
+      {
+        role: "model",
+        parts: [
+          {
+            functionCall: { name: "update_workflow", args: { workflowId: "wf-1" } },
+            thoughtSignature: "sig_update_abc",
+          },
+        ],
+      },
+      {
+        role: "user",
+        parts: [
+          {
+            functionResponse: {
+              name: "update_workflow",
+              response: { result: { success: true } },
+            },
+          },
+        ],
+      },
+      {
+        role: "model",
+        parts: [
+          {
+            functionCall: { name: "validate_workflow", args: { workflowId: "wf-1" } },
+            thoughtSignature: "sig_validate_def",
+          },
+        ],
+      },
+    ];
+
+    const gen = client.sendFunctionResult(
+      history,
+      "validate_workflow",
+      { valid: true },
+    );
+    for await (const _ of gen) {
+      /* drain */
+    }
+
+    // Verify the full history was passed to the API, including:
+    // - The prior update_workflow call with thoughtSignature
+    // - The prior update_workflow response
+    // - The validate_workflow call with thoughtSignature
+    // - The validate_workflow response (added by sendFunctionResult)
+    expect(capturedContents).toHaveLength(5); // 4 history + 1 functionResponse
+
+    // First model turn has update_workflow with thoughtSignature
+    const modelTurn1 = capturedContents[1] as { role: string; parts: { functionCall?: unknown; thoughtSignature?: string }[] };
+    expect(modelTurn1.role).toBe("model");
+    expect(modelTurn1.parts[0]).toHaveProperty("thoughtSignature", "sig_update_abc");
+
+    // Second model turn has validate_workflow with thoughtSignature
+    const modelTurn2 = capturedContents[3] as { role: string; parts: { functionCall?: unknown; thoughtSignature?: string }[] };
+    expect(modelTurn2.role).toBe("model");
+    expect(modelTurn2.parts[0]).toHaveProperty("thoughtSignature", "sig_validate_def");
+
+    // Last element is the functionResponse added by sendFunctionResult
+    const lastContent = capturedContents[4] as { role: string; parts: { functionResponse?: unknown }[] };
+    expect(lastContent.role).toBe("user");
+    expect(lastContent.parts[0]).toHaveProperty("functionResponse");
+  });
+});
+
 describe("usage metadata", () => {
   it("includes usage in done event from streamChat", async () => {
     mockGenerateContentStream.mockResolvedValue(

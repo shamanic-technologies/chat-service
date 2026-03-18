@@ -354,211 +354,197 @@ app.post("/chat", requireAuth, async (req, res) => {
       ...BUILTIN_TOOLS,
     ];
 
-    const stream = gemini.streamChat(
-      geminiHistory,
-      message.trim(),
-      allTools,
-    );
-
     function accumulateUsage(usage?: UsageMetadata) {
       if (!usage) return;
       totalPromptTokens += usage.promptTokens;
       totalOutputTokens += usage.outputTokens;
     }
 
-    for await (const event of stream) {
-      if (event.type === "token") {
-        bufferToken(event.content);
+    // Track turn history incrementally so chained tool calls include prior calls/results
+    const turnParts: Content[] = [];
+
+    /**
+     * Execute a server-side tool (built-in or MCP) and return the result.
+     * Returns null if the tool is client-side (request_user_input) or unhandled.
+     */
+    async function executeTool(
+      call: { name: string; args: Record<string, unknown>; thoughtSignature?: string },
+    ): Promise<{ name: string; result: unknown } | "input_request" | null> {
+      // Client-side tool: emit input_request and signal to stop
+      if (call.name === "request_user_input") {
+        const args = (call.args as Record<string, unknown>) || {};
+        sendSSE(res, {
+          type: "input_request",
+          input_type: args.input_type ?? "text",
+          label: args.label ?? "Please provide input",
+          ...(args.placeholder ? { placeholder: args.placeholder } : {}),
+          field: args.field ?? "input",
+          ...(args.value ? { value: args.value } : {}),
+        });
+        emittedInputRequest = true;
+        return "input_request";
       }
 
-      if (event.type === "thinking_start" || event.type === "thinking_delta" || event.type === "thinking_stop") {
-        sendSSE(res, event);
-      }
+      // Built-in workflow tools
+      if (call.name === "update_workflow" || call.name === "validate_workflow") {
+        const wfParams = {
+          orgId,
+          userId,
+          runId: runId!,
+          trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+        };
+        const args = (call.args as Record<string, unknown>) || {};
+        let result: unknown;
 
-      if (event.type === "done") {
-        accumulateUsage(event.usage);
-      }
-
-      if (event.type === "function_call") {
-        const { call } = event;
-
-        // Client-side tool: emit input_request and end stream
-        if (call.name === "request_user_input") {
-          const args = (call.args as Record<string, unknown>) || {};
-          sendSSE(res, {
-            type: "input_request",
-            input_type: args.input_type ?? "text",
-            label: args.label ?? "Please provide input",
-            ...(args.placeholder ? { placeholder: args.placeholder } : {}),
-            field: args.field ?? "input",
-            ...(args.value ? { value: args.value } : {}),
-          });
-          emittedInputRequest = true;
-          break;
+        if (call.name === "update_workflow") {
+          const { workflowId, ...updateBody } = args;
+          result = await updateWorkflow(
+            workflowId as string,
+            updateBody as { name?: string; description?: string; tags?: string[] },
+            wfParams,
+          );
+        } else {
+          result = await validateWorkflow(
+            args.workflowId as string,
+            wfParams,
+          );
         }
 
-        // Built-in workflow tools: execute directly via workflow-service
-        if (call.name === "update_workflow" || call.name === "validate_workflow") {
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // MCP tools
+      if (mcpConn) {
+        const result = await mcpConn.callTool(
+          call.name,
+          (call.args as Record<string, unknown>) || {},
+        );
+        toolCalls.push({
+          name: call.name,
+          args: (call.args as Record<string, unknown>) || {},
+          result,
+        });
+        return { name: call.name, result };
+      }
+
+      return null;
+    }
+
+    /**
+     * Process a Gemini stream, handling tokens, thinking events, and tool calls.
+     * When a tool call is encountered, executes it, appends both the call and result
+     * to turnParts, sends a continuation to Gemini, and recursively processes the
+     * continuation stream. This ensures chained tool calls work correctly and each
+     * continuation sees the full history of prior calls in the same turn.
+     */
+    async function processStream(
+      stream: AsyncGenerator<import("./lib/gemini.js").GeminiEvent>,
+      depth = 0,
+    ): Promise<void> {
+      const MAX_TOOL_CHAIN_DEPTH = 10;
+
+      for await (const event of stream) {
+        if (event.type === "token") {
+          bufferToken(event.content);
+        }
+
+        if (event.type === "thinking_start" || event.type === "thinking_delta" || event.type === "thinking_stop") {
+          sendSSE(res, event);
+        }
+
+        if (event.type === "done") {
+          accumulateUsage(event.usage);
+        }
+
+        if (event.type === "function_call") {
+          const { call } = event;
+
           const toolCallId = `tc_${crypto.randomUUID()}`;
-          sendSSE(res, {
-            type: "tool_call",
-            id: toolCallId,
-            name: call.name,
-            args: call.args,
-          });
+          if (call.name !== "request_user_input") {
+            sendSSE(res, {
+              type: "tool_call",
+              id: toolCallId,
+              name: call.name,
+              args: call.args,
+            });
+          }
 
           try {
-            const wfParams = {
-              orgId,
-              userId,
-              runId,
-              trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
-            };
-            const args = (call.args as Record<string, unknown>) || {};
-            let result: unknown;
+            const toolResult = await executeTool(call);
 
-            if (call.name === "update_workflow") {
-              const { workflowId, ...updateBody } = args;
-              result = await updateWorkflow(
-                workflowId as string,
-                updateBody as { name?: string; description?: string; tags?: string[] },
-                wfParams,
-              );
-            } else {
-              result = await validateWorkflow(
-                args.workflowId as string,
-                wfParams,
-              );
+            if (toolResult === "input_request") {
+              return; // Stop processing — client needs input
             }
 
-            toolCalls.push({ name: call.name, args, result });
-            sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result });
+            if (toolResult === null) {
+              continue; // Unhandled tool, skip
+            }
 
-            // Continue conversation with tool result
+            sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result: toolResult.result });
+
+            if (depth >= MAX_TOOL_CHAIN_DEPTH) {
+              console.warn(`Tool chain depth limit reached (${MAX_TOOL_CHAIN_DEPTH}), stopping`);
+              continue;
+            }
+
+            // Build the functionCall part with thoughtSignature for Gemini history
             const functionCallPart: Record<string, unknown> = {
               functionCall: { name: call.name, args: call.args || {} },
             };
             if (call.thoughtSignature) {
               functionCallPart.thoughtSignature = call.thoughtSignature;
             }
-            const updatedHistory: Content[] = [
-              ...geminiHistory,
-              { role: "user", parts: [{ text: message.trim() }] },
-              {
-                role: "model",
-                parts: [functionCallPart as Part],
-              },
-            ];
 
+            // Append the function call to turn history (sendFunctionResult adds the response)
+            turnParts.push({
+              role: "model",
+              parts: [functionCallPart as Part],
+            });
+
+            // Send continuation with full incremental history
             const contStream = gemini.sendFunctionResult(
-              updatedHistory,
+              [...geminiHistory, { role: "user", parts: [{ text: message.trim() }] }, ...turnParts],
               call.name,
-              result,
+              toolResult.result,
               allTools,
             );
 
-            for await (const contEvent of contStream) {
-              if (contEvent.type === "token") {
-                bufferToken(contEvent.content);
-              }
-              if (contEvent.type === "thinking_start" || contEvent.type === "thinking_delta" || contEvent.type === "thinking_stop") {
-                sendSSE(res, contEvent);
-              }
-              if (contEvent.type === "done") {
-                accumulateUsage(contEvent.usage);
-              }
-            }
+            // Add the function response to turnParts AFTER creating the stream,
+            // so future chained calls see the complete history
+            turnParts.push({
+              role: "user",
+              parts: [
+                {
+                  functionResponse: {
+                    name: call.name,
+                    response: { result: toolResult.result },
+                  },
+                } as Part,
+              ],
+            });
+
+            // Recursively process continuation (may contain more tool calls)
+            await processStream(contStream, depth + 1);
+            return; // Continuation handled the rest of the turn
           } catch (toolErr: unknown) {
             const errMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
-            console.error(`Built-in tool ${call.name} failed:`, errMsg);
+            console.error(`Tool call ${call.name} failed:`, errMsg);
             const errorContent = ` (Tool call failed: ${errMsg})`;
             fullResponse += errorContent;
             sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result: { error: errMsg } });
           }
-          continue;
-        }
-
-        if (!mcpConn) continue;
-
-        const toolCallId = `tc_${crypto.randomUUID()}`;
-        sendSSE(res, {
-          type: "tool_call",
-          id: toolCallId,
-          name: call.name,
-          args: call.args,
-        });
-
-        try {
-          const result = await mcpConn.callTool(
-            call.name,
-            (call.args as Record<string, unknown>) || {},
-          );
-          toolCalls.push({
-            name: call.name,
-            args: (call.args as Record<string, unknown>) || {},
-            result,
-          });
-
-          sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result });
-
-          // Send function result back to Gemini and stream continuation
-          // Gemini 3 with thinking requires thoughtSignature on functionCall parts
-          const functionCallPart: Record<string, unknown> = {
-            functionCall: { name: call.name, args: call.args || {} },
-          };
-          if (call.thoughtSignature) {
-            functionCallPart.thoughtSignature = call.thoughtSignature;
-          }
-          const updatedHistory: Content[] = [
-            ...geminiHistory,
-            { role: "user", parts: [{ text: message.trim() }] },
-            {
-              role: "model",
-              parts: [functionCallPart as Part],
-            },
-          ];
-
-          const contStream = gemini.sendFunctionResult(
-            updatedHistory,
-            call.name,
-            result,
-            allTools,
-          );
-
-          for await (const contEvent of contStream) {
-            if (contEvent.type === "token") {
-              bufferToken(contEvent.content);
-            }
-            if (contEvent.type === "thinking_start" || contEvent.type === "thinking_delta" || contEvent.type === "thinking_stop") {
-              sendSSE(res, contEvent);
-            }
-            if (contEvent.type === "done") {
-              accumulateUsage(contEvent.usage);
-            }
-          }
-        } catch (toolErr: unknown) {
-          const errDetail =
-            toolErr instanceof Error
-              ? {
-                  message: toolErr.message,
-                  ...Object.fromEntries(
-                    Object.entries(
-                      toolErr as unknown as Record<string, unknown>,
-                    ),
-                  ),
-                }
-              : toolErr;
-          console.error(
-            `Tool call ${call.name} failed:`,
-            JSON.stringify(errDetail, null, 2),
-          );
-          const errorMsg =
-            " (Tool call failed, continuing without result.)";
-          fullResponse += errorMsg;
-          sendSSE(res, { type: "token", content: errorMsg });
         }
       }
     }
+
+    const stream = gemini.streamChat(
+      geminiHistory,
+      message.trim(),
+      allTools,
+    );
+
+    await processStream(stream);
 
     // Finalize buffer: handle any remaining incomplete line
     if (lineBuf) {
