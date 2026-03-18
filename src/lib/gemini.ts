@@ -111,6 +111,7 @@ export interface UsageMetadata {
   promptTokens: number;
   outputTokens: number;
   totalTokens: number;
+  searchQueryCount: number;
 }
 
 export type GeminiEvent =
@@ -164,9 +165,11 @@ export function createGeminiClient({
         ],
         config: {
           systemInstruction: systemPrompt,
-          tools: tools?.length
-            ? [{ functionDeclarations: tools }]
-            : undefined,
+          tools: [
+            ...(tools?.length ? [{ functionDeclarations: tools }] : []),
+            { googleSearch: {} },
+            { urlContext: {} },
+          ],
           toolConfig: tools?.length
             ? {
                 functionCallingConfig: {
@@ -181,6 +184,7 @@ export function createGeminiClient({
       });
 
       let usage: UsageMetadata | undefined;
+      let searchQueryCount = 0;
       let inThinking = false;
       for await (const chunk of response) {
         if (chunk.usageMetadata) {
@@ -188,10 +192,17 @@ export function createGeminiClient({
             promptTokens: chunk.usageMetadata.promptTokenCount ?? 0,
             outputTokens: chunk.usageMetadata.candidatesTokenCount ?? 0,
             totalTokens: chunk.usageMetadata.totalTokenCount ?? 0,
+            searchQueryCount: 0,
           };
         }
         const candidate = chunk.candidates?.[0];
         if (!candidate) continue;
+
+        // Count web search queries from grounding metadata
+        const queries = candidate.groundingMetadata?.webSearchQueries;
+        if (queries?.length) {
+          searchQueryCount = queries.length;
+        }
 
         for (const part of candidate.content?.parts ?? []) {
           if (part.thought) {
@@ -230,6 +241,9 @@ export function createGeminiClient({
         yield { type: "thinking_stop" } as const;
       }
 
+      if (usage) {
+        usage.searchQueryCount = searchQueryCount;
+      }
       yield { type: "done", usage };
     },
 
@@ -257,9 +271,11 @@ export function createGeminiClient({
         ],
         config: {
           systemInstruction: systemPrompt,
-          tools: tools?.length
-            ? [{ functionDeclarations: tools }]
-            : undefined,
+          tools: [
+            ...(tools?.length ? [{ functionDeclarations: tools }] : []),
+            { googleSearch: {} },
+            { urlContext: {} },
+          ],
           toolConfig: tools?.length
             ? {
                 functionCallingConfig: {
@@ -274,6 +290,7 @@ export function createGeminiClient({
       });
 
       let usage: UsageMetadata | undefined;
+      let searchQueryCount = 0;
       let inThinking = false;
       for await (const chunk of response) {
         if (chunk.usageMetadata) {
@@ -281,10 +298,17 @@ export function createGeminiClient({
             promptTokens: chunk.usageMetadata.promptTokenCount ?? 0,
             outputTokens: chunk.usageMetadata.candidatesTokenCount ?? 0,
             totalTokens: chunk.usageMetadata.totalTokenCount ?? 0,
+            searchQueryCount: 0,
           };
         }
         const candidate = chunk.candidates?.[0];
         if (!candidate) continue;
+
+        // Count web search queries from grounding metadata
+        const queries = candidate.groundingMetadata?.webSearchQueries;
+        if (queries?.length) {
+          searchQueryCount = queries.length;
+        }
 
         for (const part of candidate.content?.parts ?? []) {
           if (part.thought) {
@@ -323,6 +347,9 @@ export function createGeminiClient({
         yield { type: "thinking_stop" } as const;
       }
 
+      if (usage) {
+        usage.searchQueryCount = searchQueryCount;
+      }
       yield { type: "done", usage };
     },
   };
