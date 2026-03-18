@@ -389,11 +389,19 @@ app.post("/chat", requireAuth, async (req, res) => {
 
         if (call.name === "update_workflow") {
           const { workflowId, ...updateBody } = args;
-          result = await updateWorkflow(
+          const updateResult = await updateWorkflow(
             workflowId as string,
             updateBody as import("./lib/workflow-client.js").UpdateWorkflowBody,
             wfParams,
           );
+          if (updateResult.outcome === "forked") {
+            result = {
+              ...updateResult.workflow,
+              _note: `This is a NEW workflow forked from ${workflowId}. Tell the user: "Your customized workflow is ready: ${updateResult.workflow.name || updateResult.workflow.signatureName || updateResult.workflow.id}. Use this name for future campaigns."`,
+            };
+          } else {
+            result = updateResult.workflow;
+          }
         } else {
           result = await validateWorkflow(
             args.workflowId as string,
@@ -447,7 +455,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       // Built-in workflow node config update tool
       if (call.name === "update_workflow_node_config") {
         const args = (call.args as Record<string, unknown>) || {};
-        const result = await updateWorkflowNodeConfig(
+        const updateResult = await updateWorkflowNodeConfig(
           args.workflowId as string,
           args.nodeId as string,
           args.configUpdates as Record<string, unknown>,
@@ -458,6 +466,16 @@ app.post("/chat", requireAuth, async (req, res) => {
             trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
           },
         );
+
+        let result: unknown;
+        if (updateResult.outcome === "forked") {
+          result = {
+            ...updateResult.workflow,
+            _note: `This is a NEW workflow forked from the original. Tell the user: "Your customized workflow is ready: ${updateResult.workflow.name || updateResult.workflow.signatureName || updateResult.workflow.id}. Use this name for future campaigns."`,
+          };
+        } else {
+          result = updateResult.workflow;
+        }
 
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };

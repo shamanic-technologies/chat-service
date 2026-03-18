@@ -147,8 +147,8 @@ After a tool result, more `token` events follow with the AI's continuation.
 | `get_workflow_details` | Fetches full workflow details (DAG, metadata, status) via workflow-service `GET /workflows/{id}` |
 | `get_workflow_required_providers` | Returns BYOK providers needed to execute a workflow via `GET /workflows/{id}/required-providers`. Proactively warns about missing keys. |
 | `list_workflows` | Lists/searches workflows by category, channel, tags, or free-text search via `GET /workflows` |
-| `update_workflow` | Updates a workflow's metadata (name, description, tags) and/or DAG structure via workflow-service `PUT /workflows/{id}` |
-| `update_workflow_node_config` | Updates a specific node's config in a workflow's DAG (e.g. change prompt type on `email-generate` node). Fetches, merges, and saves. |
+| `update_workflow` | Updates a workflow's metadata or DAG via `PUT /workflows/{id}`. DAG changes trigger a fork (201 with new workflow) rather than in-place update. Returns 409 if DAG signature already exists. Metadata-only changes update in-place (200). |
+| `update_workflow_node_config` | Updates a specific node's config in a workflow's DAG (e.g. change prompt type on `email-generate` node). Fetches, merges, and saves. May fork the workflow if the DAG changes. |
 | `validate_workflow` | Validates a workflow's DAG structure via workflow-service `POST /workflows/{id}/validate` |
 | `get_prompt_template` | Retrieves a stored prompt template by type from content-generation `GET /prompts?type=...` |
 | `update_prompt_template` | Creates a new version of an existing prompt template via content-generation `PUT /prompts` (auto-versions: e.g. `cold-email` → `cold-email-v2`) |
