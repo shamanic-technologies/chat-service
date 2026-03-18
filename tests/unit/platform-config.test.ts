@@ -9,19 +9,6 @@ describe("PlatformConfigRequestSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("accepts config with all fields", () => {
-    const result = PlatformConfigRequestSchema.safeParse({
-      systemPrompt: "You are a helpful assistant.",
-      mcpServerUrl: "https://mcp.example.com",
-      mcpKeyName: "mcpfactory",
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.mcpServerUrl).toBe("https://mcp.example.com");
-      expect(result.data.mcpKeyName).toBe("mcpfactory");
-    }
-  });
-
   it("rejects empty systemPrompt", () => {
     const result = PlatformConfigRequestSchema.safeParse({
       systemPrompt: "",
@@ -31,22 +18,6 @@ describe("PlatformConfigRequestSchema", () => {
 
   it("rejects missing systemPrompt", () => {
     const result = PlatformConfigRequestSchema.safeParse({});
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects invalid URL for mcpServerUrl", () => {
-    const result = PlatformConfigRequestSchema.safeParse({
-      systemPrompt: "You are a helpful assistant.",
-      mcpServerUrl: "not-a-url",
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects empty mcpKeyName", () => {
-    const result = PlatformConfigRequestSchema.safeParse({
-      systemPrompt: "You are a helpful assistant.",
-      mcpKeyName: "",
-    });
     expect(result.success).toBe(false);
   });
 });

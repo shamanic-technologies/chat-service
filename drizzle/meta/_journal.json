@@ -43,6 +43,13 @@
       "when": 1773407161270,
       "tag": "0005_neat_norman_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1773804793825,
+      "tag": "0006_dizzy_pete_wisdom",
+      "breakpoints": true
     }
   ]
 }

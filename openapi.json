@@ -107,8 +107,8 @@
           },
           "name": {
             "type": "string",
-            "description": "The MCP tool name being invoked",
-            "example": "search_leads"
+            "description": "The tool name being invoked",
+            "example": "update_workflow"
           },
           "args": {
             "type": "object",
@@ -144,8 +144,8 @@
           },
           "name": {
             "type": "string",
-            "description": "The MCP tool name that produced this result",
-            "example": "search_leads"
+            "description": "The tool name that produced this result",
+            "example": "update_workflow"
           },
           "result": {
             "nullable": true,
@@ -294,14 +294,6 @@
           "systemPrompt": {
             "type": "string"
           },
-          "mcpServerUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "mcpKeyName": {
-            "type": "string",
-            "nullable": true
-          },
           "createdAt": {
             "type": "string"
           },
@@ -312,8 +304,6 @@
         "required": [
           "orgId",
           "systemPrompt",
-          "mcpServerUrl",
-          "mcpKeyName",
           "createdAt",
           "updatedAt"
         ]
@@ -341,14 +331,6 @@
           "systemPrompt": {
             "type": "string",
             "minLength": 1
-          },
-          "mcpServerUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "mcpKeyName": {
-            "type": "string",
-            "minLength": 1
           }
         },
         "required": [
@@ -361,14 +343,6 @@
           "systemPrompt": {
             "type": "string"
           },
-          "mcpServerUrl": {
-            "type": "string",
-            "nullable": true
-          },
-          "mcpKeyName": {
-            "type": "string",
-            "nullable": true
-          },
           "createdAt": {
             "type": "string"
           },
@@ -378,8 +352,6 @@
         },
         "required": [
           "systemPrompt",
-          "mcpServerUrl",
-          "mcpKeyName",
           "createdAt",
           "updatedAt"
         ]
@@ -388,14 +360,6 @@
         "type": "object",
         "properties": {
           "systemPrompt": {
-            "type": "string",
-            "minLength": 1
-          },
-          "mcpServerUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "mcpKeyName": {
             "type": "string",
             "minLength": 1
           }
@@ -502,7 +466,7 @@
           "App Config"
         ],
         "summary": "Register or update app configuration",
-        "description": "Idempotent upsert of app configuration scoped by org (via x-org-id header). Includes system prompt and optional MCP settings. Call on every cold start.",
+        "description": "Idempotent upsert of app configuration scoped by org (via x-org-id header). Includes system prompt. Call on every cold start.",
         "parameters": [
           {
             "schema": {

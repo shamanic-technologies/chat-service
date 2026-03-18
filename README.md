@@ -1,6 +1,6 @@
 # Chat Service
 
-Multi-org AI chat service. Streams Gemini AI responses via SSE with configurable system prompts and optional MCP tool calling per org.
+Multi-org AI chat service. Streams Gemini AI responses via SSE with configurable system prompts and built-in workflow tools.
 
 ## Quick Start
 
@@ -33,15 +33,11 @@ Before using `/chat`, orgs must register their configuration via:
 Request body:
 ```json
 {
-  "systemPrompt": "You are a helpful assistant for cold email campaigns...",
-  "mcpServerUrl": "https://mcp.mcpfactory.org",
-  "mcpKeyName": "mcpfactory"
+  "systemPrompt": "You are a helpful assistant for cold email campaigns..."
 }
 ```
 
 - `systemPrompt` (required) — the system prompt sent to Gemini for this org
-- `mcpServerUrl` (optional) — MCP server URL to connect to for tool calling
-- `mcpKeyName` (optional) — BYOK provider name in key-service; the org's key is decrypted at runtime and used as Bearer token for the MCP server
 
 This endpoint is **idempotent** (upsert on `orgId` from the `x-org-id` header). Call it on every cold start.
 
@@ -50,8 +46,6 @@ Response:
 {
   "orgId": "org-uuid",
   "systemPrompt": "...",
-  "mcpServerUrl": "https://mcp.mcpfactory.org",
-  "mcpKeyName": "mcpfactory",
   "createdAt": "2026-02-26T00:00:00.000Z",
   "updatedAt": "2026-02-26T00:00:00.000Z"
 }
@@ -68,15 +62,11 @@ Register a global (non-org-scoped) chat configuration used as fallback when no p
 Request body:
 ```json
 {
-  "systemPrompt": "You are a helpful assistant...",
-  "mcpServerUrl": "https://mcp.example.com",
-  "mcpKeyName": "platform-mcp"
+  "systemPrompt": "You are a helpful assistant..."
 }
 ```
 
 - `systemPrompt` (required) — the default system prompt for all orgs without a per-org config
-- `mcpServerUrl` (optional) — default MCP server URL
-- `mcpKeyName` (optional) — default MCP key name
 
 This endpoint is **idempotent** (upsert). Called on every cold start by api-service.
 
@@ -86,8 +76,6 @@ Response:
 ```json
 {
   "systemPrompt": "...",
-  "mcpServerUrl": "https://mcp.example.com",
-  "mcpKeyName": "platform-mcp",
   "createdAt": "2026-02-26T00:00:00.000Z",
   "updatedAt": "2026-02-26T00:00:00.000Z"
 }
@@ -140,10 +128,10 @@ data: {"type":"token","content":" suggest..."}
 ```
 
 ### 4. Tool calls (optional)
-If the AI invokes an MCP tool:
+If the AI invokes a built-in tool:
 ```
-data: {"type":"tool_call","id":"tc_550e8400-e29b-41d4-a716-446655440000","name":"search_leads","args":{"query":"..."}}
-data: {"type":"tool_result","id":"tc_550e8400-e29b-41d4-a716-446655440000","name":"search_leads","result":{...}}
+data: {"type":"tool_call","id":"tc_550e8400-e29b-41d4-a716-446655440000","name":"update_workflow","args":{"workflowId":"..."}}
+data: {"type":"tool_result","id":"tc_550e8400-e29b-41d4-a716-446655440000","name":"update_workflow","result":{...}}
 ```
 - `id` — unique identifier matching a `tool_call` to its `tool_result`
 - `name` — the tool name
@@ -152,15 +140,13 @@ data: {"type":"tool_result","id":"tc_550e8400-e29b-41d4-a716-446655440000","name
 
 After a tool result, more `token` events follow with the AI's continuation.
 
-**Built-in tools** (always available, no MCP server needed):
+**Built-in tools:**
 
 | Tool | Description |
 |---|---|
 | `update_workflow` | Updates a workflow's metadata (name, description, tags) via workflow-service `PUT /workflows/{id}` |
 | `validate_workflow` | Validates a workflow's DAG structure via workflow-service `POST /workflows/{id}/validate` |
 | `request_user_input` | Asks the user for structured input (see Input Request below) |
-
-Built-in tools emit `tool_call` and `tool_result` events like MCP tools. The frontend should render them the same way (e.g., collapsible tool call blocks).
 
 **Native Gemini tools** (always enabled, invoked automatically by the model):
 
@@ -221,7 +207,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 | Variable | Required | Description |
 |---|---|---|
-| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to resolve the Gemini API key per-request and org MCP keys at runtime) |
+| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to resolve the Gemini API key per-request) |
 | `CHAT_SERVICE_DATABASE_URL` | Yes | PostgreSQL connection string |
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |
 | `RUNS_SERVICE_URL` | No | RunsService endpoint (default: `https://runs.mcpfactory.org`) |
@@ -236,7 +222,7 @@ Uses PostgreSQL via Drizzle ORM. Three tables:
 
 - **sessions** — conversation sessions scoped by `orgId` and `userId`
 - **messages** — chat messages with role, content, optional `toolCalls`, `buttons` JSONB, `runId` linking to RunsService, and optional `campaign_id`, `brand_id`, `workflow_name` for workflow tracking
-- **app_configs** — per-org configuration (system prompt, MCP settings) with unique constraint on `orgId`
+- **app_configs** — per-org configuration (system prompt) with unique constraint on `orgId`
 - **platform_configs** — global platform-wide chat configuration (fallback when no per-org config exists)
 
 Migrations run automatically on server start. To generate new migrations after schema changes:
@@ -295,8 +281,7 @@ src/
     schema.ts       # sessions + messages + app_configs + platform_configs table definitions
   lib/
     gemini.ts          # Gemini AI client, streaming + function calling, buildSystemPrompt helper, built-in tool declarations
-    mcp-client.ts      # MCP server connection via Streamable HTTP transport + tool execution
-    key-client.ts      # Key-service client for resolving Gemini keys (platform or BYOK per org) and org MCP keys
+    key-client.ts      # Key-service client for resolving Gemini keys (platform or BYOK per org)
     runs-client.ts     # RunsService HTTP client for run tracking and cost reporting
     workflow-client.ts # Workflow-service client for update_workflow and validate_workflow built-in tools
 scripts/

@@ -84,8 +84,6 @@ registry.registerPath({
 export const AppConfigRequestSchema = z
   .object({
     systemPrompt: z.string().min(1, "systemPrompt is required"),
-    mcpServerUrl: z.string().url().optional(),
-    mcpKeyName: z.string().min(1).optional(),
   })
   .openapi("AppConfigRequest");
 
@@ -93,8 +91,6 @@ export const AppConfigResponseSchema = z
   .object({
     orgId: z.string(),
     systemPrompt: z.string(),
-    mcpServerUrl: z.string().nullable(),
-    mcpKeyName: z.string().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -108,7 +104,7 @@ registry.registerPath({
   tags: ["App Config"],
   summary: "Register or update app configuration",
   description:
-    "Idempotent upsert of app configuration scoped by org (via x-org-id header). Includes system prompt and optional MCP settings. Call on every cold start.",
+    "Idempotent upsert of app configuration scoped by org (via x-org-id header). Includes system prompt. Call on every cold start.",
   request: {
     headers: z.object({
       "x-api-key": z.string().openapi({
@@ -154,16 +150,12 @@ registry.registerPath({
 export const PlatformConfigRequestSchema = z
   .object({
     systemPrompt: z.string().min(1, "systemPrompt is required"),
-    mcpServerUrl: z.string().url().optional(),
-    mcpKeyName: z.string().min(1).optional(),
   })
   .openapi("PlatformConfigRequest");
 
 export const PlatformConfigResponseSchema = z
   .object({
     systemPrompt: z.string(),
-    mcpServerUrl: z.string().nullable(),
-    mcpKeyName: z.string().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -289,8 +281,8 @@ const SSEToolCallEventSchema = z
       example: "tc_550e8400-e29b-41d4-a716-446655440000",
     }),
     name: z.string().openapi({
-      description: "The MCP tool name being invoked",
-      example: "search_leads",
+      description: "The tool name being invoked",
+      example: "update_workflow",
     }),
     args: z.record(z.string(), z.unknown()).openapi({
       description: "Input arguments passed to the tool, as a JSON object",
@@ -308,8 +300,8 @@ const SSEToolResultEventSchema = z
       example: "tc_550e8400-e29b-41d4-a716-446655440000",
     }),
     name: z.string().openapi({
-      description: "The MCP tool name that produced this result",
-      example: "search_leads",
+      description: "The tool name that produced this result",
+      example: "update_workflow",
     }),
     result: z.unknown().openapi({
       description: "The tool output — can be a string or a JSON object",
