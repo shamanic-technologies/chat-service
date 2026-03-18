@@ -171,6 +171,45 @@ export const LIST_AVAILABLE_SERVICES_TOOL: FunctionDeclaration = {
   },
 };
 
+export const GET_WORKFLOW_DETAILS_TOOL: FunctionDeclaration = {
+  name: "get_workflow_details",
+  description:
+    "Fetch the full details of a workflow including its DAG, metadata, and status. Use this to inspect the current state of a workflow, especially after making changes via update_workflow or update_workflow_node_config.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      workflowId: {
+        type: Type.STRING,
+        description:
+          "UUID of the workflow to fetch. If available in context, use it directly — do NOT ask the user for it.",
+      },
+    },
+    required: ["workflowId"],
+  },
+};
+
+export const GENERATE_WORKFLOW_TOOL: FunctionDeclaration = {
+  name: "generate_workflow",
+  description:
+    "Generate a new workflow from a natural language description. Uses an LLM to create a valid DAG, validates it, and deploys it automatically. Use this when the user wants to create a brand new workflow from scratch.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      description: {
+        type: Type.STRING,
+        description:
+          "Natural language description of the desired workflow. Be specific about the steps, services, and data flow. Minimum 10 characters.",
+      },
+      hints: {
+        type: Type.OBJECT,
+        description:
+          "Optional hints to guide generation. Can include: services (array of service names to scope to), nodeTypes (suggested node types), expectedInputs (expected flow_input field names like 'campaignId').",
+      },
+    },
+    required: ["description"],
+  },
+};
+
 export const BUILTIN_TOOLS: FunctionDeclaration[] = [
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
@@ -179,6 +218,8 @@ export const BUILTIN_TOOLS: FunctionDeclaration[] = [
   UPDATE_PROMPT_TEMPLATE_TOOL,
   UPDATE_WORKFLOW_NODE_CONFIG_TOOL,
   LIST_AVAILABLE_SERVICES_TOOL,
+  GET_WORKFLOW_DETAILS_TOOL,
+  GENERATE_WORKFLOW_TOOL,
 ];
 
 export interface FunctionCall {

@@ -293,3 +293,80 @@ describe("updateWorkflowNodeConfig", () => {
     ).rejects.toThrow(/has no DAG/);
   });
 });
+
+describe("generateWorkflow", () => {
+  it("sends POST /workflows/generate with description and hints", async () => {
+    const mockResponse = {
+      workflow: { id: "wf-new", name: "sales-email-cold-outreach-nova" },
+      dag: { nodes: [{ id: "step-1", type: "http.call" }], edges: [] },
+      category: "sales",
+      channel: "email",
+      audienceType: "cold-outreach",
+      generatedDescription: "A cold email workflow",
+    };
+
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockResponse),
+    });
+
+    const { generateWorkflow } = await loadModule();
+    const result = await generateWorkflow(
+      {
+        description: "Create a cold email workflow that fetches a lead, generates an email, and sends it",
+        hints: { services: ["lead", "content-generation", "email-gateway"] },
+      },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://workflow.test.local/workflows/generate",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "x-api-key": "test-wf-key",
+          "x-org-id": "org-1",
+        }),
+      }),
+    );
+
+    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.description).toContain("cold email workflow");
+    expect(body.hints.services).toContain("lead");
+
+    expect(result).toEqual(mockResponse);
+  });
+
+  it("throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 422,
+      text: () => Promise.resolve("Invalid DAG"),
+    });
+
+    const { generateWorkflow } = await loadModule();
+    await expect(
+      generateWorkflow(
+        { description: "bad workflow" },
+        { orgId: "o", userId: "u", runId: "r" },
+      ),
+    ).rejects.toThrow(/returned 422/);
+  });
+
+  it("works without hints", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ workflow: { id: "wf-1" } }),
+    });
+
+    const { generateWorkflow } = await loadModule();
+    await generateWorkflow(
+      { description: "Simple workflow that sends an email" },
+      { orgId: "o", userId: "u", runId: "r" },
+    );
+
+    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.description).toBe("Simple workflow that sends an email");
+    expect(body.hints).toBeUndefined();
+  });
+});
