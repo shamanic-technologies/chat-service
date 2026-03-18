@@ -12,6 +12,229 @@
   ],
   "components": {
     "schemas": {
+      "SSESessionEvent": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The session UUID — store this for subsequent requests"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "SSETokenEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "token"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "description": "Incremental text fragment of the AI response"
+          }
+        },
+        "required": [
+          "type",
+          "content"
+        ]
+      },
+      "SSEThinkingStartEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "thinking_start"
+            ]
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "SSEThinkingDeltaEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "thinking_delta"
+            ]
+          },
+          "thinking": {
+            "type": "string",
+            "description": "Incremental fragment of the model's internal reasoning"
+          }
+        },
+        "required": [
+          "type",
+          "thinking"
+        ]
+      },
+      "SSEThinkingStopEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "thinking_stop"
+            ]
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "SSEToolCallEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "tool_call"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "Unique identifier (format: tc_<uuid>) — use this to match with the corresponding tool_result",
+            "example": "tc_550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "The MCP tool name being invoked",
+            "example": "search_leads"
+          },
+          "args": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "Input arguments passed to the tool, as a JSON object",
+            "example": {
+              "query": "tech companies in Chicago"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "name",
+          "args"
+        ]
+      },
+      "SSEToolResultEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "tool_result"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "Matches the id from the corresponding tool_call event",
+            "example": "tc_550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "The MCP tool name that produced this result",
+            "example": "search_leads"
+          },
+          "result": {
+            "nullable": true,
+            "description": "The tool output — can be a string or a JSON object"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "name"
+        ]
+      },
+      "SSEInputRequestEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "input_request"
+            ]
+          },
+          "input_type": {
+            "type": "string",
+            "enum": [
+              "url",
+              "text",
+              "email"
+            ],
+            "description": "The type of input widget the frontend should render"
+          },
+          "label": {
+            "type": "string",
+            "description": "Human-readable label/question for the input",
+            "example": "What's your brand URL?"
+          },
+          "placeholder": {
+            "type": "string",
+            "description": "Placeholder text for the input field",
+            "example": "https://yourbrand.com"
+          },
+          "field": {
+            "type": "string",
+            "description": "Identifier for what the input represents",
+            "example": "brand_url"
+          }
+        },
+        "required": [
+          "type",
+          "input_type",
+          "label",
+          "field"
+        ]
+      },
+      "SSEButtonsEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "buttons"
+            ]
+          },
+          "buttons": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "Button display text"
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Text to send as the next user message when the button is clicked"
+                }
+              },
+              "required": [
+                "label",
+                "value"
+              ]
+            },
+            "description": "Quick-reply buttons extracted from the AI response"
+          }
+        },
+        "required": [
+          "type",
+          "buttons"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -161,16 +384,26 @@
         "properties": {
           "message": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "The user's chat message",
+            "example": "What campaigns are performing best this week?"
           },
           "sessionId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "UUID of an existing session to continue. Omit to create a new session. When omitted, the service creates a new session and returns its ID in the first SSE event ({\"sessionId\":\"<uuid>\"}). Use that ID in subsequent requests to continue the conversation. If a sessionId is provided but does not exist or belongs to a different org, the stream returns a \"Session not found.\" error and closes.",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
           },
           "context": {
             "type": "object",
             "additionalProperties": {
               "nullable": true
+            },
+            "description": "Free-form JSON injected into the system prompt for this request only (not stored). Use this to pass dynamic data like brand URLs, campaign objectives, budgets, etc.",
+            "example": {
+              "brandUrl": "https://example.com",
+              "objective": "clicks",
+              "budgetAmount": 500
             }
           }
         },
@@ -429,7 +662,7 @@
           "Chat"
         ],
         "summary": "Stream AI chat response",
-        "description": "Send a message and receive a streamed AI response via Server-Sent Events (SSE). Supports MCP tool calling and quick-reply buttons. Requires app config to be registered first via PUT /config.",
+        "description": "Send a message and receive a streamed AI response via Server-Sent Events (SSE).\n\n**Session lifecycle:**\n- To start a new conversation, omit `sessionId`. The first SSE event will be `{\"sessionId\":\"<uuid>\"}` — store this ID.\n- To continue a conversation, pass that `sessionId` in subsequent requests.\n- If a provided `sessionId` does not exist or belongs to a different org, the stream returns an error and closes.\n\n**SSE event order:**\nEach `data:` line contains a JSON object. Events arrive in this order:\n\n1. **Session** — `{\"sessionId\":\"<uuid>\"}` (always first)\n2. **Thinking** _(optional)_ — `thinking_start` → one or more `thinking_delta` → `thinking_stop`. May appear before tokens and after tool results.\n3. **Tokens** — `{\"type\":\"token\",\"content\":\"...\"}` streamed incrementally as the AI generates text.\n4. **Tool calls** _(optional, repeatable)_ — `tool_call` followed by `tool_result`, then more thinking/tokens as the AI continues.\n5. **Input request** _(optional)_ — `input_request` when the AI needs structured user input (terminates the response).\n6. **Buttons** _(optional)_ — `{\"type\":\"buttons\",\"buttons\":[...]}` with quick-reply options, sent after all tokens.\n7. **Done** — `\"[DONE]\"` (always last).\n\nSee the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent) in components/schemas for exact payload shapes.\n\nRequires app config to be registered first via PUT /config (or platform config via PUT /platform-config as fallback).",
         "parameters": [
           {
             "schema": {
@@ -514,7 +747,7 @@
         },
         "responses": {
           "200": {
-            "description": "SSE stream of chat events (token, thinking_start, thinking_delta, thinking_stop, tool_call, tool_result, input_request, buttons, [DONE])",
+            "description": "SSE stream of chat events. Each `data:` line is a JSON object matching one of the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent), except the final `data: \"[DONE]\"` which is a plain string.",
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -544,7 +777,7 @@
             }
           },
           "404": {
-            "description": "App config not found — register via PUT /config first",
+            "description": "App config not found — register via PUT /config first, or ensure platform config exists via PUT /platform-config",
             "content": {
               "application/json": {
                 "schema": {
