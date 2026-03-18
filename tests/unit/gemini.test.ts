@@ -715,12 +715,13 @@ describe("VALIDATE_WORKFLOW_TOOL", () => {
 });
 
 describe("BUILTIN_TOOLS", () => {
-  it("includes all three built-in tools", () => {
+  it("includes all built-in tools", () => {
     const names = BUILTIN_TOOLS.map((t) => t.name);
     expect(names).toContain("request_user_input");
     expect(names).toContain("update_workflow");
     expect(names).toContain("validate_workflow");
-    expect(BUILTIN_TOOLS).toHaveLength(3);
+    expect(names).toContain("get_prompt_template");
+    expect(BUILTIN_TOOLS).toHaveLength(4);
   });
 });
 

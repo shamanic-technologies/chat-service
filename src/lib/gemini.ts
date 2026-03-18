@@ -89,10 +89,28 @@ export const VALIDATE_WORKFLOW_TOOL: FunctionDeclaration = {
   },
 };
 
+export const GET_PROMPT_TEMPLATE_TOOL: FunctionDeclaration = {
+  name: "get_prompt_template",
+  description:
+    "Retrieve a stored prompt template by type from the content-generation service. Use this when the user asks to see, review, or check a prompt template (e.g. cold-email, follow-up).",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      type: {
+        type: Type.STRING,
+        description:
+          "The prompt type to look up (e.g. 'cold-email', 'follow-up', 'sales-email')",
+      },
+    },
+    required: ["type"],
+  },
+};
+
 export const BUILTIN_TOOLS: FunctionDeclaration[] = [
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
   VALIDATE_WORKFLOW_TOOL,
+  GET_PROMPT_TEMPLATE_TOOL,
 ];
 
 export interface FunctionCall {
