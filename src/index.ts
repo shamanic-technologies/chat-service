@@ -206,7 +206,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   const gemini = createGeminiClient({ apiKey: resolvedKey.key, systemPrompt });
 
   let mcpConn: McpConnection | null = null;
-  let runId: string | undefined;
+  let runId: string | null = null;
   let chatFailed = false;
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
@@ -239,15 +239,26 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     sendSSE(res, { sessionId: currentSessionId });
 
-    // Register run in RunsService (caller's runId becomes our parentRunId)
-    const run = await createRun({
-      orgId,
-      userId,
-      serviceName: "chat-service",
-      taskName: "chat",
-      parentRunId: callerRunId,
-    }, trackingHeaders);
-    if (run) runId = run.id;
+    // Register run in RunsService (mandatory — fail request if unavailable)
+    try {
+      const run = await createRun({
+        orgId,
+        userId,
+        serviceName: "chat-service",
+        taskName: "chat",
+        parentRunId: callerRunId,
+      }, trackingHeaders);
+      runId = run.id;
+    } catch (runErr) {
+      console.error("Failed to create run:", runErr);
+      sendSSE(res, {
+        type: "error",
+        message: "Service temporarily unavailable (run tracking). Please try again.",
+      });
+      sendSSE(res, "[DONE]");
+      res.end();
+      return;
+    }
 
     // Load conversation history
     const history = await db.query.messages.findMany({
@@ -400,7 +411,7 @@ app.post("/chat", requireAuth, async (req, res) => {
             const wfParams = {
               orgId,
               userId,
-              runId: runId ?? callerRunId,
+              runId,
               trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
             };
             const args = (call.args as Record<string, unknown>) || {};
@@ -601,7 +612,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       toolCalls: toolCalls.length > 0 ? toolCalls : null,
       buttons: buttons.length > 0 ? buttons : null,
       tokenCount: totalPromptTokens + totalOutputTokens || null,
-      runId: runId ?? null,
+      runId,
       campaignId: workflowTracking.campaignId ?? null,
       brandId: workflowTracking.brandId ?? null,
       workflowName: workflowTracking.workflowName ?? null,
