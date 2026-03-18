@@ -125,6 +125,42 @@ export async function updateWorkflowNodeConfig(
   return updateWorkflow(workflowId, { dag: workflow.dag }, params);
 }
 
+export interface GenerateWorkflowBody {
+  description: string;
+  hints?: {
+    services?: string[];
+    nodeTypes?: string[];
+    expectedInputs?: string[];
+  };
+  style?: {
+    type: "human" | "brand";
+    humanId?: string;
+    brandId?: string;
+    name: string;
+  };
+}
+
+export async function generateWorkflow(
+  body: GenerateWorkflowBody,
+  params: WorkflowCallParams,
+): Promise<unknown> {
+  const url = `${WORKFLOW_SERVICE_URL}/workflows/generate`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: buildHeaders(params),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[workflow-client] POST /workflows/generate returned ${res.status}: ${text}`,
+    );
+  }
+
+  return await res.json();
+}
+
 export async function validateWorkflow(
   workflowId: string,
   params: WorkflowCallParams,

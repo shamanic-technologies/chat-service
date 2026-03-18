@@ -17,6 +17,8 @@ import {
   updateWorkflow,
   validateWorkflow,
   updateWorkflowNodeConfig,
+  getWorkflow,
+  generateWorkflow,
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { listAvailableServices } from "./lib/api-registry-client.js";
@@ -353,6 +355,43 @@ app.post("/chat", requireAuth, async (req, res) => {
         });
         emittedInputRequest = true;
         return "input_request";
+      }
+
+      // Built-in workflow read tool
+      if (call.name === "get_workflow_details") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await getWorkflow(
+          args.workflowId as string,
+          {
+            orgId,
+            userId,
+            runId: runId!,
+            trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+          },
+        );
+
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // Built-in workflow generate tool
+      if (call.name === "generate_workflow") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await generateWorkflow(
+          {
+            description: args.description as string,
+            hints: args.hints as { services?: string[]; nodeTypes?: string[]; expectedInputs?: string[] } | undefined,
+          },
+          {
+            orgId,
+            userId,
+            runId: runId!,
+            trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+          },
+        );
+
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
       }
 
       // Built-in workflow tools

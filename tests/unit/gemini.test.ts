@@ -724,7 +724,9 @@ describe("BUILTIN_TOOLS", () => {
     expect(names).toContain("update_prompt_template");
     expect(names).toContain("update_workflow_node_config");
     expect(names).toContain("list_available_services");
-    expect(BUILTIN_TOOLS).toHaveLength(7);
+    expect(names).toContain("get_workflow_details");
+    expect(names).toContain("generate_workflow");
+    expect(BUILTIN_TOOLS).toHaveLength(9);
   });
 });
 
