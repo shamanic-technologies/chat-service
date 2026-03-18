@@ -240,6 +240,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     }
 
     sendSSE(res, { sessionId: currentSessionId });
+    console.log(`[chat] session="${currentSessionId}" org="${orgId}" user="${userId}" — start`);
 
     // Register run in RunsService (mandatory — fail request if unavailable)
     try {
@@ -249,8 +250,9 @@ app.post("/chat", requireAuth, async (req, res) => {
         trackingHeaders,
       );
       runId = run.id;
+      console.log(`[chat] session="${currentSessionId}" run="${runId}" created`);
     } catch (runErr) {
-      console.error("Failed to create run:", runErr);
+      console.error(`[chat] session="${currentSessionId}" run creation failed:`, runErr);
       sendSSE(res, {
         type: "error",
         message: "Service temporarily unavailable (run tracking). Please try again.",
@@ -541,6 +543,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
 
+    console.log(`[chat] session="${currentSessionId}" streaming — model="${gemini.model}" tools=${allTools.length} history=${geminiHistory.length}`);
     const stream = gemini.streamChat(
       geminiHistory,
       message.trim(),
@@ -548,6 +551,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     );
 
     await processStream(stream);
+    console.log(`[chat] session="${currentSessionId}" stream complete — tokens=${totalPromptTokens}+${totalOutputTokens} response=${fullResponse.length}chars`);
 
     // Finalize buffer: handle any remaining incomplete line
     if (lineBuf) {
@@ -610,7 +614,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     sendSSE(res, "[DONE]");
   } catch (err) {
     chatFailed = true;
-    console.error("Chat error:", err);
+    console.error(`[chat] org="${orgId}" unhandled error:`, err);
     sendSSE(res, {
       type: "error",
       message: "An unexpected error occurred. Please try again.",

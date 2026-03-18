@@ -731,7 +731,7 @@ describe("native Gemini tools (googleSearch + urlContext)", () => {
     );
   });
 
-  it("passes googleSearch and urlContext in tools array for streamChat", async () => {
+  it("uses googleSearch + urlContext when NO function tools are provided", async () => {
     const client = createGeminiClient({
       apiKey: "test-key",
       systemPrompt: TEST_PROMPT,
@@ -743,15 +743,14 @@ describe("native Gemini tools (googleSearch + urlContext)", () => {
 
     const callArgs = mockGenerateContentStream.mock.calls.at(-1)?.[0];
     const tools = callArgs?.config?.tools;
-    expect(tools).toEqual(
-      expect.arrayContaining([
-        { googleSearch: {} },
-        { urlContext: {} },
-      ]),
-    );
+    expect(tools).toEqual([
+      { googleSearch: {} },
+      { urlContext: {} },
+    ]);
+    expect(callArgs?.config?.toolConfig).toBeUndefined();
   });
 
-  it("passes googleSearch and urlContext in tools array for sendFunctionResult", async () => {
+  it("uses googleSearch + urlContext in sendFunctionResult when no tools", async () => {
     const client = createGeminiClient({
       apiKey: "test-key",
       systemPrompt: TEST_PROMPT,
@@ -763,15 +762,13 @@ describe("native Gemini tools (googleSearch + urlContext)", () => {
 
     const callArgs = mockGenerateContentStream.mock.calls.at(-1)?.[0];
     const tools = callArgs?.config?.tools;
-    expect(tools).toEqual(
-      expect.arrayContaining([
-        { googleSearch: {} },
-        { urlContext: {} },
-      ]),
-    );
+    expect(tools).toEqual([
+      { googleSearch: {} },
+      { urlContext: {} },
+    ]);
   });
 
-  it("includes functionDeclarations alongside native tools when tools are provided", async () => {
+  it("uses ONLY functionDeclarations when function tools are provided (no googleSearch)", async () => {
     const client = createGeminiClient({
       apiKey: "test-key",
       systemPrompt: TEST_PROMPT,
@@ -786,27 +783,32 @@ describe("native Gemini tools (googleSearch + urlContext)", () => {
 
     const callArgs = mockGenerateContentStream.mock.calls.at(-1)?.[0];
     const tools = callArgs?.config?.tools;
-    expect(tools).toHaveLength(3);
-    expect(tools[0]).toEqual({ functionDeclarations: customTools });
-    expect(tools[1]).toEqual({ googleSearch: {} });
-    expect(tools[2]).toEqual({ urlContext: {} });
+    expect(tools).toEqual([{ functionDeclarations: customTools }]);
+    // Must NOT contain googleSearch — Gemini rejects this combination
+    expect(tools).not.toEqual(
+      expect.arrayContaining([{ googleSearch: {} }]),
+    );
   });
 
-  it("still includes native tools even when no custom tools are provided", async () => {
+  it("uses ONLY functionDeclarations in sendFunctionResult when tools provided", async () => {
     const client = createGeminiClient({
       apiKey: "test-key",
       systemPrompt: TEST_PROMPT,
     });
-    const gen = client.streamChat([], "hello");
+    const customTools = [
+      { name: "my_tool", description: "test", parameters: {} },
+    ];
+    const gen = client.sendFunctionResult([], "tool", { data: "ok" }, customTools);
     for await (const _ of gen) {
       /* drain */
     }
 
     const callArgs = mockGenerateContentStream.mock.calls.at(-1)?.[0];
     const tools = callArgs?.config?.tools;
-    expect(tools).toHaveLength(2);
-    expect(tools[0]).toEqual({ googleSearch: {} });
-    expect(tools[1]).toEqual({ urlContext: {} });
+    expect(tools).toEqual([{ functionDeclarations: customTools }]);
+    expect(tools).not.toEqual(
+      expect.arrayContaining([{ googleSearch: {} }]),
+    );
   });
 });
 
