@@ -49,6 +49,26 @@ describe("updateWorkflow", () => {
     expect(result).toEqual({ id: "wf-123", description: "Updated" });
   });
 
+  it("always sends x-run-id header (regression: workflow-service 400)", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: "wf-123" }),
+    });
+
+    const { updateWorkflow } = await loadModule();
+    await updateWorkflow(
+      "wf-123",
+      { name: "test" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    const callHeaders = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
+    expect(callHeaders["x-run-id"]).toBe("run-1");
+    expect(callHeaders["x-org-id"]).toBe("org-1");
+    expect(callHeaders["x-user-id"]).toBe("user-1");
+    expect(callHeaders["x-api-key"]).toBe("test-wf-key");
+  });
+
   it("forwards tracking headers", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
@@ -62,6 +82,7 @@ describe("updateWorkflow", () => {
       {
         orgId: "org-1",
         userId: "user-1",
+        runId: "run-1",
         trackingHeaders: { "x-campaign-id": "camp-1" },
       },
     );
@@ -79,7 +100,7 @@ describe("updateWorkflow", () => {
 
     const { updateWorkflow } = await loadModule();
     await expect(
-      updateWorkflow("wf-bad", { description: "x" }, { orgId: "o", userId: "u" }),
+      updateWorkflow("wf-bad", { description: "x" }, { orgId: "o", userId: "u", runId: "r" }),
     ).rejects.toThrow(/returned 404/);
   });
 
@@ -88,7 +109,7 @@ describe("updateWorkflow", () => {
 
     const { updateWorkflow } = await loadModule();
     await expect(
-      updateWorkflow("wf-1", { description: "x" }, { orgId: "o", userId: "u" }),
+      updateWorkflow("wf-1", { description: "x" }, { orgId: "o", userId: "u", runId: "r" }),
     ).rejects.toThrow(/WORKFLOW_SERVICE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
@@ -133,7 +154,7 @@ describe("validateWorkflow", () => {
 
     const { validateWorkflow } = await loadModule();
     await expect(
-      validateWorkflow("wf-bad", { orgId: "o", userId: "u" }),
+      validateWorkflow("wf-bad", { orgId: "o", userId: "u", runId: "r" }),
     ).rejects.toThrow(/returned 500/);
   });
 
@@ -145,7 +166,7 @@ describe("validateWorkflow", () => {
     });
 
     const { validateWorkflow } = await loadModule();
-    await validateWorkflow("wf-1", { orgId: "o", userId: "u" });
+    await validateWorkflow("wf-1", { orgId: "o", userId: "u", runId: "r" });
 
     expect(fetch).toHaveBeenCalledWith(
       "https://workflow.mcpfactory.org/workflows/wf-1/validate",

@@ -5,7 +5,7 @@ const WORKFLOW_SERVICE_API_KEY = process.env.WORKFLOW_SERVICE_API_KEY;
 export interface WorkflowCallParams {
   orgId: string;
   userId: string;
-  runId?: string;
+  runId: string;
   trackingHeaders?: Record<string, string>;
 }
 
@@ -21,8 +21,8 @@ function buildHeaders(params: WorkflowCallParams): Record<string, string> {
     "x-api-key": WORKFLOW_SERVICE_API_KEY,
     "x-org-id": params.orgId,
     "x-user-id": params.userId,
+    "x-run-id": params.runId,
   };
-  if (params.runId) headers["x-run-id"] = params.runId;
   if (params.trackingHeaders) {
     for (const [k, v] of Object.entries(params.trackingHeaders)) {
       if (v) headers[k] = v;

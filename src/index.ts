@@ -400,7 +400,7 @@ app.post("/chat", requireAuth, async (req, res) => {
             const wfParams = {
               orgId,
               userId,
-              runId,
+              runId: runId ?? callerRunId,
               trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
             };
             const args = (call.args as Record<string, unknown>) || {};
