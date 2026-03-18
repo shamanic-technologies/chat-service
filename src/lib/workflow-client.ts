@@ -74,16 +74,35 @@ export interface UpdateWorkflowBody {
   dag?: WorkflowResponse["dag"];
 }
 
+/**
+ * Strip null values from DAG nodes before sending to workflow-service.
+ * Gemini sometimes sends `config: null` or `inputMapping: null` instead
+ * of omitting the field — workflow-service Zod schema rejects nulls.
+ */
+function sanitizeDag(dag: WorkflowResponse["dag"]): WorkflowResponse["dag"] {
+  return {
+    ...dag,
+    nodes: dag.nodes.map((node) => {
+      const clean: Record<string, unknown> = { id: node.id, type: node.type };
+      if (node.config != null) clean.config = node.config;
+      if (node.inputMapping != null) clean.inputMapping = node.inputMapping;
+      if (node.retries != null) clean.retries = node.retries;
+      return clean as typeof node;
+    }),
+  };
+}
+
 export async function updateWorkflow(
   workflowId: string,
   body: UpdateWorkflowBody,
   params: WorkflowCallParams,
 ): Promise<unknown> {
+  const sanitized = body.dag ? { ...body, dag: sanitizeDag(body.dag) } : body;
   const url = `${WORKFLOW_SERVICE_URL}/workflows/${encodeURIComponent(workflowId)}`;
   const res = await fetch(url, {
     method: "PUT",
     headers: buildHeaders(params),
-    body: JSON.stringify(body),
+    body: JSON.stringify(sanitized),
   });
 
   if (!res.ok) {
