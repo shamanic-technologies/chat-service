@@ -288,6 +288,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     // Stream response from Gemini
     let fullResponse = "";
+    let emittedInputRequest = false;
     const toolCalls: ToolCallRecord[] = [];
 
     // Line buffer: hold back trailing lines that match button syntax
@@ -376,6 +377,7 @@ app.post("/chat", requireAuth, async (req, res) => {
             ...(args.placeholder ? { placeholder: args.placeholder } : {}),
             field: args.field ?? "input",
           });
+          emittedInputRequest = true;
           break;
         }
 
@@ -484,6 +486,25 @@ app.post("/chat", requireAuth, async (req, res) => {
       sendSSE(res, { type: "buttons", buttons });
     }
 
+    // Detect empty stream: Gemini returned no content (safety filter, context overflow, etc.)
+    if (!fullResponse && !emittedInputRequest && toolCalls.length === 0) {
+      chatFailed = true;
+      console.error(
+        `Empty Gemini response for session="${currentSessionId}" org="${orgId}" — ` +
+          `promptTokens=${totalPromptTokens} outputTokens=${totalOutputTokens} ` +
+          `historyLength=${geminiHistory.length} messageLength=${message.length}`,
+      );
+      sendSSE(res, {
+        type: "error",
+        message:
+          "The AI model returned an empty response. This may happen when the conversation " +
+          "is too long or the message content triggers a safety filter. Please try shortening " +
+          "your message or starting a new conversation.",
+      });
+      sendSSE(res, "[DONE]");
+      return;
+    }
+
     // Save assistant message with cleaned response
     const cleanedResponse =
       buttons.length > 0 ? stripButtons(fullResponse) : fullResponse;
@@ -505,8 +526,8 @@ app.post("/chat", requireAuth, async (req, res) => {
     chatFailed = true;
     console.error("Chat error:", err);
     sendSSE(res, {
-      type: "token",
-      content: "\n\nSorry, something went wrong. Please try again.",
+      type: "error",
+      message: "An unexpected error occurred. Please try again.",
     });
     sendSSE(res, "[DONE]");
   } finally {

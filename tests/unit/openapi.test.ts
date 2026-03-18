@@ -76,6 +76,23 @@ describe("openapi.json", () => {
     expect(spec.components?.schemas?.AppConfigResponse).toBeDefined();
   });
 
+  it("includes all SSE event schemas including SSEErrorEvent", () => {
+    const spec = JSON.parse(readFileSync(openapiPath, "utf-8"));
+    const schemas = spec.components?.schemas;
+    expect(schemas?.SSESessionEvent).toBeDefined();
+    expect(schemas?.SSETokenEvent).toBeDefined();
+    expect(schemas?.SSEThinkingStartEvent).toBeDefined();
+    expect(schemas?.SSEThinkingDeltaEvent).toBeDefined();
+    expect(schemas?.SSEThinkingStopEvent).toBeDefined();
+    expect(schemas?.SSEToolCallEvent).toBeDefined();
+    expect(schemas?.SSEToolResultEvent).toBeDefined();
+    expect(schemas?.SSEInputRequestEvent).toBeDefined();
+    expect(schemas?.SSEButtonsEvent).toBeDefined();
+    expect(schemas?.SSEErrorEvent).toBeDefined();
+    expect(schemas?.SSEErrorEvent.properties.type.enum).toEqual(["error"]);
+    expect(schemas?.SSEErrorEvent.properties.message.type).toBe("string");
+  });
+
   it("ChatRequest schema requires only message (appId removed)", () => {
     const spec = JSON.parse(readFileSync(openapiPath, "utf-8"));
     const chatReq = spec.components.schemas.ChatRequest;

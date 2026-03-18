@@ -166,7 +166,14 @@ data: {"type":"buttons","buttons":[{"label":"Send Cold Emails","value":"Send Col
 ```
 Buttons are extracted from the AI response when it ends with lines formatted as `- [Button Text]`. The button `label` and `value` are both set to the text inside the brackets. Button lines are stripped from the token stream to prevent duplication.
 
-### 7. Done
+### 7. Error (optional)
+Sent when the AI model returns an empty response (context overflow, safety filter) or an unexpected error occurs:
+```
+data: {"type":"error","message":"The AI model returned an empty response. This may happen when the conversation is too long or the message content triggers a safety filter."}
+```
+The frontend should display the `message` to the user. An `error` event is always followed by `[DONE]`.
+
+### 8. Done
 ```
 data: "[DONE]"
 ```
