@@ -20,4 +20,12 @@ describe("AppConfigRequestSchema", () => {
     const result = AppConfigRequestSchema.safeParse({});
     expect(result.success).toBe(false);
   });
+
+  it("rejects unknown fields (e.g. deprecated mcpServerUrl)", () => {
+    const result = AppConfigRequestSchema.safeParse({
+      systemPrompt: "You are a helpful assistant.",
+      mcpServerUrl: "https://mcp.example.com",
+    });
+    expect(result.success).toBe(false);
+  });
 });

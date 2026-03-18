@@ -335,7 +335,8 @@
         },
         "required": [
           "systemPrompt"
-        ]
+        ],
+        "additionalProperties": false
       },
       "PlatformConfigResponse": {
         "type": "object",
@@ -366,7 +367,8 @@
         },
         "required": [
           "systemPrompt"
-        ]
+        ],
+        "additionalProperties": false
       },
       "ChatRequest": {
         "type": "object",
