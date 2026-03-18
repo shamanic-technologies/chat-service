@@ -25,6 +25,8 @@ import {
   buildSystemPrompt,
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
+  VALIDATE_WORKFLOW_TOOL,
+  BUILTIN_TOOLS,
 } from "../../src/lib/gemini.js";
 
 const TEST_PROMPT = "You are a test assistant.";
@@ -489,6 +491,25 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("## Additional Context (this request only)");
     expect(result).toContain("https://example.com");
   });
+
+  it("includes context usage rules that reference the context keys", () => {
+    const result = buildSystemPrompt("Base prompt.", {
+      workflowId: "wf-123",
+      brandUrl: "https://example.com",
+    });
+    expect(result).toContain("## IMPORTANT: Context Usage Rules");
+    expect(result).toContain("workflowId, brandUrl");
+    expect(result).toContain("Do NOT call request_user_input");
+  });
+
+  it("instructs LLM to use workflowId directly from context", () => {
+    const result = buildSystemPrompt("Base prompt.", {
+      workflowId: "wf-abc-123",
+    });
+    expect(result).toContain("wf-abc-123");
+    expect(result).toContain("workflowId");
+    expect(result).toContain("use them directly when calling tools");
+  });
 });
 
 describe("REQUEST_USER_INPUT_TOOL", () => {
@@ -508,19 +529,54 @@ describe("REQUEST_USER_INPUT_TOOL", () => {
     expect(props).toHaveProperty("value");
     expect(params.required).toEqual(["input_type", "label", "field"]);
   });
+
+  it("description warns against using for confirmations", () => {
+    expect(REQUEST_USER_INPUT_TOOL.description).toContain(
+      "NEVER use this for confirmations",
+    );
+    expect(REQUEST_USER_INPUT_TOOL.description).toContain(
+      "genuinely need information",
+    );
+  });
 });
 
 describe("UPDATE_WORKFLOW_TOOL", () => {
-  it("has correct name and required parameters", () => {
+  it("has correct name and required workflowId parameter", () => {
     expect(UPDATE_WORKFLOW_TOOL.name).toBe("update_workflow");
     expect(UPDATE_WORKFLOW_TOOL.parameters).toBeDefined();
 
     const params = UPDATE_WORKFLOW_TOOL.parameters as Record<string, unknown>;
     const props = params.properties as Record<string, unknown>;
-    expect(props).toHaveProperty("workflow_id");
+    expect(props).toHaveProperty("workflowId");
     expect(props).toHaveProperty("name");
     expect(props).toHaveProperty("description");
     expect(props).toHaveProperty("tags");
-    expect(params.required).toEqual(["workflow_id"]);
+    expect(params.required).toEqual(["workflowId"]);
+  });
+
+  it("description instructs to use context workflowId directly", () => {
+    expect(UPDATE_WORKFLOW_TOOL.description).toContain(
+      "do not use input_request",
+    );
+  });
+});
+
+describe("VALIDATE_WORKFLOW_TOOL", () => {
+  it("has correct name and required workflowId parameter", () => {
+    expect(VALIDATE_WORKFLOW_TOOL.name).toBe("validate_workflow");
+    const params = VALIDATE_WORKFLOW_TOOL.parameters as Record<string, unknown>;
+    const props = params.properties as Record<string, unknown>;
+    expect(props).toHaveProperty("workflowId");
+    expect(params.required).toEqual(["workflowId"]);
+  });
+});
+
+describe("BUILTIN_TOOLS", () => {
+  it("includes all three built-in tools", () => {
+    const names = BUILTIN_TOOLS.map((t) => t.name);
+    expect(names).toContain("request_user_input");
+    expect(names).toContain("update_workflow");
+    expect(names).toContain("validate_workflow");
+    expect(BUILTIN_TOOLS).toHaveLength(3);
   });
 });
