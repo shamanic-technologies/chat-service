@@ -84,8 +84,7 @@ describe("createRun", () => {
     );
   });
 
-  it("returns null and logs on HTTP error", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("throws on HTTP error", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       status: 500,
@@ -93,31 +92,28 @@ describe("createRun", () => {
     });
 
     const { createRun } = await loadModule();
-    const result = await createRun({
-      orgId: "org-123",
-      serviceName: "chat-service",
-      taskName: "chat",
-    });
-
-    expect(result).toBeNull();
-    expect(warnSpy).toHaveBeenCalled();
+    await expect(
+      createRun({
+        orgId: "org-123",
+        serviceName: "chat-service",
+        taskName: "chat",
+      }),
+    ).rejects.toThrow(/returned 500/);
   });
 
-  it("returns null and logs on network error", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("throws on network error", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error("ECONNREFUSED"),
     );
 
     const { createRun } = await loadModule();
-    const result = await createRun({
-      orgId: "org-123",
-      serviceName: "chat-service",
-      taskName: "chat",
-    });
-
-    expect(result).toBeNull();
-    expect(warnSpy).toHaveBeenCalled();
+    await expect(
+      createRun({
+        orgId: "org-123",
+        serviceName: "chat-service",
+        taskName: "chat",
+      }),
+    ).rejects.toThrow("ECONNREFUSED");
   });
 });
 
@@ -151,7 +147,7 @@ describe("updateRunStatus", () => {
     const { updateRunStatus } = await loadModule();
     const result = await updateRunStatus("run-1", "failed");
 
-    expect(result?.status).toBe("failed");
+    expect(result.status).toBe("failed");
   });
 });
 
@@ -189,8 +185,7 @@ describe("addRunCosts", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("handles 422 unknown cost name gracefully", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("throws on HTTP error (e.g. unknown cost name)", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       status: 422,
@@ -198,30 +193,27 @@ describe("addRunCosts", () => {
     });
 
     const { addRunCosts } = await loadModule();
-    await addRunCosts("run-1", [
-      { costName: "unknown-cost", quantity: 10, costSource: "platform" as const },
-    ]);
-
-    expect(warnSpy).toHaveBeenCalled();
+    await expect(
+      addRunCosts("run-1", [
+        { costName: "unknown-cost", quantity: 10, costSource: "platform" as const },
+      ]),
+    ).rejects.toThrow(/returned 422/);
   });
 });
 
 describe("missing RUNS_SERVICE_API_KEY", () => {
-  it("returns null without making requests", async () => {
+  it("throws without making requests", async () => {
     delete process.env.RUNS_SERVICE_API_KEY;
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const { createRun } = await loadModule();
-    const result = await createRun({
-      orgId: "org-123",
-      serviceName: "chat-service",
-      taskName: "chat",
-    });
+    await expect(
+      createRun({
+        orgId: "org-123",
+        serviceName: "chat-service",
+        taskName: "chat",
+      }),
+    ).rejects.toThrow(/RUNS_SERVICE_API_KEY is required/);
 
-    expect(result).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("RUNS_SERVICE_API_KEY not set"),
-    );
   });
 });
