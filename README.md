@@ -146,6 +146,7 @@ After a tool result, more `token` events follow with the AI's continuation.
 |---|---|
 | `update_workflow` | Updates a workflow's metadata (name, description, tags) via workflow-service `PUT /workflows/{id}` |
 | `validate_workflow` | Validates a workflow's DAG structure via workflow-service `POST /workflows/{id}/validate` |
+| `get_prompt_template` | Retrieves a stored prompt template by type from content-generation `GET /prompts?type=...` |
 | `request_user_input` | Asks the user for structured input (see Input Request below) |
 
 **Native Gemini tools** (always enabled, invoked automatically by the model):
@@ -214,6 +215,8 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `RUNS_SERVICE_API_KEY` | No | API key for RunsService (runs tracking disabled if unset) |
 | `WORKFLOW_SERVICE_URL` | No | Workflow-service endpoint (default: `https://workflow.mcpfactory.org`) |
 | `WORKFLOW_SERVICE_API_KEY` | No | API key for workflow-service (built-in workflow tools fail if unset) |
+| `CONTENT_GENERATION_SERVICE_URL` | No | Content-generation service endpoint (default: `https://content-generation.distribute.you`) |
+| `CONTENT_GENERATION_SERVICE_API_KEY` | No | API key for content-generation service (get_prompt_template tool fails if unset) |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
@@ -283,7 +286,8 @@ src/
     gemini.ts          # Gemini AI client, streaming + function calling, buildSystemPrompt helper, built-in tool declarations
     key-client.ts      # Key-service client for resolving Gemini keys (platform or BYOK per org)
     runs-client.ts     # RunsService HTTP client for run tracking and cost reporting
-    workflow-client.ts # Workflow-service client for update_workflow and validate_workflow built-in tools
+    workflow-client.ts              # Workflow-service client for update_workflow and validate_workflow built-in tools
+    content-generation-client.ts    # Content-generation service client for get_prompt_template built-in tool
 scripts/
   generate-openapi.ts  # Generates openapi.json from zod schemas via OpenApiGeneratorV3
 ```

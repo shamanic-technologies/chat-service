@@ -17,6 +17,7 @@ import {
   updateWorkflow,
   validateWorkflow,
 } from "./lib/workflow-client.js";
+import { getPromptTemplate } from "./lib/content-generation-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { resolveKey, type ResolvedKey } from "./lib/key-client.js";
 import { ChatRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
@@ -376,6 +377,23 @@ app.post("/chat", requireAuth, async (req, res) => {
             wfParams,
           );
         }
+
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // Built-in content-generation tools
+      if (call.name === "get_prompt_template") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await getPromptTemplate(
+          args.type as string,
+          {
+            orgId,
+            userId,
+            runId: runId!,
+            trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+          },
+        );
 
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
