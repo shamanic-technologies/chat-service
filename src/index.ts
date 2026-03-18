@@ -407,7 +407,7 @@ app.post("/chat", requireAuth, async (req, res) => {
             {
               orgId,
               userId,
-              runId,
+              runId: runId ?? callerRunId,
               trackingHeaders,
             },
           );

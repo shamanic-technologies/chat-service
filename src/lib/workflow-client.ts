@@ -11,7 +11,7 @@ export interface UpdateWorkflowParams {
 export interface UpdateWorkflowContext {
   orgId: string;
   userId: string;
-  runId?: string;
+  runId: string;
   trackingHeaders?: Record<string, string>;
 }
 
@@ -26,11 +26,11 @@ export async function updateWorkflow(
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-API-Key": WORKFLOW_SERVICE_API_KEY,
+    "x-api-key": WORKFLOW_SERVICE_API_KEY,
     "x-org-id": ctx.orgId,
     "x-user-id": ctx.userId,
+    "x-run-id": ctx.runId,
   };
-  if (ctx.runId) headers["x-run-id"] = ctx.runId;
   if (ctx.trackingHeaders) {
     for (const [k, v] of Object.entries(ctx.trackingHeaders)) {
       if (v) headers[k] = v;

@@ -49,7 +49,7 @@ describe("updateWorkflow", () => {
     );
 
     const callHeaders = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
-    expect(callHeaders["X-API-Key"]).toBe("test-api-key");
+    expect(callHeaders["x-api-key"]).toBe("test-api-key");
     expect(callHeaders["x-org-id"]).toBe("org-1");
     expect(callHeaders["x-user-id"]).toBe("user-1");
     expect(callHeaders["x-run-id"]).toBe("run-1");
@@ -67,6 +67,7 @@ describe("updateWorkflow", () => {
       {
         orgId: "org-1",
         userId: "user-1",
+        runId: "run-1",
         trackingHeaders: { "x-campaign-id": "camp-1", "x-brand-id": "brand-1" },
       },
     );
@@ -83,7 +84,7 @@ describe("updateWorkflow", () => {
     const result = await updateWorkflow(
       "wf-123",
       { name: "test" },
-      { orgId: "org-1", userId: "user-1" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
 
     expect(result.success).toBe(false);
@@ -100,11 +101,30 @@ describe("updateWorkflow", () => {
     const result = await updateWorkflow(
       "wf-999",
       { name: "test" },
-      { orgId: "org-1", userId: "user-1" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("404");
+  });
+
+  it("always sends x-run-id header (regression: workflow-service 400)", async () => {
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+
+    const { updateWorkflow } = await loadModule();
+    await updateWorkflow(
+      "wf-123",
+      { name: "test" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    const callHeaders = fetchSpy.mock.calls[0][1]?.headers as Record<string, string>;
+    expect(callHeaders["x-run-id"]).toBe("run-1");
+    expect(callHeaders["x-org-id"]).toBe("org-1");
+    expect(callHeaders["x-user-id"]).toBe("user-1");
+    expect(callHeaders["x-api-key"]).toBe("test-api-key");
   });
 
   it("returns error on network failure", async () => {
@@ -114,7 +134,7 @@ describe("updateWorkflow", () => {
     const result = await updateWorkflow(
       "wf-123",
       { name: "test" },
-      { orgId: "org-1", userId: "user-1" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
 
     expect(result.success).toBe(false);
