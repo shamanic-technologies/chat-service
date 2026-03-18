@@ -166,7 +166,7 @@ Built-in tools emit `tool_call` and `tool_result` events like MCP tools. The fro
 
 | Tool | Description | Cost tracking |
 |---|---|---|
-| `googleSearch` | Gemini searches the web when it needs real-time information. The model decides autonomously when to search. | Billed per search query executed. Reported as `{model}-google-search-query` cost item in runs-service. |
+| `googleSearch` | Gemini searches the web when it needs real-time information. The model decides autonomously when to search. | Billed per search query executed. Reported as `gemini-google-search-query` cost item in runs-service. |
 | `urlContext` | Gemini reads web page content when URLs appear in the conversation. | Billed as input tokens (page content is injected into context). Already covered by `{model}-tokens-input` cost item. |
 
 These tools are transparent to the frontend — no SSE events are emitted for them. The model's response simply includes grounded information with citations.

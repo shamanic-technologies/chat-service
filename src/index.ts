@@ -648,7 +648,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         ...(totalSearchQueries > 0
           ? [
               {
-                costName: `${costModel}-google-search-query`,
+                costName: "gemini-google-search-query",
                 quantity: totalSearchQueries,
                 costSource,
               },
