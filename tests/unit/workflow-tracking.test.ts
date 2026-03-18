@@ -224,15 +224,19 @@ describe("key-client forwards tracking headers", () => {
     );
   });
 
-  it("forwards tracking headers on decryptOrgKey", async () => {
+  it("forwards tracking headers on resolveKey (MCP key)", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ provider: "mcp", key: "k" }),
+      json: () => Promise.resolve({ provider: "mcp", key: "k", keySource: "org" }),
     });
 
-    const { decryptOrgKey } = await loadModule();
-    await decryptOrgKey("mcp", "org-1", { method: "POST", path: "/chat" }, {
-      "x-brand-id": "brand-1",
+    const { resolveKey } = await loadModule();
+    await resolveKey({
+      provider: "mcp",
+      orgId: "org-1",
+      userId: "user-1",
+      caller: { method: "POST", path: "/chat" },
+      trackingHeaders: { "x-brand-id": "brand-1" },
     });
 
     expect(fetch).toHaveBeenCalledWith(
@@ -240,6 +244,8 @@ describe("key-client forwards tracking headers", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           "x-brand-id": "brand-1",
+          "x-org-id": "org-1",
+          "x-user-id": "user-1",
         }),
       }),
     );
