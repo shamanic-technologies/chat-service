@@ -145,6 +145,7 @@ After a tool result, more `token` events follow with the AI's continuation.
 | Tool | Description |
 |---|---|
 | `update_workflow` | Updates a workflow's metadata (name, description, tags) via workflow-service `PUT /workflows/{id}` |
+| `update_workflow_node_config` | Updates a specific node's config in a workflow's DAG (e.g. change prompt type on `email-generate` node). Fetches, merges, and saves. |
 | `validate_workflow` | Validates a workflow's DAG structure via workflow-service `POST /workflows/{id}/validate` |
 | `get_prompt_template` | Retrieves a stored prompt template by type from content-generation `GET /prompts?type=...` |
 | `update_prompt_template` | Creates a new version of an existing prompt template via content-generation `PUT /prompts` (auto-versions: e.g. `cold-email` → `cold-email-v2`) |

@@ -174,3 +174,122 @@ describe("validateWorkflow", () => {
     );
   });
 });
+
+describe("getWorkflow", () => {
+  it("sends GET with correct URL and headers", async () => {
+    const mockWorkflow = { id: "wf-1", dag: { nodes: [], edges: [] } };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockWorkflow),
+    });
+
+    const { getWorkflow } = await loadModule();
+    const result = await getWorkflow("wf-1", { orgId: "org-1", userId: "user-1", runId: "run-1" });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://workflow.test.local/workflows/wf-1",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          "x-api-key": "test-wf-key",
+          "x-org-id": "org-1",
+        }),
+      }),
+    );
+    expect(result).toEqual(mockWorkflow);
+  });
+
+  it("throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve("Not found"),
+    });
+
+    const { getWorkflow } = await loadModule();
+    await expect(
+      getWorkflow("wf-bad", { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 404/);
+  });
+});
+
+describe("updateWorkflowNodeConfig", () => {
+  it("fetches workflow, merges config, and PUTs the updated DAG", async () => {
+    const existingWorkflow = {
+      id: "wf-1",
+      dag: {
+        nodes: [
+          { id: "email-generate", type: "http.call", config: { body: { type: "cold-email" }, path: "/generate", method: "POST", service: "content-generation" } },
+          { id: "email-send", type: "http.call", config: { path: "/send", method: "POST", service: "email-gateway" } },
+        ],
+        edges: [{ from: "email-generate", to: "email-send" }],
+      },
+    };
+
+    const updatedWorkflow = { ...existingWorkflow, updatedAt: "2026-03-18T00:00:00Z" };
+
+    (fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(existingWorkflow) }) // GET
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(updatedWorkflow) }); // PUT
+
+    const { updateWorkflowNodeConfig } = await loadModule();
+    const result = await updateWorkflowNodeConfig(
+      "wf-1",
+      "email-generate",
+      { body: { type: "cold-email-v3" } },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    // Verify GET was called first
+    expect((fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("https://workflow.test.local/workflows/wf-1");
+    expect((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe("GET");
+
+    // Verify PUT was called with merged config
+    const putBody = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[1][1].body);
+    expect(putBody.dag.nodes[0].config.body.type).toBe("cold-email-v3");
+    // Preserved other config keys
+    expect(putBody.dag.nodes[0].config.path).toBe("/generate");
+    expect(putBody.dag.nodes[0].config.service).toBe("content-generation");
+    // Other nodes unchanged
+    expect(putBody.dag.nodes[1].id).toBe("email-send");
+
+    expect(result).toEqual(updatedWorkflow);
+  });
+
+  it("throws when node is not found in DAG", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        id: "wf-1",
+        dag: { nodes: [{ id: "step-1", type: "http.call" }], edges: [] },
+      }),
+    });
+
+    const { updateWorkflowNodeConfig } = await loadModule();
+    await expect(
+      updateWorkflowNodeConfig(
+        "wf-1",
+        "nonexistent-node",
+        { body: { type: "v2" } },
+        { orgId: "o", userId: "u", runId: "r" },
+      ),
+    ).rejects.toThrow(/Node "nonexistent-node" not found/);
+  });
+
+  it("throws when workflow has no DAG", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: "wf-1", dag: null }),
+    });
+
+    const { updateWorkflowNodeConfig } = await loadModule();
+    await expect(
+      updateWorkflowNodeConfig(
+        "wf-1",
+        "step-1",
+        { body: {} },
+        { orgId: "o", userId: "u", runId: "r" },
+      ),
+    ).rejects.toThrow(/has no DAG/);
+  });
+});
