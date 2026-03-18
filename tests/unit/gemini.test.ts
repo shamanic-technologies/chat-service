@@ -721,7 +721,8 @@ describe("BUILTIN_TOOLS", () => {
     expect(names).toContain("update_workflow");
     expect(names).toContain("validate_workflow");
     expect(names).toContain("get_prompt_template");
-    expect(BUILTIN_TOOLS).toHaveLength(4);
+    expect(names).toContain("update_prompt_template");
+    expect(BUILTIN_TOOLS).toHaveLength(5);
   });
 });
 

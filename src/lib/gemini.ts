@@ -106,11 +106,40 @@ export const GET_PROMPT_TEMPLATE_TOOL: FunctionDeclaration = {
   },
 };
 
+export const UPDATE_PROMPT_TEMPLATE_TOOL: FunctionDeclaration = {
+  name: "update_prompt_template",
+  description:
+    "Create a new version of an existing prompt template. The original is never modified — a new version is created automatically (e.g. 'cold-email' → 'cold-email-v2'). Use this when the user wants to update, improve, or modify a prompt template.",
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      sourceType: {
+        type: Type.STRING,
+        description:
+          "The type of the existing prompt to version from (e.g. 'cold-email')",
+      },
+      prompt: {
+        type: Type.STRING,
+        description:
+          "The new prompt template text with {{variable}} placeholders. Must NOT contain company-specific data — only {{variables}}.",
+      },
+      variables: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description:
+          "List of variable names used in the prompt (e.g. ['leadFirstName', 'leadCompanyName'])",
+      },
+    },
+    required: ["sourceType", "prompt", "variables"],
+  },
+};
+
 export const BUILTIN_TOOLS: FunctionDeclaration[] = [
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
   VALIDATE_WORKFLOW_TOOL,
   GET_PROMPT_TEMPLATE_TOOL,
+  UPDATE_PROMPT_TEMPLATE_TOOL,
 ];
 
 export interface FunctionCall {
