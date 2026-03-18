@@ -209,6 +209,7 @@ describe("key-client forwards tracking headers", () => {
       provider: "gemini",
       orgId: "org-1",
       userId: "user-1",
+      runId: "run-1",
       caller: { method: "POST", path: "/chat" },
       trackingHeaders: { "x-campaign-id": "camp-1", "x-workflow-name": "flow-1" },
     });
@@ -235,6 +236,7 @@ describe("key-client forwards tracking headers", () => {
       provider: "mcp",
       orgId: "org-1",
       userId: "user-1",
+      runId: "run-1",
       caller: { method: "POST", path: "/chat" },
       trackingHeaders: { "x-brand-id": "brand-1" },
     });
@@ -262,6 +264,7 @@ describe("key-client forwards tracking headers", () => {
       provider: "gemini",
       orgId: "org-1",
       userId: "user-1",
+      runId: "run-1",
       caller: { method: "POST", path: "/chat" },
     });
 

@@ -35,6 +35,7 @@ describe("resolveKey", () => {
       provider: "gemini",
       orgId: "org-uuid-123",
       userId: "user-uuid-456",
+      runId: "run-uuid-789",
       caller: { method: "POST", path: "/chat" },
     });
 
@@ -46,6 +47,7 @@ describe("resolveKey", () => {
           "x-api-key": "test-key-svc-key",
           "x-org-id": "org-uuid-123",
           "x-user-id": "user-uuid-456",
+          "x-run-id": "run-uuid-789",
           "X-Caller-Service": "chat",
           "X-Caller-Method": "POST",
           "X-Caller-Path": "/chat",
@@ -75,6 +77,7 @@ describe("resolveKey", () => {
       provider: "gemini",
       orgId: "org-byok",
       userId: "user-byok",
+      runId: "run-1",
       caller: { method: "POST", path: "/chat" },
     });
 
@@ -94,7 +97,8 @@ describe("resolveKey", () => {
         provider: "gemini",
         orgId: "org-123",
         userId: "user-123",
-        caller: { method: "POST", path: "/chat" },
+        runId: "run-1",
+      caller: { method: "POST", path: "/chat" },
       }),
     ).rejects.toThrow(/returned 404/);
   });
@@ -112,7 +116,8 @@ describe("resolveKey", () => {
         provider: "gemini",
         orgId: "org-123",
         userId: "user-123",
-        caller: { method: "POST", path: "/chat" },
+        runId: "run-1",
+      caller: { method: "POST", path: "/chat" },
       }),
     ).rejects.toThrow(/returned 400/);
   });
@@ -130,7 +135,8 @@ describe("resolveKey", () => {
         provider: "gemini",
         orgId: "org-123",
         userId: "user-123",
-        caller: { method: "POST", path: "/chat" },
+        runId: "run-1",
+      caller: { method: "POST", path: "/chat" },
       }),
     ).rejects.toThrow(/returned 500/);
   });
@@ -146,7 +152,8 @@ describe("resolveKey", () => {
         provider: "gemini",
         orgId: "org-123",
         userId: "user-123",
-        caller: { method: "POST", path: "/chat" },
+        runId: "run-1",
+      caller: { method: "POST", path: "/chat" },
       }),
     ).rejects.toThrow("ECONNREFUSED");
   });
@@ -160,7 +167,8 @@ describe("resolveKey", () => {
         provider: "gemini",
         orgId: "org-123",
         userId: "user-123",
-        caller: { method: "POST", path: "/chat" },
+        runId: "run-1",
+      caller: { method: "POST", path: "/chat" },
       }),
     ).rejects.toThrow(/KEY_SERVICE_API_KEY is required/);
 
@@ -184,6 +192,7 @@ describe("resolveKey", () => {
       provider: "gemini",
       orgId: "org-123",
       userId: "user-123",
+      runId: "run-1",
       caller: { method: "POST", path: "/chat" },
     });
 
