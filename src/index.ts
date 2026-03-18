@@ -17,7 +17,6 @@ import {
   updateWorkflow,
   validateWorkflow,
 } from "./lib/workflow-client.js";
-import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { resolveKey, type ResolvedKey } from "./lib/key-client.js";
 import { ChatRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
@@ -66,22 +65,18 @@ app.put("/config", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { systemPrompt, mcpServerUrl, mcpKeyName } = parsed.data;
+  const { systemPrompt } = parsed.data;
 
   const [config] = await db
     .insert(appConfigs)
     .values({
       orgId,
       systemPrompt,
-      mcpServerUrl: mcpServerUrl ?? null,
-      mcpKeyName: mcpKeyName ?? null,
     })
     .onConflictDoUpdate({
       target: [appConfigs.orgId],
       set: {
         systemPrompt,
-        mcpServerUrl: mcpServerUrl ?? null,
-        mcpKeyName: mcpKeyName ?? null,
         updatedAt: new Date(),
       },
     })
@@ -90,8 +85,6 @@ app.put("/config", requireAuth, async (req, res) => {
   res.json({
     orgId: config.orgId,
     systemPrompt: config.systemPrompt,
-    mcpServerUrl: config.mcpServerUrl,
-    mcpKeyName: config.mcpKeyName,
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString(),
   });
@@ -109,22 +102,18 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { systemPrompt, mcpServerUrl, mcpKeyName } = parsed.data;
+  const { systemPrompt } = parsed.data;
 
   const [config] = await db
     .insert(platformConfigs)
     .values({
       key: PLATFORM_CONFIG_KEY,
       systemPrompt,
-      mcpServerUrl: mcpServerUrl ?? null,
-      mcpKeyName: mcpKeyName ?? null,
     })
     .onConflictDoUpdate({
       target: [platformConfigs.key],
       set: {
         systemPrompt,
-        mcpServerUrl: mcpServerUrl ?? null,
-        mcpKeyName: mcpKeyName ?? null,
         updatedAt: new Date(),
       },
     })
@@ -132,8 +121,6 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
 
   res.json({
     systemPrompt: config.systemPrompt,
-    mcpServerUrl: config.mcpServerUrl,
-    mcpKeyName: config.mcpKeyName,
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString(),
   });
@@ -206,7 +193,6 @@ app.post("/chat", requireAuth, async (req, res) => {
   const systemPrompt = buildSystemPrompt(appConfig.systemPrompt, context);
   const gemini = createGeminiClient({ apiKey: resolvedKey.key, systemPrompt });
 
-  let mcpConn: McpConnection | null = null;
   let runId: string | null = null;
   let chatFailed = false;
   let totalPromptTokens = 0;
@@ -275,26 +261,6 @@ app.post("/chat", requireAuth, async (req, res) => {
         parts: [{ text: m.content }],
       }));
 
-    // Connect to MCP if app config has MCP settings
-    if (appConfig.mcpServerUrl && appConfig.mcpKeyName) {
-      try {
-        const mcpKey = await resolveKey({
-          provider: appConfig.mcpKeyName,
-          orgId,
-          userId,
-          runId,
-          caller: { method: "POST", path: "/chat" },
-          trackingHeaders,
-        });
-        mcpConn = await connectMcp({
-          serverUrl: appConfig.mcpServerUrl,
-          bearerToken: mcpKey.key,
-        });
-      } catch (err) {
-        console.warn("MCP connection failed, proceeding without tools:", err);
-      }
-    }
-
     // Save user message
     await db.insert(messages).values({
       sessionId: currentSessionId,
@@ -352,11 +318,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
 
-    // Merge MCP tools with built-in tools
-    const allTools = [
-      ...(mcpConn?.tools ?? []),
-      ...BUILTIN_TOOLS,
-    ];
+    const allTools = BUILTIN_TOOLS;
 
     function accumulateUsage(usage?: UsageMetadata) {
       if (!usage) return;
@@ -369,7 +331,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     const turnParts: Content[] = [];
 
     /**
-     * Execute a server-side tool (built-in or MCP) and return the result.
+     * Execute a server-side tool (built-in) and return the result.
      * Returns null if the tool is client-side (request_user_input) or unhandled.
      */
     async function executeTool(
@@ -416,20 +378,6 @@ app.post("/chat", requireAuth, async (req, res) => {
         }
 
         toolCalls.push({ name: call.name, args, result });
-        return { name: call.name, result };
-      }
-
-      // MCP tools
-      if (mcpConn) {
-        const result = await mcpConn.callTool(
-          call.name,
-          (call.args as Record<string, unknown>) || {},
-        );
-        toolCalls.push({
-          name: call.name,
-          args: (call.args as Record<string, unknown>) || {},
-          result,
-        });
         return { name: call.name, result };
       }
 
@@ -621,10 +569,6 @@ app.post("/chat", requireAuth, async (req, res) => {
     });
     sendSSE(res, "[DONE]");
   } finally {
-    if (mcpConn) {
-      mcpConn.close().catch(() => {});
-    }
-
     // Report run status and costs (fire-and-forget)
     if (runId) {
       const costModel = gemini.model.replace(/-preview$/, "");

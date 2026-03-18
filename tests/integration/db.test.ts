@@ -148,14 +148,11 @@ describe("database integration", () => {
       .values({
         orgId: "test-org-config",
         systemPrompt: "You are a test assistant.",
-        mcpServerUrl: "https://mcp.test.local",
-        mcpKeyName: "test-provider",
       })
       .returning();
 
     expect(config.orgId).toBe("test-org-config");
     expect(config.systemPrompt).toBe("You are a test assistant.");
-    expect(config.mcpServerUrl).toBe("https://mcp.test.local");
 
     // Upsert (update on conflict by orgId)
     const [updated] = await db
@@ -168,15 +165,12 @@ describe("database integration", () => {
         target: [schema.appConfigs.orgId],
         set: {
           systemPrompt: "Updated prompt.",
-          mcpServerUrl: null,
-          mcpKeyName: null,
           updatedAt: new Date(),
         },
       })
       .returning();
 
     expect(updated.systemPrompt).toBe("Updated prompt.");
-    expect(updated.mcpServerUrl).toBeNull();
     expect(updated.id).toBe(config.id); // Same row
 
     // Cleanup

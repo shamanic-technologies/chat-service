@@ -31,8 +31,6 @@ export const appConfigs = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     orgId: text("org_id").notNull(),
     systemPrompt: text("system_prompt").notNull(),
-    mcpServerUrl: text("mcp_server_url"),
-    mcpKeyName: text("mcp_key_name"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -43,8 +41,6 @@ export const platformConfigs = pgTable("platform_configs", {
   id: uuid("id").primaryKey().defaultRandom(),
   key: text("key").notNull().unique(),
   systemPrompt: text("system_prompt").notNull(),
-  mcpServerUrl: text("mcp_server_url"),
-  mcpKeyName: text("mcp_key_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
