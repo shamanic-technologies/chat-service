@@ -19,7 +19,7 @@ import {
 } from "./lib/workflow-client.js";
 import { connectMcp, type McpConnection } from "./lib/mcp-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
-import { resolveKey, decryptOrgKey, type ResolvedKey } from "./lib/key-client.js";
+import { resolveKey, type ResolvedKey } from "./lib/key-client.js";
 import { ChatRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { Content, Part } from "@google/genai";
@@ -274,15 +274,16 @@ app.post("/chat", requireAuth, async (req, res) => {
     // Connect to MCP if app config has MCP settings
     if (appConfig.mcpServerUrl && appConfig.mcpKeyName) {
       try {
-        const decrypted = await decryptOrgKey(
-          appConfig.mcpKeyName,
+        const mcpKey = await resolveKey({
+          provider: appConfig.mcpKeyName,
           orgId,
-          { method: "POST", path: "/chat" },
+          userId,
+          caller: { method: "POST", path: "/chat" },
           trackingHeaders,
-        );
+        });
         mcpConn = await connectMcp({
           serverUrl: appConfig.mcpServerUrl,
-          bearerToken: decrypted.key,
+          bearerToken: mcpKey.key,
         });
       } catch (err) {
         console.warn("MCP connection failed, proceeding without tools:", err);
