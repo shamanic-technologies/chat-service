@@ -73,7 +73,7 @@ export function buildSystemPrompt(
 
 export function createGeminiClient({
   apiKey,
-  model = "gemini-3-flash-preview",
+  model = "gemini-3.1-pro-preview",
   systemPrompt,
 }: GeminiOptions) {
   const ai = new GoogleGenAI({ apiKey });
