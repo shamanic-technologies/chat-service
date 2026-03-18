@@ -568,7 +568,7 @@ describe("usage metadata", () => {
     const doneEvent = events.find((e) => e.type === "done");
     expect(doneEvent).toEqual({
       type: "done",
-      usage: { promptTokens: 10, outputTokens: 20, totalTokens: 30 },
+      usage: { promptTokens: 10, outputTokens: 20, totalTokens: 30, searchQueryCount: 0 },
     });
   });
 
@@ -602,7 +602,7 @@ describe("usage metadata", () => {
     const doneEvent = events.find((e) => e.type === "done");
     expect(doneEvent).toEqual({
       type: "done",
-      usage: { promptTokens: 50, outputTokens: 100, totalTokens: 150 },
+      usage: { promptTokens: 50, outputTokens: 100, totalTokens: 150, searchQueryCount: 0 },
     });
   });
 
@@ -721,5 +721,223 @@ describe("BUILTIN_TOOLS", () => {
     expect(names).toContain("update_workflow");
     expect(names).toContain("validate_workflow");
     expect(BUILTIN_TOOLS).toHaveLength(3);
+  });
+});
+
+describe("native Gemini tools (googleSearch + urlContext)", () => {
+  beforeEach(() => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {})(),
+    );
+  });
+
+  it("passes googleSearch and urlContext in tools array for streamChat", async () => {
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const gen = client.streamChat([], "hello");
+    for await (const _ of gen) {
+      /* drain */
+    }
+
+    const callArgs = mockGenerateContentStream.mock.calls.at(-1)?.[0];
+    const tools = callArgs?.config?.tools;
+    expect(tools).toEqual(
+      expect.arrayContaining([
+        { googleSearch: {} },
+        { urlContext: {} },
+      ]),
+    );
+  });
+
+  it("passes googleSearch and urlContext in tools array for sendFunctionResult", async () => {
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const gen = client.sendFunctionResult([], "tool", { data: "ok" });
+    for await (const _ of gen) {
+      /* drain */
+    }
+
+    const callArgs = mockGenerateContentStream.mock.calls.at(-1)?.[0];
+    const tools = callArgs?.config?.tools;
+    expect(tools).toEqual(
+      expect.arrayContaining([
+        { googleSearch: {} },
+        { urlContext: {} },
+      ]),
+    );
+  });
+
+  it("includes functionDeclarations alongside native tools when tools are provided", async () => {
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const customTools = [
+      { name: "my_tool", description: "test", parameters: {} },
+    ];
+    const gen = client.streamChat([], "hello", customTools);
+    for await (const _ of gen) {
+      /* drain */
+    }
+
+    const callArgs = mockGenerateContentStream.mock.calls.at(-1)?.[0];
+    const tools = callArgs?.config?.tools;
+    expect(tools).toHaveLength(3);
+    expect(tools[0]).toEqual({ functionDeclarations: customTools });
+    expect(tools[1]).toEqual({ googleSearch: {} });
+    expect(tools[2]).toEqual({ urlContext: {} });
+  });
+
+  it("still includes native tools even when no custom tools are provided", async () => {
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const gen = client.streamChat([], "hello");
+    for await (const _ of gen) {
+      /* drain */
+    }
+
+    const callArgs = mockGenerateContentStream.mock.calls.at(-1)?.[0];
+    const tools = callArgs?.config?.tools;
+    expect(tools).toHaveLength(2);
+    expect(tools[0]).toEqual({ googleSearch: {} });
+    expect(tools[1]).toEqual({ urlContext: {} });
+  });
+});
+
+describe("grounding metadata — searchQueryCount", () => {
+  it("reports searchQueryCount from groundingMetadata.webSearchQueries", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          usageMetadata: {
+            promptTokenCount: 10,
+            candidatesTokenCount: 20,
+            totalTokenCount: 30,
+          },
+          candidates: [
+            {
+              content: { parts: [{ text: "Search results show..." }] },
+              groundingMetadata: {
+                webSearchQueries: [
+                  "latest AI news",
+                  "AI developments 2026",
+                ],
+              },
+            },
+          ],
+        };
+      })(),
+    );
+
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const events = [];
+    for await (const event of client.streamChat([], "search for AI news")) {
+      events.push(event);
+    }
+
+    const doneEvent = events.find((e) => e.type === "done");
+    expect(doneEvent).toEqual({
+      type: "done",
+      usage: {
+        promptTokens: 10,
+        outputTokens: 20,
+        totalTokens: 30,
+        searchQueryCount: 2,
+      },
+    });
+  });
+
+  it("reports searchQueryCount 0 when no grounding metadata", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          usageMetadata: {
+            promptTokenCount: 5,
+            candidatesTokenCount: 10,
+            totalTokenCount: 15,
+          },
+          candidates: [
+            {
+              content: { parts: [{ text: "Just a normal response." }] },
+            },
+          ],
+        };
+      })(),
+    );
+
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const events = [];
+    for await (const event of client.streamChat([], "hello")) {
+      events.push(event);
+    }
+
+    const doneEvent = events.find((e) => e.type === "done");
+    expect(doneEvent).toEqual({
+      type: "done",
+      usage: {
+        promptTokens: 5,
+        outputTokens: 10,
+        totalTokens: 15,
+        searchQueryCount: 0,
+      },
+    });
+  });
+
+  it("reports searchQueryCount from sendFunctionResult too", async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield {
+          usageMetadata: {
+            promptTokenCount: 50,
+            candidatesTokenCount: 100,
+            totalTokenCount: 150,
+          },
+          candidates: [
+            {
+              content: { parts: [{ text: "Based on search..." }] },
+              groundingMetadata: {
+                webSearchQueries: ["company info"],
+              },
+            },
+          ],
+        };
+      })(),
+    );
+
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const events = [];
+    for await (const event of client.sendFunctionResult(
+      [],
+      "tool",
+      { data: "ok" },
+    )) {
+      events.push(event);
+    }
+
+    const doneEvent = events.find((e) => e.type === "done");
+    expect(doneEvent).toEqual({
+      type: "done",
+      usage: {
+        promptTokens: 50,
+        outputTokens: 100,
+        totalTokens: 150,
+        searchQueryCount: 1,
+      },
+    });
   });
 });

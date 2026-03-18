@@ -211,6 +211,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   let chatFailed = false;
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
+  let totalSearchQueries = 0;
 
   try {
     // Get or create session (scoped by org + user + app)
@@ -359,6 +360,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       if (!usage) return;
       totalPromptTokens += usage.promptTokens;
       totalOutputTokens += usage.outputTokens;
+      totalSearchQueries += usage.searchQueryCount;
     }
 
     // Track turn history incrementally so chained tool calls include prior calls/results
@@ -639,6 +641,15 @@ app.post("/chat", requireAuth, async (req, res) => {
               {
                 costName: `${costModel}-tokens-output`,
                 quantity: totalOutputTokens,
+                costSource,
+              },
+            ]
+          : []),
+        ...(totalSearchQueries > 0
+          ? [
+              {
+                costName: `${costModel}-google-search-query`,
+                quantity: totalSearchQueries,
                 costSource,
               },
             ]
