@@ -162,8 +162,8 @@ describe("addRunCosts", () => {
 
     const { addRunCosts } = await loadModule();
     await addRunCosts("run-1", [
-      { costName: "gemini-3-flash-tokens-input", quantity: 100, costSource: "platform" },
-      { costName: "gemini-3-flash-tokens-output", quantity: 50, costSource: "platform" },
+      { costName: "claude-sonnet-4-6-tokens-input", quantity: 100, costSource: "platform" },
+      { costName: "claude-sonnet-4-6-tokens-output", quantity: 50, costSource: "platform" },
     ], identity);
 
     expect(fetch).toHaveBeenCalledWith(

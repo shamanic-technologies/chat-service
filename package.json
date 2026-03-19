@@ -1,7 +1,7 @@
 {
   "name": "chat-service",
   "version": "1.0.0",
-  "description": "Generic AI chat service with Gemini, MCP tool calling, and SSE streaming",
+  "description": "Multi-org AI chat service with Claude Sonnet 4.6, tool calling, and SSE streaming",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -18,8 +18,8 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@asteasolutions/zod-to-openapi": "^8.4.0",
-    "@google/genai": "^1.39.0",
     "cors": "^2.8.5",
     "drizzle-orm": "^0.38.0",
     "express": "^4.21.0",

@@ -24,7 +24,7 @@ describe("resolveKey", () => {
       ok: true,
       json: () =>
         Promise.resolve({
-          provider: "gemini",
+          provider: "anthropic",
           key: "resolved-key",
           keySource: "platform",
         }),
@@ -32,7 +32,7 @@ describe("resolveKey", () => {
 
     const { resolveKey } = await loadModule();
     const result = await resolveKey({
-      provider: "gemini",
+      provider: "anthropic",
       orgId: "org-uuid-123",
       userId: "user-uuid-456",
       runId: "run-uuid-789",
@@ -40,7 +40,7 @@ describe("resolveKey", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/keys/gemini/decrypt",
+      "https://key.test.local/keys/anthropic/decrypt",
       expect.objectContaining({
         method: "GET",
         headers: {
@@ -55,7 +55,7 @@ describe("resolveKey", () => {
       }),
     );
     expect(result).toEqual({
-      provider: "gemini",
+      provider: "anthropic",
       key: "resolved-key",
       keySource: "platform",
     });
@@ -66,7 +66,7 @@ describe("resolveKey", () => {
       ok: true,
       json: () =>
         Promise.resolve({
-          provider: "gemini",
+          provider: "anthropic",
           key: "user-own-key",
           keySource: "org",
         }),
@@ -74,7 +74,7 @@ describe("resolveKey", () => {
 
     const { resolveKey } = await loadModule();
     const result = await resolveKey({
-      provider: "gemini",
+      provider: "anthropic",
       orgId: "org-byok",
       userId: "user-byok",
       runId: "run-1",
@@ -94,7 +94,7 @@ describe("resolveKey", () => {
     const { resolveKey } = await loadModule();
     await expect(
       resolveKey({
-        provider: "gemini",
+        provider: "anthropic",
         orgId: "org-123",
         userId: "user-123",
         runId: "run-1",
@@ -113,7 +113,7 @@ describe("resolveKey", () => {
     const { resolveKey } = await loadModule();
     await expect(
       resolveKey({
-        provider: "gemini",
+        provider: "anthropic",
         orgId: "org-123",
         userId: "user-123",
         runId: "run-1",
@@ -132,7 +132,7 @@ describe("resolveKey", () => {
     const { resolveKey } = await loadModule();
     await expect(
       resolveKey({
-        provider: "gemini",
+        provider: "anthropic",
         orgId: "org-123",
         userId: "user-123",
         runId: "run-1",
@@ -149,7 +149,7 @@ describe("resolveKey", () => {
     const { resolveKey } = await loadModule();
     await expect(
       resolveKey({
-        provider: "gemini",
+        provider: "anthropic",
         orgId: "org-123",
         userId: "user-123",
         runId: "run-1",
@@ -164,7 +164,7 @@ describe("resolveKey", () => {
     const { resolveKey } = await loadModule();
     await expect(
       resolveKey({
-        provider: "gemini",
+        provider: "anthropic",
         orgId: "org-123",
         userId: "user-123",
         runId: "run-1",
@@ -181,7 +181,7 @@ describe("resolveKey", () => {
       ok: true,
       json: () =>
         Promise.resolve({
-          provider: "gemini",
+          provider: "anthropic",
           key: "key-123",
           keySource: "platform",
         }),
@@ -189,7 +189,7 @@ describe("resolveKey", () => {
 
     const { resolveKey } = await loadModule();
     await resolveKey({
-      provider: "gemini",
+      provider: "anthropic",
       orgId: "org-123",
       userId: "user-123",
       runId: "run-1",
@@ -197,7 +197,7 @@ describe("resolveKey", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.mcpfactory.org/keys/gemini/decrypt",
+      "https://key.mcpfactory.org/keys/anthropic/decrypt",
       expect.anything(),
     );
   });
