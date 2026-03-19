@@ -35,6 +35,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const openapiPath = join(__dirname, "..", "openapi.json");
 
+import { mergeConsecutiveMessages } from "./lib/merge-messages.js";
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -260,7 +262,8 @@ app.post("/chat", requireAuth, async (req, res) => {
     });
 
     // Build Anthropic message history — use contentBlocks if available (preserves compaction blocks)
-    const anthropicHistory: Anthropic.MessageParam[] = history
+    // Ensure alternating user/assistant roles (merge consecutive same-role messages)
+    const rawHistory: Anthropic.MessageParam[] = history
       .filter((m) => m.role !== "tool")
       .map((m) => ({
         role: m.role as "user" | "assistant",
@@ -268,6 +271,8 @@ app.post("/chat", requireAuth, async (req, res) => {
           ? m.contentBlocks as Anthropic.ContentBlockParam[]
           : m.content) as string | Anthropic.ContentBlockParam[],
       }));
+
+    const anthropicHistory = mergeConsecutiveMessages(rawHistory);
 
     // Save user message
     await db.insert(messages).values({
@@ -327,6 +332,15 @@ app.post("/chat", requireAuth, async (req, res) => {
     }
 
     const allTools = BUILTIN_TOOLS;
+
+    // Detect client disconnect to abort in-flight streams
+    const abortController = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        console.log(`[chat] session="${currentSessionId}" client disconnected — aborting stream`);
+        abortController.abort();
+      }
+    });
 
     /**
      * Execute a server-side tool (built-in) and return the result.
@@ -541,27 +555,42 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     agenticLoop:
     while (depth <= MAX_TOOL_CHAIN_DEPTH) {
-      let currentBlockType: string | null = null;
-      const stream = claude.createStream(turnMessages, allTools);
+      // Abort early if client already disconnected
+      if (abortController.signal.aborted) {
+        console.log(`[chat] session="${currentSessionId}" aborted before depth=${depth}`);
+        break;
+      }
 
-      for await (const event of stream) {
-        if (event.type === "content_block_start") {
-          currentBlockType = event.content_block.type;
-          if (currentBlockType === "thinking") {
-            sendSSE(res, { type: "thinking_start" });
+      let currentBlockType: string | null = null;
+      const stream = claude.createStream(turnMessages, allTools, abortController.signal);
+
+      try {
+        for await (const event of stream) {
+          if (event.type === "content_block_start") {
+            currentBlockType = event.content_block.type;
+            if (currentBlockType === "thinking") {
+              sendSSE(res, { type: "thinking_start" });
+            }
+          } else if (event.type === "content_block_delta") {
+            if (event.delta.type === "thinking_delta") {
+              sendSSE(res, { type: "thinking_delta", thinking: event.delta.thinking });
+            } else if (event.delta.type === "text_delta") {
+              bufferToken(event.delta.text);
+            }
+          } else if (event.type === "content_block_stop") {
+            if (currentBlockType === "thinking") {
+              sendSSE(res, { type: "thinking_stop" });
+            }
+            currentBlockType = null;
           }
-        } else if (event.type === "content_block_delta") {
-          if (event.delta.type === "thinking_delta") {
-            sendSSE(res, { type: "thinking_delta", thinking: event.delta.thinking });
-          } else if (event.delta.type === "text_delta") {
-            bufferToken(event.delta.text);
-          }
-        } else if (event.type === "content_block_stop") {
-          if (currentBlockType === "thinking") {
-            sendSSE(res, { type: "thinking_stop" });
-          }
-          currentBlockType = null;
         }
+      } catch (streamErr) {
+        // If aborted due to client disconnect, exit cleanly
+        if (abortController.signal.aborted) {
+          console.log(`[chat] session="${currentSessionId}" stream aborted (client disconnect)`);
+          return;
+        }
+        throw streamErr; // Re-throw to outer catch for error SSE
       }
 
       const finalMessage = await stream.finalMessage();

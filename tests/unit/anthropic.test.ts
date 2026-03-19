@@ -127,6 +127,18 @@ describe("createAnthropicClient", () => {
     );
   });
 
+  it("forwards abort signal to stream options", () => {
+    const client = createAnthropicClient({
+      apiKey: "test-key",
+      systemPrompt: TEST_PROMPT,
+    });
+    const ac = new AbortController();
+    client.createStream([{ role: "user", content: "hello" }], undefined, ac.signal);
+
+    const opts = mockStream.mock.calls.at(-1)?.[1];
+    expect(opts.signal).toBe(ac.signal);
+  });
+
   it("passes tools when provided", () => {
     const client = createAnthropicClient({
       apiKey: "test-key",
