@@ -105,9 +105,12 @@ describe("createAnthropicClient", () => {
     const editTypes = callArgs.context_management.edits.map(
       (e: { type: string }) => e.type,
     );
-    expect(editTypes).toContain("compact_20260112");
-    expect(editTypes).toContain("clear_tool_uses_20250919");
-    expect(editTypes).toContain("clear_thinking_20251015");
+    // clear_thinking must be first per API requirement
+    expect(editTypes).toEqual([
+      "clear_thinking_20251015",
+      "compact_20260112",
+      "clear_tool_uses_20250919",
+    ]);
   });
 
   it("passes beta headers for compaction", () => {

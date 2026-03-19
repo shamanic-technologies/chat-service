@@ -352,6 +352,10 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         context_management: {
           edits: [
             {
+              type: "clear_thinking_20251015",
+              keep: { type: "thinking_turns", value: 2 },
+            },
+            {
               type: "compact_20260112",
               trigger: { type: "input_tokens", value: 100_000 },
               pause_after_compaction: false,
@@ -362,10 +366,6 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
               keep: { type: "tool_uses", value: 5 },
               exclude_tools: ["request_user_input"],
               clear_tool_inputs: false,
-            },
-            {
-              type: "clear_thinking_20251015",
-              keep: { type: "thinking_turns", value: 2 },
             },
           ],
         },
