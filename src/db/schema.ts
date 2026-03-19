@@ -15,6 +15,7 @@ export const messages = pgTable("messages", {
     .references(() => sessions.id, { onDelete: "cascade" }),
   role: text("role").notNull().$type<"user" | "assistant" | "tool">(),
   content: text("content").notNull(),
+  contentBlocks: jsonb("content_blocks").$type<unknown[]>(),
   toolCalls: jsonb("tool_calls").$type<ToolCallRecord[]>(),
   buttons: jsonb("buttons").$type<ButtonRecord[]>(),
   tokenCount: integer("token_count"),

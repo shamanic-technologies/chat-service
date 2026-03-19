@@ -1,6 +1,6 @@
 # Chat Service
 
-Multi-org AI chat service. Streams Gemini AI responses via SSE with configurable system prompts and built-in workflow tools.
+Multi-org AI chat service. Streams Claude Sonnet 4.6 responses via SSE with configurable system prompts and built-in workflow tools.
 
 ## Quick Start
 
@@ -37,7 +37,7 @@ Request body:
 }
 ```
 
-- `systemPrompt` (required) — the system prompt sent to Gemini for this org
+- `systemPrompt` (required) — the system prompt sent to Claude for this org
 
 This endpoint is **idempotent** (upsert on `orgId` from the `x-org-id` header). Call it on every cold start.
 
@@ -110,7 +110,7 @@ data: {"sessionId":"uuid"}
 ```
 
 ### 2. Thinking (optional)
-When Gemini uses internal reasoning, thinking events are streamed progressively:
+When Claude uses internal reasoning (adaptive thinking), thinking events are streamed progressively:
 ```
 data: {"type":"thinking_start"}
 data: {"type":"thinking_delta","thinking":"Let me analyze the user's request..."}
@@ -154,15 +154,6 @@ After a tool result, more `token` events follow with the AI's continuation.
 | `update_prompt_template` | Creates a new version of an existing prompt template via content-generation `PUT /prompts` (auto-versions: e.g. `cold-email` → `cold-email-v2`) |
 | `list_available_services` | Lists all available microservices and their API endpoints from api-registry `GET /llm-context`. Use before modifying DAGs to know valid `http.call` targets. |
 | `request_user_input` | Asks the user for structured input (see Input Request below) |
-
-**Native Gemini tools** (always enabled, invoked automatically by the model):
-
-| Tool | Description | Cost tracking |
-|---|---|---|
-| `googleSearch` | Gemini searches the web when it needs real-time information. The model decides autonomously when to search. | Billed per search query executed. Reported as `gemini-google-search-query` cost item in runs-service. |
-| `urlContext` | Gemini reads web page content when URLs appear in the conversation. | Billed as input tokens (page content is injected into context). Already covered by `{model}-tokens-input` cost item. |
-
-These tools are transparent to the frontend — no SSE events are emitted for them. The model's response simply includes grounded information with citations.
 
 ### 5. Input Request (optional)
 When the AI genuinely needs information it does not have, it emits an input request:
@@ -214,7 +205,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 | Variable | Required | Description |
 |---|---|---|
-| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to resolve the Gemini API key per-request) |
+| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to resolve the Anthropic API key per-request) |
 | `CHAT_SERVICE_DATABASE_URL` | Yes | PostgreSQL connection string |
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |
 | `RUNS_SERVICE_URL` | No | RunsService endpoint (default: `https://runs.mcpfactory.org`) |
@@ -232,7 +223,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 Uses PostgreSQL via Drizzle ORM. Three tables:
 
 - **sessions** — conversation sessions scoped by `orgId` and `userId`
-- **messages** — chat messages with role, content, optional `toolCalls`, `buttons` JSONB, `runId` linking to RunsService, and optional `campaign_id`, `brand_id`, `workflow_name` for workflow tracking
+- **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management), `runId` linking to RunsService, and optional `campaign_id`, `brand_id`, `workflow_name` for workflow tracking
 - **app_configs** — per-org configuration (system prompt) with unique constraint on `orgId`
 - **platform_configs** — global platform-wide chat configuration (fallback when no per-org config exists)
 
@@ -291,8 +282,8 @@ src/
     index.ts        # Drizzle client init
     schema.ts       # sessions + messages + app_configs + platform_configs table definitions
   lib/
-    gemini.ts          # Gemini AI client, streaming + function calling, buildSystemPrompt helper, built-in tool declarations
-    key-client.ts      # Key-service client for resolving Gemini keys (platform or BYOK per org)
+    anthropic.ts       # Claude AI client (Sonnet 4.6), streaming + tool calling, adaptive thinking, context management (compaction), built-in tool declarations
+    key-client.ts      # Key-service client for resolving Anthropic keys (platform or BYOK per org)
     runs-client.ts     # RunsService HTTP client for run tracking and cost reporting
     workflow-client.ts              # Workflow-service client for update_workflow and validate_workflow built-in tools
     content-generation-client.ts    # Content-generation service client for get_prompt_template built-in tool

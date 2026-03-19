@@ -163,7 +163,7 @@ describe("runs-client forwards tracking headers", () => {
     const { addRunCosts } = await loadModule();
     await addRunCosts(
       "run-1",
-      [{ costName: "gemini-3-flash-tokens-input", quantity: 100, costSource: "platform" as const }],
+      [{ costName: "claude-sonnet-4-6-tokens-input", quantity: 100, costSource: "platform" as const }],
       identity,
       { "x-brand-id": "brand-3" },
     );
@@ -201,12 +201,12 @@ describe("key-client forwards tracking headers", () => {
   it("forwards tracking headers on resolveKey", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ provider: "gemini", key: "k", keySource: "platform" }),
+      json: () => Promise.resolve({ provider: "anthropic", key: "k", keySource: "platform" }),
     });
 
     const { resolveKey } = await loadModule();
     await resolveKey({
-      provider: "gemini",
+      provider: "anthropic",
       orgId: "org-1",
       userId: "user-1",
       runId: "run-1",
@@ -256,12 +256,12 @@ describe("key-client forwards tracking headers", () => {
   it("does not include tracking headers when not provided", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ provider: "gemini", key: "k", keySource: "platform" }),
+      json: () => Promise.resolve({ provider: "anthropic", key: "k", keySource: "platform" }),
     });
 
     const { resolveKey } = await loadModule();
     await resolveKey({
-      provider: "gemini",
+      provider: "anthropic",
       orgId: "org-1",
       userId: "user-1",
       runId: "run-1",

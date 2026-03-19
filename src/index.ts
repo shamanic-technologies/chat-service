@@ -7,12 +7,12 @@ import { dirname, join } from "path";
 import { db } from "./db/index.js";
 import { sessions, messages, appConfigs, platformConfigs } from "./db/schema.js";
 import { eq, and } from "drizzle-orm";
+import Anthropic from "@anthropic-ai/sdk";
 import {
-  createGeminiClient,
+  createAnthropicClient,
   buildSystemPrompt,
   BUILTIN_TOOLS,
-  type UsageMetadata,
-} from "./lib/gemini.js";
+} from "./lib/anthropic.js";
 import {
   updateWorkflow,
   validateWorkflow,
@@ -28,7 +28,6 @@ import { formatToolError } from "./lib/tool-errors.js";
 import { resolveKey, type ResolvedKey } from "./lib/key-client.js";
 import { ChatRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
-import type { Content, Part } from "@google/genai";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 
@@ -171,11 +170,11 @@ app.post("/chat", requireAuth, async (req, res) => {
     });
   }
 
-  // Resolve Gemini API key per-request (supports BYOK per org)
+  // Resolve Anthropic API key per-request (supports BYOK per org)
   let resolvedKey: ResolvedKey;
   try {
     resolvedKey = await resolveKey({
-      provider: "gemini",
+      provider: "anthropic",
       orgId,
       userId,
       runId: callerRunId,
@@ -183,9 +182,9 @@ app.post("/chat", requireAuth, async (req, res) => {
       trackingHeaders,
     });
   } catch (err) {
-    console.error(`Failed to resolve Gemini key for org="${orgId}":`, err);
+    console.error(`Failed to resolve Anthropic key for org="${orgId}":`, err);
     return res.status(502).json({
-      error: `Failed to resolve Gemini API key. Ensure the key is configured in key-service.`,
+      error: `Failed to resolve Anthropic API key. Ensure the key is configured in key-service.`,
     });
   }
 
@@ -198,13 +197,12 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   // Build system prompt with optional context
   const systemPrompt = buildSystemPrompt(appConfig.systemPrompt, context);
-  const gemini = createGeminiClient({ apiKey: resolvedKey.key, systemPrompt });
+  const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
 
   let runId: string | null = null;
   let chatFailed = false;
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
-  let totalSearchQueries = 0;
 
   try {
     // Get or create session (scoped by org + user + app)
@@ -261,11 +259,14 @@ app.post("/chat", requireAuth, async (req, res) => {
       orderBy: (m, { asc }) => [asc(m.createdAt)],
     });
 
-    const geminiHistory: Content[] = history
+    // Build Anthropic message history — use contentBlocks if available (preserves compaction blocks)
+    const anthropicHistory: Anthropic.MessageParam[] = history
       .filter((m) => m.role !== "tool")
       .map((m) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }],
+        role: m.role as "user" | "assistant",
+        content: (m.role === "assistant" && m.contentBlocks
+          ? m.contentBlocks as Anthropic.ContentBlockParam[]
+          : m.content) as string | Anthropic.ContentBlockParam[],
       }));
 
     // Save user message
@@ -278,7 +279,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       workflowName: workflowTracking.workflowName ?? null,
     });
 
-    // Stream response from Gemini
+    // Stream response from Claude
     let fullResponse = "";
     let emittedInputRequest = false;
     const toolCalls: ToolCallRecord[] = [];
@@ -327,22 +328,12 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     const allTools = BUILTIN_TOOLS;
 
-    function accumulateUsage(usage?: UsageMetadata) {
-      if (!usage) return;
-      totalPromptTokens += usage.promptTokens;
-      totalOutputTokens += usage.outputTokens;
-      totalSearchQueries += usage.searchQueryCount;
-    }
-
-    // Track turn history incrementally so chained tool calls include prior calls/results
-    const turnParts: Content[] = [];
-
     /**
      * Execute a server-side tool (built-in) and return the result.
      * Returns null if the tool is client-side (request_user_input) or unhandled.
      */
     async function executeTool(
-      call: { name: string; args: Record<string, unknown>; thoughtSignature?: string },
+      call: { name: string; args: Record<string, unknown> },
     ): Promise<{ name: string; result: unknown } | "input_request" | null> {
       // Client-side tool: emit input_request and signal to stop
       if (call.name === "request_user_input") {
@@ -534,157 +525,123 @@ app.post("/chat", requireAuth, async (req, res) => {
       return null;
     }
 
-    /**
-     * Process a Gemini stream, handling tokens, thinking events, and tool calls.
-     * When a tool call is encountered, executes it, appends both the call and result
-     * to turnParts, sends a continuation to Gemini, and recursively processes the
-     * continuation stream. This ensures chained tool calls work correctly and each
-     * continuation sees the full history of prior calls in the same turn.
-     */
-    async function processStream(
-      stream: AsyncGenerator<import("./lib/gemini.js").GeminiEvent>,
-      depth = 0,
-    ): Promise<void> {
-      const MAX_TOOL_CHAIN_DEPTH = 10;
+    // -----------------------------------------------------------------------
+    // Agentic loop: stream → handle tools → repeat
+    // -----------------------------------------------------------------------
+    console.log(`[chat] session="${currentSessionId}" streaming — model="${claude.model}" tools=${allTools.length} history=${anthropicHistory.length}`);
+
+    const turnMessages: Anthropic.MessageParam[] = [
+      ...anthropicHistory,
+      { role: "user", content: message.trim() },
+    ];
+
+    const MAX_TOOL_CHAIN_DEPTH = 10;
+    let depth = 0;
+    let lastContentBlocks: Anthropic.ContentBlock[] = [];
+
+    agenticLoop:
+    while (depth <= MAX_TOOL_CHAIN_DEPTH) {
+      let currentBlockType: string | null = null;
+      const stream = claude.createStream(turnMessages, allTools);
 
       for await (const event of stream) {
-        if (event.type === "token") {
-          bufferToken(event.content);
-        }
-
-        if (event.type === "thinking_start" || event.type === "thinking_delta" || event.type === "thinking_stop") {
-          sendSSE(res, event);
-        }
-
-        if (event.type === "done") {
-          accumulateUsage(event.usage);
-        }
-
-        if (event.type === "function_call") {
-          const { call } = event;
-
-          const toolCallId = `tc_${crypto.randomUUID()}`;
-          if (call.name !== "request_user_input") {
-            sendSSE(res, {
-              type: "tool_call",
-              id: toolCallId,
-              name: call.name,
-              args: call.args,
-            });
+        if (event.type === "content_block_start") {
+          currentBlockType = event.content_block.type;
+          if (currentBlockType === "thinking") {
+            sendSSE(res, { type: "thinking_start" });
           }
-
-          try {
-            const toolResult = await executeTool(call);
-
-            if (toolResult === "input_request") {
-              return; // Stop processing — client needs input
-            }
-
-            if (toolResult === null) {
-              continue; // Unhandled tool, skip
-            }
-
-            sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result: toolResult.result });
-
-            if (depth >= MAX_TOOL_CHAIN_DEPTH) {
-              console.warn(`Tool chain depth limit reached (${MAX_TOOL_CHAIN_DEPTH}), stopping`);
-              continue;
-            }
-
-            // Build the functionCall part with thoughtSignature for Gemini history
-            const functionCallPart: Record<string, unknown> = {
-              functionCall: { name: call.name, args: call.args || {} },
-            };
-            if (call.thoughtSignature) {
-              functionCallPart.thoughtSignature = call.thoughtSignature;
-            }
-
-            // Append the function call to turn history (sendFunctionResult adds the response)
-            turnParts.push({
-              role: "model",
-              parts: [functionCallPart as Part],
-            });
-
-            // Send continuation with full incremental history
-            const contStream = gemini.sendFunctionResult(
-              [...geminiHistory, { role: "user", parts: [{ text: message.trim() }] }, ...turnParts],
-              call.name,
-              toolResult.result,
-              allTools,
-            );
-
-            // Add the function response to turnParts AFTER creating the stream,
-            // so future chained calls see the complete history
-            turnParts.push({
-              role: "user",
-              parts: [
-                {
-                  functionResponse: {
-                    name: call.name,
-                    response: { result: toolResult.result },
-                  },
-                } as Part,
-              ],
-            });
-
-            // Recursively process continuation (may contain more tool calls)
-            await processStream(contStream, depth + 1);
-            return; // Continuation handled the rest of the turn
-          } catch (toolErr: unknown) {
-            const rawMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
-            console.error(`Tool call ${call.name} failed:`, rawMsg);
-            const friendly = formatToolError(call.name, rawMsg);
-            sendSSE(res, { type: "tool_result", id: toolCallId, name: call.name, result: friendly });
-
-            // Feed the error back to Gemini so it can self-correct
-            if (depth < MAX_TOOL_CHAIN_DEPTH) {
-              const functionCallPart: Record<string, unknown> = {
-                functionCall: { name: call.name, args: call.args || {} },
-              };
-              if (call.thoughtSignature) {
-                functionCallPart.thoughtSignature = call.thoughtSignature;
-              }
-
-              turnParts.push({
-                role: "model",
-                parts: [functionCallPart as Part],
-              });
-
-              const contStream = gemini.sendFunctionResult(
-                [...geminiHistory, { role: "user", parts: [{ text: message.trim() }] }, ...turnParts],
-                call.name,
-                friendly,
-                allTools,
-              );
-
-              turnParts.push({
-                role: "user",
-                parts: [
-                  {
-                    functionResponse: {
-                      name: call.name,
-                      response: { result: friendly },
-                    },
-                  } as Part,
-                ],
-              });
-
-              await processStream(contStream, depth + 1);
-              return;
-            }
+        } else if (event.type === "content_block_delta") {
+          if (event.delta.type === "thinking_delta") {
+            sendSSE(res, { type: "thinking_delta", thinking: event.delta.thinking });
+          } else if (event.delta.type === "text_delta") {
+            bufferToken(event.delta.text);
           }
+        } else if (event.type === "content_block_stop") {
+          if (currentBlockType === "thinking") {
+            sendSSE(res, { type: "thinking_stop" });
+          }
+          currentBlockType = null;
         }
       }
+
+      const finalMessage = await stream.finalMessage();
+      totalPromptTokens += finalMessage.usage.input_tokens;
+      totalOutputTokens += finalMessage.usage.output_tokens;
+      lastContentBlocks = finalMessage.content;
+
+      // If no tool calls, we're done
+      if (finalMessage.stop_reason !== "tool_use") break;
+
+      // Extract tool_use blocks from the response
+      const toolUseBlocks = finalMessage.content.filter(
+        (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
+      );
+
+      // Append assistant response (with tool_use blocks) to turn history
+      turnMessages.push({ role: "assistant", content: finalMessage.content });
+
+      // Execute all tool calls and collect results
+      const toolResultBlocks: Anthropic.ToolResultBlockParam[] = [];
+
+      for (const toolUse of toolUseBlocks) {
+        const toolCallId = `tc_${crypto.randomUUID()}`;
+
+        if (toolUse.name !== "request_user_input") {
+          sendSSE(res, {
+            type: "tool_call",
+            id: toolCallId,
+            name: toolUse.name,
+            args: toolUse.input as Record<string, unknown>,
+          });
+        }
+
+        try {
+          const toolResult = await executeTool({
+            name: toolUse.name,
+            args: (toolUse.input as Record<string, unknown>) ?? {},
+          });
+
+          if (toolResult === "input_request") {
+            break agenticLoop; // Stop — client needs input
+          }
+
+          if (toolResult === null) {
+            toolResultBlocks.push({
+              type: "tool_result",
+              tool_use_id: toolUse.id,
+              content: JSON.stringify({ error: "Unknown tool" }),
+              is_error: true,
+            });
+            continue;
+          }
+
+          sendSSE(res, { type: "tool_result", id: toolCallId, name: toolUse.name, result: toolResult.result });
+          toolResultBlocks.push({
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(toolResult.result),
+          });
+        } catch (toolErr: unknown) {
+          const rawMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
+          console.error(`Tool call ${toolUse.name} failed:`, rawMsg);
+          const friendly = formatToolError(toolUse.name, rawMsg);
+          sendSSE(res, { type: "tool_result", id: toolCallId, name: toolUse.name, result: friendly });
+
+          // Feed the error back to Claude so it can self-correct
+          toolResultBlocks.push({
+            type: "tool_result",
+            tool_use_id: toolUse.id,
+            content: JSON.stringify(friendly),
+            is_error: true,
+          });
+        }
+      }
+
+      // Append tool results and continue the loop
+      turnMessages.push({ role: "user", content: toolResultBlocks });
+      depth++;
     }
 
-    console.log(`[chat] session="${currentSessionId}" streaming — model="${gemini.model}" tools=${allTools.length} history=${geminiHistory.length}`);
-    const stream = gemini.streamChat(
-      geminiHistory,
-      message.trim(),
-      allTools,
-    );
-
-    await processStream(stream);
     console.log(`[chat] session="${currentSessionId}" stream complete — tokens=${totalPromptTokens}+${totalOutputTokens} response=${fullResponse.length}chars`);
 
     // Finalize buffer: handle any remaining incomplete line
@@ -710,13 +667,13 @@ app.post("/chat", requireAuth, async (req, res) => {
       sendSSE(res, { type: "buttons", buttons });
     }
 
-    // Detect empty stream: Gemini returned no content (safety filter, context overflow, etc.)
+    // Detect empty stream: Claude returned no content (safety refusal, context overflow, etc.)
     if (!fullResponse && !emittedInputRequest && toolCalls.length === 0) {
       chatFailed = true;
       console.error(
-        `Empty Gemini response for session="${currentSessionId}" org="${orgId}" — ` +
+        `Empty Claude response for session="${currentSessionId}" org="${orgId}" — ` +
           `promptTokens=${totalPromptTokens} outputTokens=${totalOutputTokens} ` +
-          `historyLength=${geminiHistory.length} messageLength=${message.length}`,
+          `historyLength=${anthropicHistory.length} messageLength=${message.length}`,
       );
       sendSSE(res, {
         type: "error",
@@ -729,13 +686,14 @@ app.post("/chat", requireAuth, async (req, res) => {
       return;
     }
 
-    // Save assistant message with cleaned response
+    // Save assistant message with cleaned response + content blocks for compaction
     const cleanedResponse =
       buttons.length > 0 ? stripButtons(fullResponse) : fullResponse;
     await db.insert(messages).values({
       sessionId: currentSessionId,
       role: "assistant",
       content: cleanedResponse,
+      contentBlocks: lastContentBlocks.length > 0 ? lastContentBlocks : null,
       toolCalls: toolCalls.length > 0 ? toolCalls : null,
       buttons: buttons.length > 0 ? buttons : null,
       tokenCount: totalPromptTokens + totalOutputTokens || null,
@@ -757,14 +715,13 @@ app.post("/chat", requireAuth, async (req, res) => {
   } finally {
     // Report run status and costs (fire-and-forget)
     if (runId) {
-      const costModel = gemini.model.replace(/-preview$/, "");
       const costSource: "platform" | "org" =
         resolvedKey.keySource === "org" ? "org" : "platform";
       const costItems = [
         ...(totalPromptTokens > 0
           ? [
               {
-                costName: `${costModel}-tokens-input`,
+                costName: `${claude.model}-tokens-input`,
                 quantity: totalPromptTokens,
                 costSource,
               },
@@ -773,17 +730,8 @@ app.post("/chat", requireAuth, async (req, res) => {
         ...(totalOutputTokens > 0
           ? [
               {
-                costName: `${costModel}-tokens-output`,
+                costName: `${claude.model}-tokens-output`,
                 quantity: totalOutputTokens,
-                costSource,
-              },
-            ]
-          : []),
-        ...(totalSearchQueries > 0
-          ? [
-              {
-                costName: "gemini-google-search-query",
-                quantity: totalSearchQueries,
                 costSource,
               },
             ]

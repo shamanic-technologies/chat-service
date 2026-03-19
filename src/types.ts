@@ -72,9 +72,3 @@ export type SSEEvent =
   | SSEInputRequestEvent
   | SSEErrorEvent
   | SSESessionEvent;
-
-export interface GeminiTool {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-}
