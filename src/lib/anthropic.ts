@@ -333,6 +333,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
     createStream(
       messages: Anthropic.MessageParam[],
       tools?: Anthropic.Tool[],
+      signal?: AbortSignal,
     ) {
       // Build params with beta context management for compaction
       const params = {
@@ -374,6 +375,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       return client.messages.stream(
         params as unknown as Anthropic.MessageCreateParamsStreaming,
         {
+          signal,
           headers: {
             "anthropic-beta": "compact-2026-01-12,context-management-2025-06-27",
           },

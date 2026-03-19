@@ -283,6 +283,7 @@ src/
     schema.ts       # sessions + messages + app_configs + platform_configs table definitions
   lib/
     anthropic.ts       # Claude AI client (Sonnet 4.6), streaming + tool calling, adaptive thinking, context management (compaction), built-in tool declarations
+    merge-messages.ts  # Ensures alternating user/assistant roles by merging orphaned consecutive same-role messages
     key-client.ts      # Key-service client for resolving Anthropic keys (platform or BYOK per org)
     runs-client.ts     # RunsService HTTP client for run tracking and cost reporting
     workflow-client.ts              # Workflow-service client for update_workflow and validate_workflow built-in tools
