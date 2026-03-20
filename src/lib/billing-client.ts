@@ -2,8 +2,13 @@ const BILLING_SERVICE_URL =
   process.env.BILLING_SERVICE_URL || "https://billing.mcpfactory.org";
 const BILLING_SERVICE_API_KEY = process.env.BILLING_SERVICE_API_KEY;
 
+export interface CreditItem {
+  costName: string;
+  quantity: number;
+}
+
 export interface AuthorizeCreditParams {
-  requiredCents: number;
+  items: CreditItem[];
   description: string;
   orgId: string;
   userId: string;
@@ -14,31 +19,13 @@ export interface AuthorizeCreditParams {
 export interface AuthorizeCreditResult {
   sufficient: boolean;
   balance_cents: number;
-}
-
-/**
- * Estimate the cost in USD cents for a chat turn.
- *
- * Uses Claude Sonnet 4.6 pricing:
- *   Input:  $3  / 1M tokens → 0.0003 cents/token
- *   Output: $15 / 1M tokens → 0.0015 cents/token
- *
- * We estimate input tokens from the message length (~4 chars/token)
- * and use MAX_TOKENS (16 000) as the worst-case output budget.
- */
-export function estimateChatCostCents(messageLength: number): number {
-  const estimatedInputTokens = Math.max(Math.ceil(messageLength / 4), 500);
-  const maxOutputTokens = 16_000;
-
-  const inputCostCents = estimatedInputTokens * 0.0003;
-  const outputCostCents = maxOutputTokens * 0.0015;
-
-  return Math.ceil(inputCostCents + outputCostCents);
+  required_cents: number;
 }
 
 /**
  * Request credit authorization from billing-service.
- * Returns { sufficient, balance_cents }.
+ * Send costName + quantity items — billing-service resolves the price.
+ * Returns { sufficient, balance_cents, required_cents }.
  * Throws on network/server errors.
  */
 export async function authorizeCredits(
@@ -50,8 +37,7 @@ export async function authorizeCredits(
     );
   }
 
-  const { requiredCents, description, orgId, userId, runId, trackingHeaders } =
-    params;
+  const { items, description, orgId, userId, runId, trackingHeaders } = params;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -69,10 +55,7 @@ export async function authorizeCredits(
   const res = await fetch(`${BILLING_SERVICE_URL}/v1/credits/authorize`, {
     method: "POST",
     headers,
-    body: JSON.stringify({
-      required_cents: requiredCents,
-      description,
-    }),
+    body: JSON.stringify({ items, description }),
   });
 
   if (!res.ok) {

@@ -27,7 +27,7 @@ import { listAvailableServices } from "./lib/api-registry-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import { resolveKey, type ResolvedKey } from "./lib/key-client.js";
-import { authorizeCredits, estimateChatCostCents } from "./lib/billing-client.js";
+import { authorizeCredits } from "./lib/billing-client.js";
 import { ChatRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
@@ -194,10 +194,16 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   // Credit authorization — only for platform keys (BYOK orgs pay their provider directly)
   if (resolvedKey.keySource === "platform") {
-    const estimatedCostCents = estimateChatCostCents(message.length);
+    // Estimate token quantities: input from message length (~4 chars/token, min 500),
+    // output from MAX_TOKENS budget (16 000)
+    const estimatedInputTokens = Math.max(Math.ceil(message.length / 4), 500);
+    const estimatedOutputTokens = 16_000;
     try {
       const authResult = await authorizeCredits({
-        requiredCents: estimatedCostCents,
+        items: [
+          { costName: `${MODEL}-tokens-input`, quantity: estimatedInputTokens },
+          { costName: `${MODEL}-tokens-output`, quantity: estimatedOutputTokens },
+        ],
         description: `chat — ${MODEL}`,
         orgId,
         userId,
@@ -208,7 +214,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         return res.status(402).json({
           error: "Insufficient credits",
           balance_cents: authResult.balance_cents,
-          required_cents: estimatedCostCents,
+          required_cents: authResult.required_cents,
         });
       }
     } catch (billingErr) {
