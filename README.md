@@ -177,6 +177,21 @@ data: {"type":"buttons","buttons":[{"label":"Send Cold Emails","value":"Send Col
 ```
 Buttons are extracted from the AI response when it ends with lines formatted as `- [Button Text]`. The button `label` and `value` are both set to the text inside the brackets. Button lines are stripped from the token stream to prevent duplication.
 
+### Credit Authorization (402)
+
+Before streaming, the service checks credit authorization via billing-service for platform-key requests (`keySource: "platform"`). BYOK orgs (`keySource: "org"`) skip this check — they pay their provider directly.
+
+If the org has insufficient credits, the endpoint returns a **402 JSON response** (not SSE):
+```json
+{
+  "error": "Insufficient credits",
+  "balance_cents": 5,
+  "required_cents": 25
+}
+```
+
+If billing-service is unreachable, a **502 JSON response** is returned instead.
+
 ### 7. Error (optional)
 Sent when the AI model returns an empty response (context overflow, safety filter) or an unexpected error occurs:
 ```
@@ -216,6 +231,8 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `CONTENT_GENERATION_SERVICE_API_KEY` | No | API key for content-generation service (get_prompt_template tool fails if unset) |
 | `API_REGISTRY_SERVICE_URL` | No | API registry service endpoint (default: `https://api-registry.distribute.you`) |
 | `API_REGISTRY_SERVICE_API_KEY` | No | API key for api-registry service (list_available_services tool fails if unset) |
+| `BILLING_SERVICE_URL` | No | Billing-service endpoint (default: `https://billing.mcpfactory.org`) |
+| `BILLING_SERVICE_API_KEY` | Yes | API key for billing-service — required for credit authorization on platform-key requests |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
@@ -284,6 +301,7 @@ src/
   lib/
     anthropic.ts       # Claude AI client (Sonnet 4.6), streaming + tool calling, adaptive thinking, context management (compaction), built-in tool declarations
     merge-messages.ts  # Ensures alternating user/assistant roles by merging orphaned consecutive same-role messages
+    billing-client.ts  # Billing-service client for credit authorization before platform-key operations
     key-client.ts      # Key-service client for resolving Anthropic keys (platform or BYOK per org)
     runs-client.ts     # RunsService HTTP client for run tracking and cost reporting
     workflow-client.ts              # Workflow-service client for update_workflow and validate_workflow built-in tools
