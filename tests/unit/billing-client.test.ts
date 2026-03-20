@@ -18,40 +18,20 @@ async function loadModule() {
   return import("../../src/lib/billing-client.js");
 }
 
-describe("estimateChatCostCents", () => {
-  it("returns a positive integer for a short message", async () => {
-    const { estimateChatCostCents } = await loadModule();
-    const cost = estimateChatCostCents(100);
-    expect(cost).toBeGreaterThan(0);
-    expect(Number.isInteger(cost)).toBe(true);
-  });
-
-  it("returns a higher estimate for longer messages", async () => {
-    const { estimateChatCostCents } = await loadModule();
-    const short = estimateChatCostCents(100);
-    const long = estimateChatCostCents(100_000);
-    expect(long).toBeGreaterThanOrEqual(short);
-  });
-
-  it("uses at least 500 input tokens even for tiny messages", async () => {
-    const { estimateChatCostCents } = await loadModule();
-    const tiny = estimateChatCostCents(4); // 1 token from length
-    const minInput = estimateChatCostCents(2000); // 500 tokens from length
-    // Both should use 500 input tokens minimum, so same cost
-    expect(tiny).toBe(minInput);
-  });
-});
-
 describe("authorizeCredits", () => {
-  it("sends POST with correct headers and body when sufficient", async () => {
+  it("sends POST with items array and correct headers", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ sufficient: true, balance_cents: 5000 }),
+      json: () =>
+        Promise.resolve({ sufficient: true, balance_cents: 5000, required_cents: 25 }),
     });
 
     const { authorizeCredits } = await loadModule();
     const result = await authorizeCredits({
-      requiredCents: 25,
+      items: [
+        { costName: "claude-sonnet-4-6-tokens-input", quantity: 1000 },
+        { costName: "claude-sonnet-4-6-tokens-output", quantity: 500 },
+      ],
       description: "chat — claude-sonnet-4-6",
       orgId: "org-123",
       userId: "user-456",
@@ -70,23 +50,27 @@ describe("authorizeCredits", () => {
           "x-run-id": "run-789",
         }),
         body: JSON.stringify({
-          required_cents: 25,
+          items: [
+            { costName: "claude-sonnet-4-6-tokens-input", quantity: 1000 },
+            { costName: "claude-sonnet-4-6-tokens-output", quantity: 500 },
+          ],
           description: "chat — claude-sonnet-4-6",
         }),
       }),
     );
-    expect(result).toEqual({ sufficient: true, balance_cents: 5000 });
+    expect(result).toEqual({ sufficient: true, balance_cents: 5000, required_cents: 25 });
   });
 
-  it("returns sufficient: false when balance is too low", async () => {
+  it("returns sufficient: false with required_cents when balance is too low", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ sufficient: false, balance_cents: 5 }),
+      json: () =>
+        Promise.resolve({ sufficient: false, balance_cents: 5, required_cents: 25 }),
     });
 
     const { authorizeCredits } = await loadModule();
     const result = await authorizeCredits({
-      requiredCents: 25,
+      items: [{ costName: "claude-sonnet-4-6-tokens-output", quantity: 16000 }],
       description: "chat — claude-sonnet-4-6",
       orgId: "org-123",
       userId: "user-456",
@@ -95,17 +79,19 @@ describe("authorizeCredits", () => {
 
     expect(result.sufficient).toBe(false);
     expect(result.balance_cents).toBe(5);
+    expect(result.required_cents).toBe(25);
   });
 
   it("forwards tracking headers when provided", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ sufficient: true, balance_cents: 5000 }),
+      json: () =>
+        Promise.resolve({ sufficient: true, balance_cents: 5000, required_cents: 10 }),
     });
 
     const { authorizeCredits } = await loadModule();
     await authorizeCredits({
-      requiredCents: 25,
+      items: [{ costName: "claude-sonnet-4-6-tokens-input", quantity: 500 }],
       description: "chat — claude-sonnet-4-6",
       orgId: "org-123",
       userId: "user-456",
@@ -134,7 +120,7 @@ describe("authorizeCredits", () => {
     const { authorizeCredits } = await loadModule();
     await expect(
       authorizeCredits({
-        requiredCents: 25,
+        items: [{ costName: "claude-sonnet-4-6-tokens-input", quantity: 500 }],
         description: "chat — claude-sonnet-4-6",
         orgId: "org-123",
         userId: "user-456",
@@ -151,7 +137,7 @@ describe("authorizeCredits", () => {
     const { authorizeCredits } = await loadModule();
     await expect(
       authorizeCredits({
-        requiredCents: 25,
+        items: [{ costName: "claude-sonnet-4-6-tokens-input", quantity: 500 }],
         description: "chat — claude-sonnet-4-6",
         orgId: "org-123",
         userId: "user-456",
@@ -166,7 +152,7 @@ describe("authorizeCredits", () => {
     const { authorizeCredits } = await loadModule();
     await expect(
       authorizeCredits({
-        requiredCents: 25,
+        items: [{ costName: "claude-sonnet-4-6-tokens-input", quantity: 500 }],
         description: "chat — claude-sonnet-4-6",
         orgId: "org-123",
         userId: "user-456",
@@ -181,12 +167,13 @@ describe("authorizeCredits", () => {
     delete process.env.BILLING_SERVICE_URL;
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ sufficient: true, balance_cents: 1000 }),
+      json: () =>
+        Promise.resolve({ sufficient: true, balance_cents: 1000, required_cents: 10 }),
     });
 
     const { authorizeCredits } = await loadModule();
     await authorizeCredits({
-      requiredCents: 25,
+      items: [{ costName: "claude-sonnet-4-6-tokens-input", quantity: 500 }],
       description: "chat — claude-sonnet-4-6",
       orgId: "org-123",
       userId: "user-456",
