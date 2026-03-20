@@ -12,6 +12,7 @@ import {
   createAnthropicClient,
   buildSystemPrompt,
   BUILTIN_TOOLS,
+  MODEL,
 } from "./lib/anthropic.js";
 import {
   updateWorkflow,
@@ -26,6 +27,7 @@ import { listAvailableServices } from "./lib/api-registry-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import { resolveKey, type ResolvedKey } from "./lib/key-client.js";
+import { authorizeCredits, estimateChatCostCents } from "./lib/billing-client.js";
 import { ChatRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
@@ -188,6 +190,33 @@ app.post("/chat", requireAuth, async (req, res) => {
     return res.status(502).json({
       error: `Failed to resolve Anthropic API key. Ensure the key is configured in key-service.`,
     });
+  }
+
+  // Credit authorization — only for platform keys (BYOK orgs pay their provider directly)
+  if (resolvedKey.keySource === "platform") {
+    const estimatedCostCents = estimateChatCostCents(message.length);
+    try {
+      const authResult = await authorizeCredits({
+        requiredCents: estimatedCostCents,
+        description: `chat — ${MODEL}`,
+        orgId,
+        userId,
+        runId: callerRunId,
+        trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders : undefined,
+      });
+      if (!authResult.sufficient) {
+        return res.status(402).json({
+          error: "Insufficient credits",
+          balance_cents: authResult.balance_cents,
+          required_cents: estimatedCostCents,
+        });
+      }
+    } catch (billingErr) {
+      console.error(`[chat] billing authorization failed for org="${orgId}":`, billingErr);
+      return res.status(502).json({
+        error: "Billing service unavailable. Please try again.",
+      });
+    }
   }
 
   // SSE headers — disable proxy buffering so tokens stream immediately

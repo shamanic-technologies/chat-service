@@ -1,0 +1,201 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const originalEnv = { ...process.env };
+
+beforeEach(() => {
+  process.env.BILLING_SERVICE_API_KEY = "test-billing-key";
+  process.env.BILLING_SERVICE_URL = "https://billing.test.local";
+  vi.stubGlobal("fetch", vi.fn());
+});
+
+afterEach(() => {
+  process.env = { ...originalEnv };
+  vi.restoreAllMocks();
+});
+
+async function loadModule() {
+  vi.resetModules();
+  return import("../../src/lib/billing-client.js");
+}
+
+describe("estimateChatCostCents", () => {
+  it("returns a positive integer for a short message", async () => {
+    const { estimateChatCostCents } = await loadModule();
+    const cost = estimateChatCostCents(100);
+    expect(cost).toBeGreaterThan(0);
+    expect(Number.isInteger(cost)).toBe(true);
+  });
+
+  it("returns a higher estimate for longer messages", async () => {
+    const { estimateChatCostCents } = await loadModule();
+    const short = estimateChatCostCents(100);
+    const long = estimateChatCostCents(100_000);
+    expect(long).toBeGreaterThanOrEqual(short);
+  });
+
+  it("uses at least 500 input tokens even for tiny messages", async () => {
+    const { estimateChatCostCents } = await loadModule();
+    const tiny = estimateChatCostCents(4); // 1 token from length
+    const minInput = estimateChatCostCents(2000); // 500 tokens from length
+    // Both should use 500 input tokens minimum, so same cost
+    expect(tiny).toBe(minInput);
+  });
+});
+
+describe("authorizeCredits", () => {
+  it("sends POST with correct headers and body when sufficient", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ sufficient: true, balance_cents: 5000 }),
+    });
+
+    const { authorizeCredits } = await loadModule();
+    const result = await authorizeCredits({
+      requiredCents: 25,
+      description: "chat — claude-sonnet-4-6",
+      orgId: "org-123",
+      userId: "user-456",
+      runId: "run-789",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://billing.test.local/v1/credits/authorize",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          "X-API-Key": "test-billing-key",
+          "x-org-id": "org-123",
+          "x-user-id": "user-456",
+          "x-run-id": "run-789",
+        }),
+        body: JSON.stringify({
+          required_cents: 25,
+          description: "chat — claude-sonnet-4-6",
+        }),
+      }),
+    );
+    expect(result).toEqual({ sufficient: true, balance_cents: 5000 });
+  });
+
+  it("returns sufficient: false when balance is too low", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ sufficient: false, balance_cents: 5 }),
+    });
+
+    const { authorizeCredits } = await loadModule();
+    const result = await authorizeCredits({
+      requiredCents: 25,
+      description: "chat — claude-sonnet-4-6",
+      orgId: "org-123",
+      userId: "user-456",
+      runId: "run-789",
+    });
+
+    expect(result.sufficient).toBe(false);
+    expect(result.balance_cents).toBe(5);
+  });
+
+  it("forwards tracking headers when provided", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ sufficient: true, balance_cents: 5000 }),
+    });
+
+    const { authorizeCredits } = await loadModule();
+    await authorizeCredits({
+      requiredCents: 25,
+      description: "chat — claude-sonnet-4-6",
+      orgId: "org-123",
+      userId: "user-456",
+      runId: "run-789",
+      trackingHeaders: {
+        "x-campaign-id": "camp-1",
+        "x-brand-id": "brand-2",
+        "x-workflow-name": "wf-3",
+      },
+    });
+
+    const callArgs = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const headers = callArgs[1].headers;
+    expect(headers["x-campaign-id"]).toBe("camp-1");
+    expect(headers["x-brand-id"]).toBe("brand-2");
+    expect(headers["x-workflow-name"]).toBe("wf-3");
+  });
+
+  it("throws on HTTP error from billing-service", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve("Internal Server Error"),
+    });
+
+    const { authorizeCredits } = await loadModule();
+    await expect(
+      authorizeCredits({
+        requiredCents: 25,
+        description: "chat — claude-sonnet-4-6",
+        orgId: "org-123",
+        userId: "user-456",
+        runId: "run-789",
+      }),
+    ).rejects.toThrow(/returned 500/);
+  });
+
+  it("throws on network error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("ECONNREFUSED"),
+    );
+
+    const { authorizeCredits } = await loadModule();
+    await expect(
+      authorizeCredits({
+        requiredCents: 25,
+        description: "chat — claude-sonnet-4-6",
+        orgId: "org-123",
+        userId: "user-456",
+        runId: "run-789",
+      }),
+    ).rejects.toThrow("ECONNREFUSED");
+  });
+
+  it("throws when BILLING_SERVICE_API_KEY is not set", async () => {
+    delete process.env.BILLING_SERVICE_API_KEY;
+
+    const { authorizeCredits } = await loadModule();
+    await expect(
+      authorizeCredits({
+        requiredCents: 25,
+        description: "chat — claude-sonnet-4-6",
+        orgId: "org-123",
+        userId: "user-456",
+        runId: "run-789",
+      }),
+    ).rejects.toThrow(/BILLING_SERVICE_API_KEY is required/);
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("uses default BILLING_SERVICE_URL when not set", async () => {
+    delete process.env.BILLING_SERVICE_URL;
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ sufficient: true, balance_cents: 1000 }),
+    });
+
+    const { authorizeCredits } = await loadModule();
+    await authorizeCredits({
+      requiredCents: 25,
+      description: "chat — claude-sonnet-4-6",
+      orgId: "org-123",
+      userId: "user-456",
+      runId: "run-789",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://billing.mcpfactory.org/v1/credits/authorize",
+      expect.anything(),
+    );
+  });
+});

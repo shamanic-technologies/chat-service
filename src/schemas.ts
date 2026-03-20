@@ -37,6 +37,18 @@ export const ValidationErrorResponseSchema = z
   })
   .openapi("ValidationErrorResponse");
 
+export const InsufficientCreditsResponseSchema = z
+  .object({
+    error: z.literal("Insufficient credits"),
+    balance_cents: z.number().openapi({
+      description: "Current credit balance in USD cents",
+    }),
+    required_cents: z.number().openapi({
+      description: "Estimated cost of this request in USD cents",
+    }),
+  })
+  .openapi("InsufficientCreditsResponse");
+
 // --- Health ---
 
 export const HealthResponseSchema = z
@@ -448,6 +460,14 @@ Requires app config to be registered first via PUT /config (or platform config v
     401: {
       description: "Missing or invalid x-api-key header",
       content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    402: {
+      description:
+        "Insufficient credits — the org's credit balance is too low to cover this request. " +
+        "Only applies to platform-key usage (BYOK orgs are not charged).",
+      content: {
+        "application/json": { schema: InsufficientCreditsResponseSchema },
+      },
     },
     404: {
       description:

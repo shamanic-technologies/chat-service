@@ -370,6 +370,30 @@
         ],
         "additionalProperties": false
       },
+      "InsufficientCreditsResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "Insufficient credits"
+            ]
+          },
+          "balance_cents": {
+            "type": "number",
+            "description": "Current credit balance in USD cents"
+          },
+          "required_cents": {
+            "type": "number",
+            "description": "Estimated cost of this request in USD cents"
+          }
+        },
+        "required": [
+          "error",
+          "balance_cents",
+          "required_cents"
+        ]
+      },
       "ChatRequest": {
         "type": "object",
         "properties": {
@@ -763,6 +787,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits — the org's credit balance is too low to cover this request. Only applies to platform-key usage (BYOK orgs are not charged).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientCreditsResponse"
                 }
               }
             }
