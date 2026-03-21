@@ -214,6 +214,122 @@ registry.registerPath({
   },
 });
 
+// --- Complete (synchronous LLM call) ---
+
+export const CompleteRequestSchema = z
+  .object({
+    message: z.string().min(1, "message is required").openapi({
+      description: "The prompt to send to the LLM",
+      example: "Given this brand context, generate 10 Google search queries for PR outreach.",
+    }),
+    systemPrompt: z.string().min(1).openapi({
+      description: "Inline system prompt — no pre-registered config required",
+      example: "You are a PR research assistant.",
+    }),
+    responseFormat: z.literal("json").optional().openapi({
+      description: 'Set to "json" to instruct the model to return valid JSON. The response will be parsed and returned in the `json` field.',
+    }),
+    temperature: z.number().min(0).max(2).optional().openapi({
+      description: "Sampling temperature (0–2). Lower = more deterministic.",
+      example: 0.3,
+    }),
+    maxTokens: z.number().int().min(1).max(64000).optional().openapi({
+      description: "Maximum tokens in the response (default: 16000)",
+      example: 2000,
+    }),
+  })
+  .openapi("CompleteRequest");
+
+export const CompleteResponseSchema = z
+  .object({
+    content: z.string().openapi({
+      description: "Raw text response from the model",
+    }),
+    json: z.record(z.string(), z.unknown()).optional().openapi({
+      description: "Parsed JSON object — present only when responseFormat is \"json\" and the model returned valid JSON",
+    }),
+    tokensInput: z.number().openapi({
+      description: "Number of input tokens consumed",
+      example: 450,
+    }),
+    tokensOutput: z.number().openapi({
+      description: "Number of output tokens generated",
+      example: 800,
+    }),
+    model: z.string().openapi({
+      description: "Model used for the completion",
+      example: "claude-sonnet-4-6",
+    }),
+  })
+  .openapi("CompleteResponse");
+
+export type CompleteRequest = z.infer<typeof CompleteRequestSchema>;
+
+registry.registerPath({
+  method: "post",
+  path: "/complete",
+  tags: ["Complete"],
+  summary: "Synchronous LLM completion",
+  description: `One-shot, non-streaming LLM call for service-to-service use. Returns a JSON response with the model output.
+
+Unlike POST /chat, this endpoint:
+- Does **not** create or use sessions (stateless, one-shot)
+- Accepts an inline \`systemPrompt\` (no pre-registered config required)
+- Returns JSON instead of SSE
+- Supports \`responseFormat: "json"\` to guarantee parsable JSON output
+- Supports optional \`temperature\` and \`maxTokens\` overrides
+
+**Use cases:** generating search queries, scoring/analyzing text, any service that needs a quick LLM call without conversation context.`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({
+        description: "Service-to-service API key",
+      }),
+      "x-org-id": z.string().openapi({
+        description: "Internal org UUID from client-service",
+      }),
+      "x-user-id": z.string().openapi({
+        description: "Internal user UUID from client-service",
+      }),
+      "x-run-id": z.string().uuid().openapi({
+        description: "Caller's run ID",
+      }),
+      ...workflowTrackingHeaders,
+    }),
+    body: {
+      content: { "application/json": { schema: CompleteRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "LLM completion result",
+      content: {
+        "application/json": { schema: CompleteResponseSchema },
+      },
+    },
+    400: {
+      description: "Missing or invalid request fields",
+      content: {
+        "application/json": { schema: ValidationErrorResponseSchema },
+      },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    402: {
+      description: "Insufficient credits (platform-key only)",
+      content: {
+        "application/json": { schema: InsufficientCreditsResponseSchema },
+      },
+    },
+    502: {
+      description: "Upstream service unavailable (key-service, billing-service, runs-service, or LLM provider)",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // --- Chat ---
 
 export const ChatRequestSchema = z

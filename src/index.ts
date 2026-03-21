@@ -28,7 +28,7 @@ import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import { resolveKey, type ResolvedKey } from "./lib/key-client.js";
 import { authorizeCredits } from "./lib/billing-client.js";
-import { ChatRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -134,6 +134,158 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString(),
   });
+});
+
+// --- Complete (synchronous LLM call) ---
+
+app.post("/complete", requireAuth, async (req, res) => {
+  const { orgId, userId, runId: callerRunId, workflowTracking } = res.locals as AuthLocals;
+
+  const trackingHeaders: Record<string, string> = {};
+  if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
+  if (workflowTracking.brandId) trackingHeaders["x-brand-id"] = workflowTracking.brandId;
+  if (workflowTracking.workflowName) trackingHeaders["x-workflow-name"] = workflowTracking.workflowName;
+
+  const parsed = CompleteRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+
+  const { message, systemPrompt, responseFormat, temperature, maxTokens } = parsed.data;
+
+  // Resolve Anthropic API key per-request
+  let resolvedKey: ResolvedKey;
+  try {
+    resolvedKey = await resolveKey({
+      provider: "anthropic",
+      orgId,
+      userId,
+      runId: callerRunId,
+      caller: { method: "POST", path: "/complete" },
+      trackingHeaders,
+    });
+  } catch (err) {
+    console.error(`[complete] Failed to resolve Anthropic key for org="${orgId}":`, err);
+    return res.status(502).json({
+      error: "Failed to resolve Anthropic API key. Ensure the key is configured in key-service.",
+    });
+  }
+
+  // Credit authorization for platform keys
+  if (resolvedKey.keySource === "platform") {
+    const estimatedInputTokens = Math.max(Math.ceil(message.length / 4), 500);
+    const estimatedOutputTokens = maxTokens ?? 16_000;
+    try {
+      const authResult = await authorizeCredits({
+        items: [
+          { costName: `${MODEL}-tokens-input`, quantity: estimatedInputTokens },
+          { costName: `${MODEL}-tokens-output`, quantity: estimatedOutputTokens },
+        ],
+        description: `complete — ${MODEL}`,
+        orgId,
+        userId,
+        runId: callerRunId,
+        trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders : undefined,
+      });
+      if (!authResult.sufficient) {
+        return res.status(402).json({
+          error: "Insufficient credits",
+          balance_cents: authResult.balance_cents,
+          required_cents: authResult.required_cents,
+        });
+      }
+    } catch (billingErr) {
+      console.error(`[complete] billing authorization failed for org="${orgId}":`, billingErr);
+      return res.status(502).json({
+        error: "Billing service unavailable. Please try again.",
+      });
+    }
+  }
+
+  // Register run (mandatory)
+  let runId: string | null = null;
+  try {
+    const run = await createRun(
+      { serviceName: "chat-service", taskName: "complete" },
+      { orgId, userId, runId: callerRunId },
+      trackingHeaders,
+    );
+    runId = run.id;
+    console.log(`[complete] org="${orgId}" run="${runId}" created`);
+  } catch (runErr) {
+    console.error(`[complete] org="${orgId}" run creation failed:`, runErr);
+    return res.status(502).json({
+      error: "Service temporarily unavailable (run tracking). Please try again.",
+    });
+  }
+
+  let completeFailed = false;
+  let totalPromptTokens = 0;
+  let totalOutputTokens = 0;
+  const claudeModel = MODEL;
+  try {
+    // Build prompt — for JSON mode, prepend instruction to system prompt
+    const effectiveSystemPrompt = responseFormat === "json"
+      ? `${systemPrompt}\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, no extra text — just a single JSON object or array.`
+      : systemPrompt;
+
+    const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: effectiveSystemPrompt });
+
+    const result = await claude.complete(message, {
+      responseFormat,
+      temperature,
+      maxTokens,
+    });
+
+    totalPromptTokens = result.tokensInput;
+    totalOutputTokens = result.tokensOutput;
+
+    // Build response
+    const response: Record<string, unknown> = {
+      content: result.content,
+      tokensInput: result.tokensInput,
+      tokensOutput: result.tokensOutput,
+      model: claude.model,
+    };
+
+    // Parse JSON if requested
+    if (responseFormat === "json") {
+      try {
+        response.json = JSON.parse(result.content);
+      } catch {
+        // Model returned non-parsable content despite JSON mode — return raw content only
+      }
+    }
+
+    res.json(response);
+  } catch (err) {
+    completeFailed = true;
+    console.error(`[complete] org="${orgId}" error:`, err);
+    res.status(502).json({
+      error: "LLM call failed. Please try again.",
+    });
+  } finally {
+    // Report run status and costs (fire-and-forget)
+    if (runId) {
+      const costSource: "platform" | "org" =
+        resolvedKey.keySource === "org" ? "org" : "platform";
+      const costItems = [
+        ...(totalPromptTokens > 0
+          ? [{ costName: `${claudeModel}-tokens-input`, quantity: totalPromptTokens, costSource }]
+          : []),
+        ...(totalOutputTokens > 0
+          ? [{ costName: `${claudeModel}-tokens-output`, quantity: totalOutputTokens, costSource }]
+          : []),
+      ];
+      const runIdentity = { orgId, userId, runId };
+      Promise.all([
+        updateRunStatus(runId, completeFailed ? "failed" : "completed", runIdentity, trackingHeaders),
+        addRunCosts(runId, costItems, runIdentity, trackingHeaders),
+      ]).catch(() => {});
+    }
+  }
 });
 
 // --- Chat ---

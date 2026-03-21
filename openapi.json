@@ -370,6 +370,43 @@
         ],
         "additionalProperties": false
       },
+      "CompleteResponse": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "Raw text response from the model"
+          },
+          "json": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "Parsed JSON object — present only when responseFormat is \"json\" and the model returned valid JSON"
+          },
+          "tokensInput": {
+            "type": "number",
+            "description": "Number of input tokens consumed",
+            "example": 450
+          },
+          "tokensOutput": {
+            "type": "number",
+            "description": "Number of output tokens generated",
+            "example": 800
+          },
+          "model": {
+            "type": "string",
+            "description": "Model used for the completion",
+            "example": "claude-sonnet-4-6"
+          }
+        },
+        "required": [
+          "content",
+          "tokensInput",
+          "tokensOutput",
+          "model"
+        ]
+      },
       "InsufficientCreditsResponse": {
         "type": "object",
         "properties": {
@@ -392,6 +429,48 @@
           "error",
           "balance_cents",
           "required_cents"
+        ]
+      },
+      "CompleteRequest": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The prompt to send to the LLM",
+            "example": "Given this brand context, generate 10 Google search queries for PR outreach."
+          },
+          "systemPrompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Inline system prompt — no pre-registered config required",
+            "example": "You are a PR research assistant."
+          },
+          "responseFormat": {
+            "type": "string",
+            "enum": [
+              "json"
+            ],
+            "description": "Set to \"json\" to instruct the model to return valid JSON. The response will be parsed and returned in the `json` field."
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2,
+            "description": "Sampling temperature (0–2). Lower = more deterministic.",
+            "example": 0.3
+          },
+          "maxTokens": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64000,
+            "description": "Maximum tokens in the response (default: 16000)",
+            "example": 2000
+          }
+        },
+        "required": [
+          "message",
+          "systemPrompt"
         ]
       },
       "ChatRequest": {
@@ -660,6 +739,149 @@
           },
           "401": {
             "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/complete": {
+      "post": {
+        "tags": [
+          "Complete"
+        ],
+        "summary": "Synchronous LLM completion",
+        "description": "One-shot, non-streaming LLM call for service-to-service use. Returns a JSON response with the model output.\n\nUnlike POST /chat, this endpoint:\n- Does **not** create or use sessions (stateless, one-shot)\n- Accepts an inline `systemPrompt` (no pre-registered config required)\n- Returns JSON instead of SSE\n- Supports `responseFormat: \"json\"` to guarantee parsable JSON output\n- Supports optional `temperature` and `maxTokens` overrides\n\n**Use cases:** generating search queries, scoring/analyzing text, any service that needs a quick LLM call without conversation context.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal org UUID from client-service",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal user UUID from client-service",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Caller's run ID"
+            },
+            "required": true,
+            "description": "Caller's run ID",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Campaign ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Campaign ID — injected automatically by workflow-service",
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Brand ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Brand ID — injected automatically by workflow-service",
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Workflow name — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Workflow name — injected automatically by workflow-service",
+            "name": "x-workflow-name",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "LLM completion result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits (platform-key only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientCreditsResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream service unavailable (key-service, billing-service, runs-service, or LLM provider)",
             "content": {
               "application/json": {
                 "schema": {

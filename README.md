@@ -81,6 +81,47 @@ Response:
 }
 ```
 
+## Synchronous Completion
+
+`POST /complete` — one-shot, non-streaming LLM call for service-to-service use.
+
+Request body:
+```json
+{
+  "message": "Given this brand context, generate 10 Google search queries...",
+  "systemPrompt": "You are a PR research assistant...",
+  "responseFormat": "json",
+  "temperature": 0.3,
+  "maxTokens": 2000
+}
+```
+
+- `message` (required) — the prompt to send to the LLM
+- `systemPrompt` (required) — inline system prompt (no pre-registered config needed)
+- `responseFormat` (optional) — set to `"json"` to instruct the model to return valid JSON. The parsed result appears in the `json` field.
+- `temperature` (optional) — sampling temperature, 0–2 (default: model default)
+- `maxTokens` (optional) — max output tokens, 1–64000 (default: 16000)
+
+Response:
+```json
+{
+  "content": "...",
+  "json": { "queries": ["..."] },
+  "tokensInput": 450,
+  "tokensOutput": 800,
+  "model": "claude-sonnet-4-6"
+}
+```
+
+- `content` — raw text response (always present)
+- `json` — parsed JSON object (only when `responseFormat: "json"` and model returned valid JSON)
+- `tokensInput` / `tokensOutput` — token usage
+- `model` — model used
+
+Unlike POST /chat, this endpoint is **stateless** (no sessions), accepts an **inline systemPrompt**, and returns **JSON** instead of SSE. Run tracking and billing work identically to POST /chat.
+
+Error responses: 400 (validation), 401 (auth), 402 (insufficient credits), 502 (upstream failure).
+
 ## SSE Protocol
 
 `POST /chat` with headers `Content-Type: application/json`, `x-api-key`, `x-org-id`, `x-user-id`.
@@ -290,7 +331,7 @@ Uses `node:20-alpine`. Requires Node >= 20.
 
 ```
 src/
-  index.ts          # Express server, /chat, /config, /platform-config, /health, /openapi.json
+  index.ts          # Express server, /chat, /complete, /config, /platform-config, /health, /openapi.json
   types.ts          # SSE event TypeScript interfaces
   schemas.ts        # Zod schemas, OpenAPI registry, and request/response types
   middleware/
@@ -299,7 +340,7 @@ src/
     index.ts        # Drizzle client init
     schema.ts       # sessions + messages + app_configs + platform_configs table definitions
   lib/
-    anthropic.ts       # Claude AI client (Sonnet 4.6), streaming + tool calling, adaptive thinking, context management (compaction), built-in tool declarations
+    anthropic.ts       # Claude AI client (Sonnet 4.6), streaming + non-streaming, tool calling, adaptive thinking, context management (compaction), built-in tool declarations
     merge-messages.ts  # Ensures alternating user/assistant roles by merging orphaned consecutive same-role messages
     billing-client.ts  # Billing-service client for credit authorization before platform-key operations
     key-client.ts      # Key-service client for resolving Anthropic keys (platform or BYOK per org)
