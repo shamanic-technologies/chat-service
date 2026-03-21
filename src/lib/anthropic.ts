@@ -382,5 +382,44 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         },
       );
     },
+
+    /**
+     * Non-streaming completion — single request/response.
+     * Used by POST /complete for service-to-service calls.
+     */
+    async complete(
+      message: string,
+      options?: {
+        responseFormat?: "json";
+        temperature?: number;
+        maxTokens?: number;
+      },
+    ): Promise<{
+      content: string;
+      tokensInput: number;
+      tokensOutput: number;
+    }> {
+      const params: Anthropic.MessageCreateParamsNonStreaming = {
+        model: MODEL,
+        max_tokens: options?.maxTokens ?? MAX_TOKENS,
+        system: systemPrompt,
+        messages: [{ role: "user", content: message }],
+        ...(options?.temperature != null ? { temperature: options.temperature } : {}),
+      };
+
+      const response = await client.messages.create(params);
+
+      // Extract text from content blocks
+      const textBlocks = response.content.filter(
+        (b): b is Anthropic.TextBlock => b.type === "text",
+      );
+      const content = textBlocks.map((b) => b.text).join("");
+
+      return {
+        content,
+        tokensInput: response.usage.input_tokens,
+        tokensOutput: response.usage.output_tokens,
+      };
+    },
   };
 }
