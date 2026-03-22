@@ -30,6 +30,7 @@ import {
   createAnthropicClient,
   buildSystemPrompt,
   MODEL,
+  COST_PREFIX,
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
   VALIDATE_WORKFLOW_TOOL,
@@ -37,6 +38,17 @@ import {
 } from "../../src/lib/anthropic.js";
 
 const TEST_PROMPT = "You are a test assistant.";
+
+describe("COST_PREFIX", () => {
+  it("follows costs-service naming convention: {provider}-{model}-tokens-{direction}", () => {
+    // costs-service expects "anthropic-sonnet-4.6", not "claude-sonnet-4-6"
+    expect(COST_PREFIX).toBe("anthropic-sonnet-4.6");
+    // Must NOT match the Anthropic API model ID (which uses claude- prefix and hyphens)
+    expect(COST_PREFIX).not.toBe(MODEL);
+    expect(COST_PREFIX).not.toContain("claude-");
+    expect(COST_PREFIX).toMatch(/^anthropic-/);
+  });
+});
 
 describe("createAnthropicClient", () => {
   beforeEach(() => {
