@@ -13,6 +13,7 @@ import {
   buildSystemPrompt,
   BUILTIN_TOOLS,
   MODEL,
+  COST_PREFIX,
 } from "./lib/anthropic.js";
 import {
   updateWorkflow,
@@ -180,8 +181,8 @@ app.post("/complete", requireAuth, async (req, res) => {
     try {
       const authResult = await authorizeCredits({
         items: [
-          { costName: `${MODEL}-tokens-input`, quantity: estimatedInputTokens },
-          { costName: `${MODEL}-tokens-output`, quantity: estimatedOutputTokens },
+          { costName: `${COST_PREFIX}-tokens-input`, quantity: estimatedInputTokens },
+          { costName: `${COST_PREFIX}-tokens-output`, quantity: estimatedOutputTokens },
         ],
         description: `complete — ${MODEL}`,
         orgId,
@@ -273,10 +274,10 @@ app.post("/complete", requireAuth, async (req, res) => {
         resolvedKey.keySource === "org" ? "org" : "platform";
       const costItems = [
         ...(totalPromptTokens > 0
-          ? [{ costName: `${claudeModel}-tokens-input`, quantity: totalPromptTokens, costSource }]
+          ? [{ costName: `${COST_PREFIX}-tokens-input`, quantity: totalPromptTokens, costSource }]
           : []),
         ...(totalOutputTokens > 0
-          ? [{ costName: `${claudeModel}-tokens-output`, quantity: totalOutputTokens, costSource }]
+          ? [{ costName: `${COST_PREFIX}-tokens-output`, quantity: totalOutputTokens, costSource }]
           : []),
       ];
       const runIdentity = { orgId, userId, runId };
@@ -353,8 +354,8 @@ app.post("/chat", requireAuth, async (req, res) => {
     try {
       const authResult = await authorizeCredits({
         items: [
-          { costName: `${MODEL}-tokens-input`, quantity: estimatedInputTokens },
-          { costName: `${MODEL}-tokens-output`, quantity: estimatedOutputTokens },
+          { costName: `${COST_PREFIX}-tokens-input`, quantity: estimatedInputTokens },
+          { costName: `${COST_PREFIX}-tokens-output`, quantity: estimatedOutputTokens },
         ],
         description: `chat — ${MODEL}`,
         orgId,
@@ -937,7 +938,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         ...(totalPromptTokens > 0
           ? [
               {
-                costName: `${claude.model}-tokens-input`,
+                costName: `${COST_PREFIX}-tokens-input`,
                 quantity: totalPromptTokens,
                 costSource,
               },
@@ -946,7 +947,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         ...(totalOutputTokens > 0
           ? [
               {
-                costName: `${claude.model}-tokens-output`,
+                costName: `${COST_PREFIX}-tokens-output`,
                 quantity: totalOutputTokens,
                 costSource,
               },

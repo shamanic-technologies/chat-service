@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 export const MODEL = "claude-sonnet-4-6";
+/** Cost-name prefix used by costs-service: {provider}-{model} */
+export const COST_PREFIX = "anthropic-sonnet-4.6";
 const MAX_TOKENS = 16_000;
 
 // ---------------------------------------------------------------------------
