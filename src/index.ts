@@ -191,6 +191,9 @@ app.post("/complete", requireAuth, async (req, res) => {
         trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders : undefined,
       });
       if (!authResult.sufficient) {
+        console.warn(
+          `[complete] insufficient credits: org="${orgId}" balance_cents=${authResult.balance_cents} required_cents=${authResult.required_cents}`,
+        );
         return res.status(402).json({
           error: "Insufficient credits",
           balance_cents: authResult.balance_cents,
@@ -364,6 +367,9 @@ app.post("/chat", requireAuth, async (req, res) => {
         trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders : undefined,
       });
       if (!authResult.sufficient) {
+        console.warn(
+          `[chat] insufficient credits: org="${orgId}" balance_cents=${authResult.balance_cents} required_cents=${authResult.required_cents}`,
+        );
         return res.status(402).json({
           error: "Insufficient credits",
           balance_cents: authResult.balance_cents,
