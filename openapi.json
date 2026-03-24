@@ -643,6 +643,16 @@
             "description": "Workflow name — injected automatically by workflow-service",
             "name": "x-workflow-name",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Feature slug — propagated through the entire service chain"
+            },
+            "required": false,
+            "description": "Feature slug — propagated through the entire service chain",
+            "name": "x-feature-slug",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -828,6 +838,16 @@
             "description": "Workflow name — injected automatically by workflow-service",
             "name": "x-workflow-name",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Feature slug — propagated through the entire service chain"
+            },
+            "required": false,
+            "description": "Feature slug — propagated through the entire service chain",
+            "name": "x-feature-slug",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -970,6 +990,16 @@
             "required": false,
             "description": "Workflow name — injected automatically by workflow-service",
             "name": "x-workflow-name",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Feature slug — propagated through the entire service chain"
+            },
+            "required": false,
+            "description": "Feature slug — propagated through the entire service chain",
+            "name": "x-feature-slug",
             "in": "header"
           }
         ],

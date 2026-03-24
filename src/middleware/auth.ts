@@ -4,6 +4,7 @@ export interface WorkflowTrackingHeaders {
   campaignId?: string;
   brandId?: string;
   workflowName?: string;
+  featureSlug?: string;
 }
 
 export interface AuthLocals {
@@ -57,6 +58,8 @@ function extractWorkflowTracking(req: Request): WorkflowTrackingHeaders {
   if (typeof brandId === "string") tracking.brandId = brandId;
   const workflowName = req.headers["x-workflow-name"];
   if (typeof workflowName === "string") tracking.workflowName = workflowName;
+  const featureSlug = req.headers["x-feature-slug"];
+  if (typeof featureSlug === "string") tracking.featureSlug = featureSlug;
   return tracking;
 }
 
