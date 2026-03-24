@@ -20,6 +20,9 @@ const workflowTrackingHeaders = {
   "x-workflow-name": z.string().optional().openapi({
     description: "Workflow name — injected automatically by workflow-service",
   }),
+  "x-feature-slug": z.string().optional().openapi({
+    description: "Feature slug — propagated through the entire service chain",
+  }),
 };
 
 // --- Shared schemas ---

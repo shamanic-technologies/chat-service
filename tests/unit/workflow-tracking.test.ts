@@ -27,6 +27,7 @@ describe("workflow tracking headers in auth middleware", () => {
       "x-campaign-id": "camp-abc",
       "x-brand-id": "brand-xyz",
       "x-workflow-name": "outreach-v2",
+      "x-feature-slug": "pr-outreach",
     });
     requireAuth(req, res, next);
     expect(next).toHaveBeenCalled();
@@ -35,6 +36,7 @@ describe("workflow tracking headers in auth middleware", () => {
       campaignId: "camp-abc",
       brandId: "brand-xyz",
       workflowName: "outreach-v2",
+      featureSlug: "pr-outreach",
     });
   });
 
@@ -56,6 +58,19 @@ describe("workflow tracking headers in auth middleware", () => {
     const locals = res.locals as unknown as AuthLocals;
     expect(locals.workflowTracking).toEqual({
       campaignId: "camp-only",
+    });
+  });
+
+  it("extracts feature-slug when present alone", () => {
+    const { req, res, next } = mockReqRes({
+      ...BASE_HEADERS,
+      "x-feature-slug": "cold-email-v2",
+    });
+    requireAuth(req, res, next);
+    expect(next).toHaveBeenCalled();
+    const locals = res.locals as unknown as AuthLocals;
+    expect(locals.workflowTracking).toEqual({
+      featureSlug: "cold-email-v2",
     });
   });
 
@@ -102,7 +117,7 @@ describe("runs-client forwards tracking headers", () => {
     await createRun(
       { serviceName: "chat-service", taskName: "chat" },
       identity,
-      { "x-campaign-id": "camp-1", "x-brand-id": "brand-1", "x-workflow-name": "flow-1" },
+      { "x-campaign-id": "camp-1", "x-brand-id": "brand-1", "x-workflow-name": "flow-1", "x-feature-slug": "feat-1" },
     );
 
     expect(fetch).toHaveBeenCalledWith(
@@ -115,6 +130,7 @@ describe("runs-client forwards tracking headers", () => {
           "x-campaign-id": "camp-1",
           "x-brand-id": "brand-1",
           "x-workflow-name": "flow-1",
+          "x-feature-slug": "feat-1",
         }),
       }),
     );
@@ -133,6 +149,7 @@ describe("runs-client forwards tracking headers", () => {
     expect(callHeaders["x-campaign-id"]).toBeUndefined();
     expect(callHeaders["x-brand-id"]).toBeUndefined();
     expect(callHeaders["x-workflow-name"]).toBeUndefined();
+    expect(callHeaders["x-feature-slug"]).toBeUndefined();
   });
 
   it("forwards tracking headers on updateRunStatus", async () => {

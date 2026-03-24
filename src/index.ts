@@ -146,6 +146,7 @@ app.post("/complete", requireAuth, async (req, res) => {
   if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
   if (workflowTracking.brandId) trackingHeaders["x-brand-id"] = workflowTracking.brandId;
   if (workflowTracking.workflowName) trackingHeaders["x-workflow-name"] = workflowTracking.workflowName;
+  if (workflowTracking.featureSlug) trackingHeaders["x-feature-slug"] = workflowTracking.featureSlug;
 
   const parsed = CompleteRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -302,6 +303,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
   if (workflowTracking.brandId) trackingHeaders["x-brand-id"] = workflowTracking.brandId;
   if (workflowTracking.workflowName) trackingHeaders["x-workflow-name"] = workflowTracking.workflowName;
+  if (workflowTracking.featureSlug) trackingHeaders["x-feature-slug"] = workflowTracking.featureSlug;
 
   const parsed = ChatRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -476,6 +478,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       campaignId: workflowTracking.campaignId ?? null,
       brandId: workflowTracking.brandId ?? null,
       workflowName: workflowTracking.workflowName ?? null,
+      featureSlug: workflowTracking.featureSlug ?? null,
     });
 
     // Stream response from Claude
@@ -924,6 +927,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       campaignId: workflowTracking.campaignId ?? null,
       brandId: workflowTracking.brandId ?? null,
       workflowName: workflowTracking.workflowName ?? null,
+      featureSlug: workflowTracking.featureSlug ?? null,
     });
 
     sendSSE(res, "[DONE]");

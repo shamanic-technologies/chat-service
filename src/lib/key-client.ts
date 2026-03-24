@@ -13,6 +13,7 @@ export interface TrackingHeaders {
   "x-campaign-id"?: string;
   "x-brand-id"?: string;
   "x-workflow-name"?: string;
+  "x-feature-slug"?: string;
 }
 
 export interface KeyResolutionParams {
