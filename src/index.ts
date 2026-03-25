@@ -1148,9 +1148,28 @@ if (process.env.NODE_ENV !== "test") {
   migrate(db, { migrationsFolder: "./drizzle" })
     .then(() => {
       console.log("Migrations complete");
-      app.listen(Number(PORT), "::", () => {
+      const server = app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });
+
+      // Graceful shutdown: let in-flight SSE streams finish before exiting
+      const DRAIN_TIMEOUT_MS = 25_000; // Railway sends SIGKILL after 30s
+
+      const shutdown = (signal: string) => {
+        console.log(`[shutdown] Received ${signal}, draining connections…`);
+        server.close(() => {
+          console.log("[shutdown] All connections closed, exiting.");
+          process.exit(0);
+        });
+
+        setTimeout(() => {
+          console.log("[shutdown] Drain timeout reached, forcing exit.");
+          process.exit(0);
+        }, DRAIN_TIMEOUT_MS).unref();
+      };
+
+      process.on("SIGTERM", () => shutdown("SIGTERM"));
+      process.on("SIGINT", () => shutdown("SIGINT"));
     })
     .catch((err) => {
       console.error("Startup failed:", err);

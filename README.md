@@ -348,6 +348,10 @@ docker run -p 3002:3002 --env-file .env chat-service
 
 Uses `node:20-alpine`. Requires Node >= 20.
 
+### Graceful Shutdown
+
+On `SIGTERM` / `SIGINT`, the server stops accepting new connections and waits up to 25 seconds for in-flight SSE streams to finish before exiting. This prevents active chat streams from being killed during Railway deployments.
+
 ## Architecture
 
 ```
