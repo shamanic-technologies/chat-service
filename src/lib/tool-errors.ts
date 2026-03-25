@@ -58,9 +58,14 @@ const TOOL_HINTS: Record<string, string> = {
     "Pass sourceType (existing prompt type), prompt (template with {{variables}}), and variables (array of variable names).",
   list_available_services:
     "No parameters needed. Returns all services and their endpoints.",
-  upsert_feature:
-    "Pass slug (kebab-case), name, description, category, channel, audienceType, inputs (array of {key, label, description}), and outputs (array of {key, label, description}). All fields are required. " +
-    "Creates the feature if it doesn't exist, updates it if the slug already exists.",
+  create_feature:
+    "Pass name, description, category, channel, audienceType, inputs (array of {key, label, description}), and outputs (array of {key, label, description}). Slug is optional (auto-generated from name). Returns 409 if slug/name already exists.",
+  update_feature:
+    "Pass slug (required) and any fields to update: name, description, category, channel, audienceType, inputs, outputs. Only provided fields are changed.",
+  list_features:
+    "All parameters are optional: category, channel, audienceType, status, implemented ('true'/'false').",
+  get_feature:
+    "Pass slug as a string. Returns the full feature definition.",
 };
 
 export function formatToolError(toolName: string, rawError: string): ToolErrorResult {

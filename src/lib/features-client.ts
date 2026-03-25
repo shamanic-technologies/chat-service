@@ -119,3 +119,65 @@ export async function updateFeature(
 
   return (await res.json()) as FeatureResponse;
 }
+
+export interface ListFeaturesFilters {
+  status?: string;
+  category?: string;
+  channel?: string;
+  audienceType?: string;
+  implemented?: string;
+}
+
+/**
+ * List features via GET /features with optional filters.
+ */
+export async function listFeatures(
+  filters: ListFeaturesFilters,
+  params: FeaturesCallParams,
+): Promise<FeatureResponse[]> {
+  const query = new URLSearchParams();
+  if (filters.status) query.set("status", filters.status);
+  if (filters.category) query.set("category", filters.category);
+  if (filters.channel) query.set("channel", filters.channel);
+  if (filters.audienceType) query.set("audienceType", filters.audienceType);
+  if (filters.implemented) query.set("implemented", filters.implemented);
+
+  const qs = query.toString();
+  const url = `${FEATURES_SERVICE_URL}/features${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: buildHeaders(params),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[features-client] GET /features returned ${res.status}: ${text}`,
+    );
+  }
+
+  return (await res.json()) as FeatureResponse[];
+}
+
+/**
+ * Get a single feature by slug via GET /features/:slug.
+ */
+export async function getFeature(
+  slug: string,
+  params: FeaturesCallParams,
+): Promise<FeatureResponse> {
+  const url = `${FEATURES_SERVICE_URL}/features/${encodeURIComponent(slug)}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: buildHeaders(params),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[features-client] GET /features/${slug} returned ${res.status}: ${text}`,
+    );
+  }
+
+  return (await res.json()) as FeatureResponse;
+}

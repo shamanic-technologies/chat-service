@@ -239,3 +239,106 @@ describe("updateFeature", () => {
     expect(calledUrl).toContain("slug%20with%20spaces");
   });
 });
+
+describe("listFeatures", () => {
+  it("sends GET /features with query params", async () => {
+    const mockFeatures = [sampleFeature];
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockFeatures),
+    });
+
+    const { listFeatures } = await loadModule();
+    const result = await listFeatures(
+      { category: "sales", channel: "email", audienceType: "cold-outreach" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain("/features?");
+    expect(calledUrl).toContain("category=sales");
+    expect(calledUrl).toContain("channel=email");
+    expect(calledUrl).toContain("audienceType=cold-outreach");
+    expect(result).toEqual(mockFeatures);
+  });
+
+  it("sends GET /features without query params when no filters", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([]),
+    });
+
+    const { listFeatures } = await loadModule();
+    await listFeatures({}, { orgId: "o", userId: "u", runId: "r" });
+
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toBe("https://features.test.local/features");
+  });
+
+  it("throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve("Server error"),
+    });
+
+    const { listFeatures } = await loadModule();
+    await expect(
+      listFeatures({ category: "sales" }, { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 500/);
+  });
+});
+
+describe("getFeature", () => {
+  it("sends GET /features/:slug with correct URL and headers", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(sampleFeature),
+    });
+
+    const { getFeature } = await loadModule();
+    const result = await getFeature("cold-email-outreach", {
+      orgId: "org-1",
+      userId: "user-1",
+      runId: "run-1",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://features.test.local/features/cold-email-outreach",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          "x-api-key": "test-feat-key",
+          "x-org-id": "org-1",
+        }),
+      }),
+    );
+    expect(result.slug).toBe("cold-email-outreach");
+  });
+
+  it("throws on HTTP 404", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve("Not found"),
+    });
+
+    const { getFeature } = await loadModule();
+    await expect(
+      getFeature("nonexistent", { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 404/);
+  });
+
+  it("URL-encodes the slug", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(sampleFeature),
+    });
+
+    const { getFeature } = await loadModule();
+    await getFeature("slug with spaces", { orgId: "o", userId: "u", runId: "r" });
+
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain("slug%20with%20spaces");
+  });
+});

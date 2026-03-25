@@ -261,17 +261,31 @@ export const LIST_WORKFLOWS_TOOL: Anthropic.Tool = {
   },
 };
 
-export const UPSERT_FEATURE_TOOL: Anthropic.Tool = {
-  name: "upsert_feature",
+// ---------------------------------------------------------------------------
+// Feature-creator tools (available only when context.type === "feature-creator")
+// ---------------------------------------------------------------------------
+
+const featureFieldItems = {
+  type: "object" as const,
+  properties: {
+    key: { type: "string", description: "Machine-readable key (e.g. 'targetCompanyUrl')" },
+    label: { type: "string", description: "Human-readable label (e.g. 'Target Company URL')" },
+    description: { type: "string", description: "What this field is for" },
+  },
+  required: ["key", "label", "description"],
+};
+
+export const CREATE_FEATURE_TOOL: Anthropic.Tool = {
+  name: "create_feature",
   description:
-    "Create or update a feature definition in the features catalogue. Use this when the user has confirmed the feature design (name, description, inputs, outputs) and wants to save it. Always confirm the feature details with the user before calling this tool.",
+    "Create a new feature definition in the features catalogue. Use this when the user has finished designing a feature and wants to save it. Always confirm the feature details with the user before calling this tool. Returns 409 if the slug or name already exists.",
   input_schema: {
     type: "object" as const,
     properties: {
       slug: {
         type: "string",
         description:
-          "URL-friendly identifier for the feature (e.g. 'cold-email-outreach'). Use lowercase kebab-case.",
+          "URL-friendly identifier for the feature (e.g. 'cold-email-outreach'). Use lowercase kebab-case. Optional — auto-generated from name if omitted.",
       },
       name: {
         type: "string",
@@ -295,32 +309,79 @@ export const UPSERT_FEATURE_TOOL: Anthropic.Tool = {
       },
       inputs: {
         type: "array",
-        items: {
-          type: "object",
-          properties: {
-            key: { type: "string", description: "Machine-readable input key (e.g. 'targetCompanyUrl')" },
-            label: { type: "string", description: "Human-readable label (e.g. 'Target Company URL')" },
-            description: { type: "string", description: "What this input is for" },
-          },
-          required: ["key", "label", "description"],
-        },
+        items: featureFieldItems,
         description: "Input fields the user must provide to run this feature",
       },
       outputs: {
         type: "array",
-        items: {
-          type: "object",
-          properties: {
-            key: { type: "string", description: "Machine-readable output key (e.g. 'generatedEmail')" },
-            label: { type: "string", description: "Human-readable label (e.g. 'Generated Email')" },
-            description: { type: "string", description: "What this output contains" },
-          },
-          required: ["key", "label", "description"],
-        },
+        items: featureFieldItems,
         description: "Output fields the feature produces",
       },
     },
-    required: ["slug", "name", "description", "category", "channel", "audienceType", "inputs", "outputs"],
+    required: ["name", "description", "category", "channel", "audienceType", "inputs", "outputs"],
+  },
+};
+
+export const UPDATE_FEATURE_TOOL: Anthropic.Tool = {
+  name: "update_feature",
+  description:
+    "Update an existing feature definition by slug. Only provided fields are modified — omit fields you don't want to change. If inputs or outputs change, the feature signature is recomputed automatically. Use this when iterating on an existing feature's design.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      slug: {
+        type: "string",
+        description: "The slug of the feature to update. If available in context, use it directly.",
+      },
+      name: { type: "string", description: "New feature name (optional)" },
+      description: { type: "string", description: "New feature description (optional)" },
+      category: { type: "string", description: "New category (optional)" },
+      channel: { type: "string", description: "New channel (optional)" },
+      audienceType: { type: "string", description: "New audience type (optional)" },
+      inputs: {
+        type: "array",
+        items: featureFieldItems,
+        description: "New input fields (replaces all existing inputs)",
+      },
+      outputs: {
+        type: "array",
+        items: featureFieldItems,
+        description: "New output fields (replaces all existing outputs)",
+      },
+    },
+    required: ["slug"],
+  },
+};
+
+export const LIST_FEATURES_TOOL: Anthropic.Tool = {
+  name: "list_features",
+  description:
+    "List features from the catalogue with optional filters. Use this to browse existing features, check for duplicates before creating, or find features by category/channel. The dashboard also sends features in context, but this tool fetches the latest from the database.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      category: { type: "string", description: "Filter by category (e.g. 'sales', 'pr')" },
+      channel: { type: "string", description: "Filter by channel (e.g. 'email', 'linkedin')" },
+      audienceType: { type: "string", description: "Filter by audience type" },
+      status: { type: "string", description: "Filter by status (e.g. 'active', 'draft')" },
+      implemented: { type: "string", description: "Filter by implementation status ('true' or 'false')" },
+    },
+  },
+};
+
+export const GET_FEATURE_TOOL: Anthropic.Tool = {
+  name: "get_feature",
+  description:
+    "Get full details of a single feature by its slug. Use this to inspect inputs, outputs, and metadata of an existing feature.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      slug: {
+        type: "string",
+        description: "The feature slug to look up. If available in context, use it directly.",
+      },
+    },
+    required: ["slug"],
   },
 };
 
@@ -337,10 +398,13 @@ export const BUILTIN_TOOLS: Anthropic.Tool[] = [
   LIST_WORKFLOWS_TOOL,
 ];
 
-/** Extra tools available only when context.type === "feature-creator" */
+/** Tools available when context.type === "feature-creator" */
 export const FEATURE_CREATOR_TOOLS: Anthropic.Tool[] = [
   REQUEST_USER_INPUT_TOOL,
-  UPSERT_FEATURE_TOOL,
+  CREATE_FEATURE_TOOL,
+  UPDATE_FEATURE_TOOL,
+  LIST_FEATURES_TOOL,
+  GET_FEATURE_TOOL,
 ];
 
 // ---------------------------------------------------------------------------
