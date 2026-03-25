@@ -204,7 +204,7 @@ When `context.type` is `"feature-creator"`, the standard workflow tools above ar
 | Tool | Description |
 |---|---|
 | `request_user_input` | Asks the user for structured input (same as above) |
-| `upsert_feature` | Creates or updates a feature definition in features-service. Accepts `slug`, `name`, `description`, `category`, `channel`, `audienceType`, `inputs` (array of `{key, label, description}`), and `outputs` (array of `{key, label, description}`). |
+| `upsert_feature` | Creates or updates a feature definition in features-service. Creates via `POST /features` (201), falls back to `PUT /features/:slug` on conflict (409). Accepts `slug`, `name`, `description`, `category`, `channel`, `audienceType`, `inputs` (array of `{key, label, description}`), and `outputs` (array of `{key, label, description}`). |
 
 ### 5. Input Request (optional)
 When the AI genuinely needs information it does not have, it emits an input request:

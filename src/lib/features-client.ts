@@ -60,24 +60,62 @@ export interface FeatureResponse {
   [key: string]: unknown;
 }
 
-export async function upsertFeature(
+/**
+ * Create a new feature via POST /features.
+ * Slug is optional — auto-generated from name if omitted.
+ * Returns 201 on success, throws on 409 (conflict) or other errors.
+ */
+export async function createFeature(
   body: UpsertFeatureBody,
   params: FeaturesCallParams,
 ): Promise<FeatureResponse> {
   const url = `${FEATURES_SERVICE_URL}/features`;
   const res = await fetch(url, {
+    method: "POST",
+    headers: buildHeaders(params),
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 409) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[features-client] Feature already exists (slug, name, or signature conflict): ${text}`,
+    );
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[features-client] POST /features returned ${res.status}: ${text}`,
+    );
+  }
+
+  return (await res.json()) as FeatureResponse;
+}
+
+/**
+ * Partial update an existing feature via PUT /features/:slug.
+ * Only provided fields are updated. If inputs/outputs change, the signature
+ * is recomputed automatically by features-service.
+ */
+export async function updateFeature(
+  slug: string,
+  body: Partial<Omit<UpsertFeatureBody, "slug">>,
+  params: FeaturesCallParams,
+): Promise<FeatureResponse> {
+  const url = `${FEATURES_SERVICE_URL}/features/${encodeURIComponent(slug)}`;
+  const res = await fetch(url, {
     method: "PUT",
     headers: buildHeaders(params),
-    body: JSON.stringify({ features: [body] }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[features-client] PUT /features returned ${res.status}: ${text}`,
+      `[features-client] PUT /features/${slug} returned ${res.status}: ${text}`,
     );
   }
 
-  const result = (await res.json()) as { features: FeatureResponse[] };
-  return result.features[0];
+  return (await res.json()) as FeatureResponse;
 }

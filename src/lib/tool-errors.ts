@@ -59,7 +59,8 @@ const TOOL_HINTS: Record<string, string> = {
   list_available_services:
     "No parameters needed. Returns all services and their endpoints.",
   upsert_feature:
-    "Pass slug (kebab-case), name, description, category, channel, audienceType, inputs (array of {key, label, description}), and outputs (array of {key, label, description}). All fields are required.",
+    "Pass slug (kebab-case), name, description, category, channel, audienceType, inputs (array of {key, label, description}), and outputs (array of {key, label, description}). All fields are required. " +
+    "Creates the feature if it doesn't exist, updates it if the slug already exists.",
 };
 
 export function formatToolError(toolName: string, rawError: string): ToolErrorResult {
