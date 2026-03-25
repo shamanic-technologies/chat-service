@@ -204,8 +204,8 @@ When `context.type` is `"feature-creator"`, the standard workflow tools above ar
 | Tool | Description |
 |---|---|
 | `request_user_input` | Asks the user for structured input (same as above) |
-| `create_feature` | Creates a new feature via `POST /features`. Slug is optional (auto-generated from name). Returns 409 on conflict. |
-| `update_feature` | Updates an existing feature by slug via `PUT /features/:slug`. Partial update — only provided fields change. |
+| `create_feature` | Creates a new feature via `POST /features`. Required: name, description, **icon**, category, channel, audienceType, inputs (with key/label/**type**/**placeholder**/description/**extractKey**), outputs (with key/label/**type**/**displayOrder**/**showInCampaignRow**/**showInFunnel**). Slug optional. Returns 409 on conflict. |
+| `update_feature` | Updates an existing feature by slug via `PUT /features/:slug`. Partial update — only provided fields change. Input/output items must include all required sub-fields when provided. |
 | `list_features` | Lists features via `GET /features` with optional filters (category, channel, audienceType, status, implemented). |
 | `get_feature` | Gets full feature details by slug via `GET /features/:slug`. |
 

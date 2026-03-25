@@ -265,14 +265,34 @@ export const LIST_WORKFLOWS_TOOL: Anthropic.Tool = {
 // Feature-creator tools (available only when context.type === "feature-creator")
 // ---------------------------------------------------------------------------
 
-const featureFieldItems = {
+const featureInputItems = {
   type: "object" as const,
   properties: {
-    key: { type: "string", description: "Machine-readable key (e.g. 'targetCompanyUrl')" },
+    key: { type: "string", description: "Machine-readable input key (e.g. 'targetCompanyUrl')" },
     label: { type: "string", description: "Human-readable label (e.g. 'Target Company URL')" },
-    description: { type: "string", description: "What this field is for" },
+    type: { type: "string", enum: ["text", "textarea", "number", "select"], description: "Input field type" },
+    placeholder: { type: "string", description: "Placeholder text shown in the input (e.g. 'https://example.com')" },
+    description: { type: "string", description: "What this input is for" },
+    extractKey: { type: "string", description: "Key used to extract this value from enrichment data (e.g. 'company_url')" },
+    options: { type: "array", items: { type: "string" }, description: "Options for select-type inputs (only when type is 'select')" },
   },
-  required: ["key", "label", "description"],
+  required: ["key", "label", "type", "placeholder", "description", "extractKey"],
+};
+
+const featureOutputItems = {
+  type: "object" as const,
+  properties: {
+    key: { type: "string", description: "Machine-readable output key (e.g. 'emailsSent')" },
+    label: { type: "string", description: "Human-readable label (e.g. 'Emails Sent')" },
+    type: { type: "string", enum: ["count", "rate", "currency", "percentage"], description: "Output metric type" },
+    displayOrder: { type: "integer", description: "Order in which this output appears in the UI (0-based)" },
+    showInCampaignRow: { type: "boolean", description: "Whether to show this metric in the campaign list row" },
+    showInFunnel: { type: "boolean", description: "Whether to include this metric in the funnel visualization" },
+    funnelOrder: { type: "integer", description: "Order in the funnel (optional, only when showInFunnel is true)" },
+    numeratorKey: { type: "string", description: "For rate metrics: key of the numerator output (optional)" },
+    denominatorKey: { type: "string", description: "For rate metrics: key of the denominator output (optional)" },
+  },
+  required: ["key", "label", "type", "displayOrder", "showInCampaignRow", "showInFunnel"],
 };
 
 export const CREATE_FEATURE_TOOL: Anthropic.Tool = {
@@ -295,6 +315,10 @@ export const CREATE_FEATURE_TOOL: Anthropic.Tool = {
         type: "string",
         description: "Brief description of what the feature does",
       },
+      icon: {
+        type: "string",
+        description: "Icon identifier for the feature (e.g. 'mail', 'linkedin', 'phone')",
+      },
       category: {
         type: "string",
         description: "Feature category (e.g. 'sales', 'pr', 'marketing')",
@@ -309,16 +333,16 @@ export const CREATE_FEATURE_TOOL: Anthropic.Tool = {
       },
       inputs: {
         type: "array",
-        items: featureFieldItems,
-        description: "Input fields the user must provide to run this feature",
+        items: featureInputItems,
+        description: "Input fields the user must provide to run this feature (min 1)",
       },
       outputs: {
         type: "array",
-        items: featureFieldItems,
-        description: "Output fields the feature produces",
+        items: featureOutputItems,
+        description: "Output metrics the feature produces (min 1)",
       },
     },
-    required: ["name", "description", "category", "channel", "audienceType", "inputs", "outputs"],
+    required: ["name", "description", "icon", "category", "channel", "audienceType", "inputs", "outputs"],
   },
 };
 
@@ -331,21 +355,22 @@ export const UPDATE_FEATURE_TOOL: Anthropic.Tool = {
     properties: {
       slug: {
         type: "string",
-        description: "The slug of the feature to update. If available in context, use it directly.",
+        description: "The slug of the feature to update.",
       },
       name: { type: "string", description: "New feature name (optional)" },
       description: { type: "string", description: "New feature description (optional)" },
+      icon: { type: "string", description: "New icon identifier (optional)" },
       category: { type: "string", description: "New category (optional)" },
       channel: { type: "string", description: "New channel (optional)" },
       audienceType: { type: "string", description: "New audience type (optional)" },
       inputs: {
         type: "array",
-        items: featureFieldItems,
+        items: featureInputItems,
         description: "New input fields (replaces all existing inputs)",
       },
       outputs: {
         type: "array",
-        items: featureFieldItems,
+        items: featureOutputItems,
         description: "New output fields (replaces all existing outputs)",
       },
     },

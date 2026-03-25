@@ -748,16 +748,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       if (call.name === "create_feature") {
         const args = (call.args as Record<string, unknown>) || {};
         const result = await createFeature(
-          {
-            slug: args.slug as string,
-            name: args.name as string,
-            description: args.description as string,
-            category: args.category as string,
-            channel: args.channel as string,
-            audienceType: args.audienceType as string,
-            inputs: args.inputs as { key: string; label: string; description: string }[],
-            outputs: args.outputs as { key: string; label: string; description: string }[],
-          },
+          args as unknown as import("./lib/features-client.js").CreateFeatureBody,
           featureCallParams,
         );
         toolCalls.push({ name: call.name, args, result });
@@ -769,7 +760,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         const { slug, ...updateBody } = args;
         const result = await updateFeature(
           slug as string,
-          updateBody as Partial<{ name: string; description: string; category: string; channel: string; audienceType: string; inputs: { key: string; label: string; description: string }[]; outputs: { key: string; label: string; description: string }[] }>,
+          updateBody as Partial<Omit<import("./lib/features-client.js").CreateFeatureBody, "slug">>,
           featureCallParams,
         );
         toolCalls.push({ name: call.name, args, result });

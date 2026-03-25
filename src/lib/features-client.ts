@@ -31,32 +31,50 @@ function buildHeaders(params: FeaturesCallParams): Record<string, string> {
   return headers;
 }
 
-export interface FeatureFieldDef {
+export interface FeatureInputDef {
   key: string;
   label: string;
+  type: "text" | "textarea" | "number" | "select";
+  placeholder: string;
   description: string;
+  extractKey: string;
+  options?: string[];
 }
 
-export interface UpsertFeatureBody {
-  slug: string;
+export interface FeatureOutputDef {
+  key: string;
+  label: string;
+  type: "count" | "rate" | "currency" | "percentage";
+  displayOrder: number;
+  showInCampaignRow: boolean;
+  showInFunnel: boolean;
+  funnelOrder?: number;
+  numeratorKey?: string;
+  denominatorKey?: string;
+}
+
+export interface CreateFeatureBody {
+  slug?: string;
   name: string;
   description: string;
+  icon: string;
   category: string;
   channel: string;
   audienceType: string;
-  inputs: FeatureFieldDef[];
-  outputs: FeatureFieldDef[];
+  inputs: FeatureInputDef[];
+  outputs: FeatureOutputDef[];
 }
 
 export interface FeatureResponse {
   slug: string;
   name: string;
   description: string;
+  icon: string;
   category: string;
   channel: string;
   audienceType: string;
-  inputs: FeatureFieldDef[];
-  outputs: FeatureFieldDef[];
+  inputs: FeatureInputDef[];
+  outputs: FeatureOutputDef[];
   [key: string]: unknown;
 }
 
@@ -66,7 +84,7 @@ export interface FeatureResponse {
  * Returns 201 on success, throws on 409 (conflict) or other errors.
  */
 export async function createFeature(
-  body: UpsertFeatureBody,
+  body: CreateFeatureBody,
   params: FeaturesCallParams,
 ): Promise<FeatureResponse> {
   const url = `${FEATURES_SERVICE_URL}/features`;
@@ -100,7 +118,7 @@ export async function createFeature(
  */
 export async function updateFeature(
   slug: string,
-  body: Partial<Omit<UpsertFeatureBody, "slug">>,
+  body: Partial<Omit<CreateFeatureBody, "slug">>,
   params: FeaturesCallParams,
 ): Promise<FeatureResponse> {
   const url = `${FEATURES_SERVICE_URL}/features/${encodeURIComponent(slug)}`;

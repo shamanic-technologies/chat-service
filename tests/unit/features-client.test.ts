@@ -22,14 +22,15 @@ const sampleFeature = {
   slug: "cold-email-outreach",
   name: "Cold Email Outreach",
   description: "Automated cold email outreach campaign",
+  icon: "mail",
   category: "sales",
   channel: "email",
   audienceType: "cold-outreach",
   inputs: [
-    { key: "targetCompanyUrl", label: "Target Company URL", description: "URL of the company to prospect" },
+    { key: "targetCompanyUrl", label: "Target Company URL", type: "text" as const, placeholder: "https://example.com", description: "URL of the company to prospect", extractKey: "company_url" },
   ],
   outputs: [
-    { key: "generatedEmail", label: "Generated Email", description: "The generated cold email" },
+    { key: "emailsSent", label: "Emails Sent", type: "count" as const, displayOrder: 0, showInCampaignRow: true, showInFunnel: true },
   ],
 };
 

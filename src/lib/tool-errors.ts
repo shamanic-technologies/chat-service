@@ -59,9 +59,9 @@ const TOOL_HINTS: Record<string, string> = {
   list_available_services:
     "No parameters needed. Returns all services and their endpoints.",
   create_feature:
-    "Pass name, description, category, channel, audienceType, inputs (array of {key, label, description}), and outputs (array of {key, label, description}). Slug is optional (auto-generated from name). Returns 409 if slug/name already exists.",
+    "Pass name, description, icon, category, channel, audienceType, inputs (array of {key, label, type, placeholder, description, extractKey}), and outputs (array of {key, label, type, displayOrder, showInCampaignRow, showInFunnel}). Slug is optional. Returns 409 if slug/name already exists.",
   update_feature:
-    "Pass slug (required) and any fields to update: name, description, category, channel, audienceType, inputs, outputs. Only provided fields are changed.",
+    "Pass slug (required) and any fields to update: name, description, icon, category, channel, audienceType, inputs, outputs. Only provided fields are changed. Input/output items must include all required fields when provided.",
   list_features:
     "All parameters are optional: category, channel, audienceType, status, implemented ('true'/'false').",
   get_feature:
