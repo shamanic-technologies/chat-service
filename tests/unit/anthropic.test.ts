@@ -38,6 +38,13 @@ import {
   UPDATE_FEATURE_TOOL,
   LIST_FEATURES_TOOL,
   GET_FEATURE_TOOL,
+  LIST_SERVICES_TOOL,
+  LIST_SERVICE_ENDPOINTS_TOOL,
+  CALL_API_TOOL,
+  LIST_ORG_KEYS_TOOL,
+  GET_KEY_SOURCE_TOOL,
+  LIST_KEY_SOURCES_TOOL,
+  CHECK_PROVIDER_REQUIREMENTS_TOOL,
   BUILTIN_TOOLS,
   FEATURE_CREATOR_TOOLS,
 } from "../../src/lib/anthropic.js";
@@ -446,18 +453,29 @@ describe("VALIDATE_WORKFLOW_TOOL", () => {
 describe("BUILTIN_TOOLS", () => {
   it("includes all built-in tools", () => {
     const names = BUILTIN_TOOLS.map((t) => t.name);
+    // Workflow tools
     expect(names).toContain("request_user_input");
     expect(names).toContain("update_workflow");
     expect(names).toContain("validate_workflow");
     expect(names).toContain("get_prompt_template");
     expect(names).toContain("update_prompt_template");
     expect(names).toContain("update_workflow_node_config");
-    expect(names).toContain("list_available_services");
     expect(names).toContain("get_workflow_details");
     expect(names).toContain("get_workflow_required_providers");
     expect(names).toContain("list_workflows");
+    // API Registry progressive disclosure
+    expect(names).toContain("list_services");
+    expect(names).toContain("list_service_endpoints");
+    expect(names).toContain("call_api");
+    // Key-service read tools
+    expect(names).toContain("list_org_keys");
+    expect(names).toContain("get_key_source");
+    expect(names).toContain("list_key_sources");
+    expect(names).toContain("check_provider_requirements");
+    // Removed
+    expect(names).not.toContain("list_available_services");
     expect(names).not.toContain("generate_workflow");
-    expect(BUILTIN_TOOLS).toHaveLength(10);
+    expect(BUILTIN_TOOLS).toHaveLength(16);
   });
 
   it("all tools use Anthropic input_schema format", () => {
@@ -467,6 +485,61 @@ describe("BUILTIN_TOOLS", () => {
       expect(tool).toHaveProperty("name");
       expect(tool).toHaveProperty("description");
     }
+  });
+});
+
+describe("API Registry progressive disclosure tools", () => {
+  it("LIST_SERVICES_TOOL has no required params", () => {
+    expect(LIST_SERVICES_TOOL.name).toBe("list_services");
+    expect(LIST_SERVICES_TOOL.description).toContain("START HERE");
+  });
+
+  it("LIST_SERVICE_ENDPOINTS_TOOL requires service", () => {
+    expect(LIST_SERVICE_ENDPOINTS_TOOL.name).toBe("list_service_endpoints");
+    const schema = LIST_SERVICE_ENDPOINTS_TOOL.input_schema as {
+      required: string[];
+    };
+    expect(schema.required).toEqual(["service"]);
+  });
+
+  it("CALL_API_TOOL requires service, method, path", () => {
+    expect(CALL_API_TOOL.name).toBe("call_api");
+    const schema = CALL_API_TOOL.input_schema as {
+      properties: Record<string, unknown>;
+      required: string[];
+    };
+    expect(schema.required).toEqual(["service", "method", "path"]);
+    expect(schema.properties).toHaveProperty("body");
+  });
+});
+
+describe("Key-service read tools", () => {
+  it("LIST_ORG_KEYS_TOOL has no required params", () => {
+    expect(LIST_ORG_KEYS_TOOL.name).toBe("list_org_keys");
+    expect(LIST_ORG_KEYS_TOOL.description).toContain("masked keys");
+    expect(LIST_ORG_KEYS_TOOL.description).toContain("never the actual secret");
+  });
+
+  it("GET_KEY_SOURCE_TOOL requires provider", () => {
+    expect(GET_KEY_SOURCE_TOOL.name).toBe("get_key_source");
+    const schema = GET_KEY_SOURCE_TOOL.input_schema as {
+      required: string[];
+    };
+    expect(schema.required).toEqual(["provider"]);
+  });
+
+  it("LIST_KEY_SOURCES_TOOL has no required params", () => {
+    expect(LIST_KEY_SOURCES_TOOL.name).toBe("list_key_sources");
+  });
+
+  it("CHECK_PROVIDER_REQUIREMENTS_TOOL requires endpoints array", () => {
+    expect(CHECK_PROVIDER_REQUIREMENTS_TOOL.name).toBe("check_provider_requirements");
+    const schema = CHECK_PROVIDER_REQUIREMENTS_TOOL.input_schema as {
+      required: string[];
+      properties: Record<string, { type: string }>;
+    };
+    expect(schema.required).toEqual(["endpoints"]);
+    expect(schema.properties.endpoints.type).toBe("array");
   });
 });
 

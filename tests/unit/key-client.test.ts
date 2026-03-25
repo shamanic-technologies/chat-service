@@ -203,3 +203,212 @@ describe("resolveKey", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Read-only key-service tools
+// ---------------------------------------------------------------------------
+
+describe("listOrgKeys", () => {
+  it("calls GET /keys with identity headers", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          keys: [
+            { provider: "anthropic", maskedKey: "sk-...abc", createdAt: null, updatedAt: null },
+          ],
+        }),
+    });
+
+    const { listOrgKeys } = await loadModule();
+    const result = await listOrgKeys({
+      orgId: "org-1",
+      userId: "user-1",
+      runId: "run-1",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://key.test.local/keys",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-api-key": "test-key-svc-key",
+          "x-org-id": "org-1",
+        }),
+      }),
+    );
+    expect(result.keys).toHaveLength(1);
+    expect(result.keys[0].provider).toBe("anthropic");
+  });
+
+  it("throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve("Internal Server Error"),
+    });
+
+    const { listOrgKeys } = await loadModule();
+    await expect(
+      listOrgKeys({ orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 500/);
+  });
+
+  it("forwards tracking headers", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ keys: [] }),
+    });
+
+    const { listOrgKeys } = await loadModule();
+    await listOrgKeys({
+      orgId: "org-1",
+      userId: "user-1",
+      runId: "run-1",
+      trackingHeaders: { "x-campaign-id": "camp-123" },
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://key.test.local/keys",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-campaign-id": "camp-123",
+        }),
+      }),
+    );
+  });
+});
+
+describe("getKeySource", () => {
+  it("calls GET /keys/{provider}/source", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          provider: "anthropic",
+          orgId: "org-1",
+          keySource: "org",
+          isDefault: false,
+        }),
+    });
+
+    const { getKeySource } = await loadModule();
+    const result = await getKeySource("anthropic", {
+      orgId: "org-1",
+      userId: "user-1",
+      runId: "run-1",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://key.test.local/keys/anthropic/source",
+      expect.anything(),
+    );
+    expect(result.keySource).toBe("org");
+    expect(result.isDefault).toBe(false);
+  });
+
+  it("URL-encodes the provider name", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          provider: "my/provider",
+          orgId: "org-1",
+          keySource: "platform",
+          isDefault: true,
+        }),
+    });
+
+    const { getKeySource } = await loadModule();
+    await getKeySource("my/provider", {
+      orgId: "org-1",
+      userId: "user-1",
+      runId: "run-1",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://key.test.local/keys/my%2Fprovider/source",
+      expect.anything(),
+    );
+  });
+});
+
+describe("listKeySources", () => {
+  it("calls GET /keys/sources and returns source preferences", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          sources: [
+            { provider: "anthropic", keySource: "org" },
+            { provider: "stripe", keySource: "platform" },
+          ],
+        }),
+    });
+
+    const { listKeySources } = await loadModule();
+    const result = await listKeySources({
+      orgId: "org-1",
+      userId: "user-1",
+      runId: "run-1",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://key.test.local/keys/sources",
+      expect.anything(),
+    );
+    expect(result.sources).toHaveLength(2);
+  });
+});
+
+describe("checkProviderRequirements", () => {
+  it("calls POST /provider-requirements with endpoints", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          requirements: [
+            { service: "chat", method: "POST", path: "/complete", provider: "anthropic" },
+          ],
+          providers: ["anthropic"],
+        }),
+    });
+
+    const { checkProviderRequirements } = await loadModule();
+    const result = await checkProviderRequirements(
+      [{ service: "chat", method: "POST", path: "/complete" }],
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://key.test.local/provider-requirements",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "content-type": "application/json",
+        }),
+      }),
+    );
+
+    const callBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+    );
+    expect(callBody).toEqual({
+      endpoints: [{ service: "chat", method: "POST", path: "/complete" }],
+    });
+
+    expect(result.providers).toEqual(["anthropic"]);
+  });
+
+  it("throws on 400 (invalid request)", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: () => Promise.resolve("Invalid request"),
+    });
+
+    const { checkProviderRequirements } = await loadModule();
+    await expect(
+      checkProviderRequirements([], { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 400/);
+  });
+});
+
