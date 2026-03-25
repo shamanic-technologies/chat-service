@@ -34,7 +34,10 @@ import {
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
   VALIDATE_WORKFLOW_TOOL,
-  UPSERT_FEATURE_TOOL,
+  CREATE_FEATURE_TOOL,
+  UPDATE_FEATURE_TOOL,
+  LIST_FEATURES_TOOL,
+  GET_FEATURE_TOOL,
   BUILTIN_TOOLS,
   FEATURE_CREATOR_TOOLS,
 } from "../../src/lib/anthropic.js";
@@ -467,33 +470,65 @@ describe("BUILTIN_TOOLS", () => {
   });
 });
 
-describe("UPSERT_FEATURE_TOOL", () => {
-  it("has correct name and all required parameters", () => {
-    expect(UPSERT_FEATURE_TOOL.name).toBe("upsert_feature");
-    const schema = UPSERT_FEATURE_TOOL.input_schema as {
+describe("Feature-creator tools", () => {
+  it("CREATE_FEATURE_TOOL has correct name and required parameters (slug optional)", () => {
+    expect(CREATE_FEATURE_TOOL.name).toBe("create_feature");
+    const schema = CREATE_FEATURE_TOOL.input_schema as {
       properties: Record<string, unknown>;
       required: string[];
     };
     expect(schema.properties).toHaveProperty("slug");
     expect(schema.properties).toHaveProperty("name");
-    expect(schema.properties).toHaveProperty("description");
-    expect(schema.properties).toHaveProperty("category");
-    expect(schema.properties).toHaveProperty("channel");
-    expect(schema.properties).toHaveProperty("audienceType");
     expect(schema.properties).toHaveProperty("inputs");
     expect(schema.properties).toHaveProperty("outputs");
-    expect(schema.required).toEqual([
-      "slug", "name", "description", "category", "channel", "audienceType", "inputs", "outputs",
-    ]);
+    // slug is optional (auto-generated from name)
+    expect(schema.required).not.toContain("slug");
+    expect(schema.required).toContain("name");
+    expect(schema.required).toContain("inputs");
+    expect(schema.required).toContain("outputs");
+  });
+
+  it("UPDATE_FEATURE_TOOL requires only slug", () => {
+    expect(UPDATE_FEATURE_TOOL.name).toBe("update_feature");
+    const schema = UPDATE_FEATURE_TOOL.input_schema as {
+      properties: Record<string, unknown>;
+      required: string[];
+    };
+    expect(schema.required).toEqual(["slug"]);
+    expect(schema.properties).toHaveProperty("name");
+    expect(schema.properties).toHaveProperty("inputs");
+  });
+
+  it("LIST_FEATURES_TOOL has no required parameters", () => {
+    expect(LIST_FEATURES_TOOL.name).toBe("list_features");
+    const schema = LIST_FEATURES_TOOL.input_schema as {
+      properties: Record<string, unknown>;
+      required?: string[];
+    };
+    expect(schema.required).toBeUndefined();
+    expect(schema.properties).toHaveProperty("category");
+    expect(schema.properties).toHaveProperty("channel");
+  });
+
+  it("GET_FEATURE_TOOL requires slug", () => {
+    expect(GET_FEATURE_TOOL.name).toBe("get_feature");
+    const schema = GET_FEATURE_TOOL.input_schema as {
+      properties: Record<string, unknown>;
+      required: string[];
+    };
+    expect(schema.required).toEqual(["slug"]);
   });
 });
 
 describe("FEATURE_CREATOR_TOOLS", () => {
-  it("includes only request_user_input and upsert_feature", () => {
+  it("includes all 5 feature-creator tools", () => {
     const names = FEATURE_CREATOR_TOOLS.map((t) => t.name);
     expect(names).toContain("request_user_input");
-    expect(names).toContain("upsert_feature");
-    expect(FEATURE_CREATOR_TOOLS).toHaveLength(2);
+    expect(names).toContain("create_feature");
+    expect(names).toContain("update_feature");
+    expect(names).toContain("list_features");
+    expect(names).toContain("get_feature");
+    expect(FEATURE_CREATOR_TOOLS).toHaveLength(5);
   });
 
   it("does not include workflow tools", () => {
