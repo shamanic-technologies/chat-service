@@ -33,15 +33,16 @@ const sampleFeature = {
   ],
 };
 
-describe("upsertFeature", () => {
-  it("sends PUT /features with correct URL, headers, and body", async () => {
+describe("createFeature", () => {
+  it("sends POST /features with correct URL, headers, and body", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ features: [{ ...sampleFeature, id: "feat-1" }] }),
+      status: 201,
+      json: () => Promise.resolve({ ...sampleFeature, id: "feat-1" }),
     });
 
-    const { upsertFeature } = await loadModule();
-    const result = await upsertFeature(sampleFeature, {
+    const { createFeature } = await loadModule();
+    const result = await createFeature(sampleFeature, {
       orgId: "org-1",
       userId: "user-1",
       runId: "run-1",
@@ -50,7 +51,7 @@ describe("upsertFeature", () => {
     expect(fetch).toHaveBeenCalledWith(
       "https://features.test.local/features",
       expect.objectContaining({
-        method: "PUT",
+        method: "POST",
         headers: expect.objectContaining({
           "Content-Type": "application/json",
           "x-api-key": "test-feat-key",
@@ -62,10 +63,9 @@ describe("upsertFeature", () => {
     );
 
     const sentBody = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
-    expect(sentBody.features).toHaveLength(1);
-    expect(sentBody.features[0].slug).toBe("cold-email-outreach");
-    expect(sentBody.features[0].inputs).toHaveLength(1);
-    expect(sentBody.features[0].outputs).toHaveLength(1);
+    expect(sentBody.slug).toBe("cold-email-outreach");
+    expect(sentBody.inputs).toHaveLength(1);
+    expect(sentBody.outputs).toHaveLength(1);
 
     expect(result.slug).toBe("cold-email-outreach");
     expect(result.id).toBe("feat-1");
@@ -74,11 +74,12 @@ describe("upsertFeature", () => {
   it("forwards tracking headers", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ features: [sampleFeature] }),
+      status: 201,
+      json: () => Promise.resolve(sampleFeature),
     });
 
-    const { upsertFeature } = await loadModule();
-    await upsertFeature(sampleFeature, {
+    const { createFeature } = await loadModule();
+    await createFeature(sampleFeature, {
       orgId: "org-1",
       userId: "user-1",
       runId: "run-1",
@@ -90,25 +91,38 @@ describe("upsertFeature", () => {
     expect(callHeaders["x-feature-slug"]).toBe("cold-email-outreach");
   });
 
-  it("throws on HTTP error", async () => {
+  it("throws with conflict message on HTTP 409", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 409,
+      text: () => Promise.resolve("Feature with slug 'cold-email-outreach' already exists"),
+    });
+
+    const { createFeature } = await loadModule();
+    await expect(
+      createFeature(sampleFeature, { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/already exists/);
+  });
+
+  it("throws on other HTTP errors", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       status: 422,
       text: () => Promise.resolve("Validation failed"),
     });
 
-    const { upsertFeature } = await loadModule();
+    const { createFeature } = await loadModule();
     await expect(
-      upsertFeature(sampleFeature, { orgId: "o", userId: "u", runId: "r" }),
+      createFeature(sampleFeature, { orgId: "o", userId: "u", runId: "r" }),
     ).rejects.toThrow(/returned 422/);
   });
 
   it("throws when FEATURES_SERVICE_API_KEY is not set", async () => {
     delete process.env.FEATURES_SERVICE_API_KEY;
 
-    const { upsertFeature } = await loadModule();
+    const { createFeature } = await loadModule();
     await expect(
-      upsertFeature(sampleFeature, { orgId: "o", userId: "u", runId: "r" }),
+      createFeature(sampleFeature, { orgId: "o", userId: "u", runId: "r" }),
     ).rejects.toThrow(/FEATURES_SERVICE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
@@ -118,15 +132,110 @@ describe("upsertFeature", () => {
     delete process.env.FEATURES_SERVICE_URL;
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ features: [sampleFeature] }),
+      status: 201,
+      json: () => Promise.resolve(sampleFeature),
     });
 
-    const { upsertFeature } = await loadModule();
-    await upsertFeature(sampleFeature, { orgId: "o", userId: "u", runId: "r" });
+    const { createFeature } = await loadModule();
+    await createFeature(sampleFeature, { orgId: "o", userId: "u", runId: "r" });
 
     expect(fetch).toHaveBeenCalledWith(
       "https://features.distribute.you/features",
       expect.anything(),
     );
+  });
+});
+
+describe("updateFeature", () => {
+  it("sends PUT /features/:slug with partial body", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ...sampleFeature, description: "Updated description" }),
+    });
+
+    const { updateFeature } = await loadModule();
+    const result = await updateFeature(
+      "cold-email-outreach",
+      { description: "Updated description" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://features.test.local/features/cold-email-outreach",
+      expect.objectContaining({
+        method: "PUT",
+        headers: expect.objectContaining({
+          "x-api-key": "test-feat-key",
+          "x-org-id": "org-1",
+        }),
+      }),
+    );
+
+    const sentBody = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(sentBody.description).toBe("Updated description");
+    expect(sentBody.slug).toBeUndefined();
+
+    expect(result.description).toBe("Updated description");
+  });
+
+  it("forwards tracking headers", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(sampleFeature),
+    });
+
+    const { updateFeature } = await loadModule();
+    await updateFeature(
+      "cold-email-outreach",
+      { name: "New Name" },
+      {
+        orgId: "org-1",
+        userId: "user-1",
+        runId: "run-1",
+        trackingHeaders: { "x-feature-slug": "cold-email-outreach" },
+      },
+    );
+
+    const callHeaders = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
+    expect(callHeaders["x-feature-slug"]).toBe("cold-email-outreach");
+  });
+
+  it("throws on HTTP 404", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve("Not found"),
+    });
+
+    const { updateFeature } = await loadModule();
+    await expect(
+      updateFeature("nonexistent", { name: "x" }, { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 404/);
+  });
+
+  it("throws on HTTP 409 (signature conflict)", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 409,
+      text: () => Promise.resolve("Signature conflict"),
+    });
+
+    const { updateFeature } = await loadModule();
+    await expect(
+      updateFeature("cold-email-outreach", { name: "Conflicting" }, { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 409/);
+  });
+
+  it("URL-encodes the slug", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(sampleFeature),
+    });
+
+    const { updateFeature } = await loadModule();
+    await updateFeature("slug with spaces", { name: "x" }, { orgId: "o", userId: "u", runId: "r" });
+
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain("slug%20with%20spaces");
   });
 });
