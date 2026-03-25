@@ -25,3 +25,16 @@ export function mergeConsecutiveMessages(
   }
   return result;
 }
+
+/**
+ * Strip tool_use blocks from content blocks.
+ * Tool calls are ephemeral within a single request's agentic loop — their
+ * matching tool_result messages are never persisted. Including orphaned
+ * tool_use blocks in history causes Anthropic to reject the request with
+ * "tool_use ids were found without tool_result blocks immediately after".
+ */
+export function stripToolUseBlocks(
+  blocks: Anthropic.ContentBlockParam[],
+): Anthropic.ContentBlockParam[] {
+  return blocks.filter((b) => b.type !== "tool_use");
+}
