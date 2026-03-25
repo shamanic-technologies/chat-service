@@ -558,6 +558,25 @@ describe("Feature-creator tools", () => {
     expect(schema.required).toContain("name");
     expect(schema.required).toContain("inputs");
     expect(schema.required).toContain("outputs");
+    expect(schema.required).toContain("charts");
+    expect(schema.required).toContain("entities");
+
+    // Charts: array with oneOf (funnel-bar, breakdown-bar)
+    const chartsSchema = schema.properties.charts as { type: string; items: { oneOf: { properties: Record<string, unknown>; required: string[] }[] } };
+    expect(chartsSchema.type).toBe("array");
+    const chartVariants = chartsSchema.items.oneOf;
+    expect(chartVariants).toHaveLength(2);
+    // funnel-bar variant
+    const funnelVariant = chartVariants.find((v) => (v.properties.type as { enum: string[] }).enum[0] === "funnel-bar")!;
+    expect(funnelVariant.required).toContain("steps");
+    // breakdown-bar variant
+    const breakdownVariant = chartVariants.find((v) => (v.properties.type as { enum: string[] }).enum[0] === "breakdown-bar")!;
+    expect(breakdownVariant.required).toContain("segments");
+
+    // Entities: array of strings
+    const entitiesSchema = schema.properties.entities as { type: string; items: { type: string } };
+    expect(entitiesSchema.type).toBe("array");
+    expect(entitiesSchema.items.type).toBe("string");
 
     // Input items: 6 required fields
     const inputItems = schema.properties.inputs.items!;
@@ -582,6 +601,11 @@ describe("Feature-creator tools", () => {
     expect(schema.properties).toHaveProperty("name");
     expect(schema.properties).toHaveProperty("icon");
     expect(schema.properties).toHaveProperty("inputs");
+    expect(schema.properties).toHaveProperty("charts");
+    expect(schema.properties).toHaveProperty("entities");
+    // charts and entities are optional for updates
+    expect(schema.required).not.toContain("charts");
+    expect(schema.required).not.toContain("entities");
   });
 
   it("LIST_FEATURES_TOOL has no required parameters", () => {
