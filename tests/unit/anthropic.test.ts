@@ -34,7 +34,9 @@ import {
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
   VALIDATE_WORKFLOW_TOOL,
+  UPSERT_FEATURE_TOOL,
   BUILTIN_TOOLS,
+  FEATURE_CREATOR_TOOLS,
 } from "../../src/lib/anthropic.js";
 
 const TEST_PROMPT = "You are a test assistant.";
@@ -462,6 +464,43 @@ describe("BUILTIN_TOOLS", () => {
       expect(tool).toHaveProperty("name");
       expect(tool).toHaveProperty("description");
     }
+  });
+});
+
+describe("UPSERT_FEATURE_TOOL", () => {
+  it("has correct name and all required parameters", () => {
+    expect(UPSERT_FEATURE_TOOL.name).toBe("upsert_feature");
+    const schema = UPSERT_FEATURE_TOOL.input_schema as {
+      properties: Record<string, unknown>;
+      required: string[];
+    };
+    expect(schema.properties).toHaveProperty("slug");
+    expect(schema.properties).toHaveProperty("name");
+    expect(schema.properties).toHaveProperty("description");
+    expect(schema.properties).toHaveProperty("category");
+    expect(schema.properties).toHaveProperty("channel");
+    expect(schema.properties).toHaveProperty("audienceType");
+    expect(schema.properties).toHaveProperty("inputs");
+    expect(schema.properties).toHaveProperty("outputs");
+    expect(schema.required).toEqual([
+      "slug", "name", "description", "category", "channel", "audienceType", "inputs", "outputs",
+    ]);
+  });
+});
+
+describe("FEATURE_CREATOR_TOOLS", () => {
+  it("includes only request_user_input and upsert_feature", () => {
+    const names = FEATURE_CREATOR_TOOLS.map((t) => t.name);
+    expect(names).toContain("request_user_input");
+    expect(names).toContain("upsert_feature");
+    expect(FEATURE_CREATOR_TOOLS).toHaveLength(2);
+  });
+
+  it("does not include workflow tools", () => {
+    const names = FEATURE_CREATOR_TOOLS.map((t) => t.name);
+    expect(names).not.toContain("update_workflow");
+    expect(names).not.toContain("list_workflows");
+    expect(names).not.toContain("get_workflow_details");
   });
 });
 

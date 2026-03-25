@@ -12,6 +12,7 @@ import {
   createAnthropicClient,
   buildSystemPrompt,
   BUILTIN_TOOLS,
+  FEATURE_CREATOR_TOOLS,
   MODEL,
   COST_PREFIX,
 } from "./lib/anthropic.js";
@@ -26,6 +27,7 @@ import {
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { listAvailableServices } from "./lib/api-registry-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
+import { upsertFeature } from "./lib/features-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import { resolveKey, type ResolvedKey } from "./lib/key-client.js";
 import { authorizeCredits } from "./lib/billing-client.js";
@@ -528,7 +530,9 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
 
-    const allTools = BUILTIN_TOOLS;
+    const allTools = context?.type === "feature-creator"
+      ? FEATURE_CREATOR_TOOLS
+      : BUILTIN_TOOLS;
 
     // Detect client disconnect to abort in-flight streams
     const abortController = new AbortController();
@@ -730,6 +734,32 @@ app.post("/chat", requireAuth, async (req, res) => {
         });
 
         toolCalls.push({ name: call.name, args: {}, result });
+        return { name: call.name, result };
+      }
+
+      // Built-in feature upsert tool (feature-creator context only)
+      if (call.name === "upsert_feature") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await upsertFeature(
+          {
+            slug: args.slug as string,
+            name: args.name as string,
+            description: args.description as string,
+            category: args.category as string,
+            channel: args.channel as string,
+            audienceType: args.audienceType as string,
+            inputs: args.inputs as { key: string; label: string; description: string }[],
+            outputs: args.outputs as { key: string; label: string; description: string }[],
+          },
+          {
+            orgId,
+            userId,
+            runId: runId!,
+            trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+          },
+        );
+
+        toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
 
