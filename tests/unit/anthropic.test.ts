@@ -471,24 +471,35 @@ describe("BUILTIN_TOOLS", () => {
 });
 
 describe("Feature-creator tools", () => {
-  it("CREATE_FEATURE_TOOL has correct name and required parameters (slug optional)", () => {
+  it("CREATE_FEATURE_TOOL has icon required and full input/output schemas", () => {
     expect(CREATE_FEATURE_TOOL.name).toBe("create_feature");
     const schema = CREATE_FEATURE_TOOL.input_schema as {
-      properties: Record<string, unknown>;
+      properties: Record<string, { items?: { required?: string[]; properties?: Record<string, unknown> } }>;
       required: string[];
     };
     expect(schema.properties).toHaveProperty("slug");
-    expect(schema.properties).toHaveProperty("name");
-    expect(schema.properties).toHaveProperty("inputs");
-    expect(schema.properties).toHaveProperty("outputs");
-    // slug is optional (auto-generated from name)
+    expect(schema.properties).toHaveProperty("icon");
+    // slug optional, icon required
     expect(schema.required).not.toContain("slug");
+    expect(schema.required).toContain("icon");
     expect(schema.required).toContain("name");
     expect(schema.required).toContain("inputs");
     expect(schema.required).toContain("outputs");
+
+    // Input items: 6 required fields
+    const inputItems = schema.properties.inputs.items!;
+    expect(inputItems.required).toEqual(["key", "label", "type", "placeholder", "description", "extractKey"]);
+    expect(inputItems.properties).toHaveProperty("options");
+
+    // Output items: 6 required fields
+    const outputItems = schema.properties.outputs.items!;
+    expect(outputItems.required).toEqual(["key", "label", "type", "displayOrder", "showInCampaignRow", "showInFunnel"]);
+    expect(outputItems.properties).toHaveProperty("funnelOrder");
+    expect(outputItems.properties).toHaveProperty("numeratorKey");
+    expect(outputItems.properties).toHaveProperty("denominatorKey");
   });
 
-  it("UPDATE_FEATURE_TOOL requires only slug", () => {
+  it("UPDATE_FEATURE_TOOL requires only slug, has icon field", () => {
     expect(UPDATE_FEATURE_TOOL.name).toBe("update_feature");
     const schema = UPDATE_FEATURE_TOOL.input_schema as {
       properties: Record<string, unknown>;
@@ -496,6 +507,7 @@ describe("Feature-creator tools", () => {
     };
     expect(schema.required).toEqual(["slug"]);
     expect(schema.properties).toHaveProperty("name");
+    expect(schema.properties).toHaveProperty("icon");
     expect(schema.properties).toHaveProperty("inputs");
   });
 
