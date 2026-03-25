@@ -53,6 +53,24 @@ export interface FeatureOutputDef {
   denominatorKey?: string;
 }
 
+export interface FunnelBarChart {
+  key: string;
+  type: "funnel-bar";
+  title: string;
+  displayOrder: number;
+  steps: { key: string }[];
+}
+
+export interface BreakdownBarChart {
+  key: string;
+  type: "breakdown-bar";
+  title: string;
+  displayOrder: number;
+  segments: { key: string; color: "green" | "blue" | "red" | "gray" | "orange"; sentiment: "positive" | "neutral" | "negative" }[];
+}
+
+export type FeatureChartDef = FunnelBarChart | BreakdownBarChart;
+
 export interface CreateFeatureBody {
   slug?: string;
   name: string;
@@ -63,6 +81,8 @@ export interface CreateFeatureBody {
   audienceType: string;
   inputs: FeatureInputDef[];
   outputs: FeatureOutputDef[];
+  charts: FeatureChartDef[];
+  entities: string[];
 }
 
 export interface FeatureResponse {

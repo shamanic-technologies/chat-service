@@ -458,8 +458,66 @@ export const CREATE_FEATURE_TOOL: Anthropic.Tool = {
         items: featureOutputItems,
         description: "Output metrics the feature produces (min 1)",
       },
+      charts: {
+        type: "array",
+        description: "Chart definitions for the feature dashboard. At least one chart required. Two types: funnel-bar (sequential conversion steps, min 2 steps) and breakdown-bar (categorical segments, min 2 segments).",
+        items: {
+          oneOf: [
+            {
+              type: "object",
+              properties: {
+                key: { type: "string", description: "Unique chart key (e.g. 'outreach-funnel')" },
+                type: { type: "string", enum: ["funnel-bar"], description: "Funnel bar chart — shows conversion through sequential steps" },
+                title: { type: "string", description: "Chart title (e.g. 'Outreach Funnel')" },
+                displayOrder: { type: "integer", description: "Order in which the chart appears (0-based)" },
+                steps: {
+                  type: "array",
+                  description: "Funnel steps — each key must reference an output key. Min 2 steps.",
+                  minItems: 2,
+                  items: {
+                    type: "object",
+                    properties: { key: { type: "string", description: "Output key this step represents" } },
+                    required: ["key"],
+                  },
+                },
+              },
+              required: ["key", "type", "title", "displayOrder", "steps"],
+            },
+            {
+              type: "object",
+              properties: {
+                key: { type: "string", description: "Unique chart key (e.g. 'reply-sentiment')" },
+                type: { type: "string", enum: ["breakdown-bar"], description: "Breakdown bar chart — shows categorical distribution" },
+                title: { type: "string", description: "Chart title (e.g. 'Reply Sentiment')" },
+                displayOrder: { type: "integer", description: "Order in which the chart appears (0-based)" },
+                segments: {
+                  type: "array",
+                  description: "Breakdown segments — each key must reference an output key. Min 2 segments.",
+                  minItems: 2,
+                  items: {
+                    type: "object",
+                    properties: {
+                      key: { type: "string", description: "Output key this segment represents" },
+                      color: { type: "string", enum: ["green", "blue", "red", "gray", "orange"], description: "Segment color" },
+                      sentiment: { type: "string", enum: ["positive", "neutral", "negative"], description: "Sentiment category" },
+                    },
+                    required: ["key", "color", "sentiment"],
+                  },
+                },
+              },
+              required: ["key", "type", "title", "displayOrder", "segments"],
+            },
+          ],
+        },
+      },
+      entities: {
+        type: "array",
+        description: "Entity types shown in campaign detail sidebar (e.g. ['leads', 'companies', 'emails']). At least one required.",
+        items: { type: "string" },
+        minItems: 1,
+      },
     },
-    required: ["name", "description", "icon", "category", "channel", "audienceType", "inputs", "outputs"],
+    required: ["name", "description", "icon", "category", "channel", "audienceType", "inputs", "outputs", "charts", "entities"],
   },
 };
 
@@ -489,6 +547,61 @@ export const UPDATE_FEATURE_TOOL: Anthropic.Tool = {
         type: "array",
         items: featureOutputItems,
         description: "New output fields (replaces all existing outputs)",
+      },
+      charts: {
+        type: "array",
+        description: "New chart definitions (replaces all existing charts). Two types: funnel-bar and breakdown-bar.",
+        items: {
+          oneOf: [
+            {
+              type: "object",
+              properties: {
+                key: { type: "string" },
+                type: { type: "string", enum: ["funnel-bar"] },
+                title: { type: "string" },
+                displayOrder: { type: "integer" },
+                steps: {
+                  type: "array",
+                  minItems: 2,
+                  items: {
+                    type: "object",
+                    properties: { key: { type: "string" } },
+                    required: ["key"],
+                  },
+                },
+              },
+              required: ["key", "type", "title", "displayOrder", "steps"],
+            },
+            {
+              type: "object",
+              properties: {
+                key: { type: "string" },
+                type: { type: "string", enum: ["breakdown-bar"] },
+                title: { type: "string" },
+                displayOrder: { type: "integer" },
+                segments: {
+                  type: "array",
+                  minItems: 2,
+                  items: {
+                    type: "object",
+                    properties: {
+                      key: { type: "string" },
+                      color: { type: "string", enum: ["green", "blue", "red", "gray", "orange"] },
+                      sentiment: { type: "string", enum: ["positive", "neutral", "negative"] },
+                    },
+                    required: ["key", "color", "sentiment"],
+                  },
+                },
+              },
+              required: ["key", "type", "title", "displayOrder", "segments"],
+            },
+          ],
+        },
+      },
+      entities: {
+        type: "array",
+        description: "New entity types (replaces all existing entities)",
+        items: { type: "string" },
       },
     },
     required: ["slug"],
