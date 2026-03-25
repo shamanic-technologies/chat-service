@@ -167,13 +167,130 @@ export const UPDATE_WORKFLOW_NODE_CONFIG_TOOL: Anthropic.Tool = {
   },
 };
 
-export const LIST_AVAILABLE_SERVICES_TOOL: Anthropic.Tool = {
-  name: "list_available_services",
+// ---------------------------------------------------------------------------
+// API Registry progressive disclosure tools
+// ---------------------------------------------------------------------------
+
+export const LIST_SERVICES_TOOL: Anthropic.Tool = {
+  name: "list_services",
   description:
-    "List all available microservices and their API endpoints. Returns a compact summary of every service (name, base URL, description) and each endpoint (method, path, summary, parameters). Use this before modifying a workflow DAG to know which services and endpoints can be used in http.call nodes.",
+    "List all available microservices with their name, description, and endpoint count. START HERE for service discovery. Then use list_service_endpoints to drill into a specific service, and call_api to invoke an endpoint.",
   input_schema: {
     type: "object" as const,
     properties: {},
+  },
+};
+
+export const LIST_SERVICE_ENDPOINTS_TOOL: Anthropic.Tool = {
+  name: "list_service_endpoints",
+  description:
+    "List all endpoints for a specific service (method, path, summary). Use after list_services to explore a service. Then use call_api to invoke a specific endpoint.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      service: {
+        type: "string",
+        description:
+          "Service name from list_services (e.g. 'brand', 'features', 'workflow')",
+      },
+    },
+    required: ["service"],
+  },
+};
+
+export const CALL_API_TOOL: Anthropic.Tool = {
+  name: "call_api",
+  description:
+    "Call an API endpoint on a registered service. The API key is injected automatically — you only need the service name, method, path, and optional body. Use list_services → list_service_endpoints first to discover available endpoints. Use this to verify data, read resources, or check service state.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      service: {
+        type: "string",
+        description: "Target service name (e.g. 'brand', 'features')",
+      },
+      method: {
+        type: "string",
+        enum: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+        description: "HTTP method",
+      },
+      path: {
+        type: "string",
+        description:
+          "Endpoint path on the target service (e.g. '/features/cold-email-outreach/inputs')",
+      },
+      body: {
+        type: "object",
+        description: "Request body for POST/PUT/PATCH (optional)",
+      },
+    },
+    required: ["service", "method", "path"],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Key-service read tools
+// ---------------------------------------------------------------------------
+
+export const LIST_ORG_KEYS_TOOL: Anthropic.Tool = {
+  name: "list_org_keys",
+  description:
+    "List all API keys configured for the current organization. Returns provider names and masked keys (never the actual secret). Use this to check if an org has the required keys configured before running a workflow.",
+  input_schema: {
+    type: "object" as const,
+    properties: {},
+  },
+};
+
+export const GET_KEY_SOURCE_TOOL: Anthropic.Tool = {
+  name: "get_key_source",
+  description:
+    "Get the key source preference for a specific provider. Returns whether the org uses its own key ('org') or the platform key ('platform'). If no explicit preference is set, returns 'platform' with isDefault=true.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      provider: {
+        type: "string",
+        description:
+          "Provider name (e.g. 'anthropic', 'openai', 'stripe', 'instantly')",
+      },
+    },
+    required: ["provider"],
+  },
+};
+
+export const LIST_KEY_SOURCES_TOOL: Anthropic.Tool = {
+  name: "list_key_sources",
+  description:
+    "List all key source preferences for the current org. Shows which providers use org keys vs platform keys. Providers not listed default to 'platform'.",
+  input_schema: {
+    type: "object" as const,
+    properties: {},
+  },
+};
+
+export const CHECK_PROVIDER_REQUIREMENTS_TOOL: Anthropic.Tool = {
+  name: "check_provider_requirements",
+  description:
+    "Query which third-party API providers are needed to call a set of service endpoints. Given a list of endpoints (service + method + path), returns which providers each endpoint requires. Use this to determine what keys the org needs before executing a workflow or calling multiple services.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      endpoints: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            service: { type: "string", description: "Service name (e.g. 'chat')" },
+            method: { type: "string", description: "HTTP method (e.g. 'POST')" },
+            path: { type: "string", description: "Endpoint path (e.g. '/complete')" },
+          },
+          required: ["service", "method", "path"],
+        },
+        description: "List of endpoints to check requirements for",
+      },
+    },
+    required: ["endpoints"],
   },
 };
 
@@ -417,10 +534,18 @@ export const BUILTIN_TOOLS: Anthropic.Tool[] = [
   GET_PROMPT_TEMPLATE_TOOL,
   UPDATE_PROMPT_TEMPLATE_TOOL,
   UPDATE_WORKFLOW_NODE_CONFIG_TOOL,
-  LIST_AVAILABLE_SERVICES_TOOL,
   GET_WORKFLOW_DETAILS_TOOL,
   GET_WORKFLOW_REQUIRED_PROVIDERS_TOOL,
   LIST_WORKFLOWS_TOOL,
+  // API Registry progressive disclosure
+  LIST_SERVICES_TOOL,
+  LIST_SERVICE_ENDPOINTS_TOOL,
+  CALL_API_TOOL,
+  // Key-service read tools
+  LIST_ORG_KEYS_TOOL,
+  GET_KEY_SOURCE_TOOL,
+  LIST_KEY_SOURCES_TOOL,
+  CHECK_PROVIDER_REQUIREMENTS_TOOL,
 ];
 
 /** Tools available when context.type === "feature-creator" */

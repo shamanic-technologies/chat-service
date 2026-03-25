@@ -194,7 +194,13 @@ After a tool result, more `token` events follow with the AI's continuation.
 | `validate_workflow` | Validates a workflow's DAG structure via workflow-service `POST /workflows/{id}/validate` |
 | `get_prompt_template` | Retrieves a stored prompt template by type from content-generation `GET /prompts?type=...` |
 | `update_prompt_template` | Creates a new version of an existing prompt template via content-generation `PUT /prompts` (auto-versions: e.g. `cold-email` → `cold-email-v2`) |
-| `list_available_services` | Lists all available microservices and their API endpoints from api-registry `GET /llm-context`. Use before modifying DAGs to know valid `http.call` targets. |
+| `list_services` | Lists all microservices with name, description, and endpoint count via api-registry `GET /llm-context`. Start here for service discovery. |
+| `list_service_endpoints` | Lists endpoints (method, path, summary) for a specific service via api-registry `GET /llm-context/{service}`. Use after `list_services` to drill down. |
+| `call_api` | Proxies an API call to any registered service via api-registry `POST /call/{service}`. API key injected automatically. Use to verify data or read resources. |
+| `list_org_keys` | Lists API keys configured for the current org (provider + masked key) via key-service `GET /keys`. Never exposes actual secrets. |
+| `get_key_source` | Gets key source preference (org vs platform) for a provider via key-service `GET /keys/{provider}/source`. |
+| `list_key_sources` | Lists all key source preferences for the org via key-service `GET /keys/sources`. |
+| `check_provider_requirements` | Queries which providers are needed for a set of endpoints via key-service `POST /provider-requirements`. |
 | `request_user_input` | Asks the user for structured input (see Input Request below) |
 
 **Context-specific tools:**
@@ -284,7 +290,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `CONTENT_GENERATION_SERVICE_URL` | No | Content-generation service endpoint (default: `https://content-generation.distribute.you`) |
 | `CONTENT_GENERATION_SERVICE_API_KEY` | No | API key for content-generation service (get_prompt_template tool fails if unset) |
 | `API_REGISTRY_SERVICE_URL` | No | API registry service endpoint (default: `https://api-registry.distribute.you`) |
-| `API_REGISTRY_SERVICE_API_KEY` | No | API key for api-registry service (list_available_services tool fails if unset) |
+| `API_REGISTRY_SERVICE_API_KEY` | No | API key for api-registry service (list_services, list_service_endpoints, call_api tools fail if unset) |
 | `BILLING_SERVICE_URL` | No | Billing-service endpoint (default: `https://billing.mcpfactory.org`) |
 | `FEATURES_SERVICE_URL` | No | Features-service endpoint (default: `https://features.distribute.you`) |
 | `FEATURES_SERVICE_API_KEY` | No | API key for features-service (upsert_feature tool fails if unset) |
@@ -358,7 +364,8 @@ src/
     anthropic.ts       # Claude AI client (Sonnet 4.6), streaming + non-streaming, tool calling, adaptive thinking, context management (compaction), built-in tool declarations
     merge-messages.ts  # Ensures alternating user/assistant roles by merging orphaned consecutive same-role messages
     billing-client.ts  # Billing-service client for credit authorization before platform-key operations
-    key-client.ts      # Key-service client for resolving Anthropic keys (platform or BYOK per org)
+    key-client.ts      # Key-service client: resolveKey (decrypt), listOrgKeys, getKeySource, listKeySources, checkProviderRequirements
+    api-registry-client.ts # API Registry client: listServices, listServiceEndpoints, callApi (progressive disclosure)
     runs-client.ts     # RunsService HTTP client for run tracking and cost reporting
     workflow-client.ts              # Workflow-service client for update_workflow and validate_workflow built-in tools
     content-generation-client.ts    # Content-generation service client for get_prompt_template built-in tool

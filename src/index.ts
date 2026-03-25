@@ -25,11 +25,18 @@ import {
   listWorkflows,
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
-import { listAvailableServices } from "./lib/api-registry-client.js";
+import { listServices, listServiceEndpoints, callApi } from "./lib/api-registry-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { createFeature, updateFeature, listFeatures, getFeature } from "./lib/features-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
-import { resolveKey, type ResolvedKey } from "./lib/key-client.js";
+import {
+  resolveKey,
+  type ResolvedKey,
+  listOrgKeys,
+  getKeySource,
+  listKeySources,
+  checkProviderRequirements,
+} from "./lib/key-client.js";
 import { authorizeCredits } from "./lib/billing-client.js";
 import { ChatRequestSchema, CompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
@@ -725,15 +732,88 @@ app.post("/chat", requireAuth, async (req, res) => {
         return { name: call.name, result };
       }
 
-      // Built-in api-registry tool
-      if (call.name === "list_available_services") {
-        const result = await listAvailableServices({
+      // API Registry progressive disclosure tools
+      if (call.name === "list_services") {
+        const result = await listServices({ orgId, userId, runId: runId! });
+        toolCalls.push({ name: call.name, args: {}, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "list_service_endpoints") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await listServiceEndpoints(
+          args.service as string,
+          { orgId, userId, runId: runId! },
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "call_api") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await callApi(
+          {
+            service: args.service as string,
+            method: args.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
+            path: args.path as string,
+            body: args.body as Record<string, unknown> | undefined,
+          },
+          { orgId, userId, runId: runId! },
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // Key-service read tools
+      if (call.name === "list_org_keys") {
+        const result = await listOrgKeys({
           orgId,
           userId,
           runId: runId!,
+          trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
         });
-
         toolCalls.push({ name: call.name, args: {}, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "get_key_source") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await getKeySource(
+          args.provider as string,
+          {
+            orgId,
+            userId,
+            runId: runId!,
+            trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+          },
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "list_key_sources") {
+        const result = await listKeySources({
+          orgId,
+          userId,
+          runId: runId!,
+          trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+        });
+        toolCalls.push({ name: call.name, args: {}, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "check_provider_requirements") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await checkProviderRequirements(
+          args.endpoints as Array<{ service: string; method: string; path: string }>,
+          {
+            orgId,
+            userId,
+            runId: runId!,
+            trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+          },
+        );
+        toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
 
