@@ -47,7 +47,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const openapiPath = join(__dirname, "..", "openapi.json");
 
-import { mergeConsecutiveMessages } from "./lib/merge-messages.js";
+import { mergeConsecutiveMessages, stripToolUseBlocks } from "./lib/merge-messages.js";
 
 const app = express();
 app.use(cors());
@@ -467,15 +467,26 @@ app.post("/chat", requireAuth, async (req, res) => {
     });
 
     // Build Anthropic message history — use contentBlocks if available (preserves compaction blocks)
+    // Strip tool_use blocks: intermediate tool calls are ephemeral and not persisted with
+    // matching tool_result messages, so including them causes Anthropic API validation errors.
     // Ensure alternating user/assistant roles (merge consecutive same-role messages)
     const rawHistory: Anthropic.MessageParam[] = history
       .filter((m) => m.role !== "tool")
-      .map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: (m.role === "assistant" && m.contentBlocks
-          ? m.contentBlocks as Anthropic.ContentBlockParam[]
-          : m.content) as string | Anthropic.ContentBlockParam[],
-      }));
+      .map((m) => {
+        if (m.role === "assistant" && m.contentBlocks) {
+          const blocks = stripToolUseBlocks(
+            m.contentBlocks as Anthropic.ContentBlockParam[],
+          );
+          return {
+            role: "assistant" as const,
+            content: blocks.length > 0 ? blocks : (m.content as string),
+          };
+        }
+        return {
+          role: m.role as "user" | "assistant",
+          content: m.content as string | Anthropic.ContentBlockParam[],
+        };
+      });
 
     const anthropicHistory = mergeConsecutiveMessages(rawHistory);
 
@@ -1050,13 +1061,18 @@ app.post("/chat", requireAuth, async (req, res) => {
     }
 
     // Save assistant message with cleaned response + content blocks for compaction
+    // Strip tool_use blocks — they are ephemeral (tool results aren't saved as separate
+    // messages), so persisting them causes missing tool_result errors on next load.
     const cleanedResponse =
       buttons.length > 0 ? stripButtons(fullResponse) : fullResponse;
+    const persistBlocks = stripToolUseBlocks(
+      lastContentBlocks as Anthropic.ContentBlockParam[],
+    );
     await db.insert(messages).values({
       sessionId: currentSessionId,
       role: "assistant",
       content: cleanedResponse,
-      contentBlocks: lastContentBlocks.length > 0 ? lastContentBlocks : null,
+      contentBlocks: persistBlocks.length > 0 ? persistBlocks : null,
       toolCalls: toolCalls.length > 0 ? toolCalls : null,
       buttons: buttons.length > 0 ? buttons : null,
       tokenCount: totalPromptTokens + totalOutputTokens || null,
