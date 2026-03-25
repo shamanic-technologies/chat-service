@@ -27,6 +27,48 @@ function wireShutdown(server: http.Server, drainTimeoutMs: number) {
   return { shutdown, logs };
 }
 
+function wireServerTimeouts(server: http.Server) {
+  server.requestTimeout = 0;
+  server.headersTimeout = 60_000;
+  server.keepAliveTimeout = 120_000;
+}
+
+describe("server timeouts", () => {
+  let server: http.Server;
+
+  afterEach(() => {
+    try {
+      server?.close();
+    } catch {
+      /* already closed */
+    }
+  });
+
+  it("disables requestTimeout so long-running SSE streams are not killed", () => {
+    const app = express();
+    server = app.listen(0);
+    wireServerTimeouts(server);
+
+    expect(server.requestTimeout).toBe(0);
+  });
+
+  it("keeps headersTimeout at 60s to reject slow initial requests", () => {
+    const app = express();
+    server = app.listen(0);
+    wireServerTimeouts(server);
+
+    expect(server.headersTimeout).toBe(60_000);
+  });
+
+  it("sets keepAliveTimeout to 120s", () => {
+    const app = express();
+    server = app.listen(0);
+    wireServerTimeouts(server);
+
+    expect(server.keepAliveTimeout).toBe(120_000);
+  });
+});
+
 describe("graceful shutdown", () => {
   let server: http.Server;
 

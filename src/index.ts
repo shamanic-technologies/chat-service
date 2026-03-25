@@ -1152,6 +1152,14 @@ if (process.env.NODE_ENV !== "test") {
         console.log(`Service running on port ${PORT}`);
       });
 
+      // Node 20 defaults requestTimeout to 300s (5 min). SSE chat streams
+      // can run for 30–60 min when the LLM makes many tool calls, so we
+      // disable the request timeout entirely. Headers timeout stays at 60s
+      // to reject slow/malformed initial requests.
+      server.requestTimeout = 0;
+      server.headersTimeout = 60_000;
+      server.keepAliveTimeout = 120_000;
+
       // Graceful shutdown: let in-flight SSE streams finish before exiting
       const DRAIN_TIMEOUT_MS = 25_000; // Railway sends SIGKILL after 30s
 
