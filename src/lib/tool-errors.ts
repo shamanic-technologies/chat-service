@@ -58,6 +58,8 @@ const TOOL_HINTS: Record<string, string> = {
     "Pass sourceType (existing prompt type), prompt (template with {{variables}}), and variables (array of variable names).",
   list_available_services:
     "No parameters needed. Returns all services and their endpoints.",
+  upsert_feature:
+    "Pass slug (kebab-case), name, description, category, channel, audienceType, inputs (array of {key, label, description}), and outputs (array of {key, label, description}). All fields are required.",
 };
 
 export function formatToolError(toolName: string, rawError: string): ToolErrorResult {

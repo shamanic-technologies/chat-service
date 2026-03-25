@@ -197,6 +197,15 @@ After a tool result, more `token` events follow with the AI's continuation.
 | `list_available_services` | Lists all available microservices and their API endpoints from api-registry `GET /llm-context`. Use before modifying DAGs to know valid `http.call` targets. |
 | `request_user_input` | Asks the user for structured input (see Input Request below) |
 
+**Context-specific tools:**
+
+When `context.type` is `"feature-creator"`, the standard workflow tools above are **replaced** by a focused toolset for designing features:
+
+| Tool | Description |
+|---|---|
+| `request_user_input` | Asks the user for structured input (same as above) |
+| `upsert_feature` | Creates or updates a feature definition in features-service. Accepts `slug`, `name`, `description`, `category`, `channel`, `audienceType`, `inputs` (array of `{key, label, description}`), and `outputs` (array of `{key, label, description}`). |
+
 ### 5. Input Request (optional)
 When the AI genuinely needs information it does not have, it emits an input request:
 ```
@@ -274,6 +283,8 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `API_REGISTRY_SERVICE_URL` | No | API registry service endpoint (default: `https://api-registry.distribute.you`) |
 | `API_REGISTRY_SERVICE_API_KEY` | No | API key for api-registry service (list_available_services tool fails if unset) |
 | `BILLING_SERVICE_URL` | No | Billing-service endpoint (default: `https://billing.mcpfactory.org`) |
+| `FEATURES_SERVICE_URL` | No | Features-service endpoint (default: `https://features.distribute.you`) |
+| `FEATURES_SERVICE_API_KEY` | No | API key for features-service (upsert_feature tool fails if unset) |
 | `BILLING_SERVICE_API_KEY` | Yes | API key for billing-service — required for credit authorization on platform-key requests |
 | `PORT` | No | Server port (default: `3002`) |
 
@@ -348,6 +359,7 @@ src/
     runs-client.ts     # RunsService HTTP client for run tracking and cost reporting
     workflow-client.ts              # Workflow-service client for update_workflow and validate_workflow built-in tools
     content-generation-client.ts    # Content-generation service client for get_prompt_template built-in tool
+    features-client.ts              # Features-service client for upsert_feature tool (feature-creator context)
 scripts/
   generate-openapi.ts  # Generates openapi.json from zod schemas via OpenApiGeneratorV3
 ```

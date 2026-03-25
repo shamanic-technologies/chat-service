@@ -261,6 +261,69 @@ export const LIST_WORKFLOWS_TOOL: Anthropic.Tool = {
   },
 };
 
+export const UPSERT_FEATURE_TOOL: Anthropic.Tool = {
+  name: "upsert_feature",
+  description:
+    "Create or update a feature definition in the features catalogue. Use this when the user has confirmed the feature design (name, description, inputs, outputs) and wants to save it. Always confirm the feature details with the user before calling this tool.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      slug: {
+        type: "string",
+        description:
+          "URL-friendly identifier for the feature (e.g. 'cold-email-outreach'). Use lowercase kebab-case.",
+      },
+      name: {
+        type: "string",
+        description: "Human-readable feature name (e.g. 'Cold Email Outreach')",
+      },
+      description: {
+        type: "string",
+        description: "Brief description of what the feature does",
+      },
+      category: {
+        type: "string",
+        description: "Feature category (e.g. 'sales', 'pr', 'marketing')",
+      },
+      channel: {
+        type: "string",
+        description: "Communication channel (e.g. 'email', 'linkedin', 'phone')",
+      },
+      audienceType: {
+        type: "string",
+        description: "Target audience type (e.g. 'cold-outreach', 'warm-leads', 'existing-customers')",
+      },
+      inputs: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            key: { type: "string", description: "Machine-readable input key (e.g. 'targetCompanyUrl')" },
+            label: { type: "string", description: "Human-readable label (e.g. 'Target Company URL')" },
+            description: { type: "string", description: "What this input is for" },
+          },
+          required: ["key", "label", "description"],
+        },
+        description: "Input fields the user must provide to run this feature",
+      },
+      outputs: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            key: { type: "string", description: "Machine-readable output key (e.g. 'generatedEmail')" },
+            label: { type: "string", description: "Human-readable label (e.g. 'Generated Email')" },
+            description: { type: "string", description: "What this output contains" },
+          },
+          required: ["key", "label", "description"],
+        },
+        description: "Output fields the feature produces",
+      },
+    },
+    required: ["slug", "name", "description", "category", "channel", "audienceType", "inputs", "outputs"],
+  },
+};
+
 export const BUILTIN_TOOLS: Anthropic.Tool[] = [
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
@@ -272,6 +335,12 @@ export const BUILTIN_TOOLS: Anthropic.Tool[] = [
   GET_WORKFLOW_DETAILS_TOOL,
   GET_WORKFLOW_REQUIRED_PROVIDERS_TOOL,
   LIST_WORKFLOWS_TOOL,
+];
+
+/** Extra tools available only when context.type === "feature-creator" */
+export const FEATURE_CREATOR_TOOLS: Anthropic.Tool[] = [
+  REQUEST_USER_INPUT_TOOL,
+  UPSERT_FEATURE_TOOL,
 ];
 
 // ---------------------------------------------------------------------------
