@@ -352,6 +352,10 @@ Uses `node:20-alpine`. Requires Node >= 20.
 
 On `SIGTERM` / `SIGINT`, the server stops accepting new connections and waits up to 25 seconds for in-flight SSE streams to finish before exiting. This prevents active chat streams from being killed during Railway deployments.
 
+### SSE Stream Timeouts
+
+Node 20 defaults `requestTimeout` to 300s (5 min), which would kill long-running SSE streams. The server disables `requestTimeout` entirely (`0`) since chat streams can run for 30–60 min when the LLM makes many tool calls. `headersTimeout` stays at 60s to reject slow/malformed initial requests. `keepAliveTimeout` is set to 120s.
+
 ## Architecture
 
 ```
