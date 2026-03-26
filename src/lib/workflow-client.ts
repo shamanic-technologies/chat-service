@@ -2,32 +2,70 @@ import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
 
 export type WorkflowCallParams = ApiCallParams;
 
+export interface DAGNode {
+  id: string;
+  type: string;
+  config?: Record<string, unknown>;
+  inputMapping?: Record<string, string>;
+  retries?: number;
+}
+
+export interface DAGEdge {
+  from: string;
+  to: string;
+  condition?: string;
+}
+
+export interface DAG {
+  nodes: DAGNode[];
+  edges: DAGEdge[];
+  onError?: string;
+}
+
 export interface WorkflowResponse {
   id: string;
-  name?: string;
-  signatureName?: string;
-  forkedFrom?: string;
-  dag: {
-    nodes: Array<{
-      id: string;
-      type: string;
-      config?: Record<string, unknown>;
-      inputMapping?: Record<string, string>;
-      retries?: number;
-    }>;
-    edges: Array<{ from: string; to: string; condition?: string }>;
-    onError?: string;
-  };
+  orgId: string;
+  featureSlug: string;
+  name: string;
+  displayName?: string | null;
+  description?: string | null;
+  signatureName: string;
+  signature: string;
+  category?: string;
+  channel?: string;
+  audienceType?: string;
+  tags?: string[];
+  status?: "active" | "deprecated";
+  upgradedTo?: string | null;
+  forkedFrom?: string | null;
+  createdForBrandId?: string | null;
+  humanId?: string | null;
+  campaignId?: string | null;
+  subrequestId?: string | null;
+  styleName?: string | null;
+  createdByUserId?: string | null;
+  createdByRunId?: string | null;
+  dag: DAG;
+  createdAt?: string;
+  updatedAt?: string;
   [key: string]: unknown;
 }
 
+export interface WorkflowMutationResponse extends WorkflowResponse {
+  /** What happened: 'updated' = in-place, 'forked' = new workflow created */
+  _action: "updated" | "forked";
+  /** Only present when _action is 'forked'. Name of the original workflow. */
+  _forkedFromName?: string;
+}
+
 export interface UpdateWorkflowResult {
-  workflow: WorkflowResponse;
+  workflow: WorkflowMutationResponse;
   /** "updated" = in-place 200, "forked" = new workflow 201 */
   outcome: "updated" | "forked";
 }
 
 export interface WorkflowConflictError {
+  error: string;
   existingWorkflowId: string;
   existingWorkflowName: string;
 }
@@ -56,7 +94,7 @@ export interface UpdateWorkflowBody {
   name?: string;
   description?: string;
   tags?: string[];
-  dag?: WorkflowResponse["dag"];
+  dag?: DAG;
 }
 
 /**
@@ -64,15 +102,15 @@ export interface UpdateWorkflowBody {
  * Gemini sometimes sends `config: null` or `inputMapping: null` instead
  * of omitting the field — workflow-service Zod schema rejects nulls.
  */
-function sanitizeDag(dag: WorkflowResponse["dag"]): WorkflowResponse["dag"] {
+function sanitizeDag(dag: DAG): DAG {
   return {
     ...dag,
     nodes: dag.nodes.map((node) => {
-      const clean: Record<string, unknown> = { id: node.id, type: node.type };
+      const clean: DAGNode = { id: node.id, type: node.type };
       if (node.config != null) clean.config = node.config;
       if (node.inputMapping != null) clean.inputMapping = node.inputMapping;
       if (node.retries != null) clean.retries = node.retries;
-      return clean as typeof node;
+      return clean;
     }),
   };
 }
@@ -104,8 +142,8 @@ export async function updateWorkflow(
     );
   }
 
-  const workflow = (await res.json()) as WorkflowResponse;
-  const outcome = res.status === 201 ? "forked" : "updated";
+  const workflow = (await res.json()) as WorkflowMutationResponse;
+  const outcome = workflow._action ?? (res.status === 201 ? "forked" : "updated");
   return { workflow, outcome };
 }
 

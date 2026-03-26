@@ -56,7 +56,7 @@ describe("updateWorkflow", () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       status: 201,
-      json: () => Promise.resolve({ id: "wf-new", name: "sales-email-v2", forkedFrom: "wf-123", signatureName: "sales-email-v2" }),
+      json: () => Promise.resolve({ id: "wf-new", name: "sales-email-v2", forkedFrom: "wf-123", signatureName: "sales-email-v2", _action: "forked", _forkedFromName: "sales-email-v1" }),
     });
 
     const { updateWorkflow } = await loadModule();
@@ -70,6 +70,26 @@ describe("updateWorkflow", () => {
     expect(result.workflow.id).toBe("wf-new");
     expect(result.workflow.forkedFrom).toBe("wf-123");
     expect(result.workflow.signatureName).toBe("sales-email-v2");
+    expect(result.workflow._action).toBe("forked");
+    expect(result.workflow._forkedFromName).toBe("sales-email-v1");
+  });
+
+  it("uses _action from response body over status code", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: "wf-1", _action: "updated" }),
+    });
+
+    const { updateWorkflow } = await loadModule();
+    const result = await updateWorkflow(
+      "wf-1",
+      { description: "test" },
+      { orgId: "o", userId: "u", runId: "r" },
+    );
+
+    expect(result.outcome).toBe("updated");
+    expect(result.workflow._action).toBe("updated");
   });
 
   it("throws with existing workflow info on HTTP 409", async () => {
@@ -173,6 +193,43 @@ describe("updateWorkflow", () => {
     expect(sentBody.dag.nodes[1]).toEqual({ id: "step-2", type: "condition" });
     expect(sentBody.dag.nodes[2].config).toEqual({ path: "/send" });
     expect(sentBody.dag.nodes[2].inputMapping).toEqual({ "body.to": "$ref:step-1.output.email" });
+  });
+
+  it("preserves condition field on DAG edges when sending", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: "wf-1", _action: "updated" }),
+    });
+
+    const { updateWorkflow } = await loadModule();
+    await updateWorkflow(
+      "wf-1",
+      {
+        dag: {
+          nodes: [
+            { id: "check", type: "condition" },
+            { id: "yes-branch", type: "http.call", config: { path: "/yes" } },
+            { id: "no-branch", type: "http.call", config: { path: "/no" } },
+            { id: "always", type: "http.call", config: { path: "/done" } },
+          ],
+          edges: [
+            { from: "check", to: "yes-branch", condition: "results.check.found == true" },
+            { from: "check", to: "no-branch", condition: "results.check.found == false" },
+            { from: "check", to: "always" },
+            { from: "yes-branch", to: "always" },
+          ],
+        },
+      },
+      { orgId: "o", userId: "u", runId: "r" },
+    );
+
+    const sentBody = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(sentBody.dag.edges).toEqual([
+      { from: "check", to: "yes-branch", condition: "results.check.found == true" },
+      { from: "check", to: "no-branch", condition: "results.check.found == false" },
+      { from: "check", to: "always" },
+      { from: "yes-branch", to: "always" },
+    ]);
   });
 
   it("throws when ADMIN_DISTRIBUTE_API_KEY is not set", async () => {

@@ -619,9 +619,10 @@ app.post("/chat", requireAuth, async (req, res) => {
             wfParams,
           );
           if (updateResult.outcome === "forked") {
+            const forkedFrom = updateResult.workflow._forkedFromName || workflowId;
             result = {
               ...updateResult.workflow,
-              _note: `This is a NEW workflow forked from ${workflowId}. Tell the user: "Your customized workflow is ready: ${updateResult.workflow.name || updateResult.workflow.signatureName || updateResult.workflow.id}. Use this name for future campaigns."`,
+              _note: `This is a NEW workflow forked from "${forkedFrom}". Tell the user: "Your customized workflow is ready: ${updateResult.workflow.name || updateResult.workflow.signatureName || updateResult.workflow.id}. Use this name for future campaigns."`,
             };
           } else {
             result = updateResult.workflow;
@@ -698,9 +699,10 @@ app.post("/chat", requireAuth, async (req, res) => {
 
         let result: unknown;
         if (updateResult.outcome === "forked") {
+          const forkedFrom = updateResult.workflow._forkedFromName || "the original";
           result = {
             ...updateResult.workflow,
-            _note: `This is a NEW workflow forked from the original. Tell the user: "Your customized workflow is ready: ${updateResult.workflow.name || updateResult.workflow.signatureName || updateResult.workflow.id}. Use this name for future campaigns."`,
+            _note: `This is a NEW workflow forked from "${forkedFrom}". Tell the user: "Your customized workflow is ready: ${updateResult.workflow.name || updateResult.workflow.signatureName || updateResult.workflow.id}. Use this name for future campaigns."`,
           };
         } else {
           result = updateResult.workflow;
