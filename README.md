@@ -188,7 +188,7 @@ After a tool result, more `token` events follow with the AI's continuation.
 |---|---|
 | `get_workflow_details` | Fetches full workflow details (DAG, metadata, status) via workflow-service `GET /workflows/{id}` |
 | `get_workflow_required_providers` | Returns BYOK providers needed to execute a workflow via `GET /workflows/{id}/required-providers`. Proactively warns about missing keys. |
-| `list_workflows` | Lists/searches workflows by category, channel, tags, or free-text search via `GET /workflows` |
+| `list_workflows` | Lists workflows via `GET /workflows` with optional filters: featureSlug, category, channel, audienceType, tag, status, brandId, humanId, campaignId |
 | `update_workflow` | Updates a workflow's metadata or DAG via `PUT /workflows/{id}`. DAG changes trigger a fork (201 with new workflow) rather than in-place update. Returns 409 if DAG signature already exists. Metadata-only changes update in-place (200). |
 | `update_workflow_node_config` | Updates a specific node's config in a workflow's DAG (e.g. change prompt type on `email-generate` node). Fetches, merges, and saves. May fork the workflow if the DAG changes. |
 | `validate_workflow` | Validates a workflow's DAG structure via workflow-service `POST /workflows/{id}/validate` |
@@ -210,8 +210,8 @@ When `context.type` is `"feature-creator"`, the standard workflow tools above ar
 | Tool | Description |
 |---|---|
 | `request_user_input` | Asks the user for structured input (same as above) |
-| `create_feature` | Creates a new feature via `POST /features`. Required: name, description, **icon**, category, channel, audienceType, inputs (with key/label/**type**/**placeholder**/description/**extractKey**), outputs (with key/label/**type**/**displayOrder**/**showInCampaignRow**/**showInFunnel**). Slug optional. Returns 409 on conflict. |
-| `update_feature` | Updates an existing feature by slug via `PUT /features/:slug`. Partial update — only provided fields change. Input/output items must include all required sub-fields when provided. |
+| `create_feature` | Creates a new feature via `POST /features`. Required: name, description, **icon**, category, channel, audienceType, inputs (with key/label/**type**/**placeholder**/description/**extractKey**), outputs (with **key**/**displayOrder**, optional defaultSort/sortDirection — keys from stats registry), charts (min 1), entities (min 1). Optional: slug, implemented, displayOrder, status. Returns 409 on conflict. |
+| `update_feature` | Updates an existing feature by slug via `PUT /features/:slug`. Partial update — only provided fields change. Supports: name, description, icon, category, channel, audienceType, implemented, displayOrder, status, inputs, outputs, charts, entities. |
 | `list_features` | Lists features via `GET /features` with optional filters (category, channel, audienceType, status, implemented). |
 | `get_feature` | Gets full feature details by slug via `GET /features/:slug`. |
 
