@@ -29,7 +29,7 @@ export async function getCampaignFeatureInputs(
   if (cached !== undefined) return cached;
 
   const res = await apiServiceFetch(
-    `/campaign/campaigns/${campaignId}`,
+    `/v1/campaigns/${campaignId}`,
     "GET",
     params,
   );
