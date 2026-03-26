@@ -1,20 +1,25 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-vi.stubGlobal("fetch", vi.fn());
+const originalEnv = { ...process.env };
+
+beforeEach(() => {
+  process.env.API_SERVICE_API_KEY = "test-api-svc-key";
+  process.env.API_SERVICE_URL = "https://api.test.local";
+  vi.stubGlobal("fetch", vi.fn());
+});
+
+afterEach(() => {
+  process.env = { ...originalEnv };
+  vi.restoreAllMocks();
+});
 
 async function loadModule() {
   vi.resetModules();
-  process.env.API_REGISTRY_SERVICE_URL = "https://api-registry.test.local";
-  process.env.API_REGISTRY_SERVICE_API_KEY = "test-registry-key";
   return import("../../src/lib/api-registry-client.js");
 }
 
 describe("listServices", () => {
-  beforeEach(() => {
-    vi.mocked(fetch).mockReset();
-  });
-
-  it("calls GET /llm-context with correct headers", async () => {
+  it("calls GET /v1/platform/llm-context via api-service", async () => {
     const mockResponse = {
       _description: "API registry",
       _workflow: "list_services → list_service_endpoints → call_api",
@@ -25,10 +30,10 @@ describe("listServices", () => {
       ],
     };
 
-    vi.mocked(fetch).mockResolvedValue({
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve(mockResponse),
-    } as Response);
+    });
 
     const { listServices } = await loadModule();
     const result = await listServices({
@@ -38,10 +43,10 @@ describe("listServices", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://api-registry.test.local/llm-context",
+      "https://api.test.local/v1/platform/llm-context",
       expect.objectContaining({
         headers: expect.objectContaining({
-          "x-api-key": "test-registry-key",
+          Authorization: "Bearer test-api-svc-key",
           "x-org-id": "org-1",
           "x-user-id": "user-1",
           "x-run-id": "run-1",
@@ -53,11 +58,11 @@ describe("listServices", () => {
   });
 
   it("throws on HTTP error", async () => {
-    vi.mocked(fetch).mockResolvedValue({
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       status: 401,
       text: () => Promise.resolve("Unauthorized"),
-    } as Response);
+    });
 
     const { listServices } = await loadModule();
     await expect(
@@ -66,25 +71,17 @@ describe("listServices", () => {
   });
 
   it("throws when API key is missing", async () => {
-    vi.resetModules();
-    process.env.API_REGISTRY_SERVICE_URL = "https://api-registry.test.local";
-    delete process.env.API_REGISTRY_SERVICE_API_KEY;
+    delete process.env.API_SERVICE_API_KEY;
 
-    const { listServices } = await import(
-      "../../src/lib/api-registry-client.js"
-    );
+    const { listServices } = await loadModule();
     await expect(
       listServices({ orgId: "o", userId: "u", runId: "r" }),
-    ).rejects.toThrow(/API_REGISTRY_SERVICE_API_KEY is required/);
+    ).rejects.toThrow(/API_SERVICE_API_KEY is required/);
   });
 });
 
 describe("listServiceEndpoints", () => {
-  beforeEach(() => {
-    vi.mocked(fetch).mockReset();
-  });
-
-  it("calls GET /llm-context/{service} with correct path", async () => {
+  it("calls GET /v1/platform/services/{service} via api-service", async () => {
     const mockResponse = {
       service: "brand",
       title: "Brand Service",
@@ -95,10 +92,10 @@ describe("listServiceEndpoints", () => {
       ],
     };
 
-    vi.mocked(fetch).mockResolvedValue({
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve(mockResponse),
-    } as Response);
+    });
 
     const { listServiceEndpoints } = await loadModule();
     const result = await listServiceEndpoints("brand", {
@@ -108,7 +105,7 @@ describe("listServiceEndpoints", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://api-registry.test.local/llm-context/brand",
+      "https://api.test.local/v1/platform/services/brand",
       expect.anything(),
     );
     expect(result.service).toBe("brand");
@@ -116,11 +113,11 @@ describe("listServiceEndpoints", () => {
   });
 
   it("throws on 404 (service not found)", async () => {
-    vi.mocked(fetch).mockResolvedValue({
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       status: 404,
       text: () => Promise.resolve("Service not found"),
-    } as Response);
+    });
 
     const { listServiceEndpoints } = await loadModule();
     await expect(
@@ -130,89 +127,82 @@ describe("listServiceEndpoints", () => {
 });
 
 describe("callApi", () => {
-  beforeEach(() => {
-    vi.mocked(fetch).mockReset();
-  });
-
-  it("proxies a GET request", async () => {
-    vi.mocked(fetch).mockResolvedValue({
+  it("makes a direct GET request via api-service", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
+      status: 200,
       json: () =>
-        Promise.resolve({
-          status: 200,
-          ok: true,
-          data: { keys: [{ provider: "anthropic", maskedKey: "sk-...abc" }] },
-        }),
-    } as Response);
+        Promise.resolve({ keys: [{ provider: "anthropic", maskedKey: "sk-...abc" }] }),
+    });
 
     const { callApi } = await loadModule();
     const result = await callApi(
-      { service: "key", method: "GET", path: "/keys" },
+      { service: "key", method: "GET", path: "/v1/keys" },
       { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://api-registry.test.local/call/key",
+      "https://api.test.local/v1/keys",
       expect.objectContaining({
-        method: "POST",
+        method: "GET",
         headers: expect.objectContaining({
-          "content-type": "application/json",
-          "x-api-key": "test-registry-key",
+          Authorization: "Bearer test-api-svc-key",
         }),
       }),
     );
-
-    // Verify body contains the proxied request details
-    const callBody = JSON.parse(
-      (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string,
-    );
-    expect(callBody).toEqual({ method: "GET", path: "/keys" });
 
     expect(result.ok).toBe(true);
     expect(result.status).toBe(200);
   });
 
-  it("proxies a POST request with body", async () => {
-    vi.mocked(fetch).mockResolvedValue({
+  it("makes a direct POST request with body via api-service", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
+      status: 200,
       json: () =>
-        Promise.resolve({ status: 200, ok: true, data: { providers: ["anthropic"] } }),
-    } as Response);
+        Promise.resolve({ providers: ["anthropic"] }),
+    });
 
     const { callApi } = await loadModule();
     await callApi(
       {
         service: "key",
         method: "POST",
-        path: "/provider-requirements",
+        path: "/v1/keys/provider-requirements",
         body: { endpoints: [{ service: "chat", method: "POST", path: "/complete" }] },
       },
       { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
 
-    const callBody = JSON.parse(
-      (vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string,
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.test.local/v1/keys/provider-requirements",
+      expect.objectContaining({
+        method: "POST",
+      }),
     );
-    expect(callBody.method).toBe("POST");
-    expect(callBody.path).toBe("/provider-requirements");
-    expect(callBody.body).toEqual({
+
+    const callBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+    );
+    expect(callBody).toEqual({
       endpoints: [{ service: "chat", method: "POST", path: "/complete" }],
     });
   });
 
-  it("throws on 502 (downstream failure)", async () => {
-    vi.mocked(fetch).mockResolvedValue({
+  it("returns error status for failed requests", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       status: 502,
-      text: () => Promise.resolve("Downstream unavailable"),
-    } as Response);
+      json: () => Promise.resolve({ error: "Downstream unavailable" }),
+    });
 
     const { callApi } = await loadModule();
-    await expect(
-      callApi(
-        { service: "brand", method: "GET", path: "/brands" },
-        { orgId: "o", userId: "u", runId: "r" },
-      ),
-    ).rejects.toThrow(/returned 502/);
+    const result = await callApi(
+      { service: "brand", method: "GET", path: "/v1/brands" },
+      { orgId: "o", userId: "u", runId: "r" },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(502);
   });
 });

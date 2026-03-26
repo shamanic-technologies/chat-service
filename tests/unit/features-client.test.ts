@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const originalEnv = { ...process.env };
 
 beforeEach(() => {
-  process.env.FEATURES_SERVICE_API_KEY = "test-feat-key";
-  process.env.FEATURES_SERVICE_URL = "https://features.test.local";
+  process.env.API_SERVICE_API_KEY = "test-api-svc-key";
+  process.env.API_SERVICE_URL = "https://api.test.local";
   vi.stubGlobal("fetch", vi.fn());
 });
 
@@ -35,7 +35,7 @@ const sampleFeature = {
 };
 
 describe("createFeature", () => {
-  it("sends POST /features with correct URL, headers, and body", async () => {
+  it("sends POST /v1/features via api-service", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       status: 201,
@@ -50,12 +50,12 @@ describe("createFeature", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://features.test.local/features",
+      "https://api.test.local/v1/features",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
           "Content-Type": "application/json",
-          "x-api-key": "test-feat-key",
+          Authorization: "Bearer test-api-svc-key",
           "x-org-id": "org-1",
           "x-user-id": "user-1",
           "x-run-id": "run-1",
@@ -118,19 +118,19 @@ describe("createFeature", () => {
     ).rejects.toThrow(/returned 422/);
   });
 
-  it("throws when FEATURES_SERVICE_API_KEY is not set", async () => {
-    delete process.env.FEATURES_SERVICE_API_KEY;
+  it("throws when API_SERVICE_API_KEY is not set", async () => {
+    delete process.env.API_SERVICE_API_KEY;
 
     const { createFeature } = await loadModule();
     await expect(
       createFeature(sampleFeature, { orgId: "o", userId: "u", runId: "r" }),
-    ).rejects.toThrow(/FEATURES_SERVICE_API_KEY is required/);
+    ).rejects.toThrow(/API_SERVICE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("uses default FEATURES_SERVICE_URL when not set", async () => {
-    delete process.env.FEATURES_SERVICE_URL;
+  it("uses default API_SERVICE_URL when not set", async () => {
+    delete process.env.API_SERVICE_URL;
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       status: 201,
@@ -141,7 +141,7 @@ describe("createFeature", () => {
     await createFeature(sampleFeature, { orgId: "o", userId: "u", runId: "r" });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://features.distribute.you/features",
+      "https://api.distribute.you/v1/features",
       expect.anything(),
     );
   });
@@ -163,11 +163,11 @@ describe("updateFeature", () => {
     );
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://features.test.local/features/cold-email-outreach",
+      "https://api.test.local/v1/features/cold-email-outreach",
       expect.objectContaining({
         method: "PUT",
         headers: expect.objectContaining({
-          "x-api-key": "test-feat-key",
+          Authorization: "Bearer test-api-svc-key",
           "x-org-id": "org-1",
         }),
       }),
@@ -263,7 +263,7 @@ describe("updateFeature", () => {
 });
 
 describe("listFeatures", () => {
-  it("sends GET /features with query params", async () => {
+  it("sends GET /v1/features with query params via api-service", async () => {
     const mockFeatures = [sampleFeature];
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
@@ -277,14 +277,14 @@ describe("listFeatures", () => {
     );
 
     const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(calledUrl).toContain("/features?");
+    expect(calledUrl).toContain("/v1/features?");
     expect(calledUrl).toContain("category=sales");
     expect(calledUrl).toContain("channel=email");
     expect(calledUrl).toContain("audienceType=cold-outreach");
     expect(result).toEqual(mockFeatures);
   });
 
-  it("sends GET /features without query params when no filters", async () => {
+  it("sends GET /v1/features without query params when no filters", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve([]),
@@ -294,7 +294,7 @@ describe("listFeatures", () => {
     await listFeatures({}, { orgId: "o", userId: "u", runId: "r" });
 
     const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(calledUrl).toBe("https://features.test.local/features");
+    expect(calledUrl).toBe("https://api.test.local/v1/features");
   });
 
   it("throws on HTTP error", async () => {
@@ -312,7 +312,7 @@ describe("listFeatures", () => {
 });
 
 describe("getFeature", () => {
-  it("sends GET /features/:slug with correct URL and headers", async () => {
+  it("sends GET /v1/features/:slug via api-service", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve(sampleFeature),
@@ -326,11 +326,11 @@ describe("getFeature", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://features.test.local/features/cold-email-outreach",
+      "https://api.test.local/v1/features/cold-email-outreach",
       expect.objectContaining({
         method: "GET",
         headers: expect.objectContaining({
-          "x-api-key": "test-feat-key",
+          Authorization: "Bearer test-api-svc-key",
           "x-org-id": "org-1",
         }),
       }),
@@ -366,7 +366,7 @@ describe("getFeature", () => {
 });
 
 describe("getFeatureInputs", () => {
-  it("sends GET /features/:slug/inputs", async () => {
+  it("sends GET /v1/features/:slug/inputs via api-service", async () => {
     const mockResponse = {
       slug: "cold-email-outreach",
       name: "Cold Email Outreach",
@@ -385,7 +385,7 @@ describe("getFeatureInputs", () => {
     });
 
     const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(calledUrl).toBe("https://features.test.local/features/cold-email-outreach/inputs");
+    expect(calledUrl).toBe("https://api.test.local/v1/features/cold-email-outreach/inputs");
     expect(result.slug).toBe("cold-email-outreach");
     expect(result.inputs).toHaveLength(1);
   });
@@ -405,7 +405,7 @@ describe("getFeatureInputs", () => {
 });
 
 describe("prefillFeature", () => {
-  it("sends POST /features/:slug/prefill?format=text", async () => {
+  it("sends POST /v1/features/:slug/prefill via api-service", async () => {
     const mockResponse = {
       slug: "cold-email-outreach",
       brandId: "brand-1",
@@ -425,7 +425,7 @@ describe("prefillFeature", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://features.test.local/features/cold-email-outreach/prefill?format=text",
+      "https://api.test.local/v1/features/cold-email-outreach/prefill",
       expect.objectContaining({ method: "POST" }),
     );
     expect(result.prefilled.targetCompanyUrl).toBe("https://acme.com");
@@ -447,7 +447,7 @@ describe("prefillFeature", () => {
 });
 
 describe("getFeatureStats", () => {
-  it("sends GET /features/:slug/stats with filters", async () => {
+  it("sends GET /v1/features/:slug/stats with filters via api-service", async () => {
     const mockResponse = {
       featureSlug: "cold-email-outreach",
       systemStats: { totalCostInUsdCents: 150, completedRuns: 10, activeCampaigns: 2, firstRunAt: null, lastRunAt: null },
@@ -466,14 +466,14 @@ describe("getFeatureStats", () => {
     );
 
     const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(calledUrl).toContain("/features/cold-email-outreach/stats?");
+    expect(calledUrl).toContain("/v1/features/cold-email-outreach/stats?");
     expect(calledUrl).toContain("groupBy=brandId");
     expect(calledUrl).toContain("brandId=brand-1");
     expect(result.systemStats.completedRuns).toBe(10);
     expect(result.stats?.emailsSent).toBe(42);
   });
 
-  it("sends GET /features/:slug/stats without filters", async () => {
+  it("sends GET /v1/features/:slug/stats without filters", async () => {
     const mockResponse = {
       featureSlug: "cold-email-outreach",
       systemStats: { totalCostInUsdCents: 0, completedRuns: 0, activeCampaigns: 0, firstRunAt: null, lastRunAt: null },
@@ -487,7 +487,7 @@ describe("getFeatureStats", () => {
     await getFeatureStats("cold-email-outreach", {}, { orgId: "o", userId: "u", runId: "r" });
 
     const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(calledUrl).toBe("https://features.test.local/features/cold-email-outreach/stats");
+    expect(calledUrl).toBe("https://api.test.local/v1/features/cold-email-outreach/stats");
   });
 
   it("throws on HTTP error", async () => {

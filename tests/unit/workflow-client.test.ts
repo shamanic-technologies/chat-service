@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const originalEnv = { ...process.env };
 
 beforeEach(() => {
-  process.env.WORKFLOW_SERVICE_API_KEY = "test-wf-key";
-  process.env.WORKFLOW_SERVICE_URL = "https://workflow.test.local";
+  process.env.API_SERVICE_API_KEY = "test-api-svc-key";
+  process.env.API_SERVICE_URL = "https://api.test.local";
   vi.stubGlobal("fetch", vi.fn());
 });
 
@@ -19,7 +19,7 @@ async function loadModule() {
 }
 
 describe("updateWorkflow", () => {
-  it("sends PUT with correct URL, headers, and body", async () => {
+  it("sends PUT with correct URL, headers, and body via api-service", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ id: "wf-123", description: "Updated" }),
@@ -33,12 +33,12 @@ describe("updateWorkflow", () => {
     );
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://workflow.test.local/workflows/wf-123",
+      "https://api.test.local/v1/workflows/wf-123",
       expect.objectContaining({
         method: "PUT",
         headers: expect.objectContaining({
           "Content-Type": "application/json",
-          "x-api-key": "test-wf-key",
+          Authorization: "Bearer test-api-svc-key",
           "x-org-id": "org-1",
           "x-user-id": "user-1",
           "x-run-id": "run-1",
@@ -89,7 +89,7 @@ describe("updateWorkflow", () => {
     ).rejects.toThrow(/sales-email-v2.*wf-existing/);
   });
 
-  it("always sends x-run-id header (regression: workflow-service 400)", async () => {
+  it("always sends identity headers", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ id: "wf-123" }),
@@ -106,7 +106,7 @@ describe("updateWorkflow", () => {
     expect(callHeaders["x-run-id"]).toBe("run-1");
     expect(callHeaders["x-org-id"]).toBe("org-1");
     expect(callHeaders["x-user-id"]).toBe("user-1");
-    expect(callHeaders["x-api-key"]).toBe("test-wf-key");
+    expect(callHeaders["Authorization"]).toBe("Bearer test-api-svc-key");
   });
 
   it("forwards tracking headers", async () => {
@@ -167,31 +167,28 @@ describe("updateWorkflow", () => {
     );
 
     const sentBody = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
-    // Null fields stripped
     expect(sentBody.dag.nodes[0]).toEqual({ id: "step-1", type: "http.call", retries: 0 });
     expect(sentBody.dag.nodes[0].config).toBeUndefined();
     expect(sentBody.dag.nodes[0].inputMapping).toBeUndefined();
-    // Nodes without config/inputMapping stay clean
     expect(sentBody.dag.nodes[1]).toEqual({ id: "step-2", type: "condition" });
-    // Non-null fields preserved
     expect(sentBody.dag.nodes[2].config).toEqual({ path: "/send" });
     expect(sentBody.dag.nodes[2].inputMapping).toEqual({ "body.to": "$ref:step-1.output.email" });
   });
 
-  it("throws when WORKFLOW_SERVICE_API_KEY is not set", async () => {
-    delete process.env.WORKFLOW_SERVICE_API_KEY;
+  it("throws when API_SERVICE_API_KEY is not set", async () => {
+    delete process.env.API_SERVICE_API_KEY;
 
     const { updateWorkflow } = await loadModule();
     await expect(
       updateWorkflow("wf-1", { description: "x" }, { orgId: "o", userId: "u", runId: "r" }),
-    ).rejects.toThrow(/WORKFLOW_SERVICE_API_KEY is required/);
+    ).rejects.toThrow(/API_SERVICE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
   });
 });
 
 describe("validateWorkflow", () => {
-  it("sends POST with correct URL and headers", async () => {
+  it("sends POST with correct URL and headers via api-service", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ valid: true, errors: [] }),
@@ -205,11 +202,11 @@ describe("validateWorkflow", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://workflow.test.local/workflows/wf-456/validate",
+      "https://api.test.local/v1/workflows/wf-456/validate",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
-          "x-api-key": "test-wf-key",
+          Authorization: "Bearer test-api-svc-key",
           "x-org-id": "org-1",
           "x-user-id": "user-1",
           "x-run-id": "run-1",
@@ -232,8 +229,8 @@ describe("validateWorkflow", () => {
     ).rejects.toThrow(/returned 500/);
   });
 
-  it("uses default WORKFLOW_SERVICE_URL when not set", async () => {
-    delete process.env.WORKFLOW_SERVICE_URL;
+  it("uses default API_SERVICE_URL when not set", async () => {
+    delete process.env.API_SERVICE_URL;
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ valid: true }),
@@ -243,14 +240,14 @@ describe("validateWorkflow", () => {
     await validateWorkflow("wf-1", { orgId: "o", userId: "u", runId: "r" });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://workflow.mcpfactory.org/workflows/wf-1/validate",
+      "https://api.distribute.you/v1/workflows/wf-1/validate",
       expect.anything(),
     );
   });
 });
 
 describe("getWorkflow", () => {
-  it("sends GET with correct URL and headers", async () => {
+  it("sends GET with correct URL and headers via api-service", async () => {
     const mockWorkflow = { id: "wf-1", dag: { nodes: [], edges: [] } };
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
@@ -261,11 +258,11 @@ describe("getWorkflow", () => {
     const result = await getWorkflow("wf-1", { orgId: "org-1", userId: "user-1", runId: "run-1" });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://workflow.test.local/workflows/wf-1",
+      "https://api.test.local/v1/workflows/wf-1",
       expect.objectContaining({
         method: "GET",
         headers: expect.objectContaining({
-          "x-api-key": "test-wf-key",
+          Authorization: "Bearer test-api-svc-key",
           "x-org-id": "org-1",
         }),
       }),
@@ -303,8 +300,8 @@ describe("updateWorkflowNodeConfig", () => {
     const updatedWorkflow = { ...existingWorkflow, updatedAt: "2026-03-18T00:00:00Z" };
 
     (fetch as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(existingWorkflow) }) // GET
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(updatedWorkflow) }); // PUT
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(existingWorkflow) })
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(updatedWorkflow) });
 
     const { updateWorkflowNodeConfig } = await loadModule();
     const result = await updateWorkflowNodeConfig(
@@ -314,17 +311,13 @@ describe("updateWorkflowNodeConfig", () => {
       { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
 
-    // Verify GET was called first
-    expect((fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("https://workflow.test.local/workflows/wf-1");
+    expect((fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("https://api.test.local/v1/workflows/wf-1");
     expect((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe("GET");
 
-    // Verify PUT was called with merged config
     const putBody = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[1][1].body);
     expect(putBody.dag.nodes[0].config.body.type).toBe("cold-email-v3");
-    // Preserved other config keys
     expect(putBody.dag.nodes[0].config.path).toBe("/generate");
     expect(putBody.dag.nodes[0].config.service).toBe("content-generation");
-    // Other nodes unchanged
     expect(putBody.dag.nodes[1].id).toBe("email-send");
 
     expect(result).toEqual({ workflow: updatedWorkflow, outcome: "updated" });
@@ -342,8 +335,8 @@ describe("updateWorkflowNodeConfig", () => {
     const forkedWorkflow = { id: "wf-forked", name: "wf-1-custom", forkedFrom: "wf-1", dag: existingWorkflow.dag };
 
     (fetch as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(existingWorkflow) }) // GET
-      .mockResolvedValueOnce({ ok: true, status: 201, json: () => Promise.resolve(forkedWorkflow) }); // PUT (fork)
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(existingWorkflow) })
+      .mockResolvedValueOnce({ ok: true, status: 201, json: () => Promise.resolve(forkedWorkflow) });
 
     const { updateWorkflowNodeConfig } = await loadModule();
     const result = await updateWorkflowNodeConfig(
@@ -397,7 +390,7 @@ describe("updateWorkflowNodeConfig", () => {
 });
 
 describe("generateWorkflow", () => {
-  it("sends POST /workflows/generate with description and hints", async () => {
+  it("sends POST /v1/workflows/generate via api-service", async () => {
     const mockResponse = {
       workflow: { id: "wf-new", name: "sales-email-cold-outreach-nova" },
       dag: { nodes: [{ id: "step-1", type: "http.call" }], edges: [] },
@@ -416,17 +409,18 @@ describe("generateWorkflow", () => {
     const result = await generateWorkflow(
       {
         description: "Create a cold email workflow that fetches a lead, generates an email, and sends it",
+        featureSlug: "cold-email",
         hints: { services: ["lead", "content-generation", "email-gateway"] },
       },
       { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://workflow.test.local/workflows/generate",
+      "https://api.test.local/v1/workflows/generate",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
-          "x-api-key": "test-wf-key",
+          Authorization: "Bearer test-api-svc-key",
           "x-org-id": "org-1",
         }),
       }),
@@ -449,7 +443,7 @@ describe("generateWorkflow", () => {
     const { generateWorkflow } = await loadModule();
     await expect(
       generateWorkflow(
-        { description: "bad workflow" },
+        { description: "bad workflow", featureSlug: "test" },
         { orgId: "o", userId: "u", runId: "r" },
       ),
     ).rejects.toThrow(/returned 422/);
@@ -463,7 +457,7 @@ describe("generateWorkflow", () => {
 
     const { generateWorkflow } = await loadModule();
     await generateWorkflow(
-      { description: "Simple workflow that sends an email" },
+      { description: "Simple workflow that sends an email", featureSlug: "email" },
       { orgId: "o", userId: "u", runId: "r" },
     );
 
@@ -474,7 +468,7 @@ describe("generateWorkflow", () => {
 });
 
 describe("getWorkflowRequiredProviders", () => {
-  it("sends GET to /workflows/{id}/required-providers", async () => {
+  it("sends GET to /v1/workflows/{id}/key-status via api-service", async () => {
     const mockProviders = { providers: ["stripe", "anthropic"] };
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
@@ -489,11 +483,11 @@ describe("getWorkflowRequiredProviders", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://workflow.test.local/workflows/wf-1/required-providers",
+      "https://api.test.local/v1/workflows/wf-1/key-status",
       expect.objectContaining({
         method: "GET",
         headers: expect.objectContaining({
-          "x-api-key": "test-wf-key",
+          Authorization: "Bearer test-api-svc-key",
           "x-org-id": "org-1",
         }),
       }),
@@ -516,7 +510,7 @@ describe("getWorkflowRequiredProviders", () => {
 });
 
 describe("listWorkflows", () => {
-  it("sends GET /workflows with query params", async () => {
+  it("sends GET /v1/workflows with query params via api-service", async () => {
     const mockWorkflows = [{ id: "wf-1", name: "sales-email" }];
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
@@ -530,7 +524,7 @@ describe("listWorkflows", () => {
     );
 
     const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(calledUrl).toContain("/workflows?");
+    expect(calledUrl).toContain("/v1/workflows?");
     expect(calledUrl).toContain("category=sales");
     expect(calledUrl).toContain("channel=email");
     expect(calledUrl).toContain("tag=cold");
@@ -539,7 +533,7 @@ describe("listWorkflows", () => {
     expect(result).toEqual(mockWorkflows);
   });
 
-  it("sends GET /workflows without query params when no filters", async () => {
+  it("sends GET /v1/workflows without query params when no filters", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve([]),
@@ -549,7 +543,7 @@ describe("listWorkflows", () => {
     await listWorkflows({}, { orgId: "o", userId: "u", runId: "r" });
 
     const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(calledUrl).toBe("https://workflow.test.local/workflows");
+    expect(calledUrl).toBe("https://api.test.local/v1/workflows");
   });
 
   it("throws on HTTP error", async () => {
