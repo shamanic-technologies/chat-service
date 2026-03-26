@@ -37,9 +37,23 @@ describe("getCampaignFeatureInputs", () => {
 
     expect(result).toEqual(featureInputs);
     expect(fetch).toHaveBeenCalledWith(
-      "https://api.test.local/campaign/campaigns/c1",
+      "https://api.test.local/v1/campaigns/c1",
       expect.objectContaining({ method: "GET" }),
     );
+  });
+
+  it("calls the correct api-service v1 route (regression: was /campaign/campaigns/)", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ campaign: { id: "reg1", featureInputs: { x: 1 } } }),
+    });
+
+    const { getCampaignFeatureInputs } = await loadModule();
+    await getCampaignFeatureInputs("reg1", params);
+
+    const url = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(url).toBe("https://api.test.local/v1/campaigns/reg1");
+    expect(url).not.toContain("/campaign/campaigns/");
   });
 
   it("returns null when featureInputs is null in response", async () => {
