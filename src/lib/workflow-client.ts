@@ -1,35 +1,6 @@
-const WORKFLOW_SERVICE_URL =
-  process.env.WORKFLOW_SERVICE_URL || "https://workflow.mcpfactory.org";
-const WORKFLOW_SERVICE_API_KEY = process.env.WORKFLOW_SERVICE_API_KEY;
+import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
 
-export interface WorkflowCallParams {
-  orgId: string;
-  userId: string;
-  runId: string;
-  trackingHeaders?: Record<string, string>;
-}
-
-function buildHeaders(params: WorkflowCallParams): Record<string, string> {
-  if (!WORKFLOW_SERVICE_API_KEY) {
-    throw new Error(
-      "[workflow-client] WORKFLOW_SERVICE_API_KEY is required",
-    );
-  }
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "x-api-key": WORKFLOW_SERVICE_API_KEY,
-    "x-org-id": params.orgId,
-    "x-user-id": params.userId,
-    "x-run-id": params.runId,
-  };
-  if (params.trackingHeaders) {
-    for (const [k, v] of Object.entries(params.trackingHeaders)) {
-      if (v) headers[k] = v;
-    }
-  }
-  return headers;
-}
+export type WorkflowCallParams = ApiCallParams;
 
 export interface WorkflowResponse {
   id: string;
@@ -65,16 +36,16 @@ export async function getWorkflow(
   workflowId: string,
   params: WorkflowCallParams,
 ): Promise<WorkflowResponse> {
-  const url = `${WORKFLOW_SERVICE_URL}/workflows/${encodeURIComponent(workflowId)}`;
-  const res = await fetch(url, {
-    method: "GET",
-    headers: buildHeaders(params),
-  });
+  const res = await apiServiceFetch(
+    `/v1/workflows/${encodeURIComponent(workflowId)}`,
+    "GET",
+    params,
+  );
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[workflow-client] GET /workflows/${workflowId} returned ${res.status}: ${text}`,
+      `[workflow-client] GET /v1/workflows/${workflowId} returned ${res.status}: ${text}`,
     );
   }
 
@@ -89,7 +60,7 @@ export interface UpdateWorkflowBody {
 }
 
 /**
- * Strip null values from DAG nodes before sending to workflow-service.
+ * Strip null values from DAG nodes before sending.
  * Gemini sometimes sends `config: null` or `inputMapping: null` instead
  * of omitting the field — workflow-service Zod schema rejects nulls.
  */
@@ -112,12 +83,12 @@ export async function updateWorkflow(
   params: WorkflowCallParams,
 ): Promise<UpdateWorkflowResult> {
   const sanitized = body.dag ? { ...body, dag: sanitizeDag(body.dag) } : body;
-  const url = `${WORKFLOW_SERVICE_URL}/workflows/${encodeURIComponent(workflowId)}`;
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: buildHeaders(params),
-    body: JSON.stringify(sanitized),
-  });
+  const res = await apiServiceFetch(
+    `/v1/workflows/${encodeURIComponent(workflowId)}`,
+    "PUT",
+    params,
+    sanitized,
+  );
 
   if (res.status === 409) {
     const conflict = (await res.json()) as WorkflowConflictError;
@@ -129,7 +100,7 @@ export async function updateWorkflow(
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[workflow-client] PUT /workflows/${workflowId} returned ${res.status}: ${text}`,
+      `[workflow-client] PUT /v1/workflows/${workflowId} returned ${res.status}: ${text}`,
     );
   }
 
@@ -144,14 +115,12 @@ export async function updateWorkflowNodeConfig(
   configUpdates: Record<string, unknown>,
   params: WorkflowCallParams,
 ): Promise<UpdateWorkflowResult> {
-  // 1. Fetch the current workflow to get the full DAG
   const workflow = await getWorkflow(workflowId, params);
 
   if (!workflow.dag) {
     throw new Error(`[workflow-client] Workflow ${workflowId} has no DAG`);
   }
 
-  // 2. Find the target node
   const nodeIndex = workflow.dag.nodes.findIndex((n) => n.id === nodeId);
   if (nodeIndex === -1) {
     throw new Error(
@@ -159,11 +128,9 @@ export async function updateWorkflowNodeConfig(
     );
   }
 
-  // 3. Merge config updates into the node's existing config
   const node = workflow.dag.nodes[nodeIndex];
   node.config = { ...node.config, ...configUpdates };
 
-  // 4. PUT the updated DAG back
   return updateWorkflow(workflowId, { dag: workflow.dag }, params);
 }
 
@@ -187,17 +154,12 @@ export async function generateWorkflow(
   body: GenerateWorkflowBody,
   params: WorkflowCallParams,
 ): Promise<unknown> {
-  const url = `${WORKFLOW_SERVICE_URL}/workflows/generate`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: buildHeaders(params),
-    body: JSON.stringify(body),
-  });
+  const res = await apiServiceFetch("/v1/workflows/generate", "POST", params, body);
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[workflow-client] POST /workflows/generate returned ${res.status}: ${text}`,
+      `[workflow-client] POST /v1/workflows/generate returned ${res.status}: ${text}`,
     );
   }
 
@@ -208,16 +170,16 @@ export async function getWorkflowRequiredProviders(
   workflowId: string,
   params: WorkflowCallParams,
 ): Promise<unknown> {
-  const url = `${WORKFLOW_SERVICE_URL}/workflows/${encodeURIComponent(workflowId)}/required-providers`;
-  const res = await fetch(url, {
-    method: "GET",
-    headers: buildHeaders(params),
-  });
+  const res = await apiServiceFetch(
+    `/v1/workflows/${encodeURIComponent(workflowId)}/key-status`,
+    "GET",
+    params,
+  );
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[workflow-client] GET /workflows/${workflowId}/required-providers returned ${res.status}: ${text}`,
+      `[workflow-client] GET /v1/workflows/${workflowId}/key-status returned ${res.status}: ${text}`,
     );
   }
 
@@ -252,16 +214,16 @@ export async function listWorkflows(
   if (filters.campaignId) query.set("campaignId", filters.campaignId);
 
   const qs = query.toString();
-  const url = `${WORKFLOW_SERVICE_URL}/workflows${qs ? `?${qs}` : ""}`;
-  const res = await fetch(url, {
-    method: "GET",
-    headers: buildHeaders(params),
-  });
+  const res = await apiServiceFetch(
+    `/v1/workflows${qs ? `?${qs}` : ""}`,
+    "GET",
+    params,
+  );
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[workflow-client] GET /workflows returned ${res.status}: ${text}`,
+      `[workflow-client] GET /v1/workflows returned ${res.status}: ${text}`,
     );
   }
 
@@ -272,16 +234,16 @@ export async function validateWorkflow(
   workflowId: string,
   params: WorkflowCallParams,
 ): Promise<unknown> {
-  const url = `${WORKFLOW_SERVICE_URL}/workflows/${encodeURIComponent(workflowId)}/validate`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: buildHeaders(params),
-  });
+  const res = await apiServiceFetch(
+    `/v1/workflows/${encodeURIComponent(workflowId)}/validate`,
+    "POST",
+    params,
+  );
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[workflow-client] POST /workflows/${workflowId}/validate returned ${res.status}: ${text}`,
+      `[workflow-client] POST /v1/workflows/${workflowId}/validate returned ${res.status}: ${text}`,
     );
   }
 

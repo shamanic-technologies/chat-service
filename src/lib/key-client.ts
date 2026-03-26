@@ -1,3 +1,9 @@
+import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
+
+// ---------------------------------------------------------------------------
+// resolveKey — stays direct to key-service (infrastructure, not client-facing)
+// ---------------------------------------------------------------------------
+
 const KEY_SERVICE_URL =
   process.env.KEY_SERVICE_URL || "https://key.mcpfactory.org";
 const KEY_SERVICE_API_KEY = process.env.KEY_SERVICE_API_KEY;
@@ -74,7 +80,7 @@ export async function resolveKey(
 }
 
 // ---------------------------------------------------------------------------
-// Read-only key-service tools (exposed to LLM)
+// Read-only key tools (exposed to LLM) — routed via api-service
 // ---------------------------------------------------------------------------
 
 export interface KeyCallParams {
@@ -94,26 +100,10 @@ export interface OrgKey {
 export async function listOrgKeys(
   params: KeyCallParams,
 ): Promise<{ keys: OrgKey[] }> {
-  if (!KEY_SERVICE_API_KEY) {
-    throw new Error("[key-client] KEY_SERVICE_API_KEY is required");
-  }
-
-  const headers: Record<string, string> = {
-    "x-api-key": KEY_SERVICE_API_KEY,
-    "x-org-id": params.orgId,
-    "x-user-id": params.userId,
-    "x-run-id": params.runId,
-  };
-  if (params.trackingHeaders) {
-    for (const [k, v] of Object.entries(params.trackingHeaders)) {
-      if (v) headers[k] = v;
-    }
-  }
-
-  const res = await fetch(`${KEY_SERVICE_URL}/keys`, { headers });
+  const res = await apiServiceFetch("/v1/keys", "GET", params);
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`[key-client] GET /keys returned ${res.status}: ${text}`);
+    throw new Error(`[key-client] GET /v1/keys returned ${res.status}: ${text}`);
   }
   return (await res.json()) as { keys: OrgKey[] };
 }
@@ -129,30 +119,15 @@ export async function getKeySource(
   provider: string,
   params: KeyCallParams,
 ): Promise<KeySourcePreference> {
-  if (!KEY_SERVICE_API_KEY) {
-    throw new Error("[key-client] KEY_SERVICE_API_KEY is required");
-  }
-
-  const headers: Record<string, string> = {
-    "x-api-key": KEY_SERVICE_API_KEY,
-    "x-org-id": params.orgId,
-    "x-user-id": params.userId,
-    "x-run-id": params.runId,
-  };
-  if (params.trackingHeaders) {
-    for (const [k, v] of Object.entries(params.trackingHeaders)) {
-      if (v) headers[k] = v;
-    }
-  }
-
-  const res = await fetch(
-    `${KEY_SERVICE_URL}/keys/${encodeURIComponent(provider)}/source`,
-    { headers },
+  const res = await apiServiceFetch(
+    `/v1/keys/${encodeURIComponent(provider)}/source`,
+    "GET",
+    params,
   );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[key-client] GET /keys/${provider}/source returned ${res.status}: ${text}`,
+      `[key-client] GET /v1/keys/${provider}/source returned ${res.status}: ${text}`,
     );
   }
   return (await res.json()) as KeySourcePreference;
@@ -161,27 +136,11 @@ export async function getKeySource(
 export async function listKeySources(
   params: KeyCallParams,
 ): Promise<{ sources: Array<{ provider: string; keySource: "org" | "platform" }> }> {
-  if (!KEY_SERVICE_API_KEY) {
-    throw new Error("[key-client] KEY_SERVICE_API_KEY is required");
-  }
-
-  const headers: Record<string, string> = {
-    "x-api-key": KEY_SERVICE_API_KEY,
-    "x-org-id": params.orgId,
-    "x-user-id": params.userId,
-    "x-run-id": params.runId,
-  };
-  if (params.trackingHeaders) {
-    for (const [k, v] of Object.entries(params.trackingHeaders)) {
-      if (v) headers[k] = v;
-    }
-  }
-
-  const res = await fetch(`${KEY_SERVICE_URL}/keys/sources`, { headers });
+  const res = await apiServiceFetch("/v1/keys/sources", "GET", params);
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[key-client] GET /keys/sources returned ${res.status}: ${text}`,
+      `[key-client] GET /v1/keys/sources returned ${res.status}: ${text}`,
     );
   }
   return (await res.json()) as { sources: Array<{ provider: string; keySource: "org" | "platform" }> };
@@ -207,34 +166,17 @@ export async function checkProviderRequirements(
   endpoints: ProviderRequirementsEndpoint[],
   params: KeyCallParams,
 ): Promise<ProviderRequirementsResult> {
-  if (!KEY_SERVICE_API_KEY) {
-    throw new Error("[key-client] KEY_SERVICE_API_KEY is required");
-  }
-
-  const headers: Record<string, string> = {
-    "x-api-key": KEY_SERVICE_API_KEY,
-    "x-org-id": params.orgId,
-    "x-user-id": params.userId,
-    "x-run-id": params.runId,
-    "content-type": "application/json",
-  };
-  if (params.trackingHeaders) {
-    for (const [k, v] of Object.entries(params.trackingHeaders)) {
-      if (v) headers[k] = v;
-    }
-  }
-
-  const res = await fetch(`${KEY_SERVICE_URL}/provider-requirements`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ endpoints }),
-  });
+  const res = await apiServiceFetch(
+    "/v1/keys/provider-requirements",
+    "POST",
+    params,
+    { endpoints },
+  );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[key-client] POST /provider-requirements returned ${res.status}: ${text}`,
+      `[key-client] POST /v1/keys/provider-requirements returned ${res.status}: ${text}`,
     );
   }
   return (await res.json()) as ProviderRequirementsResult;
 }
-

@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const originalEnv = { ...process.env };
 
 beforeEach(() => {
-  process.env.CONTENT_GENERATION_SERVICE_API_KEY = "test-cg-key";
-  process.env.CONTENT_GENERATION_SERVICE_URL = "https://content-generation.test.local";
+  process.env.API_SERVICE_API_KEY = "test-api-svc-key";
+  process.env.API_SERVICE_URL = "https://api.test.local";
   vi.stubGlobal("fetch", vi.fn());
 });
 
@@ -19,7 +19,7 @@ async function loadModule() {
 }
 
 describe("getPromptTemplate", () => {
-  it("sends GET with correct URL, headers, and query param", async () => {
+  it("sends GET via api-service with correct URL and headers", async () => {
     const mockPrompt = {
       id: "p-1",
       type: "cold-email",
@@ -42,11 +42,11 @@ describe("getPromptTemplate", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://content-generation.test.local/prompts?type=cold-email",
+      "https://api.test.local/v1/prompts?type=cold-email",
       expect.objectContaining({
         method: "GET",
         headers: expect.objectContaining({
-          "x-api-key": "test-cg-key",
+          Authorization: "Bearer test-api-svc-key",
           "x-org-id": "org-1",
           "x-user-id": "user-1",
           "x-run-id": "run-1",
@@ -70,7 +70,7 @@ describe("getPromptTemplate", () => {
     });
 
     const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(calledUrl).toBe("https://content-generation.test.local/prompts?type=cold%20email");
+    expect(calledUrl).toBe("https://api.test.local/v1/prompts?type=cold%20email");
   });
 
   it("forwards tracking headers", async () => {
@@ -104,19 +104,19 @@ describe("getPromptTemplate", () => {
     ).rejects.toThrow(/returned 404/);
   });
 
-  it("throws when CONTENT_GENERATION_SERVICE_API_KEY is not set", async () => {
-    delete process.env.CONTENT_GENERATION_SERVICE_API_KEY;
+  it("throws when API_SERVICE_API_KEY is not set", async () => {
+    delete process.env.API_SERVICE_API_KEY;
 
     const { getPromptTemplate } = await loadModule();
     await expect(
       getPromptTemplate("cold-email", { orgId: "o", userId: "u", runId: "r" }),
-    ).rejects.toThrow(/CONTENT_GENERATION_SERVICE_API_KEY is required/);
+    ).rejects.toThrow(/API_SERVICE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("uses default URL when CONTENT_GENERATION_SERVICE_URL is not set", async () => {
-    delete process.env.CONTENT_GENERATION_SERVICE_URL;
+  it("uses default URL when API_SERVICE_URL is not set", async () => {
+    delete process.env.API_SERVICE_URL;
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ id: "p-1", type: "t", prompt: "", variables: [], createdAt: "", updatedAt: "" }),
@@ -126,14 +126,14 @@ describe("getPromptTemplate", () => {
     await getPromptTemplate("cold-email", { orgId: "o", userId: "u", runId: "r" });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://content-generation.distribute.you/prompts?type=cold-email",
+      "https://api.distribute.you/v1/prompts?type=cold-email",
       expect.anything(),
     );
   });
 });
 
 describe("updatePromptTemplate", () => {
-  it("sends PUT with correct URL, headers, and body", async () => {
+  it("sends PUT via api-service with correct URL, headers, and body", async () => {
     const mockResult = {
       id: "p-2",
       type: "cold-email-v2",
@@ -159,12 +159,12 @@ describe("updatePromptTemplate", () => {
     );
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://content-generation.test.local/prompts",
+      "https://api.test.local/v1/prompts",
       expect.objectContaining({
         method: "PUT",
         headers: expect.objectContaining({
           "Content-Type": "application/json",
-          "x-api-key": "test-cg-key",
+          Authorization: "Bearer test-api-svc-key",
           "x-org-id": "org-1",
           "x-user-id": "user-1",
           "x-run-id": "run-1",
@@ -211,8 +211,8 @@ describe("updatePromptTemplate", () => {
     ).rejects.toThrow(/returned 400/);
   });
 
-  it("throws when CONTENT_GENERATION_SERVICE_API_KEY is not set", async () => {
-    delete process.env.CONTENT_GENERATION_SERVICE_API_KEY;
+  it("throws when API_SERVICE_API_KEY is not set", async () => {
+    delete process.env.API_SERVICE_API_KEY;
 
     const { updatePromptTemplate } = await loadModule();
     await expect(
@@ -220,7 +220,7 @@ describe("updatePromptTemplate", () => {
         { sourceType: "cold-email", prompt: "test", variables: [] },
         { orgId: "o", userId: "u", runId: "r" },
       ),
-    ).rejects.toThrow(/CONTENT_GENERATION_SERVICE_API_KEY is required/);
+    ).rejects.toThrow(/API_SERVICE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
   });

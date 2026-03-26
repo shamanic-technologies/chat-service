@@ -3,8 +3,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const originalEnv = { ...process.env };
 
 beforeEach(() => {
+  // resolveKey still uses key-service directly
   process.env.KEY_SERVICE_API_KEY = "test-key-svc-key";
   process.env.KEY_SERVICE_URL = "https://key.test.local";
+  // Read-only tools now route through api-service
+  process.env.API_SERVICE_API_KEY = "test-api-svc-key";
+  process.env.API_SERVICE_URL = "https://api.test.local";
   vi.stubGlobal("fetch", vi.fn());
 });
 
@@ -17,6 +21,10 @@ async function loadModule() {
   vi.resetModules();
   return import("../../src/lib/key-client.js");
 }
+
+// ---------------------------------------------------------------------------
+// resolveKey — still direct to key-service
+// ---------------------------------------------------------------------------
 
 describe("resolveKey", () => {
   it("sends GET with orgId and userId as headers (not query params)", async () => {
@@ -204,11 +212,11 @@ describe("resolveKey", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Read-only key-service tools
+// Read-only key tools — now routed via api-service
 // ---------------------------------------------------------------------------
 
 describe("listOrgKeys", () => {
-  it("calls GET /keys with identity headers", async () => {
+  it("calls GET /v1/keys via api-service", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () =>
@@ -227,10 +235,10 @@ describe("listOrgKeys", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/keys",
+      "https://api.test.local/v1/keys",
       expect.objectContaining({
         headers: expect.objectContaining({
-          "x-api-key": "test-key-svc-key",
+          Authorization: "Bearer test-api-svc-key",
           "x-org-id": "org-1",
         }),
       }),
@@ -267,7 +275,7 @@ describe("listOrgKeys", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/keys",
+      "https://api.test.local/v1/keys",
       expect.objectContaining({
         headers: expect.objectContaining({
           "x-campaign-id": "camp-123",
@@ -278,7 +286,7 @@ describe("listOrgKeys", () => {
 });
 
 describe("getKeySource", () => {
-  it("calls GET /keys/{provider}/source", async () => {
+  it("calls GET /v1/keys/{provider}/source via api-service", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () =>
@@ -298,7 +306,7 @@ describe("getKeySource", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/keys/anthropic/source",
+      "https://api.test.local/v1/keys/anthropic/source",
       expect.anything(),
     );
     expect(result.keySource).toBe("org");
@@ -325,14 +333,14 @@ describe("getKeySource", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/keys/my%2Fprovider/source",
+      "https://api.test.local/v1/keys/my%2Fprovider/source",
       expect.anything(),
     );
   });
 });
 
 describe("listKeySources", () => {
-  it("calls GET /keys/sources and returns source preferences", async () => {
+  it("calls GET /v1/keys/sources via api-service", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () =>
@@ -352,7 +360,7 @@ describe("listKeySources", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/keys/sources",
+      "https://api.test.local/v1/keys/sources",
       expect.anything(),
     );
     expect(result.sources).toHaveLength(2);
@@ -360,7 +368,7 @@ describe("listKeySources", () => {
 });
 
 describe("checkProviderRequirements", () => {
-  it("calls POST /provider-requirements with endpoints", async () => {
+  it("calls POST /v1/keys/provider-requirements via api-service", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () =>
@@ -379,11 +387,11 @@ describe("checkProviderRequirements", () => {
     );
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://key.test.local/provider-requirements",
+      "https://api.test.local/v1/keys/provider-requirements",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
-          "content-type": "application/json",
+          Authorization: "Bearer test-api-svc-key",
         }),
       }),
     );
@@ -411,4 +419,3 @@ describe("checkProviderRequirements", () => {
     ).rejects.toThrow(/returned 400/);
   });
 });
-

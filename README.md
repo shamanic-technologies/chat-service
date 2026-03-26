@@ -283,20 +283,14 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 | Variable | Required | Description |
 |---|---|---|
-| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used to resolve the Anthropic API key per-request) |
-| `CHAT_SERVICE_DATABASE_URL` | Yes | PostgreSQL connection string |
+| `API_SERVICE_API_KEY` | Yes | Bearer token for api-service gateway — all client-facing backend calls (workflows, features, keys, prompts, api-registry) route through api-service |
+| `API_SERVICE_URL` | No | Api-service endpoint (default: `https://api.distribute.you`) |
+| `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used only for Anthropic API key decryption — infrastructure, not routed via api-service) |
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |
+| `CHAT_SERVICE_DATABASE_URL` | Yes | PostgreSQL connection string |
 | `RUNS_SERVICE_URL` | No | RunsService endpoint (default: `https://runs.mcpfactory.org`) |
 | `RUNS_SERVICE_API_KEY` | No | API key for RunsService (runs tracking disabled if unset) |
-| `WORKFLOW_SERVICE_URL` | No | Workflow-service endpoint (default: `https://workflow.mcpfactory.org`) |
-| `WORKFLOW_SERVICE_API_KEY` | No | API key for workflow-service (built-in workflow tools fail if unset) |
-| `CONTENT_GENERATION_SERVICE_URL` | No | Content-generation service endpoint (default: `https://content-generation.distribute.you`) |
-| `CONTENT_GENERATION_SERVICE_API_KEY` | No | API key for content-generation service (get_prompt_template tool fails if unset) |
-| `API_REGISTRY_SERVICE_URL` | No | API registry service endpoint (default: `https://api-registry.distribute.you`) |
-| `API_REGISTRY_SERVICE_API_KEY` | No | API key for api-registry service (list_services, list_service_endpoints, call_api tools fail if unset) |
 | `BILLING_SERVICE_URL` | No | Billing-service endpoint (default: `https://billing.mcpfactory.org`) |
-| `FEATURES_SERVICE_URL` | No | Features-service endpoint (default: `https://features.distribute.you`) |
-| `FEATURES_SERVICE_API_KEY` | No | API key for features-service (upsert_feature tool fails if unset) |
 | `BILLING_SERVICE_API_KEY` | Yes | API key for billing-service — required for credit authorization on platform-key requests |
 | `PORT` | No | Server port (default: `3002`) |
 
