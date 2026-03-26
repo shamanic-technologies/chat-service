@@ -55,7 +55,7 @@ describe("createFeature", () => {
         method: "POST",
         headers: expect.objectContaining({
           "Content-Type": "application/json",
-          Authorization: "Bearer test-api-svc-key",
+          "X-API-Key": "test-api-svc-key",
           "x-org-id": "org-1",
           "x-user-id": "user-1",
           "x-run-id": "run-1",
@@ -167,7 +167,7 @@ describe("updateFeature", () => {
       expect.objectContaining({
         method: "PUT",
         headers: expect.objectContaining({
-          Authorization: "Bearer test-api-svc-key",
+          "X-API-Key": "test-api-svc-key",
           "x-org-id": "org-1",
         }),
       }),
@@ -330,7 +330,7 @@ describe("getFeature", () => {
       expect.objectContaining({
         method: "GET",
         headers: expect.objectContaining({
-          Authorization: "Bearer test-api-svc-key",
+          "X-API-Key": "test-api-svc-key",
           "x-org-id": "org-1",
         }),
       }),
