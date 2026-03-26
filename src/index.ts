@@ -269,7 +269,13 @@ app.post("/complete", requireAuth, async (req, res) => {
       try {
         response.json = JSON.parse(result.content);
       } catch {
-        // Model returned non-parsable content despite JSON mode — return raw content only
+        // LLM sometimes wraps JSON in markdown fences — strip and retry
+        const stripped = result.content.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
+        try {
+          response.json = JSON.parse(stripped);
+        } catch {
+          // Model returned non-parsable content despite JSON mode — return raw content only
+        }
       }
     }
 
