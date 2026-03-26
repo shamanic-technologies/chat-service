@@ -19,7 +19,7 @@ async function loadModule() {
 }
 
 describe("apiServiceFetch", () => {
-  it("sends request with correct URL, Bearer auth, and identity headers", async () => {
+  it("sends request with correct URL, X-API-Key auth, and identity headers", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
 
     const { apiServiceFetch } = await loadModule();
@@ -34,7 +34,7 @@ describe("apiServiceFetch", () => {
       expect.objectContaining({
         method: "GET",
         headers: expect.objectContaining({
-          Authorization: "Bearer test-api-svc-key",
+          "X-API-Key": "test-api-svc-key",
           "x-org-id": "org-1",
           "x-user-id": "user-1",
           "x-run-id": "run-1",

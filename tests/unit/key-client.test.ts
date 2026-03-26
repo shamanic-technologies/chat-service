@@ -238,7 +238,7 @@ describe("listOrgKeys", () => {
       "https://api.test.local/v1/keys",
       expect.objectContaining({
         headers: expect.objectContaining({
-          Authorization: "Bearer test-api-svc-key",
+          "X-API-Key": "test-api-svc-key",
           "x-org-id": "org-1",
         }),
       }),
@@ -391,7 +391,7 @@ describe("checkProviderRequirements", () => {
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
-          Authorization: "Bearer test-api-svc-key",
+          "X-API-Key": "test-api-svc-key",
         }),
       }),
     );

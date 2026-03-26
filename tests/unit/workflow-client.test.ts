@@ -38,7 +38,7 @@ describe("updateWorkflow", () => {
         method: "PUT",
         headers: expect.objectContaining({
           "Content-Type": "application/json",
-          Authorization: "Bearer test-api-svc-key",
+          "X-API-Key": "test-api-svc-key",
           "x-org-id": "org-1",
           "x-user-id": "user-1",
           "x-run-id": "run-1",
@@ -106,7 +106,7 @@ describe("updateWorkflow", () => {
     expect(callHeaders["x-run-id"]).toBe("run-1");
     expect(callHeaders["x-org-id"]).toBe("org-1");
     expect(callHeaders["x-user-id"]).toBe("user-1");
-    expect(callHeaders["Authorization"]).toBe("Bearer test-api-svc-key");
+    expect(callHeaders["X-API-Key"]).toBe("test-api-svc-key");
   });
 
   it("forwards tracking headers", async () => {
@@ -206,7 +206,7 @@ describe("validateWorkflow", () => {
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
-          Authorization: "Bearer test-api-svc-key",
+          "X-API-Key": "test-api-svc-key",
           "x-org-id": "org-1",
           "x-user-id": "user-1",
           "x-run-id": "run-1",
@@ -262,7 +262,7 @@ describe("getWorkflow", () => {
       expect.objectContaining({
         method: "GET",
         headers: expect.objectContaining({
-          Authorization: "Bearer test-api-svc-key",
+          "X-API-Key": "test-api-svc-key",
           "x-org-id": "org-1",
         }),
       }),
@@ -420,7 +420,7 @@ describe("generateWorkflow", () => {
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
-          Authorization: "Bearer test-api-svc-key",
+          "X-API-Key": "test-api-svc-key",
           "x-org-id": "org-1",
         }),
       }),
@@ -487,7 +487,7 @@ describe("getWorkflowRequiredProviders", () => {
       expect.objectContaining({
         method: "GET",
         headers: expect.objectContaining({
-          Authorization: "Bearer test-api-svc-key",
+          "X-API-Key": "test-api-svc-key",
           "x-org-id": "org-1",
         }),
       }),
