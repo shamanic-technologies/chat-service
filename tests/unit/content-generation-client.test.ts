@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const originalEnv = { ...process.env };
 
 beforeEach(() => {
-  process.env.API_SERVICE_API_KEY = "test-api-svc-key";
+  process.env.ADMIN_DISTRIBUTE_API_KEY = "test-api-svc-key";
   process.env.API_SERVICE_URL = "https://api.test.local";
   vi.stubGlobal("fetch", vi.fn());
 });
@@ -104,13 +104,13 @@ describe("getPromptTemplate", () => {
     ).rejects.toThrow(/returned 404/);
   });
 
-  it("throws when API_SERVICE_API_KEY is not set", async () => {
-    delete process.env.API_SERVICE_API_KEY;
+  it("throws when ADMIN_DISTRIBUTE_API_KEY is not set", async () => {
+    delete process.env.ADMIN_DISTRIBUTE_API_KEY;
 
     const { getPromptTemplate } = await loadModule();
     await expect(
       getPromptTemplate("cold-email", { orgId: "o", userId: "u", runId: "r" }),
-    ).rejects.toThrow(/API_SERVICE_API_KEY is required/);
+    ).rejects.toThrow(/ADMIN_DISTRIBUTE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -211,8 +211,8 @@ describe("updatePromptTemplate", () => {
     ).rejects.toThrow(/returned 400/);
   });
 
-  it("throws when API_SERVICE_API_KEY is not set", async () => {
-    delete process.env.API_SERVICE_API_KEY;
+  it("throws when ADMIN_DISTRIBUTE_API_KEY is not set", async () => {
+    delete process.env.ADMIN_DISTRIBUTE_API_KEY;
 
     const { updatePromptTemplate } = await loadModule();
     await expect(
@@ -220,7 +220,7 @@ describe("updatePromptTemplate", () => {
         { sourceType: "cold-email", prompt: "test", variables: [] },
         { orgId: "o", userId: "u", runId: "r" },
       ),
-    ).rejects.toThrow(/API_SERVICE_API_KEY is required/);
+    ).rejects.toThrow(/ADMIN_DISTRIBUTE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
   });

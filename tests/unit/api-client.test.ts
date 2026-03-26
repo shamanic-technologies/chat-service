@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const originalEnv = { ...process.env };
 
 beforeEach(() => {
-  process.env.API_SERVICE_API_KEY = "test-api-svc-key";
+  process.env.ADMIN_DISTRIBUTE_API_KEY = "test-api-svc-key";
   process.env.API_SERVICE_URL = "https://api.test.local";
   vi.stubGlobal("fetch", vi.fn());
 });
@@ -88,13 +88,13 @@ describe("apiServiceFetch", () => {
     expect(callHeaders["x-brand-id"]).toBe("brand-1");
   });
 
-  it("throws when API_SERVICE_API_KEY is not set", async () => {
-    delete process.env.API_SERVICE_API_KEY;
+  it("throws when ADMIN_DISTRIBUTE_API_KEY is not set", async () => {
+    delete process.env.ADMIN_DISTRIBUTE_API_KEY;
 
     const { apiServiceFetch } = await loadModule();
     expect(() =>
       apiServiceFetch("/v1/keys", "GET", { orgId: "o", userId: "u", runId: "r" }),
-    ).toThrow(/API_SERVICE_API_KEY is required/);
+    ).toThrow(/ADMIN_DISTRIBUTE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
   });

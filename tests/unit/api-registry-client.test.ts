@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const originalEnv = { ...process.env };
 
 beforeEach(() => {
-  process.env.API_SERVICE_API_KEY = "test-api-svc-key";
+  process.env.ADMIN_DISTRIBUTE_API_KEY = "test-api-svc-key";
   process.env.API_SERVICE_URL = "https://api.test.local";
   vi.stubGlobal("fetch", vi.fn());
 });
@@ -71,12 +71,12 @@ describe("listServices", () => {
   });
 
   it("throws when API key is missing", async () => {
-    delete process.env.API_SERVICE_API_KEY;
+    delete process.env.ADMIN_DISTRIBUTE_API_KEY;
 
     const { listServices } = await loadModule();
     await expect(
       listServices({ orgId: "o", userId: "u", runId: "r" }),
-    ).rejects.toThrow(/API_SERVICE_API_KEY is required/);
+    ).rejects.toThrow(/ADMIN_DISTRIBUTE_API_KEY is required/);
   });
 });
 
