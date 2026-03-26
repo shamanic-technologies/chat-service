@@ -27,7 +27,7 @@ import {
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { listServices, listServiceEndpoints, callApi } from "./lib/api-registry-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
-import { createFeature, updateFeature, listFeatures, getFeature } from "./lib/features-client.js";
+import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import {
   resolveKey,
@@ -854,11 +854,12 @@ app.post("/chat", requireAuth, async (req, res) => {
       if (call.name === "update_feature") {
         const args = (call.args as Record<string, unknown>) || {};
         const { slug, ...updateBody } = args;
-        const result = await updateFeature(
+        const { feature, forked } = await updateFeature(
           slug as string,
           updateBody as Partial<Omit<import("./lib/features-client.js").CreateFeatureBody, "slug">>,
           featureCallParams,
         );
+        const result = { ...feature, forked };
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -882,6 +883,36 @@ app.post("/chat", requireAuth, async (req, res) => {
       if (call.name === "get_feature") {
         const args = (call.args as Record<string, unknown>) || {};
         const result = await getFeature(args.slug as string, featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "get_feature_inputs") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await getFeatureInputs(args.slug as string, featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "prefill_feature") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await prefillFeature(args.slug as string, featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "get_feature_stats") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await getFeatureStats(
+          args.slug as string,
+          {
+            groupBy: args.groupBy as "workflowName" | "brandId" | "campaignId" | undefined,
+            brandId: args.brandId as string | undefined,
+            campaignId: args.campaignId as string | undefined,
+            workflowName: args.workflowName as string | undefined,
+          },
+          featureCallParams,
+        );
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }

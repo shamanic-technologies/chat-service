@@ -473,7 +473,7 @@ export const CREATE_FEATURE_TOOL: Anthropic.Tool = {
       },
       name: {
         type: "string",
-        description: "Human-readable feature name (e.g. 'Cold Email Outreach')",
+        description: "Machine-readable feature name (e.g. 'Cold Email Outreach'). This becomes the unique identifier — for forked features it may include a version suffix (e.g. 'Cold Email Outreach v2'). The human-readable displayName is derived from this automatically.",
       },
       description: {
         type: "string",
@@ -584,7 +584,7 @@ export const CREATE_FEATURE_TOOL: Anthropic.Tool = {
 export const UPDATE_FEATURE_TOOL: Anthropic.Tool = {
   name: "update_feature",
   description:
-    "Update an existing feature definition by slug. Only provided fields are modified — omit fields you don't want to change. If inputs or outputs change, the feature signature is recomputed automatically. Use this when iterating on an existing feature's design.",
+    "Update an existing feature definition by slug (fork-on-write). Only provided fields are modified — omit fields you don't want to change. If only metadata changes (same signature), the feature is updated in-place. If inputs or outputs change (different signature), a NEW feature is created (forked) with a version suffix, the original is deprecated, and the fork inherits the original's displayName. The response includes a 'forked' boolean indicating which happened.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -703,6 +703,71 @@ export const GET_FEATURE_TOOL: Anthropic.Tool = {
   },
 };
 
+export const GET_FEATURE_INPUTS_TOOL: Anthropic.Tool = {
+  name: "get_feature_inputs",
+  description:
+    "Get the input field definitions for a feature by slug. Returns the list of inputs the user must provide to run this feature. Lighter than get_feature — use when you only need the input schema.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      slug: {
+        type: "string",
+        description: "The feature slug to look up inputs for.",
+      },
+    },
+    required: ["slug"],
+  },
+};
+
+export const PREFILL_FEATURE_TOOL: Anthropic.Tool = {
+  name: "prefill_feature",
+  description:
+    "Pre-fill input values for a feature using the org's brand data. Returns a map of input key → suggested text value (or null if extraction failed). Use this to auto-populate form fields before the user reviews and submits.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      slug: {
+        type: "string",
+        description: "The feature slug to pre-fill inputs for.",
+      },
+    },
+    required: ["slug"],
+  },
+};
+
+export const GET_FEATURE_STATS_TOOL: Anthropic.Tool = {
+  name: "get_feature_stats",
+  description:
+    "Get computed stats for a feature — cost, run counts, campaign counts, and per-output metrics. Optionally group by workflowName, brandId, or campaignId. System stats (cost, runs, campaigns, dates) are always included.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      slug: {
+        type: "string",
+        description: "The feature slug to get stats for.",
+      },
+      groupBy: {
+        type: "string",
+        enum: ["workflowName", "brandId", "campaignId"],
+        description: "Group stats by this dimension (optional).",
+      },
+      brandId: {
+        type: "string",
+        description: "Filter stats to a specific brand (optional).",
+      },
+      campaignId: {
+        type: "string",
+        description: "Filter stats to a specific campaign (optional).",
+      },
+      workflowName: {
+        type: "string",
+        description: "Filter stats to a specific workflow (optional).",
+      },
+    },
+    required: ["slug"],
+  },
+};
+
 export const BUILTIN_TOOLS: Anthropic.Tool[] = [
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
@@ -731,6 +796,9 @@ export const FEATURE_CREATOR_TOOLS: Anthropic.Tool[] = [
   UPDATE_FEATURE_TOOL,
   LIST_FEATURES_TOOL,
   GET_FEATURE_TOOL,
+  GET_FEATURE_INPUTS_TOOL,
+  PREFILL_FEATURE_TOOL,
+  GET_FEATURE_STATS_TOOL,
 ];
 
 // ---------------------------------------------------------------------------

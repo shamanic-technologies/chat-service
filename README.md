@@ -210,10 +210,13 @@ When `context.type` is `"feature-creator"`, the standard workflow tools above ar
 | Tool | Description |
 |---|---|
 | `request_user_input` | Asks the user for structured input (same as above) |
-| `create_feature` | Creates a new feature via `POST /features`. Required: name, description, **icon**, category, channel, audienceType, inputs (with key/label/**type**/**placeholder**/description/**extractKey**), outputs (with **key**/**displayOrder**, optional defaultSort/sortDirection — keys from stats registry), charts (min 1), entities (min 1). Optional: slug, implemented, displayOrder, status. Returns 409 on conflict. |
-| `update_feature` | Updates an existing feature by slug via `PUT /features/:slug`. Partial update — only provided fields change. Supports: name, description, icon, category, channel, audienceType, implemented, displayOrder, status, inputs, outputs, charts, entities. |
-| `list_features` | Lists features via `GET /features` with optional filters (category, channel, audienceType, status, implemented). |
+| `create_feature` | Creates a new feature via `POST /features`. Required: name, description, **icon**, category, channel, audienceType, inputs (with key/label/**type**/**placeholder**/description/**extractKey**), outputs (with **key**/**displayOrder**, optional defaultSort/sortDirection — keys from stats registry), charts (min 1), entities (min 1). Optional: slug, implemented, displayOrder, status. Returns 409 on conflict. Response includes `id`, `displayName`, `signature`. |
+| `update_feature` | Updates or forks a feature via `PUT /features/:slug` (fork-on-write). Metadata-only changes update in-place (200). If inputs/outputs change (different signature), a new forked feature is created, the original is deprecated (201). Response includes `forked: boolean`. Supports: name, description, icon, category, channel, audienceType, implemented, displayOrder, status, inputs, outputs, charts, entities. |
+| `list_features` | Lists features via `GET /features` with optional filters (category, channel, audienceType, status, implemented). Responses include `displayName` (stable human label) and `name` (machine identifier, may include version suffix). |
 | `get_feature` | Gets full feature details by slug via `GET /features/:slug`. |
+| `get_feature_inputs` | Gets input definitions only via `GET /features/:slug/inputs`. Lighter than `get_feature`. |
+| `prefill_feature` | Pre-fills feature inputs from brand data via `POST /features/:slug/prefill`. Returns a map of input key → suggested text value. |
+| `get_feature_stats` | Gets computed stats via `GET /features/:slug/stats`. Supports `groupBy` (workflowName, brandId, campaignId) and filter params. Returns system stats (cost, runs, campaigns) and per-output metrics. |
 
 ### 5. Input Request (optional)
 When the AI genuinely needs information it does not have, it emits an input request:
@@ -377,7 +380,7 @@ src/
     runs-client.ts     # RunsService HTTP client for run tracking and cost reporting
     workflow-client.ts              # Workflow-service client for update_workflow and validate_workflow built-in tools
     content-generation-client.ts    # Content-generation service client for get_prompt_template built-in tool
-    features-client.ts              # Features-service client for upsert_feature tool (feature-creator context)
+    features-client.ts              # Features-service client (create, update/fork, list, get, inputs, prefill, stats)
 scripts/
   generate-openapi.ts  # Generates openapi.json from zod schemas via OpenApiGeneratorV3
 ```
