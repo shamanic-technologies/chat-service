@@ -123,6 +123,14 @@ Unlike POST /chat, this endpoint is **stateless** (no sessions), accepts an **in
 
 Error responses: 400 (validation), 401 (auth), 402 (insufficient credits), 502 (upstream failure).
 
+## Campaign Context Enrichment
+
+When the `x-campaign-id` header is present, both `/chat` and `/complete` automatically fetch the campaign's `featureInputs` from campaign-service and inject them into the system prompt. This ensures every LLM call is informed by the user's campaign-specific inputs (editorial angle, target geography, audience type, etc.).
+
+- Campaign data is fetched via `GET /campaign/campaigns/{id}` through api-service
+- Results are cached in-memory by `campaignId` (featureInputs are immutable for the lifetime of a campaign)
+- If the fetch fails, the LLM call proceeds without campaign context (non-blocking)
+
 ## SSE Protocol
 
 `POST /chat` with headers `Content-Type: application/json`, `x-api-key`, `x-org-id`, `x-user-id`.

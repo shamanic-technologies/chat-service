@@ -388,6 +388,42 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("workflowId");
     expect(result).toContain("use them directly when calling tools");
   });
+
+  it("appends campaign context section when provided", () => {
+    const result = buildSystemPrompt("Base.", undefined, {
+      angle: "sustainability",
+      geography: "US",
+    });
+    expect(result).toContain("## Campaign Context");
+    expect(result).toContain("sustainability");
+    expect(result).toContain("US");
+  });
+
+  it("skips campaign context when null", () => {
+    const result = buildSystemPrompt("Base.", undefined, null);
+    expect(result).toBe("Base.");
+  });
+
+  it("skips campaign context when empty object", () => {
+    const result = buildSystemPrompt("Base.", undefined, {});
+    expect(result).toBe("Base.");
+  });
+
+  it("includes both campaign context and additional context", () => {
+    const result = buildSystemPrompt(
+      "Base.",
+      { workflowId: "wf-1" },
+      { angle: "growth" },
+    );
+    expect(result).toContain("## Campaign Context");
+    expect(result).toContain("growth");
+    expect(result).toContain("## Additional Context");
+    expect(result).toContain("wf-1");
+    // Campaign context should come before additional context
+    const campaignIdx = result.indexOf("## Campaign Context");
+    const additionalIdx = result.indexOf("## Additional Context");
+    expect(campaignIdx).toBeLessThan(additionalIdx);
+  });
 });
 
 describe("REQUEST_USER_INPUT_TOOL", () => {
