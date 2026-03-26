@@ -283,7 +283,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 | Variable | Required | Description |
 |---|---|---|
-| `API_SERVICE_API_KEY` | Yes | Bearer token for api-service gateway — all client-facing backend calls (workflows, features, keys, prompts, api-registry) route through api-service |
+| `ADMIN_DISTRIBUTE_API_KEY` | Yes | Bearer token for api-service gateway — all client-facing backend calls (workflows, features, keys, prompts, api-registry) route through api-service |
 | `API_SERVICE_URL` | No | Api-service endpoint (default: `https://api.distribute.you`) |
 | `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used only for Anthropic API key decryption — infrastructure, not routed via api-service) |
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |

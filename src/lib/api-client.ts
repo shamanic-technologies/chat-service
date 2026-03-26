@@ -1,6 +1,6 @@
 const API_SERVICE_URL =
   process.env.API_SERVICE_URL || "https://api.distribute.you";
-const API_SERVICE_API_KEY = process.env.API_SERVICE_API_KEY;
+const ADMIN_DISTRIBUTE_API_KEY = process.env.ADMIN_DISTRIBUTE_API_KEY;
 
 export interface ApiCallParams {
   orgId: string;
@@ -19,13 +19,13 @@ export function apiServiceFetch(
   params: ApiCallParams,
   body?: unknown,
 ): Promise<Response> {
-  if (!API_SERVICE_API_KEY) {
-    throw new Error("[api-client] API_SERVICE_API_KEY is required");
+  if (!ADMIN_DISTRIBUTE_API_KEY) {
+    throw new Error("[api-client] ADMIN_DISTRIBUTE_API_KEY is required");
   }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${API_SERVICE_API_KEY}`,
+    Authorization: `Bearer ${ADMIN_DISTRIBUTE_API_KEY}`,
     "x-org-id": params.orgId,
     "x-user-id": params.userId,
     "x-run-id": params.runId,

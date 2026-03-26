@@ -7,7 +7,7 @@ beforeEach(() => {
   process.env.KEY_SERVICE_API_KEY = "test-key-svc-key";
   process.env.KEY_SERVICE_URL = "https://key.test.local";
   // Read-only tools now route through api-service
-  process.env.API_SERVICE_API_KEY = "test-api-svc-key";
+  process.env.ADMIN_DISTRIBUTE_API_KEY = "test-api-svc-key";
   process.env.API_SERVICE_URL = "https://api.test.local";
   vi.stubGlobal("fetch", vi.fn());
 });
