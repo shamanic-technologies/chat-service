@@ -169,6 +169,7 @@ export async function updateWorkflowNodeConfig(
 
 export interface GenerateWorkflowBody {
   description: string;
+  featureSlug: string;
   hints?: {
     services?: string[];
     nodeTypes?: string[];
@@ -224,10 +225,15 @@ export async function getWorkflowRequiredProviders(
 }
 
 export interface ListWorkflowsParams {
+  featureSlug?: string;
   category?: string;
   channel?: string;
-  tags?: string[];
-  search?: string;
+  audienceType?: string;
+  tag?: string;
+  status?: string;
+  brandId?: string;
+  humanId?: string;
+  campaignId?: string;
 }
 
 export async function listWorkflows(
@@ -235,12 +241,15 @@ export async function listWorkflows(
   params: WorkflowCallParams,
 ): Promise<unknown> {
   const query = new URLSearchParams();
+  if (filters.featureSlug) query.set("featureSlug", filters.featureSlug);
   if (filters.category) query.set("category", filters.category);
   if (filters.channel) query.set("channel", filters.channel);
-  if (filters.tags?.length) {
-    for (const tag of filters.tags) query.append("tags", tag);
-  }
-  if (filters.search) query.set("search", filters.search);
+  if (filters.audienceType) query.set("audienceType", filters.audienceType);
+  if (filters.tag) query.set("tag", filters.tag);
+  if (filters.status) query.set("status", filters.status);
+  if (filters.brandId) query.set("brandId", filters.brandId);
+  if (filters.humanId) query.set("humanId", filters.humanId);
+  if (filters.campaignId) query.set("campaignId", filters.campaignId);
 
   const qs = query.toString();
   const url = `${WORKFLOW_SERVICE_URL}/workflows${qs ? `?${qs}` : ""}`;

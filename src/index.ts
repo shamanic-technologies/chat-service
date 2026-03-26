@@ -659,10 +659,15 @@ app.post("/chat", requireAuth, async (req, res) => {
         const args = (call.args as Record<string, unknown>) || {};
         const result = await listWorkflows(
           {
+            featureSlug: args.featureSlug as string | undefined,
             category: args.category as string | undefined,
             channel: args.channel as string | undefined,
-            tags: args.tags as string[] | undefined,
-            search: args.search as string | undefined,
+            audienceType: args.audienceType as string | undefined,
+            tag: args.tag as string | undefined,
+            status: args.status as string | undefined,
+            brandId: args.brandId as string | undefined,
+            humanId: args.humanId as string | undefined,
+            campaignId: args.campaignId as string | undefined,
           },
           {
             orgId,

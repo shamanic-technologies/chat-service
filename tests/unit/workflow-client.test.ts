@@ -525,7 +525,7 @@ describe("listWorkflows", () => {
 
     const { listWorkflows } = await loadModule();
     const result = await listWorkflows(
-      { category: "sales", channel: "email", tags: ["cold", "outreach"], search: "lead" },
+      { category: "sales", channel: "email", tag: "cold", featureSlug: "cold-email-outreach", status: "active" },
       { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
 
@@ -533,9 +533,9 @@ describe("listWorkflows", () => {
     expect(calledUrl).toContain("/workflows?");
     expect(calledUrl).toContain("category=sales");
     expect(calledUrl).toContain("channel=email");
-    expect(calledUrl).toContain("tags=cold");
-    expect(calledUrl).toContain("tags=outreach");
-    expect(calledUrl).toContain("search=lead");
+    expect(calledUrl).toContain("tag=cold");
+    expect(calledUrl).toContain("featureSlug=cold-email-outreach");
+    expect(calledUrl).toContain("status=active");
     expect(result).toEqual(mockWorkflows);
   });
 

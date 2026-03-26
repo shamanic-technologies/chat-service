@@ -323,13 +323,43 @@ export const GENERATE_WORKFLOW_TOOL: Anthropic.Tool = {
         description:
           "Natural language description of the desired workflow. Be specific about the steps, services, and data flow. Minimum 10 characters.",
       },
+      featureSlug: {
+        type: "string",
+        description:
+          "Feature slug from features-service (e.g. 'cold-email-outreach'). Required — used to build the workflow name.",
+      },
       hints: {
         type: "object",
         description:
           "Optional hints to guide generation. Can include: services (array of service names to scope to), nodeTypes (suggested node types), expectedInputs (expected flow_input field names like 'campaignId').",
       },
+      style: {
+        type: "object",
+        description:
+          "Optional style configuration. When provided, the workflow is generated in the style of the specified human or brand, and the signatureName uses the style name with auto-versioning (e.g. 'hormozi-v1').",
+        properties: {
+          type: {
+            type: "string",
+            enum: ["human", "brand"],
+            description: "Style source type. 'human' for an industry expert, 'brand' for a company/organization.",
+          },
+          humanId: {
+            type: "string",
+            description: "Human ID from human-service. Required when type is 'human'.",
+          },
+          brandId: {
+            type: "string",
+            description: "Brand ID from brand-service. Required when type is 'brand'.",
+          },
+          name: {
+            type: "string",
+            description: "Display name of the human or brand (e.g. 'Hormozi'). Used to build the signatureName.",
+          },
+        },
+        required: ["type", "name"],
+      },
     },
-    required: ["description"],
+    required: ["description", "featureSlug"],
   },
 };
 
@@ -353,26 +383,48 @@ export const GET_WORKFLOW_REQUIRED_PROVIDERS_TOOL: Anthropic.Tool = {
 export const LIST_WORKFLOWS_TOOL: Anthropic.Tool = {
   name: "list_workflows",
   description:
-    "List or search existing workflows. Use this when the user asks to see their workflows, find a specific workflow, or check if a workflow already exists for a given purpose.",
+    "List existing workflows with optional filters. Use this when the user asks to see their workflows, find a specific workflow, or check if a workflow already exists for a given purpose.",
   input_schema: {
     type: "object" as const,
     properties: {
+      featureSlug: {
+        type: "string",
+        description: "Filter by feature slug (e.g. 'cold-email-outreach')",
+      },
       category: {
         type: "string",
-        description: "Filter by category: 'sales' or 'pr' (optional)",
+        enum: ["sales", "pr", "outlets", "journalists"],
+        description: "Filter by category (optional)",
       },
       channel: {
         type: "string",
-        description: "Filter by channel: 'email' (optional)",
+        enum: ["email", "database"],
+        description: "Filter by channel (optional)",
       },
-      tags: {
-        type: "array",
-        items: { type: "string" },
-        description: "Filter by tags (optional)",
-      },
-      search: {
+      audienceType: {
         type: "string",
-        description: "Free-text search across workflow names and descriptions (optional)",
+        enum: ["cold-outreach", "discovery"],
+        description: "Filter by audience type (optional)",
+      },
+      tag: {
+        type: "string",
+        description: "Filter workflows that contain this tag (optional)",
+      },
+      status: {
+        type: "string",
+        description: "Filter by status. Defaults to 'active'. Use 'all' to include deprecated workflows (optional)",
+      },
+      brandId: {
+        type: "string",
+        description: "Filter by brand ID (optional)",
+      },
+      humanId: {
+        type: "string",
+        description: "Filter by human ID (optional)",
+      },
+      campaignId: {
+        type: "string",
+        description: "Filter by campaign ID (optional)",
       },
     },
   },
@@ -399,17 +451,12 @@ const featureInputItems = {
 const featureOutputItems = {
   type: "object" as const,
   properties: {
-    key: { type: "string", description: "Machine-readable output key (e.g. 'emailsSent')" },
-    label: { type: "string", description: "Human-readable label (e.g. 'Emails Sent')" },
-    type: { type: "string", enum: ["count", "rate", "currency", "percentage"], description: "Output metric type" },
+    key: { type: "string", description: "Stats registry key (e.g. 'emailsSent'). Must reference a valid key from GET /stats/registry." },
     displayOrder: { type: "integer", description: "Order in which this output appears in the UI (0-based)" },
-    showInCampaignRow: { type: "boolean", description: "Whether to show this metric in the campaign list row" },
-    showInFunnel: { type: "boolean", description: "Whether to include this metric in the funnel visualization" },
-    funnelOrder: { type: "integer", description: "Order in the funnel (optional, only when showInFunnel is true)" },
-    numeratorKey: { type: "string", description: "For rate metrics: key of the numerator output (optional)" },
-    denominatorKey: { type: "string", description: "For rate metrics: key of the denominator output (optional)" },
+    defaultSort: { type: "boolean", description: "Whether this output is the default sort column (optional)" },
+    sortDirection: { type: "string", enum: ["asc", "desc"], description: "Sort direction when this is the default sort column (optional)" },
   },
-  required: ["key", "label", "type", "displayOrder", "showInCampaignRow", "showInFunnel"],
+  required: ["key", "displayOrder"],
 };
 
 export const CREATE_FEATURE_TOOL: Anthropic.Tool = {
@@ -447,6 +494,19 @@ export const CREATE_FEATURE_TOOL: Anthropic.Tool = {
       audienceType: {
         type: "string",
         description: "Target audience type (e.g. 'cold-outreach', 'warm-leads', 'existing-customers')",
+      },
+      implemented: {
+        type: "boolean",
+        description: "Whether this feature is implemented and ready for use (default: true)",
+      },
+      displayOrder: {
+        type: "integer",
+        description: "Display order in the feature catalogue (default: 0)",
+      },
+      status: {
+        type: "string",
+        enum: ["active", "draft", "deprecated"],
+        description: "Feature lifecycle status (default: 'active')",
       },
       inputs: {
         type: "array",
@@ -538,6 +598,9 @@ export const UPDATE_FEATURE_TOOL: Anthropic.Tool = {
       category: { type: "string", description: "New category (optional)" },
       channel: { type: "string", description: "New channel (optional)" },
       audienceType: { type: "string", description: "New audience type (optional)" },
+      implemented: { type: "boolean", description: "Whether this feature is implemented (optional)" },
+      displayOrder: { type: "integer", description: "New display order (optional)" },
+      status: { type: "string", enum: ["active", "draft", "deprecated"], description: "New status (optional)" },
       inputs: {
         type: "array",
         items: featureInputItems,

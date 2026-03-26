@@ -583,12 +583,11 @@ describe("Feature-creator tools", () => {
     expect(inputItems.required).toEqual(["key", "label", "type", "placeholder", "description", "extractKey"]);
     expect(inputItems.properties).toHaveProperty("options");
 
-    // Output items: 6 required fields
+    // Output items: 2 required fields (key + displayOrder), optional defaultSort + sortDirection
     const outputItems = schema.properties.outputs.items!;
-    expect(outputItems.required).toEqual(["key", "label", "type", "displayOrder", "showInCampaignRow", "showInFunnel"]);
-    expect(outputItems.properties).toHaveProperty("funnelOrder");
-    expect(outputItems.properties).toHaveProperty("numeratorKey");
-    expect(outputItems.properties).toHaveProperty("denominatorKey");
+    expect(outputItems.required).toEqual(["key", "displayOrder"]);
+    expect(outputItems.properties).toHaveProperty("defaultSort");
+    expect(outputItems.properties).toHaveProperty("sortDirection");
   });
 
   it("UPDATE_FEATURE_TOOL requires only slug, has icon field", () => {

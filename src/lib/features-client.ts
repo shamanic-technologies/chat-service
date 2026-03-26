@@ -43,14 +43,9 @@ export interface FeatureInputDef {
 
 export interface FeatureOutputDef {
   key: string;
-  label: string;
-  type: "count" | "rate" | "currency" | "percentage";
   displayOrder: number;
-  showInCampaignRow: boolean;
-  showInFunnel: boolean;
-  funnelOrder?: number;
-  numeratorKey?: string;
-  denominatorKey?: string;
+  defaultSort?: boolean;
+  sortDirection?: "asc" | "desc";
 }
 
 export interface FunnelBarChart {
@@ -79,6 +74,9 @@ export interface CreateFeatureBody {
   category: string;
   channel: string;
   audienceType: string;
+  implemented?: boolean;
+  displayOrder?: number;
+  status?: "active" | "draft" | "deprecated";
   inputs: FeatureInputDef[];
   outputs: FeatureOutputDef[];
   charts: FeatureChartDef[];
