@@ -25,7 +25,7 @@ export function apiServiceFetch(
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${ADMIN_DISTRIBUTE_API_KEY}`,
+    "X-API-Key": ADMIN_DISTRIBUTE_API_KEY,
     "x-org-id": params.orgId,
     "x-user-id": params.userId,
     "x-run-id": params.runId,
