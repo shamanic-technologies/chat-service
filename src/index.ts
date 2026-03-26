@@ -38,6 +38,7 @@ import {
   checkProviderRequirements,
 } from "./lib/key-client.js";
 import { authorizeCredits } from "./lib/billing-client.js";
+import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
 import { ChatRequestSchema, CompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
@@ -235,15 +236,32 @@ app.post("/complete", requireAuth, async (req, res) => {
     });
   }
 
+  // Fetch campaign context if campaignId is present (Convention 2)
+  let campaignFeatureInputs: Record<string, unknown> | null = null;
+  if (workflowTracking.campaignId) {
+    try {
+      campaignFeatureInputs = await getCampaignFeatureInputs(
+        workflowTracking.campaignId,
+        { orgId, userId, runId: callerRunId, trackingHeaders },
+      );
+    } catch (err) {
+      console.warn(`[complete] Failed to fetch campaign context for campaign="${workflowTracking.campaignId}":`, err);
+    }
+  }
+
   let completeFailed = false;
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
   const claudeModel = MODEL;
   try {
     // Build prompt — for JSON mode, prepend instruction to system prompt
-    const effectiveSystemPrompt = responseFormat === "json"
-      ? `${systemPrompt}\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, no extra text — just a single JSON object or array.`
-      : systemPrompt;
+    let effectiveSystemPrompt = systemPrompt;
+    if (campaignFeatureInputs && Object.keys(campaignFeatureInputs).length > 0) {
+      effectiveSystemPrompt = buildSystemPrompt(systemPrompt, undefined, campaignFeatureInputs);
+    }
+    if (responseFormat === "json") {
+      effectiveSystemPrompt += `\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, no extra text — just a single JSON object or array.`;
+    }
 
     const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: effectiveSystemPrompt });
 
@@ -401,6 +419,19 @@ app.post("/chat", requireAuth, async (req, res) => {
     }
   }
 
+  // Fetch campaign context if campaignId is present (Convention 2)
+  let campaignFeatureInputs: Record<string, unknown> | null = null;
+  if (workflowTracking.campaignId) {
+    try {
+      campaignFeatureInputs = await getCampaignFeatureInputs(
+        workflowTracking.campaignId,
+        { orgId, userId, runId: callerRunId, trackingHeaders },
+      );
+    } catch (err) {
+      console.warn(`[chat] Failed to fetch campaign context for campaign="${workflowTracking.campaignId}":`, err);
+    }
+  }
+
   // SSE headers — disable proxy buffering so tokens stream immediately
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -408,8 +439,8 @@ app.post("/chat", requireAuth, async (req, res) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
-  // Build system prompt with optional context
-  const systemPrompt = buildSystemPrompt(appConfig.systemPrompt, context);
+  // Build system prompt with optional context and campaign feature inputs
+  const systemPrompt = buildSystemPrompt(appConfig.systemPrompt, context, campaignFeatureInputs);
   const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
 
   let runId: string | null = null;

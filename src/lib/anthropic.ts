@@ -823,21 +823,32 @@ export interface UsageMetadata {
 export function buildSystemPrompt(
   basePrompt: string,
   context?: Record<string, unknown>,
+  campaignContext?: Record<string, unknown> | null,
 ): string {
-  if (!context || Object.keys(context).length === 0) return basePrompt;
+  let prompt = basePrompt;
 
-  const contextKeys = Object.keys(context);
-  const contextInstructions = [
-    `\n\n---\n## Additional Context (this request only)`,
-    JSON.stringify(context, null, 2),
-    `\n## IMPORTANT: Context Usage Rules`,
-    `The values above (${contextKeys.join(", ")}) are already known — use them directly when calling tools.`,
-    `Do NOT call request_user_input to ask for any value that is already present in this context.`,
-    `For example, if workflowId is in context and you need to update or validate the workflow, pass it directly to the tool.`,
-    `Only use request_user_input when you genuinely need information that is NOT available in context or conversation history.`,
-  ].join("\n");
+  if (campaignContext && Object.keys(campaignContext).length > 0) {
+    prompt += [
+      `\n\n---\n## Campaign Context`,
+      `The user launched this campaign with the following inputs. Use them to inform your responses, suggestions, and any content you generate.`,
+      JSON.stringify(campaignContext, null, 2),
+    ].join("\n");
+  }
 
-  return `${basePrompt}${contextInstructions}`;
+  if (context && Object.keys(context).length > 0) {
+    const contextKeys = Object.keys(context);
+    prompt += [
+      `\n\n---\n## Additional Context (this request only)`,
+      JSON.stringify(context, null, 2),
+      `\n## IMPORTANT: Context Usage Rules`,
+      `The values above (${contextKeys.join(", ")}) are already known — use them directly when calling tools.`,
+      `Do NOT call request_user_input to ask for any value that is already present in this context.`,
+      `For example, if workflowId is in context and you need to update or validate the workflow, pass it directly to the tool.`,
+      `Only use request_user_input when you genuinely need information that is NOT available in context or conversation history.`,
+    ].join("\n");
+  }
+
+  return prompt;
 }
 
 // ---------------------------------------------------------------------------
