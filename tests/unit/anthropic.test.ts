@@ -629,14 +629,17 @@ describe("Feature-creator tools", () => {
 });
 
 describe("FEATURE_CREATOR_TOOLS", () => {
-  it("includes all 5 feature-creator tools", () => {
+  it("includes all 8 feature-creator tools", () => {
     const names = FEATURE_CREATOR_TOOLS.map((t) => t.name);
     expect(names).toContain("request_user_input");
     expect(names).toContain("create_feature");
     expect(names).toContain("update_feature");
     expect(names).toContain("list_features");
     expect(names).toContain("get_feature");
-    expect(FEATURE_CREATOR_TOOLS).toHaveLength(5);
+    expect(names).toContain("get_feature_inputs");
+    expect(names).toContain("prefill_feature");
+    expect(names).toContain("get_feature_stats");
+    expect(FEATURE_CREATOR_TOOLS).toHaveLength(8);
   });
 
   it("does not include workflow tools", () => {

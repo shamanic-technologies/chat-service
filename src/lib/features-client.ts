@@ -84,15 +84,23 @@ export interface CreateFeatureBody {
 }
 
 export interface FeatureResponse {
+  id: string;
   slug: string;
   name: string;
+  displayName: string;
   description: string;
   icon: string;
   category: string;
   channel: string;
   audienceType: string;
+  implemented: boolean;
+  displayOrder: number;
+  status: "active" | "draft" | "deprecated";
+  signature: string;
   inputs: FeatureInputDef[];
   outputs: FeatureOutputDef[];
+  charts: FeatureChartDef[];
+  entities: string[];
   [key: string]: unknown;
 }
 
@@ -129,16 +137,23 @@ export async function createFeature(
   return (await res.json()) as FeatureResponse;
 }
 
+export interface UpdateFeatureResult {
+  feature: FeatureResponse;
+  /** true when inputs/outputs changed and features-service forked a new version (HTTP 201) */
+  forked: boolean;
+}
+
 /**
- * Partial update an existing feature via PUT /features/:slug.
- * Only provided fields are updated. If inputs/outputs change, the signature
- * is recomputed automatically by features-service.
+ * Update or fork a feature via PUT /features/:slug.
+ * If only metadata changes (same signature) → updates in-place (200).
+ * If inputs or outputs change (different signature) → creates a fork,
+ * deprecates the original, and returns 201. The fork inherits displayName.
  */
 export async function updateFeature(
   slug: string,
   body: Partial<Omit<CreateFeatureBody, "slug">>,
   params: FeaturesCallParams,
-): Promise<FeatureResponse> {
+): Promise<UpdateFeatureResult> {
   const url = `${FEATURES_SERVICE_URL}/features/${encodeURIComponent(slug)}`;
   const res = await fetch(url, {
     method: "PUT",
@@ -153,7 +168,8 @@ export async function updateFeature(
     );
   }
 
-  return (await res.json()) as FeatureResponse;
+  const feature = (await res.json()) as FeatureResponse;
+  return { feature, forked: res.status === 201 };
 }
 
 export interface ListFeaturesFilters {
@@ -216,4 +232,124 @@ export async function getFeature(
   }
 
   return (await res.json()) as FeatureResponse;
+}
+
+export interface FeatureInputsResponse {
+  slug: string;
+  name: string;
+  inputs: FeatureInputDef[];
+}
+
+/**
+ * Get input definitions for a feature via GET /features/:slug/inputs.
+ */
+export async function getFeatureInputs(
+  slug: string,
+  params: FeaturesCallParams,
+): Promise<FeatureInputsResponse> {
+  const url = `${FEATURES_SERVICE_URL}/features/${encodeURIComponent(slug)}/inputs`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: buildHeaders(params),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[features-client] GET /features/${slug}/inputs returned ${res.status}: ${text}`,
+    );
+  }
+
+  return (await res.json()) as FeatureInputsResponse;
+}
+
+export interface PrefillTextResponse {
+  slug: string;
+  brandId: string;
+  format: "text";
+  prefilled: Record<string, string | null>;
+}
+
+/**
+ * Pre-fill input values for a feature from brand data via POST /features/:slug/prefill.
+ * Returns a map of input key → pre-filled text value (or null if extraction failed).
+ */
+export async function prefillFeature(
+  slug: string,
+  params: FeaturesCallParams,
+): Promise<PrefillTextResponse> {
+  const url = `${FEATURES_SERVICE_URL}/features/${encodeURIComponent(slug)}/prefill?format=text`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: buildHeaders(params),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[features-client] POST /features/${slug}/prefill returned ${res.status}: ${text}`,
+    );
+  }
+
+  return (await res.json()) as PrefillTextResponse;
+}
+
+export interface FeatureStatsSystemStats {
+  totalCostInUsdCents: number;
+  completedRuns: number;
+  activeCampaigns: number;
+  firstRunAt: string | null;
+  lastRunAt: string | null;
+}
+
+export interface FeatureStatsResponse {
+  featureSlug: string;
+  groupBy?: string;
+  systemStats: FeatureStatsSystemStats;
+  stats?: Record<string, number | null>;
+  groups?: Array<{
+    workflowName?: string | null;
+    brandId?: string | null;
+    campaignId?: string | null;
+    systemStats: FeatureStatsSystemStats;
+    stats: Record<string, number | null>;
+  }>;
+}
+
+export interface GetFeatureStatsFilters {
+  groupBy?: "workflowName" | "brandId" | "campaignId";
+  brandId?: string;
+  campaignId?: string;
+  workflowName?: string;
+}
+
+/**
+ * Get computed stats for a feature via GET /features/:slug/stats.
+ */
+export async function getFeatureStats(
+  slug: string,
+  filters: GetFeatureStatsFilters,
+  params: FeaturesCallParams,
+): Promise<FeatureStatsResponse> {
+  const query = new URLSearchParams();
+  if (filters.groupBy) query.set("groupBy", filters.groupBy);
+  if (filters.brandId) query.set("brandId", filters.brandId);
+  if (filters.campaignId) query.set("campaignId", filters.campaignId);
+  if (filters.workflowName) query.set("workflowName", filters.workflowName);
+
+  const qs = query.toString();
+  const url = `${FEATURES_SERVICE_URL}/features/${encodeURIComponent(slug)}/stats${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: buildHeaders(params),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[features-client] GET /features/${slug}/stats returned ${res.status}: ${text}`,
+    );
+  }
+
+  return (await res.json()) as FeatureStatsResponse;
 }

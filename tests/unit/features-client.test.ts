@@ -148,9 +148,10 @@ describe("createFeature", () => {
 });
 
 describe("updateFeature", () => {
-  it("sends PUT /features/:slug with partial body", async () => {
+  it("returns { feature, forked: false } on 200 (in-place update)", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
+      status: 200,
       json: () => Promise.resolve({ ...sampleFeature, description: "Updated description" }),
     });
 
@@ -176,12 +177,32 @@ describe("updateFeature", () => {
     expect(sentBody.description).toBe("Updated description");
     expect(sentBody.slug).toBeUndefined();
 
-    expect(result.description).toBe("Updated description");
+    expect(result.forked).toBe(false);
+    expect(result.feature.description).toBe("Updated description");
+  });
+
+  it("returns { feature, forked: true } on 201 (fork-on-write)", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({ ...sampleFeature, slug: "cold-email-outreach-v2", name: "Cold Email Outreach v2" }),
+    });
+
+    const { updateFeature } = await loadModule();
+    const result = await updateFeature(
+      "cold-email-outreach",
+      { inputs: [{ key: "newInput", label: "New", type: "text" as const, placeholder: "...", description: "new input", extractKey: "new" }] },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    expect(result.forked).toBe(true);
+    expect(result.feature.slug).toBe("cold-email-outreach-v2");
   });
 
   it("forwards tracking headers", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
+      status: 200,
       json: () => Promise.resolve(sampleFeature),
     });
 
@@ -341,5 +362,144 @@ describe("getFeature", () => {
 
     const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
     expect(calledUrl).toContain("slug%20with%20spaces");
+  });
+});
+
+describe("getFeatureInputs", () => {
+  it("sends GET /features/:slug/inputs", async () => {
+    const mockResponse = {
+      slug: "cold-email-outreach",
+      name: "Cold Email Outreach",
+      inputs: sampleFeature.inputs,
+    };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockResponse),
+    });
+
+    const { getFeatureInputs } = await loadModule();
+    const result = await getFeatureInputs("cold-email-outreach", {
+      orgId: "org-1",
+      userId: "user-1",
+      runId: "run-1",
+    });
+
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toBe("https://features.test.local/features/cold-email-outreach/inputs");
+    expect(result.slug).toBe("cold-email-outreach");
+    expect(result.inputs).toHaveLength(1);
+  });
+
+  it("throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve("Not found"),
+    });
+
+    const { getFeatureInputs } = await loadModule();
+    await expect(
+      getFeatureInputs("nonexistent", { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 404/);
+  });
+});
+
+describe("prefillFeature", () => {
+  it("sends POST /features/:slug/prefill?format=text", async () => {
+    const mockResponse = {
+      slug: "cold-email-outreach",
+      brandId: "brand-1",
+      format: "text" as const,
+      prefilled: { targetCompanyUrl: "https://acme.com" },
+    };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockResponse),
+    });
+
+    const { prefillFeature } = await loadModule();
+    const result = await prefillFeature("cold-email-outreach", {
+      orgId: "org-1",
+      userId: "user-1",
+      runId: "run-1",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://features.test.local/features/cold-email-outreach/prefill?format=text",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(result.prefilled.targetCompanyUrl).toBe("https://acme.com");
+    expect(result.format).toBe("text");
+  });
+
+  it("throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: () => Promise.resolve("No brand configured"),
+    });
+
+    const { prefillFeature } = await loadModule();
+    await expect(
+      prefillFeature("cold-email-outreach", { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 400/);
+  });
+});
+
+describe("getFeatureStats", () => {
+  it("sends GET /features/:slug/stats with filters", async () => {
+    const mockResponse = {
+      featureSlug: "cold-email-outreach",
+      systemStats: { totalCostInUsdCents: 150, completedRuns: 10, activeCampaigns: 2, firstRunAt: null, lastRunAt: null },
+      stats: { emailsSent: 42 },
+    };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockResponse),
+    });
+
+    const { getFeatureStats } = await loadModule();
+    const result = await getFeatureStats(
+      "cold-email-outreach",
+      { groupBy: "brandId", brandId: "brand-1" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain("/features/cold-email-outreach/stats?");
+    expect(calledUrl).toContain("groupBy=brandId");
+    expect(calledUrl).toContain("brandId=brand-1");
+    expect(result.systemStats.completedRuns).toBe(10);
+    expect(result.stats?.emailsSent).toBe(42);
+  });
+
+  it("sends GET /features/:slug/stats without filters", async () => {
+    const mockResponse = {
+      featureSlug: "cold-email-outreach",
+      systemStats: { totalCostInUsdCents: 0, completedRuns: 0, activeCampaigns: 0, firstRunAt: null, lastRunAt: null },
+    };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockResponse),
+    });
+
+    const { getFeatureStats } = await loadModule();
+    await getFeatureStats("cold-email-outreach", {}, { orgId: "o", userId: "u", runId: "r" });
+
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toBe("https://features.test.local/features/cold-email-outreach/stats");
+  });
+
+  it("throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve("Feature not found"),
+    });
+
+    const { getFeatureStats } = await loadModule();
+    await expect(
+      getFeatureStats("nonexistent", {}, { orgId: "o", userId: "u", runId: "r" }),
+    ).rejects.toThrow(/returned 404/);
   });
 });
