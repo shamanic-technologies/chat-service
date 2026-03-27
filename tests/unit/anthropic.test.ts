@@ -31,6 +31,8 @@ import {
   buildSystemPrompt,
   MODEL,
   COST_PREFIX,
+  SUPPORTED_MODELS,
+  costPrefixForModel,
   REQUEST_USER_INPUT_TOOL,
   UPDATE_WORKFLOW_TOOL,
   VALIDATE_WORKFLOW_TOOL,
@@ -59,6 +61,28 @@ describe("COST_PREFIX", () => {
     expect(COST_PREFIX).not.toBe(MODEL);
     expect(COST_PREFIX).not.toContain("claude-");
     expect(COST_PREFIX).toMatch(/^anthropic-/);
+  });
+});
+
+describe("SUPPORTED_MODELS", () => {
+  it("maps all supported model IDs to cost prefixes", () => {
+    expect(SUPPORTED_MODELS["claude-sonnet-4-6"]).toBe("anthropic-sonnet-4.6");
+    expect(SUPPORTED_MODELS["claude-haiku-4-5"]).toBe("anthropic-haiku-4.5");
+  });
+
+  it("includes the default model", () => {
+    expect(SUPPORTED_MODELS[MODEL]).toBe(COST_PREFIX);
+  });
+});
+
+describe("costPrefixForModel", () => {
+  it("returns correct prefix for known models", () => {
+    expect(costPrefixForModel("claude-sonnet-4-6")).toBe("anthropic-sonnet-4.6");
+    expect(costPrefixForModel("claude-haiku-4-5")).toBe("anthropic-haiku-4.5");
+  });
+
+  it("falls back to default COST_PREFIX for unknown models", () => {
+    expect(costPrefixForModel("unknown-model")).toBe(COST_PREFIX);
   });
 });
 

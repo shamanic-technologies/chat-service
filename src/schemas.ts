@@ -240,6 +240,10 @@ export const CompleteRequestSchema = z
       description: "Maximum tokens in the response (default: 16000)",
       example: 2000,
     }),
+    model: z.enum(["claude-sonnet-4-6", "claude-haiku-4-5"]).optional().openapi({
+      description: "Anthropic model to use. Defaults to claude-sonnet-4-6. Use claude-haiku-4-5 for simpler tasks (extraction, classification) to reduce cost.",
+      example: "claude-haiku-4-5",
+    }),
   })
   .openapi("CompleteRequest");
 

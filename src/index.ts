@@ -15,6 +15,7 @@ import {
   FEATURE_CREATOR_TOOLS,
   MODEL,
   COST_PREFIX,
+  costPrefixForModel,
 } from "./lib/anthropic.js";
 import {
   updateWorkflow,
@@ -165,7 +166,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, temperature, maxTokens } = parsed.data;
+  const { message, systemPrompt, responseFormat, temperature, maxTokens, model: requestedModel } = parsed.data;
 
   // Resolve Anthropic API key per-request
   let resolvedKey: ResolvedKey;
@@ -185,6 +186,10 @@ app.post("/complete", requireAuth, async (req, res) => {
     });
   }
 
+  // Resolve model and its cost prefix
+  const effectiveModel = requestedModel ?? MODEL;
+  const effectiveCostPrefix = costPrefixForModel(effectiveModel);
+
   // Credit authorization for platform keys
   if (resolvedKey.keySource === "platform") {
     const estimatedInputTokens = Math.max(Math.ceil(message.length / 4), 500);
@@ -192,10 +197,10 @@ app.post("/complete", requireAuth, async (req, res) => {
     try {
       const authResult = await authorizeCredits({
         items: [
-          { costName: `${COST_PREFIX}-tokens-input`, quantity: estimatedInputTokens },
-          { costName: `${COST_PREFIX}-tokens-output`, quantity: estimatedOutputTokens },
+          { costName: `${effectiveCostPrefix}-tokens-input`, quantity: estimatedInputTokens },
+          { costName: `${effectiveCostPrefix}-tokens-output`, quantity: estimatedOutputTokens },
         ],
-        description: `complete — ${MODEL}`,
+        description: `complete — ${effectiveModel}`,
         orgId,
         userId,
         runId: callerRunId,
@@ -252,7 +257,6 @@ app.post("/complete", requireAuth, async (req, res) => {
   let completeFailed = false;
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
-  const claudeModel = MODEL;
   try {
     // Build prompt — for JSON mode, prepend instruction to system prompt
     let effectiveSystemPrompt = systemPrompt;
@@ -269,6 +273,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       responseFormat,
       temperature,
       maxTokens,
+      model: effectiveModel,
     });
 
     totalPromptTokens = result.tokensInput;
@@ -279,7 +284,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       content: result.content,
       tokensInput: result.tokensInput,
       tokensOutput: result.tokensOutput,
-      model: claude.model,
+      model: result.model,
     };
 
     // Parse JSON if requested
@@ -311,10 +316,10 @@ app.post("/complete", requireAuth, async (req, res) => {
         resolvedKey.keySource === "org" ? "org" : "platform";
       const costItems = [
         ...(totalPromptTokens > 0
-          ? [{ costName: `${COST_PREFIX}-tokens-input`, quantity: totalPromptTokens, costSource }]
+          ? [{ costName: `${effectiveCostPrefix}-tokens-input`, quantity: totalPromptTokens, costSource }]
           : []),
         ...(totalOutputTokens > 0
-          ? [{ costName: `${COST_PREFIX}-tokens-output`, quantity: totalOutputTokens, costSource }]
+          ? [{ costName: `${effectiveCostPrefix}-tokens-output`, quantity: totalOutputTokens, costSource }]
           : []),
       ];
       const runIdentity = { orgId, userId, runId };
