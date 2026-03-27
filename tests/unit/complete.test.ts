@@ -106,6 +106,50 @@ describe("CompleteRequestSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts valid model override", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Extract metadata",
+      systemPrompt: "You are a metadata extractor.",
+      model: "claude-haiku-4-5",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.model).toBe("claude-haiku-4-5");
+    }
+  });
+
+  it("accepts default model explicitly", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      model: "claude-sonnet-4-6",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.model).toBe("claude-sonnet-4-6");
+    }
+  });
+
+  it("rejects unsupported model", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      model: "gpt-4o",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("defaults model to undefined when omitted", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.model).toBeUndefined();
+    }
+  });
+
   it("accepts temperature at boundaries (0 and 2)", () => {
     const atZero = CompleteRequestSchema.safeParse({
       message: "Hello",

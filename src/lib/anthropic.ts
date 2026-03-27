@@ -5,6 +5,20 @@ export const MODEL = "claude-sonnet-4-6";
 export const COST_PREFIX = "anthropic-sonnet-4.6";
 const MAX_TOKENS = 16_000;
 
+/**
+ * Supported models and their costs-service prefixes.
+ * Keys are Anthropic API model IDs; values are cost-name prefixes.
+ */
+export const SUPPORTED_MODELS: Record<string, string> = {
+  "claude-sonnet-4-6": "anthropic-sonnet-4.6",
+  "claude-haiku-4-5": "anthropic-haiku-4.5",
+};
+
+/** Resolve the cost prefix for a given model ID (falls back to default). */
+export function costPrefixForModel(model: string): string {
+  return SUPPORTED_MODELS[model] ?? COST_PREFIX;
+}
+
 // ---------------------------------------------------------------------------
 // Tool definitions (Anthropic JSON Schema format)
 // ---------------------------------------------------------------------------
@@ -933,14 +947,17 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         responseFormat?: "json";
         temperature?: number;
         maxTokens?: number;
+        model?: string;
       },
     ): Promise<{
       content: string;
       tokensInput: number;
       tokensOutput: number;
+      model: string;
     }> {
+      const effectiveModel = options?.model ?? MODEL;
       const params: Anthropic.MessageCreateParamsNonStreaming = {
-        model: MODEL,
+        model: effectiveModel,
         max_tokens: options?.maxTokens ?? MAX_TOKENS,
         system: systemPrompt,
         messages: [{ role: "user", content: message }],
@@ -959,6 +976,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         content,
         tokensInput: response.usage.input_tokens,
         tokensOutput: response.usage.output_tokens,
+        model: effectiveModel,
       };
     },
   };

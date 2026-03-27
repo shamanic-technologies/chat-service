@@ -93,7 +93,8 @@ Request body:
   "systemPrompt": "You are a PR research assistant...",
   "responseFormat": "json",
   "temperature": 0.3,
-  "maxTokens": 2000
+  "maxTokens": 2000,
+  "model": "claude-haiku-4-5"
 }
 ```
 
@@ -102,6 +103,7 @@ Request body:
 - `responseFormat` (optional) — set to `"json"` to instruct the model to return valid JSON. The parsed result appears in the `json` field.
 - `temperature` (optional) — sampling temperature, 0–2 (default: model default)
 - `maxTokens` (optional) — max output tokens, 1–64000 (default: 16000)
+- `model` (optional) — Anthropic model to use: `claude-sonnet-4-6` (default) or `claude-haiku-4-5`. Use Haiku for simpler tasks (extraction, classification) to reduce cost.
 
 Response:
 ```json
