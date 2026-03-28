@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 export interface WorkflowTrackingHeaders {
   campaignId?: string;
   brandId?: string;
-  workflowName?: string;
+  workflowSlug?: string;
   featureSlug?: string;
 }
 
@@ -56,8 +56,8 @@ function extractWorkflowTracking(req: Request): WorkflowTrackingHeaders {
   if (typeof campaignId === "string") tracking.campaignId = campaignId;
   const brandId = req.headers["x-brand-id"];
   if (typeof brandId === "string") tracking.brandId = brandId;
-  const workflowName = req.headers["x-workflow-name"];
-  if (typeof workflowName === "string") tracking.workflowName = workflowName;
+  const workflowSlug = req.headers["x-workflow-slug"];
+  if (typeof workflowSlug === "string") tracking.workflowSlug = workflowSlug;
   const featureSlug = req.headers["x-feature-slug"];
   if (typeof featureSlug === "string") tracking.featureSlug = featureSlug;
   return tracking;

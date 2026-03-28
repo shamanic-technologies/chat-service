@@ -156,7 +156,7 @@ app.post("/complete", requireAuth, async (req, res) => {
   const trackingHeaders: Record<string, string> = {};
   if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
   if (workflowTracking.brandId) trackingHeaders["x-brand-id"] = workflowTracking.brandId;
-  if (workflowTracking.workflowName) trackingHeaders["x-workflow-name"] = workflowTracking.workflowName;
+  if (workflowTracking.workflowSlug) trackingHeaders["x-workflow-slug"] = workflowTracking.workflowSlug;
   if (workflowTracking.featureSlug) trackingHeaders["x-feature-slug"] = workflowTracking.featureSlug;
 
   const parsed = CompleteRequestSchema.safeParse(req.body);
@@ -340,7 +340,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   const trackingHeaders: Record<string, string> = {};
   if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
   if (workflowTracking.brandId) trackingHeaders["x-brand-id"] = workflowTracking.brandId;
-  if (workflowTracking.workflowName) trackingHeaders["x-workflow-name"] = workflowTracking.workflowName;
+  if (workflowTracking.workflowSlug) trackingHeaders["x-workflow-slug"] = workflowTracking.workflowSlug;
   if (workflowTracking.featureSlug) trackingHeaders["x-feature-slug"] = workflowTracking.featureSlug;
 
   const parsed = ChatRequestSchema.safeParse(req.body);
@@ -539,7 +539,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       content: message.trim(),
       campaignId: workflowTracking.campaignId ?? null,
       brandId: workflowTracking.brandId ?? null,
-      workflowName: workflowTracking.workflowName ?? null,
+      workflowSlug: workflowTracking.workflowSlug ?? null,
       featureSlug: workflowTracking.featureSlug ?? null,
     });
 
@@ -950,10 +950,10 @@ app.post("/chat", requireAuth, async (req, res) => {
         const result = await getFeatureStats(
           args.slug as string,
           {
-            groupBy: args.groupBy as "workflowName" | "brandId" | "campaignId" | undefined,
+            groupBy: args.groupBy as "workflowSlug" | "brandId" | "campaignId" | undefined,
             brandId: args.brandId as string | undefined,
             campaignId: args.campaignId as string | undefined,
-            workflowName: args.workflowName as string | undefined,
+            workflowSlug: args.workflowSlug as string | undefined,
           },
           featureCallParams,
         );
@@ -1159,7 +1159,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       runId,
       campaignId: workflowTracking.campaignId ?? null,
       brandId: workflowTracking.brandId ?? null,
-      workflowName: workflowTracking.workflowName ?? null,
+      workflowSlug: workflowTracking.workflowSlug ?? null,
       featureSlug: workflowTracking.featureSlug ?? null,
     });
 

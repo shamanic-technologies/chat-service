@@ -64,6 +64,13 @@
       "when": 1774318699055,
       "tag": "0008_sparkling_the_twelve",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1774886400000,
+      "tag": "0009_rename_workflow_name_to_slug",
+      "breakpoints": true
     }
   ]
 }

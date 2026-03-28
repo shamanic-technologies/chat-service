@@ -99,7 +99,7 @@ describe("authorizeCredits", () => {
       trackingHeaders: {
         "x-campaign-id": "camp-1",
         "x-brand-id": "brand-2",
-        "x-workflow-name": "wf-3",
+        "x-workflow-slug": "wf-3",
       },
     });
 
@@ -107,7 +107,7 @@ describe("authorizeCredits", () => {
     const headers = callArgs[1].headers;
     expect(headers["x-campaign-id"]).toBe("camp-1");
     expect(headers["x-brand-id"]).toBe("brand-2");
-    expect(headers["x-workflow-name"]).toBe("wf-3");
+    expect(headers["x-workflow-slug"]).toBe("wf-3");
   });
 
   it("throws on HTTP error from billing-service", async () => {

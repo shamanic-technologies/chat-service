@@ -340,7 +340,7 @@ export const GENERATE_WORKFLOW_TOOL: Anthropic.Tool = {
       featureSlug: {
         type: "string",
         description:
-          "Feature slug from features-service (e.g. 'cold-email-outreach'). Required — used to build the workflow name.",
+          "Feature slug from features-service (e.g. 'cold-email-outreach'). Required — used to build the workflow slug.",
       },
       hints: {
         type: "object",
@@ -752,7 +752,7 @@ export const PREFILL_FEATURE_TOOL: Anthropic.Tool = {
 export const GET_FEATURE_STATS_TOOL: Anthropic.Tool = {
   name: "get_feature_stats",
   description:
-    "Get computed stats for a feature — cost, run counts, campaign counts, and per-output metrics. Optionally group by workflowName, brandId, or campaignId. System stats (cost, runs, campaigns, dates) are always included.",
+    "Get computed stats for a feature — cost, run counts, campaign counts, and per-output metrics. Optionally group by workflowSlug, brandId, or campaignId. System stats (cost, runs, campaigns, dates) are always included.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -762,7 +762,7 @@ export const GET_FEATURE_STATS_TOOL: Anthropic.Tool = {
       },
       groupBy: {
         type: "string",
-        enum: ["workflowName", "brandId", "campaignId"],
+        enum: ["workflowSlug", "brandId", "campaignId"],
         description: "Group stats by this dimension (optional).",
       },
       brandId: {
@@ -773,7 +773,7 @@ export const GET_FEATURE_STATS_TOOL: Anthropic.Tool = {
         type: "string",
         description: "Filter stats to a specific campaign (optional).",
       },
-      workflowName: {
+      workflowSlug: {
         type: "string",
         description: "Filter stats to a specific workflow (optional).",
       },
