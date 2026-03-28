@@ -26,7 +26,7 @@ describe("workflow tracking headers in auth middleware", () => {
       ...BASE_HEADERS,
       "x-campaign-id": "camp-abc",
       "x-brand-id": "brand-xyz",
-      "x-workflow-name": "outreach-v2",
+      "x-workflow-slug": "outreach-v2",
       "x-feature-slug": "pr-outreach",
     });
     requireAuth(req, res, next);
@@ -35,7 +35,7 @@ describe("workflow tracking headers in auth middleware", () => {
     expect(locals.workflowTracking).toEqual({
       campaignId: "camp-abc",
       brandId: "brand-xyz",
-      workflowName: "outreach-v2",
+      workflowSlug: "outreach-v2",
       featureSlug: "pr-outreach",
     });
   });
@@ -117,7 +117,7 @@ describe("runs-client forwards tracking headers", () => {
     await createRun(
       { serviceName: "chat-service", taskName: "chat" },
       identity,
-      { "x-campaign-id": "camp-1", "x-brand-id": "brand-1", "x-workflow-name": "flow-1", "x-feature-slug": "feat-1" },
+      { "x-campaign-id": "camp-1", "x-brand-id": "brand-1", "x-workflow-slug": "flow-1", "x-feature-slug": "feat-1" },
     );
 
     expect(fetch).toHaveBeenCalledWith(
@@ -129,7 +129,7 @@ describe("runs-client forwards tracking headers", () => {
           "x-run-id": "run-caller",
           "x-campaign-id": "camp-1",
           "x-brand-id": "brand-1",
-          "x-workflow-name": "flow-1",
+          "x-workflow-slug": "flow-1",
           "x-feature-slug": "feat-1",
         }),
       }),
@@ -148,7 +148,7 @@ describe("runs-client forwards tracking headers", () => {
     const callHeaders = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
     expect(callHeaders["x-campaign-id"]).toBeUndefined();
     expect(callHeaders["x-brand-id"]).toBeUndefined();
-    expect(callHeaders["x-workflow-name"]).toBeUndefined();
+    expect(callHeaders["x-workflow-slug"]).toBeUndefined();
     expect(callHeaders["x-feature-slug"]).toBeUndefined();
   });
 
@@ -228,7 +228,7 @@ describe("key-client forwards tracking headers", () => {
       userId: "user-1",
       runId: "run-1",
       caller: { method: "POST", path: "/chat" },
-      trackingHeaders: { "x-campaign-id": "camp-1", "x-workflow-name": "flow-1" },
+      trackingHeaders: { "x-campaign-id": "camp-1", "x-workflow-slug": "flow-1" },
     });
 
     expect(fetch).toHaveBeenCalledWith(
@@ -236,7 +236,7 @@ describe("key-client forwards tracking headers", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           "x-campaign-id": "camp-1",
-          "x-workflow-name": "flow-1",
+          "x-workflow-slug": "flow-1",
         }),
       }),
     );

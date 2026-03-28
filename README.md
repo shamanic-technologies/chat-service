@@ -22,7 +22,7 @@ All endpoints (except `/health` and `/openapi.json`) require these headers:
 | `x-run-id` | Caller's run ID — used as `parentRunId` when creating this service's own run in runs-service |
 | `x-campaign-id` | _(optional)_ Campaign ID — injected automatically by workflow-service |
 | `x-brand-id` | _(optional)_ Brand ID — injected automatically by workflow-service |
-| `x-workflow-name` | _(optional)_ Workflow name — injected automatically by workflow-service |
+| `x-workflow-slug` | _(optional)_ Workflow slug — injected automatically by workflow-service |
 | `x-feature-slug` | _(optional)_ Feature slug — propagated through the entire service chain |
 
 ## App Config Registration
@@ -226,7 +226,7 @@ When `context.type` is `"feature-creator"`, the standard workflow tools above ar
 | `get_feature` | Gets full feature details by slug via `GET /features/:slug`. |
 | `get_feature_inputs` | Gets input definitions only via `GET /features/:slug/inputs`. Lighter than `get_feature`. |
 | `prefill_feature` | Pre-fills feature inputs from brand data via `POST /features/:slug/prefill`. Returns a map of input key → suggested text value. |
-| `get_feature_stats` | Gets computed stats via `GET /features/:slug/stats`. Supports `groupBy` (workflowName, brandId, campaignId) and filter params. Returns system stats (cost, runs, campaigns) and per-output metrics. |
+| `get_feature_stats` | Gets computed stats via `GET /features/:slug/stats`. Supports `groupBy` (workflowSlug, brandId, campaignId) and filter params. Returns system stats (cost, runs, campaigns) and per-output metrics. |
 
 ### 5. Input Request (optional)
 When the AI genuinely needs information it does not have, it emits an input request:
@@ -309,7 +309,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 Uses PostgreSQL via Drizzle ORM. Three tables:
 
 - **sessions** — conversation sessions scoped by `orgId` and `userId`
-- **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management), `runId` linking to RunsService, and optional `campaign_id`, `brand_id`, `workflow_name`, `feature_slug` for workflow tracking
+- **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management), `runId` linking to RunsService, and optional `campaign_id`, `brand_id`, `workflow_slug`, `feature_slug` for workflow tracking
 - **app_configs** — per-org configuration (system prompt) with unique constraint on `orgId`
 - **platform_configs** — global platform-wide chat configuration (fallback when no per-org config exists)
 

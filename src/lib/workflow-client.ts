@@ -67,7 +67,7 @@ export interface UpdateWorkflowResult {
 export interface WorkflowConflictError {
   error: string;
   existingWorkflowId: string;
-  existingWorkflowName: string;
+  existingWorkflowSlug: string;
 }
 
 export async function getWorkflow(
@@ -131,7 +131,7 @@ export async function updateWorkflow(
   if (res.status === 409) {
     const conflict = (await res.json()) as WorkflowConflictError;
     throw new Error(
-      `[workflow-client] A workflow with this DAG signature already exists: "${conflict.existingWorkflowName}" (${conflict.existingWorkflowId}). Use the existing workflow instead of creating a duplicate.`,
+      `[workflow-client] A workflow with this DAG signature already exists: "${conflict.existingWorkflowSlug}" (${conflict.existingWorkflowId}). Use the existing workflow instead of creating a duplicate.`,
     );
   }
 

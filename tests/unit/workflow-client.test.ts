@@ -96,7 +96,7 @@ describe("updateWorkflow", () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       status: 409,
-      json: () => Promise.resolve({ existingWorkflowId: "wf-existing", existingWorkflowName: "sales-email-v2" }),
+      json: () => Promise.resolve({ existingWorkflowId: "wf-existing", existingWorkflowSlug: "sales-email-v2" }),
     });
 
     const { updateWorkflow } = await loadModule();

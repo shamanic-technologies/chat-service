@@ -249,7 +249,7 @@ export interface FeatureStatsResponse {
   systemStats: FeatureStatsSystemStats;
   stats?: Record<string, number | null>;
   groups?: Array<{
-    workflowName?: string | null;
+    workflowSlug?: string | null;
     brandId?: string | null;
     campaignId?: string | null;
     systemStats: FeatureStatsSystemStats;
@@ -258,10 +258,10 @@ export interface FeatureStatsResponse {
 }
 
 export interface GetFeatureStatsFilters {
-  groupBy?: "workflowName" | "brandId" | "campaignId";
+  groupBy?: "workflowSlug" | "brandId" | "campaignId";
   brandId?: string;
   campaignId?: string;
-  workflowName?: string;
+  workflowSlug?: string;
 }
 
 export async function getFeatureStats(
@@ -273,7 +273,7 @@ export async function getFeatureStats(
   if (filters.groupBy) query.set("groupBy", filters.groupBy);
   if (filters.brandId) query.set("brandId", filters.brandId);
   if (filters.campaignId) query.set("campaignId", filters.campaignId);
-  if (filters.workflowName) query.set("workflowName", filters.workflowName);
+  if (filters.workflowSlug) query.set("workflowSlug", filters.workflowSlug);
 
   const qs = query.toString();
   const res = await apiServiceFetch(

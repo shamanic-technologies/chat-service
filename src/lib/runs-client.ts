@@ -32,7 +32,7 @@ export interface CostItem {
 export interface TrackingHeaders {
   "x-campaign-id"?: string;
   "x-brand-id"?: string;
-  "x-workflow-name"?: string;
+  "x-workflow-slug"?: string;
   "x-feature-slug"?: string;
 }
 
