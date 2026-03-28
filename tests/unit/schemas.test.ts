@@ -46,6 +46,22 @@ describe("ChatRequestSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts sessionId: null (reset chat sends null)", () => {
+    const result = ChatRequestSchema.safeParse({
+      message: "Hello",
+      sessionId: null,
+      context: { type: "workflow-viewer", workflowId: "wf-123" },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.sessionId).toBeNull();
+      expect(result.data.context).toEqual({
+        type: "workflow-viewer",
+        workflowId: "wf-123",
+      });
+    }
+  });
+
   it("rejects non-uuid sessionId", () => {
     const result = ChatRequestSchema.safeParse({
       message: "Hello",

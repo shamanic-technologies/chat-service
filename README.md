@@ -151,7 +151,7 @@ Request body:
 ```
 
 - `message` (required) — the user's chat message
-- `sessionId` (optional) — UUID of an existing session to continue. **Omit to start a new conversation** — the service creates the session and returns its ID in the first SSE event (`{"sessionId":"<uuid>"}`). Store that ID and pass it in subsequent requests. If a provided `sessionId` does not exist or belongs to a different org, the stream returns `"Session not found."` and closes. **Do not generate your own UUID** — always use the one returned by the service.
+- `sessionId` (optional, nullable) — UUID of an existing session to continue. **Omit or pass `null` to start a new conversation** — the service creates the session and returns its ID in the first SSE event (`{"sessionId":"<uuid>"}`). Store that ID and pass it in subsequent requests. If a provided `sessionId` does not exist or belongs to a different org, the stream returns `"Session not found."` and closes. **Do not generate your own UUID** — always use the one returned by the service.
 - `context` (optional) — free-form JSON injected into the system prompt for this request only (not stored)
 
 The response is a stream of SSE events in this order:
