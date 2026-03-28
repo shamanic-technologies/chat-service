@@ -493,6 +493,7 @@
           },
           "sessionId": {
             "type": "string",
+            "nullable": true,
             "format": "uuid",
             "description": "UUID of an existing session to continue. Omit to create a new session. When omitted, the service creates a new session and returns its ID in the first SSE event ({\"sessionId\":\"<uuid>\"}). Use that ID in subsequent requests to continue the conversation. If a sessionId is provided but does not exist or belongs to a different org, the stream returns a \"Session not found.\" error and closes.",
             "example": "550e8400-e29b-41d4-a716-446655440000"

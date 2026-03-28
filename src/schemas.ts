@@ -345,7 +345,7 @@ export const ChatRequestSchema = z
       description: "The user's chat message",
       example: "What campaigns are performing best this week?",
     }),
-    sessionId: z.string().uuid().optional().openapi({
+    sessionId: z.string().uuid().nullish().openapi({
       description:
         "UUID of an existing session to continue. Omit to create a new session. " +
         "When omitted, the service creates a new session and returns its ID in the first SSE event " +
