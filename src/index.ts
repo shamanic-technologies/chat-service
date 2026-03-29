@@ -11,8 +11,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   createAnthropicClient,
   buildSystemPrompt,
-  BUILTIN_TOOLS,
-  FEATURE_CREATOR_TOOLS,
+  resolveToolSet,
+  AVAILABLE_TOOL_NAMES,
   MODEL,
   COST_PREFIX,
   costPrefixForModel,
@@ -26,7 +26,7 @@ import {
   listWorkflows,
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
-import { listServices, listServiceEndpoints, callApi } from "./lib/api-registry-client.js";
+import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
@@ -87,18 +87,29 @@ app.put("/config", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { systemPrompt } = parsed.data;
+  const { key, systemPrompt, allowedTools } = parsed.data;
+
+  // Validate all tool names
+  const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t));
+  if (unknownTools.length > 0) {
+    return res.status(400).json({
+      error: `Unknown tools: ${unknownTools.join(", ")}. Available: ${AVAILABLE_TOOL_NAMES.join(", ")}`,
+    });
+  }
 
   const [config] = await db
     .insert(appConfigs)
     .values({
       orgId,
+      key,
       systemPrompt,
+      allowedTools,
     })
     .onConflictDoUpdate({
-      target: [appConfigs.orgId],
+      target: [appConfigs.orgId, appConfigs.key],
       set: {
         systemPrompt,
+        allowedTools,
         updatedAt: new Date(),
       },
     })
@@ -106,15 +117,15 @@ app.put("/config", requireAuth, async (req, res) => {
 
   res.json({
     orgId: config.orgId,
+    key: config.key,
     systemPrompt: config.systemPrompt,
+    allowedTools: config.allowedTools,
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString(),
   });
 });
 
 // --- Platform Config Registration ---
-
-const PLATFORM_CONFIG_KEY = "default";
 
 app.put("/platform-config", requireInternalAuth, async (req, res) => {
   const parsed = PlatformConfigRequestSchema.safeParse(req.body);
@@ -124,25 +135,37 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { systemPrompt } = parsed.data;
+  const { key, systemPrompt, allowedTools } = parsed.data;
+
+  // Validate all tool names
+  const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t));
+  if (unknownTools.length > 0) {
+    return res.status(400).json({
+      error: `Unknown tools: ${unknownTools.join(", ")}. Available: ${AVAILABLE_TOOL_NAMES.join(", ")}`,
+    });
+  }
 
   const [config] = await db
     .insert(platformConfigs)
     .values({
-      key: PLATFORM_CONFIG_KEY,
+      key,
       systemPrompt,
+      allowedTools,
     })
     .onConflictDoUpdate({
       target: [platformConfigs.key],
       set: {
         systemPrompt,
+        allowedTools,
         updatedAt: new Date(),
       },
     })
     .returning();
 
   res.json({
+    key: config.key,
     systemPrompt: config.systemPrompt,
+    allowedTools: config.allowedTools,
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString(),
   });
@@ -350,25 +373,27 @@ app.post("/chat", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, sessionId, context } = parsed.data;
+  const { configKey, message, sessionId, context } = parsed.data;
 
-  // Look up app config by orgId, fall back to platform config
+  // Look up app config by (orgId, configKey), fall back to platform config by configKey
   const [orgConfig] = await db
     .select()
     .from(appConfigs)
-    .where(eq(appConfigs.orgId, orgId));
+    .where(and(eq(appConfigs.orgId, orgId), eq(appConfigs.key, configKey)));
 
   const appConfig = orgConfig ?? (await db
     .select()
     .from(platformConfigs)
-    .where(eq(platformConfigs.key, PLATFORM_CONFIG_KEY))
+    .where(eq(platformConfigs.key, configKey))
     .then(([row]) => row ?? null));
 
   if (!appConfig) {
     return res.status(404).json({
-      error: `No chat config found for org="${orgId}". Register via PUT /config or PUT /platform-config.`,
+      error: `No chat config found for key="${configKey}" (org="${orgId}"). Register via PUT /config or PUT /platform-config.`,
     });
   }
+
+  const allowedToolNames: string[] = appConfig.allowedTools as string[];
 
   // Resolve Anthropic API key per-request (supports BYOK per org)
   let resolvedKey: ResolvedKey;
@@ -590,9 +615,8 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
 
-    const allTools = context?.type === "feature-creator"
-      ? FEATURE_CREATOR_TOOLS
-      : BUILTIN_TOOLS;
+    const allTools = resolveToolSet(allowedToolNames);
+    const allowedToolSet = new Set(allowedToolNames);
 
     // Detect client disconnect to abort in-flight streams
     const abortController = new AbortController();
@@ -610,6 +634,15 @@ app.post("/chat", requireAuth, async (req, res) => {
     async function executeTool(
       call: { name: string; args: Record<string, unknown> },
     ): Promise<{ name: string; result: unknown } | "input_request" | null> {
+      // Tool guard: reject tools not in the config's allowedTools
+      if (!allowedToolSet.has(call.name)) {
+        console.warn(`[chat] Tool "${call.name}" not in allowedTools for configKey="${configKey}" — rejecting`);
+        return {
+          name: call.name,
+          result: { error: `Tool "${call.name}" is not available in this chat mode.` },
+        };
+      }
+
       // Client-side tool: emit input_request and signal to stop
       if (call.name === "request_user_input") {
         const args = (call.args as Record<string, unknown>) || {};
@@ -809,20 +842,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         return { name: call.name, result };
       }
 
-      if (call.name === "call_api") {
-        const args = (call.args as Record<string, unknown>) || {};
-        const result = await callApi(
-          {
-            service: args.service as string,
-            method: args.method as "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
-            path: args.path as string,
-            body: args.body as Record<string, unknown> | undefined,
-          },
-          { orgId, userId, runId: runId! },
-        );
-        toolCalls.push({ name: call.name, args, result });
-        return { name: call.name, result };
-      }
+      // call_api removed — security risk (unrestricted admin-key access to all services)
 
       // Key-service read tools
       if (call.name === "list_org_keys") {

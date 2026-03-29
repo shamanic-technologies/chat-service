@@ -212,35 +212,7 @@ export const LIST_SERVICE_ENDPOINTS_TOOL: Anthropic.Tool = {
   },
 };
 
-export const CALL_API_TOOL: Anthropic.Tool = {
-  name: "call_api",
-  description:
-    "Call an API endpoint on a registered service. The API key is injected automatically — you only need the service name, method, path, and optional body. Use list_services → list_service_endpoints first to discover available endpoints. Use this to verify data, read resources, or check service state.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      service: {
-        type: "string",
-        description: "Target service name (e.g. 'brand', 'features')",
-      },
-      method: {
-        type: "string",
-        enum: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-        description: "HTTP method",
-      },
-      path: {
-        type: "string",
-        description:
-          "Endpoint path on the target service (e.g. '/features/cold-email-outreach/inputs')",
-      },
-      body: {
-        type: "object",
-        description: "Request body for POST/PUT/PATCH (optional)",
-      },
-    },
-    required: ["service", "method", "path"],
-  },
-};
+// call_api tool removed — security risk (unrestricted admin-key access to all services)
 
 // ---------------------------------------------------------------------------
 // Key-service read tools
@@ -782,38 +754,56 @@ export const GET_FEATURE_STATS_TOOL: Anthropic.Tool = {
   },
 };
 
-export const BUILTIN_TOOLS: Anthropic.Tool[] = [
-  REQUEST_USER_INPUT_TOOL,
-  UPDATE_WORKFLOW_TOOL,
-  VALIDATE_WORKFLOW_TOOL,
-  GET_PROMPT_TEMPLATE_TOOL,
-  UPDATE_PROMPT_TEMPLATE_TOOL,
-  UPDATE_WORKFLOW_NODE_CONFIG_TOOL,
-  GET_WORKFLOW_DETAILS_TOOL,
-  GET_WORKFLOW_REQUIRED_PROVIDERS_TOOL,
-  LIST_WORKFLOWS_TOOL,
-  // API Registry progressive disclosure
-  LIST_SERVICES_TOOL,
-  LIST_SERVICE_ENDPOINTS_TOOL,
-  CALL_API_TOOL,
-  // Key-service read tools
-  LIST_ORG_KEYS_TOOL,
-  GET_KEY_SOURCE_TOOL,
-  LIST_KEY_SOURCES_TOOL,
-  CHECK_PROVIDER_REQUIREMENTS_TOOL,
-];
+// ---------------------------------------------------------------------------
+// Tool registry — every tool the service knows how to execute.
+// Clients choose which subset to enable via allowedTools in their config.
+// ---------------------------------------------------------------------------
 
-/** Tools available when context.type === "feature-creator" */
-export const FEATURE_CREATOR_TOOLS: Anthropic.Tool[] = [
-  REQUEST_USER_INPUT_TOOL,
-  CREATE_FEATURE_TOOL,
-  UPDATE_FEATURE_TOOL,
-  LIST_FEATURES_TOOL,
-  GET_FEATURE_TOOL,
-  GET_FEATURE_INPUTS_TOOL,
-  PREFILL_FEATURE_TOOL,
-  GET_FEATURE_STATS_TOOL,
-];
+export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
+  request_user_input: REQUEST_USER_INPUT_TOOL,
+  update_workflow: UPDATE_WORKFLOW_TOOL,
+  validate_workflow: VALIDATE_WORKFLOW_TOOL,
+  get_prompt_template: GET_PROMPT_TEMPLATE_TOOL,
+  update_prompt_template: UPDATE_PROMPT_TEMPLATE_TOOL,
+  update_workflow_node_config: UPDATE_WORKFLOW_NODE_CONFIG_TOOL,
+  get_workflow_details: GET_WORKFLOW_DETAILS_TOOL,
+  generate_workflow: GENERATE_WORKFLOW_TOOL,
+  get_workflow_required_providers: GET_WORKFLOW_REQUIRED_PROVIDERS_TOOL,
+  list_workflows: LIST_WORKFLOWS_TOOL,
+  list_services: LIST_SERVICES_TOOL,
+  list_service_endpoints: LIST_SERVICE_ENDPOINTS_TOOL,
+  list_org_keys: LIST_ORG_KEYS_TOOL,
+  get_key_source: GET_KEY_SOURCE_TOOL,
+  list_key_sources: LIST_KEY_SOURCES_TOOL,
+  check_provider_requirements: CHECK_PROVIDER_REQUIREMENTS_TOOL,
+  create_feature: CREATE_FEATURE_TOOL,
+  update_feature: UPDATE_FEATURE_TOOL,
+  list_features: LIST_FEATURES_TOOL,
+  get_feature: GET_FEATURE_TOOL,
+  get_feature_inputs: GET_FEATURE_INPUTS_TOOL,
+  prefill_feature: PREFILL_FEATURE_TOOL,
+  get_feature_stats: GET_FEATURE_STATS_TOOL,
+};
+
+/** All tool names available for use in allowedTools config. */
+export const AVAILABLE_TOOL_NAMES = Object.keys(TOOL_REGISTRY);
+
+/**
+ * Resolve a list of tool names to their Anthropic tool definitions.
+ * Ignores unknown names (logs a warning).
+ */
+export function resolveToolSet(allowedTools: string[]): Anthropic.Tool[] {
+  const tools: Anthropic.Tool[] = [];
+  for (const name of allowedTools) {
+    const tool = TOOL_REGISTRY[name];
+    if (tool) {
+      tools.push(tool);
+    } else {
+      console.warn(`[chat-service] Unknown tool in allowedTools: "${name}" — skipping`);
+    }
+  }
+  return tools;
+}
 
 // ---------------------------------------------------------------------------
 // Types

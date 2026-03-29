@@ -2,12 +2,14 @@ import { describe, it, expect } from "vitest";
 import { ChatRequestSchema } from "../../src/schemas.js";
 
 describe("ChatRequestSchema", () => {
-  it("accepts valid request with message", () => {
+  it("accepts valid request with configKey and message", () => {
     const result = ChatRequestSchema.safeParse({
+      configKey: "workflow",
       message: "Hello",
     });
     expect(result.success).toBe(true);
     if (result.success) {
+      expect(result.data.configKey).toBe("workflow");
       expect(result.data.message).toBe("Hello");
       expect(result.data.sessionId).toBeUndefined();
       expect(result.data.context).toBeUndefined();
@@ -16,54 +18,67 @@ describe("ChatRequestSchema", () => {
 
   it("accepts valid request with all fields", () => {
     const result = ChatRequestSchema.safeParse({
+      configKey: "workflow",
       message: "Hello",
       sessionId: "550e8400-e29b-41d4-a716-446655440000",
-      context: { brandUrl: "https://example.com", budget: 500 },
+      context: { workflowId: "wf-123", brandUrl: "https://example.com" },
     });
     expect(result.success).toBe(true);
     if (result.success) {
+      expect(result.data.configKey).toBe("workflow");
       expect(result.data.context).toEqual({
+        workflowId: "wf-123",
         brandUrl: "https://example.com",
-        budget: 500,
       });
     }
   });
 
+  it("rejects missing configKey", () => {
+    const result = ChatRequestSchema.safeParse({
+      message: "Hello",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects empty configKey", () => {
+    const result = ChatRequestSchema.safeParse({
+      configKey: "",
+      message: "Hello",
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("rejects empty message", () => {
     const result = ChatRequestSchema.safeParse({
+      configKey: "workflow",
       message: "",
     });
     expect(result.success).toBe(false);
   });
 
   it("rejects missing message", () => {
-    const result = ChatRequestSchema.safeParse({});
+    const result = ChatRequestSchema.safeParse({
+      configKey: "workflow",
+    });
     expect(result.success).toBe(false);
-  });
-
-  it("does not require appId (removed from contract)", () => {
-    const result = ChatRequestSchema.safeParse({ message: "Hello" });
-    expect(result.success).toBe(true);
   });
 
   it("accepts sessionId: null (reset chat sends null)", () => {
     const result = ChatRequestSchema.safeParse({
+      configKey: "feature",
       message: "Hello",
       sessionId: null,
-      context: { type: "workflow-viewer", workflowId: "wf-123" },
+      context: { featureSlug: "cold-email-outreach" },
     });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.sessionId).toBeNull();
-      expect(result.data.context).toEqual({
-        type: "workflow-viewer",
-        workflowId: "wf-123",
-      });
     }
   });
 
   it("rejects non-uuid sessionId", () => {
     const result = ChatRequestSchema.safeParse({
+      configKey: "workflow",
       message: "Hello",
       sessionId: "not-a-uuid",
     });
@@ -72,6 +87,7 @@ describe("ChatRequestSchema", () => {
 
   it("accepts context with any JSON structure", () => {
     const result = ChatRequestSchema.safeParse({
+      configKey: "workflow",
       message: "Hello",
       context: {
         nested: { deep: true },
@@ -84,6 +100,7 @@ describe("ChatRequestSchema", () => {
 
   it("strips extra fields", () => {
     const result = ChatRequestSchema.safeParse({
+      configKey: "workflow",
       message: "Hello",
       extra: "field",
       appId: "leftover-app-id",

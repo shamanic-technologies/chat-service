@@ -98,7 +98,36 @@ registry.registerPath({
 
 export const AppConfigRequestSchema = z
   .object({
-    systemPrompt: z.string().min(1, "systemPrompt is required"),
+    key: z.string().min(1, "key is required").openapi({
+      description:
+        "Config key — identifies which chat mode this config is for (e.g. 'workflow', 'feature', 'press-kit'). " +
+        "Each org can have multiple configs, one per key.",
+      example: "workflow",
+    }),
+    systemPrompt: z.string().min(1, "systemPrompt is required").openapi({
+      description: "System prompt sent to the LLM for this chat mode",
+      example:
+        "You are an AI assistant that helps users understand and modify their workflows.",
+    }),
+    allowedTools: z.array(z.string().min(1)).min(1, "allowedTools must contain at least one tool").openapi({
+      description:
+        "List of tool names the LLM is allowed to use in this chat mode. " +
+        "Only these tools will be provided to the model and executable server-side. " +
+        "Available tools: request_user_input, update_workflow, validate_workflow, " +
+        "get_workflow_details, generate_workflow, get_workflow_required_providers, list_workflows, " +
+        "update_workflow_node_config, get_prompt_template, update_prompt_template, " +
+        "list_services, list_service_endpoints, " +
+        "list_org_keys, get_key_source, list_key_sources, check_provider_requirements, " +
+        "create_feature, update_feature, list_features, get_feature, get_feature_inputs, " +
+        "prefill_feature, get_feature_stats",
+      example: [
+        "request_user_input",
+        "update_workflow",
+        "validate_workflow",
+        "get_workflow_details",
+        "list_workflows",
+      ],
+    }),
   })
   .strict()
   .openapi("AppConfigRequest");
@@ -106,7 +135,9 @@ export const AppConfigRequestSchema = z
 export const AppConfigResponseSchema = z
   .object({
     orgId: z.string(),
+    key: z.string(),
     systemPrompt: z.string(),
+    allowedTools: z.array(z.string()),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -120,7 +151,19 @@ registry.registerPath({
   tags: ["App Config"],
   summary: "Register or update app configuration",
   description:
-    "Idempotent upsert of app configuration scoped by org (via x-org-id header). Includes system prompt. Call on every cold start.",
+    "Idempotent upsert of app configuration scoped by (orgId, key). Each key represents a chat mode " +
+    "(e.g. 'workflow', 'feature', 'press-kit'). The config defines the system prompt and which tools " +
+    "the LLM can use in that mode. Call on every cold start.\n\n" +
+    "**Example — workflow chat config:**\n" +
+    "```json\n" +
+    '{ "key": "workflow", "systemPrompt": "You help users understand and modify workflows...", ' +
+    '"allowedTools": ["request_user_input", "update_workflow", "validate_workflow", "get_workflow_details", "list_workflows", "update_workflow_node_config", "get_prompt_template", "update_prompt_template", "list_org_keys", "get_key_source", "list_key_sources", "check_provider_requirements", "list_services", "list_service_endpoints", "generate_workflow", "get_workflow_required_providers"] }\n' +
+    "```\n\n" +
+    "**Example — feature chat config:**\n" +
+    "```json\n" +
+    '{ "key": "feature", "systemPrompt": "You help users design and manage features...", ' +
+    '"allowedTools": ["request_user_input", "create_feature", "update_feature", "list_features", "get_feature", "get_feature_inputs", "prefill_feature", "get_feature_stats"] }\n' +
+    "```",
   request: {
     headers: z.object({
       "x-api-key": z.string().openapi({
@@ -165,14 +208,37 @@ registry.registerPath({
 
 export const PlatformConfigRequestSchema = z
   .object({
-    systemPrompt: z.string().min(1, "systemPrompt is required"),
+    key: z.string().min(1, "key is required").openapi({
+      description:
+        "Config key — identifies which chat mode this platform config is for. " +
+        "Used as fallback when no per-org config exists for this key.",
+      example: "workflow",
+    }),
+    systemPrompt: z.string().min(1, "systemPrompt is required").openapi({
+      description: "Default system prompt for all orgs without a per-org config for this key",
+      example:
+        "You are an AI assistant that helps users understand and modify their workflows.",
+    }),
+    allowedTools: z.array(z.string().min(1)).min(1, "allowedTools must contain at least one tool").openapi({
+      description:
+        "List of tool names the LLM is allowed to use. Same semantics as in PUT /config.",
+      example: [
+        "request_user_input",
+        "update_workflow",
+        "validate_workflow",
+        "get_workflow_details",
+        "list_workflows",
+      ],
+    }),
   })
   .strict()
   .openapi("PlatformConfigRequest");
 
 export const PlatformConfigResponseSchema = z
   .object({
+    key: z.string(),
     systemPrompt: z.string(),
+    allowedTools: z.array(z.string()),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -186,7 +252,13 @@ registry.registerPath({
   tags: ["Platform Config"],
   summary: "Register or update platform-wide chat configuration",
   description:
-    "Idempotent upsert of a global chat configuration (not scoped to any org). Used as fallback when no per-org config exists. Auth: X-API-Key only — no x-org-id, x-user-id, or x-run-id required. Called on every cold start by api-service.",
+    "Idempotent upsert of a platform-wide chat configuration keyed by `key`. " +
+    "Used as fallback when no per-org config exists for the same key. " +
+    "Auth: X-API-Key only — no x-org-id, x-user-id, or x-run-id required. " +
+    "Called on every cold start by api-service.\n\n" +
+    "**Config resolution in POST /chat:** " +
+    "Per-org config `(orgId, configKey)` takes priority. If none exists, " +
+    "platform config `(configKey)` is used. If neither exists → 404.",
   request: {
     headers: z.object({
       "x-api-key": z.string().openapi({
@@ -341,13 +413,20 @@ Unlike POST /chat, this endpoint:
 
 export const ChatRequestSchema = z
   .object({
+    configKey: z.string().min(1, "configKey is required").openapi({
+      description:
+        "Which chat config to use for this request. Must match a key registered via PUT /config " +
+        "(per-org) or PUT /platform-config (platform-wide fallback). " +
+        "Examples: 'workflow', 'feature', 'press-kit'.",
+      example: "workflow",
+    }),
     message: z.string().min(1, "message is required").openapi({
       description: "The user's chat message",
       example: "What campaigns are performing best this week?",
     }),
     sessionId: z.string().uuid().nullish().openapi({
       description:
-        "UUID of an existing session to continue. Omit to create a new session. " +
+        "UUID of an existing session to continue. Omit or pass null to start a new conversation. " +
         "When omitted, the service creates a new session and returns its ID in the first SSE event " +
         '({"sessionId":"<uuid>"}). Use that ID in subsequent requests to continue the conversation. ' +
         "If a sessionId is provided but does not exist or belongs to a different org, the stream " +
@@ -356,12 +435,16 @@ export const ChatRequestSchema = z
     }),
     context: z.record(z.string(), z.unknown()).optional().openapi({
       description:
-        "Free-form JSON injected into the system prompt for this request only (not stored). " +
-        "Use this to pass dynamic data like brand URLs, campaign objectives, budgets, etc.",
+        "Free-form JSON context provided by the frontend (not user-editable). " +
+        "Injected into the system prompt for this request only (not stored). " +
+        "Re-send on every message — the service does not cache it. " +
+        "Use this to pass the current page state: workflow details, brand info, etc.",
       example: {
+        workflowId: "wf-550e8400-e29b-41d4-a716-446655440000",
+        workflowSlug: "cold-email-outreach",
+        workflowName: "Cold Email Outreach",
+        brandId: "brand-123",
         brandUrl: "https://example.com",
-        objective: "clicks",
-        budgetAmount: 500,
       },
     }),
   })
@@ -521,26 +604,35 @@ registry.registerPath({
   summary: "Stream AI chat response",
   description: `Send a message and receive a streamed AI response via Server-Sent Events (SSE).
 
+**Config resolution:**
+The \`configKey\` field selects which chat config to use. Resolution order:
+1. Per-org config: \`(orgId, configKey)\` from PUT /config
+2. Platform config: \`(configKey)\` from PUT /platform-config
+3. If neither exists → 404
+
+The selected config determines both the system prompt and which tools the LLM can use.
+
 **Session lifecycle:**
-- To start a new conversation, omit \`sessionId\`. The first SSE event will be \`{"sessionId":"<uuid>"}\` — store this ID.
+- To start a new conversation, omit \`sessionId\` (or pass \`null\`). The first SSE event will be \`{"sessionId":"<uuid>"}\` — store this ID.
 - To continue a conversation, pass that \`sessionId\` in subsequent requests.
-- If a provided \`sessionId\` does not exist or belongs to a different org, the stream returns an error and closes.
+- To reset a conversation (e.g. after a fork), omit \`sessionId\` and send a new \`context\`.
+
+**Context:**
+The \`context\` field is a free-form JSON object provided by the frontend on **every** message. It is injected into the system prompt but not stored. Re-send it on every request — the service does not cache it. After a fork (e.g. workflow updated → new workflow created), the frontend should update its context with the new IDs and either continue the session or start a new one.
 
 **SSE event order:**
 Each \`data:\` line contains a JSON object. Events arrive in this order:
 
 1. **Session** — \`{"sessionId":"<uuid>"}\` (always first)
-2. **Thinking** _(optional)_ — \`thinking_start\` → one or more \`thinking_delta\` → \`thinking_stop\`. May appear before tokens and after tool results.
-3. **Tokens** — \`{"type":"token","content":"..."}\` streamed incrementally as the AI generates text.
-4. **Tool calls** _(optional, repeatable)_ — \`tool_call\` followed by \`tool_result\`, then more thinking/tokens as the AI continues.
+2. **Thinking** _(optional)_ — \`thinking_start\` → one or more \`thinking_delta\` → \`thinking_stop\`.
+3. **Tokens** — \`{"type":"token","content":"..."}\` streamed incrementally.
+4. **Tool calls** _(optional, repeatable)_ — \`tool_call\` followed by \`tool_result\`, then more thinking/tokens.
 5. **Input request** _(optional)_ — \`input_request\` when the AI needs structured user input (terminates the response).
 6. **Buttons** _(optional)_ — \`{"type":"buttons","buttons":[...]}\` with quick-reply options, sent after all tokens.
-7. **Error** _(optional)_ — \`{"type":"error","message":"..."}\` if the AI model returns an empty response (context overflow, safety filter) or an unexpected error occurs. Sent before \`[DONE]\`.
+7. **Error** _(optional)_ — \`{"type":"error","message":"..."}\` if something goes wrong. Sent before \`[DONE]\`.
 8. **Done** — \`"[DONE]"\` (always last).
 
-See the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent, SSEErrorEvent) in components/schemas for exact payload shapes.
-
-Requires app config to be registered first via PUT /config (or platform config via PUT /platform-config as fallback).`,
+**Available tools** depend on the config's \`allowedTools\`. The LLM only sees and can call the tools listed there. See PUT /config documentation for the full list of available tool names.`,
   request: {
     headers: z.object({
       "x-api-key": z.string().openapi({

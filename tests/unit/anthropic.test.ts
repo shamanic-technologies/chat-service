@@ -42,13 +42,13 @@ import {
   GET_FEATURE_TOOL,
   LIST_SERVICES_TOOL,
   LIST_SERVICE_ENDPOINTS_TOOL,
-  CALL_API_TOOL,
   LIST_ORG_KEYS_TOOL,
   GET_KEY_SOURCE_TOOL,
   LIST_KEY_SOURCES_TOOL,
   CHECK_PROVIDER_REQUIREMENTS_TOOL,
-  BUILTIN_TOOLS,
-  FEATURE_CREATOR_TOOLS,
+  TOOL_REGISTRY,
+  AVAILABLE_TOOL_NAMES,
+  resolveToolSet,
 } from "../../src/lib/anthropic.js";
 
 const TEST_PROMPT = "You are a test assistant.";
@@ -358,7 +358,7 @@ describe("streaming events", () => {
     });
     const stream = client.createStream(
       [{ role: "user", content: "show workflow" }],
-      BUILTIN_TOOLS,
+      resolveToolSet(AVAILABLE_TOOL_NAMES),
     );
 
     for await (const _ of stream) {
@@ -510,36 +510,34 @@ describe("VALIDATE_WORKFLOW_TOOL", () => {
   });
 });
 
-describe("BUILTIN_TOOLS", () => {
-  it("includes all built-in tools", () => {
-    const names = BUILTIN_TOOLS.map((t) => t.name);
-    // Workflow tools
-    expect(names).toContain("request_user_input");
-    expect(names).toContain("update_workflow");
-    expect(names).toContain("validate_workflow");
-    expect(names).toContain("get_prompt_template");
-    expect(names).toContain("update_prompt_template");
-    expect(names).toContain("update_workflow_node_config");
-    expect(names).toContain("get_workflow_details");
-    expect(names).toContain("get_workflow_required_providers");
-    expect(names).toContain("list_workflows");
-    // API Registry progressive disclosure
-    expect(names).toContain("list_services");
-    expect(names).toContain("list_service_endpoints");
-    expect(names).toContain("call_api");
-    // Key-service read tools
-    expect(names).toContain("list_org_keys");
-    expect(names).toContain("get_key_source");
-    expect(names).toContain("list_key_sources");
-    expect(names).toContain("check_provider_requirements");
-    // Removed
-    expect(names).not.toContain("list_available_services");
-    expect(names).not.toContain("generate_workflow");
-    expect(BUILTIN_TOOLS).toHaveLength(16);
+describe("TOOL_REGISTRY", () => {
+  it("contains all expected tools", () => {
+    expect(AVAILABLE_TOOL_NAMES).toContain("request_user_input");
+    expect(AVAILABLE_TOOL_NAMES).toContain("update_workflow");
+    expect(AVAILABLE_TOOL_NAMES).toContain("validate_workflow");
+    expect(AVAILABLE_TOOL_NAMES).toContain("get_prompt_template");
+    expect(AVAILABLE_TOOL_NAMES).toContain("update_prompt_template");
+    expect(AVAILABLE_TOOL_NAMES).toContain("update_workflow_node_config");
+    expect(AVAILABLE_TOOL_NAMES).toContain("get_workflow_details");
+    expect(AVAILABLE_TOOL_NAMES).toContain("generate_workflow");
+    expect(AVAILABLE_TOOL_NAMES).toContain("get_workflow_required_providers");
+    expect(AVAILABLE_TOOL_NAMES).toContain("list_workflows");
+    expect(AVAILABLE_TOOL_NAMES).toContain("list_services");
+    expect(AVAILABLE_TOOL_NAMES).toContain("list_service_endpoints");
+    expect(AVAILABLE_TOOL_NAMES).toContain("list_org_keys");
+    expect(AVAILABLE_TOOL_NAMES).toContain("get_key_source");
+    expect(AVAILABLE_TOOL_NAMES).toContain("list_key_sources");
+    expect(AVAILABLE_TOOL_NAMES).toContain("check_provider_requirements");
+    expect(AVAILABLE_TOOL_NAMES).toContain("create_feature");
+    expect(AVAILABLE_TOOL_NAMES).toContain("update_feature");
+  });
+
+  it("does NOT contain call_api (removed for security)", () => {
+    expect(AVAILABLE_TOOL_NAMES).not.toContain("call_api");
   });
 
   it("all tools use Anthropic input_schema format", () => {
-    for (const tool of BUILTIN_TOOLS) {
+    for (const tool of Object.values(TOOL_REGISTRY)) {
       expect(tool.input_schema).toBeDefined();
       expect(tool.input_schema.type).toBe("object");
       expect(tool).toHaveProperty("name");
@@ -562,14 +560,8 @@ describe("API Registry progressive disclosure tools", () => {
     expect(schema.required).toEqual(["service"]);
   });
 
-  it("CALL_API_TOOL requires service, method, path", () => {
-    expect(CALL_API_TOOL.name).toBe("call_api");
-    const schema = CALL_API_TOOL.input_schema as {
-      properties: Record<string, unknown>;
-      required: string[];
-    };
-    expect(schema.required).toEqual(["service", "method", "path"]);
-    expect(schema.properties).toHaveProperty("body");
+  it("call_api is NOT in the tool registry (removed for security)", () => {
+    expect(TOOL_REGISTRY["call_api"]).toBeUndefined();
   });
 });
 
@@ -688,25 +680,17 @@ describe("Feature-creator tools", () => {
   });
 });
 
-describe("FEATURE_CREATOR_TOOLS", () => {
-  it("includes all 8 feature-creator tools", () => {
-    const names = FEATURE_CREATOR_TOOLS.map((t) => t.name);
-    expect(names).toContain("request_user_input");
-    expect(names).toContain("create_feature");
-    expect(names).toContain("update_feature");
-    expect(names).toContain("list_features");
-    expect(names).toContain("get_feature");
-    expect(names).toContain("get_feature_inputs");
-    expect(names).toContain("prefill_feature");
-    expect(names).toContain("get_feature_stats");
-    expect(FEATURE_CREATOR_TOOLS).toHaveLength(8);
+describe("resolveToolSet", () => {
+  it("resolves a subset of tools from the registry", () => {
+    const tools = resolveToolSet(["request_user_input", "create_feature", "update_feature"]);
+    expect(tools).toHaveLength(3);
+    expect(tools.map((t) => t.name)).toEqual(["request_user_input", "create_feature", "update_feature"]);
   });
 
-  it("does not include workflow tools", () => {
-    const names = FEATURE_CREATOR_TOOLS.map((t) => t.name);
-    expect(names).not.toContain("update_workflow");
-    expect(names).not.toContain("list_workflows");
-    expect(names).not.toContain("get_workflow_details");
+  it("skips unknown tool names gracefully", () => {
+    const tools = resolveToolSet(["request_user_input", "nonexistent_tool"]);
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe("request_user_input");
   });
 });
 
