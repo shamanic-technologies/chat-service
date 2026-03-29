@@ -413,11 +413,11 @@ Unlike POST /chat, this endpoint:
 
 export const ChatRequestSchema = z
   .object({
-    configKey: z.string().min(1).default("default").openapi({
+    configKey: z.string().min(1, "configKey is required").openapi({
       description:
         "Which chat config to use for this request. Must match a key registered via PUT /config " +
         "(per-org) or PUT /platform-config (platform-wide fallback). " +
-        "Defaults to 'default' if omitted. Examples: 'workflow', 'feature', 'press-kit'.",
+        "Examples: 'workflow', 'feature', 'press-kit'.",
       example: "workflow",
     }),
     message: z.string().min(1, "message is required").openapi({
