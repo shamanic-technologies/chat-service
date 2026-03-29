@@ -33,11 +33,14 @@ describe("ChatRequestSchema", () => {
     }
   });
 
-  it("rejects missing configKey", () => {
+  it("defaults configKey to 'default' when omitted", () => {
     const result = ChatRequestSchema.safeParse({
       message: "Hello",
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.configKey).toBe("default");
+    }
   });
 
   it("rejects empty configKey", () => {
