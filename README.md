@@ -203,7 +203,7 @@ Request body:
 }
 ```
 
-- `configKey` (optional, default `"default"`) — which config to use (must match a key from `PUT /config` or `PUT /platform-config`)
+- `configKey` (required) — which config to use (must match a key from `PUT /config` or `PUT /platform-config`)
 - `message` (required) — the user's chat message
 - `sessionId` (optional, nullable) — UUID of an existing session to continue. **Omit or pass `null` to start a new conversation** — the service creates the session and returns its ID in the first SSE event (`{"sessionId":"<uuid>"}`). Store that ID and pass it in subsequent requests. If a provided `sessionId` does not exist or belongs to a different org, the stream returns `"Session not found."` and closes. **Do not generate your own UUID** — always use the one returned by the service.
 - `context` (optional) — free-form JSON provided by the **frontend** (not user-editable). Injected into the system prompt for this request only (not stored). **Re-send on every message** — the service does not cache it. After a fork (e.g. workflow updated → new workflow created), update the context with the new IDs.
