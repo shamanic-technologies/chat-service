@@ -27,26 +27,68 @@ All endpoints (except `/health` and `/openapi.json`) require these headers:
 
 ## App Config Registration
 
-Before using `/chat`, orgs must register their configuration via:
+Before using `/chat`, register a config for each chat mode your app needs. Each config is identified by a `key` (e.g. `"workflow"`, `"feature"`, `"press-kit"`) and defines the system prompt + which tools the LLM can use.
 
 `PUT /config`
 
-Request body:
+**Example — workflow chat:**
 ```json
 {
-  "systemPrompt": "You are a helpful assistant for cold email campaigns..."
+  "key": "workflow",
+  "systemPrompt": "You are an AI assistant that helps users understand and modify their outreach workflows...",
+  "allowedTools": [
+    "request_user_input",
+    "update_workflow",
+    "validate_workflow",
+    "get_workflow_details",
+    "generate_workflow",
+    "get_workflow_required_providers",
+    "list_workflows",
+    "update_workflow_node_config",
+    "get_prompt_template",
+    "update_prompt_template",
+    "list_services",
+    "list_service_endpoints",
+    "list_org_keys",
+    "get_key_source",
+    "list_key_sources",
+    "check_provider_requirements"
+  ]
 }
 ```
 
-- `systemPrompt` (required) — the system prompt sent to Claude for this org
+**Example — feature chat:**
+```json
+{
+  "key": "feature",
+  "systemPrompt": "You are an AI assistant that helps users design and manage features...",
+  "allowedTools": [
+    "request_user_input",
+    "create_feature",
+    "update_feature",
+    "list_features",
+    "get_feature",
+    "get_feature_inputs",
+    "prefill_feature",
+    "get_feature_stats"
+  ]
+}
+```
 
-This endpoint is **idempotent** (upsert on `orgId` from the `x-org-id` header). Call it on every cold start.
+Fields:
+- `key` (required) — config identifier, unique per org. Clients pass this as `configKey` in `POST /chat`.
+- `systemPrompt` (required) — the system prompt sent to Claude for this chat mode
+- `allowedTools` (required, min 1) — which tools the LLM can use. The service rejects any tool call not in this list. See [Available Tools](#available-tools) for the full list.
+
+This endpoint is **idempotent** (upsert on `(orgId, key)`). Call it on every cold start.
 
 Response:
 ```json
 {
   "orgId": "org-uuid",
+  "key": "workflow",
   "systemPrompt": "...",
+  "allowedTools": ["..."],
   "createdAt": "2026-02-26T00:00:00.000Z",
   "updatedAt": "2026-02-26T00:00:00.000Z"
 }
@@ -54,29 +96,37 @@ Response:
 
 ## Platform Config Registration
 
-Register a global (non-org-scoped) chat configuration used as fallback when no per-org config exists:
+Register a platform-wide config for a given key. Used as fallback when no per-org config exists for that key.
 
 `PUT /platform-config`
 
 **Auth:** `X-API-Key` only — no `x-org-id`, `x-user-id`, or `x-run-id` headers required.
 
-Request body:
 ```json
 {
-  "systemPrompt": "You are a helpful assistant..."
+  "key": "workflow",
+  "systemPrompt": "You are a helpful assistant...",
+  "allowedTools": ["request_user_input", "get_workflow_details", "list_workflows"]
 }
 ```
 
-- `systemPrompt` (required) — the default system prompt for all orgs without a per-org config
+Fields: same as `PUT /config` — `key`, `systemPrompt`, `allowedTools` (all required).
 
-This endpoint is **idempotent** (upsert). Called on every cold start by api-service.
+This endpoint is **idempotent** (upsert on `key`). Called on every cold start by api-service.
 
-**Config resolution in POST /chat:** Per-org config (from `PUT /config`) takes priority. If none exists, the platform config (from `PUT /platform-config`) is used. If neither exists, the request fails with 404. There is no merging — it's one or the other.
+**Config resolution in POST /chat:**
+1. Per-org config `(orgId, configKey)` → if found, use it
+2. Platform config `(configKey)` → if found, use it
+3. Neither found → **404**
+
+There is no merging — it's one or the other.
 
 Response:
 ```json
 {
+  "key": "workflow",
   "systemPrompt": "...",
+  "allowedTools": ["..."],
   "createdAt": "2026-02-26T00:00:00.000Z",
   "updatedAt": "2026-02-26T00:00:00.000Z"
 }
@@ -140,19 +190,23 @@ When the `x-campaign-id` header is present, both `/chat` and `/complete` automat
 Request body:
 ```json
 {
+  "configKey": "workflow",
   "message": "Hello",
-  "sessionId": "optional-uuid",
+  "sessionId": "optional-uuid-or-null",
   "context": {
-    "brandUrl": "https://example.com",
-    "objective": "clicks",
-    "budgetAmount": 500
+    "workflowId": "wf-550e8400-e29b-41d4-a716-446655440000",
+    "workflowSlug": "cold-email-outreach",
+    "workflowName": "Cold Email Outreach",
+    "brandId": "brand-123",
+    "brandUrl": "https://example.com"
   }
 }
 ```
 
+- `configKey` (required) — which config to use (must match a key from `PUT /config` or `PUT /platform-config`)
 - `message` (required) — the user's chat message
 - `sessionId` (optional, nullable) — UUID of an existing session to continue. **Omit or pass `null` to start a new conversation** — the service creates the session and returns its ID in the first SSE event (`{"sessionId":"<uuid>"}`). Store that ID and pass it in subsequent requests. If a provided `sessionId` does not exist or belongs to a different org, the stream returns `"Session not found."` and closes. **Do not generate your own UUID** — always use the one returned by the service.
-- `context` (optional) — free-form JSON injected into the system prompt for this request only (not stored)
+- `context` (optional) — free-form JSON provided by the **frontend** (not user-editable). Injected into the system prompt for this request only (not stored). **Re-send on every message** — the service does not cache it. After a fork (e.g. workflow updated → new workflow created), update the context with the new IDs.
 
 The response is a stream of SSE events in this order:
 
@@ -192,41 +246,57 @@ data: {"type":"tool_result","id":"tc_550e8400-e29b-41d4-a716-446655440000","name
 
 After a tool result, more `token` events follow with the AI's continuation.
 
-**Built-in tools:**
+### Available Tools
+
+The tools available in each chat session are determined by the `allowedTools` array in the config. The LLM only sees and can call tools that are listed. Unknown or unlisted tools are rejected.
+
+**Workflow tools:**
 
 | Tool | Description |
 |---|---|
 | `get_workflow_details` | Fetches full workflow details (DAG, metadata, status) via workflow-service `GET /workflows/{id}` |
-| `get_workflow_required_providers` | Returns BYOK providers needed to execute a workflow via `GET /workflows/{id}/required-providers`. Proactively warns about missing keys. |
-| `list_workflows` | Lists workflows via `GET /workflows` with optional filters: featureSlug, category, channel, audienceType, tag, status, brandId, humanId, campaignId |
-| `update_workflow` | Updates a workflow's metadata or DAG via `PUT /workflows/{id}`. DAG changes trigger a fork (201 with new workflow) rather than in-place update. Returns 409 if DAG signature already exists. Metadata-only changes update in-place (200). |
-| `update_workflow_node_config` | Updates a specific node's config in a workflow's DAG (e.g. change prompt type on `email-generate` node). Fetches, merges, and saves. May fork the workflow if the DAG changes. |
-| `validate_workflow` | Validates a workflow's DAG structure via workflow-service `POST /workflows/{id}/validate` |
-| `get_prompt_template` | Retrieves a stored prompt template by type from content-generation `GET /prompts?type=...` |
-| `update_prompt_template` | Creates a new version of an existing prompt template via content-generation `PUT /prompts` (auto-versions: e.g. `cold-email` → `cold-email-v2`) |
-| `list_services` | Lists all microservices with name, description, and endpoint count via api-registry `GET /llm-context`. Start here for service discovery. |
-| `list_service_endpoints` | Lists endpoints (method, path, summary) for a specific service via api-registry `GET /llm-context/{service}`. Use after `list_services` to drill down. |
-| `call_api` | Proxies an API call to any registered service via api-registry `POST /call/{service}`. API key injected automatically. Use to verify data or read resources. |
-| `list_org_keys` | Lists API keys configured for the current org (provider + masked key) via key-service `GET /keys`. Never exposes actual secrets. |
-| `get_key_source` | Gets key source preference (org vs platform) for a provider via key-service `GET /keys/{provider}/source`. |
-| `list_key_sources` | Lists all key source preferences for the org via key-service `GET /keys/sources`. |
-| `check_provider_requirements` | Queries which providers are needed for a set of endpoints via key-service `POST /provider-requirements`. |
-| `request_user_input` | Asks the user for structured input (see Input Request below) |
+| `generate_workflow` | Generates a new workflow from natural language via workflow-service `POST /workflows/generate` |
+| `get_workflow_required_providers` | Returns BYOK providers needed to execute a workflow via `GET /workflows/{id}/required-providers` |
+| `list_workflows` | Lists workflows via `GET /workflows` with optional filters |
+| `update_workflow` | Updates a workflow's metadata or DAG. DAG changes trigger a fork (new workflow). Metadata-only changes update in-place. |
+| `update_workflow_node_config` | Updates a specific node's config in a workflow's DAG. May fork if DAG changes. |
+| `validate_workflow` | Validates a workflow's DAG structure |
+| `get_prompt_template` | Retrieves a stored prompt template by type |
+| `update_prompt_template` | Creates a new version of an existing prompt template (auto-versions) |
 
-**Context-specific tools:**
-
-When `context.type` is `"feature-creator"`, the standard workflow tools above are **replaced** by a focused toolset for designing features:
+**Service discovery tools (read-only):**
 
 | Tool | Description |
 |---|---|
-| `request_user_input` | Asks the user for structured input (same as above) |
-| `create_feature` | Creates a new feature via `POST /features`. Required: name, description, **icon**, category, channel, audienceType, inputs (with key/label/**type**/**placeholder**/description/**extractKey**), outputs (with **key**/**displayOrder**, optional defaultSort/sortDirection — keys from stats registry), charts (min 1), entities (min 1). Optional: slug, implemented, displayOrder, status. Returns 409 on conflict. Response includes `id`, `displayName`, `signature`. |
-| `update_feature` | Updates or forks a feature via `PUT /features/:slug` (fork-on-write). Metadata-only changes update in-place (200). If inputs/outputs change (different signature), a new forked feature is created, the original is deprecated (201). Response includes `forked: boolean`. Supports: name, description, icon, category, channel, audienceType, implemented, displayOrder, status, inputs, outputs, charts, entities. |
-| `list_features` | Lists features via `GET /features` with optional filters (category, channel, audienceType, status, implemented). Responses include `displayName` (stable human label) and `name` (machine identifier, may include version suffix). |
-| `get_feature` | Gets full feature details by slug via `GET /features/:slug`. |
-| `get_feature_inputs` | Gets input definitions only via `GET /features/:slug/inputs`. Lighter than `get_feature`. |
-| `prefill_feature` | Pre-fills feature inputs from brand data via `POST /features/:slug/prefill`. Returns a map of input key → suggested text value. |
-| `get_feature_stats` | Gets computed stats via `GET /features/:slug/stats`. Supports `groupBy` (workflowSlug, brandId, campaignId) and filter params. Returns system stats (cost, runs, campaigns) and per-output metrics. |
+| `list_services` | Lists all microservices with name, description, and endpoint count |
+| `list_service_endpoints` | Lists endpoints for a specific service (method, path, summary) |
+
+**Key management tools (read-only):**
+
+| Tool | Description |
+|---|---|
+| `list_org_keys` | Lists API keys configured for the org (masked, never exposes secrets) |
+| `get_key_source` | Gets key source preference (org vs platform) for a provider |
+| `list_key_sources` | Lists all key source preferences for the org |
+| `check_provider_requirements` | Queries which providers are needed for a set of endpoints |
+
+**Feature tools:**
+
+| Tool | Description |
+|---|---|
+| `create_feature` | Creates a new feature definition |
+| `update_feature` | Updates or forks a feature (fork-on-write if signature changes) |
+| `list_features` | Lists features with optional filters |
+| `get_feature` | Gets full feature details by slug |
+| `get_feature_inputs` | Gets input definitions only (lighter than get_feature) |
+| `prefill_feature` | Pre-fills feature inputs from brand data |
+| `get_feature_stats` | Gets computed stats for a feature |
+
+**UI tools:**
+
+| Tool | Description |
+|---|---|
+| `request_user_input` | Asks the user for structured input (see Input Request below) |
 
 ### 5. Input Request (optional)
 When the AI genuinely needs information it does not have, it emits an input request:
@@ -310,8 +380,8 @@ Uses PostgreSQL via Drizzle ORM. Three tables:
 
 - **sessions** — conversation sessions scoped by `orgId` and `userId`
 - **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management), `runId` linking to RunsService, and optional `campaign_id`, `brand_id`, `workflow_slug`, `feature_slug` for workflow tracking
-- **app_configs** — per-org configuration (system prompt) with unique constraint on `orgId`
-- **platform_configs** — global platform-wide chat configuration (fallback when no per-org config exists)
+- **app_configs** — per-org configuration keyed by `(orgId, key)`. Each entry defines a system prompt and `allowedTools` for a specific chat mode.
+- **platform_configs** — platform-wide configuration keyed by `key`. Fallback when no per-org config exists for the same key.
 
 Migrations run automatically on server start. To generate new migrations after schema changes:
 

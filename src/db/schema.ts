@@ -32,17 +32,20 @@ export const appConfigs = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     orgId: text("org_id").notNull(),
+    key: text("key").notNull(),
     systemPrompt: text("system_prompt").notNull(),
+    allowedTools: jsonb("allowed_tools").notNull().$type<string[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [unique("app_configs_org_id_unique").on(table.orgId)],
+  (table) => [unique("app_configs_org_id_key_unique").on(table.orgId, table.key)],
 );
 
 export const platformConfigs = pgTable("platform_configs", {
   id: uuid("id").primaryKey().defaultRandom(),
   key: text("key").notNull().unique(),
   systemPrompt: text("system_prompt").notNull(),
+  allowedTools: jsonb("allowed_tools").notNull().$type<string[]>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
