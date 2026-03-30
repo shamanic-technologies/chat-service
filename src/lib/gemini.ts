@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
 // Gemini REST API client — lightweight, no SDK dependency
-// Used by POST /complete for vision tasks (gemini-2.5-flash)
+// Used by POST /complete for vision tasks (gemini-3.1-flash-lite-preview)
 // ---------------------------------------------------------------------------
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 export const GEMINI_MODELS: Record<string, string> = {
-  "gemini-2.5-flash": "google-flash-2.5",
+  "gemini-3.1-flash-lite-preview": "google-flash-lite-3.1",
 };
 
 /** Check if a model ID is a Gemini model. */
@@ -16,7 +16,7 @@ export function isGeminiModel(model: string): boolean {
 
 /** Get cost-name prefix for a Gemini model. */
 export function geminiCostPrefix(model: string): string {
-  return GEMINI_MODELS[model] ?? "google-flash-2.5";
+  return GEMINI_MODELS[model] ?? "google-flash-lite-3.1";
 }
 
 export interface ImageContext {
