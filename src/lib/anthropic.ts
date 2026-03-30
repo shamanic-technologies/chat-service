@@ -840,34 +840,10 @@ export function buildSystemPrompt(
   }
 
   if (context && Object.keys(context).length > 0) {
-    const contextKeys = Object.keys(context);
-    const lines: string[] = [
+    prompt += [
       `\n\n---\n## Additional Context (this request only)`,
       JSON.stringify(context, null, 2),
-      `\n## IMPORTANT: Context Usage Rules`,
-      `The values above (${contextKeys.join(", ")}) are already known — use them directly when calling tools.`,
-      `Do NOT call request_user_input to ask for any value that is already present in this context.`,
-      `Only use request_user_input when you genuinely need information that is NOT available in context or conversation history.`,
-    ];
-
-    // Workflow-specific instructions: when we already have the workflow, forbid redundant lookups
-    if (context.workflowId || (context.workflow && typeof context.workflow === "object")) {
-      const wfId = (context.workflowId as string) ?? (context.workflow as Record<string, unknown>)?.id;
-      lines.push(
-        `\n## Workflow Context — CRITICAL`,
-        `The current workflow ID is: ${wfId}`,
-        `The workflow details (DAG, slug, metadata) are ALREADY provided in the context above.`,
-        `You MUST:`,
-        `- Pass "${wfId}" directly as workflowId to any tool that needs it (update_workflow, validate_workflow, update_workflow_node_config, get_prompt_template, update_prompt_template, etc.)`,
-        `- Use the DAG and metadata from the context above — do NOT call get_workflow_details to re-fetch what you already have`,
-        `You MUST NOT:`,
-        `- Call list_workflows to search for or find this workflow — you already have it`,
-        `- Call get_workflow_details to fetch details you already have in context (only call it AFTER making changes to see the updated state)`,
-        `- Call request_user_input to ask for the workflow ID — you already have it`,
-      );
-    }
-
-    prompt += lines.join("\n");
+    ].join("\n");
   }
 
   return prompt;
