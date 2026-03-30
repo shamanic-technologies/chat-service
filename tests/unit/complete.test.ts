@@ -170,23 +170,23 @@ describe("CompleteRequestSchema", () => {
 
   // --- Vision / imageUrl tests ---
 
-  it("accepts gemini-2.0-flash model", () => {
+  it("accepts gemini-2.5-flash model", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Analyze this image",
       systemPrompt: "You are an image classifier.",
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.model).toBe("gemini-2.0-flash");
+      expect(result.data.model).toBe("gemini-2.5-flash");
     }
   });
 
-  it("accepts imageUrl with gemini-2.0-flash", () => {
+  it("accepts imageUrl with gemini-2.5-flash", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Score this image",
       systemPrompt: "You are an image scoring assistant.",
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       imageUrl: "https://example.com/images/hero.jpg",
       responseFormat: "json",
       temperature: 0,
@@ -195,7 +195,7 @@ describe("CompleteRequestSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.imageUrl).toBe("https://example.com/images/hero.jpg");
-      expect(result.data.model).toBe("gemini-2.0-flash");
+      expect(result.data.model).toBe("gemini-2.5-flash");
     }
   });
 
@@ -238,11 +238,75 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Just text",
       systemPrompt: "You are helpful.",
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
     });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.imageUrl).toBeUndefined();
+    }
+  });
+
+  // --- imageContext tests ---
+
+  it("accepts imageContext with all fields", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Score this image",
+      systemPrompt: "You are an image classifier.",
+      model: "gemini-2.5-flash",
+      imageUrl: "https://example.com/hero.jpg",
+      imageContext: {
+        alt: "Company logo",
+        title: "Our Brand Logo",
+        sourceUrl: "https://example.com/about",
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.imageContext).toEqual({
+        alt: "Company logo",
+        title: "Our Brand Logo",
+        sourceUrl: "https://example.com/about",
+      });
+    }
+  });
+
+  it("accepts imageContext with partial fields", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Analyze",
+      systemPrompt: "You are helpful.",
+      imageUrl: "https://example.com/img.jpg",
+      imageContext: { alt: "Team photo" },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.imageContext?.alt).toBe("Team photo");
+      expect(result.data.imageContext?.title).toBeUndefined();
+      expect(result.data.imageContext?.sourceUrl).toBeUndefined();
+    }
+  });
+
+  it("accepts empty imageContext object", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Analyze",
+      systemPrompt: "You are helpful.",
+      imageUrl: "https://example.com/img.jpg",
+      imageContext: {},
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.imageContext).toEqual({});
+    }
+  });
+
+  it("accepts request without imageContext (optional)", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Analyze",
+      systemPrompt: "You are helpful.",
+      imageUrl: "https://example.com/img.jpg",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.imageContext).toBeUndefined();
     }
   });
 });
@@ -250,8 +314,8 @@ describe("CompleteRequestSchema", () => {
 // --- Gemini model helpers ---
 
 describe("isGeminiModel", () => {
-  it("returns true for gemini-2.0-flash", () => {
-    expect(isGeminiModel("gemini-2.0-flash")).toBe(true);
+  it("returns true for gemini-2.5-flash", () => {
+    expect(isGeminiModel("gemini-2.5-flash")).toBe(true);
   });
 
   it("returns false for anthropic models", () => {
@@ -265,14 +329,14 @@ describe("isGeminiModel", () => {
 });
 
 describe("geminiCostPrefix", () => {
-  it("returns correct prefix for gemini-2.0-flash", () => {
-    expect(geminiCostPrefix("gemini-2.0-flash")).toBe("google-flash-2.0");
+  it("returns correct prefix for gemini-2.5-flash", () => {
+    expect(geminiCostPrefix("gemini-2.5-flash")).toBe("google-flash-2.5");
   });
 });
 
 describe("costPrefixForModel", () => {
-  it("returns correct prefix for gemini-2.0-flash", () => {
-    expect(costPrefixForModel("gemini-2.0-flash")).toBe("google-flash-2.0");
+  it("returns correct prefix for gemini-2.5-flash", () => {
+    expect(costPrefixForModel("gemini-2.5-flash")).toBe("google-flash-2.5");
   });
 
   it("returns correct prefix for anthropic models", () => {

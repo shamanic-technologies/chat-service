@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
 // Gemini REST API client — lightweight, no SDK dependency
-// Used by POST /complete for vision tasks (gemini-2.0-flash)
+// Used by POST /complete for vision tasks (gemini-2.5-flash)
 // ---------------------------------------------------------------------------
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 export const GEMINI_MODELS: Record<string, string> = {
-  "gemini-2.0-flash": "google-flash-2.0",
+  "gemini-2.5-flash": "google-flash-2.5",
 };
 
 /** Check if a model ID is a Gemini model. */
@@ -16,7 +16,13 @@ export function isGeminiModel(model: string): boolean {
 
 /** Get cost-name prefix for a Gemini model. */
 export function geminiCostPrefix(model: string): string {
-  return GEMINI_MODELS[model] ?? "google-flash-2.0";
+  return GEMINI_MODELS[model] ?? "google-flash-2.5";
+}
+
+export interface ImageContext {
+  alt?: string;
+  title?: string;
+  sourceUrl?: string;
 }
 
 interface GeminiCompleteOptions {
@@ -25,6 +31,7 @@ interface GeminiCompleteOptions {
   message: string;
   systemPrompt: string;
   imageUrl?: string;
+  imageContext?: ImageContext;
   responseFormat?: "json";
   temperature?: number;
   maxTokens?: number;
@@ -62,13 +69,22 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     message,
     systemPrompt,
     imageUrl,
+    imageContext,
     responseFormat,
     temperature,
     maxTokens,
   } = options;
 
-  // Build content parts
-  const parts: Array<Record<string, unknown>> = [{ text: message }];
+  // Build content parts — inject image metadata into the text if provided
+  let textContent = message;
+  if (imageContext && (imageContext.alt || imageContext.title || imageContext.sourceUrl)) {
+    const metaLines: string[] = [];
+    if (imageContext.alt) metaLines.push(`Alt text: ${imageContext.alt}`);
+    if (imageContext.title) metaLines.push(`Title: ${imageContext.title}`);
+    if (imageContext.sourceUrl) metaLines.push(`Source page: ${imageContext.sourceUrl}`);
+    textContent = `${message}\n\nImage metadata:\n${metaLines.join("\n")}`;
+  }
+  const parts: Array<Record<string, unknown>> = [{ text: textContent }];
 
   if (imageUrl) {
     const image = await fetchImageAsBase64(imageUrl);
