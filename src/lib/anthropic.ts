@@ -12,6 +12,7 @@ const MAX_TOKENS = 16_000;
 export const SUPPORTED_MODELS: Record<string, string> = {
   "claude-sonnet-4-6": "anthropic-sonnet-4.6",
   "claude-haiku-4-5": "anthropic-haiku-4.5",
+  "gemini-2.0-flash": "google-flash-2.0",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */
@@ -932,6 +933,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         temperature?: number;
         maxTokens?: number;
         model?: string;
+        imageUrl?: string;
       },
     ): Promise<{
       content: string;
@@ -940,11 +942,26 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       model: string;
     }> {
       const effectiveModel = options?.model ?? MODEL;
+
+      // Build user content — multimodal when imageUrl is provided
+      let userContent: Anthropic.MessageCreateParamsNonStreaming["messages"][0]["content"];
+      if (options?.imageUrl) {
+        userContent = [
+          {
+            type: "image",
+            source: { type: "url", url: options.imageUrl },
+          },
+          { type: "text", text: message },
+        ];
+      } else {
+        userContent = message;
+      }
+
       const params: Anthropic.MessageCreateParamsNonStreaming = {
         model: effectiveModel,
         max_tokens: options?.maxTokens ?? MAX_TOKENS,
         system: systemPrompt,
-        messages: [{ role: "user", content: message }],
+        messages: [{ role: "user", content: userContent }],
         ...(options?.temperature != null ? { temperature: options.temperature } : {}),
       };
 

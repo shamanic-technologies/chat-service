@@ -555,10 +555,17 @@
             "type": "string",
             "enum": [
               "claude-sonnet-4-6",
-              "claude-haiku-4-5"
+              "claude-haiku-4-5",
+              "gemini-2.0-flash"
             ],
-            "description": "Anthropic model to use. Defaults to claude-sonnet-4-6. Use claude-haiku-4-5 for simpler tasks (extraction, classification) to reduce cost.",
-            "example": "claude-haiku-4-5"
+            "description": "Model to use. Defaults to claude-sonnet-4-6. Use claude-haiku-4-5 for simpler tasks, or gemini-2.0-flash for vision tasks (image analysis, classification).",
+            "example": "gemini-2.0-flash"
+          },
+          "imageUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL of an image to include in the prompt. The image is fetched server-side and sent to the model as a visual input. Supported by all models, but recommended with gemini-2.0-flash for cost-effective vision tasks (image classification, scoring, analysis).",
+            "example": "https://example.com/images/hero.jpg"
           }
         },
         "required": [
@@ -869,7 +876,7 @@
           "Complete"
         ],
         "summary": "Synchronous LLM completion",
-        "description": "One-shot, non-streaming LLM call for service-to-service use. Returns a JSON response with the model output.\n\nUnlike POST /chat, this endpoint:\n- Does **not** create or use sessions (stateless, one-shot)\n- Accepts an inline `systemPrompt` (no pre-registered config required)\n- Returns JSON instead of SSE\n- Supports `responseFormat: \"json\"` — when set, the parsed object is returned in the `json` field (always use `json`, not `content`, for structured data)\n- Supports optional `temperature` and `maxTokens` overrides\n\n**Use cases:** generating search queries, scoring/analyzing text, any service that needs a quick LLM call without conversation context.",
+        "description": "One-shot, non-streaming LLM call for service-to-service use. Returns a JSON response with the model output.\n\nUnlike POST /chat, this endpoint:\n- Does **not** create or use sessions (stateless, one-shot)\n- Accepts an inline `systemPrompt` (no pre-registered config required)\n- Returns JSON instead of SSE\n- Supports `responseFormat: \"json\"` — when set, the parsed object is returned in the `json` field (always use `json`, not `content`, for structured data)\n- Supports optional `temperature` and `maxTokens` overrides\n- Supports **vision** via the `imageUrl` field — the image is fetched server-side and sent as visual input to the model\n\n**Models:**\n- `claude-sonnet-4-6` (default) — general-purpose, high quality\n- `claude-haiku-4-5` — faster/cheaper for simple extraction and classification\n- `gemini-2.0-flash` — cost-effective vision model for image analysis, scoring, and classification. Requires a Google API key configured in key-service (provider: `google`).\n\n**Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with `imageUrl` + `gemini-2.0-flash`), any service that needs a quick LLM call without conversation context.",
         "parameters": [
           {
             "schema": {

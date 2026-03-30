@@ -148,12 +148,26 @@ Request body:
 }
 ```
 
+**Vision example (image analysis):**
+```json
+{
+  "message": "Analyze this image and score it on: is_logo, is_product, is_team_photo, is_professional (0-1 each)",
+  "systemPrompt": "You are an image classification assistant. Return JSON with scores.",
+  "imageUrl": "https://example.com/images/hero.jpg",
+  "model": "gemini-2.0-flash",
+  "responseFormat": "json",
+  "temperature": 0,
+  "maxTokens": 1024
+}
+```
+
 - `message` (required) — the prompt to send to the LLM
 - `systemPrompt` (required) — inline system prompt (no pre-registered config needed)
 - `responseFormat` (optional) — set to `"json"` to instruct the model to return valid JSON. The parsed result appears in the `json` field.
 - `temperature` (optional) — sampling temperature, 0–2 (default: model default)
 - `maxTokens` (optional) — max output tokens, 1–64000 (default: 16000)
-- `model` (optional) — Anthropic model to use: `claude-sonnet-4-6` (default) or `claude-haiku-4-5`. Use Haiku for simpler tasks (extraction, classification) to reduce cost.
+- `model` (optional) — `claude-sonnet-4-6` (default), `claude-haiku-4-5` (cheaper text tasks), or `gemini-2.0-flash` (cost-effective vision). Gemini models require a Google API key configured in key-service (provider: `google`).
+- `imageUrl` (optional) — URL of an image to include as visual input. The image is fetched server-side. Supported by all models, but recommended with `gemini-2.0-flash` for cost-effective vision tasks.
 
 Response:
 ```json
@@ -447,6 +461,7 @@ src/
     schema.ts       # sessions + messages + app_configs + platform_configs table definitions
   lib/
     anthropic.ts       # Claude AI client (Sonnet 4.6), streaming + non-streaming, tool calling, adaptive thinking, context management (compaction), built-in tool declarations
+    gemini.ts          # Gemini REST API client (Flash 2.0) for vision tasks — lightweight, no SDK dependency
     merge-messages.ts  # Ensures alternating user/assistant roles by merging orphaned consecutive same-role messages
     billing-client.ts  # Billing-service client for credit authorization before platform-key operations
     key-client.ts      # Key-service client: resolveKey (decrypt), listOrgKeys, getKeySource, listKeySources, checkProviderRequirements

@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { CompleteRequestSchema } from "../../src/schemas.js";
+import { isGeminiModel, geminiCostPrefix, GEMINI_MODELS } from "../../src/lib/gemini.js";
+import { costPrefixForModel, SUPPORTED_MODELS } from "../../src/lib/anthropic.js";
 
 describe("CompleteRequestSchema", () => {
   it("accepts valid request with message and systemPrompt", () => {
@@ -164,5 +166,117 @@ describe("CompleteRequestSchema", () => {
       temperature: 2,
     });
     expect(atTwo.success).toBe(true);
+  });
+
+  // --- Vision / imageUrl tests ---
+
+  it("accepts gemini-2.0-flash model", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Analyze this image",
+      systemPrompt: "You are an image classifier.",
+      model: "gemini-2.0-flash",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.model).toBe("gemini-2.0-flash");
+    }
+  });
+
+  it("accepts imageUrl with gemini-2.0-flash", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Score this image",
+      systemPrompt: "You are an image scoring assistant.",
+      model: "gemini-2.0-flash",
+      imageUrl: "https://example.com/images/hero.jpg",
+      responseFormat: "json",
+      temperature: 0,
+      maxTokens: 1024,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.imageUrl).toBe("https://example.com/images/hero.jpg");
+      expect(result.data.model).toBe("gemini-2.0-flash");
+    }
+  });
+
+  it("accepts imageUrl with anthropic models", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Describe this image",
+      systemPrompt: "You are helpful.",
+      model: "claude-sonnet-4-6",
+      imageUrl: "https://example.com/photo.png",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.imageUrl).toBe("https://example.com/photo.png");
+    }
+  });
+
+  it("accepts imageUrl without explicit model (defaults to claude)", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "What do you see?",
+      systemPrompt: "You are helpful.",
+      imageUrl: "https://example.com/img.jpg",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.imageUrl).toBe("https://example.com/img.jpg");
+      expect(result.data.model).toBeUndefined();
+    }
+  });
+
+  it("rejects invalid imageUrl", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Analyze",
+      systemPrompt: "You are helpful.",
+      imageUrl: "not-a-url",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts request without imageUrl (vision is optional)", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Just text",
+      systemPrompt: "You are helpful.",
+      model: "gemini-2.0-flash",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.imageUrl).toBeUndefined();
+    }
+  });
+});
+
+// --- Gemini model helpers ---
+
+describe("isGeminiModel", () => {
+  it("returns true for gemini-2.0-flash", () => {
+    expect(isGeminiModel("gemini-2.0-flash")).toBe(true);
+  });
+
+  it("returns false for anthropic models", () => {
+    expect(isGeminiModel("claude-sonnet-4-6")).toBe(false);
+    expect(isGeminiModel("claude-haiku-4-5")).toBe(false);
+  });
+
+  it("returns false for unknown models", () => {
+    expect(isGeminiModel("gpt-4o")).toBe(false);
+  });
+});
+
+describe("geminiCostPrefix", () => {
+  it("returns correct prefix for gemini-2.0-flash", () => {
+    expect(geminiCostPrefix("gemini-2.0-flash")).toBe("google-flash-2.0");
+  });
+});
+
+describe("costPrefixForModel", () => {
+  it("returns correct prefix for gemini-2.0-flash", () => {
+    expect(costPrefixForModel("gemini-2.0-flash")).toBe("google-flash-2.0");
+  });
+
+  it("returns correct prefix for anthropic models", () => {
+    expect(costPrefixForModel("claude-sonnet-4-6")).toBe("anthropic-sonnet-4.6");
+    expect(costPrefixForModel("claude-haiku-4-5")).toBe("anthropic-haiku-4.5");
   });
 });
