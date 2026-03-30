@@ -170,23 +170,23 @@ describe("CompleteRequestSchema", () => {
 
   // --- Vision / imageUrl tests ---
 
-  it("accepts gemini-2.5-flash model", () => {
+  it("accepts gemini-3.1-flash-lite-preview model", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Analyze this image",
       systemPrompt: "You are an image classifier.",
-      model: "gemini-2.5-flash",
+      model: "gemini-3.1-flash-lite-preview",
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.model).toBe("gemini-2.5-flash");
+      expect(result.data.model).toBe("gemini-3.1-flash-lite-preview");
     }
   });
 
-  it("accepts imageUrl with gemini-2.5-flash", () => {
+  it("accepts imageUrl with gemini-3.1-flash-lite-preview", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Score this image",
       systemPrompt: "You are an image scoring assistant.",
-      model: "gemini-2.5-flash",
+      model: "gemini-3.1-flash-lite-preview",
       imageUrl: "https://example.com/images/hero.jpg",
       responseFormat: "json",
       temperature: 0,
@@ -195,7 +195,7 @@ describe("CompleteRequestSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.imageUrl).toBe("https://example.com/images/hero.jpg");
-      expect(result.data.model).toBe("gemini-2.5-flash");
+      expect(result.data.model).toBe("gemini-3.1-flash-lite-preview");
     }
   });
 
@@ -238,7 +238,7 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Just text",
       systemPrompt: "You are helpful.",
-      model: "gemini-2.5-flash",
+      model: "gemini-3.1-flash-lite-preview",
     });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -252,7 +252,7 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Score this image",
       systemPrompt: "You are an image classifier.",
-      model: "gemini-2.5-flash",
+      model: "gemini-3.1-flash-lite-preview",
       imageUrl: "https://example.com/hero.jpg",
       imageContext: {
         alt: "Company logo",
@@ -314,8 +314,8 @@ describe("CompleteRequestSchema", () => {
 // --- Gemini model helpers ---
 
 describe("isGeminiModel", () => {
-  it("returns true for gemini-2.5-flash", () => {
-    expect(isGeminiModel("gemini-2.5-flash")).toBe(true);
+  it("returns true for gemini-3.1-flash-lite-preview", () => {
+    expect(isGeminiModel("gemini-3.1-flash-lite-preview")).toBe(true);
   });
 
   it("returns false for anthropic models", () => {
@@ -329,14 +329,14 @@ describe("isGeminiModel", () => {
 });
 
 describe("geminiCostPrefix", () => {
-  it("returns correct prefix for gemini-2.5-flash", () => {
-    expect(geminiCostPrefix("gemini-2.5-flash")).toBe("google-flash-2.5");
+  it("returns correct prefix for gemini-3.1-flash-lite-preview", () => {
+    expect(geminiCostPrefix("gemini-3.1-flash-lite-preview")).toBe("google-flash-lite-3.1");
   });
 });
 
 describe("costPrefixForModel", () => {
-  it("returns correct prefix for gemini-2.5-flash", () => {
-    expect(costPrefixForModel("gemini-2.5-flash")).toBe("google-flash-2.5");
+  it("returns correct prefix for gemini-3.1-flash-lite-preview", () => {
+    expect(costPrefixForModel("gemini-3.1-flash-lite-preview")).toBe("google-flash-lite-3.1");
   });
 
   it("returns correct prefix for anthropic models", () => {

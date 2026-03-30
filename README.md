@@ -155,7 +155,7 @@ Request body:
   "systemPrompt": "You are an image classification assistant. Return JSON with scores.",
   "imageUrl": "https://example.com/images/hero.jpg",
   "imageContext": { "alt": "Company hero banner", "title": "About Us", "sourceUrl": "https://example.com/about" },
-  "model": "gemini-2.5-flash",
+  "model": "gemini-3.1-flash-lite-preview",
   "responseFormat": "json",
   "temperature": 0,
   "maxTokens": 1024
@@ -167,8 +167,8 @@ Request body:
 - `responseFormat` (optional) — set to `"json"` to instruct the model to return valid JSON. The parsed result appears in the `json` field.
 - `temperature` (optional) — sampling temperature, 0–2 (default: model default)
 - `maxTokens` (optional) — max output tokens, 1–64000 (default: 16000)
-- `model` (optional) — `claude-sonnet-4-6` (default), `claude-haiku-4-5` (cheaper text tasks), or `gemini-2.5-flash` (cost-effective vision). Gemini models require a Google API key configured in key-service (provider: `google`).
-- `imageUrl` (optional) — URL of an image to include as visual input. The image is fetched server-side. Supported by all models, but recommended with `gemini-2.5-flash` for cost-effective vision tasks.
+- `model` (optional) — `claude-sonnet-4-6` (default), `claude-haiku-4-5` (cheaper text tasks), or `gemini-3.1-flash-lite-preview` (cost-effective vision). Gemini models require a Google API key configured in key-service (provider: `google`).
+- `imageUrl` (optional) — URL of an image to include as visual input. The image is fetched server-side. Supported by all models, but recommended with `gemini-3.1-flash-lite-preview` for cost-effective vision tasks.
 - `imageContext` (optional) — metadata about the image to help the model classify it: `{ alt?: string, title?: string, sourceUrl?: string }`. Injected into the prompt alongside the image. Only meaningful when `imageUrl` is provided.
 
 Response:
