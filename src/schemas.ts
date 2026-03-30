@@ -322,10 +322,12 @@ export const CompleteRequestSchema = z
 export const CompleteResponseSchema = z
   .object({
     content: z.string().openapi({
-      description: "Raw text response from the model",
+      description: "Raw text response from the model. WARNING: when responseFormat is \"json\", this field may contain markdown code fences (e.g. ```json...```). Do NOT use this field for JSON parsing — use the `json` field instead.",
+      example: '{"subject": "Quick question", "emails": [{"body": "Hi...", "daysSinceLastStep": 0}]}',
     }),
     json: z.record(z.string(), z.unknown()).optional().openapi({
-      description: "Parsed JSON object — present only when responseFormat is \"json\" and the model returned valid JSON",
+      description: "Parsed JSON object — present only when responseFormat is \"json\" and the model returned valid JSON. IMPORTANT: always use this field (not `content`) when you need structured data. Markdown fences are already stripped and the JSON is pre-parsed.",
+      example: { subject: "Quick question", emails: [{ body: "Hi there, I noticed...", daysSinceLastStep: 0 }] },
     }),
     tokensInput: z.number().openapi({
       description: "Number of input tokens consumed",
@@ -355,7 +357,7 @@ Unlike POST /chat, this endpoint:
 - Does **not** create or use sessions (stateless, one-shot)
 - Accepts an inline \`systemPrompt\` (no pre-registered config required)
 - Returns JSON instead of SSE
-- Supports \`responseFormat: "json"\` to guarantee parsable JSON output
+- Supports \`responseFormat: "json"\` — when set, the parsed object is returned in the \`json\` field (always use \`json\`, not \`content\`, for structured data)
 - Supports optional \`temperature\` and \`maxTokens\` overrides
 
 **Use cases:** generating search queries, scoring/analyzing text, any service that needs a quick LLM call without conversation context.`,
