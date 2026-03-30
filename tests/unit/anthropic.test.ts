@@ -413,6 +413,36 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("use them directly when calling tools");
   });
 
+  it("adds workflow-specific CRITICAL section when workflowId is in context", () => {
+    const result = buildSystemPrompt("Base prompt.", {
+      workflowId: "wf-abc-123",
+      workflow: { id: "wf-abc-123", slug: "cold-email" },
+      dag: { nodes: [] },
+    });
+    expect(result).toContain("## Workflow Context — CRITICAL");
+    expect(result).toContain('The current workflow ID is: wf-abc-123');
+    expect(result).toContain("MUST NOT");
+    expect(result).toContain("Call list_workflows");
+    expect(result).toContain("Call get_workflow_details to fetch details you already have");
+  });
+
+  it("extracts workflowId from nested workflow object when top-level workflowId missing", () => {
+    const result = buildSystemPrompt("Base prompt.", {
+      workflow: { id: "wf-nested-456", slug: "pr-outreach" },
+    });
+    expect(result).toContain("## Workflow Context — CRITICAL");
+    expect(result).toContain("wf-nested-456");
+    expect(result).toContain("Call list_workflows");
+  });
+
+  it("does NOT add workflow section when no workflow data in context", () => {
+    const result = buildSystemPrompt("Base prompt.", {
+      brandUrl: "https://example.com",
+    });
+    expect(result).not.toContain("## Workflow Context");
+    expect(result).not.toContain("list_workflows");
+  });
+
   it("appends campaign context section when provided", () => {
     const result = buildSystemPrompt("Base.", undefined, {
       angle: "sustainability",
