@@ -17,6 +17,7 @@ import {
   COST_PREFIX,
   costPrefixForModel,
 } from "./lib/anthropic.js";
+import { isGeminiModel, completeWithGemini } from "./lib/gemini.js";
 import {
   updateWorkflow,
   validateWorkflow,
@@ -189,13 +190,18 @@ app.post("/complete", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, temperature, maxTokens, model: requestedModel } = parsed.data;
+  const { message, systemPrompt, responseFormat, temperature, maxTokens, model: requestedModel, imageUrl } = parsed.data;
 
-  // Resolve Anthropic API key per-request
+  // Determine provider from model
+  const effectiveModel = requestedModel ?? MODEL;
+  const isGemini = isGeminiModel(effectiveModel);
+  const provider = isGemini ? "google" : "anthropic";
+
+  // Resolve API key per-request
   let resolvedKey: ResolvedKey;
   try {
     resolvedKey = await resolveKey({
-      provider: "anthropic",
+      provider,
       orgId,
       userId,
       runId: callerRunId,
@@ -203,14 +209,13 @@ app.post("/complete", requireAuth, async (req, res) => {
       trackingHeaders,
     });
   } catch (err) {
-    console.error(`[complete] Failed to resolve Anthropic key for org="${orgId}":`, err);
+    console.error(`[complete] Failed to resolve ${provider} key for org="${orgId}":`, err);
     return res.status(502).json({
-      error: "Failed to resolve Anthropic API key. Ensure the key is configured in key-service.",
+      error: `Failed to resolve ${provider} API key. Ensure the key is configured in key-service.`,
     });
   }
 
-  // Resolve model and its cost prefix
-  const effectiveModel = requestedModel ?? MODEL;
+  // Resolve cost prefix
   const effectiveCostPrefix = costPrefixForModel(effectiveModel);
 
   // Credit authorization for platform keys
@@ -290,14 +295,29 @@ app.post("/complete", requireAuth, async (req, res) => {
       effectiveSystemPrompt += `\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, no extra text — just a single JSON object or array.`;
     }
 
-    const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: effectiveSystemPrompt });
+    let result: { content: string; tokensInput: number; tokensOutput: number; model: string };
 
-    const result = await claude.complete(message, {
-      responseFormat,
-      temperature,
-      maxTokens,
-      model: effectiveModel,
-    });
+    if (isGemini) {
+      result = await completeWithGemini({
+        apiKey: resolvedKey.key,
+        model: effectiveModel,
+        message,
+        systemPrompt: effectiveSystemPrompt,
+        imageUrl,
+        responseFormat,
+        temperature,
+        maxTokens,
+      });
+    } else {
+      const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: effectiveSystemPrompt });
+      result = await claude.complete(message, {
+        responseFormat,
+        temperature,
+        maxTokens,
+        model: effectiveModel,
+        imageUrl,
+      });
+    }
 
     totalPromptTokens = result.tokensInput;
     totalOutputTokens = result.tokensOutput;

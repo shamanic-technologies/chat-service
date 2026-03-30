@@ -312,9 +312,13 @@ export const CompleteRequestSchema = z
       description: "Maximum tokens in the response (default: 16000)",
       example: 2000,
     }),
-    model: z.enum(["claude-sonnet-4-6", "claude-haiku-4-5"]).optional().openapi({
-      description: "Anthropic model to use. Defaults to claude-sonnet-4-6. Use claude-haiku-4-5 for simpler tasks (extraction, classification) to reduce cost.",
-      example: "claude-haiku-4-5",
+    model: z.enum(["claude-sonnet-4-6", "claude-haiku-4-5", "gemini-2.0-flash"]).optional().openapi({
+      description: "Model to use. Defaults to claude-sonnet-4-6. Use claude-haiku-4-5 for simpler tasks, or gemini-2.0-flash for vision tasks (image analysis, classification).",
+      example: "gemini-2.0-flash",
+    }),
+    imageUrl: z.string().url().optional().openapi({
+      description: "URL of an image to include in the prompt. The image is fetched server-side and sent to the model as a visual input. Supported by all models, but recommended with gemini-2.0-flash for cost-effective vision tasks (image classification, scoring, analysis).",
+      example: "https://example.com/images/hero.jpg",
     }),
   })
   .openapi("CompleteRequest");
@@ -359,8 +363,14 @@ Unlike POST /chat, this endpoint:
 - Returns JSON instead of SSE
 - Supports \`responseFormat: "json"\` — when set, the parsed object is returned in the \`json\` field (always use \`json\`, not \`content\`, for structured data)
 - Supports optional \`temperature\` and \`maxTokens\` overrides
+- Supports **vision** via the \`imageUrl\` field — the image is fetched server-side and sent as visual input to the model
 
-**Use cases:** generating search queries, scoring/analyzing text, any service that needs a quick LLM call without conversation context.`,
+**Models:**
+- \`claude-sonnet-4-6\` (default) — general-purpose, high quality
+- \`claude-haiku-4-5\` — faster/cheaper for simple extraction and classification
+- \`gemini-2.0-flash\` — cost-effective vision model for image analysis, scoring, and classification. Requires a Google API key configured in key-service (provider: \`google\`).
+
+**Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with \`imageUrl\` + \`gemini-2.0-flash\`), any service that needs a quick LLM call without conversation context.`,
   request: {
     headers: z.object({
       "x-api-key": z.string().openapi({
