@@ -190,7 +190,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, temperature, maxTokens, model: requestedModel, imageUrl } = parsed.data;
+  const { message, systemPrompt, responseFormat, temperature, maxTokens, model: requestedModel, imageUrl, imageContext } = parsed.data;
 
   // Determine provider from model
   const effectiveModel = requestedModel ?? MODEL;
@@ -304,6 +304,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         message,
         systemPrompt: effectiveSystemPrompt,
         imageUrl,
+        imageContext,
         responseFormat,
         temperature,
         maxTokens,

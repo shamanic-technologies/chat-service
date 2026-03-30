@@ -12,7 +12,7 @@ const MAX_TOKENS = 16_000;
 export const SUPPORTED_MODELS: Record<string, string> = {
   "claude-sonnet-4-6": "anthropic-sonnet-4.6",
   "claude-haiku-4-5": "anthropic-haiku-4.5",
-  "gemini-2.0-flash": "google-flash-2.0",
+  "gemini-2.5-flash": "google-flash-2.5",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */
