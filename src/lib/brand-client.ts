@@ -3,7 +3,7 @@ import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
 export type BrandCallParams = ApiCallParams;
 
 // ---------------------------------------------------------------------------
-// POST /brands/{brandId}/extract-fields
+// POST /brands/extract-fields  (reads x-brand-id from forwarded headers)
 // ---------------------------------------------------------------------------
 
 export interface ExtractFieldDef {
@@ -26,12 +26,11 @@ export interface ExtractFieldsResponse {
 }
 
 export async function extractBrandFields(
-  brandId: string,
   fields: ExtractFieldDef[],
   params: BrandCallParams,
 ): Promise<ExtractFieldsResponse> {
   const res = await apiServiceFetch(
-    `/v1/brands/${encodeURIComponent(brandId)}/extract-fields`,
+    `/v1/brands/extract-fields`,
     "POST",
     params,
     { fields },

@@ -21,7 +21,7 @@ const BASE_HEADERS = {
 };
 
 describe("workflow tracking headers in auth middleware", () => {
-  it("extracts all three tracking headers when present", () => {
+  it("extracts all tracking headers when present", () => {
     const { req, res, next } = mockReqRes({
       ...BASE_HEADERS,
       "x-campaign-id": "camp-abc",
@@ -37,6 +37,19 @@ describe("workflow tracking headers in auth middleware", () => {
       brandId: "brand-xyz",
       workflowSlug: "outreach-v2",
       featureSlug: "pr-outreach",
+    });
+  });
+
+  it("preserves CSV x-brand-id header as-is for multi-brand campaigns", () => {
+    const { req, res, next } = mockReqRes({
+      ...BASE_HEADERS,
+      "x-brand-id": "brand-1,brand-2,brand-3",
+    });
+    requireAuth(req, res, next);
+    expect(next).toHaveBeenCalled();
+    const locals = res.locals as unknown as AuthLocals;
+    expect(locals.workflowTracking).toEqual({
+      brandId: "brand-1,brand-2,brand-3",
     });
   });
 

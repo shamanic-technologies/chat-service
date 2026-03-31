@@ -25,7 +25,7 @@ const baseParams = {
 };
 
 describe("extractBrandFields", () => {
-  it("calls POST /v1/brands/{brandId}/extract-fields via api-service", async () => {
+  it("calls POST /v1/brands/extract-fields via api-service (no brandId in path)", async () => {
     const mockResponse = {
       brandId: "brand-123",
       results: [
@@ -40,19 +40,19 @@ describe("extractBrandFields", () => {
 
     const { extractBrandFields } = await loadModule();
     const result = await extractBrandFields(
-      "brand-123",
       [{ key: "industry", description: "The brand's primary industry" }],
-      baseParams,
+      { ...baseParams, trackingHeaders: { "x-brand-id": "brand-123" } },
     );
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://api.test.local/v1/brands/brand-123/extract-fields",
+      "https://api.test.local/v1/brands/extract-fields",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
           "x-org-id": "org-1",
           "x-user-id": "user-1",
           "x-run-id": "run-1",
+          "x-brand-id": "brand-123",
         }),
         body: JSON.stringify({
           fields: [{ key: "industry", description: "The brand's primary industry" }],
@@ -76,20 +76,20 @@ describe("extractBrandFields", () => {
     const { extractBrandFields } = await loadModule();
 
     await expect(
-      extractBrandFields("brand-missing", [{ key: "x", description: "y" }], baseParams),
+      extractBrandFields([{ key: "x", description: "y" }], baseParams),
     ).rejects.toThrow("[brand-client] extract-fields failed (404)");
   });
 
-  it("forwards tracking headers when provided", async () => {
+  it("forwards tracking headers including multi-brand CSV x-brand-id", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ brandId: "b-1", results: [] }),
     });
 
     const { extractBrandFields } = await loadModule();
-    await extractBrandFields("b-1", [{ key: "x", description: "y" }], {
+    await extractBrandFields([{ key: "x", description: "y" }], {
       ...baseParams,
-      trackingHeaders: { "x-campaign-id": "camp-1", "x-brand-id": "b-1" },
+      trackingHeaders: { "x-campaign-id": "camp-1", "x-brand-id": "b-1,b-2,b-3" },
     });
 
     expect(fetch).toHaveBeenCalledWith(
@@ -97,7 +97,7 @@ describe("extractBrandFields", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           "x-campaign-id": "camp-1",
-          "x-brand-id": "b-1",
+          "x-brand-id": "b-1,b-2,b-3",
         }),
       }),
     );
