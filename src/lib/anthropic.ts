@@ -756,6 +756,78 @@ export const GET_FEATURE_STATS_TOOL: Anthropic.Tool = {
 };
 
 // ---------------------------------------------------------------------------
+// Campaign-prefill tools
+// ---------------------------------------------------------------------------
+
+export const UPDATE_CAMPAIGN_FIELDS_TOOL: Anthropic.Tool = {
+  name: "update_campaign_fields",
+  description:
+    "Update campaign form fields. Returns the fields object as-is so the frontend can apply the values to the form. Use this to pre-fill or modify campaign creation fields based on the conversation.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      fields: {
+        type: "object",
+        additionalProperties: { type: "string" },
+        description:
+          "Key-value map of campaign form fields to update. Keys are field names, values are the new string values.",
+      },
+    },
+    required: ["fields"],
+  },
+};
+
+export const EXTRACT_BRAND_FIELDS_TOOL: Anthropic.Tool = {
+  name: "extract_brand_fields",
+  description:
+    "Extract arbitrary fields from a brand's website using AI. Wraps brand-service extract-fields endpoint. Results are cached 30 days per field — safe to call repeatedly.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: {
+        type: "string",
+        description: "UUID of the brand to extract fields from.",
+      },
+      fields: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            key: {
+              type: "string",
+              description: "Machine-readable key for the field (e.g. 'industry', 'target_audience').",
+            },
+            description: {
+              type: "string",
+              description: "Human-readable description of what to extract (e.g. 'The brand\\'s primary industry vertical').",
+            },
+          },
+          required: ["key", "description"],
+        },
+        description: "List of fields to extract. Each field has a key and a description.",
+      },
+    },
+    required: ["brandId", "fields"],
+  },
+};
+
+export const EXTRACT_BRAND_TEXT_TOOL: Anthropic.Tool = {
+  name: "extract_brand_text",
+  description:
+    "Extract the full text content from a brand's public website pages. Returns the raw text of all scraped pages. Use this to read the brand's site content for analysis or to inform campaign creation.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: {
+        type: "string",
+        description: "UUID of the brand whose website text to extract.",
+      },
+    },
+    required: ["brandId"],
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Tool registry — every tool the service knows how to execute.
 // Clients choose which subset to enable via allowedTools in their config.
 // ---------------------------------------------------------------------------
@@ -784,6 +856,9 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   get_feature_inputs: GET_FEATURE_INPUTS_TOOL,
   prefill_feature: PREFILL_FEATURE_TOOL,
   get_feature_stats: GET_FEATURE_STATS_TOOL,
+  update_campaign_fields: UPDATE_CAMPAIGN_FIELDS_TOOL,
+  extract_brand_fields: EXTRACT_BRAND_FIELDS_TOOL,
+  extract_brand_text: EXTRACT_BRAND_TEXT_TOOL,
 };
 
 /** All tool names available for use in allowedTools config. */

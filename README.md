@@ -75,6 +75,19 @@ Before using `/chat`, register a config for each chat mode your app needs. Each 
 }
 ```
 
+**Example — campaign-prefill chat:**
+```json
+{
+  "key": "campaign-prefill",
+  "systemPrompt": "You help users create campaigns by pre-filling form fields based on their brand...",
+  "allowedTools": [
+    "update_campaign_fields",
+    "extract_brand_fields",
+    "extract_brand_text"
+  ]
+}
+```
+
 Fields:
 - `key` (required) — config identifier, unique per org. Clients pass this as `configKey` in `POST /chat`.
 - `systemPrompt` (required) — the system prompt sent to Claude for this chat mode
@@ -307,6 +320,14 @@ The tools available in each chat session are determined by the `allowedTools` ar
 | `get_feature_inputs` | Gets input definitions only (lighter than get_feature) |
 | `prefill_feature` | Pre-fills feature inputs from brand data |
 | `get_feature_stats` | Gets computed stats for a feature |
+
+**Campaign-prefill tools:**
+
+| Tool | Description |
+|---|---|
+| `update_campaign_fields` | Passthrough tool — returns `{ fields }` so the frontend can apply values to the campaign form |
+| `extract_brand_fields` | Extracts arbitrary fields from a brand's website via brand-service AI (cached 30 days) |
+| `extract_brand_text` | Extracts full text content from a brand's public website pages |
 
 **UI tools:**
 

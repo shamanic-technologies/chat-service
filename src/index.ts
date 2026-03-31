@@ -30,6 +30,7 @@ import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generatio
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
+import { extractBrandFields, extractBrandText } from "./lib/brand-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import {
   resolveKey,
@@ -1004,6 +1005,35 @@ app.post("/chat", requireAuth, async (req, res) => {
             campaignId: args.campaignId as string | undefined,
             workflowSlug: args.workflowSlug as string | undefined,
           },
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // Campaign-prefill tools
+      if (call.name === "update_campaign_fields") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = { fields: args.fields as Record<string, string> };
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "extract_brand_fields") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await extractBrandFields(
+          args.brandId as string,
+          args.fields as Array<{ key: string; description: string }>,
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "extract_brand_text") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await extractBrandText(
+          args.brandId as string,
           featureCallParams,
         );
         toolCalls.push({ name: call.name, args, result });
