@@ -397,13 +397,6 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   const { configKey, message, sessionId, context } = parsed.data;
 
-  // Debug: log what the client sent for context
-  const contextKeys = context ? Object.keys(context) : [];
-  console.log(`[chat-service] POST /chat configKey="${configKey}" sessionId=${sessionId ?? "new"} context=${contextKeys.length > 0 ? `{${contextKeys.join(", ")}} (${JSON.stringify(context).length} chars)` : "EMPTY"}`);
-  if (context && contextKeys.length > 0) {
-    console.log(`[chat-service] context received: ${JSON.stringify(context)}`);
-  }
-
   // Look up app config by (orgId, configKey), fall back to platform config by configKey
   const [orgConfig] = await db
     .select()
@@ -500,7 +493,6 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   // Build system prompt with optional context and campaign feature inputs
   const systemPrompt = buildSystemPrompt(appConfig.systemPrompt, context, campaignFeatureInputs);
-  console.log(`[chat-service] systemPrompt length=${systemPrompt.length} chars, has context block=${systemPrompt.includes("Additional Context")}, has campaign block=${systemPrompt.includes("Campaign Context")}`);
   const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
 
   let runId: string | null = null;
@@ -1045,7 +1037,6 @@ app.post("/chat", requireAuth, async (req, res) => {
     // -----------------------------------------------------------------------
     // Agentic loop: stream → handle tools → repeat
     // -----------------------------------------------------------------------
-    console.log(`[chat] session="${currentSessionId}" streaming — model="${claude.model}" tools=${allTools.length} history=${anthropicHistory.length}`);
 
     const turnMessages: Anthropic.MessageParam[] = [
       ...anthropicHistory,
