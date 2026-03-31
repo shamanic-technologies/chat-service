@@ -21,7 +21,7 @@ All endpoints (except `/health` and `/openapi.json`) require these headers:
 | `x-user-id` | Internal user UUID from client-service |
 | `x-run-id` | Caller's run ID — used as `parentRunId` when creating this service's own run in runs-service |
 | `x-campaign-id` | _(optional)_ Campaign ID — injected automatically by workflow-service |
-| `x-brand-id` | _(optional)_ Brand ID — injected automatically by workflow-service |
+| `x-brand-id` | _(optional)_ Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. `uuid1,uuid2,uuid3`). |
 | `x-workflow-slug` | _(optional)_ Workflow slug — injected automatically by workflow-service |
 | `x-feature-slug` | _(optional)_ Feature slug — propagated through the entire service chain |
 
@@ -416,7 +416,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 Uses PostgreSQL via Drizzle ORM. Three tables:
 
 - **sessions** — conversation sessions scoped by `orgId` and `userId`
-- **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management), `runId` linking to RunsService, and optional `campaign_id`, `brand_id`, `workflow_slug`, `feature_slug` for workflow tracking
+- **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management), `runId` linking to RunsService, and optional `campaign_id`, `brand_ids` (text array for multi-brand support), `workflow_slug`, `feature_slug` for workflow tracking
 - **app_configs** — per-org configuration keyed by `(orgId, key)`. Each entry defines a system prompt and `allowedTools` for a specific chat mode.
 - **platform_configs** — platform-wide configuration keyed by `key`. Fallback when no per-org config exists for the same key.
 

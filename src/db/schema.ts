@@ -21,7 +21,7 @@ export const messages = pgTable("messages", {
   tokenCount: integer("token_count"),
   runId: uuid("run_id"),
   campaignId: text("campaign_id"),
-  brandId: text("brand_id"),
+  brandIds: text("brand_ids").array(),
   workflowSlug: text("workflow_slug"),
   featureSlug: text("feature_slug"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

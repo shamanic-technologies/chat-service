@@ -593,7 +593,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       role: "user",
       content: message.trim(),
       campaignId: workflowTracking.campaignId ?? null,
-      brandId: workflowTracking.brandId ?? null,
+      brandIds: workflowTracking.brandId ? workflowTracking.brandId.split(",").map(s => s.trim()).filter(Boolean) : null,
       workflowSlug: workflowTracking.workflowSlug ?? null,
       featureSlug: workflowTracking.featureSlug ?? null,
     });
@@ -1022,7 +1022,6 @@ app.post("/chat", requireAuth, async (req, res) => {
       if (call.name === "extract_brand_fields") {
         const args = (call.args as Record<string, unknown>) || {};
         const result = await extractBrandFields(
-          args.brandId as string,
           args.fields as Array<{ key: string; description: string }>,
           featureCallParams,
         );
@@ -1237,7 +1236,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       tokenCount: totalPromptTokens + totalOutputTokens || null,
       runId,
       campaignId: workflowTracking.campaignId ?? null,
-      brandId: workflowTracking.brandId ?? null,
+      brandIds: workflowTracking.brandId ? workflowTracking.brandId.split(",").map(s => s.trim()).filter(Boolean) : null,
       workflowSlug: workflowTracking.workflowSlug ?? null,
       featureSlug: workflowTracking.featureSlug ?? null,
     });

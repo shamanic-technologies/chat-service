@@ -758,10 +758,11 @@
           {
             "schema": {
               "type": "string",
-              "description": "Brand ID — injected automatically by workflow-service"
+              "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+              "example": "550e8400-e29b-41d4-a716-446655440000,660f9500-f30c-52e5-b827-557766551111"
             },
             "required": false,
-            "description": "Brand ID — injected automatically by workflow-service",
+            "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
             "name": "x-brand-id",
             "in": "header"
           },
@@ -953,10 +954,11 @@
           {
             "schema": {
               "type": "string",
-              "description": "Brand ID — injected automatically by workflow-service"
+              "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+              "example": "550e8400-e29b-41d4-a716-446655440000,660f9500-f30c-52e5-b827-557766551111"
             },
             "required": false,
-            "description": "Brand ID — injected automatically by workflow-service",
+            "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
             "name": "x-brand-id",
             "in": "header"
           },
@@ -1106,10 +1108,11 @@
           {
             "schema": {
               "type": "string",
-              "description": "Brand ID — injected automatically by workflow-service"
+              "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+              "example": "550e8400-e29b-41d4-a716-446655440000,660f9500-f30c-52e5-b827-557766551111"
             },
             "required": false,
-            "description": "Brand ID — injected automatically by workflow-service",
+            "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
             "name": "x-brand-id",
             "in": "header"
           },

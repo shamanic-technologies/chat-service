@@ -780,14 +780,10 @@ export const UPDATE_CAMPAIGN_FIELDS_TOOL: Anthropic.Tool = {
 export const EXTRACT_BRAND_FIELDS_TOOL: Anthropic.Tool = {
   name: "extract_brand_fields",
   description:
-    "Extract arbitrary fields from a brand's website using AI. Wraps brand-service extract-fields endpoint. Results are cached 30 days per field — safe to call repeatedly.",
+    "Extract arbitrary fields from the brand's website using AI. Uses the brand(s) from the x-brand-id header (no brandId parameter needed). Wraps brand-service extract-fields endpoint. Results are cached 30 days per field — safe to call repeatedly.",
   input_schema: {
     type: "object" as const,
     properties: {
-      brandId: {
-        type: "string",
-        description: "UUID of the brand to extract fields from.",
-      },
       fields: {
         type: "array",
         items: {
@@ -807,7 +803,7 @@ export const EXTRACT_BRAND_FIELDS_TOOL: Anthropic.Tool = {
         description: "List of fields to extract. Each field has a key and a description.",
       },
     },
-    required: ["brandId", "fields"],
+    required: ["fields"],
   },
 };
 

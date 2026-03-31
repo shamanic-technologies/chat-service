@@ -15,7 +15,8 @@ const workflowTrackingHeaders = {
     description: "Campaign ID — injected automatically by workflow-service",
   }),
   "x-brand-id": z.string().optional().openapi({
-    description: "Brand ID — injected automatically by workflow-service",
+    description: "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+    example: "550e8400-e29b-41d4-a716-446655440000,660f9500-f30c-52e5-b827-557766551111",
   }),
   "x-workflow-slug": z.string().optional().openapi({
     description: "Workflow slug — injected automatically by workflow-service",
