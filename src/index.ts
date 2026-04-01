@@ -262,7 +262,6 @@ app.post("/complete", requireAuth, async (req, res) => {
       trackingHeaders,
     );
     runId = run.id;
-    console.log(`[complete] org="${orgId}" run="${runId}" created`);
   } catch (runErr) {
     console.error(`[complete] org="${orgId}" run creation failed:`, runErr);
     return res.status(502).json({
@@ -537,7 +536,6 @@ app.post("/chat", requireAuth, async (req, res) => {
         trackingHeaders,
       );
       runId = run.id;
-      console.log(`[chat] session="${currentSessionId}" run="${runId}" created`);
     } catch (runErr) {
       console.error(`[chat] session="${currentSessionId}" run creation failed:`, runErr);
       sendSSE(res, {
