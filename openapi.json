@@ -480,7 +480,7 @@
           },
           "model": {
             "type": "string",
-            "description": "Model used for the completion",
+            "description": "Versioned model ID actually used for the completion (resolved by the service from the provider+model alias)",
             "example": "claude-sonnet-4-6"
           }
         },
@@ -551,15 +551,25 @@
             "description": "Maximum tokens in the response (default: 16000)",
             "example": 2000
           },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "google"
+            ],
+            "description": "LLM provider to use.",
+            "example": "anthropic"
+          },
           "model": {
             "type": "string",
             "enum": [
-              "claude-sonnet-4-6",
-              "claude-haiku-4-5",
-              "gemini-3.1-flash-lite-preview"
+              "haiku",
+              "sonnet",
+              "opus",
+              "flash-lite"
             ],
-            "description": "Model to use. Defaults to claude-sonnet-4-6. Use claude-haiku-4-5 for simpler tasks, or gemini-3.1-flash-lite-preview for cost-effective vision tasks (image analysis, classification).",
-            "example": "gemini-3.1-flash-lite-preview"
+            "description": "Model alias (version-free). The service resolves the latest versioned model internally.\n\n**Anthropic models:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n**Google models:** `flash-lite` (cost-effective vision).\n\nThe model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite.",
+            "example": "sonnet"
           },
           "imageUrl": {
             "type": "string",
@@ -591,7 +601,9 @@
         },
         "required": [
           "message",
-          "systemPrompt"
+          "systemPrompt",
+          "provider",
+          "model"
         ]
       },
       "ChatRequest": {
@@ -898,7 +910,7 @@
           "Complete"
         ],
         "summary": "Synchronous LLM completion",
-        "description": "One-shot, non-streaming LLM call for service-to-service use. Returns a JSON response with the model output.\n\nUnlike POST /chat, this endpoint:\n- Does **not** create or use sessions (stateless, one-shot)\n- Accepts an inline `systemPrompt` (no pre-registered config required)\n- Returns JSON instead of SSE\n- Supports `responseFormat: \"json\"` — when set, the parsed object is returned in the `json` field (always use `json`, not `content`, for structured data)\n- Supports optional `temperature` and `maxTokens` overrides\n- Supports **vision** via the `imageUrl` field — the image is fetched server-side and sent as visual input to the model\n\n**Models:**\n- `claude-sonnet-4-6` (default) — general-purpose, high quality\n- `claude-haiku-4-5` — faster/cheaper for simple extraction and classification\n- `gemini-3.1-flash-lite-preview` — cost-effective vision model for image analysis, scoring, and classification. Requires a Google API key configured in key-service (provider: `google`).\n\n**Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with `imageUrl` + `gemini-3.1-flash-lite-preview`), any service that needs a quick LLM call without conversation context.",
+        "description": "One-shot, non-streaming LLM call for service-to-service use. Returns a JSON response with the model output.\n\nUnlike POST /chat, this endpoint:\n- Does **not** create or use sessions (stateless, one-shot)\n- Accepts an inline `systemPrompt` (no pre-registered config required)\n- Returns JSON instead of SSE\n- Supports `responseFormat: \"json\"` — when set, the parsed object is returned in the `json` field (always use `json`, not `content`, for structured data)\n- Supports optional `temperature` and `maxTokens` overrides\n- Supports **vision** via the `imageUrl` field — the image is fetched server-side and sent as visual input to the model\n\n**Provider + model (both required):**\nCallers specify a provider and a version-free model alias. The service resolves the latest versioned model ID internally.\n\n| provider | model | Description |\n|----------|-------|-------------|\n| `anthropic` | `sonnet` | General-purpose, high quality |\n| `anthropic` | `haiku` | Faster/cheaper for simple extraction and classification |\n| `anthropic` | `opus` | Highest quality for complex reasoning |\n| `google` | `flash-lite` | Cost-effective vision model for image analysis. Requires a Google API key in key-service. |\n\n**Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with `imageUrl` + `gemini-3.1-flash-lite-preview`), any service that needs a quick LLM call without conversation context.",
         "parameters": [
           {
             "schema": {

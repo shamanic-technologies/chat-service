@@ -314,9 +314,17 @@ export const CompleteRequestSchema = z
       description: "Maximum tokens in the response (default: 16000)",
       example: 2000,
     }),
-    model: z.enum(["claude-sonnet-4-6", "claude-haiku-4-5", "gemini-3.1-flash-lite-preview"]).optional().openapi({
-      description: "Model to use. Defaults to claude-sonnet-4-6. Use claude-haiku-4-5 for simpler tasks, or gemini-3.1-flash-lite-preview for cost-effective vision tasks (image analysis, classification).",
-      example: "gemini-3.1-flash-lite-preview",
+    provider: z.enum(["anthropic", "google"]).openapi({
+      description: "LLM provider to use.",
+      example: "anthropic",
+    }),
+    model: z.enum(["haiku", "sonnet", "opus", "flash-lite"]).openapi({
+      description:
+        "Model alias (version-free). The service resolves the latest versioned model internally.\n\n" +
+        "**Anthropic models:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n" +
+        "**Google models:** `flash-lite` (cost-effective vision).\n\n" +
+        "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite.",
+      example: "sonnet",
     }),
     imageUrl: z.string().url().optional().openapi({
       description: "URL of an image to include in the prompt. The image is fetched server-side and sent to the model as a visual input. Supported by all models, but recommended with gemini-3.1-flash-lite-preview for cost-effective vision tasks (image classification, scoring, analysis).",
@@ -339,6 +347,20 @@ export const CompleteRequestSchema = z
       description: "Optional metadata about the image (alt text, title, source page). Injected into the prompt alongside the image to help the model classify and score it more accurately. Only meaningful when imageUrl is provided.",
     }),
   })
+  .superRefine((data, ctx) => {
+    const validModels: Record<string, string[]> = {
+      anthropic: ["haiku", "sonnet", "opus"],
+      google: ["flash-lite"],
+    };
+    const allowed = validModels[data.provider];
+    if (allowed && !allowed.includes(data.model)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Model "${data.model}" is not valid for provider "${data.provider}". Valid models: ${allowed.join(", ")}`,
+        path: ["model"],
+      });
+    }
+  })
   .openapi("CompleteRequest");
 
 export const CompleteResponseSchema = z
@@ -360,7 +382,7 @@ export const CompleteResponseSchema = z
       example: 800,
     }),
     model: z.string().openapi({
-      description: "Model used for the completion",
+      description: "Versioned model ID actually used for the completion (resolved by the service from the provider+model alias)",
       example: "claude-sonnet-4-6",
     }),
   })
@@ -383,10 +405,15 @@ Unlike POST /chat, this endpoint:
 - Supports optional \`temperature\` and \`maxTokens\` overrides
 - Supports **vision** via the \`imageUrl\` field — the image is fetched server-side and sent as visual input to the model
 
-**Models:**
-- \`claude-sonnet-4-6\` (default) — general-purpose, high quality
-- \`claude-haiku-4-5\` — faster/cheaper for simple extraction and classification
-- \`gemini-3.1-flash-lite-preview\` — cost-effective vision model for image analysis, scoring, and classification. Requires a Google API key configured in key-service (provider: \`google\`).
+**Provider + model (both required):**
+Callers specify a provider and a version-free model alias. The service resolves the latest versioned model ID internally.
+
+| provider | model | Description |
+|----------|-------|-------------|
+| \`anthropic\` | \`sonnet\` | General-purpose, high quality |
+| \`anthropic\` | \`haiku\` | Faster/cheaper for simple extraction and classification |
+| \`anthropic\` | \`opus\` | Highest quality for complex reasoning |
+| \`google\` | \`flash-lite\` | Cost-effective vision model for image analysis. Requires a Google API key in key-service. |
 
 **Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with \`imageUrl\` + \`gemini-3.1-flash-lite-preview\`), any service that needs a quick LLM call without conversation context.`,
   request: {

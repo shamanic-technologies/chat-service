@@ -5,13 +5,61 @@ export const MODEL = "claude-sonnet-4-6";
 export const COST_PREFIX = "anthropic-sonnet-4.6";
 const MAX_TOKENS = 16_000;
 
+// ---------------------------------------------------------------------------
+// Provider + model alias → versioned API model ID + cost prefix
+// Callers specify version-free aliases (e.g. "sonnet"); the service resolves
+// the latest versioned model ID internally.
+// ---------------------------------------------------------------------------
+
+export type Provider = "anthropic" | "google";
+export type ModelAlias = "haiku" | "sonnet" | "opus" | "flash-lite";
+
+interface ResolvedModel {
+  /** Versioned model ID sent to the provider's API */
+  apiModelId: string;
+  /** Cost-name prefix for costs-service */
+  costPrefix: string;
+  /** Provider key used for key-service resolution */
+  provider: "anthropic" | "google";
+}
+
+const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
+  anthropic: {
+    haiku: { apiModelId: "claude-haiku-4-5", costPrefix: "anthropic-haiku-4.5", provider: "anthropic" },
+    sonnet: { apiModelId: "claude-sonnet-4-6", costPrefix: "anthropic-sonnet-4.6", provider: "anthropic" },
+    opus: { apiModelId: "claude-opus-4-6", costPrefix: "anthropic-opus-4.6", provider: "anthropic" },
+  },
+  google: {
+    "flash-lite": { apiModelId: "gemini-3.1-flash-lite-preview", costPrefix: "google-flash-lite-3.1", provider: "google" },
+  },
+};
+
+/** Valid model aliases per provider — used for Zod validation. */
+export const PROVIDER_MODELS: Record<Provider, readonly ModelAlias[]> = {
+  anthropic: ["haiku", "sonnet", "opus"],
+  google: ["flash-lite"],
+};
+
 /**
- * Supported models and their costs-service prefixes.
- * Keys are Anthropic API model IDs; values are cost-name prefixes.
+ * Resolve a (provider, model alias) pair to the versioned API model ID,
+ * cost prefix, and provider string.
+ * Throws if the combination is invalid.
+ */
+export function resolveModel(provider: Provider, modelAlias: ModelAlias): ResolvedModel {
+  const providerMap = MODEL_MAP[provider];
+  if (!providerMap) throw new Error(`Unknown provider: ${provider}`);
+  const resolved = providerMap[modelAlias];
+  if (!resolved) throw new Error(`Unknown model "${modelAlias}" for provider "${provider}"`);
+  return resolved;
+}
+
+/**
+ * @deprecated — kept for backward compat during migration. Use resolveModel instead.
  */
 export const SUPPORTED_MODELS: Record<string, string> = {
   "claude-sonnet-4-6": "anthropic-sonnet-4.6",
   "claude-haiku-4-5": "anthropic-haiku-4.5",
+  "claude-opus-4-6": "anthropic-opus-4.6",
   "gemini-3.1-flash-lite-preview": "google-flash-lite-3.1",
 };
 
