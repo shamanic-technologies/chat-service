@@ -154,10 +154,11 @@ Request body:
 {
   "message": "Given this brand context, generate 10 Google search queries...",
   "systemPrompt": "You are a PR research assistant...",
+  "provider": "anthropic",
+  "model": "haiku",
   "responseFormat": "json",
   "temperature": 0.3,
-  "maxTokens": 2000,
-  "model": "claude-haiku-4-5"
+  "maxTokens": 2000
 }
 ```
 
@@ -166,9 +167,10 @@ Request body:
 {
   "message": "Analyze this image and score it on: is_logo, is_product, is_team_photo, is_professional (0-1 each)",
   "systemPrompt": "You are an image classification assistant. Return JSON with scores.",
+  "provider": "google",
+  "model": "flash-lite",
   "imageUrl": "https://example.com/images/hero.jpg",
   "imageContext": { "alt": "Company hero banner", "title": "About Us", "sourceUrl": "https://example.com/about" },
-  "model": "gemini-3.1-flash-lite-preview",
   "responseFormat": "json",
   "temperature": 0,
   "maxTokens": 1024
@@ -177,11 +179,14 @@ Request body:
 
 - `message` (required) — the prompt to send to the LLM
 - `systemPrompt` (required) — inline system prompt (no pre-registered config needed)
+- `provider` (required) — LLM provider: `"anthropic"` or `"google"`
+- `model` (required) — version-free model alias. The service resolves the latest versioned model internally. Valid combinations:
+  - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
+  - **google**: `flash-lite` (cost-effective vision). Requires a Google API key in key-service.
 - `responseFormat` (optional) — set to `"json"` to instruct the model to return valid JSON. The parsed result appears in the `json` field.
 - `temperature` (optional) — sampling temperature, 0–2 (default: model default)
 - `maxTokens` (optional) — max output tokens, 1–64000 (default: 16000)
-- `model` (optional) — `claude-sonnet-4-6` (default), `claude-haiku-4-5` (cheaper text tasks), or `gemini-3.1-flash-lite-preview` (cost-effective vision). Gemini models require a Google API key configured in key-service (provider: `google`).
-- `imageUrl` (optional) — URL of an image to include as visual input. The image is fetched server-side. Supported by all models, but recommended with `gemini-3.1-flash-lite-preview` for cost-effective vision tasks.
+- `imageUrl` (optional) — URL of an image to include as visual input. The image is fetched server-side. Supported by all models, but recommended with `google` + `flash-lite` for cost-effective vision tasks.
 - `imageContext` (optional) — metadata about the image to help the model classify it: `{ alt?: string, title?: string, sourceUrl?: string }`. Injected into the prompt alongside the image. Only meaningful when `imageUrl` is provided.
 
 Response:
@@ -198,7 +203,7 @@ Response:
 - `content` — raw text response (always present). **Warning:** when `responseFormat: "json"`, this field may contain markdown code fences (e.g. `` ```json...``` ``). Do **not** use this field for JSON parsing.
 - `json` — parsed JSON object (present when `responseFormat: "json"`). **Always use this field** for structured data — markdown fences are already stripped and the JSON is pre-parsed. If the model returns non-parsable JSON, the endpoint returns **502** instead of silently omitting this field.
 - `tokensInput` / `tokensOutput` — token usage
-- `model` — model used
+- `model` — the versioned model ID that was actually used (resolved from the provider + alias)
 
 Unlike POST /chat, this endpoint is **stateless** (no sessions), accepts an **inline systemPrompt**, and returns **JSON** instead of SSE. Run tracking and billing work identically to POST /chat.
 

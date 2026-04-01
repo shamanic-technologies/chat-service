@@ -1,13 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { CompleteRequestSchema } from "../../src/schemas.js";
 import { isGeminiModel, geminiCostPrefix, GEMINI_MODELS } from "../../src/lib/gemini.js";
-import { costPrefixForModel, SUPPORTED_MODELS } from "../../src/lib/anthropic.js";
+import { costPrefixForModel, SUPPORTED_MODELS, resolveModel } from "../../src/lib/anthropic.js";
 
 describe("CompleteRequestSchema", () => {
-  it("accepts valid request with message and systemPrompt", () => {
+  it("accepts valid request with provider and model", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Generate 10 search queries",
       systemPrompt: "You are a PR research assistant.",
+      provider: "anthropic",
+      model: "sonnet",
     });
     expect(result.success).toBe(true);
   });
@@ -16,6 +18,8 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Generate queries",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       responseFormat: "json",
       temperature: 0.3,
       maxTokens: 2000,
@@ -31,6 +35,8 @@ describe("CompleteRequestSchema", () => {
   it("rejects missing message", () => {
     const result = CompleteRequestSchema.safeParse({
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
     });
     expect(result.success).toBe(false);
   });
@@ -39,6 +45,8 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
     });
     expect(result.success).toBe(false);
   });
@@ -46,6 +54,8 @@ describe("CompleteRequestSchema", () => {
   it("rejects missing systemPrompt", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Hello",
+      provider: "anthropic",
+      model: "sonnet",
     });
     expect(result.success).toBe(false);
   });
@@ -54,6 +64,26 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "",
+      provider: "anthropic",
+      model: "sonnet",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects missing provider", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      model: "sonnet",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects missing model", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      provider: "anthropic",
     });
     expect(result.success).toBe(false);
   });
@@ -62,6 +92,8 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       responseFormat: "xml",
     });
     expect(result.success).toBe(false);
@@ -71,6 +103,8 @@ describe("CompleteRequestSchema", () => {
     const below = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       temperature: -0.1,
     });
     expect(below.success).toBe(false);
@@ -78,6 +112,8 @@ describe("CompleteRequestSchema", () => {
     const above = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       temperature: 2.1,
     });
     expect(above.success).toBe(false);
@@ -87,6 +123,8 @@ describe("CompleteRequestSchema", () => {
     const zero = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       maxTokens: 0,
     });
     expect(zero.success).toBe(false);
@@ -94,6 +132,8 @@ describe("CompleteRequestSchema", () => {
     const tooHigh = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       maxTokens: 65000,
     });
     expect(tooHigh.success).toBe(false);
@@ -103,59 +143,101 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       maxTokens: 1000.5,
     });
     expect(result.success).toBe(false);
   });
 
-  it("accepts valid model override", () => {
+  // --- Provider + model validation ---
+
+  it("accepts anthropic + haiku", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Extract metadata",
       systemPrompt: "You are a metadata extractor.",
-      model: "claude-haiku-4-5",
+      provider: "anthropic",
+      model: "haiku",
     });
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.model).toBe("claude-haiku-4-5");
-    }
   });
 
-  it("accepts default model explicitly", () => {
+  it("accepts anthropic + sonnet", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "You are helpful.",
-      model: "claude-sonnet-4-6",
+      provider: "anthropic",
+      model: "sonnet",
     });
     expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.model).toBe("claude-sonnet-4-6");
-    }
   });
 
-  it("rejects unsupported model", () => {
+  it("accepts anthropic + opus", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Complex reasoning task",
+      systemPrompt: "You are a reasoning expert.",
+      provider: "anthropic",
+      model: "opus",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts google + flash-lite", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Analyze this image",
+      systemPrompt: "You are an image classifier.",
+      provider: "google",
+      model: "flash-lite",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects anthropic + flash-lite (wrong provider)", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "flash-lite",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects google + sonnet (wrong provider)", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      provider: "google",
+      model: "sonnet",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects unsupported provider", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      provider: "openai",
       model: "gpt-4o",
     });
     expect(result.success).toBe(false);
   });
 
-  it("defaults model to undefined when omitted", () => {
+  it("rejects unsupported model alias", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "gpt-4o",
     });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.model).toBeUndefined();
-    }
+    expect(result.success).toBe(false);
   });
 
   it("accepts temperature at boundaries (0 and 2)", () => {
     const atZero = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       temperature: 0,
     });
     expect(atZero.success).toBe(true);
@@ -163,6 +245,8 @@ describe("CompleteRequestSchema", () => {
     const atTwo = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       temperature: 2,
     });
     expect(atTwo.success).toBe(true);
@@ -170,23 +254,12 @@ describe("CompleteRequestSchema", () => {
 
   // --- Vision / imageUrl tests ---
 
-  it("accepts gemini-3.1-flash-lite-preview model", () => {
-    const result = CompleteRequestSchema.safeParse({
-      message: "Analyze this image",
-      systemPrompt: "You are an image classifier.",
-      model: "gemini-3.1-flash-lite-preview",
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.model).toBe("gemini-3.1-flash-lite-preview");
-    }
-  });
-
-  it("accepts imageUrl with gemini-3.1-flash-lite-preview", () => {
+  it("accepts google + flash-lite with imageUrl", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Score this image",
       systemPrompt: "You are an image scoring assistant.",
-      model: "gemini-3.1-flash-lite-preview",
+      provider: "google",
+      model: "flash-lite",
       imageUrl: "https://example.com/images/hero.jpg",
       responseFormat: "json",
       temperature: 0,
@@ -195,7 +268,6 @@ describe("CompleteRequestSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.imageUrl).toBe("https://example.com/images/hero.jpg");
-      expect(result.data.model).toBe("gemini-3.1-flash-lite-preview");
     }
   });
 
@@ -203,7 +275,8 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Describe this image",
       systemPrompt: "You are helpful.",
-      model: "claude-sonnet-4-6",
+      provider: "anthropic",
+      model: "sonnet",
       imageUrl: "https://example.com/photo.png",
     });
     expect(result.success).toBe(true);
@@ -212,23 +285,12 @@ describe("CompleteRequestSchema", () => {
     }
   });
 
-  it("accepts imageUrl without explicit model (defaults to claude)", () => {
-    const result = CompleteRequestSchema.safeParse({
-      message: "What do you see?",
-      systemPrompt: "You are helpful.",
-      imageUrl: "https://example.com/img.jpg",
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.imageUrl).toBe("https://example.com/img.jpg");
-      expect(result.data.model).toBeUndefined();
-    }
-  });
-
   it("rejects invalid imageUrl", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Analyze",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       imageUrl: "not-a-url",
     });
     expect(result.success).toBe(false);
@@ -238,7 +300,8 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Just text",
       systemPrompt: "You are helpful.",
-      model: "gemini-3.1-flash-lite-preview",
+      provider: "google",
+      model: "flash-lite",
     });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -252,7 +315,8 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Score this image",
       systemPrompt: "You are an image classifier.",
-      model: "gemini-3.1-flash-lite-preview",
+      provider: "google",
+      model: "flash-lite",
       imageUrl: "https://example.com/hero.jpg",
       imageContext: {
         alt: "Company logo",
@@ -274,6 +338,8 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Analyze",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       imageUrl: "https://example.com/img.jpg",
       imageContext: { alt: "Team photo" },
     });
@@ -289,6 +355,8 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Analyze",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       imageUrl: "https://example.com/img.jpg",
       imageContext: {},
     });
@@ -302,12 +370,54 @@ describe("CompleteRequestSchema", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Analyze",
       systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
       imageUrl: "https://example.com/img.jpg",
     });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.imageContext).toBeUndefined();
     }
+  });
+});
+
+// --- resolveModel tests ---
+
+describe("resolveModel", () => {
+  it("resolves anthropic + haiku to claude-haiku-4-5", () => {
+    const resolved = resolveModel("anthropic", "haiku");
+    expect(resolved.apiModelId).toBe("claude-haiku-4-5");
+    expect(resolved.costPrefix).toBe("anthropic-haiku-4.5");
+    expect(resolved.provider).toBe("anthropic");
+  });
+
+  it("resolves anthropic + sonnet to claude-sonnet-4-6", () => {
+    const resolved = resolveModel("anthropic", "sonnet");
+    expect(resolved.apiModelId).toBe("claude-sonnet-4-6");
+    expect(resolved.costPrefix).toBe("anthropic-sonnet-4.6");
+    expect(resolved.provider).toBe("anthropic");
+  });
+
+  it("resolves anthropic + opus to claude-opus-4-6", () => {
+    const resolved = resolveModel("anthropic", "opus");
+    expect(resolved.apiModelId).toBe("claude-opus-4-6");
+    expect(resolved.costPrefix).toBe("anthropic-opus-4.6");
+    expect(resolved.provider).toBe("anthropic");
+  });
+
+  it("resolves google + flash-lite to gemini-3.1-flash-lite-preview", () => {
+    const resolved = resolveModel("google", "flash-lite");
+    expect(resolved.apiModelId).toBe("gemini-3.1-flash-lite-preview");
+    expect(resolved.costPrefix).toBe("google-flash-lite-3.1");
+    expect(resolved.provider).toBe("google");
+  });
+
+  it("throws for invalid provider", () => {
+    expect(() => resolveModel("openai" as any, "sonnet")).toThrow();
+  });
+
+  it("throws for invalid model alias", () => {
+    expect(() => resolveModel("anthropic", "flash-lite")).toThrow();
   });
 });
 
@@ -342,5 +452,6 @@ describe("costPrefixForModel", () => {
   it("returns correct prefix for anthropic models", () => {
     expect(costPrefixForModel("claude-sonnet-4-6")).toBe("anthropic-sonnet-4.6");
     expect(costPrefixForModel("claude-haiku-4-5")).toBe("anthropic-haiku-4.5");
+    expect(costPrefixForModel("claude-opus-4-6")).toBe("anthropic-opus-4.6");
   });
 });

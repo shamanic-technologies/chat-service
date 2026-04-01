@@ -16,7 +16,9 @@ import {
   MODEL,
   COST_PREFIX,
   costPrefixForModel,
+  resolveModel,
 } from "./lib/anthropic.js";
+import type { Provider, ModelAlias } from "./lib/anthropic.js";
 import { isGeminiModel, completeWithGemini } from "./lib/gemini.js";
 import {
   updateWorkflow,
@@ -191,12 +193,13 @@ app.post("/complete", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, temperature, maxTokens, model: requestedModel, imageUrl, imageContext } = parsed.data;
+  const { message, systemPrompt, responseFormat, temperature, maxTokens, provider: requestedProvider, model: requestedModel, imageUrl, imageContext } = parsed.data;
 
-  // Determine provider from model
-  const effectiveModel = requestedModel ?? MODEL;
-  const isGemini = isGeminiModel(effectiveModel);
-  const provider = isGemini ? "google" : "anthropic";
+  // Resolve versioned model from (provider, alias) pair
+  const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
+  const effectiveModel = resolved.apiModelId;
+  const isGemini = resolved.provider === "google";
+  const provider = resolved.provider;
 
   // Resolve API key per-request
   let resolvedKey: ResolvedKey;
@@ -216,8 +219,8 @@ app.post("/complete", requireAuth, async (req, res) => {
     });
   }
 
-  // Resolve cost prefix
-  const effectiveCostPrefix = costPrefixForModel(effectiveModel);
+  // Cost prefix from model resolution
+  const effectiveCostPrefix = resolved.costPrefix;
 
   // Credit authorization for platform keys
   if (resolvedKey.keySource === "platform") {
