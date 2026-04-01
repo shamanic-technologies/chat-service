@@ -3,16 +3,18 @@ import { describe, it, expect } from "vitest";
 /**
  * Mirrors the markdown-fence stripping logic in src/index.ts /complete handler.
  * If JSON.parse fails on raw content, strip ```json fences and retry.
+ * Throws on truly unparsable content (no silent fallback).
  */
-function parseJsonWithFenceStrip(content: string): unknown | null {
+function parseJsonWithFenceStrip(content: string): unknown {
+  const trimmed = content.trim();
   try {
-    return JSON.parse(content);
+    return JSON.parse(trimmed);
   } catch {
-    const stripped = content.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
+    const stripped = trimmed.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
     try {
       return JSON.parse(stripped);
     } catch {
-      return null;
+      throw new Error(`Model returned non-parsable JSON. Content: ${content.slice(0, 500)}`);
     }
   }
 }
@@ -47,20 +49,46 @@ describe("JSON markdown fence stripping", () => {
     expect(result).toEqual([{ id: 1 }, { id: 2 }]);
   });
 
-  it("returns null for truly unparsable content", () => {
-    const result = parseJsonWithFenceStrip("This is not JSON at all");
-    expect(result).toBeNull();
+  it("throws for truly unparsable content", () => {
+    expect(() => parseJsonWithFenceStrip("This is not JSON at all")).toThrow(
+      "Model returned non-parsable JSON",
+    );
   });
 
-  it("returns null for fenced non-JSON content", () => {
+  it("throws for fenced non-JSON content", () => {
     const content = '```json\nnot actually json\n```';
-    const result = parseJsonWithFenceStrip(content);
-    expect(result).toBeNull();
+    expect(() => parseJsonWithFenceStrip(content)).toThrow(
+      "Model returned non-parsable JSON",
+    );
   });
 
   it("handles fences with no trailing newline", () => {
     const content = '```json\n{"ok": true}```';
     const result = parseJsonWithFenceStrip(content);
     expect(result).toEqual({ ok: true });
+  });
+
+  it("handles leading/trailing whitespace around fences", () => {
+    const content = '\n```json\n{"isArticle": false, "authors": [], "publishedAt": null}\n```\n';
+    const result = parseJsonWithFenceStrip(content);
+    expect(result).toEqual({ isArticle: false, authors: [], publishedAt: null });
+  });
+
+  it("handles leading/trailing whitespace around plain JSON", () => {
+    const content = '  \n{"key": "value"}\n  ';
+    const result = parseJsonWithFenceStrip(content);
+    expect(result).toEqual({ key: "value" });
+  });
+
+  it("handles whitespace inside fences around JSON", () => {
+    const content = '```json\n\n  {"key": "value"}\n\n```';
+    const result = parseJsonWithFenceStrip(content);
+    expect(result).toEqual({ key: "value" });
+  });
+
+  it("handles \\r\\n line endings", () => {
+    const content = '```json\r\n{"key": "value"}\r\n```';
+    const result = parseJsonWithFenceStrip(content);
+    expect(result).toEqual({ key: "value" });
   });
 });

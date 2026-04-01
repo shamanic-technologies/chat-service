@@ -348,7 +348,7 @@ export const CompleteResponseSchema = z
       example: '{"subject": "Quick question", "emails": [{"body": "Hi...", "daysSinceLastStep": 0}]}',
     }),
     json: z.record(z.string(), z.unknown()).optional().openapi({
-      description: "Parsed JSON object — present only when responseFormat is \"json\" and the model returned valid JSON. IMPORTANT: always use this field (not `content`) when you need structured data. Markdown fences are already stripped and the JSON is pre-parsed.",
+      description: "Parsed JSON object — present when responseFormat is \"json\". IMPORTANT: always use this field (not `content`) when you need structured data. Markdown fences are already stripped and the JSON is pre-parsed. If the model returns non-parsable JSON, the endpoint returns 502 instead of silently omitting this field.",
       example: { subject: "Quick question", emails: [{ body: "Hi there, I noticed...", daysSinceLastStep: 0 }] },
     }),
     tokensInput: z.number().openapi({

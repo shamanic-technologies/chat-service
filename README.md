@@ -196,7 +196,7 @@ Response:
 ```
 
 - `content` — raw text response (always present). **Warning:** when `responseFormat: "json"`, this field may contain markdown code fences (e.g. `` ```json...``` ``). Do **not** use this field for JSON parsing.
-- `json` — parsed JSON object (only when `responseFormat: "json"` and model returned valid JSON). **Always use this field** for structured data — markdown fences are already stripped and the JSON is pre-parsed.
+- `json` — parsed JSON object (present when `responseFormat: "json"`). **Always use this field** for structured data — markdown fences are already stripped and the JSON is pre-parsed. If the model returns non-parsable JSON, the endpoint returns **502** instead of silently omitting this field.
 - `tokensInput` / `tokensOutput` — token usage
 - `model` — model used
 
