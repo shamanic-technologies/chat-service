@@ -192,6 +192,46 @@ describe("CompleteRequestSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts google + flash", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Reason about this",
+      systemPrompt: "You are helpful.",
+      provider: "google",
+      model: "flash",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts google + pro", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Complex analysis",
+      systemPrompt: "You are an expert analyst.",
+      provider: "google",
+      model: "pro",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects anthropic + flash (wrong provider)", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "flash",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects anthropic + pro (wrong provider)", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "pro",
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("rejects anthropic + flash-lite (wrong provider)", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Hello",
@@ -412,6 +452,20 @@ describe("resolveModel", () => {
     expect(resolved.provider).toBe("google");
   });
 
+  it("resolves google + flash to gemini-2.5-flash", () => {
+    const resolved = resolveModel("google", "flash");
+    expect(resolved.apiModelId).toBe("gemini-2.5-flash");
+    expect(resolved.costPrefix).toBe("google-flash-2.5");
+    expect(resolved.provider).toBe("google");
+  });
+
+  it("resolves google + pro to gemini-3.1-pro-preview", () => {
+    const resolved = resolveModel("google", "pro");
+    expect(resolved.apiModelId).toBe("gemini-3.1-pro-preview");
+    expect(resolved.costPrefix).toBe("google-pro-3.1");
+    expect(resolved.provider).toBe("google");
+  });
+
   it("throws for invalid provider", () => {
     expect(() => resolveModel("openai" as any, "sonnet")).toThrow();
   });
@@ -428,6 +482,14 @@ describe("isGeminiModel", () => {
     expect(isGeminiModel("gemini-3.1-flash-lite-preview")).toBe(true);
   });
 
+  it("returns true for gemini-2.5-flash", () => {
+    expect(isGeminiModel("gemini-2.5-flash")).toBe(true);
+  });
+
+  it("returns true for gemini-3.1-pro-preview", () => {
+    expect(isGeminiModel("gemini-3.1-pro-preview")).toBe(true);
+  });
+
   it("returns false for anthropic models", () => {
     expect(isGeminiModel("claude-sonnet-4-6")).toBe(false);
     expect(isGeminiModel("claude-haiku-4-5")).toBe(false);
@@ -442,6 +504,14 @@ describe("geminiCostPrefix", () => {
   it("returns correct prefix for gemini-3.1-flash-lite-preview", () => {
     expect(geminiCostPrefix("gemini-3.1-flash-lite-preview")).toBe("google-flash-lite-3.1");
   });
+
+  it("returns correct prefix for gemini-2.5-flash", () => {
+    expect(geminiCostPrefix("gemini-2.5-flash")).toBe("google-flash-2.5");
+  });
+
+  it("returns correct prefix for gemini-3.1-pro-preview", () => {
+    expect(geminiCostPrefix("gemini-3.1-pro-preview")).toBe("google-pro-3.1");
+  });
 });
 
 describe("costPrefixForModel", () => {
@@ -453,5 +523,10 @@ describe("costPrefixForModel", () => {
     expect(costPrefixForModel("claude-sonnet-4-6")).toBe("anthropic-sonnet-4.6");
     expect(costPrefixForModel("claude-haiku-4-5")).toBe("anthropic-haiku-4.5");
     expect(costPrefixForModel("claude-opus-4-6")).toBe("anthropic-opus-4.6");
+  });
+
+  it("returns correct prefix for all gemini models", () => {
+    expect(costPrefixForModel("gemini-2.5-flash")).toBe("google-flash-2.5");
+    expect(costPrefixForModel("gemini-3.1-pro-preview")).toBe("google-pro-3.1");
   });
 });

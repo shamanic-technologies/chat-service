@@ -182,7 +182,7 @@ Request body:
 - `provider` (required) — LLM provider: `"anthropic"` or `"google"`
 - `model` (required) — version-free model alias. The service resolves the latest versioned model internally. Valid combinations:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
-  - **google**: `flash-lite` (cost-effective vision). Requires a Google API key in key-service.
+  - **google**: `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `pro` (most powerful). All require a Google API key in key-service.
 - `responseFormat` (optional) — set to `"json"` to instruct the model to return valid JSON. The parsed result appears in the `json` field.
 - `temperature` (optional) — sampling temperature, 0–2 (default: model default)
 - `maxTokens` (optional) — max output tokens, 1–64000 (default: 16000)

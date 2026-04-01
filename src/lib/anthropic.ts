@@ -12,7 +12,7 @@ const MAX_TOKENS = 16_000;
 // ---------------------------------------------------------------------------
 
 export type Provider = "anthropic" | "google";
-export type ModelAlias = "haiku" | "sonnet" | "opus" | "flash-lite";
+export type ModelAlias = "haiku" | "sonnet" | "opus" | "flash-lite" | "flash" | "pro";
 
 interface ResolvedModel {
   /** Versioned model ID sent to the provider's API */
@@ -31,13 +31,15 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   },
   google: {
     "flash-lite": { apiModelId: "gemini-3.1-flash-lite-preview", costPrefix: "google-flash-lite-3.1", provider: "google" },
+    "flash": { apiModelId: "gemini-2.5-flash", costPrefix: "google-flash-2.5", provider: "google" },
+    "pro": { apiModelId: "gemini-3.1-pro-preview", costPrefix: "google-pro-3.1", provider: "google" },
   },
 };
 
 /** Valid model aliases per provider — used for Zod validation. */
 export const PROVIDER_MODELS: Record<Provider, readonly ModelAlias[]> = {
   anthropic: ["haiku", "sonnet", "opus"],
-  google: ["flash-lite"],
+  google: ["flash-lite", "flash", "pro"],
 };
 
 /**
@@ -61,6 +63,8 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "claude-haiku-4-5": "anthropic-haiku-4.5",
   "claude-opus-4-6": "anthropic-opus-4.6",
   "gemini-3.1-flash-lite-preview": "google-flash-lite-3.1",
+  "gemini-2.5-flash": "google-flash-2.5",
+  "gemini-3.1-pro-preview": "google-pro-3.1",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */

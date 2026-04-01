@@ -318,12 +318,12 @@ export const CompleteRequestSchema = z
       description: "LLM provider to use.",
       example: "anthropic",
     }),
-    model: z.enum(["haiku", "sonnet", "opus", "flash-lite"]).openapi({
+    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "pro"]).openapi({
       description:
         "Model alias (version-free). The service resolves the latest versioned model internally.\n\n" +
         "**Anthropic models:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n" +
-        "**Google models:** `flash-lite` (cost-effective vision).\n\n" +
-        "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite.",
+        "**Google models:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `pro` (most powerful).\n\n" +
+        "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|pro.",
       example: "sonnet",
     }),
     imageUrl: z.string().url().optional().openapi({
@@ -350,7 +350,7 @@ export const CompleteRequestSchema = z
   .superRefine((data, ctx) => {
     const validModels: Record<string, string[]> = {
       anthropic: ["haiku", "sonnet", "opus"],
-      google: ["flash-lite"],
+      google: ["flash-lite", "flash", "pro"],
     };
     const allowed = validModels[data.provider];
     if (allowed && !allowed.includes(data.model)) {
@@ -413,7 +413,11 @@ Callers specify a provider and a version-free model alias. The service resolves 
 | \`anthropic\` | \`sonnet\` | General-purpose, high quality |
 | \`anthropic\` | \`haiku\` | Faster/cheaper for simple extraction and classification |
 | \`anthropic\` | \`opus\` | Highest quality for complex reasoning |
-| \`google\` | \`flash-lite\` | Cost-effective vision model for image analysis. Requires a Google API key in key-service. |
+| \`google\` | \`flash-lite\` | Cheapest, cost-effective vision model for image analysis |
+| \`google\` | \`flash\` | Balanced price-performance with reasoning capabilities |
+| \`google\` | \`pro\` | Most powerful Google model for complex tasks |
+
+All Google models require a Google API key configured in key-service (provider: \`google\`).
 
 **Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with \`imageUrl\` + \`gemini-3.1-flash-lite-preview\`), any service that needs a quick LLM call without conversation context.`,
   request: {
