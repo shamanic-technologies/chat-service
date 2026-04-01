@@ -1034,6 +1034,19 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }],
         ...(options?.temperature != null ? { temperature: options.temperature } : {}),
+        ...(options?.responseFormat === "json"
+          ? {
+              output_config: {
+                format: {
+                  type: "json_schema" as const,
+                  schema: {
+                    type: "object",
+                    additionalProperties: true,
+                  },
+                },
+              },
+            }
+          : {}),
       };
 
       const response = await client.messages.create(params);
