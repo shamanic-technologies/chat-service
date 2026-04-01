@@ -333,15 +333,16 @@ app.post("/complete", requireAuth, async (req, res) => {
 
     // Parse JSON if requested
     if (responseFormat === "json") {
+      const trimmed = result.content.trim();
       try {
-        response.json = JSON.parse(result.content);
+        response.json = JSON.parse(trimmed);
       } catch {
         // LLM sometimes wraps JSON in markdown fences — strip and retry
-        const stripped = result.content.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "");
+        const stripped = trimmed.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
         try {
           response.json = JSON.parse(stripped);
         } catch {
-          // Model returned non-parsable content despite JSON mode — return raw content only
+          throw new Error(`Model returned non-parsable JSON despite responseFormat: "json". Content: ${result.content.slice(0, 500)}`);
         }
       }
     }
