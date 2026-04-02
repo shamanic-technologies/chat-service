@@ -78,3 +78,11 @@ jobs:
         run: npm run test:integration
         env:
           CHAT_SERVICE_DATABASE_URL: ${{ steps.neon.outputs.db_url_pooled }}
+
+      - name: Delete Neon branch
+        if: always()
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: pr-${{ github.event.number }}
+          api_key: ${{ secrets.NEON_API_KEY }}
