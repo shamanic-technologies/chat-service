@@ -327,7 +327,7 @@ export const CompleteRequestSchema = z
       example: "sonnet",
     }),
     imageUrl: z.string().url().optional().openapi({
-      description: "URL of an image to include in the prompt. The image is fetched server-side and sent to the model as a visual input. Supported by all models, but recommended with gemini-3.1-flash-lite-preview for cost-effective vision tasks (image classification, scoring, analysis).",
+      description: "URL of an image to include in the prompt. The image is fetched server-side and sent to the model as a visual input. Supported by all models, but recommended with provider: \"google\", model: \"flash-lite\" for cost-effective vision tasks (image classification, scoring, analysis).",
       example: "https://example.com/images/hero.jpg",
     }),
     imageContext: z.object({
@@ -419,7 +419,7 @@ Callers specify a provider and a version-free model alias. The service resolves 
 
 All Google models require a Google API key configured in key-service (provider: \`google\`).
 
-**Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with \`imageUrl\` + \`gemini-3.1-flash-lite-preview\`), any service that needs a quick LLM call without conversation context.`,
+**Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with \`imageUrl\` + google/flash-lite), any service that needs a quick LLM call without conversation context.`,
   request: {
     headers: z.object({
       "x-api-key": z.string().openapi({
