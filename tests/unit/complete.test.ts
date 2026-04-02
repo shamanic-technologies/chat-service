@@ -22,13 +22,11 @@ describe("CompleteRequestSchema", () => {
       model: "sonnet",
       responseFormat: "json",
       temperature: 0.3,
-      maxTokens: 2000,
     });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.responseFormat).toBe("json");
       expect(result.data.temperature).toBe(0.3);
-      expect(result.data.maxTokens).toBe(2000);
     }
   });
 
@@ -117,37 +115,6 @@ describe("CompleteRequestSchema", () => {
       temperature: 2.1,
     });
     expect(above.success).toBe(false);
-  });
-
-  it("rejects maxTokens out of range", () => {
-    const zero = CompleteRequestSchema.safeParse({
-      message: "Hello",
-      systemPrompt: "You are helpful.",
-      provider: "anthropic",
-      model: "sonnet",
-      maxTokens: 0,
-    });
-    expect(zero.success).toBe(false);
-
-    const tooHigh = CompleteRequestSchema.safeParse({
-      message: "Hello",
-      systemPrompt: "You are helpful.",
-      provider: "anthropic",
-      model: "sonnet",
-      maxTokens: 65000,
-    });
-    expect(tooHigh.success).toBe(false);
-  });
-
-  it("rejects non-integer maxTokens", () => {
-    const result = CompleteRequestSchema.safeParse({
-      message: "Hello",
-      systemPrompt: "You are helpful.",
-      provider: "anthropic",
-      model: "sonnet",
-      maxTokens: 1000.5,
-    });
-    expect(result.success).toBe(false);
   });
 
   // --- Provider + model validation ---
@@ -303,7 +270,6 @@ describe("CompleteRequestSchema", () => {
       imageUrl: "https://example.com/images/hero.jpg",
       responseFormat: "json",
       temperature: 0,
-      maxTokens: 1024,
     });
     expect(result.success).toBe(true);
     if (result.success) {

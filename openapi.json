@@ -544,13 +544,6 @@
             "description": "Sampling temperature (0–2). Lower = more deterministic.",
             "example": 0.3
           },
-          "maxTokens": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 64000,
-            "description": "Maximum tokens in the response (default: 64000)",
-            "example": 2000
-          },
           "provider": {
             "type": "string",
             "enum": [
@@ -572,13 +565,6 @@
             ],
             "description": "Model alias (version-free). The service resolves the latest versioned model internally.\n\n**Anthropic models:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n**Google models:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `pro` (most powerful).\n\nThe model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|pro.",
             "example": "sonnet"
-          },
-          "thinkingBudget": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 32000,
-            "description": "Thinking token budget — enables internal reasoning (chain-of-thought) before the model produces its response. Thinking tokens share the maxTokens budget, so set maxTokens high enough to accommodate both.\n\n**Google:** maps to `thinkingConfig.thinkingBudget`. When omitted or 0, thinkingConfig is not sent (lets thinking-only models use their default budget).\n**Anthropic:** maps to `thinking.budget_tokens`. Minimum: 1024. When enabled, temperature is forced to 1 (Anthropic API requirement).\n\nDefault: omitted (thinking not explicitly configured).",
-            "example": 8000
           },
           "imageUrl": {
             "type": "string",
@@ -919,7 +905,7 @@
           "Complete"
         ],
         "summary": "Synchronous LLM completion",
-        "description": "One-shot, non-streaming LLM call for service-to-service use. Returns a JSON response with the model output.\n\nUnlike POST /chat, this endpoint:\n- Does **not** create or use sessions (stateless, one-shot)\n- Accepts an inline `systemPrompt` (no pre-registered config required)\n- Returns JSON instead of SSE\n- Supports `responseFormat: \"json\"` — when set, the parsed object is returned in the `json` field (always use `json`, not `content`, for structured data)\n- Supports optional `temperature` and `maxTokens` overrides\n- Supports **vision** via the `imageUrl` field — the image is fetched server-side and sent as visual input to the model\n\n**Provider + model (both required):**\nCallers specify a provider and a version-free model alias. The service resolves the latest versioned model ID internally.\n\n| provider | model | Description |\n|----------|-------|-------------|\n| `anthropic` | `sonnet` | General-purpose, high quality |\n| `anthropic` | `haiku` | Faster/cheaper for simple extraction and classification |\n| `anthropic` | `opus` | Highest quality for complex reasoning |\n| `google` | `flash-lite` | Cheapest, cost-effective vision model for image analysis |\n| `google` | `flash` | Balanced price-performance with reasoning capabilities |\n| `google` | `pro` | Most powerful Google model for complex tasks |\n\nAll Google models require a Google API key configured in key-service (provider: `google`).\n\n**Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with `imageUrl` + google/flash-lite), any service that needs a quick LLM call without conversation context.",
+        "description": "One-shot, non-streaming LLM call for service-to-service use. Returns a JSON response with the model output.\n\nUnlike POST /chat, this endpoint:\n- Does **not** create or use sessions (stateless, one-shot)\n- Accepts an inline `systemPrompt` (no pre-registered config required)\n- Returns JSON instead of SSE\n- Supports `responseFormat: \"json\"` — when set, the parsed object is returned in the `json` field (always use `json`, not `content`, for structured data)\n- Supports optional `temperature` override\n- Supports **vision** via the `imageUrl` field — the image is fetched server-side and sent as visual input to the model\n\n**Provider + model (both required):**\nCallers specify a provider and a version-free model alias. The service resolves the latest versioned model ID internally.\n\n| provider | model | Description |\n|----------|-------|-------------|\n| `anthropic` | `sonnet` | General-purpose, high quality |\n| `anthropic` | `haiku` | Faster/cheaper for simple extraction and classification |\n| `anthropic` | `opus` | Highest quality for complex reasoning |\n| `google` | `flash-lite` | Cheapest, cost-effective vision model for image analysis |\n| `google` | `flash` | Balanced price-performance with reasoning capabilities |\n| `google` | `pro` | Most powerful Google model for complex tasks |\n\nAll Google models require a Google API key configured in key-service (provider: `google`).\n\n**Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with `imageUrl` + google/flash-lite), any service that needs a quick LLM call without conversation context.",
         "parameters": [
           {
             "schema": {

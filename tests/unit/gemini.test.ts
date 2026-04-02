@@ -21,7 +21,7 @@ describe("completeWithGemini", () => {
     responseFormat: "json" as const,
   };
 
-  it("throws with diagnostic info when finishReason is MAX_TOKENS in JSON mode", async () => {
+  it("returns partial content when finishReason is MAX_TOKENS in JSON mode (no throw)", async () => {
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -35,14 +35,10 @@ describe("completeWithGemini", () => {
       }),
     });
 
-    const err = await completeWithGemini(baseOptions).catch((e: Error) => e);
-    expect(err).toBeInstanceOf(Error);
-    expect(err.message).toMatch(/MAX_TOKENS/);
-    expect(err.message).toContain("model=gemini-3-flash-preview");
-    expect(err.message).toContain("maxOutputTokens=64000");
-    expect(err.message).toContain("tokensInput=100");
-    expect(err.message).toContain("tokensOutput=500");
-    expect(err.message).toContain("responseFormat=json");
+    const result = await completeWithGemini(baseOptions);
+    expect(result.content).toBe('["https://example.com", "https://truncat');
+    expect(result.tokensInput).toBe(100);
+    expect(result.tokensOutput).toBe(500);
   });
 
   it("returns partial content when finishReason is MAX_TOKENS in non-JSON mode", async () => {
@@ -89,7 +85,7 @@ describe("completeWithGemini", () => {
     expect(result.tokensOutput).toBe(50);
   });
 
-  it("sends maxOutputTokens: 64000 by default when client omits maxTokens", async () => {
+  it("does not send maxOutputTokens (API manages its own limits)", async () => {
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -101,10 +97,10 @@ describe("completeWithGemini", () => {
     await completeWithGemini(baseOptions);
 
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.maxOutputTokens).toBe(64_000);
+    expect(requestBody.generationConfig.maxOutputTokens).toBeUndefined();
   });
 
-  it("omits thinkingConfig by default so thinking-only models use their defaults", async () => {
+  it("does not send thinkingConfig (thinking removed from API)", async () => {
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -117,50 +113,5 @@ describe("completeWithGemini", () => {
 
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(requestBody.generationConfig.thinkingConfig).toBeUndefined();
-  });
-
-  it("omits thinkingConfig when thinkingBudget is explicitly 0", async () => {
-    fetchSpy.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason: "STOP" }],
-        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
-      }),
-    });
-
-    await completeWithGemini({ ...baseOptions, thinkingBudget: 0 });
-
-    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.thinkingConfig).toBeUndefined();
-  });
-
-  it("uses caller-provided thinkingBudget when specified", async () => {
-    fetchSpy.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason: "STOP" }],
-        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
-      }),
-    });
-
-    await completeWithGemini({ ...baseOptions, thinkingBudget: 8000 });
-
-    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 8000 });
-  });
-
-  it("uses client-provided maxTokens when specified", async () => {
-    fetchSpy.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason: "STOP" }],
-        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
-      }),
-    });
-
-    await completeWithGemini({ ...baseOptions, maxTokens: 1000 });
-
-    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.maxOutputTokens).toBe(1000);
   });
 });

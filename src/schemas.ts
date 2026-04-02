@@ -310,10 +310,6 @@ export const CompleteRequestSchema = z
       description: "Sampling temperature (0–2). Lower = more deterministic.",
       example: 0.3,
     }),
-    maxTokens: z.number().int().min(1).max(64000).optional().openapi({
-      description: "Maximum tokens in the response (default: 64000)",
-      example: 2000,
-    }),
     provider: z.enum(["anthropic", "google"]).openapi({
       description: "LLM provider to use.",
       example: "anthropic",
@@ -325,18 +321,6 @@ export const CompleteRequestSchema = z
         "**Google models:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `pro` (most powerful).\n\n" +
         "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|pro.",
       example: "sonnet",
-    }),
-    thinkingBudget: z.number().int().min(0).max(32000).optional().openapi({
-      description:
-        "Thinking token budget — enables internal reasoning (chain-of-thought) before the model " +
-        "produces its response. Thinking tokens share the maxTokens budget, so set maxTokens high " +
-        "enough to accommodate both.\n\n" +
-        "**Google:** maps to `thinkingConfig.thinkingBudget`. When omitted or 0, thinkingConfig is not sent " +
-        "(lets thinking-only models use their default budget).\n" +
-        "**Anthropic:** maps to `thinking.budget_tokens`. Minimum: 1024. " +
-        "When enabled, temperature is forced to 1 (Anthropic API requirement).\n\n" +
-        "Default: omitted (thinking not explicitly configured).",
-      example: 8000,
     }),
     imageUrl: z.string().url().optional().openapi({
       description: "URL of an image to include in the prompt. The image is fetched server-side and sent to the model as a visual input. Supported by all models, but recommended with provider: \"google\", model: \"flash-lite\" for cost-effective vision tasks (image classification, scoring, analysis).",
@@ -371,24 +355,6 @@ export const CompleteRequestSchema = z
         message: `Model "${data.model}" is not valid for provider "${data.provider}". Valid models: ${allowed.join(", ")}`,
         path: ["model"],
       });
-    }
-    // Anthropic thinking requires budget_tokens >= 1024 and budget_tokens < max_tokens
-    if (data.provider === "anthropic" && data.thinkingBudget != null && data.thinkingBudget > 0) {
-      if (data.thinkingBudget < 1024) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Anthropic requires thinkingBudget >= 1024 (got ${data.thinkingBudget})`,
-          path: ["thinkingBudget"],
-        });
-      }
-      const effectiveMax = data.maxTokens ?? 64000;
-      if (data.thinkingBudget >= effectiveMax) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `thinkingBudget (${data.thinkingBudget}) must be less than maxTokens (${effectiveMax}) — thinking tokens share the output budget`,
-          path: ["thinkingBudget"],
-        });
-      }
     }
   })
   .openapi("CompleteRequest");
@@ -432,7 +398,7 @@ Unlike POST /chat, this endpoint:
 - Accepts an inline \`systemPrompt\` (no pre-registered config required)
 - Returns JSON instead of SSE
 - Supports \`responseFormat: "json"\` — when set, the parsed object is returned in the \`json\` field (always use \`json\`, not \`content\`, for structured data)
-- Supports optional \`temperature\` and \`maxTokens\` overrides
+- Supports optional \`temperature\` override
 - Supports **vision** via the \`imageUrl\` field — the image is fetched server-side and sent as visual input to the model
 
 **Provider + model (both required):**

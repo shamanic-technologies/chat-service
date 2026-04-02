@@ -36,8 +36,6 @@ interface GeminiCompleteOptions {
   imageContext?: ImageContext;
   responseFormat?: "json";
   temperature?: number;
-  maxTokens?: number;
-  thinkingBudget?: number;
 }
 
 interface GeminiCompleteResult {
@@ -75,8 +73,6 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     imageContext,
     responseFormat,
     temperature,
-    maxTokens,
-    thinkingBudget,
   } = options;
 
   // Build content parts — inject image metadata into the text if provided
@@ -101,22 +97,13 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
   }
 
   // Build request body
-  // Only include thinkingConfig when the caller explicitly opts in with a
-  // positive budget.  Some Gemini models ("thinking-only") reject
-  // thinkingBudget: 0 with a 400.  Omitting thinkingConfig entirely lets
-  // each model use its own default behaviour.
-  const generationConfig: Record<string, unknown> = {
-    ...(temperature != null ? { temperature } : {}),
-    maxOutputTokens: maxTokens ?? 64_000,
-    ...(responseFormat === "json" ? { responseMimeType: "application/json" } : {}),
-    ...(thinkingBudget != null && thinkingBudget > 0
-      ? { thinkingConfig: { thinkingBudget } }
-      : {}),
-  };
   const body: Record<string, unknown> = {
     contents: [{ parts }],
     systemInstruction: { parts: [{ text: systemPrompt }] },
-    generationConfig,
+    generationConfig: {
+      ...(temperature != null ? { temperature } : {}),
+      ...(responseFormat === "json" ? { responseMimeType: "application/json" } : {}),
+    },
   };
 
   const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -146,28 +133,14 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
   const finishReason = data.candidates?.[0]?.finishReason;
   const tokensIn = data.usageMetadata?.promptTokenCount ?? 0;
   const tokensOut = data.usageMetadata?.candidatesTokenCount ?? 0;
-  const effectiveMax = maxTokens ?? 64_000;
-
   if (finishReason === "MAX_TOKENS") {
-    const contentPreview = (data.candidates?.[0]?.content?.parts
-      ?.map((p) => p.text ?? "").join("") ?? "").slice(0, 300);
-    const diag = [
-      `[gemini] MAX_TOKENS hit`,
-      `model=${model}`,
-      `maxOutputTokens=${effectiveMax}`,
-      `tokensInput=${tokensIn}`,
-      `tokensOutput=${tokensOut}`,
-      `responseFormat=${responseFormat ?? "text"}`,
-      `systemPromptLen=${systemPrompt.length}`,
-      `messageLen=${message.length}`,
-      `contentPreview=${JSON.stringify(contentPreview)}`,
-    ].join(" | ");
-
-    if (responseFormat === "json") {
-      console.error(diag);
-      throw new Error(`[gemini] Output truncated (MAX_TOKENS). ${diag}`);
-    }
-    console.warn(`${diag} — returning partial content`);
+    console.warn(
+      `[gemini] MAX_TOKENS hit | model=${model}` +
+      ` | tokensInput=${tokensIn}` +
+      ` | tokensOutput=${tokensOut}` +
+      ` | responseFormat=${responseFormat ?? "text"}` +
+      ` — returning partial content`,
+    );
   }
 
   const content =
