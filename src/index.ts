@@ -193,7 +193,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, temperature, maxTokens, thinkingBudget, provider: requestedProvider, model: requestedModel, imageUrl, imageContext } = parsed.data;
+  const { message, systemPrompt, responseFormat, temperature, provider: requestedProvider, model: requestedModel, imageUrl, imageContext } = parsed.data;
 
   // Resolve versioned model from (provider, alias) pair
   const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
@@ -225,7 +225,7 @@ app.post("/complete", requireAuth, async (req, res) => {
   // Credit authorization for platform keys
   if (resolvedKey.keySource === "platform") {
     const estimatedInputTokens = Math.max(Math.ceil(message.length / 4), 500);
-    const estimatedOutputTokens = maxTokens ?? 64_000;
+    const estimatedOutputTokens = 64_000;
     try {
       const authResult = await authorizeCredits({
         items: [
@@ -310,18 +310,14 @@ app.post("/complete", requireAuth, async (req, res) => {
         imageContext,
         responseFormat,
         temperature,
-        maxTokens,
-        thinkingBudget,
       });
     } else {
       const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: effectiveSystemPrompt });
       result = await claude.complete(message, {
         responseFormat,
         temperature,
-        maxTokens,
         model: effectiveModel,
         imageUrl,
-        thinkingBudget,
       });
     }
 

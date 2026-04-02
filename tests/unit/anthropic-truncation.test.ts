@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 
 /**
- * Tests that complete() throws when Anthropic returns stop_reason: "max_tokens"
- * with responseFormat: "json", preventing truncated JSON from reaching callers.
+ * Tests that complete() returns partial content when Anthropic returns
+ * stop_reason: "max_tokens" — it should never throw, regardless of responseFormat.
  */
 
 let mockCreateResponse: Record<string, unknown>;
@@ -23,7 +23,7 @@ vi.mock("@anthropic-ai/sdk", () => {
 const { createAnthropicClient } = await import("../../src/lib/anthropic.js");
 
 describe("anthropic complete() truncation detection", () => {
-  it("throws with diagnostic info when stop_reason is max_tokens and responseFormat is json", async () => {
+  it("returns partial content when stop_reason is max_tokens with responseFormat json", async () => {
     mockCreateResponse = {
       stop_reason: "max_tokens",
       content: [{ type: "text", text: '{"partial": "dat' }],
@@ -31,17 +31,14 @@ describe("anthropic complete() truncation detection", () => {
     };
 
     const claude = createAnthropicClient({ apiKey: "test-key", systemPrompt: "You are helpful." });
+    const result = await claude.complete("Return JSON", { responseFormat: "json" });
 
-    const err = await claude.complete("Return JSON", { responseFormat: "json" }).catch((e: Error) => e);
-    expect(err).toBeInstanceOf(Error);
-    expect(err.message).toMatch(/max_tokens hit/);
-    expect(err.message).toContain("tokensInput=100");
-    expect(err.message).toContain("tokensOutput=16000");
-    expect(err.message).toContain("responseFormat=json");
-    expect(err.message).toContain("maxTokens=64000");
+    expect(result.content).toBe('{"partial": "dat');
+    expect(result.tokensInput).toBe(100);
+    expect(result.tokensOutput).toBe(16000);
   });
 
-  it("does NOT throw when stop_reason is max_tokens without responseFormat json", async () => {
+  it("returns partial content when stop_reason is max_tokens without responseFormat json", async () => {
     mockCreateResponse = {
       stop_reason: "max_tokens",
       content: [{ type: "text", text: "some long text that got cut off" }],

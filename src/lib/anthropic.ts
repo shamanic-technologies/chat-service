@@ -1054,10 +1054,8 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       options?: {
         responseFormat?: "json";
         temperature?: number;
-        maxTokens?: number;
         model?: string;
         imageUrl?: string;
-        thinkingBudget?: number;
       },
     ): Promise<{
       content: string;
@@ -1081,20 +1079,12 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         userContent = message;
       }
 
-      const thinkingEnabled = (options?.thinkingBudget ?? 0) > 0;
-
       const params: Anthropic.MessageCreateParamsNonStreaming = {
         model: effectiveModel,
-        max_tokens: options?.maxTokens ?? MAX_TOKENS,
+        max_tokens: MAX_TOKENS,
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }],
-        // When thinking is enabled, Anthropic forces temperature to 1
-        ...(thinkingEnabled
-          ? {}
-          : options?.temperature != null ? { temperature: options.temperature } : {}),
-        ...(thinkingEnabled
-          ? { thinking: { type: "enabled" as const, budget_tokens: options!.thinkingBudget! } }
-          : {}),
+        ...(options?.temperature != null ? { temperature: options.temperature } : {}),
         ...(options?.responseFormat === "json"
           ? {
               output_config: {
@@ -1113,27 +1103,13 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       const response = await client.messages.create(params);
 
       if (response.stop_reason === "max_tokens") {
-        const effectiveMax = options?.maxTokens ?? MAX_TOKENS;
-        const contentPreview = response.content
-          .filter((b): b is Anthropic.TextBlock => b.type === "text")
-          .map((b) => b.text).join("").slice(0, 300);
-        const diag = [
-          `[anthropic] max_tokens hit`,
-          `model=${effectiveModel}`,
-          `maxTokens=${effectiveMax}`,
-          `tokensInput=${response.usage.input_tokens}`,
-          `tokensOutput=${response.usage.output_tokens}`,
-          `responseFormat=${options?.responseFormat ?? "text"}`,
-          `systemPromptLen=${systemPrompt.length}`,
-          `messageLen=${message.length}`,
-          `contentPreview=${JSON.stringify(contentPreview)}`,
-        ].join(" | ");
-
-        if (options?.responseFormat === "json") {
-          console.error(diag);
-          throw new Error(`[anthropic] Output truncated (max_tokens). ${diag}`);
-        }
-        console.warn(`${diag} — returning partial content`);
+        console.warn(
+          `[anthropic] max_tokens hit | model=${effectiveModel}` +
+          ` | tokensInput=${response.usage.input_tokens}` +
+          ` | tokensOutput=${response.usage.output_tokens}` +
+          ` | responseFormat=${options?.responseFormat ?? "text"}` +
+          ` — returning partial content`,
+        );
       }
 
       // Extract text from content blocks
