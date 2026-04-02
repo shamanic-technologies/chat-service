@@ -36,15 +36,16 @@ import { extractBrandFields, extractBrandText } from "./lib/brand-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import {
   resolveKey,
+  resolvePlatformKey,
   type ResolvedKey,
   listOrgKeys,
   getKeySource,
   listKeySources,
   checkProviderRequirements,
 } from "./lib/key-client.js";
-import { authorizeCredits } from "./lib/billing-client.js";
+import { authorizeCredits, BillingError } from "./lib/billing-client.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -299,6 +300,11 @@ app.post("/complete", requireAuth, async (req, res) => {
       }
     } catch (billingErr) {
       console.error(`[complete] billing authorization failed for org="${orgId}":`, billingErr);
+      if (billingErr instanceof BillingError && billingErr.isClientError) {
+        return res.status(billingErr.statusCode).json({
+          error: `Billing authorization rejected: ${billingErr.upstreamBody}`,
+        });
+      }
       return res.status(502).json({
         error: "Billing service unavailable. Please try again.",
       });
@@ -412,6 +418,83 @@ app.post("/complete", requireAuth, async (req, res) => {
         addRunCosts(runId, costItems, runIdentity, trackingHeaders),
       ]).catch(() => {});
     }
+  }
+});
+
+// --- Internal Platform Complete (no billing, no run tracking) ---
+
+app.post("/internal/platform-complete", requireInternalAuth, async (req, res) => {
+  const parsed = InternalPlatformCompleteRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+
+  const { message, systemPrompt, responseFormat, temperature, provider: requestedProvider, model: requestedModel } = parsed.data;
+
+  const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
+  const effectiveModel = resolved.apiModelId;
+  const isGemini = resolved.provider === "google";
+  const provider = resolved.provider;
+
+  let apiKey: string;
+  try {
+    const platformKey = await resolvePlatformKey(provider, {
+      method: "POST",
+      path: "/internal/platform-complete",
+    });
+    apiKey = platformKey.key;
+  } catch (err) {
+    console.error(`[internal/platform-complete] Failed to resolve platform ${provider} key:`, err);
+    return res.status(502).json({
+      error: `Failed to resolve platform ${provider} API key.`,
+    });
+  }
+
+  try {
+    let effectiveSystemPrompt = systemPrompt;
+    if (responseFormat === "json") {
+      effectiveSystemPrompt += `\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, no extra text — just a single JSON object or array.`;
+    }
+
+    let result: { content: string; tokensInput: number; tokensOutput: number; model: string };
+
+    if (isGemini) {
+      result = await completeWithGemini({
+        apiKey,
+        model: effectiveModel,
+        message,
+        systemPrompt: effectiveSystemPrompt,
+        responseFormat,
+        temperature,
+      });
+    } else {
+      const claude = createAnthropicClient({ apiKey, systemPrompt: effectiveSystemPrompt });
+      result = await claude.complete(message, {
+        responseFormat,
+        temperature,
+        model: effectiveModel,
+      });
+    }
+
+    const response: Record<string, unknown> = {
+      content: result.content,
+      tokensInput: result.tokensInput,
+      tokensOutput: result.tokensOutput,
+      model: result.model,
+    };
+
+    if (responseFormat === "json") {
+      response.json = parseModelJson(result.content);
+    }
+
+    res.json(response);
+  } catch (err) {
+    console.error(`[internal/platform-complete] LLM call failed:`, err);
+    res.status(502).json({
+      error: "LLM call failed. Please try again.",
+    });
   }
 });
 

@@ -2,6 +2,22 @@ const BILLING_SERVICE_URL =
   process.env.BILLING_SERVICE_URL || "https://billing.mcpfactory.org";
 const BILLING_SERVICE_API_KEY = process.env.BILLING_SERVICE_API_KEY;
 
+export class BillingError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: number,
+    public readonly upstreamBody: string,
+  ) {
+    super(message);
+    this.name = "BillingError";
+  }
+
+  /** True when billing-service explicitly rejected the request (4xx) */
+  get isClientError(): boolean {
+    return this.statusCode >= 400 && this.statusCode < 500;
+  }
+}
+
 export interface CreditItem {
   costName: string;
   quantity: number;
@@ -60,8 +76,10 @@ export async function authorizeCredits(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
+    throw new BillingError(
       `[billing-client] POST /v1/credits/authorize returned ${res.status}: ${text}`,
+      res.status,
+      text,
     );
   }
 

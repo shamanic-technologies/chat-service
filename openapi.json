@@ -601,6 +601,65 @@
           "model"
         ]
       },
+      "InternalPlatformCompleteRequest": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The prompt to send to the LLM",
+            "example": "Analyze this workflow definition and suggest field mappings."
+          },
+          "systemPrompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Inline system prompt",
+            "example": "You are a workflow analysis assistant."
+          },
+          "responseFormat": {
+            "type": "string",
+            "enum": [
+              "json"
+            ],
+            "description": "Set to \"json\" to instruct the model to return valid JSON."
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 2,
+            "description": "Sampling temperature (0–2). Lower = more deterministic.",
+            "example": 0.3
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "google"
+            ],
+            "description": "LLM provider to use.",
+            "example": "anthropic"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "haiku",
+              "sonnet",
+              "opus",
+              "flash-lite",
+              "flash",
+              "pro"
+            ],
+            "description": "Model alias (version-free).",
+            "example": "sonnet"
+          }
+        },
+        "required": [
+          "message",
+          "systemPrompt",
+          "provider",
+          "model"
+        ]
+      },
       "ChatRequest": {
         "type": "object",
         "properties": {
@@ -1042,6 +1101,78 @@
           },
           "502": {
             "description": "Upstream service unavailable (key-service, billing-service, runs-service, or LLM provider)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/platform-complete": {
+      "post": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Platform-level LLM completion (no billing, no run tracking)",
+        "description": "Internal endpoint for platform-level LLM calls that do not belong to a specific org or user.\n\n**Auth:** Requires only `x-api-key` (no `x-org-id`, `x-user-id`, or `x-run-id`).\n\n**Key resolution:** Uses the platform key directly via `GET /keys/platform/{provider}/decrypt` — no org-level key lookup.\n\n**No billing, no run tracking.** This endpoint is for internal service-to-service calls (e.g. workflow upgrades at startup) where there is no org to bill and no user-initiated run to track.\n\nDoes not support `imageUrl` or `imageContext` — use `POST /complete` for vision tasks.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InternalPlatformCompleteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "LLM completion result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompleteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream service unavailable (key-service or LLM provider)",
             "content": {
               "application/json": {
                 "schema": {

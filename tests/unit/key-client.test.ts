@@ -212,6 +212,84 @@ describe("resolveKey", () => {
 });
 
 // ---------------------------------------------------------------------------
+// resolvePlatformKey — direct platform-key lookup
+// ---------------------------------------------------------------------------
+
+describe("resolvePlatformKey", () => {
+  it("sends GET to /keys/platform/{provider}/decrypt with caller headers only", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({ provider: "anthropic", key: "platform-key-123" }),
+    });
+
+    const { resolvePlatformKey } = await loadModule();
+    const result = await resolvePlatformKey("anthropic", {
+      method: "POST",
+      path: "/internal/platform-complete",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://key.test.local/keys/platform/anthropic/decrypt",
+      expect.objectContaining({
+        method: "GET",
+        headers: {
+          "x-api-key": "test-key-svc-key",
+          "X-Caller-Service": "chat",
+          "X-Caller-Method": "POST",
+          "X-Caller-Path": "/internal/platform-complete",
+        },
+      }),
+    );
+    expect(result).toEqual({ provider: "anthropic", key: "platform-key-123" });
+  });
+
+  it("does NOT send x-org-id, x-user-id, or x-run-id headers", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({ provider: "google", key: "google-platform-key" }),
+    });
+
+    const { resolvePlatformKey } = await loadModule();
+    await resolvePlatformKey("google", {
+      method: "POST",
+      path: "/internal/platform-complete",
+    });
+
+    const callArgs = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const headers = callArgs[1].headers;
+    expect(headers).not.toHaveProperty("x-org-id");
+    expect(headers).not.toHaveProperty("x-user-id");
+    expect(headers).not.toHaveProperty("x-run-id");
+  });
+
+  it("throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve("Platform key not found"),
+    });
+
+    const { resolvePlatformKey } = await loadModule();
+    await expect(
+      resolvePlatformKey("anthropic", { method: "POST", path: "/internal/platform-complete" }),
+    ).rejects.toThrow(/returned 404/);
+  });
+
+  it("throws when KEY_SERVICE_API_KEY is not set", async () => {
+    delete process.env.KEY_SERVICE_API_KEY;
+
+    const { resolvePlatformKey } = await loadModule();
+    await expect(
+      resolvePlatformKey("anthropic", { method: "POST", path: "/internal/platform-complete" }),
+    ).rejects.toThrow(/KEY_SERVICE_API_KEY is required/);
+
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Read-only key tools — now routed via api-service
 // ---------------------------------------------------------------------------
 

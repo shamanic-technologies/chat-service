@@ -206,6 +206,37 @@ Unlike POST /chat, this endpoint is **stateless** (no sessions), accepts an **in
 
 Error responses: 400 (validation), 401 (auth), 402 (insufficient credits), 502 (upstream failure).
 
+## Internal Platform Completion
+
+`POST /internal/platform-complete` — platform-level LLM completion for internal service-to-service calls.
+
+**Auth:** `X-API-Key` only — no `x-org-id`, `x-user-id`, or `x-run-id` headers required.
+
+```json
+{
+  "message": "Analyze this workflow definition and suggest field mappings.",
+  "systemPrompt": "You are a workflow analysis assistant.",
+  "provider": "anthropic",
+  "model": "sonnet",
+  "responseFormat": "json",
+  "temperature": 0.3
+}
+```
+
+Same fields as `POST /complete` except **no `imageUrl` or `imageContext`** support.
+
+**Key differences from `POST /complete`:**
+- **No billing** — platform-level calls are not charged to any org
+- **No run tracking** — no run is created in runs-service
+- **No campaign context** — no `x-campaign-id` enrichment
+- **Platform key resolution** — uses `GET /keys/platform/{provider}/decrypt` directly (no org-level key lookup)
+
+Use this endpoint when a service needs an LLM call during startup or for platform-level operations that don't belong to a specific org or user (e.g. workflow upgrades, schema analysis).
+
+Response format is identical to `POST /complete`.
+
+Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
+
 ## Campaign Context Enrichment
 
 When the `x-campaign-id` header is present, both `/chat` and `/complete` automatically fetch the campaign's `featureInputs` from campaign-service and inject them into the system prompt. This ensures every LLM call is informed by the user's campaign-specific inputs (editorial angle, target geography, audience type, etc.).
@@ -476,7 +507,7 @@ Node 20 defaults `requestTimeout` to 300s (5 min), which would kill long-running
 
 ```
 src/
-  index.ts          # Express server, /chat, /complete, /config, /platform-config, /health, /openapi.json
+  index.ts          # Express server, /chat, /complete, /internal/platform-complete, /config, /platform-config, /health, /openapi.json
   types.ts          # SSE event TypeScript interfaces
   schemas.ts        # Zod schemas, OpenAPI registry, and request/response types
   middleware/

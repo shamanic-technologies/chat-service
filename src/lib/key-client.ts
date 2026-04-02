@@ -80,6 +80,47 @@ export async function resolveKey(
 }
 
 // ---------------------------------------------------------------------------
+// resolvePlatformKey — direct platform-key lookup (no org/user context needed)
+// ---------------------------------------------------------------------------
+
+export interface PlatformResolvedKey {
+  provider: string;
+  key: string;
+}
+
+export async function resolvePlatformKey(
+  provider: string,
+  caller: CallerInfo,
+): Promise<PlatformResolvedKey> {
+  if (!KEY_SERVICE_API_KEY) {
+    throw new Error(
+      "[key-client] KEY_SERVICE_API_KEY is required to resolve keys",
+    );
+  }
+
+  const url = `${KEY_SERVICE_URL}/keys/platform/${encodeURIComponent(provider)}/decrypt`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      "x-api-key": KEY_SERVICE_API_KEY,
+      "X-Caller-Service": CALLER_SERVICE,
+      "X-Caller-Method": caller.method,
+      "X-Caller-Path": caller.path,
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[key-client] GET /keys/platform/${provider}/decrypt returned ${res.status}: ${text}`,
+    );
+  }
+
+  return (await res.json()) as PlatformResolvedKey;
+}
+
+// ---------------------------------------------------------------------------
 // Read-only key tools (exposed to LLM) — routed via api-service
 // ---------------------------------------------------------------------------
 
