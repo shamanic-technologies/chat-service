@@ -7,7 +7,7 @@ const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 export const GEMINI_MODELS: Record<string, string> = {
   "gemini-3.1-flash-lite-preview": "google-flash-lite-3.1",
-  "gemini-3-flash-preview": "google-flash-3.0",
+  "gemini-3-flash-preview": "google-flash-3",
   "gemini-3.1-pro-preview": "google-pro-3.1",
 };
 
