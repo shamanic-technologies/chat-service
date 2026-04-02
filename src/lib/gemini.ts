@@ -11,6 +11,14 @@ export const GEMINI_MODELS: Record<string, string> = {
   "gemini-3.1-pro-preview": "google-pro-3.1",
 };
 
+/** Model-specific API timeouts in milliseconds. */
+const GEMINI_TIMEOUT_MS: Record<string, number> = {
+  "gemini-3.1-pro-preview": 15 * 60_000,       // 15 min — Pro
+  "gemini-3-flash-preview": 10 * 60_000,        // 10 min — Flash
+  "gemini-3.1-flash-lite-preview": 5 * 60_000,  //  5 min — Flash Lite
+};
+const DEFAULT_GEMINI_TIMEOUT_MS = 10 * 60_000;  // 10 min fallback
+
 /** Check if a model ID is a Gemini model. */
 export function isGeminiModel(model: string): boolean {
   return model in GEMINI_MODELS;
@@ -119,19 +127,19 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
 
   const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
-  const GEMINI_TIMEOUT_MS = 120_000;
+  const timeoutMs = GEMINI_TIMEOUT_MS[model] ?? DEFAULT_GEMINI_TIMEOUT_MS;
   let res: Response;
   try {
     res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === "TimeoutError") {
       throw new Error(
-        `[chat-service] Gemini API timed out after ${GEMINI_TIMEOUT_MS / 1000}s | model=${model}`,
+        `[chat-service] Gemini API timed out after ${timeoutMs / 1000}s | model=${model}`,
       );
     }
     throw err;

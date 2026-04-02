@@ -5,6 +5,14 @@ export const MODEL = "claude-sonnet-4-6";
 export const COST_PREFIX = "anthropic-sonnet-4.6";
 const MAX_TOKENS = 64_000;
 
+/** Model-specific API timeouts in milliseconds. */
+const ANTHROPIC_TIMEOUT_MS: Record<string, number> = {
+  "claude-opus-4-6": 15 * 60_000,    // 15 min — Opus
+  "claude-sonnet-4-6": 10 * 60_000,  // 10 min — Sonnet
+  "claude-haiku-4-5": 5 * 60_000,    //  5 min — Haiku
+};
+const DEFAULT_ANTHROPIC_TIMEOUT_MS = 10 * 60_000; // 10 min fallback
+
 // ---------------------------------------------------------------------------
 // Provider + model alias → versioned API model ID + cost prefix
 // Callers specify version-free aliases (e.g. "sonnet"); the service resolves
@@ -1100,7 +1108,8 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
           : {}),
       };
 
-      const response = await client.messages.create(params);
+      const timeoutMs = ANTHROPIC_TIMEOUT_MS[effectiveModel] ?? DEFAULT_ANTHROPIC_TIMEOUT_MS;
+      const response = await client.messages.create(params, { timeout: timeoutMs });
 
       if (response.stop_reason === "max_tokens") {
         console.warn(

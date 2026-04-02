@@ -115,13 +115,31 @@ describe("completeWithGemini", () => {
     expect(requestBody.generationConfig.thinkingConfig).toBeUndefined();
   });
 
-  it("throws a clear timeout error when Gemini API times out", async () => {
+  it("throws a clear timeout error with model-specific duration (flash = 600s)", async () => {
     const timeoutError = new DOMException("The operation was aborted due to timeout", "TimeoutError");
     fetchSpy.mockRejectedValueOnce(timeoutError);
 
     await expect(completeWithGemini(baseOptions)).rejects.toThrow(
-      /Gemini API timed out after 120s/,
+      /Gemini API timed out after 600s/,
     );
+  });
+
+  it("uses 900s timeout for pro model", async () => {
+    const timeoutError = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    fetchSpy.mockRejectedValueOnce(timeoutError);
+
+    await expect(
+      completeWithGemini({ ...baseOptions, model: "gemini-3.1-pro-preview" }),
+    ).rejects.toThrow(/Gemini API timed out after 900s/);
+  });
+
+  it("uses 300s timeout for flash-lite model", async () => {
+    const timeoutError = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    fetchSpy.mockRejectedValueOnce(timeoutError);
+
+    await expect(
+      completeWithGemini({ ...baseOptions, model: "gemini-3.1-flash-lite-preview" }),
+    ).rejects.toThrow(/Gemini API timed out after 300s/);
   });
 
   it("passes AbortSignal.timeout to the Gemini fetch call", async () => {
