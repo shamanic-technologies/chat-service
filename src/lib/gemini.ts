@@ -37,6 +37,7 @@ interface GeminiCompleteOptions {
   responseFormat?: "json";
   temperature?: number;
   maxTokens?: number;
+  thinkingBudget?: number;
 }
 
 interface GeminiCompleteResult {
@@ -75,6 +76,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     responseFormat,
     temperature,
     maxTokens,
+    thinkingBudget,
   } = options;
 
   // Build content parts — inject image metadata into the text if provided
@@ -99,10 +101,10 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
   }
 
   // Build request body
-  // Disable thinking (internal reasoning) — thinking tokens share the
-  // maxOutputTokens budget and can consume it entirely, leaving nothing for
-  // the actual response.  POST /complete is used for extraction tasks that
-  // don't benefit from chain-of-thought reasoning.
+  // Thinking (internal reasoning) is disabled by default (thinkingBudget: 0)
+  // because thinking tokens share the maxOutputTokens budget and can consume
+  // it entirely.  Callers can opt in via the thinkingBudget option.
+  const effectiveThinkingBudget = thinkingBudget ?? 0;
   const body: Record<string, unknown> = {
     contents: [{ parts }],
     systemInstruction: { parts: [{ text: systemPrompt }] },
@@ -110,7 +112,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
       ...(temperature != null ? { temperature } : {}),
       maxOutputTokens: maxTokens ?? 64_000,
       ...(responseFormat === "json" ? { responseMimeType: "application/json" } : {}),
-      thinkingConfig: { thinkingBudget: 0 },
+      thinkingConfig: { thinkingBudget: effectiveThinkingBudget },
     },
   };
 

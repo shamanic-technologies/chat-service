@@ -573,6 +573,13 @@
             "description": "Model alias (version-free). The service resolves the latest versioned model internally.\n\n**Anthropic models:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n**Google models:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `pro` (most powerful).\n\nThe model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|pro.",
             "example": "sonnet"
           },
+          "thinkingBudget": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 32000,
+            "description": "Thinking token budget for Gemini models. When set to a value > 0, enables internal reasoning (chain-of-thought) before the model produces its response. Thinking tokens share the maxOutputTokens budget — set maxTokens high enough to accommodate both thinking and the response. Default: 0 (thinking disabled). Only applies to provider: \"google\"; ignored for Anthropic.",
+            "example": 8000
+          },
           "imageUrl": {
             "type": "string",
             "format": "uri",
