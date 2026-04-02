@@ -1057,6 +1057,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         maxTokens?: number;
         model?: string;
         imageUrl?: string;
+        thinkingBudget?: number;
       },
     ): Promise<{
       content: string;
@@ -1080,12 +1081,20 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         userContent = message;
       }
 
+      const thinkingEnabled = (options?.thinkingBudget ?? 0) > 0;
+
       const params: Anthropic.MessageCreateParamsNonStreaming = {
         model: effectiveModel,
         max_tokens: options?.maxTokens ?? MAX_TOKENS,
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }],
-        ...(options?.temperature != null ? { temperature: options.temperature } : {}),
+        // When thinking is enabled, Anthropic forces temperature to 1
+        ...(thinkingEnabled
+          ? {}
+          : options?.temperature != null ? { temperature: options.temperature } : {}),
+        ...(thinkingEnabled
+          ? { thinking: { type: "enabled" as const, budget_tokens: options!.thinkingBudget! } }
+          : {}),
         ...(options?.responseFormat === "json"
           ? {
               output_config: {

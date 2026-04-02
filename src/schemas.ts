@@ -328,10 +328,13 @@ export const CompleteRequestSchema = z
     }),
     thinkingBudget: z.number().int().min(0).max(32000).optional().openapi({
       description:
-        "Thinking token budget for Gemini models. When set to a value > 0, enables internal reasoning " +
-        "(chain-of-thought) before the model produces its response. Thinking tokens share the " +
-        "maxOutputTokens budget — set maxTokens high enough to accommodate both thinking and the response. " +
-        "Default: 0 (thinking disabled). Only applies to provider: \"google\"; ignored for Anthropic.",
+        "Thinking token budget — enables internal reasoning (chain-of-thought) before the model " +
+        "produces its response. Thinking tokens share the maxTokens budget, so set maxTokens high " +
+        "enough to accommodate both.\n\n" +
+        "**Google:** maps to `thinkingConfig.thinkingBudget`. Default: 0 (disabled).\n" +
+        "**Anthropic:** maps to `thinking.budget_tokens`. Minimum: 1024. " +
+        "When enabled, temperature is forced to 1 (Anthropic API requirement).\n\n" +
+        "Default: 0 (thinking disabled for both providers).",
       example: 8000,
     }),
     imageUrl: z.string().url().optional().openapi({
@@ -367,6 +370,24 @@ export const CompleteRequestSchema = z
         message: `Model "${data.model}" is not valid for provider "${data.provider}". Valid models: ${allowed.join(", ")}`,
         path: ["model"],
       });
+    }
+    // Anthropic thinking requires budget_tokens >= 1024 and budget_tokens < max_tokens
+    if (data.provider === "anthropic" && data.thinkingBudget != null && data.thinkingBudget > 0) {
+      if (data.thinkingBudget < 1024) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Anthropic requires thinkingBudget >= 1024 (got ${data.thinkingBudget})`,
+          path: ["thinkingBudget"],
+        });
+      }
+      const effectiveMax = data.maxTokens ?? 64000;
+      if (data.thinkingBudget >= effectiveMax) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `thinkingBudget (${data.thinkingBudget}) must be less than maxTokens (${effectiveMax}) — thinking tokens share the output budget`,
+          path: ["thinkingBudget"],
+        });
+      }
     }
   })
   .openapi("CompleteRequest");
