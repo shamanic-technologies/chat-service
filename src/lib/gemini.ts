@@ -139,11 +139,30 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
   };
 
   const finishReason = data.candidates?.[0]?.finishReason;
-  if (finishReason === "MAX_TOKENS" && responseFormat === "json") {
-    throw new Error(`[gemini] Output truncated: model hit max output token limit. Increase maxTokens or reduce prompt size.`);
-  }
+  const tokensIn = data.usageMetadata?.promptTokenCount ?? 0;
+  const tokensOut = data.usageMetadata?.candidatesTokenCount ?? 0;
+  const effectiveMax = maxTokens ?? 64_000;
+
   if (finishReason === "MAX_TOKENS") {
-    console.warn(`[gemini] Output truncated (MAX_TOKENS) for model=${model}. Returning partial content.`);
+    const contentPreview = (data.candidates?.[0]?.content?.parts
+      ?.map((p) => p.text ?? "").join("") ?? "").slice(0, 300);
+    const diag = [
+      `[gemini] MAX_TOKENS hit`,
+      `model=${model}`,
+      `maxOutputTokens=${effectiveMax}`,
+      `tokensInput=${tokensIn}`,
+      `tokensOutput=${tokensOut}`,
+      `responseFormat=${responseFormat ?? "text"}`,
+      `systemPromptLen=${systemPrompt.length}`,
+      `messageLen=${message.length}`,
+      `contentPreview=${JSON.stringify(contentPreview)}`,
+    ].join(" | ");
+
+    if (responseFormat === "json") {
+      console.error(diag);
+      throw new Error(`[gemini] Output truncated (MAX_TOKENS). ${diag}`);
+    }
+    console.warn(`${diag} — returning partial content`);
   }
 
   const content =

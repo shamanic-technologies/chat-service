@@ -21,7 +21,7 @@ describe("completeWithGemini", () => {
     responseFormat: "json" as const,
   };
 
-  it("throws when finishReason is MAX_TOKENS in JSON mode (truncated output)", async () => {
+  it("throws with diagnostic info when finishReason is MAX_TOKENS in JSON mode", async () => {
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -35,9 +35,14 @@ describe("completeWithGemini", () => {
       }),
     });
 
-    await expect(completeWithGemini(baseOptions)).rejects.toThrow(
-      /Output truncated.*max output token limit/,
-    );
+    const err = await completeWithGemini(baseOptions).catch((e: Error) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toMatch(/MAX_TOKENS/);
+    expect(err.message).toContain("model=gemini-3-flash-preview");
+    expect(err.message).toContain("maxOutputTokens=64000");
+    expect(err.message).toContain("tokensInput=100");
+    expect(err.message).toContain("tokensOutput=500");
+    expect(err.message).toContain("responseFormat=json");
   });
 
   it("returns partial content when finishReason is MAX_TOKENS in non-JSON mode", async () => {
