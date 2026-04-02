@@ -154,8 +154,8 @@ Request body:
 {
   "message": "Given this brand context, generate 10 Google search queries...",
   "systemPrompt": "You are a PR research assistant...",
-  "provider": "anthropic",
-  "model": "haiku",
+  "provider": "google",
+  "model": "flash",
   "responseFormat": "json",
   "temperature": 0.3,
   "maxTokens": 2000
