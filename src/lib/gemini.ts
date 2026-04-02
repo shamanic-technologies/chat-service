@@ -99,6 +99,10 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
   }
 
   // Build request body
+  // Disable thinking (internal reasoning) — thinking tokens share the
+  // maxOutputTokens budget and can consume it entirely, leaving nothing for
+  // the actual response.  POST /complete is used for extraction tasks that
+  // don't benefit from chain-of-thought reasoning.
   const body: Record<string, unknown> = {
     contents: [{ parts }],
     systemInstruction: { parts: [{ text: systemPrompt }] },
@@ -106,6 +110,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
       ...(temperature != null ? { temperature } : {}),
       maxOutputTokens: maxTokens ?? 64_000,
       ...(responseFormat === "json" ? { responseMimeType: "application/json" } : {}),
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
 
