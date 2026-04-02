@@ -59,4 +59,34 @@ describe("completeWithGemini", () => {
     expect(result.tokensInput).toBe(100);
     expect(result.tokensOutput).toBe(50);
   });
+
+  it("sends maxOutputTokens: 64000 by default when client omits maxTokens", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+      }),
+    });
+
+    await completeWithGemini(baseOptions);
+
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.maxOutputTokens).toBe(64_000);
+  });
+
+  it("uses client-provided maxTokens when specified", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+      }),
+    });
+
+    await completeWithGemini({ ...baseOptions, maxTokens: 1000 });
+
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.maxOutputTokens).toBe(1000);
+  });
 });

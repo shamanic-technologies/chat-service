@@ -104,7 +104,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
       ...(temperature != null ? { temperature } : {}),
-      ...(maxTokens != null ? { maxOutputTokens: maxTokens } : {}),
+      maxOutputTokens: maxTokens ?? 64_000,
       ...(responseFormat === "json" ? { responseMimeType: "application/json" } : {}),
     },
   };

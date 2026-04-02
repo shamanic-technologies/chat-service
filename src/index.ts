@@ -225,7 +225,7 @@ app.post("/complete", requireAuth, async (req, res) => {
   // Credit authorization for platform keys
   if (resolvedKey.keySource === "platform") {
     const estimatedInputTokens = Math.max(Math.ceil(message.length / 4), 500);
-    const estimatedOutputTokens = maxTokens ?? 16_000;
+    const estimatedOutputTokens = maxTokens ?? 64_000;
     try {
       const authResult = await authorizeCredits({
         items: [
@@ -441,9 +441,9 @@ app.post("/chat", requireAuth, async (req, res) => {
   // Credit authorization — only for platform keys (BYOK orgs pay their provider directly)
   if (resolvedKey.keySource === "platform") {
     // Estimate token quantities: input from message length (~4 chars/token, min 500),
-    // output from MAX_TOKENS budget (16 000)
+    // output from MAX_TOKENS budget (64 000)
     const estimatedInputTokens = Math.max(Math.ceil(message.length / 4), 500);
-    const estimatedOutputTokens = 16_000;
+    const estimatedOutputTokens = 64_000;
     try {
       const authResult = await authorizeCredits({
         items: [
