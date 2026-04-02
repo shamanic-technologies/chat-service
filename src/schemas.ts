@@ -331,10 +331,11 @@ export const CompleteRequestSchema = z
         "Thinking token budget — enables internal reasoning (chain-of-thought) before the model " +
         "produces its response. Thinking tokens share the maxTokens budget, so set maxTokens high " +
         "enough to accommodate both.\n\n" +
-        "**Google:** maps to `thinkingConfig.thinkingBudget`. Default: 0 (disabled).\n" +
+        "**Google:** maps to `thinkingConfig.thinkingBudget`. When omitted or 0, thinkingConfig is not sent " +
+        "(lets thinking-only models use their default budget).\n" +
         "**Anthropic:** maps to `thinking.budget_tokens`. Minimum: 1024. " +
         "When enabled, temperature is forced to 1 (Anthropic API requirement).\n\n" +
-        "Default: 0 (thinking disabled for both providers).",
+        "Default: omitted (thinking not explicitly configured).",
       example: 8000,
     }),
     imageUrl: z.string().url().optional().openapi({

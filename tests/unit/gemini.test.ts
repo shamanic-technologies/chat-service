@@ -104,7 +104,7 @@ describe("completeWithGemini", () => {
     expect(requestBody.generationConfig.maxOutputTokens).toBe(64_000);
   });
 
-  it("disables thinking by default (thinkingBudget: 0)", async () => {
+  it("omits thinkingConfig by default so thinking-only models use their defaults", async () => {
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -116,7 +116,22 @@ describe("completeWithGemini", () => {
     await completeWithGemini(baseOptions);
 
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
+    expect(requestBody.generationConfig.thinkingConfig).toBeUndefined();
+  });
+
+  it("omits thinkingConfig when thinkingBudget is explicitly 0", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+      }),
+    });
+
+    await completeWithGemini({ ...baseOptions, thinkingBudget: 0 });
+
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toBeUndefined();
   });
 
   it("uses caller-provided thinkingBudget when specified", async () => {

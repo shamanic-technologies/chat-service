@@ -101,19 +101,22 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
   }
 
   // Build request body
-  // Thinking (internal reasoning) is disabled by default (thinkingBudget: 0)
-  // because thinking tokens share the maxOutputTokens budget and can consume
-  // it entirely.  Callers can opt in via the thinkingBudget option.
-  const effectiveThinkingBudget = thinkingBudget ?? 0;
+  // Only include thinkingConfig when the caller explicitly opts in with a
+  // positive budget.  Some Gemini models ("thinking-only") reject
+  // thinkingBudget: 0 with a 400.  Omitting thinkingConfig entirely lets
+  // each model use its own default behaviour.
+  const generationConfig: Record<string, unknown> = {
+    ...(temperature != null ? { temperature } : {}),
+    maxOutputTokens: maxTokens ?? 64_000,
+    ...(responseFormat === "json" ? { responseMimeType: "application/json" } : {}),
+    ...(thinkingBudget != null && thinkingBudget > 0
+      ? { thinkingConfig: { thinkingBudget } }
+      : {}),
+  };
   const body: Record<string, unknown> = {
     contents: [{ parts }],
     systemInstruction: { parts: [{ text: systemPrompt }] },
-    generationConfig: {
-      ...(temperature != null ? { temperature } : {}),
-      maxOutputTokens: maxTokens ?? 64_000,
-      ...(responseFormat === "json" ? { responseMimeType: "application/json" } : {}),
-      thinkingConfig: { thinkingBudget: effectiveThinkingBudget },
-    },
+    generationConfig,
   };
 
   const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
