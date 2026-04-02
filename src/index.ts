@@ -55,6 +55,55 @@ const openapiPath = join(__dirname, "..", "openapi.json");
 
 import { mergeConsecutiveMessages, stripToolUseBlocks } from "./lib/merge-messages.js";
 
+// ---------------------------------------------------------------------------
+// JSON parsing for LLM responses
+// ---------------------------------------------------------------------------
+
+/** Remove trailing commas before ] and } — a common LLM output quirk. */
+function removeTrailingCommas(s: string): string {
+  return s.replace(/,\s*([\]}])/g, "$1");
+}
+
+/**
+ * Parse JSON from model output with progressive repair:
+ * 1. Try raw JSON.parse
+ * 2. Strip markdown code fences and retry
+ * 3. Remove trailing commas and retry
+ * Throws with diagnostics if all attempts fail.
+ */
+function parseModelJson(raw: string): unknown {
+  const trimmed = raw.trim();
+
+  // Attempt 1: direct parse
+  try {
+    return JSON.parse(trimmed);
+  } catch { /* continue */ }
+
+  // Attempt 2: strip markdown fences
+  const stripped = trimmed
+    .replace(/^```(?:json)?\s*\n?/i, "")
+    .replace(/\n?```\s*$/i, "")
+    .trim();
+  try {
+    return JSON.parse(stripped);
+  } catch { /* continue */ }
+
+  // Attempt 3: remove trailing commas (LLMs often produce these)
+  const repaired = removeTrailingCommas(stripped);
+  try {
+    const parsed = JSON.parse(repaired);
+    console.warn(`[chat-service] JSON required trailing-comma repair (contentLen=${raw.length})`);
+    return parsed;
+  } catch { /* continue */ }
+
+  throw new Error(
+    `Model returned non-parsable JSON despite responseFormat: "json". ` +
+    `contentLen=${raw.length}, ` +
+    `first500=${raw.slice(0, 500)}, ` +
+    `last200=${raw.slice(-200)}`
+  );
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
@@ -334,18 +383,7 @@ app.post("/complete", requireAuth, async (req, res) => {
 
     // Parse JSON if requested
     if (responseFormat === "json") {
-      const trimmed = result.content.trim();
-      try {
-        response.json = JSON.parse(trimmed);
-      } catch {
-        // LLM sometimes wraps JSON in markdown fences — strip and retry
-        const stripped = trimmed.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
-        try {
-          response.json = JSON.parse(stripped);
-        } catch {
-          throw new Error(`Model returned non-parsable JSON despite responseFormat: "json". Content: ${result.content.slice(0, 500)}`);
-        }
-      }
+      response.json = parseModelJson(result.content);
     }
 
     res.json(response);
