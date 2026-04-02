@@ -466,6 +466,86 @@ All Google models require a Google API key configured in key-service (provider: 
   },
 });
 
+// --- Internal Platform Complete ---
+
+export const InternalPlatformCompleteRequestSchema = z
+  .object({
+    message: z.string().min(1, "message is required").openapi({
+      description: "The prompt to send to the LLM",
+      example: "Analyze this workflow definition and suggest field mappings.",
+    }),
+    systemPrompt: z.string().min(1).openapi({
+      description: "Inline system prompt",
+      example: "You are a workflow analysis assistant.",
+    }),
+    responseFormat: z.literal("json").optional().openapi({
+      description: 'Set to "json" to instruct the model to return valid JSON.',
+    }),
+    temperature: z.number().min(0).max(2).optional().openapi({
+      description: "Sampling temperature (0–2). Lower = more deterministic.",
+      example: 0.3,
+    }),
+    provider: z.enum(["anthropic", "google"]).openapi({
+      description: "LLM provider to use.",
+      example: "anthropic",
+    }),
+    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "pro"]).openapi({
+      description: "Model alias (version-free).",
+      example: "sonnet",
+    }),
+  })
+  .openapi("InternalPlatformCompleteRequest");
+
+export type InternalPlatformCompleteRequest = z.infer<typeof InternalPlatformCompleteRequestSchema>;
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/platform-complete",
+  tags: ["Internal"],
+  summary: "Platform-level LLM completion (no billing, no run tracking)",
+  description: `Internal endpoint for platform-level LLM calls that do not belong to a specific org or user.
+
+**Auth:** Requires only \`x-api-key\` (no \`x-org-id\`, \`x-user-id\`, or \`x-run-id\`).
+
+**Key resolution:** Uses the platform key directly via \`GET /keys/platform/{provider}/decrypt\` — no org-level key lookup.
+
+**No billing, no run tracking.** This endpoint is for internal service-to-service calls (e.g. workflow upgrades at startup) where there is no org to bill and no user-initiated run to track.
+
+Does not support \`imageUrl\` or \`imageContext\` — use \`POST /complete\` for vision tasks.`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({
+        description: "Service-to-service API key",
+      }),
+    }),
+    body: {
+      content: { "application/json": { schema: InternalPlatformCompleteRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "LLM completion result",
+      content: {
+        "application/json": { schema: CompleteResponseSchema },
+      },
+    },
+    400: {
+      description: "Missing or invalid request fields",
+      content: {
+        "application/json": { schema: ValidationErrorResponseSchema },
+      },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: "Upstream service unavailable (key-service or LLM provider)",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // --- Chat ---
 
 export const ChatRequestSchema = z

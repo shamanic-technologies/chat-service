@@ -110,23 +110,53 @@ describe("authorizeCredits", () => {
     expect(headers["x-workflow-slug"]).toBe("wf-3");
   });
 
-  it("throws on HTTP error from billing-service", async () => {
+  it("throws BillingError with statusCode on HTTP error from billing-service", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       status: 500,
       text: () => Promise.resolve("Internal Server Error"),
     });
 
-    const { authorizeCredits } = await loadModule();
-    await expect(
-      authorizeCredits({
+    const { authorizeCredits, BillingError } = await loadModule();
+    try {
+      await authorizeCredits({
         items: [{ costName: "claude-sonnet-4-6-tokens-input", quantity: 500 }],
         description: "chat — claude-sonnet-4-6",
         orgId: "org-123",
         userId: "user-456",
         runId: "run-789",
-      }),
-    ).rejects.toThrow(/returned 500/);
+      });
+      expect.unreachable("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(BillingError);
+      expect((err as InstanceType<typeof BillingError>).statusCode).toBe(500);
+      expect((err as InstanceType<typeof BillingError>).isClientError).toBe(false);
+    }
+  });
+
+  it("throws BillingError with isClientError=true on 400 from billing-service", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: () => Promise.resolve('{"error":"x-org-id must be a valid UUID"}'),
+    });
+
+    const { authorizeCredits, BillingError } = await loadModule();
+    try {
+      await authorizeCredits({
+        items: [{ costName: "claude-sonnet-4-6-tokens-input", quantity: 500 }],
+        description: "chat — claude-sonnet-4-6",
+        orgId: "platform",
+        userId: "user-456",
+        runId: "run-789",
+      });
+      expect.unreachable("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(BillingError);
+      expect((err as InstanceType<typeof BillingError>).statusCode).toBe(400);
+      expect((err as InstanceType<typeof BillingError>).isClientError).toBe(true);
+      expect((err as InstanceType<typeof BillingError>).upstreamBody).toContain("x-org-id must be a valid UUID");
+    }
   });
 
   it("throws on network error", async () => {
