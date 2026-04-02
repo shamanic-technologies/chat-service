@@ -21,7 +21,7 @@ describe("completeWithGemini", () => {
     responseFormat: "json" as const,
   };
 
-  it("throws when finishReason is MAX_TOKENS (truncated output)", async () => {
+  it("throws when finishReason is MAX_TOKENS in JSON mode (truncated output)", async () => {
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -38,6 +38,30 @@ describe("completeWithGemini", () => {
     await expect(completeWithGemini(baseOptions)).rejects.toThrow(
       /Output truncated.*max output token limit/,
     );
+  });
+
+  it("returns partial content when finishReason is MAX_TOKENS in non-JSON mode", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        candidates: [
+          {
+            content: { parts: [{ text: "Here are the top outlets for your campaign: 1. TechCrun" }] },
+            finishReason: "MAX_TOKENS",
+          },
+        ],
+        usageMetadata: { promptTokenCount: 200, candidatesTokenCount: 1000 },
+      }),
+    });
+
+    const result = await completeWithGemini({
+      ...baseOptions,
+      responseFormat: undefined,
+    });
+
+    expect(result.content).toBe("Here are the top outlets for your campaign: 1. TechCrun");
+    expect(result.tokensInput).toBe(200);
+    expect(result.tokensOutput).toBe(1000);
   });
 
   it("returns content when finishReason is STOP (normal completion)", async () => {
