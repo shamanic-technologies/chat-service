@@ -99,6 +99,21 @@ describe("completeWithGemini", () => {
     expect(requestBody.generationConfig.maxOutputTokens).toBe(64_000);
   });
 
+  it("disables thinking via thinkingConfig.thinkingBudget: 0", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: '{}' }] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+      }),
+    });
+
+    await completeWithGemini(baseOptions);
+
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
+  });
+
   it("uses client-provided maxTokens when specified", async () => {
     fetchSpy.mockResolvedValueOnce({
       ok: true,
