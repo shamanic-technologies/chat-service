@@ -114,4 +114,35 @@ describe("completeWithGemini", () => {
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(requestBody.generationConfig.thinkingConfig).toBeUndefined();
   });
+
+  it("throws a clear timeout error when Gemini API times out", async () => {
+    const timeoutError = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    fetchSpy.mockRejectedValueOnce(timeoutError);
+
+    await expect(completeWithGemini(baseOptions)).rejects.toThrow(
+      /Gemini API timed out after 120s/,
+    );
+  });
+
+  it("passes AbortSignal.timeout to the Gemini fetch call", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: "{}" }] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+      }),
+    });
+
+    await completeWithGemini(baseOptions);
+
+    const fetchOptions = fetchSpy.mock.calls[0][1];
+    expect(fetchOptions.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("re-throws non-timeout fetch errors as-is", async () => {
+    const networkError = new TypeError("fetch failed");
+    fetchSpy.mockRejectedValueOnce(networkError);
+
+    await expect(completeWithGemini(baseOptions)).rejects.toThrow("fetch failed");
+  });
 });

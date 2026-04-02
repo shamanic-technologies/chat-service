@@ -49,9 +49,20 @@ interface GeminiCompleteResult {
  * Fetch an image from a URL and return base64-encoded data + MIME type.
  */
 async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType: string }> {
-  const res = await fetch(url);
+  const IMAGE_FETCH_TIMEOUT_MS = 30_000;
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS) });
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new Error(
+        `[chat-service] Image fetch timed out after ${IMAGE_FETCH_TIMEOUT_MS / 1000}s | url=${url}`,
+      );
+    }
+    throw err;
+  }
   if (!res.ok) {
-    throw new Error(`[gemini] Failed to fetch image from ${url}: ${res.status} ${res.statusText}`);
+    throw new Error(`[chat-service] Failed to fetch image from ${url}: ${res.status} ${res.statusText}`);
   }
   const contentType = res.headers.get("content-type") ?? "image/jpeg";
   const buffer = await res.arrayBuffer();
@@ -108,11 +119,23 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
 
   const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const GEMINI_TIMEOUT_MS = 120_000;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+    });
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new Error(
+        `[chat-service] Gemini API timed out after ${GEMINI_TIMEOUT_MS / 1000}s | model=${model}`,
+      );
+    }
+    throw err;
+  }
 
   if (!res.ok) {
     const errorText = await res.text().catch(() => "unknown error");
