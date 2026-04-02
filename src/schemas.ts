@@ -326,6 +326,14 @@ export const CompleteRequestSchema = z
         "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|pro.",
       example: "sonnet",
     }),
+    thinkingBudget: z.number().int().min(0).max(32000).optional().openapi({
+      description:
+        "Thinking token budget for Gemini models. When set to a value > 0, enables internal reasoning " +
+        "(chain-of-thought) before the model produces its response. Thinking tokens share the " +
+        "maxOutputTokens budget — set maxTokens high enough to accommodate both thinking and the response. " +
+        "Default: 0 (thinking disabled). Only applies to provider: \"google\"; ignored for Anthropic.",
+      example: 8000,
+    }),
     imageUrl: z.string().url().optional().openapi({
       description: "URL of an image to include in the prompt. The image is fetched server-side and sent to the model as a visual input. Supported by all models, but recommended with provider: \"google\", model: \"flash-lite\" for cost-effective vision tasks (image classification, scoring, analysis).",
       example: "https://example.com/images/hero.jpg",

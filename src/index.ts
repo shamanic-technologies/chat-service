@@ -193,7 +193,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, temperature, maxTokens, provider: requestedProvider, model: requestedModel, imageUrl, imageContext } = parsed.data;
+  const { message, systemPrompt, responseFormat, temperature, maxTokens, thinkingBudget, provider: requestedProvider, model: requestedModel, imageUrl, imageContext } = parsed.data;
 
   // Resolve versioned model from (provider, alias) pair
   const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
@@ -311,6 +311,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         responseFormat,
         temperature,
         maxTokens,
+        thinkingBudget,
       });
     } else {
       const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: effectiveSystemPrompt });
