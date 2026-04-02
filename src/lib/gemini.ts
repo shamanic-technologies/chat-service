@@ -134,8 +134,11 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
   };
 
   const finishReason = data.candidates?.[0]?.finishReason;
-  if (finishReason === "MAX_TOKENS") {
+  if (finishReason === "MAX_TOKENS" && responseFormat === "json") {
     throw new Error(`[gemini] Output truncated: model hit max output token limit. Increase maxTokens or reduce prompt size.`);
+  }
+  if (finishReason === "MAX_TOKENS") {
+    console.warn(`[gemini] Output truncated (MAX_TOKENS) for model=${model}. Returning partial content.`);
   }
 
   const content =
