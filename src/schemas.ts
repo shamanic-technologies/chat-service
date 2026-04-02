@@ -311,7 +311,7 @@ export const CompleteRequestSchema = z
       example: 0.3,
     }),
     maxTokens: z.number().int().min(1).max(64000).optional().openapi({
-      description: "Maximum tokens in the response (default: 16000)",
+      description: "Maximum tokens in the response (default: 64000)",
       example: 2000,
     }),
     provider: z.enum(["anthropic", "google"]).openapi({
