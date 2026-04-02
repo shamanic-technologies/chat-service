@@ -321,6 +321,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         maxTokens,
         model: effectiveModel,
         imageUrl,
+        thinkingBudget,
       });
     }
 

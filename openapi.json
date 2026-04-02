@@ -577,7 +577,7 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 32000,
-            "description": "Thinking token budget for Gemini models. When set to a value > 0, enables internal reasoning (chain-of-thought) before the model produces its response. Thinking tokens share the maxOutputTokens budget — set maxTokens high enough to accommodate both thinking and the response. Default: 0 (thinking disabled). Only applies to provider: \"google\"; ignored for Anthropic.",
+            "description": "Thinking token budget — enables internal reasoning (chain-of-thought) before the model produces its response. Thinking tokens share the maxTokens budget, so set maxTokens high enough to accommodate both.\n\n**Google:** maps to `thinkingConfig.thinkingBudget`. Default: 0 (disabled).\n**Anthropic:** maps to `thinking.budget_tokens`. Minimum: 1024. When enabled, temperature is forced to 1 (Anthropic API requirement).\n\nDefault: 0 (thinking disabled for both providers).",
             "example": 8000
           },
           "imageUrl": {
