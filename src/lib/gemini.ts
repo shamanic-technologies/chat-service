@@ -125,12 +125,18 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
   const data = (await res.json()) as {
     candidates?: Array<{
       content?: { parts?: Array<{ text?: string }> };
+      finishReason?: string;
     }>;
     usageMetadata?: {
       promptTokenCount?: number;
       candidatesTokenCount?: number;
     };
   };
+
+  const finishReason = data.candidates?.[0]?.finishReason;
+  if (finishReason === "MAX_TOKENS") {
+    throw new Error(`[gemini] Output truncated: model hit max output token limit. Increase maxTokens or reduce prompt size.`);
+  }
 
   const content =
     data.candidates?.[0]?.content?.parts

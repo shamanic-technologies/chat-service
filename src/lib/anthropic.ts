@@ -1103,6 +1103,10 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
 
       const response = await client.messages.create(params);
 
+      if (response.stop_reason === "max_tokens" && options?.responseFormat === "json") {
+        throw new Error(`[anthropic] Output truncated: model hit max output token limit. Increase maxTokens or reduce prompt size.`);
+      }
+
       // Extract text from content blocks
       const textBlocks = response.content.filter(
         (b): b is Anthropic.TextBlock => b.type === "text",
