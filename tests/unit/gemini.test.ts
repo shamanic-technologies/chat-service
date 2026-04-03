@@ -19,7 +19,7 @@ describe("completeWithGemini", () => {
 
   const baseOptions = {
     apiKey: "test-key",
-    model: "gemini-3.1-flash-preview",
+    model: "gemini-3-flash-preview",
     message: "Return URLs as JSON",
     systemPrompt: "You are helpful.",
     responseFormat: "json" as const,
@@ -139,7 +139,7 @@ describe("completeWithGemini", () => {
 
     const result = await runWithTimers(baseOptions);
     expect(result.content).toBe("ok");
-    expect(result.model).toBe("gemini-3.1-flash-preview");
+    expect(result.model).toBe("gemini-3-flash-preview");
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
