@@ -418,10 +418,10 @@ describe("resolveModel", () => {
     expect(resolved.provider).toBe("google");
   });
 
-  it("resolves google + flash to gemini-3-flash-preview", () => {
+  it("resolves google + flash to gemini-3.1-flash-preview", () => {
     const resolved = resolveModel("google", "flash");
-    expect(resolved.apiModelId).toBe("gemini-3-flash-preview");
-    expect(resolved.costPrefix).toBe("google-flash-3");
+    expect(resolved.apiModelId).toBe("gemini-3.1-flash-preview");
+    expect(resolved.costPrefix).toBe("google-flash-3.1");
     expect(resolved.provider).toBe("google");
   });
 
@@ -448,8 +448,8 @@ describe("isGeminiModel", () => {
     expect(isGeminiModel("gemini-3.1-flash-lite-preview")).toBe(true);
   });
 
-  it("returns true for gemini-3-flash-preview", () => {
-    expect(isGeminiModel("gemini-3-flash-preview")).toBe(true);
+  it("returns true for gemini-3.1-flash-preview", () => {
+    expect(isGeminiModel("gemini-3.1-flash-preview")).toBe(true);
   });
 
   it("returns true for gemini-3.1-pro-preview", () => {
@@ -471,8 +471,8 @@ describe("geminiCostPrefix", () => {
     expect(geminiCostPrefix("gemini-3.1-flash-lite-preview")).toBe("google-flash-lite-3.1");
   });
 
-  it("returns correct prefix for gemini-3-flash-preview", () => {
-    expect(geminiCostPrefix("gemini-3-flash-preview")).toBe("google-flash-3");
+  it("returns correct prefix for gemini-3.1-flash-preview", () => {
+    expect(geminiCostPrefix("gemini-3.1-flash-preview")).toBe("google-flash-3.1");
   });
 
   it("returns correct prefix for gemini-3.1-pro-preview", () => {
@@ -492,7 +492,7 @@ describe("costPrefixForModel", () => {
   });
 
   it("returns correct prefix for all gemini models", () => {
-    expect(costPrefixForModel("gemini-3-flash-preview")).toBe("google-flash-3");
+    expect(costPrefixForModel("gemini-3.1-flash-preview")).toBe("google-flash-3.1");
     expect(costPrefixForModel("gemini-3.1-pro-preview")).toBe("google-pro-3.1");
   });
 });
