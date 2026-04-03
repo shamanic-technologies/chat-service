@@ -39,7 +39,7 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   },
   google: {
     "flash-lite": { apiModelId: "gemini-3.1-flash-lite-preview", costPrefix: "google-flash-lite-3.1", provider: "google" },
-    "flash": { apiModelId: "gemini-3.1-flash-preview", costPrefix: "google-flash-3.1", provider: "google" },
+    "flash": { apiModelId: "gemini-3-flash-preview", costPrefix: "google-flash-3", provider: "google" },
     "pro": { apiModelId: "gemini-3.1-pro-preview", costPrefix: "google-pro-3.1", provider: "google" },
   },
 };
@@ -71,7 +71,7 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "claude-haiku-4-5": "anthropic-haiku-4.5",
   "claude-opus-4-6": "anthropic-opus-4.6",
   "gemini-3.1-flash-lite-preview": "google-flash-lite-3.1",
-  "gemini-3.1-flash-preview": "google-flash-3.1",
+  "gemini-3-flash-preview": "google-flash-3",
   "gemini-3.1-pro-preview": "google-pro-3.1",
   "gemini-2.5-pro": "google-pro-2.5",
   "gemini-2.5-flash": "google-flash-2.5",
