@@ -834,26 +834,45 @@ app.post("/chat", requireAuth, async (req, res) => {
           // Redirect to the already-forked workflow if the LLM tries to
           // update the same source workflow again in this turn.
           const effectiveWorkflowId = forkedWorkflowMap.get(rawWorkflowId as string) ?? rawWorkflowId as string;
-          if (effectiveWorkflowId !== rawWorkflowId) {
+          const wasRedirected = effectiveWorkflowId !== (rawWorkflowId as string);
+          if (wasRedirected) {
             console.log(
               `[chat] Redirecting update_workflow from already-forked source "${rawWorkflowId}" → "${effectiveWorkflowId}"`,
             );
           }
-          const updateResult = await updateWorkflow(
-            effectiveWorkflowId,
-            updateBody as import("./lib/workflow-client.js").UpdateWorkflowBody,
-            wfParams,
-          );
-          if (updateResult.outcome === "forked") {
-            const forkedFrom = updateResult.workflow._forkedFromName || rawWorkflowId;
-            // Record the fork so subsequent calls target the fork, not the original
-            forkedWorkflowMap.set(rawWorkflowId as string, updateResult.workflow.id);
-            result = {
-              ...updateResult.workflow,
-              _note: `This is a NEW workflow forked from "${forkedFrom}". Tell the user: "Your customized workflow is ready: ${updateResult.workflow.name || updateResult.workflow.signatureName || updateResult.workflow.id}. Use this name for future campaigns."`,
-            };
-          } else {
-            result = updateResult.workflow;
+          try {
+            const updateResult = await updateWorkflow(
+              effectiveWorkflowId,
+              updateBody as import("./lib/workflow-client.js").UpdateWorkflowBody,
+              wfParams,
+            );
+            if (updateResult.outcome === "forked") {
+              const forkedFrom = updateResult.workflow._forkedFromName || rawWorkflowId;
+              // Record the fork so subsequent calls target the fork, not the original
+              forkedWorkflowMap.set(rawWorkflowId as string, updateResult.workflow.id);
+              result = {
+                ...updateResult.workflow,
+                _note: `This is a NEW workflow forked from "${forkedFrom}". Tell the user: "Your customized workflow is ready: ${updateResult.workflow.name || updateResult.workflow.signatureName || updateResult.workflow.id}. Use this name for future campaigns."`,
+              };
+            } else {
+              result = updateResult.workflow;
+            }
+          } catch (err: unknown) {
+            // 409 on a redirected call means the forked workflow already has
+            // the same DAG — treat as a no-op and return the current state.
+            const is409 = err instanceof Error && err.message.includes("signature already exists");
+            if (is409) {
+              console.log(
+                `[chat] update_workflow 409 on "${effectiveWorkflowId}" — workflow already has this DAG, returning current state`,
+              );
+              const current = await getWorkflow(effectiveWorkflowId, wfParams);
+              result = {
+                ...current,
+                _note: "No changes needed — this workflow already has the requested configuration.",
+              };
+            } else {
+              throw err;
+            }
           }
         } else {
           result = await validateWorkflow(
@@ -921,29 +940,51 @@ app.post("/chat", requireAuth, async (req, res) => {
             `[chat] Redirecting update_workflow_node_config from already-forked source "${rawWorkflowId}" → "${effectiveWorkflowId}"`,
           );
         }
-        const updateResult = await updateWorkflowNodeConfig(
-          effectiveWorkflowId,
-          args.nodeId as string,
-          args.configUpdates as Record<string, unknown>,
-          {
-            orgId,
-            userId,
-            runId: runId!,
-            trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
-          },
-        );
 
         let result: unknown;
-        if (updateResult.outcome === "forked") {
-          const forkedFrom = updateResult.workflow._forkedFromName || "the original";
-          // Record the fork so subsequent calls target the fork
-          forkedWorkflowMap.set(rawWorkflowId, updateResult.workflow.id);
-          result = {
-            ...updateResult.workflow,
-            _note: `This is a NEW workflow forked from "${forkedFrom}". Tell the user: "Your customized workflow is ready: ${updateResult.workflow.name || updateResult.workflow.signatureName || updateResult.workflow.id}. Use this name for future campaigns."`,
-          };
-        } else {
-          result = updateResult.workflow;
+        try {
+          const updateResult = await updateWorkflowNodeConfig(
+            effectiveWorkflowId,
+            args.nodeId as string,
+            args.configUpdates as Record<string, unknown>,
+            {
+              orgId,
+              userId,
+              runId: runId!,
+              trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+            },
+          );
+
+          if (updateResult.outcome === "forked") {
+            const forkedFrom = updateResult.workflow._forkedFromName || "the original";
+            // Record the fork so subsequent calls target the fork
+            forkedWorkflowMap.set(rawWorkflowId, updateResult.workflow.id);
+            result = {
+              ...updateResult.workflow,
+              _note: `This is a NEW workflow forked from "${forkedFrom}". Tell the user: "Your customized workflow is ready: ${updateResult.workflow.name || updateResult.workflow.signatureName || updateResult.workflow.id}. Use this name for future campaigns."`,
+            };
+          } else {
+            result = updateResult.workflow;
+          }
+        } catch (err: unknown) {
+          const is409 = err instanceof Error && err.message.includes("signature already exists");
+          if (is409) {
+            console.log(
+              `[chat] update_workflow_node_config 409 on "${effectiveWorkflowId}" — workflow already has this DAG, returning current state`,
+            );
+            const current = await getWorkflow(effectiveWorkflowId, {
+              orgId,
+              userId,
+              runId: runId!,
+              trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+            });
+            result = {
+              ...current,
+              _note: "No changes needed — this workflow already has the requested configuration.",
+            };
+          } else {
+            throw err;
+          }
         }
 
         toolCalls.push({ name: call.name, args, result });
