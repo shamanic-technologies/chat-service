@@ -830,14 +830,24 @@ app.post("/chat", requireAuth, async (req, res) => {
         let result: unknown;
 
         if (call.name === "update_workflow") {
-          const { workflowId, ...updateBody } = args;
+          const { workflowId: rawWorkflowId, ...updateBody } = args;
+          // Redirect to the already-forked workflow if the LLM tries to
+          // update the same source workflow again in this turn.
+          const effectiveWorkflowId = forkedWorkflowMap.get(rawWorkflowId as string) ?? rawWorkflowId as string;
+          if (effectiveWorkflowId !== rawWorkflowId) {
+            console.log(
+              `[chat] Redirecting update_workflow from already-forked source "${rawWorkflowId}" → "${effectiveWorkflowId}"`,
+            );
+          }
           const updateResult = await updateWorkflow(
-            workflowId as string,
+            effectiveWorkflowId,
             updateBody as import("./lib/workflow-client.js").UpdateWorkflowBody,
             wfParams,
           );
           if (updateResult.outcome === "forked") {
-            const forkedFrom = updateResult.workflow._forkedFromName || workflowId;
+            const forkedFrom = updateResult.workflow._forkedFromName || rawWorkflowId;
+            // Record the fork so subsequent calls target the fork, not the original
+            forkedWorkflowMap.set(rawWorkflowId as string, updateResult.workflow.id);
             result = {
               ...updateResult.workflow,
               _note: `This is a NEW workflow forked from "${forkedFrom}". Tell the user: "Your customized workflow is ready: ${updateResult.workflow.name || updateResult.workflow.signatureName || updateResult.workflow.id}. Use this name for future campaigns."`,
@@ -903,8 +913,16 @@ app.post("/chat", requireAuth, async (req, res) => {
       // Built-in workflow node config update tool
       if (call.name === "update_workflow_node_config") {
         const args = (call.args as Record<string, unknown>) || {};
+        const rawWorkflowId = args.workflowId as string;
+        // Redirect to the already-forked workflow if applicable
+        const effectiveWorkflowId = forkedWorkflowMap.get(rawWorkflowId) ?? rawWorkflowId;
+        if (effectiveWorkflowId !== rawWorkflowId) {
+          console.log(
+            `[chat] Redirecting update_workflow_node_config from already-forked source "${rawWorkflowId}" → "${effectiveWorkflowId}"`,
+          );
+        }
         const updateResult = await updateWorkflowNodeConfig(
-          args.workflowId as string,
+          effectiveWorkflowId,
           args.nodeId as string,
           args.configUpdates as Record<string, unknown>,
           {
@@ -918,6 +936,8 @@ app.post("/chat", requireAuth, async (req, res) => {
         let result: unknown;
         if (updateResult.outcome === "forked") {
           const forkedFrom = updateResult.workflow._forkedFromName || "the original";
+          // Record the fork so subsequent calls target the fork
+          forkedWorkflowMap.set(rawWorkflowId, updateResult.workflow.id);
           result = {
             ...updateResult.workflow,
             _note: `This is a NEW workflow forked from "${forkedFrom}". Tell the user: "Your customized workflow is ready: ${updateResult.workflow.name || updateResult.workflow.signatureName || updateResult.workflow.id}. Use this name for future campaigns."`,
@@ -1167,6 +1187,11 @@ app.post("/chat", requireAuth, async (req, res) => {
     const MAX_TOOL_CHAIN_DEPTH = 10;
     let depth = 0;
     let lastContentBlocks: Anthropic.ContentBlock[] = [];
+
+    // Track workflows that were forked during this turn so the LLM
+    // doesn't accidentally fork the same source workflow multiple times.
+    // Maps: originalWorkflowId → forkedWorkflowId
+    const forkedWorkflowMap = new Map<string, string>();
 
     agenticLoop:
     while (depth <= MAX_TOOL_CHAIN_DEPTH) {
