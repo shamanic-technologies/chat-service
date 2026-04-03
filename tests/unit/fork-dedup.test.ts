@@ -157,4 +157,55 @@ describe("fork deduplication (forkedWorkflowMap)", () => {
     expect(originalCalls).toHaveLength(1);
     expect(forkedCalls).toHaveLength(3);
   });
+
+  it("handles 409 gracefully when redirected update has same DAG signature", async () => {
+    /**
+     * Regression: after a fork, the LLM may call update_workflow again with
+     * the same DAG. Workflow-service returns 409 "signature already exists".
+     * The handler should catch this and return the current workflow state
+     * instead of propagating the error (which causes the LLM to retry).
+     */
+    const { updateWorkflow, getWorkflow } = await loadModule();
+    const dedup = createForkDedup();
+
+    // First call: fork
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: () =>
+        Promise.resolve({
+          id: "wf-forked",
+          name: "PR Cold Email Fork",
+          _action: "forked",
+          _forkedFromName: "PR Cold Email Original",
+        }),
+    });
+
+    const params = { orgId: "org-1", userId: "user-1", runId: "run-1" };
+    const result1 = await updateWorkflow("wf-original", { dag: { nodes: [{ id: "s1", type: "http.call" }], edges: [] } }, params);
+    expect(result1.outcome).toBe("forked");
+    dedup.recordFork("wf-original", result1.workflow.id);
+
+    // Second call: redirected to fork, but 409 because same DAG
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      json: () =>
+        Promise.resolve({
+          error: "A workflow with this DAG signature already exists",
+          existingWorkflowId: undefined,
+          existingWorkflowSlug: undefined,
+        }),
+    });
+
+    const effectiveId = dedup.resolveWorkflowId("wf-original");
+    expect(effectiveId).toBe("wf-forked");
+
+    // The 409 should throw from updateWorkflow — the handler in index.ts
+    // catches it and calls getWorkflow instead. Here we verify the error
+    // message contains "signature already exists" so the handler can match it.
+    await expect(
+      updateWorkflow(effectiveId, { dag: { nodes: [{ id: "s1", type: "http.call" }], edges: [] } }, params),
+    ).rejects.toThrow(/signature already exists/);
+  });
 });
