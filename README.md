@@ -517,7 +517,7 @@ src/
     schema.ts       # sessions + messages + app_configs + platform_configs table definitions
   lib/
     anthropic.ts       # Claude AI client (Sonnet 4.6), streaming + non-streaming, tool calling, adaptive thinking, context management (compaction), built-in tool declarations
-    gemini.ts          # Gemini REST API client (Flash 2.0) for vision tasks — lightweight, no SDK dependency
+    gemini.ts          # Gemini REST API client — retry with exponential backoff (3 retries) + fallback to stable 2.5 models on failure
     merge-messages.ts  # Ensures alternating user/assistant roles by merging orphaned consecutive same-role messages
     billing-client.ts  # Billing-service client for credit authorization before platform-key operations
     key-client.ts      # Key-service client: resolveKey (decrypt), listOrgKeys, getKeySource, listKeySources, checkProviderRequirements

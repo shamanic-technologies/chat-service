@@ -73,6 +73,8 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "gemini-3.1-flash-lite-preview": "google-flash-lite-3.1",
   "gemini-3-flash-preview": "google-flash-3",
   "gemini-3.1-pro-preview": "google-pro-3.1",
+  "gemini-2.5-pro": "google-pro-2.5",
+  "gemini-2.5-flash": "google-flash-2.5",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */
