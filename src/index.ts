@@ -57,6 +57,31 @@ const openapiPath = join(__dirname, "..", "openapi.json");
 import { mergeConsecutiveMessages, stripToolUseBlocks } from "./lib/merge-messages.js";
 
 // ---------------------------------------------------------------------------
+// Anthropic stream retry
+// ---------------------------------------------------------------------------
+
+/** Max retries for Anthropic streaming on transient errors. */
+const ANTHROPIC_STREAM_MAX_RETRIES = 2;
+
+/** Base delay for Anthropic stream retry backoff in ms. */
+const ANTHROPIC_STREAM_RETRY_BASE_MS = 2_000;
+
+/**
+ * Check if an Anthropic error is retryable (overloaded, rate-limited, or server error).
+ * Only safe to retry if no tokens have been emitted to the client yet.
+ */
+function isRetryableAnthropicError(err: unknown): boolean {
+  if (!(err instanceof Anthropic.APIError)) return false;
+  // During streaming, the SDK throws `new APIError(undefined, parsedBody, ...)` directly.
+  // The `error` property is the raw SSE payload: { type: "error", error: { type: "overloaded_error", ... } }
+  const errorBody = err.error as { type?: string; error?: { type?: string } } | undefined;
+  if (errorBody?.error?.type === "overloaded_error") return true;
+  // Standard retryable HTTP statuses (non-streaming or future SDK changes)
+  if (typeof err.status === "number" && [429, 500, 503, 529].includes(err.status)) return true;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // JSON parsing for LLM responses
 // ---------------------------------------------------------------------------
 
@@ -1243,38 +1268,66 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
 
       let currentBlockType: string | null = null;
-      const stream = claude.createStream(turnMessages, allTools, abortController.signal);
+      let stream: ReturnType<typeof claude.createStream> | undefined;
+      let tokensEmitted = false;
 
-      try {
-        for await (const event of stream) {
-          if (event.type === "content_block_start") {
-            currentBlockType = event.content_block.type;
-            if (currentBlockType === "thinking") {
-              sendSSE(res, { type: "thinking_start" });
+      // Retry loop for transient Anthropic errors (overloaded, 429, 5xx).
+      // Only retries when no tokens have been sent to the client yet.
+      for (let attempt = 0; attempt <= ANTHROPIC_STREAM_MAX_RETRIES; attempt++) {
+        tokensEmitted = false;
+        currentBlockType = null;
+        stream = claude.createStream(turnMessages, allTools, abortController.signal);
+
+        try {
+          for await (const event of stream) {
+            if (event.type === "content_block_start") {
+              currentBlockType = event.content_block.type;
+              if (currentBlockType === "thinking") {
+                sendSSE(res, { type: "thinking_start" });
+                tokensEmitted = true;
+              }
+            } else if (event.type === "content_block_delta") {
+              if (event.delta.type === "thinking_delta") {
+                sendSSE(res, { type: "thinking_delta", thinking: event.delta.thinking });
+                tokensEmitted = true;
+              } else if (event.delta.type === "text_delta") {
+                bufferToken(event.delta.text);
+                tokensEmitted = true;
+              }
+            } else if (event.type === "content_block_stop") {
+              if (currentBlockType === "thinking") {
+                sendSSE(res, { type: "thinking_stop" });
+              }
+              currentBlockType = null;
             }
-          } else if (event.type === "content_block_delta") {
-            if (event.delta.type === "thinking_delta") {
-              sendSSE(res, { type: "thinking_delta", thinking: event.delta.thinking });
-            } else if (event.delta.type === "text_delta") {
-              bufferToken(event.delta.text);
-            }
-          } else if (event.type === "content_block_stop") {
-            if (currentBlockType === "thinking") {
-              sendSSE(res, { type: "thinking_stop" });
-            }
-            currentBlockType = null;
           }
+          break; // Stream completed successfully — exit retry loop
+        } catch (streamErr) {
+          // If aborted due to client disconnect, exit cleanly
+          if (abortController.signal.aborted) {
+            console.log(`[chat] session="${currentSessionId}" stream aborted (client disconnect)`);
+            return;
+          }
+          // Only retry if: (a) retryable error, (b) no tokens emitted yet, (c) retries left
+          if (
+            !tokensEmitted &&
+            isRetryableAnthropicError(streamErr) &&
+            attempt < ANTHROPIC_STREAM_MAX_RETRIES
+          ) {
+            const delay = ANTHROPIC_STREAM_RETRY_BASE_MS * 2 ** attempt + Math.random() * 500;
+            console.warn(
+              `[chat] Anthropic stream retry ${attempt + 1}/${ANTHROPIC_STREAM_MAX_RETRIES} ` +
+                `after ${Math.round(delay)}ms | session="${currentSessionId}" org="${orgId}" | ` +
+                `error=${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            continue;
+          }
+          throw streamErr; // Non-retryable or tokens already emitted — propagate
         }
-      } catch (streamErr) {
-        // If aborted due to client disconnect, exit cleanly
-        if (abortController.signal.aborted) {
-          console.log(`[chat] session="${currentSessionId}" stream aborted (client disconnect)`);
-          return;
-        }
-        throw streamErr; // Re-throw to outer catch for error SSE
       }
 
-      const finalMessage = await stream.finalMessage();
+      const finalMessage = await stream!.finalMessage();
       totalPromptTokens += finalMessage.usage.input_tokens;
       totalOutputTokens += finalMessage.usage.output_tokens;
       lastContentBlocks = finalMessage.content;
