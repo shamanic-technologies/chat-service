@@ -713,11 +713,21 @@ const SSEButtonsEventSchema = z
 const SSEErrorEventSchema = z
   .object({
     type: z.literal("error"),
+    code: z
+      .enum(["model_overloaded", "rate_limited", "model_error", "internal_error"])
+      .openapi({
+        description:
+          "Machine-readable error code. `model_overloaded` — Claude is temporarily at capacity (retry after a moment). " +
+          "`rate_limited` — too many requests (respect retry-after). " +
+          "`model_error` — transient upstream error. " +
+          "`internal_error` — unexpected server error.",
+        example: "model_overloaded",
+      }),
     message: z.string().openapi({
       description:
         "Human-readable error message explaining what went wrong",
       example:
-        "The AI model returned an empty response. This may happen when the conversation is too long or the message content triggers a safety filter.",
+        "Claude is temporarily overloaded. Please try again in a moment.",
     }),
   })
   .openapi("SSEErrorEvent");

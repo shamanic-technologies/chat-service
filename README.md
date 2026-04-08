@@ -406,11 +406,19 @@ If the org has insufficient credits, the endpoint returns a **402 JSON response*
 If billing-service is unreachable, a **502 JSON response** is returned instead.
 
 ### 7. Error (optional)
-Sent when the AI model returns an empty response (context overflow, safety filter) or an unexpected error occurs:
+Sent when the AI model returns an empty response, is overloaded, or an unexpected error occurs:
 ```
-data: {"type":"error","message":"The AI model returned an empty response. This may happen when the conversation is too long or the message content triggers a safety filter."}
+data: {"type":"error","code":"model_overloaded","message":"Claude is temporarily overloaded. Please try again in a moment."}
 ```
-The frontend should display the `message` to the user. An `error` event is always followed by `[DONE]`.
+
+| `code` | Meaning | Suggested UX |
+|--------|---------|-------------|
+| `model_overloaded` | Claude is temporarily at capacity (retries exhausted) | Show message + "Retry" button |
+| `rate_limited` | Too many requests | Show message + auto-retry after delay |
+| `model_error` | Transient upstream error (empty response, 5xx) | Show message + "Retry" button |
+| `internal_error` | Unexpected server error | Show message |
+
+The frontend should display the `message` to the user and use `code` to decide whether to offer a retry action. An `error` event is always followed by `[DONE]`.
 
 ### 8. Done
 ```
