@@ -249,14 +249,26 @@
               "error"
             ]
           },
+          "code": {
+            "type": "string",
+            "enum": [
+              "model_overloaded",
+              "rate_limited",
+              "model_error",
+              "internal_error"
+            ],
+            "description": "Machine-readable error code. `model_overloaded` — Claude is temporarily at capacity (retry after a moment). `rate_limited` — too many requests (respect retry-after). `model_error` — transient upstream error. `internal_error` — unexpected server error.",
+            "example": "model_overloaded"
+          },
           "message": {
             "type": "string",
             "description": "Human-readable error message explaining what went wrong",
-            "example": "The AI model returned an empty response. This may happen when the conversation is too long or the message content triggers a safety filter."
+            "example": "Claude is temporarily overloaded. Please try again in a moment."
           }
         },
         "required": [
           "type",
+          "code",
           "message"
         ]
       },

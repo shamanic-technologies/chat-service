@@ -54,6 +54,7 @@ export interface SSEInputRequestEvent {
 
 export interface SSEErrorEvent {
   type: "error";
+  code: string;
   message: string;
 }
 

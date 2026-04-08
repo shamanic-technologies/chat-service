@@ -81,6 +81,53 @@ function isRetryableAnthropicError(err: unknown): boolean {
   return false;
 }
 
+/**
+ * Extract retry-after delay from an Anthropic error's response headers.
+ * Returns the delay in ms, or null if the header is missing.
+ */
+function getRetryAfterMs(err: unknown): number | null {
+  if (!(err instanceof Anthropic.APIError)) return null;
+  const headers = err.headers as Headers | undefined;
+  if (!headers) return null;
+  const retryAfter = headers.get("retry-after");
+  if (!retryAfter) return null;
+  const seconds = Number(retryAfter);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+}
+
+/**
+ * Classify an error for the SSE error event sent to the client.
+ * Returns a user-facing message and an error code the frontend can act on.
+ */
+function classifyErrorForClient(err: unknown): { message: string; code: string } {
+  if (err instanceof Anthropic.APIError) {
+    const errorBody = err.error as { type?: string; error?: { type?: string } } | undefined;
+    const errorType = errorBody?.error?.type;
+    if (errorType === "overloaded_error" || err.status === 529) {
+      return {
+        code: "model_overloaded",
+        message: "Claude is temporarily overloaded. Please try again in a moment.",
+      };
+    }
+    if (err.status === 429) {
+      return {
+        code: "rate_limited",
+        message: "Too many requests. Please wait a moment and try again.",
+      };
+    }
+    if (typeof err.status === "number" && err.status >= 500) {
+      return {
+        code: "model_error",
+        message: "Claude encountered a temporary error. Please try again.",
+      };
+    }
+  }
+  return {
+    code: "internal_error",
+    message: "An unexpected error occurred. Please try again.",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // JSON parsing for LLM responses
 // ---------------------------------------------------------------------------
@@ -688,6 +735,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       console.error(`[chat] session="${currentSessionId}" run creation failed:`, runErr);
       sendSSE(res, {
         type: "error",
+        code: "internal_error",
         message: "Service temporarily unavailable (run tracking). Please try again.",
       });
       sendSSE(res, "[DONE]");
@@ -1314,7 +1362,8 @@ app.post("/chat", requireAuth, async (req, res) => {
             isRetryableAnthropicError(streamErr) &&
             attempt < ANTHROPIC_STREAM_MAX_RETRIES
           ) {
-            const delay = ANTHROPIC_STREAM_RETRY_BASE_MS * 2 ** attempt + Math.random() * 500;
+            const retryAfter = getRetryAfterMs(streamErr);
+            const delay = retryAfter ?? (ANTHROPIC_STREAM_RETRY_BASE_MS * 2 ** attempt + Math.random() * 500);
             console.warn(
               `[chat] Anthropic stream retry ${attempt + 1}/${ANTHROPIC_STREAM_MAX_RETRIES} ` +
                 `after ${Math.round(delay)}ms | session="${currentSessionId}" org="${orgId}" | ` +
@@ -1440,6 +1489,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       );
       sendSSE(res, {
         type: "error",
+        code: "model_error",
         message:
           "The AI model returned an empty response. This may happen when the conversation " +
           "is too long or the message content triggers a safety filter. Please try shortening " +
@@ -1475,10 +1525,12 @@ app.post("/chat", requireAuth, async (req, res) => {
     sendSSE(res, "[DONE]");
   } catch (err) {
     chatFailed = true;
-    console.error(`[chat] org="${orgId}" unhandled error:`, err);
+    const { message: errorMessage, code: errorCode } = classifyErrorForClient(err);
+    console.error(`[chat] org="${orgId}" error code="${errorCode}":`, err);
     sendSSE(res, {
       type: "error",
-      message: "An unexpected error occurred. Please try again.",
+      code: errorCode,
+      message: errorMessage,
     });
     sendSSE(res, "[DONE]");
   } finally {
