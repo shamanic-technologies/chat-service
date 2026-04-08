@@ -869,22 +869,6 @@ export const EXTRACT_BRAND_FIELDS_TOOL: Anthropic.Tool = {
   },
 };
 
-export const EXTRACT_BRAND_TEXT_TOOL: Anthropic.Tool = {
-  name: "extract_brand_text",
-  description:
-    "Extract the full text content from a brand's public website pages. Returns the raw text of all scraped pages. Use this to read the brand's site content for analysis or to inform campaign creation.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      brandId: {
-        type: "string",
-        description: "UUID of the brand whose website text to extract.",
-      },
-    },
-    required: ["brandId"],
-  },
-};
-
 // ---------------------------------------------------------------------------
 // Tool registry — every tool the service knows how to execute.
 // Clients choose which subset to enable via allowedTools in their config.
@@ -916,7 +900,6 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   get_feature_stats: GET_FEATURE_STATS_TOOL,
   update_campaign_fields: UPDATE_CAMPAIGN_FIELDS_TOOL,
   extract_brand_fields: EXTRACT_BRAND_FIELDS_TOOL,
-  extract_brand_text: EXTRACT_BRAND_TEXT_TOOL,
 };
 
 /** All tool names available for use in allowedTools config. */

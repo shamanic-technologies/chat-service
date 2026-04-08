@@ -9,7 +9,7 @@ describe("TOOL_REGISTRY", () => {
     expect(AVAILABLE_TOOL_NAMES).toContain("list_services");
     expect(AVAILABLE_TOOL_NAMES).toContain("update_campaign_fields");
     expect(AVAILABLE_TOOL_NAMES).toContain("extract_brand_fields");
-    expect(AVAILABLE_TOOL_NAMES).toContain("extract_brand_text");
+    expect(AVAILABLE_TOOL_NAMES).not.toContain("extract_brand_text");
   });
 
   it("does NOT contain call_api (removed for security)", () => {
