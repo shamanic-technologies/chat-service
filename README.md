@@ -82,8 +82,7 @@ Before using `/chat`, register a config for each chat mode your app needs. Each 
   "systemPrompt": "You help users create campaigns by pre-filling form fields based on their brand...",
   "allowedTools": [
     "update_campaign_fields",
-    "extract_brand_fields",
-    "extract_brand_text"
+    "extract_brand_fields"
   ]
 }
 ```
@@ -360,7 +359,6 @@ The tools available in each chat session are determined by the `allowedTools` ar
 |---|---|
 | `update_campaign_fields` | Passthrough tool — returns `{ fields }` so the frontend can apply values to the campaign form |
 | `extract_brand_fields` | Extracts arbitrary fields from a brand's website via brand-service AI (cached 30 days) |
-| `extract_brand_text` | Extracts full text content from a brand's public website pages |
 
 **UI tools:**
 
