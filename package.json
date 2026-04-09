@@ -23,6 +23,7 @@
     "cors": "^2.8.5",
     "drizzle-orm": "^0.38.0",
     "express": "^4.21.0",
+    "jsonrepair": "^3.13.3",
     "postgres": "^3.4.0",
     "zod": "^4.3.6"
   },
