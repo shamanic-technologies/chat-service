@@ -8,9 +8,21 @@ jobs:
   delete-neon-branch:
     runs-on: ubuntu-latest
     steps:
-      - name: Delete Neon branch
-        uses: neondatabase/delete-branch-action@v3
+      - uses: actions/setup-node@v4
         with:
-          project_id: ${{ vars.NEON_PROJECT_ID }}
-          branch: pr-${{ github.event.number }}
-          api_key: ${{ secrets.NEON_API_KEY }}
+          node-version: 20
+
+      - name: Install neonctl
+        run: npm i -g neonctl@v2
+
+      - name: Delete Neon branch (if exists)
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: |
+          BRANCH="pr-${{ github.event.number }}"
+          if neonctl branches get "$BRANCH" --project-id ${{ vars.NEON_PROJECT_ID }} 2>/dev/null; then
+            neonctl branches delete "$BRANCH" --project-id ${{ vars.NEON_PROJECT_ID }}
+            echo "Deleted Neon branch $BRANCH"
+          else
+            echo "Neon branch $BRANCH does not exist — skipping"
+          fi
