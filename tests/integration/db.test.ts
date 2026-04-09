@@ -141,41 +141,54 @@ describe("database integration", () => {
       .where(eq(schema.sessions.id, session.id));
   });
 
-  it("should create and upsert app_configs by orgId", async () => {
+  it("should create and upsert app_configs by orgId + key", async () => {
     // Insert
     const [config] = await db
       .insert(schema.appConfigs)
       .values({
         orgId: "test-org-config",
+        key: "test-key",
         systemPrompt: "You are a test assistant.",
+        allowedTools: ["search"],
       })
       .returning();
 
     expect(config.orgId).toBe("test-org-config");
+    expect(config.key).toBe("test-key");
     expect(config.systemPrompt).toBe("You are a test assistant.");
+    expect(config.allowedTools).toEqual(["search"]);
 
-    // Upsert (update on conflict by orgId)
+    // Upsert (update on conflict by orgId + key)
     const [updated] = await db
       .insert(schema.appConfigs)
       .values({
         orgId: "test-org-config",
+        key: "test-key",
         systemPrompt: "Updated prompt.",
+        allowedTools: ["search", "browse"],
       })
       .onConflictDoUpdate({
-        target: [schema.appConfigs.orgId],
+        target: [schema.appConfigs.orgId, schema.appConfigs.key],
         set: {
           systemPrompt: "Updated prompt.",
+          allowedTools: ["search", "browse"],
           updatedAt: new Date(),
         },
       })
       .returning();
 
     expect(updated.systemPrompt).toBe("Updated prompt.");
+    expect(updated.allowedTools).toEqual(["search", "browse"]);
     expect(updated.id).toBe(config.id); // Same row
 
     // Cleanup
     await db
       .delete(schema.appConfigs)
-      .where(eq(schema.appConfigs.orgId, "test-org-config"));
+      .where(
+        and(
+          eq(schema.appConfigs.orgId, "test-org-config"),
+          eq(schema.appConfigs.key, "test-key"),
+        ),
+      );
   });
 });
