@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { jsonrepair, JSONRepairError } from "jsonrepair";
 import { db } from "./db/index.js";
 import { sessions, messages, appConfigs, platformConfigs } from "./db/schema.js";
 import { eq, and } from "drizzle-orm";
@@ -132,19 +133,75 @@ function classifyErrorForClient(err: unknown): { message: string; code: string }
 // JSON parsing for LLM responses
 // ---------------------------------------------------------------------------
 
-/** Remove trailing commas before ] and } — a common LLM output quirk. */
-function removeTrailingCommas(s: string): string {
-  return s.replace(/,\s*([\]}])/g, "$1");
+/** Context needed to call the same model for LLM-assisted JSON repair. */
+interface JsonRepairContext {
+  apiKey: string;
+  model: string;
+  isGemini: boolean;
+}
+
+const LLM_REPAIR_MAX_ROUNDS = 3;
+
+/** Extract a ±200-char window around a character position for diagnostics. */
+function snippetAround(text: string, pos: number, radius = 200): string {
+  const start = Math.max(0, pos - radius);
+  const end = Math.min(text.length, pos + radius);
+  return (
+    (start > 0 ? "..." : "") +
+    text.slice(start, end) +
+    (end < text.length ? "..." : "")
+  );
+}
+
+/**
+ * Ask the same model that produced the broken JSON to repair it.
+ * Sends the full broken output + the parse error diagnostic and asks
+ * for a minimal structural fix. Returns the raw LLM response text.
+ */
+async function llmRepairJson(
+  broken: string,
+  errorMessage: string,
+  ctx: JsonRepairContext,
+): Promise<string> {
+  const repairPrompt =
+    `The following JSON is structurally broken. A JSON parser returned this error:\n\n` +
+    `${errorMessage}\n\n` +
+    `Here is the broken JSON:\n\`\`\`\n${broken}\n\`\`\`\n\n` +
+    `Return ONLY the corrected JSON. Make minimal structural edits to fix the syntax ` +
+    `(missing brackets, quotes, commas, truncation, etc.). Do NOT change any field names or values — ` +
+    `only fix the structure so it parses as valid JSON.`;
+
+  const systemPrompt =
+    "You are a JSON repair tool. You receive broken JSON and return ONLY the fixed JSON. " +
+    "No explanations, no markdown fences, no extra text.";
+
+  if (ctx.isGemini) {
+    const result = await completeWithGemini({
+      apiKey: ctx.apiKey,
+      model: ctx.model,
+      message: repairPrompt,
+      systemPrompt,
+      responseFormat: "json",
+    });
+    return result.content;
+  } else {
+    const claude = createAnthropicClient({ apiKey: ctx.apiKey, systemPrompt });
+    const result = await claude.complete(repairPrompt, {
+      responseFormat: "json",
+      model: ctx.model,
+    });
+    return result.content;
+  }
 }
 
 /**
  * Parse JSON from model output with progressive repair:
  * 1. Try raw JSON.parse
- * 2. Strip markdown code fences and retry
- * 3. Remove trailing commas and retry
+ * 2. Try jsonrepair (handles fences, trailing commas, missing quotes, truncation, etc.)
+ * 3. LLM-assisted repair — send broken JSON + jsonrepair diagnostics to the same model (up to 3 rounds)
  * Throws with diagnostics if all attempts fail.
  */
-function parseModelJson(raw: string): unknown {
+async function parseModelJson(raw: string, repairCtx?: JsonRepairContext): Promise<unknown> {
   const trimmed = raw.trim();
 
   // Attempt 1: direct parse
@@ -152,22 +209,85 @@ function parseModelJson(raw: string): unknown {
     return JSON.parse(trimmed);
   } catch { /* continue */ }
 
-  // Attempt 2: strip markdown fences
-  const stripped = trimmed
-    .replace(/^```(?:json)?\s*\n?/i, "")
-    .replace(/\n?```\s*$/i, "")
-    .trim();
+  // Attempt 2: jsonrepair — handles fences, trailing commas, missing quotes,
+  // truncated JSON, single quotes, comments, and many more LLM quirks
+  let repairError: JSONRepairError | undefined;
   try {
-    return JSON.parse(stripped);
-  } catch { /* continue */ }
-
-  // Attempt 3: remove trailing commas (LLMs often produce these)
-  const repaired = removeTrailingCommas(stripped);
-  try {
+    const repaired = jsonrepair(trimmed);
     const parsed = JSON.parse(repaired);
-    console.warn(`[chat-service] JSON required trailing-comma repair (contentLen=${raw.length})`);
+    console.warn(`[chat-service] JSON required jsonrepair (contentLen=${raw.length})`);
     return parsed;
-  } catch { /* continue */ }
+  } catch (err) {
+    if (err instanceof JSONRepairError) {
+      repairError = err;
+    }
+    // continue to LLM repair
+  }
+
+  // Attempt 3: LLM-assisted repair (up to 3 rounds)
+  if (repairCtx) {
+    let current = trimmed;
+    for (let round = 1; round <= LLM_REPAIR_MAX_ROUNDS; round++) {
+      // Build diagnostic from jsonrepair error or JSON.parse error
+      let diagnostic: string;
+      try {
+        JSON.parse(current);
+        // If somehow it parses now, return it (shouldn't happen but be safe)
+        return JSON.parse(current);
+      } catch (parseErr) {
+        const parseError = parseErr as SyntaxError & { message: string };
+        // Extract position from JSON.parse error (e.g. "at position 1847")
+        const posMatch = parseError.message.match(/position\s+(\d+)/);
+        const pos = posMatch ? parseInt(posMatch[1], 10) : undefined;
+
+        diagnostic = `JSON.parse error: ${parseError.message}`;
+        if (pos != null) {
+          diagnostic += `\nContext around position ${pos}:\n${snippetAround(current, pos)}`;
+        }
+        if (repairError && round === 1) {
+          diagnostic += `\njsonrepair also failed: ${repairError.message}`;
+        }
+      }
+
+      console.warn(
+        `[chat-service] LLM JSON repair round ${round}/${LLM_REPAIR_MAX_ROUNDS} (contentLen=${current.length})`,
+      );
+
+      try {
+        const repaired = await llmRepairJson(current, diagnostic, repairCtx);
+        const repairedTrimmed = repaired.trim();
+
+        // Try direct parse first
+        try {
+          const parsed = JSON.parse(repairedTrimmed);
+          console.warn(
+            `[chat-service] LLM JSON repair succeeded on round ${round} (contentLen=${raw.length})`,
+          );
+          return parsed;
+        } catch { /* continue */ }
+
+        // Try jsonrepair on the LLM output too
+        try {
+          const doubleRepaired = jsonrepair(repairedTrimmed);
+          const parsed = JSON.parse(doubleRepaired);
+          console.warn(
+            `[chat-service] LLM JSON repair + jsonrepair succeeded on round ${round} (contentLen=${raw.length})`,
+          );
+          return parsed;
+        } catch { /* continue */ }
+
+        // Feed this round's output into the next round
+        current = repairedTrimmed;
+      } catch (llmErr) {
+        console.error(
+          `[chat-service] LLM JSON repair round ${round} call failed:`,
+          llmErr,
+        );
+        // Don't retry if the LLM call itself failed — likely a transient issue
+        break;
+      }
+    }
+  }
 
   throw new Error(
     `Model returned non-parsable JSON despite responseFormat: "json". ` +
@@ -461,7 +581,11 @@ app.post("/complete", requireAuth, async (req, res) => {
 
     // Parse JSON if requested
     if (responseFormat === "json") {
-      response.json = parseModelJson(result.content);
+      response.json = await parseModelJson(result.content, {
+        apiKey: resolvedKey.key,
+        model: effectiveModel,
+        isGemini,
+      });
     }
 
     res.json(response);
@@ -558,7 +682,11 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
     };
 
     if (responseFormat === "json") {
-      response.json = parseModelJson(result.content);
+      response.json = await parseModelJson(result.content, {
+        apiKey,
+        model: effectiveModel,
+        isGemini,
+      });
     }
 
     res.json(response);
