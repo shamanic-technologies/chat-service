@@ -197,7 +197,7 @@ Response:
 ```
 
 - `content` — raw text response (always present). **Warning:** when `responseFormat: "json"`, this field may contain markdown code fences (e.g. `` ```json...``` ``). Do **not** use this field for JSON parsing.
-- `json` — parsed JSON object (present when `responseFormat: "json"`). **Always use this field** for structured data — markdown fences are already stripped and the JSON is pre-parsed. If the model returns non-parsable JSON, the endpoint returns **502** instead of silently omitting this field.
+- `json` — parsed JSON object (present when `responseFormat: "json"`). **Always use this field** for structured data. The service applies a 3-stage repair pipeline: (1) direct `JSON.parse`, (2) algorithmic repair via `jsonrepair` (handles fences, trailing commas, missing quotes, truncation, etc.), (3) LLM-assisted repair — the same model that produced the output is asked to fix the JSON structure (up to 3 rounds, using parse error diagnostics). If all stages fail, the endpoint returns **502**.
 - `tokensInput` / `tokensOutput` — token usage
 - `model` — the versioned model ID that was actually used (resolved from the provider + alias)
 
