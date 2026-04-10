@@ -1232,7 +1232,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       // API Registry progressive disclosure tools
       if (call.name === "list_services") {
-        const result = await listServices({ orgId, userId, runId: runId! });
+        const result = await listServices();
         toolCalls.push({ name: call.name, args: {}, result });
         return { name: call.name, result };
       }
@@ -1241,7 +1241,6 @@ app.post("/chat", requireAuth, async (req, res) => {
         const args = (call.args as Record<string, unknown>) || {};
         const result = await listServiceEndpoints(
           args.service as string,
-          { orgId, userId, runId: runId! },
         );
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
