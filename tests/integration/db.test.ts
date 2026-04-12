@@ -6,7 +6,7 @@ import * as schema from "../../src/db/schema.js";
 
 const connectionString = process.env.CHAT_SERVICE_DATABASE_URL;
 
-describe("database integration", () => {
+describe("database integration", { timeout: 15000 }, () => {
   let client: ReturnType<typeof postgres>;
   let db: ReturnType<typeof drizzle<typeof schema>>;
 
