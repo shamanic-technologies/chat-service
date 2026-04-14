@@ -121,7 +121,7 @@ export const AppConfigRequestSchema = z
         "list_org_keys, get_key_source, list_key_sources, check_provider_requirements, " +
         "create_feature, update_feature, list_features, get_feature, get_feature_inputs, " +
         "prefill_feature, get_feature_stats, " +
-        "update_campaign_fields, extract_brand_fields",
+        "update_campaign_fields, extract_brand_fields, browse_url",
       example: [
         "request_user_input",
         "update_workflow",
