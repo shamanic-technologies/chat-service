@@ -359,6 +359,7 @@ The tools available in each chat session are determined by the `allowedTools` ar
 |---|---|
 | `update_campaign_fields` | Passthrough tool — returns `{ fields }` so the frontend can apply values to the campaign form |
 | `extract_brand_fields` | Extracts arbitrary fields from a brand's website via brand-service AI (cached 30 days) |
+| `browse_url` | Fetches and returns the content of any public URL as markdown (via scraping-service/firecrawl). Read-only. |
 
 **UI tools:**
 
