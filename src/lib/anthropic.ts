@@ -869,6 +869,22 @@ export const EXTRACT_BRAND_FIELDS_TOOL: Anthropic.Tool = {
   },
 };
 
+export const BROWSE_URL_TOOL: Anthropic.Tool = {
+  name: "browse_url",
+  description:
+    "Fetch and read the content of any public URL. Returns the page text as markdown, plus the meta description. Use this to visit competitor pages, reference articles, product pages, or any URL the user mentions. Read-only — does not modify anything.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      url: {
+        type: "string",
+        description: "The URL to visit and read (must be a valid http or https URL).",
+      },
+    },
+    required: ["url"],
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Tool registry — every tool the service knows how to execute.
 // Clients choose which subset to enable via allowedTools in their config.
@@ -900,6 +916,7 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   get_feature_stats: GET_FEATURE_STATS_TOOL,
   update_campaign_fields: UPDATE_CAMPAIGN_FIELDS_TOOL,
   extract_brand_fields: EXTRACT_BRAND_FIELDS_TOOL,
+  browse_url: BROWSE_URL_TOOL,
 };
 
 /** All tool names available for use in allowedTools config. */
