@@ -48,6 +48,7 @@ import {
 import { authorizeCredits, BillingError } from "./lib/billing-client.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
 import { ChatRequestSchema, CompleteRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
+import { JSON_RESPONSE_SYSTEM_SUFFIX } from "./lib/json-prompt.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -543,7 +544,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       effectiveSystemPrompt = buildSystemPrompt(systemPrompt, undefined, campaignFeatureInputs);
     }
     if (responseFormat === "json") {
-      effectiveSystemPrompt += `\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, no extra text — just a single JSON object or array.`;
+      effectiveSystemPrompt += JSON_RESPONSE_SYSTEM_SUFFIX;
     }
 
     let result: { content: string; tokensInput: number; tokensOutput: number; model: string };
@@ -652,7 +653,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   try {
     let effectiveSystemPrompt = systemPrompt;
     if (responseFormat === "json") {
-      effectiveSystemPrompt += `\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown, no code fences, no extra text — just a single JSON object or array.`;
+      effectiveSystemPrompt += JSON_RESPONSE_SYSTEM_SUFFIX;
     }
 
     let result: { content: string; tokensInput: number; tokensOutput: number; model: string };
