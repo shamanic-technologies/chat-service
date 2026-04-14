@@ -34,6 +34,7 @@ import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
 import { extractBrandFields } from "./lib/brand-client.js";
+import { scrapeUrl } from "./lib/scraping-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import {
   resolveKey,
@@ -1398,6 +1399,16 @@ app.post("/chat", requireAuth, async (req, res) => {
         const args = (call.args as Record<string, unknown>) || {};
         const result = await extractBrandFields(
           args.fields as Array<{ key: string; description: string }>,
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "browse_url") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await scrapeUrl(
+          args.url as string,
           featureCallParams,
         );
         toolCalls.push({ name: call.name, args, result });
