@@ -217,12 +217,14 @@ export interface PrefillTextResponse {
 
 export async function prefillFeature(
   slug: string,
+  brandIds: string[],
   params: FeaturesCallParams,
 ): Promise<PrefillTextResponse> {
   const res = await apiServiceFetch(
     `/v1/features/${encodeURIComponent(slug)}/prefill`,
     "POST",
     params,
+    { brandIds },
   );
 
   if (!res.ok) {

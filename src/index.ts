@@ -719,6 +719,13 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   const { configKey, message, sessionId, context } = parsed.data;
 
+  // Derive brandIds from x-brand-id header, falling back to context.brandId
+  const brandIds: string[] = workflowTracking.brandId
+    ? workflowTracking.brandId.split(",").map(s => s.trim()).filter(Boolean)
+    : (typeof context?.brandId === "string" && context.brandId
+        ? [context.brandId]
+        : []);
+
   // Look up app config by (orgId, configKey), fall back to platform config by configKey
   const [orgConfig] = await db
     .select()
@@ -1365,7 +1372,10 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "prefill_feature") {
         const args = (call.args as Record<string, unknown>) || {};
-        const result = await prefillFeature(args.slug as string, featureCallParams);
+        if (brandIds.length === 0) {
+          throw new Error("brandIds required for prefill_feature — ensure x-brand-id header or context.brandId is provided");
+        }
+        const result = await prefillFeature(args.slug as string, brandIds, featureCallParams);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -1396,8 +1406,12 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "extract_brand_fields") {
         const args = (call.args as Record<string, unknown>) || {};
+        if (brandIds.length === 0) {
+          throw new Error("brandIds required for extract_brand_fields — ensure x-brand-id header or context.brandId is provided");
+        }
         const result = await extractBrandFields(
           args.fields as Array<{ key: string; description: string }>,
+          brandIds,
           featureCallParams,
         );
         toolCalls.push({ name: call.name, args, result });

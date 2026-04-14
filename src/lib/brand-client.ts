@@ -27,13 +27,14 @@ export interface ExtractFieldsResponse {
 
 export async function extractBrandFields(
   fields: ExtractFieldDef[],
+  brandIds: string[],
   params: BrandCallParams,
 ): Promise<ExtractFieldsResponse> {
   const res = await apiServiceFetch(
     `/v1/brands/extract-fields`,
     "POST",
     params,
-    { fields },
+    { brandIds, fields },
   );
 
   if (!res.ok) {

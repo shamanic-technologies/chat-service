@@ -405,7 +405,7 @@ describe("getFeatureInputs", () => {
 });
 
 describe("prefillFeature", () => {
-  it("sends POST /v1/features/:slug/prefill via api-service", async () => {
+  it("sends POST /v1/features/:slug/prefill with brandIds in body", async () => {
     const mockResponse = {
       slug: "cold-email-outreach",
       brandId: "brand-1",
@@ -418,7 +418,7 @@ describe("prefillFeature", () => {
     });
 
     const { prefillFeature } = await loadModule();
-    const result = await prefillFeature("cold-email-outreach", {
+    const result = await prefillFeature("cold-email-outreach", ["brand-1"], {
       orgId: "org-1",
       userId: "user-1",
       runId: "run-1",
@@ -428,8 +428,25 @@ describe("prefillFeature", () => {
       "https://api.test.local/v1/features/cold-email-outreach/prefill",
       expect.objectContaining({ method: "POST" }),
     );
+
+    const sentBody = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(sentBody.brandIds).toEqual(["brand-1"]);
+
     expect(result.prefilled.targetCompanyUrl).toBe("https://acme.com");
     expect(result.format).toBe("text");
+  });
+
+  it("sends multiple brandIds in body", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ slug: "s", brandId: "b1", format: "text", prefilled: {} }),
+    });
+
+    const { prefillFeature } = await loadModule();
+    await prefillFeature("s", ["brand-1", "brand-2"], { orgId: "o", userId: "u", runId: "r" });
+
+    const sentBody = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(sentBody.brandIds).toEqual(["brand-1", "brand-2"]);
   });
 
   it("throws on HTTP error", async () => {
@@ -441,7 +458,7 @@ describe("prefillFeature", () => {
 
     const { prefillFeature } = await loadModule();
     await expect(
-      prefillFeature("cold-email-outreach", { orgId: "o", userId: "u", runId: "r" }),
+      prefillFeature("cold-email-outreach", ["brand-1"], { orgId: "o", userId: "u", runId: "r" }),
     ).rejects.toThrow(/returned 400/);
   });
 });
