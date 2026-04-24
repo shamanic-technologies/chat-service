@@ -236,6 +236,31 @@ Response format is identical to `POST /complete`.
 
 Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
 
+## Internal: Transfer Brand
+
+`POST /internal/transfer-brand` — re-assigns solo-brand sessions from one org to another.
+
+**Auth:** `X-API-Key` only — no org context needed (org IDs come from the body).
+
+```json
+{
+  "brandId": "brand-uuid",
+  "sourceOrgId": "org-source-uuid",
+  "targetOrgId": "org-target-uuid"
+}
+```
+
+Updates all sessions where `org_id = sourceOrgId` AND `brand_ids` contains exactly one element matching `brandId`. Sessions with multiple brand IDs (co-branding) are skipped.
+
+Response:
+```json
+{
+  "updatedTables": [{ "tableName": "sessions", "count": 5 }]
+}
+```
+
+Idempotent — running it twice with the same params is a no-op (all rows already updated).
+
 ## Campaign Context Enrichment
 
 When the `x-campaign-id` header is present, both `/chat` and `/complete` automatically fetch the campaign's `featureInputs` from campaign-service and inject them into the system prompt. This ensures every LLM call is informed by the user's campaign-specific inputs (editorial angle, target geography, audience type, etc.).
@@ -453,10 +478,10 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 ## Database
 
-Uses PostgreSQL via Drizzle ORM. Three tables:
+Uses PostgreSQL via Drizzle ORM. Four tables:
 
-- **sessions** — conversation sessions scoped by `orgId` and `userId`
-- **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management), `runId` linking to RunsService, and optional `campaign_id`, `brand_ids` (text array for multi-brand support), `workflow_slug`, `feature_slug` for workflow tracking
+- **sessions** — conversation sessions scoped by `orgId` and `userId`. Stores all identity/tracking context: `runId` (this service's run), `parentRunId` (caller's run from `x-run-id` header), `campaignId`, `brandIds` (text array for multi-brand support), `workflowSlug`, `featureSlug`
+- **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management)
 - **app_configs** — per-org configuration keyed by `(orgId, key)`. Each entry defines a system prompt and `allowedTools` for a specific chat mode.
 - **platform_configs** — platform-wide configuration keyed by `key`. Fallback when no per-org config exists for the same key.
 
@@ -514,7 +539,7 @@ Node 20 defaults `requestTimeout` to 300s (5 min), which would kill long-running
 
 ```
 src/
-  index.ts          # Express server, /chat, /complete, /internal/platform-complete, /config, /platform-config, /health, /openapi.json
+  index.ts          # Express server, /chat, /complete, /internal/platform-complete, /internal/transfer-brand, /config, /platform-config, /health, /openapi.json
   types.ts          # SSE event TypeScript interfaces
   schemas.ts        # Zod schemas, OpenAPI registry, and request/response types
   middleware/

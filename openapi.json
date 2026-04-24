@@ -713,6 +713,59 @@
           "configKey",
           "message"
         ]
+      },
+      "TransferBrandResponse": {
+        "type": "object",
+        "properties": {
+          "updatedTables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tableName": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "tableName",
+                "count"
+              ]
+            },
+            "description": "List of tables updated with row counts"
+          }
+        },
+        "required": [
+          "updatedTables"
+        ]
+      },
+      "TransferBrandRequest": {
+        "type": "object",
+        "properties": {
+          "brandId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The brand UUID to transfer"
+          },
+          "sourceOrgId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The org UUID the brand is currently in"
+          },
+          "targetOrgId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The org UUID to transfer the brand to"
+          }
+        },
+        "required": [
+          "brandId",
+          "sourceOrgId",
+          "targetOrgId"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -1339,6 +1392,68 @@
           },
           "404": {
             "description": "App config not found — register via PUT /config first, or ensure platform config exists via PUT /platform-config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/transfer-brand": {
+      "post": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Transfer brand ownership between orgs",
+        "description": "Re-assigns all solo-brand sessions from sourceOrgId to targetOrgId. Solo-brand = sessions where brand_ids contains exactly one element matching brandId. Sessions with multiple brand IDs (co-branding) are skipped. Idempotent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferBrandRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transfer completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferBrandResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
             "content": {
               "application/json": {
                 "schema": {
