@@ -95,7 +95,7 @@ describe("workflow tracking headers in auth middleware", () => {
     requireAuth(req, res, next);
     expect(res.locals.orgId).toBe("org-123");
     expect(res.locals.userId).toBe("user-456");
-    expect(res.locals.runId).toBe("run-789");
+    expect(res.locals.parentRunId).toBe("run-789");
   });
 });
 

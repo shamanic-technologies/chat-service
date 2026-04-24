@@ -75,7 +75,7 @@ describe("requireAuth middleware", () => {
     expect(next).toHaveBeenCalled();
     expect(res.locals.orgId).toBe("org-123");
     expect(res.locals.userId).toBe("user-456");
-    expect(res.locals.runId).toBe("run-789");
+    expect(res.locals.parentRunId).toBe("run-789");
     expect(res.status).not.toHaveBeenCalled();
   });
 });

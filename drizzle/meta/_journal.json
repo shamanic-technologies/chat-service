@@ -85,6 +85,13 @@
       "when": 1775059200000,
       "tag": "0011_migrate_brand_id_to_brand_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1775145600000,
+      "tag": "0012_move_tracking_to_sessions",
+      "breakpoints": true
     }
   ]
 }

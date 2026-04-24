@@ -4,6 +4,12 @@ export const sessions = pgTable("sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
   orgId: text("org_id").notNull(),
   userId: text("user_id"),
+  runId: uuid("run_id"),
+  parentRunId: uuid("parent_run_id"),
+  campaignId: text("campaign_id"),
+  brandIds: text("brand_ids").array(),
+  workflowSlug: text("workflow_slug"),
+  featureSlug: text("feature_slug"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -19,11 +25,6 @@ export const messages = pgTable("messages", {
   toolCalls: jsonb("tool_calls").$type<ToolCallRecord[]>(),
   buttons: jsonb("buttons").$type<ButtonRecord[]>(),
   tokenCount: integer("token_count"),
-  runId: uuid("run_id"),
-  campaignId: text("campaign_id"),
-  brandIds: text("brand_ids").array(),
-  workflowSlug: text("workflow_slug"),
-  featureSlug: text("feature_slug"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
