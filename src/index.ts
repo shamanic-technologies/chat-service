@@ -7,7 +7,7 @@ import { dirname, join } from "path";
 import { jsonrepair, JSONRepairError } from "jsonrepair";
 import { db } from "./db/index.js";
 import { sessions, messages, appConfigs, platformConfigs } from "./db/schema.js";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   createAnthropicClient,
@@ -47,7 +47,7 @@ import {
 } from "./lib/key-client.js";
 import { authorizeCredits, BillingError } from "./lib/billing-client.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema } from "./schemas.js";
 import { JSON_RESPONSE_SYSTEM_SUFFIX } from "./lib/json-prompt.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
@@ -422,7 +422,7 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
 // --- Complete (synchronous LLM call) ---
 
 app.post("/complete", requireAuth, async (req, res) => {
-  const { orgId, userId, runId: callerRunId, workflowTracking } = res.locals as AuthLocals;
+  const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
 
   const trackingHeaders: Record<string, string> = {};
   if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
@@ -452,7 +452,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       provider,
       orgId,
       userId,
-      runId: callerRunId,
+      runId: parentRunId,
       caller: { method: "POST", path: "/complete" },
       trackingHeaders,
     });
@@ -479,7 +479,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         description: `complete — ${effectiveModel}`,
         orgId,
         userId,
-        runId: callerRunId,
+        runId: parentRunId,
         trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders : undefined,
       });
       if (!authResult.sufficient) {
@@ -510,7 +510,7 @@ app.post("/complete", requireAuth, async (req, res) => {
   try {
     const run = await createRun(
       { serviceName: "chat-service", taskName: "complete" },
-      { orgId, userId, runId: callerRunId },
+      { orgId, userId, runId: parentRunId },
       trackingHeaders,
     );
     runId = run.id;
@@ -527,7 +527,7 @@ app.post("/complete", requireAuth, async (req, res) => {
     try {
       campaignFeatureInputs = await getCampaignFeatureInputs(
         workflowTracking.campaignId,
-        { orgId, userId, runId: callerRunId, trackingHeaders },
+        { orgId, userId, runId: parentRunId, trackingHeaders },
       );
     } catch (err) {
       console.warn(`[complete] Failed to fetch campaign context for campaign="${workflowTracking.campaignId}":`, err);
@@ -703,7 +703,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
 // --- Chat ---
 
 app.post("/chat", requireAuth, async (req, res) => {
-  const { orgId, userId, runId: callerRunId, workflowTracking } = res.locals as AuthLocals;
+  const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
 
   // Build tracking headers to forward to downstream services
   const trackingHeaders: Record<string, string> = {};
@@ -748,7 +748,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       provider: "anthropic",
       orgId,
       userId,
-      runId: callerRunId,
+      runId: parentRunId,
       caller: { method: "POST", path: "/chat" },
       trackingHeaders,
     });
@@ -774,7 +774,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         description: `chat — ${MODEL}`,
         orgId,
         userId,
-        runId: callerRunId,
+        runId: parentRunId,
         trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders : undefined,
       });
       if (!authResult.sufficient) {
@@ -801,7 +801,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     try {
       campaignFeatureInputs = await getCampaignFeatureInputs(
         workflowTracking.campaignId,
-        { orgId, userId, runId: callerRunId, trackingHeaders },
+        { orgId, userId, runId: parentRunId, trackingHeaders },
       );
     } catch (err) {
       console.warn(`[chat] Failed to fetch campaign context for campaign="${workflowTracking.campaignId}":`, err);
@@ -827,10 +827,21 @@ app.post("/chat", requireAuth, async (req, res) => {
   try {
     // Get or create session (scoped by org + user + app)
     let currentSessionId = sessionId;
+    const brandIds = workflowTracking.brandId
+      ? workflowTracking.brandId.split(",").map(s => s.trim()).filter(Boolean)
+      : null;
     if (!currentSessionId) {
       const [session] = await db
         .insert(sessions)
-        .values({ orgId, userId })
+        .values({
+          orgId,
+          userId,
+          parentRunId,
+          campaignId: workflowTracking.campaignId ?? null,
+          brandIds,
+          workflowSlug: workflowTracking.workflowSlug ?? null,
+          featureSlug: workflowTracking.featureSlug ?? null,
+        })
         .returning();
       currentSessionId = session.id;
     } else {
@@ -857,10 +868,14 @@ app.post("/chat", requireAuth, async (req, res) => {
     try {
       const run = await createRun(
         { serviceName: "chat-service", taskName: "chat" },
-        { orgId, userId, runId: callerRunId },
+        { orgId, userId, runId: parentRunId },
         trackingHeaders,
       );
       runId = run.id;
+      // Update session with this service's run ID
+      await db.update(sessions)
+        .set({ runId, updatedAt: new Date() })
+        .where(eq(sessions.id, currentSessionId));
     } catch (runErr) {
       console.error(`[chat] session="${currentSessionId}" run creation failed:`, runErr);
       sendSSE(res, {
@@ -908,10 +923,6 @@ app.post("/chat", requireAuth, async (req, res) => {
       sessionId: currentSessionId,
       role: "user",
       content: message.trim(),
-      campaignId: workflowTracking.campaignId ?? null,
-      brandIds: workflowTracking.brandId ? workflowTracking.brandId.split(",").map(s => s.trim()).filter(Boolean) : null,
-      workflowSlug: workflowTracking.workflowSlug ?? null,
-      featureSlug: workflowTracking.featureSlug ?? null,
     });
 
     // Stream response from Claude
@@ -1645,11 +1656,6 @@ app.post("/chat", requireAuth, async (req, res) => {
       toolCalls: toolCalls.length > 0 ? toolCalls : null,
       buttons: buttons.length > 0 ? buttons : null,
       tokenCount: totalPromptTokens + totalOutputTokens || null,
-      runId,
-      campaignId: workflowTracking.campaignId ?? null,
-      brandIds: workflowTracking.brandId ? workflowTracking.brandId.split(",").map(s => s.trim()).filter(Boolean) : null,
-      workflowSlug: workflowTracking.workflowSlug ?? null,
-      featureSlug: workflowTracking.featureSlug ?? null,
     });
 
     sendSSE(res, "[DONE]");
@@ -1729,6 +1735,37 @@ function stripButtons(text: string): string {
   while (end > 0 && lines[end - 1].trim() === "") end--;
   return lines.slice(0, end).join("\n");
 }
+
+// --- Internal: Transfer Brand ---
+
+app.post("/internal/transfer-brand", requireInternalAuth, async (req, res) => {
+  const parsed = TransferBrandRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+
+  const { brandId, sourceOrgId, targetOrgId } = parsed.data;
+
+  // Find sessions with solo-brand: brand_ids = ARRAY[brandId] (exactly one element)
+  const result = await db.execute(sql`
+    UPDATE sessions
+    SET org_id = ${targetOrgId}, updated_at = NOW()
+    WHERE org_id = ${sourceOrgId}
+      AND brand_ids = ARRAY[${brandId}]::text[]
+  `) as unknown as { rowCount: number };
+
+  const updatedCount = result.rowCount ?? 0;
+
+  console.log(
+    `[chat-service] transfer-brand: brandId="${brandId}" from="${sourceOrgId}" to="${targetOrgId}" sessions=${updatedCount}`,
+  );
+
+  res.json({
+    updatedTables: [{ tableName: "sessions", count: updatedCount }],
+  });
+});
 
 // Only start server if not in test environment
 if (process.env.NODE_ENV !== "test") {

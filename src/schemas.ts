@@ -838,3 +838,74 @@ Each \`data:\` line contains a JSON object. Events arrive in this order:
     },
   },
 });
+
+// --- Internal: Transfer Brand ---
+
+export const TransferBrandRequestSchema = z
+  .object({
+    brandId: z.string().min(1).openapi({
+      description: "The brand UUID to transfer",
+    }),
+    sourceOrgId: z.string().min(1).openapi({
+      description: "The org UUID the brand is currently in",
+    }),
+    targetOrgId: z.string().min(1).openapi({
+      description: "The org UUID to transfer the brand to",
+    }),
+  })
+  .strict()
+  .openapi("TransferBrandRequest");
+
+export const TransferBrandResponseSchema = z
+  .object({
+    updatedTables: z.array(
+      z.object({
+        tableName: z.string(),
+        count: z.number(),
+      }),
+    ).openapi({
+      description: "List of tables updated with row counts",
+    }),
+  })
+  .openapi("TransferBrandResponse");
+
+export type TransferBrandRequest = z.infer<typeof TransferBrandRequestSchema>;
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/transfer-brand",
+  tags: ["Internal"],
+  summary: "Transfer brand ownership between orgs",
+  description:
+    "Re-assigns all solo-brand sessions from sourceOrgId to targetOrgId. " +
+    "Solo-brand = sessions where brand_ids contains exactly one element matching brandId. " +
+    "Sessions with multiple brand IDs (co-branding) are skipped. Idempotent.",
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({
+        description: "Service-to-service API key",
+      }),
+    }),
+    body: {
+      content: { "application/json": { schema: TransferBrandRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Transfer completed",
+      content: {
+        "application/json": { schema: TransferBrandResponseSchema },
+      },
+    },
+    400: {
+      description: "Invalid request",
+      content: {
+        "application/json": { schema: ValidationErrorResponseSchema },
+      },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
