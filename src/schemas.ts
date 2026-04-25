@@ -843,14 +843,20 @@ Each \`data:\` line contains a JSON object. Events arrive in this order:
 
 export const TransferBrandRequestSchema = z
   .object({
-    brandId: z.string().min(1).openapi({
-      description: "The brand UUID to transfer",
+    sourceBrandId: z.string().min(1).openapi({
+      description: "The brand UUID to transfer (in the source org)",
     }),
     sourceOrgId: z.string().min(1).openapi({
       description: "The org UUID the brand is currently in",
     }),
     targetOrgId: z.string().min(1).openapi({
       description: "The org UUID to transfer the brand to",
+    }),
+    targetBrandId: z.string().min(1).optional().openapi({
+      description:
+        "The brand UUID in the target org to rewrite to. " +
+        "When present (conflict case), brand references are rewritten from sourceBrandId to targetBrandId. " +
+        "When absent, only org_id is updated.",
     }),
   })
   .strict()
@@ -878,7 +884,8 @@ registry.registerPath({
   summary: "Transfer brand ownership between orgs",
   description:
     "Re-assigns all solo-brand sessions from sourceOrgId to targetOrgId. " +
-    "Solo-brand = sessions where brand_ids contains exactly one element matching brandId. " +
+    "Solo-brand = sessions where brand_ids contains exactly one element matching sourceBrandId. " +
+    "When targetBrandId is provided (conflict case), brand references are rewritten to targetBrandId. " +
     "Sessions with multiple brand IDs (co-branding) are skipped. Idempotent.",
   request: {
     headers: z.object({
