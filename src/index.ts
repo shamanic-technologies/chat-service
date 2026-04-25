@@ -1746,20 +1746,29 @@ app.post("/internal/transfer-brand", requireInternalAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { brandId, sourceOrgId, targetOrgId } = parsed.data;
+  const { sourceBrandId, sourceOrgId, targetOrgId, targetBrandId } = parsed.data;
 
-  // Find sessions with solo-brand: brand_ids = ARRAY[brandId] (exactly one element)
-  const result = await db.execute(sql`
+  // Step 1: Move solo-brand sessions to target org
+  const moveResult = await db.execute(sql`
     UPDATE sessions
     SET org_id = ${targetOrgId}, updated_at = NOW()
     WHERE org_id = ${sourceOrgId}
-      AND brand_ids = ARRAY[${brandId}]::text[]
+      AND brand_ids = ARRAY[${sourceBrandId}]::text[]
   `) as unknown as { rowCount: number };
 
-  const updatedCount = result.rowCount ?? 0;
+  const updatedCount = moveResult.rowCount ?? 0;
+
+  // Step 2: Rewrite brand reference (no org_id filter — catches all remaining references)
+  if (targetBrandId) {
+    await db.execute(sql`
+      UPDATE sessions
+      SET brand_ids = ARRAY[${targetBrandId}]::text[], updated_at = NOW()
+      WHERE brand_ids = ARRAY[${sourceBrandId}]::text[]
+    `);
+  }
 
   console.log(
-    `[chat-service] transfer-brand: brandId="${brandId}" from="${sourceOrgId}" to="${targetOrgId}" sessions=${updatedCount}`,
+    `[chat-service] transfer-brand: sourceBrandId="${sourceBrandId}" targetBrandId="${targetBrandId ?? "same"}" from="${sourceOrgId}" to="${targetOrgId}" sessions=${updatedCount}`,
   );
 
   res.json({

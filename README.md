@@ -244,13 +244,14 @@ Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
 
 ```json
 {
-  "brandId": "brand-uuid",
+  "sourceBrandId": "brand-aaa-uuid",
   "sourceOrgId": "org-source-uuid",
-  "targetOrgId": "org-target-uuid"
+  "targetOrgId": "org-target-uuid",
+  "targetBrandId": "brand-bbb-uuid"  // optional — when present, rewrites brand reference
 }
 ```
 
-Updates all sessions where `org_id = sourceOrgId` AND `brand_ids` contains exactly one element matching `brandId`. Sessions with multiple brand IDs (co-branding) are skipped.
+Updates all sessions where `org_id = sourceOrgId` AND `brand_ids` contains exactly one element matching `sourceBrandId`. When `targetBrandId` is provided (conflict case — target org already has a brand for this domain), brand references are rewritten to `targetBrandId`. Sessions with multiple brand IDs (co-branding) are skipped.
 
 Response:
 ```json
