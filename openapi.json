@@ -744,10 +744,10 @@
       "TransferBrandRequest": {
         "type": "object",
         "properties": {
-          "brandId": {
+          "sourceBrandId": {
             "type": "string",
             "minLength": 1,
-            "description": "The brand UUID to transfer"
+            "description": "The brand UUID to transfer (in the source org)"
           },
           "sourceOrgId": {
             "type": "string",
@@ -758,10 +758,15 @@
             "type": "string",
             "minLength": 1,
             "description": "The org UUID to transfer the brand to"
+          },
+          "targetBrandId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The brand UUID in the target org to rewrite to. When present (conflict case), brand references are rewritten from sourceBrandId to targetBrandId. When absent, only org_id is updated."
           }
         },
         "required": [
-          "brandId",
+          "sourceBrandId",
           "sourceOrgId",
           "targetOrgId"
         ],
@@ -1409,7 +1414,7 @@
           "Internal"
         ],
         "summary": "Transfer brand ownership between orgs",
-        "description": "Re-assigns all solo-brand sessions from sourceOrgId to targetOrgId. Solo-brand = sessions where brand_ids contains exactly one element matching brandId. Sessions with multiple brand IDs (co-branding) are skipped. Idempotent.",
+        "description": "Re-assigns all solo-brand sessions from sourceOrgId to targetOrgId. Solo-brand = sessions where brand_ids contains exactly one element matching sourceBrandId. When targetBrandId is provided (conflict case), brand references are rewritten to targetBrandId. Sessions with multiple brand IDs (co-branding) are skipped. Idempotent.",
         "parameters": [
           {
             "schema": {

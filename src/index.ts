@@ -1746,20 +1746,28 @@ app.post("/internal/transfer-brand", requireInternalAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { brandId, sourceOrgId, targetOrgId } = parsed.data;
+  const { sourceBrandId, sourceOrgId, targetOrgId, targetBrandId } = parsed.data;
 
-  // Find sessions with solo-brand: brand_ids = ARRAY[brandId] (exactly one element)
-  const result = await db.execute(sql`
-    UPDATE sessions
-    SET org_id = ${targetOrgId}, updated_at = NOW()
-    WHERE org_id = ${sourceOrgId}
-      AND brand_ids = ARRAY[${brandId}]::text[]
-  `) as unknown as { rowCount: number };
+  // Find sessions with solo-brand: brand_ids = ARRAY[sourceBrandId] (exactly one element)
+  // When targetBrandId is present (conflict), rewrite brand reference too
+  const result = targetBrandId
+    ? await db.execute(sql`
+        UPDATE sessions
+        SET org_id = ${targetOrgId}, brand_ids = ARRAY[${targetBrandId}]::text[], updated_at = NOW()
+        WHERE org_id = ${sourceOrgId}
+          AND brand_ids = ARRAY[${sourceBrandId}]::text[]
+      `) as unknown as { rowCount: number }
+    : await db.execute(sql`
+        UPDATE sessions
+        SET org_id = ${targetOrgId}, updated_at = NOW()
+        WHERE org_id = ${sourceOrgId}
+          AND brand_ids = ARRAY[${sourceBrandId}]::text[]
+      `) as unknown as { rowCount: number };
 
   const updatedCount = result.rowCount ?? 0;
 
   console.log(
-    `[chat-service] transfer-brand: brandId="${brandId}" from="${sourceOrgId}" to="${targetOrgId}" sessions=${updatedCount}`,
+    `[chat-service] transfer-brand: sourceBrandId="${sourceBrandId}" targetBrandId="${targetBrandId ?? "same"}" from="${sourceOrgId}" to="${targetOrgId}" sessions=${updatedCount}`,
   );
 
   res.json({
