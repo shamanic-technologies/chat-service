@@ -58,6 +58,7 @@ const __dirname = dirname(__filename);
 const openapiPath = join(__dirname, "..", "openapi.json");
 
 import { mergeConsecutiveMessages, stripToolUseBlocks } from "./lib/merge-messages.js";
+import { streamGeminiChat, type ToolDefinition } from "./lib/gemini-chat.js";
 
 // ---------------------------------------------------------------------------
 // Anthropic stream retry
@@ -335,7 +336,7 @@ app.put("/config", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { key, systemPrompt, allowedTools } = parsed.data;
+  const { key, systemPrompt, allowedTools, provider, model } = parsed.data;
 
   // Validate all tool names
   const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t));
@@ -352,12 +353,16 @@ app.put("/config", requireAuth, async (req, res) => {
       key,
       systemPrompt,
       allowedTools,
+      provider: provider ?? null,
+      model: model ?? null,
     })
     .onConflictDoUpdate({
       target: [appConfigs.orgId, appConfigs.key],
       set: {
         systemPrompt,
         allowedTools,
+        provider: provider ?? null,
+        model: model ?? null,
         updatedAt: new Date(),
       },
     })
@@ -368,6 +373,8 @@ app.put("/config", requireAuth, async (req, res) => {
     key: config.key,
     systemPrompt: config.systemPrompt,
     allowedTools: config.allowedTools,
+    provider: config.provider,
+    model: config.model,
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString(),
   });
@@ -383,7 +390,7 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { key, systemPrompt, allowedTools } = parsed.data;
+  const { key, systemPrompt, allowedTools, provider, model } = parsed.data;
 
   // Validate all tool names
   const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t));
@@ -399,12 +406,16 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
       key,
       systemPrompt,
       allowedTools,
+      provider: provider ?? null,
+      model: model ?? null,
     })
     .onConflictDoUpdate({
       target: [platformConfigs.key],
       set: {
         systemPrompt,
         allowedTools,
+        provider: provider ?? null,
+        model: model ?? null,
         updatedAt: new Date(),
       },
     })
@@ -414,6 +425,8 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
     key: config.key,
     systemPrompt: config.systemPrompt,
     allowedTools: config.allowedTools,
+    provider: config.provider,
+    model: config.model,
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString(),
   });
@@ -741,11 +754,16 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   const allowedToolNames: string[] = appConfig.allowedTools as string[];
 
-  // Resolve Anthropic API key per-request (supports BYOK per org)
+  // Resolve provider/model from config (NULL = default: anthropic/sonnet)
+  const chatProvider = (appConfig.provider ?? "anthropic") as Provider;
+  const chatModelAlias = (appConfig.model ?? (chatProvider === "anthropic" ? "sonnet" : "pro")) as ModelAlias;
+  const resolvedModelInfo = resolveModel(chatProvider, chatModelAlias);
+
+  // Resolve API key for the configured provider
   let resolvedKey: ResolvedKey;
   try {
     resolvedKey = await resolveKey({
-      provider: "anthropic",
+      provider: resolvedModelInfo.provider,
       orgId,
       userId,
       runId: parentRunId,
@@ -753,9 +771,9 @@ app.post("/chat", requireAuth, async (req, res) => {
       trackingHeaders,
     });
   } catch (err) {
-    console.error(`Failed to resolve Anthropic key for org="${orgId}":`, err);
+    console.error(`Failed to resolve ${resolvedModelInfo.provider} key for org="${orgId}":`, err);
     return res.status(502).json({
-      error: `Failed to resolve Anthropic API key. Ensure the key is configured in key-service.`,
+      error: `Failed to resolve ${resolvedModelInfo.provider} API key. Ensure the key is configured in key-service.`,
     });
   }
 
@@ -768,10 +786,10 @@ app.post("/chat", requireAuth, async (req, res) => {
     try {
       const authResult = await authorizeCredits({
         items: [
-          { costName: `${COST_PREFIX}-tokens-input`, quantity: estimatedInputTokens },
-          { costName: `${COST_PREFIX}-tokens-output`, quantity: estimatedOutputTokens },
+          { costName: `${resolvedModelInfo.costPrefix}-tokens-input`, quantity: estimatedInputTokens },
+          { costName: `${resolvedModelInfo.costPrefix}-tokens-output`, quantity: estimatedOutputTokens },
         ],
-        description: `chat — ${MODEL}`,
+        description: `chat — ${resolvedModelInfo.apiModelId}`,
         orgId,
         userId,
         runId: parentRunId,
@@ -817,7 +835,8 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   // Build system prompt with optional context and campaign feature inputs
   const systemPrompt = buildSystemPrompt(appConfig.systemPrompt, context, campaignFeatureInputs);
-  const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
+  const isGeminiChat = chatProvider === "google";
+  const claude = isGeminiChat ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
 
   let runId: string | null = null;
   let chatFailed = false;
@@ -888,35 +907,11 @@ app.post("/chat", requireAuth, async (req, res) => {
       return;
     }
 
-    // Load conversation history
+    // Load conversation history (shared by both providers)
     const history = await db.query.messages.findMany({
       where: eq(messages.sessionId, currentSessionId),
       orderBy: (m, { asc }) => [asc(m.createdAt)],
     });
-
-    // Build Anthropic message history — use contentBlocks if available (preserves compaction blocks)
-    // Strip tool_use blocks: intermediate tool calls are ephemeral and not persisted with
-    // matching tool_result messages, so including them causes Anthropic API validation errors.
-    // Ensure alternating user/assistant roles (merge consecutive same-role messages)
-    const rawHistory: Anthropic.MessageParam[] = history
-      .filter((m) => m.role !== "tool")
-      .map((m) => {
-        if (m.role === "assistant" && m.contentBlocks) {
-          const blocks = stripToolUseBlocks(
-            m.contentBlocks as Anthropic.ContentBlockParam[],
-          );
-          return {
-            role: "assistant" as const,
-            content: blocks.length > 0 ? blocks : (m.content as string),
-          };
-        }
-        return {
-          role: m.role as "user" | "assistant",
-          content: m.content as string | Anthropic.ContentBlockParam[],
-        };
-      });
-
-    const anthropicHistory = mergeConsecutiveMessages(rawHistory);
 
     // Save user message
     await db.insert(messages).values({
@@ -925,13 +920,15 @@ app.post("/chat", requireAuth, async (req, res) => {
       content: message.trim(),
     });
 
-    // Stream response from Claude
+    // Shared state for both providers
     let fullResponse = "";
     let emittedInputRequest = false;
     const toolCalls: ToolCallRecord[] = [];
+    let lastContentBlocks: Anthropic.ContentBlock[] = [];
+    // Track workflows forked during this turn (used by executeTool)
+    const forkedWorkflowMap = new Map<string, string>();
 
-    // Line buffer: hold back trailing lines that match button syntax
-    // so they aren't streamed as tokens (only sent as buttons event)
+    // Anthropic-specific: line buffer for button detection during streaming
     const BUTTON_RE = /^[-*]\s*\[.+?\]\s*$/;
     let lineBuf = "";
     let held = "";
@@ -1432,7 +1429,68 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     // -----------------------------------------------------------------------
     // Agentic loop: stream → handle tools → repeat
+    // Provider-specific: Gemini uses streamGeminiChat(), Anthropic uses SDK
     // -----------------------------------------------------------------------
+
+    if (isGeminiChat) {
+      // --- Gemini streaming path ---
+      const geminiToolDefs: ToolDefinition[] = allTools.map((t) => ({
+        name: t.name,
+        description: t.description ?? "",
+        input_schema: t.input_schema as ToolDefinition["input_schema"],
+      }));
+
+      const plainHistory = history
+        .filter((m) => m.role !== "tool")
+        .map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content as string,
+        }));
+
+      const geminiResult = await streamGeminiChat({
+        apiKey: resolvedKey.key,
+        model: resolvedModelInfo.apiModelId,
+        systemPrompt,
+        history: plainHistory,
+        userMessage: message.trim(),
+        tools: geminiToolDefs,
+        res,
+        sendSSE,
+        executeTool,
+        signal: abortController.signal,
+      });
+
+      fullResponse = geminiResult.fullResponse;
+      emittedInputRequest = geminiResult.emittedInputRequest;
+      toolCalls.push(...geminiResult.toolCalls);
+      totalPromptTokens = geminiResult.tokensInput;
+      totalOutputTokens = geminiResult.tokensOutput;
+
+      // Shared post-processing: buttons, empty response check, save message
+      // (no line buffering for Gemini — tokens are streamed directly)
+
+    } else {
+    // --- Anthropic streaming path ---
+
+    // Build Anthropic message history — use contentBlocks if available (preserves compaction blocks)
+    const rawHistory: Anthropic.MessageParam[] = history
+      .filter((m) => m.role !== "tool")
+      .map((m) => {
+        if (m.role === "assistant" && m.contentBlocks) {
+          const blocks = stripToolUseBlocks(
+            m.contentBlocks as Anthropic.ContentBlockParam[],
+          );
+          return {
+            role: "assistant" as const,
+            content: blocks.length > 0 ? blocks : (m.content as string),
+          };
+        }
+        return {
+          role: m.role as "user" | "assistant",
+          content: m.content as string | Anthropic.ContentBlockParam[],
+        };
+      });
+    const anthropicHistory = mergeConsecutiveMessages(rawHistory);
 
     const turnMessages: Anthropic.MessageParam[] = [
       ...anthropicHistory,
@@ -1441,12 +1499,6 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     const MAX_TOOL_CHAIN_DEPTH = 10;
     let depth = 0;
-    let lastContentBlocks: Anthropic.ContentBlock[] = [];
-
-    // Track workflows that were forked during this turn so the LLM
-    // doesn't accidentally fork the same source workflow multiple times.
-    // Maps: originalWorkflowId → forkedWorkflowId
-    const forkedWorkflowMap = new Map<string, string>();
 
     agenticLoop:
     while (depth <= MAX_TOOL_CHAIN_DEPTH) {
@@ -1457,7 +1509,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
 
       let currentBlockType: string | null = null;
-      let stream: ReturnType<typeof claude.createStream> | undefined;
+      let stream: ReturnType<NonNullable<typeof claude>["createStream"]> | undefined;
       let tokensEmitted = false;
 
       // Retry loop for transient Anthropic errors (overloaded, 429, 5xx).
@@ -1465,7 +1517,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       for (let attempt = 0; attempt <= ANTHROPIC_STREAM_MAX_RETRIES; attempt++) {
         tokensEmitted = false;
         currentBlockType = null;
-        stream = claude.createStream(turnMessages, allTools, abortController.signal);
+        stream = claude!.createStream(turnMessages, allTools, abortController.signal);
 
         try {
           for await (const event of stream) {
@@ -1595,9 +1647,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       depth++;
     }
 
-    console.log(`[chat] session="${currentSessionId}" stream complete — tokens=${totalPromptTokens}+${totalOutputTokens} response=${fullResponse.length}chars`);
-
-    // Finalize buffer: handle any remaining incomplete line
+    // Finalize Anthropic line buffer
     if (lineBuf) {
       if (BUTTON_RE.test(lineBuf.trim())) {
         held += lineBuf;
@@ -1611,22 +1661,41 @@ app.post("/chat", requireAuth, async (req, res) => {
       lineBuf = "";
     }
 
-    // Process held content as buttons
-    const buttons: ButtonRecord[] = held ? extractButtons(held) : [];
-    if (held && buttons.length === 0) {
-      sendSSE(res, { type: "token", content: held });
+    } // end else (Anthropic path)
+
+    // -----------------------------------------------------------------------
+    // Shared post-processing (both providers)
+    // -----------------------------------------------------------------------
+
+    console.log(`[chat] session="${currentSessionId}" stream complete — provider=${chatProvider} tokens=${totalPromptTokens}+${totalOutputTokens} response=${fullResponse.length}chars`);
+
+    // Process held content as buttons (Anthropic buffer or raw Gemini response)
+    const BUTTON_LINE_RE = /^[-*]\s*\[.+?\]\s*$/;
+    const trailingButtonLines: string[] = [];
+    const responseLines = fullResponse.split("\n");
+    for (let i = responseLines.length - 1; i >= 0; i--) {
+      if (BUTTON_LINE_RE.test(responseLines[i].trim())) {
+        trailingButtonLines.unshift(responseLines[i]);
+      } else if (trailingButtonLines.length > 0) {
+        break;
+      } else if (responseLines[i].trim() !== "") {
+        break;
+      }
     }
+    const buttons: ButtonRecord[] = trailingButtonLines.length > 0
+      ? extractButtons(trailingButtonLines.join("\n"))
+      : [];
     if (buttons.length > 0) {
       sendSSE(res, { type: "buttons", buttons });
     }
 
-    // Detect empty stream: Claude returned no content (safety refusal, context overflow, etc.)
+    // Detect empty stream
     if (!fullResponse && !emittedInputRequest && toolCalls.length === 0) {
       chatFailed = true;
       console.error(
-        `Empty Claude response for session="${currentSessionId}" org="${orgId}" — ` +
+        `Empty ${chatProvider} response for session="${currentSessionId}" org="${orgId}" — ` +
           `promptTokens=${totalPromptTokens} outputTokens=${totalOutputTokens} ` +
-          `historyLength=${anthropicHistory.length} messageLength=${message.length}`,
+          `historyLength=${history.length} messageLength=${message.length}`,
       );
       sendSSE(res, {
         type: "error",
@@ -1641,13 +1710,12 @@ app.post("/chat", requireAuth, async (req, res) => {
     }
 
     // Save assistant message with cleaned response + content blocks for compaction
-    // Strip tool_use blocks — they are ephemeral (tool results aren't saved as separate
-    // messages), so persisting them causes missing tool_result errors on next load.
     const cleanedResponse =
       buttons.length > 0 ? stripButtons(fullResponse) : fullResponse;
-    const persistBlocks = stripToolUseBlocks(
-      lastContentBlocks as Anthropic.ContentBlockParam[],
-    );
+    // Content blocks are Anthropic-specific (compaction). Gemini stores null.
+    const persistBlocks = (!isGeminiChat && lastContentBlocks.length > 0)
+      ? stripToolUseBlocks(lastContentBlocks as Anthropic.ContentBlockParam[])
+      : [];
     await db.insert(messages).values({
       sessionId: currentSessionId,
       role: "assistant",
@@ -1674,11 +1742,12 @@ app.post("/chat", requireAuth, async (req, res) => {
     if (runId) {
       const costSource: "platform" | "org" =
         resolvedKey.keySource === "org" ? "org" : "platform";
+      const chatCostPrefix = resolvedModelInfo.costPrefix;
       const costItems = [
         ...(totalPromptTokens > 0
           ? [
               {
-                costName: `${COST_PREFIX}-tokens-input`,
+                costName: `${chatCostPrefix}-tokens-input`,
                 quantity: totalPromptTokens,
                 costSource,
               },
@@ -1687,7 +1756,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         ...(totalOutputTokens > 0
           ? [
               {
-                costName: `${COST_PREFIX}-tokens-output`,
+                costName: `${chatCostPrefix}-tokens-output`,
                 quantity: totalOutputTokens,
                 costSource,
               },
