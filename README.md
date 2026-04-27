@@ -89,8 +89,10 @@ Before using `/chat`, register a config for each chat mode your app needs. Each 
 
 Fields:
 - `key` (required) — config identifier, unique per org. Clients pass this as `configKey` in `POST /chat`.
-- `systemPrompt` (required) — the system prompt sent to Claude for this chat mode
+- `systemPrompt` (required) — the system prompt sent to the LLM for this chat mode
 - `allowedTools` (required, min 1) — which tools the LLM can use. The service rejects any tool call not in this list. See [Available Tools](#available-tools) for the full list.
+- `provider` (optional) — LLM provider: `"anthropic"` or `"google"`. Defaults to `"anthropic"` when omitted.
+- `model` (optional) — Model alias (version-free). Must match the provider: anthropic → `haiku|sonnet|opus`, google → `flash-lite|flash|pro`. Defaults to `"sonnet"` for anthropic, `"pro"` for google.
 
 This endpoint is **idempotent** (upsert on `(orgId, key)`). Call it on every cold start.
 
@@ -101,6 +103,8 @@ Response:
   "key": "workflow",
   "systemPrompt": "...",
   "allowedTools": ["..."],
+  "provider": "google",
+  "model": "pro",
   "createdAt": "2026-02-26T00:00:00.000Z",
   "updatedAt": "2026-02-26T00:00:00.000Z"
 }
@@ -122,7 +126,7 @@ Register a platform-wide config for a given key. Used as fallback when no per-or
 }
 ```
 
-Fields: same as `PUT /config` — `key`, `systemPrompt`, `allowedTools` (all required).
+Fields: same as `PUT /config` — `key`, `systemPrompt`, `allowedTools` (all required), plus optional `provider` and `model`.
 
 This endpoint is **idempotent** (upsert on `key`). Called on every cold start by api-service.
 
@@ -550,7 +554,8 @@ src/
     schema.ts       # sessions + messages + app_configs + platform_configs table definitions
   lib/
     anthropic.ts       # Claude AI client (Sonnet 4.6), streaming + non-streaming, tool calling, adaptive thinking, context management (compaction), built-in tool declarations. Streaming retries transient errors (overloaded, 429, 5xx) up to 2× with exponential backoff when no tokens have been emitted yet
-    gemini.ts          # Gemini REST API client — retry with exponential backoff (3 retries) + fallback to stable 2.5 models on failure
+    gemini.ts          # Gemini REST API client (non-streaming) — retry with exponential backoff (3 retries) + fallback to stable 2.5 models on failure
+    gemini-chat.ts     # Gemini streaming chat client — streaming + function calling for /chat endpoint
     merge-messages.ts  # Ensures alternating user/assistant roles by merging orphaned consecutive same-role messages
     billing-client.ts  # Billing-service client for credit authorization before platform-key operations
     key-client.ts      # Key-service client: resolveKey (decrypt), listOrgKeys, getKeySource, listKeySources, checkProviderRequirements

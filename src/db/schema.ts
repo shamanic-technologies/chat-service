@@ -36,6 +36,8 @@ export const appConfigs = pgTable(
     key: text("key").notNull(),
     systemPrompt: text("system_prompt").notNull(),
     allowedTools: jsonb("allowed_tools").notNull().$type<string[]>(),
+    provider: text("provider").$type<"anthropic" | "google">(),
+    model: text("model"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -47,6 +49,8 @@ export const platformConfigs = pgTable("platform_configs", {
   key: text("key").notNull().unique(),
   systemPrompt: text("system_prompt").notNull(),
   allowedTools: jsonb("allowed_tools").notNull().$type<string[]>(),
+  provider: text("provider").$type<"anthropic" | "google">(),
+  model: text("model"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

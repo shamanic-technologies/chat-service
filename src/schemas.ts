@@ -130,8 +130,37 @@ export const AppConfigRequestSchema = z
         "list_workflows",
       ],
     }),
+    provider: z.enum(["anthropic", "google"]).optional().openapi({
+      description:
+        "LLM provider for this chat mode. Omit to use the default (anthropic).\n\n" +
+        "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
+        "- `google` — Gemini models (flash-lite, flash, pro)",
+      example: "google",
+    }),
+    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "pro"]).optional().openapi({
+      description:
+        "Model alias (version-free). Omit to use the provider's default " +
+        "(sonnet for anthropic, pro for google). Must match the provider:\n\n" +
+        "- anthropic → haiku, sonnet, opus\n" +
+        "- google → flash-lite, flash, pro",
+      example: "pro",
+    }),
   })
   .strict()
+  .refine(
+    (data) => {
+      if (!data.provider || !data.model) return true;
+      const anthropicModels = ["haiku", "sonnet", "opus"];
+      const googleModels = ["flash-lite", "flash", "pro"];
+      if (data.provider === "anthropic") return anthropicModels.includes(data.model);
+      if (data.provider === "google") return googleModels.includes(data.model);
+      return false;
+    },
+    {
+      message: "Model must match provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|pro",
+      path: ["model"],
+    },
+  )
   .openapi("AppConfigRequest");
 
 export const AppConfigResponseSchema = z
@@ -140,6 +169,12 @@ export const AppConfigResponseSchema = z
     key: z.string(),
     systemPrompt: z.string(),
     allowedTools: z.array(z.string()),
+    provider: z.enum(["anthropic", "google"]).nullable().openapi({
+      description: "LLM provider. Null means default (anthropic).",
+    }),
+    model: z.string().nullable().openapi({
+      description: "Model alias. Null means provider default (sonnet for anthropic, pro for google).",
+    }),
     createdAt: z.string(),
     updatedAt: z.string(),
   })
@@ -232,8 +267,35 @@ export const PlatformConfigRequestSchema = z
         "list_workflows",
       ],
     }),
+    provider: z.enum(["anthropic", "google"]).optional().openapi({
+      description:
+        "LLM provider for this chat mode. Omit to use the default (anthropic).\n\n" +
+        "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
+        "- `google` — Gemini models (flash-lite, flash, pro)",
+      example: "google",
+    }),
+    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "pro"]).optional().openapi({
+      description:
+        "Model alias (version-free). Omit to use the provider's default " +
+        "(sonnet for anthropic, pro for google). Must match the provider.",
+      example: "pro",
+    }),
   })
   .strict()
+  .refine(
+    (data) => {
+      if (!data.provider || !data.model) return true;
+      const anthropicModels = ["haiku", "sonnet", "opus"];
+      const googleModels = ["flash-lite", "flash", "pro"];
+      if (data.provider === "anthropic") return anthropicModels.includes(data.model);
+      if (data.provider === "google") return googleModels.includes(data.model);
+      return false;
+    },
+    {
+      message: "Model must match provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|pro",
+      path: ["model"],
+    },
+  )
   .openapi("PlatformConfigRequest");
 
 export const PlatformConfigResponseSchema = z
@@ -241,6 +303,12 @@ export const PlatformConfigResponseSchema = z
     key: z.string(),
     systemPrompt: z.string(),
     allowedTools: z.array(z.string()),
+    provider: z.enum(["anthropic", "google"]).nullable().openapi({
+      description: "LLM provider. Null means default (anthropic).",
+    }),
+    model: z.string().nullable().openapi({
+      description: "Model alias. Null means provider default (sonnet for anthropic, pro for google).",
+    }),
     createdAt: z.string(),
     updatedAt: z.string(),
   })

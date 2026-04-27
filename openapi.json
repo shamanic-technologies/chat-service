@@ -315,6 +315,21 @@
               "type": "string"
             }
           },
+          "provider": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "anthropic",
+              "google",
+              null
+            ],
+            "description": "LLM provider. Null means default (anthropic)."
+          },
+          "model": {
+            "type": "string",
+            "nullable": true,
+            "description": "Model alias. Null means provider default (sonnet for anthropic, pro for google)."
+          },
           "createdAt": {
             "type": "string"
           },
@@ -327,6 +342,8 @@
           "key",
           "systemPrompt",
           "allowedTools",
+          "provider",
+          "model",
           "createdAt",
           "updatedAt"
         ]
@@ -378,6 +395,28 @@
               "get_workflow_details",
               "list_workflows"
             ]
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "google"
+            ],
+            "description": "LLM provider for this chat mode. Omit to use the default (anthropic).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, pro)",
+            "example": "google"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "haiku",
+              "sonnet",
+              "opus",
+              "flash-lite",
+              "flash",
+              "pro"
+            ],
+            "description": "Model alias (version-free). Omit to use the provider's default (sonnet for anthropic, pro for google). Must match the provider:\n\n- anthropic → haiku, sonnet, opus\n- google → flash-lite, flash, pro",
+            "example": "pro"
           }
         },
         "required": [
@@ -402,6 +441,21 @@
               "type": "string"
             }
           },
+          "provider": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "anthropic",
+              "google",
+              null
+            ],
+            "description": "LLM provider. Null means default (anthropic)."
+          },
+          "model": {
+            "type": "string",
+            "nullable": true,
+            "description": "Model alias. Null means provider default (sonnet for anthropic, pro for google)."
+          },
           "createdAt": {
             "type": "string"
           },
@@ -413,6 +467,8 @@
           "key",
           "systemPrompt",
           "allowedTools",
+          "provider",
+          "model",
           "createdAt",
           "updatedAt"
         ]
@@ -447,6 +503,28 @@
               "get_workflow_details",
               "list_workflows"
             ]
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "google"
+            ],
+            "description": "LLM provider for this chat mode. Omit to use the default (anthropic).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, pro)",
+            "example": "google"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "haiku",
+              "sonnet",
+              "opus",
+              "flash-lite",
+              "flash",
+              "pro"
+            ],
+            "description": "Model alias (version-free). Omit to use the provider's default (sonnet for anthropic, pro for google). Must match the provider.",
+            "example": "pro"
           }
         },
         "required": [
