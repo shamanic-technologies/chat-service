@@ -92,6 +92,13 @@
       "when": 1775145600000,
       "tag": "0012_move_tracking_to_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1775232000000,
+      "tag": "0013_add_provider_model_to_configs",
+      "breakpoints": true
     }
   ]
 }
