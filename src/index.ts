@@ -611,7 +611,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       error: "LLM call failed. Please try again.",
     });
   } finally {
-    // Report run status and costs (fire-and-forget)
+    // Report run status and costs
     if (runId) {
       const costSource: "platform" | "org" =
         resolvedKey.keySource === "org" ? "org" : "platform";
@@ -624,10 +624,14 @@ app.post("/complete", requireAuth, async (req, res) => {
           : []),
       ];
       const runIdentity = { orgId, userId, runId };
-      Promise.all([
-        updateRunStatus(runId, completeFailed ? "failed" : "completed", runIdentity, trackingHeaders),
-        addRunCosts(runId, costItems, runIdentity, trackingHeaders),
-      ]).catch(() => {});
+      try {
+        await Promise.all([
+          updateRunStatus(runId, completeFailed ? "failed" : "completed", runIdentity, trackingHeaders),
+          addRunCosts(runId, costItems, runIdentity, trackingHeaders),
+        ]);
+      } catch (runErr) {
+        console.error(`[chat-service] /complete failed to finalize run runId="${runId}" orgId="${orgId}":`, runErr);
+      }
     }
   }
 });
@@ -1738,7 +1742,10 @@ app.post("/chat", requireAuth, async (req, res) => {
     });
     sendSSE(res, "[DONE]");
   } finally {
-    // Report run status and costs (fire-and-forget)
+    // End SSE stream immediately so the client is not blocked
+    res.end();
+
+    // Report run status and costs
     if (runId) {
       const costSource: "platform" | "org" =
         resolvedKey.keySource === "org" ? "org" : "platform";
@@ -1764,13 +1771,15 @@ app.post("/chat", requireAuth, async (req, res) => {
           : []),
       ];
       const runIdentity = { orgId, userId, runId };
-      Promise.all([
-        updateRunStatus(runId, chatFailed ? "failed" : "completed", runIdentity, trackingHeaders),
-        addRunCosts(runId, costItems, runIdentity, trackingHeaders),
-      ]).catch(() => {});
+      try {
+        await Promise.all([
+          updateRunStatus(runId, chatFailed ? "failed" : "completed", runIdentity, trackingHeaders),
+          addRunCosts(runId, costItems, runIdentity, trackingHeaders),
+        ]);
+      } catch (runErr) {
+        console.error(`[chat-service] /chat failed to finalize run runId="${runId}" orgId="${orgId}":`, runErr);
+      }
     }
-
-    res.end();
   }
 });
 
