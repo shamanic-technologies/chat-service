@@ -56,7 +56,7 @@ describe("updateWorkflow", () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       status: 201,
-      json: () => Promise.resolve({ id: "wf-new", name: "sales-email-v2", forkedFrom: "wf-123", signatureName: "sales-email-v2", _action: "forked", _forkedFromName: "sales-email-v1" }),
+      json: () => Promise.resolve({ id: "wf-new", name: "sales-email-v2", creationType: "fork", createdFromWorkflow: "wf-123", signatureName: "sales-email-v2", _action: "forked", _forkedFromName: "sales-email-v1" }),
     });
 
     const { updateWorkflow } = await loadModule();
@@ -68,7 +68,8 @@ describe("updateWorkflow", () => {
 
     expect(result.outcome).toBe("forked");
     expect(result.workflow.id).toBe("wf-new");
-    expect(result.workflow.forkedFrom).toBe("wf-123");
+    expect(result.workflow.creationType).toBe("fork");
+    expect(result.workflow.createdFromWorkflow).toBe("wf-123");
     expect(result.workflow.signatureName).toBe("sales-email-v2");
     expect(result.workflow._action).toBe("forked");
     expect(result.workflow._forkedFromName).toBe("sales-email-v1");
@@ -389,7 +390,7 @@ describe("updateWorkflowNodeConfig", () => {
       },
     };
 
-    const forkedWorkflow = { id: "wf-forked", name: "wf-1-custom", forkedFrom: "wf-1", dag: existingWorkflow.dag };
+    const forkedWorkflow = { id: "wf-forked", name: "wf-1-custom", creationType: "fork", createdFromWorkflow: "wf-1", dag: existingWorkflow.dag };
 
     (fetch as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(existingWorkflow) })
@@ -405,7 +406,8 @@ describe("updateWorkflowNodeConfig", () => {
 
     expect(result.outcome).toBe("forked");
     expect(result.workflow.id).toBe("wf-forked");
-    expect(result.workflow.forkedFrom).toBe("wf-1");
+    expect(result.workflow.creationType).toBe("fork");
+    expect(result.workflow.createdFromWorkflow).toBe("wf-1");
   });
 
   it("throws when node is not found in DAG", async () => {
