@@ -37,7 +37,8 @@ export interface WorkflowResponse {
   tags?: string[];
   status?: "active" | "deprecated";
   upgradedTo?: string | null;
-  forkedFrom?: string | null;
+  creationType: "scratch" | "upgrade" | "fork";
+  createdFromWorkflow: string | null;
   createdForBrandId?: string | null;
   humanId?: string | null;
   campaignId?: string | null;
