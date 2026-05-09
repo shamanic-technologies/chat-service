@@ -62,6 +62,14 @@ export interface SSESessionEvent {
   sessionId: string;
 }
 
+export interface SSEContextUsageEvent {
+  type: "context_usage";
+  inputTokens: number;
+  outputTokens: number;
+  maxTokens: number;
+  percent: number;
+}
+
 export type SSEEvent =
   | SSETokenEvent
   | SSEThinkingStartEvent
@@ -72,4 +80,5 @@ export type SSEEvent =
   | SSEToolResultEvent
   | SSEInputRequestEvent
   | SSEErrorEvent
-  | SSESessionEvent;
+  | SSESessionEvent
+  | SSEContextUsageEvent;
