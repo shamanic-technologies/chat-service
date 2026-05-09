@@ -5,6 +5,7 @@
 
 import type { Response as ExpressResponse } from "express";
 import type { ToolCallRecord } from "../db/schema.js";
+import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -183,8 +184,18 @@ export async function streamGeminiChat(
   const allToolCalls: ToolCallRecord[] = [];
   let emittedInputRequest = false;
 
+  // Cap context to 200k tokens — chat-service deliberately stays out of the
+  // 1M-token Gemini tier so cost and behavior match the Anthropic path.
+  const trim = trimGeminiHistoryToBudget(history);
+  if (trim.trimmed) {
+    console.log(
+      `[gemini-chat] trimmed history from ${history.length} → ${trim.history.length} messages ` +
+        `(estimated input tokens ≈ ${trim.estimatedInputTokens})`,
+    );
+  }
+
   // Build Gemini message history
-  const geminiHistory = toGeminiHistory(history);
+  const geminiHistory = toGeminiHistory(trim.history);
 
   // Build turn messages — history + current user message
   const turnMessages: GeminiMessage[] = [

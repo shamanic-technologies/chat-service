@@ -98,6 +98,29 @@ describe("ChatRequestSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("rejects context whose JSON exceeds 50KB", () => {
+    // Build a context whose JSON.stringify length is just over 50KB.
+    const big = "x".repeat(51_300);
+    const result = ChatRequestSchema.safeParse({
+      configKey: "workflow",
+      message: "Hello",
+      context: { huge: big },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts context whose JSON is at the 50KB boundary", () => {
+    // Build a context whose JSON.stringify length is just under the 50KB cap.
+    const safeSize = 51_000;
+    const big = "x".repeat(safeSize);
+    const result = ChatRequestSchema.safeParse({
+      configKey: "workflow",
+      message: "Hello",
+      context: { ok: big },
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("strips extra fields", () => {
     const result = ChatRequestSchema.safeParse({
       configKey: "workflow",
