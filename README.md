@@ -490,7 +490,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |
 | `CHAT_SERVICE_DATABASE_URL` | Yes | PostgreSQL connection string |
 | `RUNS_SERVICE_URL` | No | RunsService endpoint (default: `https://runs.mcpfactory.org`) |
-| `RUNS_SERVICE_API_KEY` | No | API key for RunsService (runs tracking disabled if unset) |
+| `RUNS_SERVICE_API_KEY` | No | API key for RunsService (runs tracking and trace events disabled if unset) |
 | `BILLING_SERVICE_URL` | No | Billing-service endpoint (default: `https://billing.mcpfactory.org`) |
 | `BILLING_SERVICE_API_KEY` | Yes | API key for billing-service — required for credit authorization on platform-key requests |
 | `PORT` | No | Server port (default: `3002`) |
@@ -509,6 +509,17 @@ Migrations run automatically on server start. To generate new migrations after s
 ```bash
 npm run db:generate
 ```
+
+## Trace Events
+
+`/chat` and `/complete` emit structured trace events to runs-service via `POST /v1/runs/{runId}/events`. Calls are fire-and-forget — failures are logged but never throw or block the request. Disabled when `RUNS_SERVICE_API_KEY` is unset.
+
+| Endpoint | Events emitted |
+|---|---|
+| `/complete` | `run-created`, `llm-call-start`, `llm-call-done`, `llm-call-failed` |
+| `/chat` | `run-created`, `stream-start`, `stream-done`, `stream-failed` |
+
+Body shape: `{ service: "chat-service", event, detail?, level?, data? }`. All identity (`x-org-id`, `x-user-id`, `x-run-id`, `x-api-key`) and tracking headers (`x-brand-id`, `x-campaign-id`, `x-workflow-slug`, `x-feature-slug`) are forwarded.
 
 ## Scripts
 
