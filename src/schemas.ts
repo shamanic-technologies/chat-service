@@ -1022,3 +1022,154 @@ registry.registerPath({
     },
   },
 });
+
+// --- Org RAG Score ---
+
+export const RAG_SCORE_DOCUMENTS_MAX = 100;
+
+export const RagScoreDocumentSchema = z
+  .object({
+    id: z.string().min(1, "id is required").openapi({
+      description: "Caller-supplied identifier; preserved verbatim in the response.",
+      example: "quote-7c2b",
+    }),
+    text: z.string().min(1, "text is required").openapi({
+      description: "Free-form text body to embed and score against the brand profile.",
+      example:
+        "Looking to interview a B2B SaaS founder about pricing experiments for an upcoming feature.",
+    }),
+  })
+  .strict()
+  .openapi("RagScoreDocument");
+
+export const RagScoreRequestSchema = z
+  .object({
+    documents: z
+      .array(RagScoreDocumentSchema)
+      .min(1, "documents must contain at least one item")
+      .max(
+        RAG_SCORE_DOCUMENTS_MAX,
+        `documents may contain at most ${RAG_SCORE_DOCUMENTS_MAX} items`,
+      )
+      .openapi({
+        description: `List of documents to score against the brand profile. At most ${RAG_SCORE_DOCUMENTS_MAX} items per request.`,
+      }),
+    brandId: z.string().uuid("brandId must be a UUID").openapi({
+      description:
+        "Brand whose profile is used as the semantic query. Resolved via brand-service " +
+        "(industry, expertise, target audience, voice).",
+      example: "550e8400-e29b-41d4-a716-446655440000",
+    }),
+    query: z.string().min(1).optional().openapi({
+      description:
+        "Optional override for the brand-profile query string. When omitted, the service " +
+        "synthesizes a query from the resolved brand fields.",
+    }),
+  })
+  .strict()
+  .openapi("RagScoreRequest");
+
+export const RagScoreResultSchema = z
+  .object({
+    id: z.string().openapi({
+      description: "Document id from the request, preserved verbatim.",
+    }),
+    score: z.number().openapi({
+      description:
+        "Cosine similarity in [0, 1] between the document embedding and the brand-profile " +
+        "embedding. Negative values are clamped to 0.",
+    }),
+  })
+  .openapi("RagScoreResult");
+
+export const RagScoreResponseSchema = z
+  .object({
+    brandId: z.string().openapi({ description: "Echo of the request brandId." }),
+    queryText: z.string().openapi({
+      description:
+        "The brand-profile query string that was embedded. Useful for debugging and auditing.",
+    }),
+    cacheHit: z.boolean().openapi({
+      description: "Whether the brand-profile embedding was served from cache.",
+    }),
+    model: z.string().openapi({
+      description: "The Gemini embedding model used.",
+      example: "gemini-embedding-001",
+    }),
+    results: z.array(RagScoreResultSchema).openapi({
+      description: "Per-document scores, sorted by score descending.",
+    }),
+  })
+  .openapi("RagScoreResponse");
+
+export type RagScoreRequest = z.infer<typeof RagScoreRequestSchema>;
+export type RagScoreResponse = z.infer<typeof RagScoreResponseSchema>;
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/rag/score",
+  tags: ["RAG"],
+  summary: "Score documents against a brand profile (semantic similarity)",
+  description: `RAG-style semantic similarity scoring for picking the best document(s) for a brand.
+
+Used by journalists-quotes-service to rank quote requests against a brand profile, and by any other consumer that needs cheap document-vs-brand scoring.
+
+**Pipeline:**
+1. Resolve brand context via brand-service (industry, expertise, target audience, voice).
+2. Synthesize a brand-profile query string (or use the caller-supplied \`query\`).
+3. Compute the brand-profile embedding via Gemini's \`gemini-embedding-001\` (cached per (orgId, brandId, contentHash)).
+4. Compute embeddings for each \`documents[i].text\` in a single batch call.
+5. Score = cosine similarity, sorted descending.
+
+**Caching:** the brand-profile embedding is cached. Repeated calls with the same brand context (same resolved fields) reuse the cached vector — only document embeddings are recomputed. The cache automatically invalidates when any resolved brand field changes.
+
+**Volume:** designed for batches up to ${RAG_SCORE_DOCUMENTS_MAX} documents per request.`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({
+        description: "Service-to-service API key",
+      }),
+      "x-org-id": z.string().openapi({
+        description: "Internal org UUID from client-service",
+      }),
+      "x-user-id": z.string().openapi({
+        description: "Internal user UUID from client-service",
+      }),
+      "x-run-id": z.string().uuid().openapi({
+        description:
+          "Caller's run ID — used as parentRunId when creating this service's own run in runs-service",
+      }),
+      ...workflowTrackingHeaders,
+    }),
+    body: {
+      content: { "application/json": { schema: RagScoreRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Scored results, sorted by score descending",
+      content: {
+        "application/json": { schema: RagScoreResponseSchema },
+      },
+    },
+    400: {
+      description: "Missing or invalid request fields (including documents > cap)",
+      content: {
+        "application/json": { schema: ValidationErrorResponseSchema },
+      },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: "Brand not found in brand-service",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description:
+        "Upstream service unavailable (brand-service, key-service, runs-service, or Gemini)",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
