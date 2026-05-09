@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { jsonrepair, JSONRepairError } from "jsonrepair";
 import { db } from "./db/index.js";
-import { sessions, messages, appConfigs, platformConfigs } from "./db/schema.js";
+import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings } from "./db/schema.js";
 import { eq, and, sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import {
@@ -34,7 +34,14 @@ import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
 import { traceEvent } from "./lib/trace-event.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
-import { extractBrandFields } from "./lib/brand-client.js";
+import { extractBrandFields, BrandError } from "./lib/brand-client.js";
+import {
+  embedText,
+  embedTexts,
+  cosineSimilarity,
+  contentHash,
+  DEFAULT_EMBEDDING_MODEL,
+} from "./lib/embeddings.js";
 import { scrapeUrl } from "./lib/scraping-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import {
@@ -48,7 +55,7 @@ import {
 } from "./lib/key-client.js";
 import { authorizeCredits, BillingError } from "./lib/billing-client.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema } from "./schemas.js";
 import { JSON_RESPONSE_SYSTEM_SUFFIX } from "./lib/json-prompt.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
@@ -661,6 +668,237 @@ app.post("/complete", requireAuth, async (req, res) => {
         ]);
       } catch (runErr) {
         console.error(`[chat-service] /complete failed to finalize run runId="${runId}" orgId="${orgId}":`, runErr);
+      }
+    }
+  }
+});
+
+// --- Org RAG Score (semantic similarity) ---
+//
+// Brand-profile fields used to synthesize the cached query string.
+// Order is fixed so contentHash is stable across calls.
+const RAG_BRAND_FIELDS: Array<{ key: string; description: string }> = [
+  { key: "industry", description: "The brand's primary industry vertical (1-3 words)." },
+  { key: "expertise", description: "Specific topics, problems, or angles the brand is qualified to comment on." },
+  { key: "target_audience", description: "Who the brand sells to or speaks to (job titles, segments, geographies)." },
+  { key: "voice", description: "Brand voice / tone in 1-2 sentences (e.g. data-driven, founder-led, casual)." },
+];
+
+function buildBrandProfileQuery(fields: Record<string, string>): string {
+  const lines: string[] = [];
+  for (const def of RAG_BRAND_FIELDS) {
+    const value = fields[def.key];
+    if (value && value.trim().length > 0) {
+      lines.push(`${def.key.replace(/_/g, " ")}: ${value.trim()}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+app.post("/orgs/rag/score", requireAuth, async (req, res) => {
+  const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
+
+  const baseTrackingHeaders: Record<string, string> = {};
+  if (workflowTracking.campaignId) baseTrackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
+  if (workflowTracking.workflowSlug) baseTrackingHeaders["x-workflow-slug"] = workflowTracking.workflowSlug;
+  if (workflowTracking.featureSlug) baseTrackingHeaders["x-feature-slug"] = workflowTracking.featureSlug;
+
+  const parsed = RagScoreRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const { documents, brandId, query: queryOverride } = parsed.data;
+
+  // Body brandId is the authoritative target — overrides any forwarded x-brand-id.
+  const trackingHeaders: Record<string, string> = {
+    ...baseTrackingHeaders,
+    "x-brand-id": brandId,
+  };
+
+  // Register run (mandatory)
+  let runId: string | null = null;
+  try {
+    const run = await createRun(
+      { serviceName: "chat-service", taskName: "rag-score" },
+      { orgId, userId, runId: parentRunId },
+      trackingHeaders,
+    );
+    runId = run.id;
+    traceEvent(runId, "run-created", { orgId, userId }, workflowTracking, {
+      data: { taskName: "rag-score", parentRunId, brandId, documentCount: documents.length },
+    });
+  } catch (runErr) {
+    console.error(`[rag-score] org="${orgId}" run creation failed:`, runErr);
+    return res.status(502).json({
+      error: "Service temporarily unavailable (run tracking). Please try again.",
+    });
+  }
+
+  let scoreFailed = false;
+  try {
+    // Resolve brand context. Pass own runId so brand-service sees us as the parent.
+    let brandResults;
+    try {
+      brandResults = await extractBrandFields(RAG_BRAND_FIELDS, {
+        orgId,
+        userId,
+        runId,
+        trackingHeaders,
+      });
+    } catch (err) {
+      if (err instanceof BrandError && err.status === 404) {
+        return res.status(404).json({
+          error: `Brand not found: ${brandId}`,
+        });
+      }
+      throw err;
+    }
+
+    // Flatten results into a {key: stringValue} map. Skip null/empty values.
+    const fieldValues: Record<string, string> = {};
+    for (const r of brandResults.results) {
+      if (r.value == null) continue;
+      const str = typeof r.value === "string" ? r.value : JSON.stringify(r.value);
+      if (str.trim().length === 0) continue;
+      fieldValues[r.key] = str;
+    }
+
+    const queryText = queryOverride ?? buildBrandProfileQuery(fieldValues);
+    if (queryText.trim().length === 0) {
+      scoreFailed = true;
+      console.warn(
+        `[rag-score] org="${orgId}" brand="${brandId}" produced empty brand profile (no resolvable fields)`,
+      );
+      return res.status(400).json({
+        error:
+          "Brand profile is empty — no resolvable brand fields. Provide an explicit `query` or enrich the brand in brand-service first.",
+      });
+    }
+
+    // Cache key: hash of the resolved field values (or the override string).
+    const hash = queryOverride
+      ? contentHash({ __override__: queryOverride })
+      : contentHash(fieldValues);
+
+    // Resolve Gemini key once — needed for either branch (cache miss embeds query;
+    // documents always need fresh embeddings).
+    let resolvedKey;
+    try {
+      resolvedKey = await resolveKey({
+        provider: "google",
+        orgId,
+        userId,
+        runId,
+        caller: { method: "POST", path: "/orgs/rag/score" },
+        trackingHeaders,
+      });
+    } catch (err) {
+      console.error(`[rag-score] Failed to resolve google key for org="${orgId}":`, err);
+      return res.status(502).json({
+        error: "Failed to resolve google API key. Ensure the key is configured in key-service.",
+      });
+    }
+
+    // Cache lookup
+    let queryEmbedding: number[];
+    let cacheHit = false;
+    const cached = await db
+      .select()
+      .from(brandProfileEmbeddings)
+      .where(
+        and(
+          eq(brandProfileEmbeddings.orgId, orgId),
+          eq(brandProfileEmbeddings.brandId, brandId),
+          eq(brandProfileEmbeddings.contentHash, hash),
+        ),
+      )
+      .limit(1);
+
+    if (cached.length > 0) {
+      queryEmbedding = cached[0].embedding;
+      cacheHit = true;
+    } else {
+      queryEmbedding = await embedText(resolvedKey.key, queryText);
+      // Race-safe insert: another concurrent request may have already populated it.
+      await db
+        .insert(brandProfileEmbeddings)
+        .values({
+          orgId,
+          brandId,
+          contentHash: hash,
+          queryText,
+          embedding: queryEmbedding,
+          model: DEFAULT_EMBEDDING_MODEL,
+        })
+        .onConflictDoNothing({
+          target: [
+            brandProfileEmbeddings.orgId,
+            brandProfileEmbeddings.brandId,
+            brandProfileEmbeddings.contentHash,
+          ],
+        });
+    }
+
+    // Embed documents in batch
+    const docTexts = documents.map((d) => d.text);
+    const docEmbeddings = await embedTexts(resolvedKey.key, docTexts);
+
+    // Score
+    const scored = documents.map((d, i) => {
+      const raw = cosineSimilarity(queryEmbedding, docEmbeddings[i]);
+      // Clamp negatives to 0 so consumers can treat the score as a [0, 1] confidence.
+      const score = raw < 0 ? 0 : raw;
+      return { id: d.id, score };
+    });
+    scored.sort((a, b) => b.score - a.score);
+
+    if (runId) {
+      traceEvent(runId, "rag-score-done", { orgId, userId }, workflowTracking, {
+        data: {
+          brandId,
+          documentCount: documents.length,
+          cacheHit,
+          model: DEFAULT_EMBEDDING_MODEL,
+        },
+      });
+    }
+
+    res.json({
+      brandId,
+      queryText,
+      cacheHit,
+      model: DEFAULT_EMBEDDING_MODEL,
+      results: scored,
+    });
+  } catch (err) {
+    scoreFailed = true;
+    console.error(`[rag-score] org="${orgId}" brand="${brandId}" error:`, err);
+    if (runId) {
+      traceEvent(runId, "rag-score-failed", { orgId, userId }, workflowTracking, {
+        level: "error",
+        detail: err instanceof Error ? err.message : String(err),
+        data: { brandId },
+      });
+    }
+    res.status(502).json({
+      error: "RAG score failed. Please try again.",
+    });
+  } finally {
+    if (runId) {
+      try {
+        await updateRunStatus(
+          runId,
+          scoreFailed ? "failed" : "completed",
+          { orgId, userId, runId },
+          trackingHeaders,
+        );
+      } catch (runErr) {
+        console.error(
+          `[rag-score] failed to finalize run runId="${runId}" orgId="${orgId}":`,
+          runErr,
+        );
       }
     }
   }

@@ -891,6 +891,111 @@
           "targetOrgId"
         ],
         "additionalProperties": false
+      },
+      "RagScoreResponse": {
+        "type": "object",
+        "properties": {
+          "brandId": {
+            "type": "string",
+            "description": "Echo of the request brandId."
+          },
+          "queryText": {
+            "type": "string",
+            "description": "The brand-profile query string that was embedded. Useful for debugging and auditing."
+          },
+          "cacheHit": {
+            "type": "boolean",
+            "description": "Whether the brand-profile embedding was served from cache."
+          },
+          "model": {
+            "type": "string",
+            "description": "The Gemini embedding model used.",
+            "example": "gemini-embedding-001"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RagScoreResult"
+            },
+            "description": "Per-document scores, sorted by score descending."
+          }
+        },
+        "required": [
+          "brandId",
+          "queryText",
+          "cacheHit",
+          "model",
+          "results"
+        ]
+      },
+      "RagScoreResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Document id from the request, preserved verbatim."
+          },
+          "score": {
+            "type": "number",
+            "description": "Cosine similarity in [0, 1] between the document embedding and the brand-profile embedding. Negative values are clamped to 0."
+          }
+        },
+        "required": [
+          "id",
+          "score"
+        ]
+      },
+      "RagScoreRequest": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RagScoreDocument"
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "List of documents to score against the brand profile. At most 100 items per request."
+          },
+          "brandId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Brand whose profile is used as the semantic query. Resolved via brand-service (industry, expertise, target audience, voice).",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional override for the brand-profile query string. When omitted, the service synthesizes a query from the resolved brand fields."
+          }
+        },
+        "required": [
+          "documents",
+          "brandId"
+        ],
+        "additionalProperties": false
+      },
+      "RagScoreDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Caller-supplied identifier; preserved verbatim in the response.",
+            "example": "quote-7c2b"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Free-form text body to embed and score against the brand profile.",
+            "example": "Looking to interview a B2B SaaS founder about pricing experiments for an upcoming feature."
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -1579,6 +1684,160 @@
           },
           "401": {
             "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/rag/score": {
+      "post": {
+        "tags": [
+          "RAG"
+        ],
+        "summary": "Score documents against a brand profile (semantic similarity)",
+        "description": "RAG-style semantic similarity scoring for picking the best document(s) for a brand.\n\nUsed by journalists-quotes-service to rank quote requests against a brand profile, and by any other consumer that needs cheap document-vs-brand scoring.\n\n**Pipeline:**\n1. Resolve brand context via brand-service (industry, expertise, target audience, voice).\n2. Synthesize a brand-profile query string (or use the caller-supplied `query`).\n3. Compute the brand-profile embedding via Gemini's `gemini-embedding-001` (cached per (orgId, brandId, contentHash)).\n4. Compute embeddings for each `documents[i].text` in a single batch call.\n5. Score = cosine similarity, sorted descending.\n\n**Caching:** the brand-profile embedding is cached. Repeated calls with the same brand context (same resolved fields) reuse the cached vector — only document embeddings are recomputed. The cache automatically invalidates when any resolved brand field changes.\n\n**Volume:** designed for batches up to 100 documents per request.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal org UUID from client-service",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal user UUID from client-service",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Caller's run ID — used as parentRunId when creating this service's own run in runs-service"
+            },
+            "required": true,
+            "description": "Caller's run ID — used as parentRunId when creating this service's own run in runs-service",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Campaign ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Campaign ID — injected automatically by workflow-service",
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+              "example": "550e8400-e29b-41d4-a716-446655440000,660f9500-f30c-52e5-b827-557766551111"
+            },
+            "required": false,
+            "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Workflow slug — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Workflow slug — injected automatically by workflow-service",
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Feature slug — propagated through the entire service chain"
+            },
+            "required": false,
+            "description": "Feature slug — propagated through the entire service chain",
+            "name": "x-feature-slug",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagScoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Scored results, sorted by score descending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagScoreResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid request fields (including documents > cap)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Brand not found in brand-service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream service unavailable (brand-service, key-service, runs-service, or Gemini)",
             "content": {
               "application/json": {
                 "schema": {
