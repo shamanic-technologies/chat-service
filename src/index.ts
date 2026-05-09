@@ -32,6 +32,7 @@ import {
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
 import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
+import { traceEvent } from "./lib/trace-event.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
 import { extractBrandFields } from "./lib/brand-client.js";
 import { scrapeUrl } from "./lib/scraping-client.js";
@@ -529,6 +530,9 @@ app.post("/complete", requireAuth, async (req, res) => {
       trackingHeaders,
     );
     runId = run.id;
+    traceEvent(runId, "run-created", { orgId, userId }, workflowTracking, {
+      data: { taskName: "complete", parentRunId, provider, model: effectiveModel },
+    });
   } catch (runErr) {
     console.error(`[complete] org="${orgId}" run creation failed:`, runErr);
     return res.status(502).json({
@@ -564,6 +568,12 @@ app.post("/complete", requireAuth, async (req, res) => {
 
     let result: { content: string; tokensInput: number; tokensOutput: number; model: string };
 
+    if (runId) {
+      traceEvent(runId, "llm-call-start", { orgId, userId }, workflowTracking, {
+        data: { provider, model: effectiveModel, responseFormat },
+      });
+    }
+
     if (isGemini) {
       result = await completeWithGemini({
         apiKey: resolvedKey.key,
@@ -588,6 +598,17 @@ app.post("/complete", requireAuth, async (req, res) => {
     totalPromptTokens = result.tokensInput;
     totalOutputTokens = result.tokensOutput;
 
+    if (runId) {
+      traceEvent(runId, "llm-call-done", { orgId, userId }, workflowTracking, {
+        data: {
+          provider,
+          model: result.model,
+          tokensInput: result.tokensInput,
+          tokensOutput: result.tokensOutput,
+        },
+      });
+    }
+
     // Build response
     const response: Record<string, unknown> = {
       content: result.content,
@@ -609,6 +630,13 @@ app.post("/complete", requireAuth, async (req, res) => {
   } catch (err) {
     completeFailed = true;
     console.error(`[complete] org="${orgId}" error:`, err);
+    if (runId) {
+      traceEvent(runId, "llm-call-failed", { orgId, userId }, workflowTracking, {
+        level: "error",
+        detail: err instanceof Error ? err.message : String(err),
+        data: { provider, model: effectiveModel },
+      });
+    }
     res.status(502).json({
       error: "LLM call failed. Please try again.",
     });
@@ -894,6 +922,16 @@ app.post("/chat", requireAuth, async (req, res) => {
         trackingHeaders,
       );
       runId = run.id;
+      traceEvent(runId, "run-created", { orgId, userId }, workflowTracking, {
+        data: {
+          taskName: "chat",
+          parentRunId,
+          sessionId: currentSessionId,
+          provider: chatProvider,
+          model: resolvedModelInfo.apiModelId,
+          configKey,
+        },
+      });
       // Update session with this service's run ID
       await db.update(sessions)
         .set({ runId, updatedAt: new Date() })
@@ -1435,6 +1473,17 @@ app.post("/chat", requireAuth, async (req, res) => {
     // Provider-specific: Gemini uses streamGeminiChat(), Anthropic uses SDK
     // -----------------------------------------------------------------------
 
+    if (runId) {
+      traceEvent(runId, "stream-start", { orgId, userId }, workflowTracking, {
+        data: {
+          provider: chatProvider,
+          model: resolvedModelInfo.apiModelId,
+          historyLength: history.length,
+          toolCount: allTools.length,
+        },
+      });
+    }
+
     if (isGeminiChat) {
       // --- Gemini streaming path ---
       const geminiToolDefs: ToolDefinition[] = allTools.map((t) => ({
@@ -1733,11 +1782,36 @@ app.post("/chat", requireAuth, async (req, res) => {
       inputTokens: totalPromptTokens,
       outputTokens: totalOutputTokens,
     }));
+
+    if (runId) {
+      traceEvent(runId, "stream-done", { orgId, userId }, workflowTracking, {
+        data: {
+          provider: chatProvider,
+          model: resolvedModelInfo.apiModelId,
+          tokensInput: totalPromptTokens,
+          tokensOutput: totalOutputTokens,
+          toolCallCount: toolCalls.length,
+          buttonCount: buttons.length,
+        },
+      });
+    }
+
     sendSSE(res, "[DONE]");
   } catch (err) {
     chatFailed = true;
     const { message: errorMessage, code: errorCode } = classifyErrorForClient(err);
     console.error(`[chat] org="${orgId}" error code="${errorCode}":`, err);
+    if (runId) {
+      traceEvent(runId, "stream-failed", { orgId, userId }, workflowTracking, {
+        level: "error",
+        detail: err instanceof Error ? err.message : String(err),
+        data: {
+          provider: chatProvider,
+          model: resolvedModelInfo.apiModelId,
+          code: errorCode,
+        },
+      });
+    }
     sendSSE(res, {
       type: "error",
       code: errorCode,
