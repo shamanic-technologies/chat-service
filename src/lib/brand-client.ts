@@ -2,6 +2,16 @@ import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
 
 export type BrandCallParams = ApiCallParams;
 
+export class BrandError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly upstreamBody: string,
+  ) {
+    super(`[brand-client] extract-fields failed (${status}): ${upstreamBody}`);
+    this.name = "BrandError";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // POST /brands/extract-fields  (reads x-brand-id from forwarded headers)
 // ---------------------------------------------------------------------------
@@ -38,7 +48,7 @@ export async function extractBrandFields(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "unknown error");
-    throw new Error(`[brand-client] extract-fields failed (${res.status}): ${text}`);
+    throw new BrandError(res.status, text);
   }
 
   return res.json() as Promise<ExtractFieldsResponse>;

@@ -99,6 +99,13 @@
       "when": 1775232000000,
       "tag": "0013_add_provider_model_to_configs",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1776009600000,
+      "tag": "0014_add_brand_profile_embeddings",
+      "breakpoints": true
     }
   ]
 }

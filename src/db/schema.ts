@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, unique } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, unique, index } from "drizzle-orm/pg-core";
 
 export const sessions = pgTable("sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -43,6 +43,31 @@ export const appConfigs = pgTable(
   },
   (table) => [unique("app_configs_org_id_key_unique").on(table.orgId, table.key)],
 );
+
+export const brandProfileEmbeddings = pgTable(
+  "brand_profile_embeddings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    brandId: text("brand_id").notNull(),
+    contentHash: text("content_hash").notNull(),
+    queryText: text("query_text").notNull(),
+    embedding: jsonb("embedding").notNull().$type<number[]>(),
+    model: text("model").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("brand_profile_embeddings_org_brand_hash_unique").on(
+      table.orgId,
+      table.brandId,
+      table.contentHash,
+    ),
+    index("brand_profile_embeddings_org_brand_idx").on(table.orgId, table.brandId),
+  ],
+);
+
+export type BrandProfileEmbedding = typeof brandProfileEmbeddings.$inferSelect;
+export type NewBrandProfileEmbedding = typeof brandProfileEmbeddings.$inferInsert;
 
 export const platformConfigs = pgTable("platform_configs", {
   id: uuid("id").primaryKey().defaultRandom(),

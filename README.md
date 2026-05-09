@@ -266,6 +266,66 @@ Response:
 
 Idempotent — running it twice with the same params is a no-op (all rows already updated).
 
+## RAG Score (`/orgs/rag/score`)
+
+`POST /orgs/rag/score` — score a batch of documents against a brand profile using semantic similarity.
+
+Used by **journalists-quotes-service** to rank quote requests against a brand for outreach, and by any other consumer that needs cheap document-vs-brand scoring without spending an LLM call per document.
+
+**Auth:** `x-api-key` + `x-org-id` + `x-user-id` + `x-run-id` (standard).
+
+**Request:**
+```json
+{
+  "brandId": "550e8400-e29b-41d4-a716-446655440000",
+  "documents": [
+    { "id": "quote-7c2b", "text": "Looking to interview a B2B SaaS founder about pricing experiments." },
+    { "id": "quote-9f1a", "text": "Need a quote on AI safety from a research lab." }
+  ],
+  "query": "B2B SaaS pricing experiments"   // optional override
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `brandId` | yes | UUID. Brand whose profile is used as the semantic query. |
+| `documents` | yes | 1–100 items. Each has `id` (caller-supplied, returned verbatim) and `text` (body to embed). |
+| `query` | no | When omitted, the service synthesizes a query from the brand profile (industry, expertise, target audience, voice). When present, the override is used directly. |
+
+**Response:**
+```json
+{
+  "brandId": "550e8400-e29b-41d4-a716-446655440000",
+  "queryText": "industry: B2B SaaS\nexpertise: pricing experiments\ntarget audience: founders\nvoice: data-driven",
+  "cacheHit": true,
+  "model": "gemini-embedding-001",
+  "results": [
+    { "id": "quote-7c2b", "score": 0.92 },
+    { "id": "quote-9f1a", "score": 0.18 }
+  ]
+}
+```
+
+`results` is sorted by `score` descending. Scores are cosine similarity in `[0, 1]` (negatives clamped to `0`).
+
+**Pipeline:**
+1. Resolve brand context from brand-service (`industry`, `expertise`, `target_audience`, `voice`).
+2. Synthesize a brand-profile query string (or use `query` override).
+3. Compute the brand-profile embedding via Gemini `gemini-embedding-001` (cached per `(orgId, brandId, contentHash)` in the `brand_profile_embeddings` table — only the brand-profile vector is cached; document vectors are recomputed per request).
+4. Batch-embed every `documents[i].text`.
+5. Cosine similarity between brand-profile vector and each document vector.
+
+The cache automatically invalidates when **any** resolved brand field changes (the hash covers all fields). Repeated calls with unchanged brand context skip the brand-profile Gemini call entirely.
+
+**Errors:**
+- `400` — validation (`documents` empty, `documents.length > 100`, `brandId` not UUID, etc.) or empty resolved brand profile (provide an explicit `query` when this happens).
+- `404` — `brandId` not found in brand-service.
+- `502` — upstream failure (brand-service, key-service, runs-service, or Gemini).
+
+**Volume:** designed for batches of up to **100** documents per request. Larger batches must be chunked by the caller.
+
+The Gemini embedding model defaults to `gemini-embedding-001` and is overridable via `GEMINI_EMBEDDING_MODEL`. Key resolution uses the standard `google` provider in key-service.
+
 ## Campaign Context Enrichment
 
 When the `x-campaign-id` header is present, both `/chat` and `/complete` automatically fetch the campaign's `featureInputs` from campaign-service and inject them into the system prompt. This ensures every LLM call is informed by the user's campaign-specific inputs (editorial angle, target geography, audience type, etc.).
@@ -493,16 +553,18 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `RUNS_SERVICE_API_KEY` | No | API key for RunsService (runs tracking and trace events disabled if unset) |
 | `BILLING_SERVICE_URL` | No | Billing-service endpoint (default: `https://billing.mcpfactory.org`) |
 | `BILLING_SERVICE_API_KEY` | Yes | API key for billing-service — required for credit authorization on platform-key requests |
+| `GEMINI_EMBEDDING_MODEL` | No | Gemini embedding model used by `/orgs/rag/score` (default: `gemini-embedding-001`) |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
 
-Uses PostgreSQL via Drizzle ORM. Four tables:
+Uses PostgreSQL via Drizzle ORM. Five tables:
 
 - **sessions** — conversation sessions scoped by `orgId` and `userId`. Stores all identity/tracking context: `runId` (this service's run), `parentRunId` (caller's run from `x-run-id` header), `campaignId`, `brandIds` (text array for multi-brand support), `workflowSlug`, `featureSlug`
 - **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management)
 - **app_configs** — per-org configuration keyed by `(orgId, key)`. Each entry defines a system prompt and `allowedTools` for a specific chat mode.
 - **platform_configs** — platform-wide configuration keyed by `key`. Fallback when no per-org config exists for the same key.
+- **brand_profile_embeddings** — cached Gemini embeddings of the brand-profile query, keyed by `(orgId, brandId, contentHash)`. Used by `/orgs/rag/score` so identical brand contexts skip the brand-profile embedding call. Document embeddings are not cached.
 
 Migrations run automatically on server start. To generate new migrations after schema changes:
 
@@ -516,6 +578,7 @@ npm run db:generate
 
 | Endpoint | Events emitted |
 |---|---|
+| `/orgs/rag/score` | `run-created`, `rag-score-done`, `rag-score-failed` |
 | `/complete` | `run-created`, `llm-call-start`, `llm-call-done`, `llm-call-failed` |
 | `/chat` | `run-created`, `stream-start`, `stream-done`, `stream-failed` |
 
