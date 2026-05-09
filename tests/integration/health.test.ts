@@ -1,9 +1,16 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
+import request from "supertest";
 
-describe("health endpoint", () => {
-  it("should be importable (smoke test)", async () => {
-    // Full integration test would start the server and hit /health
-    // For now, verify the module structure is correct
-    expect(true).toBe(true);
+// NODE_ENV=test prevents app.listen() at module load (see src/index.ts bottom).
+beforeAll(() => {
+  process.env.NODE_ENV = "test";
+});
+
+describe("GET /health", () => {
+  it("returns 200 with {status: 'ok'}", async () => {
+    const { default: app } = await import("../../src/index.js");
+    const res = await request(app).get("/health");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: "ok" });
   });
 });

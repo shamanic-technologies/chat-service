@@ -59,6 +59,8 @@ const openapiPath = join(__dirname, "..", "openapi.json");
 
 import { mergeConsecutiveMessages, stripToolUseBlocks } from "./lib/merge-messages.js";
 import { streamGeminiChat, type ToolDefinition } from "./lib/gemini-chat.js";
+import { SESSION_NOT_FOUND_EVENT } from "./lib/session-errors.js";
+import { buildContextUsageEvent } from "./lib/context-usage.js";
 
 // ---------------------------------------------------------------------------
 // Anthropic stream retry
@@ -874,10 +876,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         .from(sessions)
         .where(eq(sessions.id, currentSessionId));
       if (!existing || existing.orgId !== orgId) {
-        sendSSE(res, {
-          type: "token",
-          content: "Session not found.",
-        });
+        sendSSE(res, SESSION_NOT_FOUND_EVENT);
         sendSSE(res, "[DONE]");
         res.end();
         return;
@@ -1730,6 +1729,10 @@ app.post("/chat", requireAuth, async (req, res) => {
       tokenCount: totalPromptTokens + totalOutputTokens || null,
     });
 
+    sendSSE(res, buildContextUsageEvent({
+      inputTokens: totalPromptTokens,
+      outputTokens: totalOutputTokens,
+    }));
     sendSSE(res, "[DONE]");
   } catch (err) {
     chatFailed = true;
