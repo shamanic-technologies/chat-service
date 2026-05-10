@@ -55,7 +55,7 @@ import {
 } from "./lib/key-client.js";
 import { authorizeCredits, BillingError } from "./lib/billing-client.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema } from "./schemas.js";
 import { JSON_RESPONSE_SYSTEM_SUFFIX } from "./lib/json-prompt.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
@@ -897,6 +897,129 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
       } catch (runErr) {
         console.error(
           `[rag-score] failed to finalize run runId="${runId}" orgId="${orgId}":`,
+          runErr,
+        );
+      }
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /orgs/rag/embed — return raw embedding vectors for a batch of texts.
+// Used by callers that need to run their own similarity / clustering / dedup
+// (e.g. journalists-quotes-service cross-platform opportunity dedup pipeline).
+// Same auth + run-tracking shape as /orgs/rag/score, but no brand resolution
+// and no caching — callers persist vectors themselves.
+// ---------------------------------------------------------------------------
+
+app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
+  const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
+
+  const trackingHeaders: Record<string, string> = {};
+  if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
+  if (workflowTracking.brandId) trackingHeaders["x-brand-id"] = workflowTracking.brandId;
+  if (workflowTracking.workflowSlug) trackingHeaders["x-workflow-slug"] = workflowTracking.workflowSlug;
+  if (workflowTracking.featureSlug) trackingHeaders["x-feature-slug"] = workflowTracking.featureSlug;
+
+  const parsed = RagEmbedRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const { documents } = parsed.data;
+
+  // Register run (mandatory)
+  let runId: string | null = null;
+  try {
+    const run = await createRun(
+      { serviceName: "chat-service", taskName: "rag-embed" },
+      { orgId, userId, runId: parentRunId },
+      trackingHeaders,
+    );
+    runId = run.id;
+    traceEvent(runId, "run-created", { orgId, userId }, workflowTracking, {
+      data: { taskName: "rag-embed", parentRunId, documentCount: documents.length },
+    });
+  } catch (runErr) {
+    console.error(`[rag-embed] org="${orgId}" run creation failed:`, runErr);
+    return res.status(502).json({
+      error: "Service temporarily unavailable (run tracking). Please try again.",
+    });
+  }
+
+  let embedFailed = false;
+  try {
+    let resolvedKey;
+    try {
+      resolvedKey = await resolveKey({
+        provider: "google",
+        orgId,
+        userId,
+        runId,
+        caller: { method: "POST", path: "/orgs/rag/embed" },
+        trackingHeaders,
+      });
+    } catch (err) {
+      console.error(`[rag-embed] Failed to resolve google key for org="${orgId}":`, err);
+      return res.status(502).json({
+        error: "Failed to resolve google API key. Ensure the key is configured in key-service.",
+      });
+    }
+
+    const docTexts = documents.map((d) => d.text);
+    const docEmbeddings = await embedTexts(resolvedKey.key, docTexts);
+
+    if (docEmbeddings.length !== documents.length) {
+      throw new Error(
+        `[rag-embed] embedTexts returned ${docEmbeddings.length} vectors for ${documents.length} inputs`,
+      );
+    }
+
+    const results = documents.map((d, i) => ({
+      id: d.id,
+      embedding: docEmbeddings[i],
+    }));
+
+    if (runId) {
+      traceEvent(runId, "rag-embed-done", { orgId, userId }, workflowTracking, {
+        data: {
+          documentCount: documents.length,
+          model: DEFAULT_EMBEDDING_MODEL,
+          dimensions: results[0]?.embedding.length ?? 0,
+        },
+      });
+    }
+
+    res.json({
+      model: DEFAULT_EMBEDDING_MODEL,
+      results,
+    });
+  } catch (err) {
+    embedFailed = true;
+    console.error(`[rag-embed] org="${orgId}" error:`, err);
+    if (runId) {
+      traceEvent(runId, "rag-embed-failed", { orgId, userId }, workflowTracking, {
+        level: "error",
+        detail: err instanceof Error ? err.message : String(err),
+        data: { documentCount: documents.length },
+      });
+    }
+    res.status(502).json({
+      error: "RAG embed failed. Please try again.",
+    });
+  } finally {
+    if (runId) {
+      try {
+        await updateRunStatus(
+          runId,
+          embedFailed ? "failed" : "completed",
+          { orgId, userId, runId },
+          trackingHeaders,
+        );
+      } catch (runErr) {
+        console.error(
+          `[rag-embed] failed to finalize run runId="${runId}" orgId="${orgId}":`,
           runErr,
         );
       }
