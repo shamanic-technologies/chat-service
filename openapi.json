@@ -996,6 +996,88 @@
           "text"
         ],
         "additionalProperties": false
+      },
+      "RagEmbedResponse": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "The Gemini embedding model used.",
+            "example": "gemini-embedding-001"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RagEmbedResult"
+            },
+            "description": "Per-document embeddings, returned in the same order as the input documents (1:1 by index and id)."
+          }
+        },
+        "required": [
+          "model",
+          "results"
+        ]
+      },
+      "RagEmbedResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Document id from the request, preserved verbatim."
+          },
+          "embedding": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "description": "Raw embedding vector for the document text. Length is the embedding model's output dimensionality (3072 for gemini-embedding-001)."
+          }
+        },
+        "required": [
+          "id",
+          "embedding"
+        ]
+      },
+      "RagEmbedRequest": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RagEmbedDocument"
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "List of texts to embed. At most 100 items per request, 8000 characters per text."
+          }
+        },
+        "required": [
+          "documents"
+        ],
+        "additionalProperties": false
+      },
+      "RagEmbedDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Caller-supplied identifier; preserved verbatim in the response.",
+            "example": "quote-7c2b"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000,
+            "description": "Free-form text body to embed. Max 8000 characters (matches Gemini gemini-embedding-001's ~2048-token input limit).",
+            "example": "Looking to interview a B2B SaaS founder about pricing experiments."
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -1838,6 +1920,150 @@
           },
           "502": {
             "description": "Upstream service unavailable (brand-service, key-service, runs-service, or Gemini)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/rag/embed": {
+      "post": {
+        "tags": [
+          "RAG"
+        ],
+        "summary": "Compute raw embeddings for a batch of texts",
+        "description": "Returns raw embedding vectors for a batch of texts. Used by callers that need to run their own similarity, clustering, or dedup logic.\n\nBacked by the same Gemini `gemini-embedding-001` model as `/orgs/rag/score` — single source of truth for embedding model selection across chat-service.\n\n**Pipeline:**\n1. Resolve the org's Google API key via key-service.\n2. Call Gemini `batchEmbedContents` for all `documents[i].text` in a single batch.\n3. Return per-document vectors in input order, with `id` preserved verbatim.\n\n**No vector storage, no similarity scoring.** Callers persist and compare vectors themselves. For document-vs-brand semantic scoring use `POST /orgs/rag/score` instead.\n\n**Limits:** at most 100 documents per request, at most 8000 characters per text (matches Gemini's ~2048-token input limit).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal org UUID from client-service",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal user UUID from client-service",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Caller's run ID — used as parentRunId when creating this service's own run in runs-service"
+            },
+            "required": true,
+            "description": "Caller's run ID — used as parentRunId when creating this service's own run in runs-service",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Campaign ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Campaign ID — injected automatically by workflow-service",
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+              "example": "550e8400-e29b-41d4-a716-446655440000,660f9500-f30c-52e5-b827-557766551111"
+            },
+            "required": false,
+            "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Workflow slug — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Workflow slug — injected automatically by workflow-service",
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Feature slug — propagated through the entire service chain"
+            },
+            "required": false,
+            "description": "Feature slug — propagated through the entire service chain",
+            "name": "x-feature-slug",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagEmbedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Raw embeddings, one per input document, in input order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagEmbedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid request fields (including documents > cap or text > char cap)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream service unavailable (key-service, runs-service, or Gemini)",
             "content": {
               "application/json": {
                 "schema": {

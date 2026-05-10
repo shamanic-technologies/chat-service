@@ -1173,3 +1173,142 @@ Used by journalists-quotes-service to rank quote requests against a brand profil
     },
   },
 });
+
+// --- Org RAG Embed ---
+
+export const RAG_EMBED_DOCUMENTS_MAX = 100;
+/**
+ * Per-text character cap. Gemini `gemini-embedding-001` accepts up to ~2048
+ * input tokens per text; ~4 chars/token gives an 8000-char proxy that keeps
+ * us safely under the provider limit without pulling in a tokenizer.
+ */
+export const RAG_EMBED_TEXT_MAX_CHARS = 8000;
+
+export const RagEmbedDocumentSchema = z
+  .object({
+    id: z.string().min(1, "id is required").openapi({
+      description: "Caller-supplied identifier; preserved verbatim in the response.",
+      example: "quote-7c2b",
+    }),
+    text: z
+      .string()
+      .min(1, "text is required")
+      .max(
+        RAG_EMBED_TEXT_MAX_CHARS,
+        `text may be at most ${RAG_EMBED_TEXT_MAX_CHARS} characters`,
+      )
+      .openapi({
+        description: `Free-form text body to embed. Max ${RAG_EMBED_TEXT_MAX_CHARS} characters (matches Gemini gemini-embedding-001's ~2048-token input limit).`,
+        example: "Looking to interview a B2B SaaS founder about pricing experiments.",
+      }),
+  })
+  .strict()
+  .openapi("RagEmbedDocument");
+
+export const RagEmbedRequestSchema = z
+  .object({
+    documents: z
+      .array(RagEmbedDocumentSchema)
+      .min(1, "documents must contain at least one item")
+      .max(
+        RAG_EMBED_DOCUMENTS_MAX,
+        `documents may contain at most ${RAG_EMBED_DOCUMENTS_MAX} items`,
+      )
+      .openapi({
+        description: `List of texts to embed. At most ${RAG_EMBED_DOCUMENTS_MAX} items per request, ${RAG_EMBED_TEXT_MAX_CHARS} characters per text.`,
+      }),
+  })
+  .strict()
+  .openapi("RagEmbedRequest");
+
+export const RagEmbedResultSchema = z
+  .object({
+    id: z.string().openapi({
+      description: "Document id from the request, preserved verbatim.",
+    }),
+    embedding: z.array(z.number()).openapi({
+      description:
+        "Raw embedding vector for the document text. Length is the embedding model's output dimensionality (3072 for gemini-embedding-001).",
+    }),
+  })
+  .openapi("RagEmbedResult");
+
+export const RagEmbedResponseSchema = z
+  .object({
+    model: z.string().openapi({
+      description: "The Gemini embedding model used.",
+      example: "gemini-embedding-001",
+    }),
+    results: z.array(RagEmbedResultSchema).openapi({
+      description:
+        "Per-document embeddings, returned in the same order as the input documents (1:1 by index and id).",
+    }),
+  })
+  .openapi("RagEmbedResponse");
+
+export type RagEmbedRequest = z.infer<typeof RagEmbedRequestSchema>;
+export type RagEmbedResponse = z.infer<typeof RagEmbedResponseSchema>;
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/rag/embed",
+  tags: ["RAG"],
+  summary: "Compute raw embeddings for a batch of texts",
+  description: `Returns raw embedding vectors for a batch of texts. Used by callers that need to run their own similarity, clustering, or dedup logic.
+
+Backed by the same Gemini \`gemini-embedding-001\` model as \`/orgs/rag/score\` — single source of truth for embedding model selection across chat-service.
+
+**Pipeline:**
+1. Resolve the org's Google API key via key-service.
+2. Call Gemini \`batchEmbedContents\` for all \`documents[i].text\` in a single batch.
+3. Return per-document vectors in input order, with \`id\` preserved verbatim.
+
+**No vector storage, no similarity scoring.** Callers persist and compare vectors themselves. For document-vs-brand semantic scoring use \`POST /orgs/rag/score\` instead.
+
+**Limits:** at most ${RAG_EMBED_DOCUMENTS_MAX} documents per request, at most ${RAG_EMBED_TEXT_MAX_CHARS} characters per text (matches Gemini's ~2048-token input limit).`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({
+        description: "Service-to-service API key",
+      }),
+      "x-org-id": z.string().openapi({
+        description: "Internal org UUID from client-service",
+      }),
+      "x-user-id": z.string().openapi({
+        description: "Internal user UUID from client-service",
+      }),
+      "x-run-id": z.string().uuid().openapi({
+        description:
+          "Caller's run ID — used as parentRunId when creating this service's own run in runs-service",
+      }),
+      ...workflowTrackingHeaders,
+    }),
+    body: {
+      content: { "application/json": { schema: RagEmbedRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Raw embeddings, one per input document, in input order",
+      content: {
+        "application/json": { schema: RagEmbedResponseSchema },
+      },
+    },
+    400: {
+      description:
+        "Missing or invalid request fields (including documents > cap or text > char cap)",
+      content: {
+        "application/json": { schema: ValidationErrorResponseSchema },
+      },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description:
+        "Upstream service unavailable (key-service, runs-service, or Gemini)",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
