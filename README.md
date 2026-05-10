@@ -326,6 +326,57 @@ The cache automatically invalidates when **any** resolved brand field changes (t
 
 The Gemini embedding model defaults to `gemini-embedding-001` and is overridable via `GEMINI_EMBEDDING_MODEL`. Key resolution uses the standard `google` provider in key-service.
 
+## RAG Embed (`/orgs/rag/embed`)
+
+`POST /orgs/rag/embed` — return raw embedding vectors for a batch of texts. Same embedding model as `/orgs/rag/score` (single source of truth).
+
+Used by callers that need to run their own similarity, clustering, or dedup logic against the vectors (e.g. **journalists-quotes-service** cross-platform opportunity dedup pipeline). For document-vs-brand scoring use `/orgs/rag/score` instead — this endpoint does not score, cache, or persist anything.
+
+**Auth:** `x-api-key` + `x-org-id` + `x-user-id` + `x-run-id` (standard).
+
+**Request:**
+```json
+{
+  "documents": [
+    { "id": "quote-7c2b", "text": "Looking to interview a B2B SaaS founder about pricing experiments." },
+    { "id": "quote-9f1a", "text": "Need a quote on AI safety from a research lab." }
+  ]
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `documents` | yes | 1–100 items. Each has `id` (caller-supplied, returned verbatim) and `text` (body to embed; max 8000 chars per text — matches Gemini `gemini-embedding-001`'s ~2048-token input limit). |
+
+**Response:**
+```json
+{
+  "model": "gemini-embedding-001",
+  "results": [
+    { "id": "quote-7c2b", "embedding": [0.0123, -0.0456, ...] },
+    { "id": "quote-9f1a", "embedding": [0.0789, -0.0321, ...] }
+  ]
+}
+```
+
+`results` is returned in the **same order** as the input documents (1:1 by index and id). Vector dimensionality is whatever the underlying model returns (3072 for `gemini-embedding-001`).
+
+**Pipeline:**
+1. Resolve the org's Google API key via key-service.
+2. Call Gemini `batchEmbedContents` for all `documents[i].text` in a single batch.
+3. Return raw vectors in input order.
+
+No vector storage, no similarity, no caching — callers persist and compare vectors themselves.
+
+**Errors:**
+- `400` — validation (`documents` empty, `documents.length > 100`, `text > 8000` chars, missing `id`/`text`, unknown fields).
+- `401` — missing or invalid `x-api-key`.
+- `502` — upstream failure (key-service, runs-service, or Gemini).
+
+**Volume:** designed for batches of up to **100** documents per request, **8000** characters per text. Larger inputs must be chunked or truncated by the caller.
+
+Determinism: Gemini `gemini-embedding-001` is deterministic for identical input texts under stable model versions, but Google does not contractually guarantee bit-exact output across server-side updates. Callers that depend on stable vectors over time should re-embed after a model version change.
+
 ## Campaign Context Enrichment
 
 When the `x-campaign-id` header is present, both `/chat` and `/complete` automatically fetch the campaign's `featureInputs` from campaign-service and inject them into the system prompt. This ensures every LLM call is informed by the user's campaign-specific inputs (editorial angle, target geography, audience type, etc.).
@@ -553,7 +604,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `RUNS_SERVICE_API_KEY` | No | API key for RunsService (runs tracking and trace events disabled if unset) |
 | `BILLING_SERVICE_URL` | No | Billing-service endpoint (default: `https://billing.mcpfactory.org`) |
 | `BILLING_SERVICE_API_KEY` | Yes | API key for billing-service — required for credit authorization on platform-key requests |
-| `GEMINI_EMBEDDING_MODEL` | No | Gemini embedding model used by `/orgs/rag/score` (default: `gemini-embedding-001`) |
+| `GEMINI_EMBEDDING_MODEL` | No | Gemini embedding model used by `/orgs/rag/score` and `/orgs/rag/embed` (default: `gemini-embedding-001`) |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
@@ -579,6 +630,7 @@ npm run db:generate
 | Endpoint | Events emitted |
 |---|---|
 | `/orgs/rag/score` | `run-created`, `rag-score-done`, `rag-score-failed` |
+| `/orgs/rag/embed` | `run-created`, `rag-embed-done`, `rag-embed-failed` |
 | `/complete` | `run-created`, `llm-call-start`, `llm-call-done`, `llm-call-failed` |
 | `/chat` | `run-created`, `stream-start`, `stream-done`, `stream-failed` |
 
