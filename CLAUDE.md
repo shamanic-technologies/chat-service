@@ -62,3 +62,17 @@ CI will warn if source files change without corresponding test changes. Do not s
 - Functional patterns over classes
 - Keep solutions simple, no over-engineering
 - Tests in `tests/` with vitest
+
+## Workflow Tools (mutations) — three-tool contract
+
+The only workflow-mutation tools exposed to the LLM are:
+
+- `create_workflow` → `POST /v1/workflows/create` — new dynasty from NL.
+- `upgrade_workflow` → `POST /v1/workflows/upgrade` — regenerate within the same dynasty. **Bug fixes or metadata clarifications only.** Anything substantive must use `fork_workflow`.
+- `fork_workflow` → `PUT /v1/workflows/:id` with a full DAG — creates a new dynasty when the signature differs; same-signature submissions return `_action: "updated"` and are surfaced honestly to the model (not a bug).
+
+Do NOT introduce a metadata-only update tool, a single-node-config tweak tool, or any "shortcut" mutation path. Every workflow change must commit to either `upgrade_workflow` (bug fix / metadata clarification) or `fork_workflow` (substantive). "Sneak a tweak under the rug" is not a category we support.
+
+### Tool descriptions are the enforcement surface
+
+The system prompt is owned by the calling app (stored in `app_configs.system_prompt` / `platform_configs.system_prompt`). For behavioral rules we want to enforce regardless of the calling app — e.g. "upgrade is bug-fix only, even if the user asks otherwise" — encode them in the tool description in `src/lib/anthropic.ts`, prefixed with `HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO:`. Tool descriptions bind the model more reliably than system prompts and survive app-level config drift.
