@@ -4,13 +4,18 @@ import { TOOL_REGISTRY, AVAILABLE_TOOL_NAMES, resolveToolSet } from "../../src/l
 describe("TOOL_REGISTRY", () => {
   it("contains all expected tools", () => {
     expect(AVAILABLE_TOOL_NAMES).toContain("request_user_input");
-    expect(AVAILABLE_TOOL_NAMES).toContain("update_workflow");
+    expect(AVAILABLE_TOOL_NAMES).toContain("create_workflow");
+    expect(AVAILABLE_TOOL_NAMES).toContain("upgrade_workflow");
+    expect(AVAILABLE_TOOL_NAMES).toContain("fork_workflow");
     expect(AVAILABLE_TOOL_NAMES).toContain("create_feature");
     expect(AVAILABLE_TOOL_NAMES).toContain("list_services");
     expect(AVAILABLE_TOOL_NAMES).toContain("update_campaign_fields");
     expect(AVAILABLE_TOOL_NAMES).toContain("extract_brand_fields");
     expect(AVAILABLE_TOOL_NAMES).toContain("browse_url");
     expect(AVAILABLE_TOOL_NAMES).not.toContain("extract_brand_text");
+    expect(AVAILABLE_TOOL_NAMES).not.toContain("update_workflow");
+    expect(AVAILABLE_TOOL_NAMES).not.toContain("update_workflow_node_config");
+    expect(AVAILABLE_TOOL_NAMES).not.toContain("generate_workflow");
   });
 
   it("does NOT contain call_api (removed for security)", () => {
@@ -27,10 +32,10 @@ describe("TOOL_REGISTRY", () => {
 
 describe("resolveToolSet", () => {
   it("resolves known tools to their definitions", () => {
-    const tools = resolveToolSet(["request_user_input", "update_workflow"]);
+    const tools = resolveToolSet(["request_user_input", "fork_workflow"]);
     expect(tools).toHaveLength(2);
     expect(tools[0].name).toBe("request_user_input");
-    expect(tools[1].name).toBe("update_workflow");
+    expect(tools[1].name).toBe("fork_workflow");
   });
 
   it("skips unknown tool names", () => {

@@ -34,7 +34,9 @@ import {
   SUPPORTED_MODELS,
   costPrefixForModel,
   REQUEST_USER_INPUT_TOOL,
-  UPDATE_WORKFLOW_TOOL,
+  CREATE_WORKFLOW_TOOL,
+  UPGRADE_WORKFLOW_TOOL,
+  FORK_WORKFLOW_TOOL,
   VALIDATE_WORKFLOW_TOOL,
   CREATE_FEATURE_TOOL,
   UPDATE_FEATURE_TOOL,
@@ -467,23 +469,55 @@ describe("REQUEST_USER_INPUT_TOOL", () => {
   });
 });
 
-describe("UPDATE_WORKFLOW_TOOL", () => {
-  it("has correct name and required workflowId parameter", () => {
-    expect(UPDATE_WORKFLOW_TOOL.name).toBe("update_workflow");
-    const schema = UPDATE_WORKFLOW_TOOL.input_schema as {
+describe("CREATE_WORKFLOW_TOOL", () => {
+  it("has correct name and required description + featureSlug", () => {
+    expect(CREATE_WORKFLOW_TOOL.name).toBe("create_workflow");
+    const schema = CREATE_WORKFLOW_TOOL.input_schema as {
+      properties: Record<string, unknown>;
+      required: string[];
+    };
+    expect(schema.properties).toHaveProperty("description");
+    expect(schema.properties).toHaveProperty("featureSlug");
+    expect(schema.properties).toHaveProperty("hints");
+    expect(schema.properties).toHaveProperty("style");
+    expect(schema.required).toEqual(
+      expect.arrayContaining(["description", "featureSlug"]),
+    );
+  });
+});
+
+describe("UPGRADE_WORKFLOW_TOOL", () => {
+  it("has correct name and required workflowSlug + description", () => {
+    expect(UPGRADE_WORKFLOW_TOOL.name).toBe("upgrade_workflow");
+    const schema = UPGRADE_WORKFLOW_TOOL.input_schema as {
+      properties: Record<string, unknown>;
+      required: string[];
+    };
+    expect(schema.properties).toHaveProperty("workflowSlug");
+    expect(schema.properties).toHaveProperty("description");
+    expect(schema.required).toEqual(
+      expect.arrayContaining(["workflowSlug", "description"]),
+    );
+  });
+
+  it("description carries the HARD RULE for bug-fix/metadata-clarification scope", () => {
+    expect(UPGRADE_WORKFLOW_TOOL.description).toContain("HARD RULE");
+    expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/bug.?fix/i);
+    expect(UPGRADE_WORKFLOW_TOOL.description).toContain("fork_workflow");
+  });
+});
+
+describe("FORK_WORKFLOW_TOOL", () => {
+  it("has correct name and required workflowId + dag", () => {
+    expect(FORK_WORKFLOW_TOOL.name).toBe("fork_workflow");
+    const schema = FORK_WORKFLOW_TOOL.input_schema as {
       properties: Record<string, unknown>;
       required: string[];
     };
     expect(schema.properties).toHaveProperty("workflowId");
-    expect(schema.properties).toHaveProperty("name");
-    expect(schema.properties).toHaveProperty("description");
-    expect(schema.properties).toHaveProperty("tags");
-    expect(schema.required).toEqual(["workflowId"]);
-  });
-
-  it("description instructs to use context workflowId directly", () => {
-    expect(UPDATE_WORKFLOW_TOOL.description).toContain(
-      "do not use input_request",
+    expect(schema.properties).toHaveProperty("dag");
+    expect(schema.required).toEqual(
+      expect.arrayContaining(["workflowId", "dag"]),
     );
   });
 });
@@ -503,13 +537,13 @@ describe("VALIDATE_WORKFLOW_TOOL", () => {
 describe("TOOL_REGISTRY", () => {
   it("contains all expected tools", () => {
     expect(AVAILABLE_TOOL_NAMES).toContain("request_user_input");
-    expect(AVAILABLE_TOOL_NAMES).toContain("update_workflow");
+    expect(AVAILABLE_TOOL_NAMES).toContain("create_workflow");
+    expect(AVAILABLE_TOOL_NAMES).toContain("upgrade_workflow");
+    expect(AVAILABLE_TOOL_NAMES).toContain("fork_workflow");
     expect(AVAILABLE_TOOL_NAMES).toContain("validate_workflow");
     expect(AVAILABLE_TOOL_NAMES).toContain("get_prompt_template");
     expect(AVAILABLE_TOOL_NAMES).toContain("update_prompt_template");
-    expect(AVAILABLE_TOOL_NAMES).toContain("update_workflow_node_config");
     expect(AVAILABLE_TOOL_NAMES).toContain("get_workflow_details");
-    expect(AVAILABLE_TOOL_NAMES).toContain("generate_workflow");
     expect(AVAILABLE_TOOL_NAMES).toContain("get_workflow_required_providers");
     expect(AVAILABLE_TOOL_NAMES).toContain("list_workflows");
     expect(AVAILABLE_TOOL_NAMES).toContain("list_services");

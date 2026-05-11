@@ -38,13 +38,13 @@ Before using `/chat`, register a config for each chat mode your app needs. Each 
   "systemPrompt": "You are an AI assistant that helps users understand and modify their outreach workflows...",
   "allowedTools": [
     "request_user_input",
-    "update_workflow",
+    "create_workflow",
+    "upgrade_workflow",
+    "fork_workflow",
     "validate_workflow",
     "get_workflow_details",
-    "generate_workflow",
     "get_workflow_required_providers",
     "list_workflows",
-    "update_workflow_node_config",
     "get_prompt_template",
     "update_prompt_template",
     "list_services",
@@ -438,8 +438,8 @@ data: {"type":"token","content":" suggest..."}
 ### 4. Tool calls (optional)
 If the AI invokes a built-in tool:
 ```
-data: {"type":"tool_call","id":"tc_550e8400-e29b-41d4-a716-446655440000","name":"update_workflow","args":{"workflowId":"..."}}
-data: {"type":"tool_result","id":"tc_550e8400-e29b-41d4-a716-446655440000","name":"update_workflow","result":{...}}
+data: {"type":"tool_call","id":"tc_550e8400-e29b-41d4-a716-446655440000","name":"fork_workflow","args":{"workflowId":"...","dag":{...}}}
+data: {"type":"tool_result","id":"tc_550e8400-e29b-41d4-a716-446655440000","name":"fork_workflow","result":{...}}
 ```
 - `id` — unique identifier matching a `tool_call` to its `tool_result`
 - `name` — the tool name
@@ -454,14 +454,21 @@ The tools available in each chat session are determined by the `allowedTools` ar
 
 **Workflow tools:**
 
+The three workflow write tools are intent-specific. The frontend's system prompt should make clear which intent applies:
+
+| Tool | Intent | Endpoint |
+|---|---|---|
+| `create_workflow` | Brand-new workflow from natural language. No existing workflow being modified. Starts a new dynasty. | `POST /v1/workflows/create` |
+| `upgrade_workflow` | Re-generate the DAG of an existing workflow within its dynasty. **Hard rule: bug fixes or metadata clarifications only.** Substantive changes must use `fork_workflow`. | `POST /v1/workflows/upgrade` |
+| `fork_workflow` | Substantive change to an existing workflow. Submits a new DAG to `PUT /v1/workflows/:id`; the workflow-service creates a new dynasty when the DAG signature differs. Same-signature submissions return `_action: "updated"` (no-op). | `PUT /v1/workflows/:id` |
+
+Read-only and supporting workflow tools:
+
 | Tool | Description |
 |---|---|
-| `get_workflow_details` | Fetches full workflow details (DAG, metadata, status) via workflow-service `GET /workflows/{id}` |
-| `generate_workflow` | Generates a new workflow from natural language via workflow-service `POST /workflows/generate` |
-| `get_workflow_required_providers` | Returns BYOK providers needed to execute a workflow via `GET /workflows/{id}/required-providers` |
+| `get_workflow_details` | Fetches full workflow details (DAG, metadata, status) via `GET /workflows/{id}` |
+| `get_workflow_required_providers` | Returns BYOK providers needed to execute a workflow via `GET /workflows/{id}/key-status` |
 | `list_workflows` | Lists workflows via `GET /workflows` with optional filters |
-| `update_workflow` | Updates a workflow's metadata or DAG. DAG changes trigger a fork (new workflow). Metadata-only changes update in-place. |
-| `update_workflow_node_config` | Updates a specific node's config in a workflow's DAG. May fork if DAG changes. |
 | `validate_workflow` | Validates a workflow's DAG structure |
 | `get_prompt_template` | Retrieves a stored prompt template by type |
 | `update_prompt_template` | Creates a new version of an existing prompt template (auto-versions) |
@@ -701,7 +708,7 @@ src/
     key-client.ts      # Key-service client: resolveKey (decrypt), listOrgKeys, getKeySource, listKeySources, checkProviderRequirements
     api-registry-client.ts # API Registry client: listServices, listServiceEndpoints, callApi (progressive disclosure)
     runs-client.ts     # RunsService HTTP client for run tracking and cost reporting
-    workflow-client.ts              # Workflow-service client for update_workflow and validate_workflow built-in tools
+    workflow-client.ts              # Workflow-service client for create/upgrade/fork/validate built-in tools
     content-generation-client.ts    # Content-generation service client for get_prompt_template built-in tool
     features-client.ts              # Features-service client (create, update/fork, list, get, inputs, prefill, stats)
 scripts/
