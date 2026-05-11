@@ -59,9 +59,9 @@ export interface WorkflowMutationResponse extends WorkflowResponse {
   _forkedFromName?: string;
 }
 
-export interface UpdateWorkflowResult {
+export interface ForkWorkflowResult {
   workflow: WorkflowMutationResponse;
-  /** "updated" = in-place 200, "forked" = new workflow 201 */
+  /** "updated" = signature unchanged (no-op), "forked" = new workflow created */
   outcome: "updated" | "forked";
 }
 
@@ -91,11 +91,8 @@ export async function getWorkflow(
   return (await res.json()) as WorkflowResponse;
 }
 
-export interface UpdateWorkflowBody {
-  name?: string;
-  description?: string;
-  tags?: string[];
-  dag?: DAG;
+export interface ForkWorkflowBody {
+  dag: DAG;
 }
 
 /**
@@ -116,12 +113,17 @@ function sanitizeDag(dag: DAG): DAG {
   };
 }
 
-export async function updateWorkflow(
+/**
+ * Fork a workflow by submitting a new DAG to PUT /v1/workflows/:id.
+ * Workflow-service creates a new dynasty when the DAG signature differs from
+ * the source. Same-signature submissions return _action: "updated" (no-op).
+ */
+export async function forkWorkflow(
   workflowId: string,
-  body: UpdateWorkflowBody,
+  body: ForkWorkflowBody,
   params: WorkflowCallParams,
-): Promise<UpdateWorkflowResult> {
-  const sanitized = body.dag ? { ...body, dag: sanitizeDag(body.dag) } : body;
+): Promise<ForkWorkflowResult> {
+  const sanitized = { dag: sanitizeDag(body.dag) };
   const res = await apiServiceFetch(
     `/v1/workflows/${encodeURIComponent(workflowId)}`,
     "PUT",
@@ -148,32 +150,7 @@ export async function updateWorkflow(
   return { workflow, outcome };
 }
 
-export async function updateWorkflowNodeConfig(
-  workflowId: string,
-  nodeId: string,
-  configUpdates: Record<string, unknown>,
-  params: WorkflowCallParams,
-): Promise<UpdateWorkflowResult> {
-  const workflow = await getWorkflow(workflowId, params);
-
-  if (!workflow.dag) {
-    throw new Error(`[workflow-client] Workflow ${workflowId} has no DAG`);
-  }
-
-  const nodeIndex = workflow.dag.nodes.findIndex((n) => n.id === nodeId);
-  if (nodeIndex === -1) {
-    throw new Error(
-      `[workflow-client] Node "${nodeId}" not found in workflow ${workflowId}. Available nodes: ${workflow.dag.nodes.map((n) => n.id).join(", ")}`,
-    );
-  }
-
-  const node = workflow.dag.nodes[nodeIndex];
-  node.config = { ...node.config, ...configUpdates };
-
-  return updateWorkflow(workflowId, { dag: workflow.dag }, params);
-}
-
-export interface GenerateWorkflowBody {
+export interface CreateWorkflowBody {
   description: string;
   featureSlug: string;
   hints?: {
@@ -189,16 +166,47 @@ export interface GenerateWorkflowBody {
   };
 }
 
-export async function generateWorkflow(
-  body: GenerateWorkflowBody,
+/**
+ * Create a new workflow dynasty from a natural-language description.
+ * Returns the generated workflow with its DAG. workflow-service deploys it.
+ */
+export async function createWorkflow(
+  body: CreateWorkflowBody,
   params: WorkflowCallParams,
 ): Promise<unknown> {
-  const res = await apiServiceFetch("/v1/workflows/generate", "POST", params, body);
+  const res = await apiServiceFetch("/v1/workflows/create", "POST", params, body);
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[workflow-client] POST /v1/workflows/generate returned ${res.status}: ${text}`,
+      `[workflow-client] POST /v1/workflows/create returned ${res.status}: ${text}`,
+    );
+  }
+
+  return await res.json();
+}
+
+export interface UpgradeWorkflowBody {
+  workflowSlug: string;
+  description: string;
+  hints?: string[];
+}
+
+/**
+ * Upgrade an existing workflow within its dynasty. The description should
+ * describe a bug fix or a metadata clarification — not a substantive change
+ * (use forkWorkflow for that).
+ */
+export async function upgradeWorkflow(
+  body: UpgradeWorkflowBody,
+  params: WorkflowCallParams,
+): Promise<unknown> {
+  const res = await apiServiceFetch("/v1/workflows/upgrade", "POST", params, body);
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[workflow-client] POST /v1/workflows/upgrade returned ${res.status}: ${text}`,
     );
   }
 

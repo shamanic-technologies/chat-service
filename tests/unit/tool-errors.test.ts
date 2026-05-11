@@ -5,12 +5,12 @@ describe("formatToolError", () => {
   it("parses Zod validation errors into field-level messages", () => {
     const raw = `[workflow-client] PUT /workflows/wf-1 returned 400: {"error":"Validation error","details":{"issues":[{"code":"invalid_type","expected":"object","received":"null","path":["dag","nodes",0,"config"],"message":"Expected object, received null"},{"code":"invalid_type","expected":"object","received":"null","path":["dag","nodes",0,"inputMapping"],"message":"Expected object, received null"}],"name":"ZodError"}}`;
 
-    const result = formatToolError("update_workflow", raw);
+    const result = formatToolError("fork_workflow", raw);
 
     expect(result.error).toContain("dag.nodes.0.config: Expected object, received null");
     expect(result.error).toContain("dag.nodes.0.inputMapping: Expected object, received null");
-    expect(result.suggestion).toContain("update_workflow_node_config");
-    expect(result.tool).toBe("update_workflow");
+    expect(result.suggestion).toContain("get_workflow_details");
+    expect(result.tool).toBe("fork_workflow");
   });
 
   it("truncates when more than 5 Zod issues", () => {
@@ -23,7 +23,7 @@ describe("formatToolError", () => {
     }));
     const raw = `returned 400: {"error":"Validation error","details":{"issues":${JSON.stringify(issues)},"name":"ZodError"}}`;
 
-    const result = formatToolError("update_workflow", raw);
+    const result = formatToolError("fork_workflow", raw);
     expect(result.error).toContain("and 3 more");
   });
 
@@ -45,7 +45,7 @@ describe("formatToolError", () => {
 
   it("handles missing API key errors", () => {
     const raw = "[workflow-client] WORKFLOW_SERVICE_API_KEY is required";
-    const result = formatToolError("update_workflow", raw);
+    const result = formatToolError("fork_workflow", raw);
 
     expect(result.error).toContain("is required");
     expect(result.suggestion).toContain("server configuration");
@@ -53,17 +53,17 @@ describe("formatToolError", () => {
 
   it("handles generic 400 errors without Zod details", () => {
     const raw = "[workflow-client] PUT /workflows/wf-1 returned 400: Bad request body";
-    const result = formatToolError("update_workflow", raw);
+    const result = formatToolError("fork_workflow", raw);
 
     expect(result.error).toContain("Bad request");
-    expect(result.suggestion).toContain("update_workflow_node_config");
+    expect(result.suggestion).toContain("get_workflow_details");
   });
 
-  it("includes tool-specific hints for update_workflow_node_config", () => {
-    const raw = "[workflow-client] Node \"bad-node\" not found in workflow wf-1";
-    const result = formatToolError("update_workflow_node_config", raw);
+  it("includes tool-specific hints for upgrade_workflow", () => {
+    const raw = "returned 400: invalid description";
+    const result = formatToolError("upgrade_workflow", raw);
 
-    expect(result.suggestion).toContain("nodeId");
+    expect(result.suggestion).toMatch(/bug.?fix|metadata/i);
   });
 
   it("includes tool-specific hints for update_prompt_template", () => {

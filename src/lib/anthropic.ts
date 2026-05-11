@@ -120,38 +120,109 @@ export const REQUEST_USER_INPUT_TOOL: Anthropic.Tool = {
   },
 };
 
-export const UPDATE_WORKFLOW_TOOL: Anthropic.Tool = {
-  name: "update_workflow",
+export const CREATE_WORKFLOW_TOOL: Anthropic.Tool = {
+  name: "create_workflow",
   description:
-    "Update a workflow's metadata (name, description, tags) and/or its DAG structure. Use this to directly modify a workflow when the user asks — do not use input_request to confirm values you already know. For structural changes (adding/removing nodes or edges), pass the full dag object.",
+    "Create a brand-new workflow dynasty from a natural-language description. Uses an LLM on workflow-service to generate a valid DAG, validates it, and deploys it. Use this ONLY when no existing workflow is being modified — e.g. the user is starting from scratch. If an existing workflow is being changed in any way, use upgrade_workflow (bug fix or metadata clarification) or fork_workflow (substantive change) instead.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      description: {
+        type: "string",
+        description:
+          "Natural-language description of the desired workflow. Be specific about steps, services, and data flow. Minimum 10 characters.",
+      },
+      featureSlug: {
+        type: "string",
+        description:
+          "Feature slug from features-service (e.g. 'cold-email-outreach'). Required — used to build the workflow slug.",
+      },
+      hints: {
+        type: "object",
+        description:
+          "Optional hints to guide generation. Can include: services (array of service names to scope to), nodeTypes (suggested node types), expectedInputs (expected flow_input field names like 'campaignId').",
+      },
+      style: {
+        type: "object",
+        description:
+          "Optional style configuration. When provided, the workflow is generated in the style of the specified human or brand, and the signatureName uses the style name with auto-versioning (e.g. 'hormozi-v1').",
+        properties: {
+          type: {
+            type: "string",
+            enum: ["human", "brand"],
+            description:
+              "Style source type. 'human' for an industry expert, 'brand' for a company/organization.",
+          },
+          humanId: {
+            type: "string",
+            description: "Human ID from human-service. Required when type is 'human'.",
+          },
+          brandId: {
+            type: "string",
+            description: "Brand ID from brand-service. Required when type is 'brand'.",
+          },
+          name: {
+            type: "string",
+            description:
+              "Display name of the human or brand (e.g. 'Hormozi'). Used to build the signatureName.",
+          },
+        },
+        required: ["type", "name"],
+      },
+    },
+    required: ["description", "featureSlug"],
+  },
+};
+
+export const UPGRADE_WORKFLOW_TOOL: Anthropic.Tool = {
+  name: "upgrade_workflow",
+  description:
+    "Re-generate the DAG of an existing workflow while keeping the SAME dynasty/lineage. Returns the workflow in the same dynasty (possibly as a new version row when the regenerated DAG signature differs from the previous one).\n\n" +
+    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: upgrade_workflow may ONLY be used when (a) fixing a bug in the existing workflow's DAG, or (b) clarifying metadata that is factually wrong or imprecise. Any change in behavior, scope, intent, audience, or substantive metadata is NOT an upgrade — use fork_workflow instead. Upgrade keeps the same lineage; fork starts a new one. If you are not certain the change qualifies as a bug fix or metadata clarification, default to fork_workflow.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      workflowSlug: {
+        type: "string",
+        description:
+          "Slug of the existing workflow to upgrade (e.g. 'cold-email-outreach-nova'). Upgrade stays within the same dynasty.",
+      },
+      description: {
+        type: "string",
+        description:
+          "Natural-language description of the upgrade. Must describe the bug being fixed or the metadata being clarified — not a new behavior. Minimum 10 characters.",
+      },
+      hints: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Optional free-form hints to guide the upgrade (array of short strings).",
+      },
+    },
+    required: ["workflowSlug", "description"],
+  },
+};
+
+export const FORK_WORKFLOW_TOOL: Anthropic.Tool = {
+  name: "fork_workflow",
+  description:
+    "Fork a workflow into a NEW dynasty/lineage by submitting a new DAG. Use this for any substantive change: new behavior, new scope, new intent, new audience, or a structural DAG change that isn't a bug fix. The original workflow stays active under its own lineage; this creates a new one. If the submitted DAG has the same signature as the source, no fork happens (returns _action: 'updated') — that's expected, not an error.\n\n" +
+    "Always call get_workflow_details first to read the current DAG, modify it, and pass the COMPLETE updated DAG — partial DAGs are not supported.",
   input_schema: {
     type: "object" as const,
     properties: {
       workflowId: {
         type: "string",
         description:
-          "UUID of the workflow to update. If available in context, use it directly — do NOT ask the user for it.",
-      },
-      name: {
-        type: "string",
-        description: "New workflow name (optional)",
-      },
-      description: {
-        type: "string",
-        description: "New workflow description (optional)",
-      },
-      tags: {
-        type: "array",
-        items: { type: "string" },
-        description: "New tags for the workflow (optional)",
+          "UUID of the source workflow to fork from. If available in context, use it directly — do NOT ask the user for it.",
       },
       dag: {
         type: "object",
         description:
-          "Full DAG definition with nodes and edges. Use for structural changes like adding/removing nodes or edges. Must include the complete DAG — partial updates are not supported. Use get_workflow_details first to read the current DAG, then modify and pass the full result.",
+          "Full DAG definition with nodes and edges. Must include the complete DAG — partial updates are not supported. Use get_workflow_details first to read the current DAG, then modify and pass the full result.",
       },
     },
-    required: ["workflowId"],
+    required: ["workflowId", "dag"],
   },
 };
 
@@ -214,33 +285,6 @@ export const UPDATE_PROMPT_TEMPLATE_TOOL: Anthropic.Tool = {
       },
     },
     required: ["sourceType", "prompt", "variables"],
-  },
-};
-
-export const UPDATE_WORKFLOW_NODE_CONFIG_TOOL: Anthropic.Tool = {
-  name: "update_workflow_node_config",
-  description:
-    "Update the static config of a specific node in a workflow's DAG. Fetches the current DAG, merges your config changes into the target node, and saves. Use this to change node parameters like prompt type, target URL, call-to-action, etc.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      workflowId: {
-        type: "string",
-        description:
-          "UUID of the workflow to update. If available in context, use it directly.",
-      },
-      nodeId: {
-        type: "string",
-        description:
-          "ID of the node to update (e.g. 'email-generate', 'email-send')",
-      },
-      configUpdates: {
-        type: "object",
-        description:
-          'Key-value pairs to merge into the node\'s config. Only specified keys are changed; others are preserved. Example: {"body": {"type": "cold-email-v3"}}',
-      },
-    },
-    required: ["workflowId", "nodeId", "configUpdates"],
   },
 };
 
@@ -346,7 +390,7 @@ export const CHECK_PROVIDER_REQUIREMENTS_TOOL: Anthropic.Tool = {
 export const GET_WORKFLOW_DETAILS_TOOL: Anthropic.Tool = {
   name: "get_workflow_details",
   description:
-    "Fetch the full details of a workflow including its DAG, metadata, and status. Use this to inspect the current state of a workflow, especially after making changes via update_workflow or update_workflow_node_config.",
+    "Fetch the full details of a workflow including its DAG, metadata, and status. Use this to inspect the current state of a workflow, especially before calling fork_workflow (to read the current DAG before modifying it).",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -357,58 +401,6 @@ export const GET_WORKFLOW_DETAILS_TOOL: Anthropic.Tool = {
       },
     },
     required: ["workflowId"],
-  },
-};
-
-export const GENERATE_WORKFLOW_TOOL: Anthropic.Tool = {
-  name: "generate_workflow",
-  description:
-    "Generate a new workflow from a natural language description. Uses an LLM to create a valid DAG, validates it, and deploys it automatically. Use this when the user wants to create a brand new workflow from scratch.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      description: {
-        type: "string",
-        description:
-          "Natural language description of the desired workflow. Be specific about the steps, services, and data flow. Minimum 10 characters.",
-      },
-      featureSlug: {
-        type: "string",
-        description:
-          "Feature slug from features-service (e.g. 'cold-email-outreach'). Required — used to build the workflow slug.",
-      },
-      hints: {
-        type: "object",
-        description:
-          "Optional hints to guide generation. Can include: services (array of service names to scope to), nodeTypes (suggested node types), expectedInputs (expected flow_input field names like 'campaignId').",
-      },
-      style: {
-        type: "object",
-        description:
-          "Optional style configuration. When provided, the workflow is generated in the style of the specified human or brand, and the signatureName uses the style name with auto-versioning (e.g. 'hormozi-v1').",
-        properties: {
-          type: {
-            type: "string",
-            enum: ["human", "brand"],
-            description: "Style source type. 'human' for an industry expert, 'brand' for a company/organization.",
-          },
-          humanId: {
-            type: "string",
-            description: "Human ID from human-service. Required when type is 'human'.",
-          },
-          brandId: {
-            type: "string",
-            description: "Brand ID from brand-service. Required when type is 'brand'.",
-          },
-          name: {
-            type: "string",
-            description: "Display name of the human or brand (e.g. 'Hormozi'). Used to build the signatureName.",
-          },
-        },
-        required: ["type", "name"],
-      },
-    },
-    required: ["description", "featureSlug"],
   },
 };
 
@@ -892,13 +884,13 @@ export const BROWSE_URL_TOOL: Anthropic.Tool = {
 
 export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   request_user_input: REQUEST_USER_INPUT_TOOL,
-  update_workflow: UPDATE_WORKFLOW_TOOL,
+  create_workflow: CREATE_WORKFLOW_TOOL,
+  upgrade_workflow: UPGRADE_WORKFLOW_TOOL,
+  fork_workflow: FORK_WORKFLOW_TOOL,
   validate_workflow: VALIDATE_WORKFLOW_TOOL,
   get_prompt_template: GET_PROMPT_TEMPLATE_TOOL,
   update_prompt_template: UPDATE_PROMPT_TEMPLATE_TOOL,
-  update_workflow_node_config: UPDATE_WORKFLOW_NODE_CONFIG_TOOL,
   get_workflow_details: GET_WORKFLOW_DETAILS_TOOL,
-  generate_workflow: GENERATE_WORKFLOW_TOOL,
   get_workflow_required_providers: GET_WORKFLOW_REQUIRED_PROVIDERS_TOOL,
   list_workflows: LIST_WORKFLOWS_TOOL,
   list_services: LIST_SERVICES_TOOL,

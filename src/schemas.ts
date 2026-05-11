@@ -114,9 +114,9 @@ export const AppConfigRequestSchema = z
       description:
         "List of tool names the LLM is allowed to use in this chat mode. " +
         "Only these tools will be provided to the model and executable server-side. " +
-        "Available tools: request_user_input, update_workflow, validate_workflow, " +
-        "get_workflow_details, generate_workflow, get_workflow_required_providers, list_workflows, " +
-        "update_workflow_node_config, get_prompt_template, update_prompt_template, " +
+        "Available tools: request_user_input, create_workflow, upgrade_workflow, fork_workflow, " +
+        "validate_workflow, get_workflow_details, get_workflow_required_providers, list_workflows, " +
+        "get_prompt_template, update_prompt_template, " +
         "list_services, list_service_endpoints, " +
         "list_org_keys, get_key_source, list_key_sources, check_provider_requirements, " +
         "create_feature, update_feature, list_features, get_feature, get_feature_inputs, " +
@@ -124,7 +124,9 @@ export const AppConfigRequestSchema = z
         "update_campaign_fields, extract_brand_fields, browse_url",
       example: [
         "request_user_input",
-        "update_workflow",
+        "create_workflow",
+        "upgrade_workflow",
+        "fork_workflow",
         "validate_workflow",
         "get_workflow_details",
         "list_workflows",
@@ -194,7 +196,7 @@ registry.registerPath({
     "**Example — workflow chat config:**\n" +
     "```json\n" +
     '{ "key": "workflow", "systemPrompt": "You help users understand and modify workflows...", ' +
-    '"allowedTools": ["request_user_input", "update_workflow", "validate_workflow", "get_workflow_details", "list_workflows", "update_workflow_node_config", "get_prompt_template", "update_prompt_template", "list_org_keys", "get_key_source", "list_key_sources", "check_provider_requirements", "list_services", "list_service_endpoints", "generate_workflow", "get_workflow_required_providers"] }\n' +
+    '"allowedTools": ["request_user_input", "create_workflow", "upgrade_workflow", "fork_workflow", "validate_workflow", "get_workflow_details", "list_workflows", "get_prompt_template", "update_prompt_template", "list_org_keys", "get_key_source", "list_key_sources", "check_provider_requirements", "list_services", "list_service_endpoints", "get_workflow_required_providers"] }\n' +
     "```\n\n" +
     "**Example — feature chat config:**\n" +
     "```json\n" +
@@ -261,7 +263,9 @@ export const PlatformConfigRequestSchema = z
         "List of tool names the LLM is allowed to use. Same semantics as in PUT /config.",
       example: [
         "request_user_input",
-        "update_workflow",
+        "create_workflow",
+        "upgrade_workflow",
+        "fork_workflow",
         "validate_workflow",
         "get_workflow_details",
         "list_workflows",
@@ -715,7 +719,7 @@ const SSEToolCallEventSchema = z
     }),
     name: z.string().openapi({
       description: "The tool name being invoked",
-      example: "update_workflow",
+      example: "fork_workflow",
     }),
     args: z.record(z.string(), z.unknown()).openapi({
       description: "Input arguments passed to the tool, as a JSON object",
@@ -734,7 +738,7 @@ const SSEToolResultEventSchema = z
     }),
     name: z.string().openapi({
       description: "The tool name that produced this result",
-      example: "update_workflow",
+      example: "fork_workflow",
     }),
     result: z.unknown().openapi({
       description: "The tool output — can be a string or a JSON object",

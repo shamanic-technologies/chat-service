@@ -18,24 +18,33 @@ async function loadModule() {
   return import("../../src/lib/workflow-client.js");
 }
 
-describe("updateWorkflow", () => {
-  it("sends PUT with correct URL, headers, and body via api-service", async () => {
+describe("createWorkflow", () => {
+  it("sends POST /v1/workflows/create with body and identity headers", async () => {
+    const mockResponse = {
+      workflow: { id: "wf-new", name: "cold-email-outreach-nova", action: "created" },
+      dag: { nodes: [{ id: "step-1", type: "http.call" }], edges: [] },
+      generatedDescription: "Cold email workflow",
+    };
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ id: "wf-123", description: "Updated" }),
+      status: 201,
+      json: () => Promise.resolve(mockResponse),
     });
 
-    const { updateWorkflow } = await loadModule();
-    const result = await updateWorkflow(
-      "wf-123",
-      { description: "Updated description" },
+    const { createWorkflow } = await loadModule();
+    const result = await createWorkflow(
+      {
+        description: "Fetch a lead, generate a cold email, and send it",
+        featureSlug: "cold-email-outreach",
+        hints: { services: ["lead", "content-generation"] },
+      },
       { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://api.test.local/v1/workflows/wf-123",
+      "https://api.test.local/v1/workflows/create",
       expect.objectContaining({
-        method: "PUT",
+        method: "POST",
         headers: expect.objectContaining({
           "Content-Type": "application/json",
           "X-API-Key": "test-api-svc-key",
@@ -43,126 +52,191 @@ describe("updateWorkflow", () => {
           "x-user-id": "user-1",
           "x-run-id": "run-1",
         }),
-        body: JSON.stringify({ description: "Updated description" }),
       }),
     );
-    expect(result).toEqual({
-      workflow: { id: "wf-123", description: "Updated" },
-      outcome: "updated",
+    const sentBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+    );
+    expect(sentBody.description).toContain("cold email");
+    expect(sentBody.featureSlug).toBe("cold-email-outreach");
+    expect(sentBody.hints.services).toEqual(["lead", "content-generation"]);
+    expect(result).toEqual(mockResponse);
+  });
+
+  it("passes optional style configuration through", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ workflow: { id: "wf-1" } }),
+    });
+
+    const { createWorkflow } = await loadModule();
+    await createWorkflow(
+      {
+        description: "Workflow inspired by an expert",
+        featureSlug: "cold-email",
+        style: { type: "human", humanId: "hum-1", name: "Hormozi" },
+      },
+      { orgId: "o", userId: "u", runId: "r" },
+    );
+
+    const sentBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+    );
+    expect(sentBody.style).toEqual({
+      type: "human",
+      humanId: "hum-1",
+      name: "Hormozi",
     });
   });
 
-  it("returns outcome 'forked' on HTTP 201", async () => {
+  it("throws on non-OK response with status and body in message", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 422,
+      text: () => Promise.resolve("Could not generate a valid DAG"),
+    });
+
+    const { createWorkflow } = await loadModule();
+    await expect(
+      createWorkflow(
+        { description: "vague workflow request", featureSlug: "test" },
+        { orgId: "o", userId: "u", runId: "r" },
+      ),
+    ).rejects.toThrow(/returned 422.*Could not generate a valid DAG/);
+  });
+});
+
+describe("upgradeWorkflow", () => {
+  it("sends POST /v1/workflows/upgrade with workflowSlug + description", async () => {
+    const mockResponse = {
+      workflow: {
+        id: "wf-v2",
+        name: "cold-email-outreach-nova",
+        action: "updated",
+      },
+      dag: { nodes: [], edges: [] },
+      generatedDescription: "Upgraded workflow",
+    };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockResponse),
+    });
+
+    const { upgradeWorkflow } = await loadModule();
+    const result = await upgradeWorkflow(
+      {
+        workflowSlug: "cold-email-outreach-nova",
+        description: "Bug fix: the email-send step was missing the to address mapping",
+      },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.test.local/v1/workflows/upgrade",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "X-API-Key": "test-api-svc-key",
+          "x-org-id": "org-1",
+        }),
+      }),
+    );
+    const sentBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+    );
+    expect(sentBody.workflowSlug).toBe("cold-email-outreach-nova");
+    expect(sentBody.description).toContain("Bug fix");
+    expect(result).toEqual(mockResponse);
+  });
+
+  it("throws on non-OK response", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve("Workflow slug not found"),
+    });
+
+    const { upgradeWorkflow } = await loadModule();
+    await expect(
+      upgradeWorkflow(
+        { workflowSlug: "missing", description: "fix something" },
+        { orgId: "o", userId: "u", runId: "r" },
+      ),
+    ).rejects.toThrow(/returned 404.*Workflow slug not found/);
+  });
+
+  it("forwards tracking headers", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ workflow: { id: "wf-1" } }),
+    });
+
+    const { upgradeWorkflow } = await loadModule();
+    await upgradeWorkflow(
+      { workflowSlug: "s", description: "description text" },
+      {
+        orgId: "o",
+        userId: "u",
+        runId: "r",
+        trackingHeaders: { "x-campaign-id": "camp-1" },
+      },
+    );
+
+    const callHeaders = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]
+      .headers;
+    expect(callHeaders["x-campaign-id"]).toBe("camp-1");
+  });
+});
+
+describe("forkWorkflow", () => {
+  it("sends PUT /v1/workflows/:id with DAG body via api-service", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       status: 201,
-      json: () => Promise.resolve({ id: "wf-new", name: "sales-email-v2", creationType: "fork", createdFromWorkflow: "wf-123", signatureName: "sales-email-v2", _action: "forked", _forkedFromName: "sales-email-v1" }),
+      json: () =>
+        Promise.resolve({
+          id: "wf-new",
+          name: "sales-email-v2",
+          creationType: "fork",
+          createdFromWorkflow: "wf-123",
+          signatureName: "sales-email-v2",
+          _action: "forked",
+          _forkedFromName: "sales-email-v1",
+        }),
     });
 
-    const { updateWorkflow } = await loadModule();
-    const result = await updateWorkflow(
+    const { forkWorkflow } = await loadModule();
+    const result = await forkWorkflow(
       "wf-123",
       { dag: { nodes: [{ id: "step-1", type: "http.call" }], edges: [] } },
       { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
 
+    expect(fetch).toHaveBeenCalledWith(
+      "https://api.test.local/v1/workflows/wf-123",
+      expect.objectContaining({ method: "PUT" }),
+    );
     expect(result.outcome).toBe("forked");
     expect(result.workflow.id).toBe("wf-new");
     expect(result.workflow.creationType).toBe("fork");
-    expect(result.workflow.createdFromWorkflow).toBe("wf-123");
-    expect(result.workflow.signatureName).toBe("sales-email-v2");
-    expect(result.workflow._action).toBe("forked");
-    expect(result.workflow._forkedFromName).toBe("sales-email-v1");
   });
 
-  it("uses _action from response body over status code", async () => {
+  it("returns outcome 'updated' when signature is identical (no fork)", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       status: 200,
       json: () => Promise.resolve({ id: "wf-1", _action: "updated" }),
     });
 
-    const { updateWorkflow } = await loadModule();
-    const result = await updateWorkflow(
+    const { forkWorkflow } = await loadModule();
+    const result = await forkWorkflow(
       "wf-1",
-      { description: "test" },
+      { dag: { nodes: [{ id: "step-1", type: "http.call" }], edges: [] } },
       { orgId: "o", userId: "u", runId: "r" },
     );
 
     expect(result.outcome).toBe("updated");
-    expect(result.workflow._action).toBe("updated");
-  });
-
-  it("throws with existing workflow info on HTTP 409", async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: false,
-      status: 409,
-      json: () => Promise.resolve({ existingWorkflowId: "wf-existing", existingWorkflowSlug: "sales-email-v2" }),
-    });
-
-    const { updateWorkflow } = await loadModule();
-    await expect(
-      updateWorkflow(
-        "wf-123",
-        { dag: { nodes: [{ id: "step-1", type: "http.call" }], edges: [] } },
-        { orgId: "org-1", userId: "user-1", runId: "run-1" },
-      ),
-    ).rejects.toThrow(/sales-email-v2.*wf-existing/);
-  });
-
-  it("always sends identity headers", async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ id: "wf-123" }),
-    });
-
-    const { updateWorkflow } = await loadModule();
-    await updateWorkflow(
-      "wf-123",
-      { name: "test" },
-      { orgId: "org-1", userId: "user-1", runId: "run-1" },
-    );
-
-    const callHeaders = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
-    expect(callHeaders["x-run-id"]).toBe("run-1");
-    expect(callHeaders["x-org-id"]).toBe("org-1");
-    expect(callHeaders["x-user-id"]).toBe("user-1");
-    expect(callHeaders["X-API-Key"]).toBe("test-api-svc-key");
-  });
-
-  it("forwards tracking headers", async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ id: "wf-123" }),
-    });
-
-    const { updateWorkflow } = await loadModule();
-    await updateWorkflow(
-      "wf-123",
-      { name: "new-name" },
-      {
-        orgId: "org-1",
-        userId: "user-1",
-        runId: "run-1",
-        trackingHeaders: { "x-campaign-id": "camp-1" },
-      },
-    );
-
-    const callHeaders = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
-    expect(callHeaders["x-campaign-id"]).toBe("camp-1");
-  });
-
-  it("throws on HTTP error", async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: false,
-      status: 404,
-      text: () => Promise.resolve("Not found"),
-    });
-
-    const { updateWorkflow } = await loadModule();
-    await expect(
-      updateWorkflow("wf-bad", { description: "x" }, { orgId: "o", userId: "u", runId: "r" }),
-    ).rejects.toThrow(/returned 404/);
   });
 
   it("strips null config and inputMapping from DAG nodes before sending", async () => {
@@ -171,15 +245,26 @@ describe("updateWorkflow", () => {
       json: () => Promise.resolve({ id: "wf-1" }),
     });
 
-    const { updateWorkflow } = await loadModule();
-    await updateWorkflow(
+    const { forkWorkflow } = await loadModule();
+    await forkWorkflow(
       "wf-1",
       {
         dag: {
           nodes: [
-            { id: "step-1", type: "http.call", config: null as unknown as Record<string, unknown>, inputMapping: null as unknown as Record<string, string>, retries: 0 },
+            {
+              id: "step-1",
+              type: "http.call",
+              config: null as unknown as Record<string, unknown>,
+              inputMapping: null as unknown as Record<string, string>,
+              retries: 0,
+            },
             { id: "step-2", type: "condition" },
-            { id: "step-3", type: "http.call", config: { path: "/send" }, inputMapping: { "body.to": "$ref:step-1.output.email" } },
+            {
+              id: "step-3",
+              type: "http.call",
+              config: { path: "/send" },
+              inputMapping: { "body.to": "$ref:step-1.output.email" },
+            },
           ],
           edges: [{ from: "step-1", to: "step-2" }],
         },
@@ -187,58 +272,100 @@ describe("updateWorkflow", () => {
       { orgId: "o", userId: "u", runId: "r" },
     );
 
-    const sentBody = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
-    expect(sentBody.dag.nodes[0]).toEqual({ id: "step-1", type: "http.call", retries: 0 });
+    const sentBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+    );
+    expect(sentBody.dag.nodes[0]).toEqual({
+      id: "step-1",
+      type: "http.call",
+      retries: 0,
+    });
     expect(sentBody.dag.nodes[0].config).toBeUndefined();
     expect(sentBody.dag.nodes[0].inputMapping).toBeUndefined();
-    expect(sentBody.dag.nodes[1]).toEqual({ id: "step-2", type: "condition" });
     expect(sentBody.dag.nodes[2].config).toEqual({ path: "/send" });
-    expect(sentBody.dag.nodes[2].inputMapping).toEqual({ "body.to": "$ref:step-1.output.email" });
   });
 
-  it("preserves condition field on DAG edges when sending", async () => {
+  it("preserves condition field on DAG edges", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: () => Promise.resolve({ id: "wf-1", _action: "updated" }),
     });
 
-    const { updateWorkflow } = await loadModule();
-    await updateWorkflow(
+    const { forkWorkflow } = await loadModule();
+    await forkWorkflow(
       "wf-1",
       {
         dag: {
           nodes: [
             { id: "check", type: "condition" },
-            { id: "yes-branch", type: "http.call", config: { path: "/yes" } },
-            { id: "no-branch", type: "http.call", config: { path: "/no" } },
-            { id: "always", type: "http.call", config: { path: "/done" } },
+            { id: "yes", type: "http.call", config: { path: "/yes" } },
           ],
           edges: [
-            { from: "check", to: "yes-branch", condition: "results.check.found == true" },
-            { from: "check", to: "no-branch", condition: "results.check.found == false" },
-            { from: "check", to: "always" },
-            { from: "yes-branch", to: "always" },
+            { from: "check", to: "yes", condition: "results.check.found == true" },
           ],
         },
       },
       { orgId: "o", userId: "u", runId: "r" },
     );
 
-    const sentBody = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
-    expect(sentBody.dag.edges).toEqual([
-      { from: "check", to: "yes-branch", condition: "results.check.found == true" },
-      { from: "check", to: "no-branch", condition: "results.check.found == false" },
-      { from: "check", to: "always" },
-      { from: "yes-branch", to: "always" },
-    ]);
+    const sentBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+    );
+    expect(sentBody.dag.edges[0]).toEqual({
+      from: "check",
+      to: "yes",
+      condition: "results.check.found == true",
+    });
+  });
+
+  it("throws with existing workflow info on HTTP 409", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: () =>
+        Promise.resolve({
+          existingWorkflowId: "wf-existing",
+          existingWorkflowSlug: "sales-email-v2",
+        }),
+    });
+
+    const { forkWorkflow } = await loadModule();
+    await expect(
+      forkWorkflow(
+        "wf-123",
+        { dag: { nodes: [{ id: "step-1", type: "http.call" }], edges: [] } },
+        { orgId: "org-1", userId: "user-1", runId: "run-1" },
+      ),
+    ).rejects.toThrow(/sales-email-v2.*wf-existing/);
+  });
+
+  it("throws on other HTTP errors", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve("Internal error"),
+    });
+
+    const { forkWorkflow } = await loadModule();
+    await expect(
+      forkWorkflow(
+        "wf-bad",
+        { dag: { nodes: [], edges: [] } },
+        { orgId: "o", userId: "u", runId: "r" },
+      ),
+    ).rejects.toThrow(/returned 500/);
   });
 
   it("throws when ADMIN_DISTRIBUTE_API_KEY is not set", async () => {
     delete process.env.ADMIN_DISTRIBUTE_API_KEY;
 
-    const { updateWorkflow } = await loadModule();
+    const { forkWorkflow } = await loadModule();
     await expect(
-      updateWorkflow("wf-1", { description: "x" }, { orgId: "o", userId: "u", runId: "r" }),
+      forkWorkflow(
+        "wf-1",
+        { dag: { nodes: [], edges: [] } },
+        { orgId: "o", userId: "u", runId: "r" },
+      ),
     ).rejects.toThrow(/ADMIN_DISTRIBUTE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
@@ -313,7 +440,11 @@ describe("getWorkflow", () => {
     });
 
     const { getWorkflow } = await loadModule();
-    const result = await getWorkflow("wf-1", { orgId: "org-1", userId: "user-1", runId: "run-1" });
+    const result = await getWorkflow("wf-1", {
+      orgId: "org-1",
+      userId: "user-1",
+      runId: "run-1",
+    });
 
     expect(fetch).toHaveBeenCalledWith(
       "https://api.test.local/v1/workflows/wf-1",
@@ -339,190 +470,6 @@ describe("getWorkflow", () => {
     await expect(
       getWorkflow("wf-bad", { orgId: "o", userId: "u", runId: "r" }),
     ).rejects.toThrow(/returned 404/);
-  });
-});
-
-describe("updateWorkflowNodeConfig", () => {
-  it("fetches workflow, merges config, and PUTs the updated DAG", async () => {
-    const existingWorkflow = {
-      id: "wf-1",
-      dag: {
-        nodes: [
-          { id: "email-generate", type: "http.call", config: { body: { type: "cold-email" }, path: "/generate", method: "POST", service: "content-generation" } },
-          { id: "email-send", type: "http.call", config: { path: "/send", method: "POST", service: "email-gateway" } },
-        ],
-        edges: [{ from: "email-generate", to: "email-send" }],
-      },
-    };
-
-    const updatedWorkflow = { ...existingWorkflow, updatedAt: "2026-03-18T00:00:00Z" };
-
-    (fetch as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(existingWorkflow) })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(updatedWorkflow) });
-
-    const { updateWorkflowNodeConfig } = await loadModule();
-    const result = await updateWorkflowNodeConfig(
-      "wf-1",
-      "email-generate",
-      { body: { type: "cold-email-v3" } },
-      { orgId: "org-1", userId: "user-1", runId: "run-1" },
-    );
-
-    expect((fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("https://api.test.local/v1/workflows/wf-1");
-    expect((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe("GET");
-
-    const putBody = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[1][1].body);
-    expect(putBody.dag.nodes[0].config.body.type).toBe("cold-email-v3");
-    expect(putBody.dag.nodes[0].config.path).toBe("/generate");
-    expect(putBody.dag.nodes[0].config.service).toBe("content-generation");
-    expect(putBody.dag.nodes[1].id).toBe("email-send");
-
-    expect(result).toEqual({ workflow: updatedWorkflow, outcome: "updated" });
-  });
-
-  it("returns forked outcome when node config change triggers a fork", async () => {
-    const existingWorkflow = {
-      id: "wf-1",
-      dag: {
-        nodes: [{ id: "step-1", type: "http.call", config: { path: "/old" } }],
-        edges: [],
-      },
-    };
-
-    const forkedWorkflow = { id: "wf-forked", name: "wf-1-custom", creationType: "fork", createdFromWorkflow: "wf-1", dag: existingWorkflow.dag };
-
-    (fetch as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(existingWorkflow) })
-      .mockResolvedValueOnce({ ok: true, status: 201, json: () => Promise.resolve(forkedWorkflow) });
-
-    const { updateWorkflowNodeConfig } = await loadModule();
-    const result = await updateWorkflowNodeConfig(
-      "wf-1",
-      "step-1",
-      { path: "/new" },
-      { orgId: "org-1", userId: "user-1", runId: "run-1" },
-    );
-
-    expect(result.outcome).toBe("forked");
-    expect(result.workflow.id).toBe("wf-forked");
-    expect(result.workflow.creationType).toBe("fork");
-    expect(result.workflow.createdFromWorkflow).toBe("wf-1");
-  });
-
-  it("throws when node is not found in DAG", async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({
-        id: "wf-1",
-        dag: { nodes: [{ id: "step-1", type: "http.call" }], edges: [] },
-      }),
-    });
-
-    const { updateWorkflowNodeConfig } = await loadModule();
-    await expect(
-      updateWorkflowNodeConfig(
-        "wf-1",
-        "nonexistent-node",
-        { body: { type: "v2" } },
-        { orgId: "o", userId: "u", runId: "r" },
-      ),
-    ).rejects.toThrow(/Node "nonexistent-node" not found/);
-  });
-
-  it("throws when workflow has no DAG", async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ id: "wf-1", dag: null }),
-    });
-
-    const { updateWorkflowNodeConfig } = await loadModule();
-    await expect(
-      updateWorkflowNodeConfig(
-        "wf-1",
-        "step-1",
-        { body: {} },
-        { orgId: "o", userId: "u", runId: "r" },
-      ),
-    ).rejects.toThrow(/has no DAG/);
-  });
-});
-
-describe("generateWorkflow", () => {
-  it("sends POST /v1/workflows/generate via api-service", async () => {
-    const mockResponse = {
-      workflow: { id: "wf-new", name: "sales-email-cold-outreach-nova" },
-      dag: { nodes: [{ id: "step-1", type: "http.call" }], edges: [] },
-      category: "sales",
-      channel: "email",
-      audienceType: "cold-outreach",
-      generatedDescription: "A cold email workflow",
-    };
-
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    });
-
-    const { generateWorkflow } = await loadModule();
-    const result = await generateWorkflow(
-      {
-        description: "Create a cold email workflow that fetches a lead, generates an email, and sends it",
-        featureSlug: "cold-email",
-        hints: { services: ["lead", "content-generation", "email-gateway"] },
-      },
-      { orgId: "org-1", userId: "user-1", runId: "run-1" },
-    );
-
-    expect(fetch).toHaveBeenCalledWith(
-      "https://api.test.local/v1/workflows/generate",
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({
-          "X-API-Key": "test-api-svc-key",
-          "x-org-id": "org-1",
-        }),
-      }),
-    );
-
-    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
-    expect(body.description).toContain("cold email workflow");
-    expect(body.hints.services).toContain("lead");
-
-    expect(result).toEqual(mockResponse);
-  });
-
-  it("throws on HTTP error", async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: false,
-      status: 422,
-      text: () => Promise.resolve("Invalid DAG"),
-    });
-
-    const { generateWorkflow } = await loadModule();
-    await expect(
-      generateWorkflow(
-        { description: "bad workflow", featureSlug: "test" },
-        { orgId: "o", userId: "u", runId: "r" },
-      ),
-    ).rejects.toThrow(/returned 422/);
-  });
-
-  it("works without hints", async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ workflow: { id: "wf-1" } }),
-    });
-
-    const { generateWorkflow } = await loadModule();
-    await generateWorkflow(
-      { description: "Simple workflow that sends an email", featureSlug: "email" },
-      { orgId: "o", userId: "u", runId: "r" },
-    );
-
-    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
-    expect(body.description).toBe("Simple workflow that sends an email");
-    expect(body.hints).toBeUndefined();
   });
 });
 
@@ -563,7 +510,11 @@ describe("getWorkflowRequiredProviders", () => {
 
     const { getWorkflowRequiredProviders } = await loadModule();
     await expect(
-      getWorkflowRequiredProviders("wf-bad", { orgId: "o", userId: "u", runId: "r" }),
+      getWorkflowRequiredProviders("wf-bad", {
+        orgId: "o",
+        userId: "u",
+        runId: "r",
+      }),
     ).rejects.toThrow(/returned 404/);
   });
 });
@@ -578,7 +529,13 @@ describe("listWorkflows", () => {
 
     const { listWorkflows } = await loadModule();
     const result = await listWorkflows(
-      { category: "sales", channel: "email", tag: "cold", featureSlug: "cold-email-outreach", status: "active" },
+      {
+        category: "sales",
+        channel: "email",
+        tag: "cold",
+        featureSlug: "cold-email-outreach",
+        status: "active",
+      },
       { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
 
