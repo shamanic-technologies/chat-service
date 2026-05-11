@@ -11,16 +11,18 @@ vi.mock("@anthropic-ai/sdk", () => {
   return {
     default: class MockAnthropic {
       messages = {
-        create: async (_params: Record<string, unknown>, options?: Record<string, unknown>) => {
+        create: () => {
+          throw new Error("create not implemented in mock — complete() must use stream");
+        },
+        stream: (_params: Record<string, unknown>, options?: Record<string, unknown>) => {
           capturedRequestOptions = options;
           return {
-            content: [{ type: "text", text: "ok" }],
-            usage: { input_tokens: 10, output_tokens: 5 },
-            stop_reason: "end_turn",
+            finalMessage: async () => ({
+              content: [{ type: "text", text: "ok" }],
+              usage: { input_tokens: 10, output_tokens: 5 },
+              stop_reason: "end_turn",
+            }),
           };
-        },
-        stream: () => {
-          throw new Error("stream not implemented in mock");
         },
       };
     },

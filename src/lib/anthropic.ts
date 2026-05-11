@@ -1081,7 +1081,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         userContent = message;
       }
 
-      const params: Anthropic.MessageCreateParamsNonStreaming = {
+      const params = {
         model: effectiveModel,
         max_tokens: MAX_TOKENS,
         system: systemPrompt,
@@ -1103,7 +1103,14 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       };
 
       const timeoutMs = ANTHROPIC_TIMEOUT_MS[effectiveModel] ?? DEFAULT_ANTHROPIC_TIMEOUT_MS;
-      const response = await client.messages.create(params, { timeout: timeoutMs });
+      // Use streaming transport. Anthropic SDK rejects non-streaming requests
+      // when max_tokens implies >10 min runtime ("Streaming is required..."),
+      // so we stream under the hood and assemble the final Message.
+      const stream = client.messages.stream(
+        params as unknown as Anthropic.MessageStreamParams,
+        { timeout: timeoutMs },
+      );
+      const response = await stream.finalMessage();
 
       if (response.stop_reason === "max_tokens") {
         console.warn(
