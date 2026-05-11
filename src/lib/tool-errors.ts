@@ -37,13 +37,12 @@ function parseStatusCode(msg: string): number | null {
 }
 
 const TOOL_HINTS: Record<string, string> = {
-  update_workflow:
-    "For targeted node changes, prefer update_workflow_node_config instead. " +
-    "If you need to send a full DAG, call get_workflow_details first to get the current DAG, " +
-    "then modify only the parts you need and pass the complete result.",
-  update_workflow_node_config:
-    "Pass workflowId (UUID), nodeId (e.g. 'email-generate'), and configUpdates (object with keys to merge). " +
-    "Only keys in configUpdates are changed; the rest is preserved.",
+  create_workflow:
+    "Pass description (natural language, min 10 chars), featureSlug (e.g. 'cold-email-outreach'), optional hints ({services, nodeTypes, expectedInputs}), optional style ({type, name, humanId?, brandId?}). Use only for NEW workflows from scratch.",
+  upgrade_workflow:
+    "Pass workflowSlug (existing workflow slug) and description (NL describing the bug fix or metadata clarification, min 10 chars). HARD RULE: upgrade is for bug fixes or metadata clarifications only — for substantive changes, use fork_workflow instead.",
+  fork_workflow:
+    "Pass workflowId (UUID) and dag (complete DAG with nodes and edges). Call get_workflow_details first to read the current DAG, modify it, then pass the full result. Partial DAGs are not supported.",
   get_workflow_details:
     "Pass workflowId as a UUID string. If it's in context, use it directly.",
   validate_workflow:

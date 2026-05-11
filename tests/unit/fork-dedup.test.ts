@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 /**
  * Regression test for duplicate fork bug.
  *
- * When the LLM calls update_workflow multiple times with the same workflowId
+ * When the LLM calls fork_workflow multiple times with the same workflowId
  * in a single chat turn, the first call may trigger a fork (201). Subsequent
  * calls must target the already-forked workflow ID, NOT the original — otherwise
  * each call creates a new fork from the same parent.
@@ -89,8 +89,8 @@ describe("fork deduplication (forkedWorkflowMap)", () => {
     expect(dedup.resolveWorkflowId("wf-C")).toBe("wf-C"); // untouched
   });
 
-  it("prevents duplicate forks when LLM calls update_workflow 4 times on same source", async () => {
-    const { updateWorkflow } = await loadModule();
+  it("prevents duplicate forks when LLM calls fork_workflow 4 times on same source", async () => {
+    const { forkWorkflow } = await loadModule();
     const dedup = createForkDedup();
 
     let forkCount = 0;
@@ -126,13 +126,13 @@ describe("fork deduplication (forkedWorkflowMap)", () => {
 
     const params = { orgId: "org-1", userId: "user-1", runId: "run-1" };
 
-    // Simulate 4 LLM tool calls to update_workflow with the same source workflowId
+    // Simulate 4 LLM tool calls to fork_workflow with the same source workflowId
     const results = [];
     for (let i = 0; i < 4; i++) {
       const effectiveId = dedup.resolveWorkflowId("wf-original");
-      const result = await updateWorkflow(
+      const result = await forkWorkflow(
         effectiveId,
-        { description: `change ${i}` },
+        { dag: { nodes: [{ id: `s${i}`, type: "http.call" }], edges: [] } },
         params,
       );
       if (result.outcome === "forked") {
@@ -158,14 +158,14 @@ describe("fork deduplication (forkedWorkflowMap)", () => {
     expect(forkedCalls).toHaveLength(3);
   });
 
-  it("handles 409 gracefully when redirected update has same DAG signature", async () => {
+  it("handles 409 gracefully when redirected fork has same DAG signature", async () => {
     /**
-     * Regression: after a fork, the LLM may call update_workflow again with
+     * Regression: after a fork, the LLM may call fork_workflow again with
      * the same DAG. Workflow-service returns 409 "signature already exists".
      * The handler should catch this and return the current workflow state
      * instead of propagating the error (which causes the LLM to retry).
      */
-    const { updateWorkflow, getWorkflow } = await loadModule();
+    const { forkWorkflow } = await loadModule();
     const dedup = createForkDedup();
 
     // First call: fork
@@ -182,7 +182,7 @@ describe("fork deduplication (forkedWorkflowMap)", () => {
     });
 
     const params = { orgId: "org-1", userId: "user-1", runId: "run-1" };
-    const result1 = await updateWorkflow("wf-original", { dag: { nodes: [{ id: "s1", type: "http.call" }], edges: [] } }, params);
+    const result1 = await forkWorkflow("wf-original", { dag: { nodes: [{ id: "s1", type: "http.call" }], edges: [] } }, params);
     expect(result1.outcome).toBe("forked");
     dedup.recordFork("wf-original", result1.workflow.id);
 
@@ -201,11 +201,11 @@ describe("fork deduplication (forkedWorkflowMap)", () => {
     const effectiveId = dedup.resolveWorkflowId("wf-original");
     expect(effectiveId).toBe("wf-forked");
 
-    // The 409 should throw from updateWorkflow — the handler in index.ts
+    // The 409 should throw from forkWorkflow — the handler in index.ts
     // catches it and calls getWorkflow instead. Here we verify the error
     // message contains "signature already exists" so the handler can match it.
     await expect(
-      updateWorkflow(effectiveId, { dag: { nodes: [{ id: "s1", type: "http.call" }], edges: [] } }, params),
+      forkWorkflow(effectiveId, { dag: { nodes: [{ id: "s1", type: "http.call" }], edges: [] } }, params),
     ).rejects.toThrow(/signature already exists/);
   });
 });
