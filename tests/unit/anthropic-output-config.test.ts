@@ -7,22 +7,24 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * malformed output).
  */
 
-// Capture the params passed to client.messages.create
+// Capture the params passed to client.messages.stream
 let capturedParams: Record<string, unknown> | undefined;
 
 vi.mock("@anthropic-ai/sdk", () => {
   return {
     default: class MockAnthropic {
       messages = {
-        create: async (params: Record<string, unknown>) => {
+        create: () => {
+          throw new Error("create not implemented in mock — complete() must use stream");
+        },
+        stream: (params: Record<string, unknown>) => {
           capturedParams = params;
           return {
-            content: [{ type: "text", text: '{"ok":true}' }],
-            usage: { input_tokens: 10, output_tokens: 5 },
+            finalMessage: async () => ({
+              content: [{ type: "text", text: '{"ok":true}' }],
+              usage: { input_tokens: 10, output_tokens: 5 },
+            }),
           };
-        },
-        stream: () => {
-          throw new Error("stream not implemented in mock");
         },
       };
     },
