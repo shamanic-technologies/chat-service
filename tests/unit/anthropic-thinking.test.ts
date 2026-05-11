@@ -1,18 +1,20 @@
 import { describe, it, expect, vi } from "vitest";
 
-let lastCreateParams: Record<string, unknown>;
-let mockCreateResponse: Record<string, unknown>;
+let lastStreamParams: Record<string, unknown>;
+let mockFinalMessage: Record<string, unknown>;
 
 vi.mock("@anthropic-ai/sdk", () => {
   return {
     default: class MockAnthropic {
       messages = {
-        create: async (params: Record<string, unknown>) => {
-          lastCreateParams = params;
-          return mockCreateResponse;
+        create: () => {
+          throw new Error("create not implemented in mock — complete() must use stream");
         },
-        stream: () => {
-          throw new Error("stream not implemented in mock");
+        stream: (params: Record<string, unknown>) => {
+          lastStreamParams = params;
+          return {
+            finalMessage: async () => mockFinalMessage,
+          };
         },
       };
     },
@@ -25,7 +27,7 @@ describe("anthropic complete() options", () => {
   const claude = createAnthropicClient({ apiKey: "test-key", systemPrompt: "You are helpful." });
 
   it("does NOT send thinking config (thinking removed from API)", async () => {
-    mockCreateResponse = {
+    mockFinalMessage = {
       stop_reason: "end_turn",
       content: [{ type: "text", text: "result" }],
       usage: { input_tokens: 10, output_tokens: 5 },
@@ -33,11 +35,11 @@ describe("anthropic complete() options", () => {
 
     await claude.complete("Simple task");
 
-    expect(lastCreateParams.thinking).toBeUndefined();
+    expect(lastStreamParams.thinking).toBeUndefined();
   });
 
   it("preserves caller temperature", async () => {
-    mockCreateResponse = {
+    mockFinalMessage = {
       stop_reason: "end_turn",
       content: [{ type: "text", text: "result" }],
       usage: { input_tokens: 10, output_tokens: 5 },
@@ -45,11 +47,11 @@ describe("anthropic complete() options", () => {
 
     await claude.complete("Simple task", { temperature: 0.3 });
 
-    expect(lastCreateParams.temperature).toBe(0.3);
+    expect(lastStreamParams.temperature).toBe(0.3);
   });
 
   it("does not send temperature when omitted", async () => {
-    mockCreateResponse = {
+    mockFinalMessage = {
       stop_reason: "end_turn",
       content: [{ type: "text", text: "result" }],
       usage: { input_tokens: 10, output_tokens: 5 },
@@ -57,6 +59,6 @@ describe("anthropic complete() options", () => {
 
     await claude.complete("Simple task");
 
-    expect(lastCreateParams.temperature).toBeUndefined();
+    expect(lastStreamParams.temperature).toBeUndefined();
   });
 });
