@@ -1088,13 +1088,12 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         userContent = message;
       }
 
-      // Structured-output enforcement:
-      // - If the caller supplies `responseSchema`, pass it via `output_config.format`
-      //   so Anthropic guarantees valid JSON of that shape (no JSON.parse retries needed).
-      // - Without a caller schema, we do NOT pass `output_config`: Anthropic rejects
-      //   permissive schemas (additionalProperties: true, no properties) with 400.
-      //   JSON-mode correctness then falls back to JSON_RESPONSE_SYSTEM_SUFFIX +
-      //   the downstream parseModelJson/jsonrepair pipeline.
+      // Structured-output enforcement: if the caller supplies `responseSchema`,
+      // pass it via `output_config.format` so Anthropic guarantees valid JSON of
+      // that shape. Without a schema, do NOT pass `output_config` (Anthropic
+      // rejects permissive schemas with 400). Callers requiring JSON mode on
+      // Anthropic must supply `responseSchema`; the route handlers reject
+      // `responseFormat:"json"` without a schema upfront.
       const params = {
         model: effectiveModel,
         max_tokens: MAX_TOKENS,
