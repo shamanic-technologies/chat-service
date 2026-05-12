@@ -94,14 +94,17 @@ describe("CompleteRequestSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects empty systemPrompt", () => {
+  it("accepts empty systemPrompt", () => {
     const result = CompleteRequestSchema.safeParse({
       message: "Hello",
       systemPrompt: "",
       provider: "anthropic",
       model: "sonnet",
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.systemPrompt).toBe("");
+    }
   });
 
   it("rejects missing provider", () => {

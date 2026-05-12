@@ -662,8 +662,7 @@
           },
           "systemPrompt": {
             "type": "string",
-            "minLength": 1,
-            "description": "Inline system prompt — no pre-registered config required",
+            "description": "Inline system prompt — no pre-registered config required. Empty string is allowed: the provider receives no system prompt and falls back to its default behavior. The value is forwarded byte-equal to the provider; the service does not inject, enrich, or nudge the prompt.",
             "example": "You are a PR research assistant."
           },
           "responseFormat": {
@@ -774,8 +773,7 @@
           },
           "systemPrompt": {
             "type": "string",
-            "minLength": 1,
-            "description": "Inline system prompt",
+            "description": "Inline system prompt. Empty string is allowed: the provider receives no system prompt and falls back to its default behavior. The value is forwarded byte-equal to the provider; the service does not inject, enrich, or nudge the prompt.",
             "example": "You are a workflow analysis assistant."
           },
           "responseFormat": {

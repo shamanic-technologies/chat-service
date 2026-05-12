@@ -56,6 +56,19 @@ describe("InternalPlatformCompleteRequestSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts empty systemPrompt", () => {
+    const result = InternalPlatformCompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "",
+      provider: "anthropic",
+      model: "sonnet",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.systemPrompt).toBe("");
+    }
+  });
+
   it("rejects missing provider", () => {
     const result = InternalPlatformCompleteRequestSchema.safeParse({
       message: "Hello",
