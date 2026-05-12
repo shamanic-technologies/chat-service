@@ -63,6 +63,23 @@ CI will warn if source files change without corresponding test changes. Do not s
 - Keep solutions simple, no over-engineering
 - Tests in `tests/` with vitest
 
+## Prompt Ownership — `/complete` family
+
+**`/complete` and `/internal/platform-complete` MUST forward the caller's `systemPrompt` byte-equal to the provider.** No injection, no enrichment, no nudges. The caller owns the prompt end-to-end.
+
+Concretely forbidden in these endpoints:
+- Appending campaign / brand / workflow context fetched from another service
+- Appending a "respond with JSON" suffix or any other behavior nudge
+- Wrapping in any preamble or postamble
+
+JSON mode is enforced **only** via native provider metadata:
+- **Anthropic**: `output_config.format = { type: "json_schema", schema }`. Requires a strict `responseSchema` from the caller. Without it, return 400 — do not nudge via system prompt.
+- **Gemini**: `generationConfig.responseMimeType: "application/json"` (+ optional `responseSchema`).
+
+**No fallback parsing.** `response.json` is populated by strict `JSON.parse(content)`. A parse failure means the provider violated its enforcement contract and surfaces as 502. Do not reintroduce `jsonrepair`, LLM-repair rounds, or any other recovery pipeline.
+
+`/chat` is the only endpoint that may compose the system prompt (Campaign Context block, Additional Context block via `buildSystemPrompt`). Do not generalize that pattern back to `/complete`.
+
 ## Workflow Tools (mutations) — three-tool contract
 
 The only workflow-mutation tools exposed to the LLM are:
