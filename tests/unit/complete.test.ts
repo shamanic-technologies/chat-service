@@ -30,6 +30,42 @@ describe("CompleteRequestSchema", () => {
     }
   });
 
+  it("accepts optional responseSchema (JSON Schema object)", () => {
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        subject: { type: "string" },
+        body: { type: "string" },
+      },
+      required: ["subject", "body"],
+    };
+    const result = CompleteRequestSchema.safeParse({
+      message: "Generate an email",
+      systemPrompt: "You are a copywriter.",
+      provider: "anthropic",
+      model: "sonnet",
+      responseSchema: schema,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.responseSchema).toEqual(schema);
+    }
+  });
+
+  it("accepts request without responseSchema (still optional)", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.responseSchema).toBeUndefined();
+    }
+  });
+
   it("rejects missing message", () => {
     const result = CompleteRequestSchema.safeParse({
       systemPrompt: "You are helpful.",

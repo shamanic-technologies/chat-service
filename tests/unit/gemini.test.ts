@@ -104,6 +104,41 @@ describe("completeWithGemini", () => {
     expect(requestBody.generationConfig.maxOutputTokens).toBeUndefined();
   });
 
+  // --- responseSchema passthrough ---
+
+  it("includes generationConfig.responseSchema when caller supplies a schema", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    const schema = {
+      type: "object",
+      properties: { urls: { type: "array", items: { type: "string" } } },
+      required: ["urls"],
+    };
+    await runWithTimers({ ...baseOptions, responseSchema: schema });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.responseSchema).toEqual(schema);
+    expect(requestBody.generationConfig.responseMimeType).toBe("application/json");
+  });
+
+  it("omits responseSchema when caller does not supply one", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers(baseOptions);
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.responseSchema).toBeUndefined();
+  });
+
+  it("forces responseMimeType: application/json when responseSchema is set even if responseFormat is omitted", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    const schema = { type: "object", properties: { x: { type: "number" } } };
+    await runWithTimers({
+      ...baseOptions,
+      responseFormat: undefined,
+      responseSchema: schema,
+    });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.responseMimeType).toBe("application/json");
+    expect(requestBody.generationConfig.responseSchema).toEqual(schema);
+  });
+
   it("does not send thinkingConfig (thinking removed from API)", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     await runWithTimers(baseOptions);

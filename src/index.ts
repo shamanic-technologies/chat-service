@@ -58,6 +58,7 @@ import { authorizeCredits, BillingError } from "./lib/billing-client.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
 import { ChatRequestSchema, CompleteRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema } from "./schemas.js";
 import { JSON_RESPONSE_SYSTEM_SUFFIX } from "./lib/json-prompt.js";
+import { repairLogSuffix } from "./lib/repair-log.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -229,7 +230,9 @@ async function parseModelJson(raw: string, repairCtx?: JsonRepairContext): Promi
   try {
     const repaired = jsonrepair(trimmed);
     const parsed = JSON.parse(repaired);
-    console.warn(`[chat-service] JSON required jsonrepair (contentLen=${raw.length})`);
+    console.warn(
+      `[chat-service] JSON required jsonrepair (contentLen=${raw.length})${repairLogSuffix(raw, repairCtx)}`,
+    );
     return parsed;
   } catch (err) {
     if (err instanceof JSONRepairError) {
@@ -264,7 +267,7 @@ async function parseModelJson(raw: string, repairCtx?: JsonRepairContext): Promi
       }
 
       console.warn(
-        `[chat-service] LLM JSON repair round ${round}/${LLM_REPAIR_MAX_ROUNDS} (contentLen=${current.length})`,
+        `[chat-service] LLM JSON repair round ${round}/${LLM_REPAIR_MAX_ROUNDS} (contentLen=${current.length})${repairLogSuffix(raw, repairCtx)}`,
       );
 
       try {
@@ -275,7 +278,7 @@ async function parseModelJson(raw: string, repairCtx?: JsonRepairContext): Promi
         try {
           const parsed = JSON.parse(repairedTrimmed);
           console.warn(
-            `[chat-service] LLM JSON repair succeeded on round ${round} (contentLen=${raw.length})`,
+            `[chat-service] LLM JSON repair succeeded on round ${round} (contentLen=${raw.length})${repairLogSuffix(raw, repairCtx)}`,
           );
           return parsed;
         } catch { /* continue */ }
@@ -285,7 +288,7 @@ async function parseModelJson(raw: string, repairCtx?: JsonRepairContext): Promi
           const doubleRepaired = jsonrepair(repairedTrimmed);
           const parsed = JSON.parse(doubleRepaired);
           console.warn(
-            `[chat-service] LLM JSON repair + jsonrepair succeeded on round ${round} (contentLen=${raw.length})`,
+            `[chat-service] LLM JSON repair + jsonrepair succeeded on round ${round} (contentLen=${raw.length})${repairLogSuffix(raw, repairCtx)}`,
           );
           return parsed;
         } catch { /* continue */ }
@@ -461,7 +464,10 @@ app.post("/complete", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, temperature, provider: requestedProvider, model: requestedModel, imageUrl, imageContext } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, imageUrl, imageContext } = parsed.data;
+
+  // Passing a responseSchema implies JSON-mode parsing of the response.
+  const jsonMode = responseFormat === "json" || responseSchema != null;
 
   // Resolve versioned model from (provider, alias) pair
   const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
@@ -570,7 +576,7 @@ app.post("/complete", requireAuth, async (req, res) => {
     if (campaignFeatureInputs && Object.keys(campaignFeatureInputs).length > 0) {
       effectiveSystemPrompt = buildSystemPrompt(systemPrompt, undefined, campaignFeatureInputs);
     }
-    if (responseFormat === "json") {
+    if (jsonMode) {
       effectiveSystemPrompt += JSON_RESPONSE_SYSTEM_SUFFIX;
     }
 
@@ -578,7 +584,7 @@ app.post("/complete", requireAuth, async (req, res) => {
 
     if (runId) {
       traceEvent(runId, "llm-call-start", { orgId, userId }, workflowTracking, {
-        data: { provider, model: effectiveModel, responseFormat },
+        data: { provider, model: effectiveModel, responseFormat, hasResponseSchema: responseSchema != null },
       });
     }
 
@@ -591,12 +597,14 @@ app.post("/complete", requireAuth, async (req, res) => {
         imageUrl,
         imageContext,
         responseFormat,
+        responseSchema,
         temperature,
       });
     } else {
       const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: effectiveSystemPrompt });
       result = await claude.complete(message, {
         responseFormat,
+        responseSchema,
         temperature,
         model: effectiveModel,
         imageUrl,
@@ -625,8 +633,8 @@ app.post("/complete", requireAuth, async (req, res) => {
       model: result.model,
     };
 
-    // Parse JSON if requested
-    if (responseFormat === "json") {
+    // Parse JSON if requested (either explicit responseFormat or implicit via responseSchema)
+    if (jsonMode) {
       response.json = await parseModelJson(result.content, {
         apiKey: resolvedKey.key,
         model: effectiveModel,
@@ -1038,12 +1046,15 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, temperature, provider: requestedProvider, model: requestedModel } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel } = parsed.data;
 
   const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
   const effectiveModel = resolved.apiModelId;
   const isGemini = resolved.provider === "google";
   const provider = resolved.provider;
+
+  // Passing a responseSchema implies JSON-mode parsing of the response.
+  const jsonMode = responseFormat === "json" || responseSchema != null;
 
   let apiKey: string;
   try {
@@ -1061,7 +1072,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
 
   try {
     let effectiveSystemPrompt = systemPrompt;
-    if (responseFormat === "json") {
+    if (jsonMode) {
       effectiveSystemPrompt += JSON_RESPONSE_SYSTEM_SUFFIX;
     }
 
@@ -1074,12 +1085,14 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
         message,
         systemPrompt: effectiveSystemPrompt,
         responseFormat,
+        responseSchema,
         temperature,
       });
     } else {
       const claude = createAnthropicClient({ apiKey, systemPrompt: effectiveSystemPrompt });
       result = await claude.complete(message, {
         responseFormat,
+        responseSchema,
         temperature,
         model: effectiveModel,
       });
@@ -1092,7 +1105,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       model: result.model,
     };
 
-    if (responseFormat === "json") {
+    if (jsonMode) {
       response.json = await parseModelJson(result.content, {
         apiKey,
         model: effectiveModel,

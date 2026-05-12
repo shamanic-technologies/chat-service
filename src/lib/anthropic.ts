@@ -1055,6 +1055,13 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       message: string,
       options?: {
         responseFormat?: "json";
+        /**
+         * Optional JSON Schema enforced server-side by Anthropic via
+         * `output_config.format = { type: "json_schema", schema }`.
+         * Must be a strict schema: `additionalProperties: false` and an
+         * explicit `properties` map. Permissive schemas return 400.
+         */
+        responseSchema?: Record<string, unknown>;
         temperature?: number;
         model?: string;
         imageUrl?: string;
@@ -1081,17 +1088,26 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         userContent = message;
       }
 
-      // JSON-mode correctness is enforced by JSON_RESPONSE_SYSTEM_SUFFIX
-      // (system-prompt nudge) + downstream parseModelJson/jsonrepair pipeline.
-      // We do NOT pass `output_config` here: Anthropic rejects a permissive
-      // schema (additionalProperties: true, no properties) with 400, and we
-      // have no caller-supplied strict schema.
+      // Structured-output enforcement:
+      // - If the caller supplies `responseSchema`, pass it via `output_config.format`
+      //   so Anthropic guarantees valid JSON of that shape (no JSON.parse retries needed).
+      // - Without a caller schema, we do NOT pass `output_config`: Anthropic rejects
+      //   permissive schemas (additionalProperties: true, no properties) with 400.
+      //   JSON-mode correctness then falls back to JSON_RESPONSE_SYSTEM_SUFFIX +
+      //   the downstream parseModelJson/jsonrepair pipeline.
       const params = {
         model: effectiveModel,
         max_tokens: MAX_TOKENS,
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }],
         ...(options?.temperature != null ? { temperature: options.temperature } : {}),
+        ...(options?.responseSchema != null
+          ? {
+              output_config: {
+                format: { type: "json_schema", schema: options.responseSchema },
+              },
+            }
+          : {}),
       };
 
       const timeoutMs = ANTHROPIC_TIMEOUT_MS[effectiveModel] ?? DEFAULT_ANTHROPIC_TIMEOUT_MS;

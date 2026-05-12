@@ -185,9 +185,32 @@ Request body:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
   - **google**: `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `pro` (most powerful). All require a Google API key in key-service.
 - `responseFormat` (optional) — set to `"json"` to instruct the model to return valid JSON. The parsed result appears in the `json` field.
+- `responseSchema` (optional) — JSON Schema enforced server-side by the provider's structured-output API. When set, JSON-mode parsing is implied (no need to also pass `responseFormat: "json"`). The schema is forwarded as:
+  - **Google** → `generationConfig.responseSchema` (supported on all Gemini 2.5+ models: `pro`, `flash`, `flash-lite`).
+  - **Anthropic** → `output_config.format = { type: "json_schema", schema }` (Claude 4.x). **Strict schema required**: `additionalProperties: false` and an explicit `properties` map. Permissive schemas are rejected with 400 by Anthropic.
+  - When supplied, the provider guarantees the output matches the schema — the downstream `jsonrepair` / LLM-repair pipeline becomes a no-op for that call.
 - `temperature` (optional) — sampling temperature, 0–2 (default: model default)
 - `imageUrl` (optional) — URL of an image to include as visual input. The image is fetched server-side. Supported by all models, but recommended with `google` + `flash-lite` for cost-effective vision tasks.
 - `imageContext` (optional) — metadata about the image to help the model classify it: `{ alt?: string, title?: string, sourceUrl?: string }`. Injected into the prompt alongside the image. Only meaningful when `imageUrl` is provided.
+
+**Example with `responseSchema` (Anthropic — strict schema mandatory):**
+```json
+{
+  "message": "Score this image on is_logo, is_product (0-1 each).",
+  "systemPrompt": "You are an image classifier.",
+  "provider": "anthropic",
+  "model": "sonnet",
+  "responseSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "is_logo": { "type": "number" },
+      "is_product": { "type": "number" }
+    },
+    "required": ["is_logo", "is_product"]
+  }
+}
+```
 
 Response:
 ```json
@@ -201,7 +224,7 @@ Response:
 ```
 
 - `content` — raw text response (always present). **Warning:** when `responseFormat: "json"`, this field may contain markdown code fences (e.g. `` ```json...``` ``). Do **not** use this field for JSON parsing.
-- `json` — parsed JSON object (present when `responseFormat: "json"`). **Always use this field** for structured data. The service applies a 3-stage repair pipeline: (1) direct `JSON.parse`, (2) algorithmic repair via `jsonrepair` (handles fences, trailing commas, missing quotes, truncation, etc.), (3) LLM-assisted repair — the same model that produced the output is asked to fix the JSON structure (up to 3 rounds, using parse error diagnostics). If all stages fail, the endpoint returns **502**.
+- `json` — parsed JSON object (present when `responseFormat: "json"` or when `responseSchema` is set). **Always use this field** for structured data. The service applies a 3-stage repair pipeline: (1) direct `JSON.parse`, (2) algorithmic repair via `jsonrepair` (handles fences, trailing commas, missing quotes, truncation, etc.), (3) LLM-assisted repair — the same model that produced the output is asked to fix the JSON structure (up to 3 rounds, using parse error diagnostics). If all stages fail, the endpoint returns **502**. Every repair stage logs a `warn` line ending with `provider=<google|anthropic> model=<...> sample="<first 80 chars escaped>"` so callers can identify which caller / model dominates the repair rate from Railway logs.
 - `tokensInput` / `tokensOutput` — token usage
 - `model` — the versioned model ID that was actually used (resolved from the provider + alias)
 
@@ -226,7 +249,7 @@ Error responses: 400 (validation), 401 (auth), 402 (insufficient credits), 502 (
 }
 ```
 
-Same fields as `POST /complete` except **no `imageUrl` or `imageContext`** support.
+Same fields as `POST /complete` (including the optional `responseSchema`) except **no `imageUrl` or `imageContext`** support.
 
 **Key differences from `POST /complete`:**
 - **No billing** — platform-level calls are not charged to any org
