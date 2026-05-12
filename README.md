@@ -179,7 +179,7 @@ Request body:
 ```
 
 - `message` (required) — the prompt to send to the LLM
-- `systemPrompt` (required) — inline system prompt (no pre-registered config needed)
+- `systemPrompt` (required) — inline system prompt (no pre-registered config needed). Empty string is allowed: the provider receives no system prompt and falls back to its default behavior. The value is forwarded byte-equal to the provider.
 - `provider` (required) — LLM provider: `"anthropic"` or `"google"`
 - `model` (required) — version-free model alias. The service resolves the latest versioned model internally. Valid combinations:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)

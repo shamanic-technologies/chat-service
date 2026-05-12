@@ -371,8 +371,12 @@ export const CompleteRequestSchema = z
       description: "The prompt to send to the LLM",
       example: "Given this brand context, generate 10 Google search queries for PR outreach.",
     }),
-    systemPrompt: z.string().min(1).openapi({
-      description: "Inline system prompt — no pre-registered config required",
+    systemPrompt: z.string().openapi({
+      description:
+        "Inline system prompt — no pre-registered config required. Empty string is allowed: " +
+        "the provider receives no system prompt and falls back to its default behavior. The " +
+        "value is forwarded byte-equal to the provider; the service does not inject, enrich, " +
+        "or nudge the prompt.",
       example: "You are a PR research assistant.",
     }),
     responseFormat: z.literal("json").optional().openapi({
@@ -561,8 +565,11 @@ export const InternalPlatformCompleteRequestSchema = z
       description: "The prompt to send to the LLM",
       example: "Analyze this workflow definition and suggest field mappings.",
     }),
-    systemPrompt: z.string().min(1).openapi({
-      description: "Inline system prompt",
+    systemPrompt: z.string().openapi({
+      description:
+        "Inline system prompt. Empty string is allowed: the provider receives no system " +
+        "prompt and falls back to its default behavior. The value is forwarded byte-equal " +
+        "to the provider; the service does not inject, enrich, or nudge the prompt.",
       example: "You are a workflow analysis assistant.",
     }),
     responseFormat: z.literal("json").optional().openapi({
