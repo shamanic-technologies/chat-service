@@ -67,4 +67,35 @@ describe("anthropic complete() output_config", () => {
     expect(result.tokensInput).toBe(10);
     expect(result.tokensOutput).toBe(5);
   });
+
+  it("passes output_config.format = json_schema when caller supplies responseSchema", async () => {
+    const claude = createAnthropicClient({ apiKey: "test-key", systemPrompt: "You are helpful." });
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: { ok: { type: "boolean" } },
+      required: ["ok"],
+    };
+    await claude.complete("Return JSON", { responseFormat: "json", responseSchema: schema });
+
+    expect(capturedParams).toBeDefined();
+    expect(capturedParams!.output_config).toEqual({
+      format: { type: "json_schema", schema },
+    });
+  });
+
+  it("passes output_config when responseSchema is set even without responseFormat", async () => {
+    const claude = createAnthropicClient({ apiKey: "test-key", systemPrompt: "You are helpful." });
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: { x: { type: "number" } },
+    };
+    await claude.complete("Return JSON", { responseSchema: schema });
+
+    expect(capturedParams).toBeDefined();
+    expect(capturedParams!.output_config).toEqual({
+      format: { type: "json_schema", schema },
+    });
+  });
 });
