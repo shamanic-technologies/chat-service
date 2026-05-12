@@ -66,6 +66,13 @@ interface GeminiCompleteOptions {
   imageUrl?: string;
   imageContext?: ImageContext;
   responseFormat?: "json";
+  /**
+   * Optional JSON Schema enforced server-side by Gemini via
+   * `generationConfig.responseSchema`. When present, JSON mode is implied
+   * (responseMimeType: "application/json") even if responseFormat is unset.
+   * Supported on all Gemini 2.5+ models (pro / flash / flash-lite).
+   */
+  responseSchema?: Record<string, unknown>;
   temperature?: number;
 }
 
@@ -220,8 +227,12 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     imageUrl,
     imageContext,
     responseFormat,
+    responseSchema,
     temperature,
   } = options;
+
+  // Passing a responseSchema implies JSON mode regardless of responseFormat.
+  const jsonMode = responseFormat === "json" || responseSchema != null;
 
   // Build content parts — inject image metadata into the text if provided
   let textContent = message;
@@ -250,7 +261,8 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
       ...(temperature != null ? { temperature } : {}),
-      ...(responseFormat === "json" ? { responseMimeType: "application/json" } : {}),
+      ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+      ...(responseSchema != null ? { responseSchema } : {}),
     },
   };
 

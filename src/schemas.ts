@@ -378,6 +378,21 @@ export const CompleteRequestSchema = z
     responseFormat: z.literal("json").optional().openapi({
       description: 'Set to "json" to instruct the model to return valid JSON. The response will be parsed and returned in the `json` field.',
     }),
+    responseSchema: z.record(z.string(), z.unknown()).optional().openapi({
+      description:
+        "Optional JSON Schema describing the exact shape of the expected JSON response. When set, the schema is " +
+        "passed to the provider's structured-output API (Gemini: `generationConfig.responseSchema`; Anthropic: " +
+        "`output_config.format` with `type: \"json_schema\"`) and the provider enforces the shape server-side. " +
+        "Implies `responseFormat: \"json\"`. " +
+        "**Anthropic constraint:** the schema must be strict — `additionalProperties: false` and an explicit `properties` map. " +
+        "Permissive schemas are rejected with 400.",
+      example: {
+        type: "object",
+        additionalProperties: false,
+        properties: { subject: { type: "string" }, emails: { type: "array", items: { type: "object" } } },
+        required: ["subject", "emails"],
+      },
+    }),
     temperature: z.number().min(0).max(2).optional().openapi({
       description: "Sampling temperature (0–2). Lower = more deterministic.",
       example: 0.3,
@@ -552,6 +567,11 @@ export const InternalPlatformCompleteRequestSchema = z
     }),
     responseFormat: z.literal("json").optional().openapi({
       description: 'Set to "json" to instruct the model to return valid JSON.',
+    }),
+    responseSchema: z.record(z.string(), z.unknown()).optional().openapi({
+      description:
+        "Optional JSON Schema enforced server-side by the provider's structured-output API. " +
+        "Implies `responseFormat: \"json\"`. Same shape and constraints as POST /complete.",
     }),
     temperature: z.number().min(0).max(2).optional().openapi({
       description: "Sampling temperature (0–2). Lower = more deterministic.",
