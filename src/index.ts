@@ -4,7 +4,6 @@ import crypto from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { jsonrepair, JSONRepairError } from "jsonrepair";
 import { db } from "./db/index.js";
 import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings } from "./db/schema.js";
 import { eq, and, sql } from "drizzle-orm";
@@ -57,8 +56,6 @@ import {
 import { authorizeCredits, BillingError } from "./lib/billing-client.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
 import { ChatRequestSchema, CompleteRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema } from "./schemas.js";
-import { JSON_RESPONSE_SYSTEM_SUFFIX } from "./lib/json-prompt.js";
-import { repairLogSuffix } from "./lib/repair-log.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -142,176 +139,6 @@ function classifyErrorForClient(err: unknown): { message: string; code: string }
     code: "internal_error",
     message: "An unexpected error occurred. Please try again.",
   };
-}
-
-// ---------------------------------------------------------------------------
-// JSON parsing for LLM responses
-// ---------------------------------------------------------------------------
-
-/** Context needed to call the same model for LLM-assisted JSON repair. */
-interface JsonRepairContext {
-  apiKey: string;
-  model: string;
-  isGemini: boolean;
-}
-
-const LLM_REPAIR_MAX_ROUNDS = 3;
-
-/** Extract a ±200-char window around a character position for diagnostics. */
-function snippetAround(text: string, pos: number, radius = 200): string {
-  const start = Math.max(0, pos - radius);
-  const end = Math.min(text.length, pos + radius);
-  return (
-    (start > 0 ? "..." : "") +
-    text.slice(start, end) +
-    (end < text.length ? "..." : "")
-  );
-}
-
-/**
- * Ask the same model that produced the broken JSON to repair it.
- * Sends the full broken output + the parse error diagnostic and asks
- * for a minimal structural fix. Returns the raw LLM response text.
- */
-async function llmRepairJson(
-  broken: string,
-  errorMessage: string,
-  ctx: JsonRepairContext,
-): Promise<string> {
-  const repairPrompt =
-    `The following JSON is structurally broken. A JSON parser returned this error:\n\n` +
-    `${errorMessage}\n\n` +
-    `Here is the broken JSON:\n\`\`\`\n${broken}\n\`\`\`\n\n` +
-    `Return ONLY the corrected JSON. Make minimal structural edits to fix the syntax ` +
-    `(missing brackets, quotes, commas, truncation, etc.). Do NOT change any field names or values — ` +
-    `only fix the structure so it parses as valid JSON.`;
-
-  const systemPrompt =
-    "You are a JSON repair tool. You receive broken JSON and return ONLY the fixed JSON. " +
-    "No explanations, no markdown fences, no extra text.";
-
-  if (ctx.isGemini) {
-    const result = await completeWithGemini({
-      apiKey: ctx.apiKey,
-      model: ctx.model,
-      message: repairPrompt,
-      systemPrompt,
-      responseFormat: "json",
-    });
-    return result.content;
-  } else {
-    const claude = createAnthropicClient({ apiKey: ctx.apiKey, systemPrompt });
-    const result = await claude.complete(repairPrompt, {
-      responseFormat: "json",
-      model: ctx.model,
-    });
-    return result.content;
-  }
-}
-
-/**
- * Parse JSON from model output with progressive repair:
- * 1. Try raw JSON.parse
- * 2. Try jsonrepair (handles fences, trailing commas, missing quotes, truncation, etc.)
- * 3. LLM-assisted repair — send broken JSON + jsonrepair diagnostics to the same model (up to 3 rounds)
- * Throws with diagnostics if all attempts fail.
- */
-async function parseModelJson(raw: string, repairCtx?: JsonRepairContext): Promise<unknown> {
-  const trimmed = raw.trim();
-
-  // Attempt 1: direct parse
-  try {
-    return JSON.parse(trimmed);
-  } catch { /* continue */ }
-
-  // Attempt 2: jsonrepair — handles fences, trailing commas, missing quotes,
-  // truncated JSON, single quotes, comments, and many more LLM quirks
-  let repairError: JSONRepairError | undefined;
-  try {
-    const repaired = jsonrepair(trimmed);
-    const parsed = JSON.parse(repaired);
-    console.warn(
-      `[chat-service] JSON required jsonrepair (contentLen=${raw.length})${repairLogSuffix(raw, repairCtx)}`,
-    );
-    return parsed;
-  } catch (err) {
-    if (err instanceof JSONRepairError) {
-      repairError = err;
-    }
-    // continue to LLM repair
-  }
-
-  // Attempt 3: LLM-assisted repair (up to 3 rounds)
-  if (repairCtx) {
-    let current = trimmed;
-    for (let round = 1; round <= LLM_REPAIR_MAX_ROUNDS; round++) {
-      // Build diagnostic from jsonrepair error or JSON.parse error
-      let diagnostic: string;
-      try {
-        JSON.parse(current);
-        // If somehow it parses now, return it (shouldn't happen but be safe)
-        return JSON.parse(current);
-      } catch (parseErr) {
-        const parseError = parseErr as SyntaxError & { message: string };
-        // Extract position from JSON.parse error (e.g. "at position 1847")
-        const posMatch = parseError.message.match(/position\s+(\d+)/);
-        const pos = posMatch ? parseInt(posMatch[1], 10) : undefined;
-
-        diagnostic = `JSON.parse error: ${parseError.message}`;
-        if (pos != null) {
-          diagnostic += `\nContext around position ${pos}:\n${snippetAround(current, pos)}`;
-        }
-        if (repairError && round === 1) {
-          diagnostic += `\njsonrepair also failed: ${repairError.message}`;
-        }
-      }
-
-      console.warn(
-        `[chat-service] LLM JSON repair round ${round}/${LLM_REPAIR_MAX_ROUNDS} (contentLen=${current.length})${repairLogSuffix(raw, repairCtx)}`,
-      );
-
-      try {
-        const repaired = await llmRepairJson(current, diagnostic, repairCtx);
-        const repairedTrimmed = repaired.trim();
-
-        // Try direct parse first
-        try {
-          const parsed = JSON.parse(repairedTrimmed);
-          console.warn(
-            `[chat-service] LLM JSON repair succeeded on round ${round} (contentLen=${raw.length})${repairLogSuffix(raw, repairCtx)}`,
-          );
-          return parsed;
-        } catch { /* continue */ }
-
-        // Try jsonrepair on the LLM output too
-        try {
-          const doubleRepaired = jsonrepair(repairedTrimmed);
-          const parsed = JSON.parse(doubleRepaired);
-          console.warn(
-            `[chat-service] LLM JSON repair + jsonrepair succeeded on round ${round} (contentLen=${raw.length})${repairLogSuffix(raw, repairCtx)}`,
-          );
-          return parsed;
-        } catch { /* continue */ }
-
-        // Feed this round's output into the next round
-        current = repairedTrimmed;
-      } catch (llmErr) {
-        console.error(
-          `[chat-service] LLM JSON repair round ${round} call failed:`,
-          llmErr,
-        );
-        // Don't retry if the LLM call itself failed — likely a transient issue
-        break;
-      }
-    }
-  }
-
-  throw new Error(
-    `Model returned non-parsable JSON despite responseFormat: "json". ` +
-    `contentLen=${raw.length}, ` +
-    `first500=${raw.slice(0, 500)}, ` +
-    `last200=${raw.slice(-200)}`
-  );
 }
 
 const app = express();
@@ -475,6 +302,17 @@ app.post("/complete", requireAuth, async (req, res) => {
   const isGemini = resolved.provider === "google";
   const provider = resolved.provider;
 
+  // Anthropic JSON mode requires `responseSchema` — Anthropic API has no native
+  // standalone JSON-mode flag; enforcement is only available via
+  // `output_config.format = { type: "json_schema", schema }`. Reject upfront so
+  // callers get a clear error instead of best-effort behavior.
+  if (provider === "anthropic" && responseFormat === "json" && responseSchema == null) {
+    return res.status(400).json({
+      error:
+        "Anthropic JSON mode requires responseSchema. Per Anthropic API, JSON output is only enforceable via output_config.format with a JSON Schema. Supply responseSchema in the request body.",
+    });
+  }
+
   // Resolve API key per-request
   let resolvedKey: ResolvedKey;
   try {
@@ -554,32 +392,10 @@ app.post("/complete", requireAuth, async (req, res) => {
     });
   }
 
-  // Fetch campaign context if campaignId is present (Convention 2)
-  let campaignFeatureInputs: Record<string, unknown> | null = null;
-  if (workflowTracking.campaignId) {
-    try {
-      campaignFeatureInputs = await getCampaignFeatureInputs(
-        workflowTracking.campaignId,
-        { orgId, userId, runId: parentRunId, trackingHeaders },
-      );
-    } catch (err) {
-      console.warn(`[complete] Failed to fetch campaign context for campaign="${workflowTracking.campaignId}":`, err);
-    }
-  }
-
   let completeFailed = false;
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
   try {
-    // Build prompt — for JSON mode, prepend instruction to system prompt
-    let effectiveSystemPrompt = systemPrompt;
-    if (campaignFeatureInputs && Object.keys(campaignFeatureInputs).length > 0) {
-      effectiveSystemPrompt = buildSystemPrompt(systemPrompt, undefined, campaignFeatureInputs);
-    }
-    if (jsonMode) {
-      effectiveSystemPrompt += JSON_RESPONSE_SYSTEM_SUFFIX;
-    }
-
     let result: { content: string; tokensInput: number; tokensOutput: number; model: string };
 
     if (runId) {
@@ -593,7 +409,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         apiKey: resolvedKey.key,
         model: effectiveModel,
         message,
-        systemPrompt: effectiveSystemPrompt,
+        systemPrompt,
         imageUrl,
         imageContext,
         responseFormat,
@@ -601,7 +417,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         temperature,
       });
     } else {
-      const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: effectiveSystemPrompt });
+      const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
       result = await claude.complete(message, {
         responseFormat,
         responseSchema,
@@ -633,13 +449,12 @@ app.post("/complete", requireAuth, async (req, res) => {
       model: result.model,
     };
 
-    // Parse JSON if requested (either explicit responseFormat or implicit via responseSchema)
+    // Parse JSON if requested. Strict parse — no fallback, no repair.
+    // Provider-side enforcement (Anthropic output_config.format, Gemini
+    // responseMimeType / responseSchema) guarantees valid JSON when jsonMode
+    // is set; a parse failure here means the provider violated the contract.
     if (jsonMode) {
-      response.json = await parseModelJson(result.content, {
-        apiKey: resolvedKey.key,
-        model: effectiveModel,
-        isGemini,
-      });
+      response.json = JSON.parse(result.content);
     }
 
     res.json(response);
@@ -1056,6 +871,14 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   // Passing a responseSchema implies JSON-mode parsing of the response.
   const jsonMode = responseFormat === "json" || responseSchema != null;
 
+  // Anthropic JSON mode requires `responseSchema` — see /complete for rationale.
+  if (provider === "anthropic" && responseFormat === "json" && responseSchema == null) {
+    return res.status(400).json({
+      error:
+        "Anthropic JSON mode requires responseSchema. Per Anthropic API, JSON output is only enforceable via output_config.format with a JSON Schema. Supply responseSchema in the request body.",
+    });
+  }
+
   let apiKey: string;
   try {
     const platformKey = await resolvePlatformKey(provider, {
@@ -1071,11 +894,6 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   }
 
   try {
-    let effectiveSystemPrompt = systemPrompt;
-    if (jsonMode) {
-      effectiveSystemPrompt += JSON_RESPONSE_SYSTEM_SUFFIX;
-    }
-
     let result: { content: string; tokensInput: number; tokensOutput: number; model: string };
 
     if (isGemini) {
@@ -1083,13 +901,13 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
         apiKey,
         model: effectiveModel,
         message,
-        systemPrompt: effectiveSystemPrompt,
+        systemPrompt,
         responseFormat,
         responseSchema,
         temperature,
       });
     } else {
-      const claude = createAnthropicClient({ apiKey, systemPrompt: effectiveSystemPrompt });
+      const claude = createAnthropicClient({ apiKey, systemPrompt });
       result = await claude.complete(message, {
         responseFormat,
         responseSchema,
@@ -1105,12 +923,9 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       model: result.model,
     };
 
+    // Strict parse — provider-side enforcement guarantees valid JSON.
     if (jsonMode) {
-      response.json = await parseModelJson(result.content, {
-        apiKey,
-        model: effectiveModel,
-        isGemini,
-      });
+      response.json = JSON.parse(result.content);
     }
 
     res.json(response);

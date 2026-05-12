@@ -6,10 +6,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  *   400 invalid_request_error — "For 'object' type, 'additionalProperties: true'
  *   is not supported. Please set 'additionalProperties' to false"
  *
- * We have no caller-supplied schema for the generic JSON-mode use case, so
- * complete() must NOT pass `output_config` at all. JSON correctness is enforced
- * by the system-prompt suffix (JSON_RESPONSE_SYSTEM_SUFFIX) + the downstream
- * parseModelJson / jsonrepair / LLM-repair pipeline.
+ * complete() must NOT pass `output_config` unless the caller supplies a strict
+ * `responseSchema`. Anthropic JSON mode without `responseSchema` is rejected
+ * upfront at the route handler level (400).
  */
 
 let capturedParams: Record<string, unknown> | undefined;
