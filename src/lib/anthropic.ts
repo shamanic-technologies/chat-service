@@ -1081,25 +1081,17 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         userContent = message;
       }
 
+      // JSON-mode correctness is enforced by JSON_RESPONSE_SYSTEM_SUFFIX
+      // (system-prompt nudge) + downstream parseModelJson/jsonrepair pipeline.
+      // We do NOT pass `output_config` here: Anthropic rejects a permissive
+      // schema (additionalProperties: true, no properties) with 400, and we
+      // have no caller-supplied strict schema.
       const params = {
         model: effectiveModel,
         max_tokens: MAX_TOKENS,
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }],
         ...(options?.temperature != null ? { temperature: options.temperature } : {}),
-        ...(options?.responseFormat === "json"
-          ? {
-              output_config: {
-                format: {
-                  type: "json_schema" as const,
-                  schema: {
-                    type: "object",
-                    additionalProperties: true,
-                  },
-                },
-              },
-            }
-          : {}),
       };
 
       const timeoutMs = ANTHROPIC_TIMEOUT_MS[effectiveModel] ?? DEFAULT_ANTHROPIC_TIMEOUT_MS;
