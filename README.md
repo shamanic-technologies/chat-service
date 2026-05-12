@@ -184,11 +184,10 @@ Request body:
 - `model` (required) — version-free model alias. The service resolves the latest versioned model internally. Valid combinations:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
   - **google**: `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `pro` (most powerful). All require a Google API key in key-service.
-- `responseFormat` (optional) — set to `"json"` to instruct the model to return valid JSON. The parsed result appears in the `json` field.
+- `responseFormat` (optional) — set to `"json"` to enable JSON-mode parsing. **For `provider: "anthropic"`, you MUST also supply `responseSchema`** — Anthropic has no native standalone JSON mode, so the request is rejected with 400 if `responseSchema` is missing. For `provider: "google"` (Gemini), `responseFormat: "json"` alone is sufficient (native `responseMimeType` enforcement).
 - `responseSchema` (optional) — JSON Schema enforced server-side by the provider's structured-output API. When set, JSON-mode parsing is implied (no need to also pass `responseFormat: "json"`). The schema is forwarded as:
   - **Google** → `generationConfig.responseSchema` (supported on all Gemini 2.5+ models: `pro`, `flash`, `flash-lite`).
   - **Anthropic** → `output_config.format = { type: "json_schema", schema }` (Claude 4.x). **Strict schema required**: `additionalProperties: false` and an explicit `properties` map. Permissive schemas are rejected with 400 by Anthropic.
-  - When supplied, the provider guarantees the output matches the schema — the downstream `jsonrepair` / LLM-repair pipeline becomes a no-op for that call.
 - `temperature` (optional) — sampling temperature, 0–2 (default: model default)
 - `imageUrl` (optional) — URL of an image to include as visual input. The image is fetched server-side. Supported by all models, but recommended with `google` + `flash-lite` for cost-effective vision tasks.
 - `imageContext` (optional) — metadata about the image to help the model classify it: `{ alt?: string, title?: string, sourceUrl?: string }`. Injected into the prompt alongside the image. Only meaningful when `imageUrl` is provided.
@@ -223,8 +222,8 @@ Response:
 }
 ```
 
-- `content` — raw text response (always present). **Warning:** when `responseFormat: "json"`, this field may contain markdown code fences (e.g. `` ```json...``` ``). Do **not** use this field for JSON parsing.
-- `json` — parsed JSON object (present when `responseFormat: "json"` or when `responseSchema` is set). **Always use this field** for structured data. The service applies a 3-stage repair pipeline: (1) direct `JSON.parse`, (2) algorithmic repair via `jsonrepair` (handles fences, trailing commas, missing quotes, truncation, etc.), (3) LLM-assisted repair — the same model that produced the output is asked to fix the JSON structure (up to 3 rounds, using parse error diagnostics). If all stages fail, the endpoint returns **502**. Every repair stage logs a `warn` line ending with `provider=<google|anthropic> model=<...> sample="<first 80 chars escaped>"` so callers can identify which caller / model dominates the repair rate from Railway logs.
+- `content` — raw text response (always present).
+- `json` — parsed JSON object (present when `responseFormat: "json"` or when `responseSchema` is set). Populated via strict `JSON.parse(content)` — no jsonrepair, no LLM-assisted repair. Provider-native enforcement (`output_config.format` for Anthropic, `responseMimeType` / `responseSchema` for Gemini) guarantees the output is valid JSON. A parse failure means the provider violated its contract and the endpoint returns **502**.
 - `tokensInput` / `tokensOutput` — token usage
 - `model` — the versioned model ID that was actually used (resolved from the provider + alias)
 
@@ -402,11 +401,24 @@ Determinism: Gemini `gemini-embedding-001` is deterministic for identical input 
 
 ## Campaign Context Enrichment
 
-When the `x-campaign-id` header is present, both `/chat` and `/complete` automatically fetch the campaign's `featureInputs` from campaign-service and inject them into the system prompt. This ensures every LLM call is informed by the user's campaign-specific inputs (editorial angle, target geography, audience type, etc.).
+**Applies to `/chat` only.** When the `x-campaign-id` header is present on a `/chat` request, the service fetches the campaign's `featureInputs` from campaign-service and injects them into the system prompt as a `## Campaign Context` block.
 
 - Campaign data is fetched via `GET /campaign/campaigns/{id}` through api-service
 - Results are cached in-memory by `campaignId` (featureInputs are immutable for the lifetime of a campaign)
-- If the fetch fails, the LLM call proceeds without campaign context (non-blocking)
+- If the fetch fails, the chat proceeds without campaign context (non-blocking)
+
+**`/complete` and `/internal/platform-complete` do NOT inject anything into the system prompt.** They forward the caller's `systemPrompt` byte-equal to the provider. Callers wanting campaign data in the prompt must include it in their own `systemPrompt` payload.
+
+## JSON Mode
+
+`/complete` and `/internal/platform-complete` support JSON output via `responseFormat: "json"` and/or `responseSchema`. Enforcement is provider-native only — no system-prompt injection, no jsonrepair fallback, no LLM repair rounds.
+
+| Provider | `responseFormat: "json"` alone | `responseSchema` (with or without `responseFormat`) |
+|----------|-------------------------------|------------------------------------------------------|
+| **Anthropic** | **Rejected (400)** — Anthropic has no native standalone JSON mode. Supply `responseSchema`. | Passed to Anthropic as `output_config.format = { type: "json_schema", schema }`. Anthropic enforces server-side. |
+| **Google (Gemini)** | Native — passed as `generationConfig.responseMimeType: "application/json"`. | Both passed as `responseMimeType` + `responseSchema` in `generationConfig`. |
+
+When `jsonMode` is set, the service runs strict `JSON.parse(content)` on the model output to populate `response.json`. A parse failure means the provider violated its enforcement contract and is surfaced as a 502.
 
 ## SSE Protocol
 
