@@ -39,7 +39,7 @@ describe("authorizeCredits", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://billing.test.local/v1/credits/authorize",
+      "https://billing.test.local/v1/customer_balance/authorize",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
@@ -211,7 +211,7 @@ describe("authorizeCredits", () => {
     });
 
     expect(fetch).toHaveBeenCalledWith(
-      "https://billing.mcpfactory.org/v1/credits/authorize",
+      "https://billing.mcpfactory.org/v1/customer_balance/authorize",
       expect.anything(),
     );
   });
