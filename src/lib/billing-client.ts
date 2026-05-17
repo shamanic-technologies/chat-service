@@ -68,7 +68,7 @@ export async function authorizeCredits(
     }
   }
 
-  const res = await fetch(`${BILLING_SERVICE_URL}/v1/credits/authorize`, {
+  const res = await fetch(`${BILLING_SERVICE_URL}/v1/customer_balance/authorize`, {
     method: "POST",
     headers,
     body: JSON.stringify({ items, description }),
@@ -77,7 +77,7 @@ export async function authorizeCredits(
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new BillingError(
-      `[billing-client] POST /v1/credits/authorize returned ${res.status}: ${text}`,
+      `[billing-client] POST /v1/customer_balance/authorize returned ${res.status}: ${text}`,
       res.status,
       text,
     );
