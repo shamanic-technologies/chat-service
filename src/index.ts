@@ -565,12 +565,16 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
     // Resolve brand context. Pass own runId so brand-service sees us as the parent.
     let brandResults;
     try {
-      brandResults = await extractBrandFields(RAG_BRAND_FIELDS, {
-        orgId,
-        userId,
-        runId,
-        trackingHeaders,
-      });
+      brandResults = await extractBrandFields(
+        RAG_BRAND_FIELDS,
+        [brandId],
+        {
+          orgId,
+          userId,
+          runId,
+          trackingHeaders,
+        },
+      );
     } catch (err) {
       if (err instanceof BrandError && err.status === 404) {
         return res.status(404).json({
@@ -580,13 +584,13 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
       throw err;
     }
 
-    // Flatten results into a {key: stringValue} map. Skip null/empty values.
+    // Flatten consolidated `value` per field into a {key: stringValue} map. Skip null/empty values.
     const fieldValues: Record<string, string> = {};
-    for (const r of brandResults.results) {
-      if (r.value == null) continue;
-      const str = typeof r.value === "string" ? r.value : JSON.stringify(r.value);
+    for (const [key, entry] of Object.entries(brandResults.fields)) {
+      if (entry.value == null) continue;
+      const str = typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value);
       if (str.trim().length === 0) continue;
-      fieldValues[r.key] = str;
+      fieldValues[key] = str;
     }
 
     const queryText = queryOverride ?? buildBrandProfileQuery(fieldValues);
@@ -1070,9 +1074,12 @@ app.post("/chat", requireAuth, async (req, res) => {
   try {
     // Get or create session (scoped by org + user + app)
     let currentSessionId = sessionId;
-    const brandIds = workflowTracking.brandId
-      ? workflowTracking.brandId.split(",").map(s => s.trim()).filter(Boolean)
-      : null;
+    // Resolve brand UUIDs for this turn. Header CSV first, fall back to context.brandId.
+    const brandIds: string[] = workflowTracking.brandId
+      ? workflowTracking.brandId.split(",").map((s) => s.trim()).filter(Boolean)
+      : typeof context?.brandId === "string" && context.brandId
+        ? [context.brandId]
+        : [];
     if (!currentSessionId) {
       const [session] = await db
         .insert(sessions)
@@ -1081,7 +1088,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           userId,
           parentRunId,
           campaignId: workflowTracking.campaignId ?? null,
-          brandIds,
+          brandIds: brandIds.length > 0 ? brandIds : null,
           workflowSlug: workflowTracking.workflowSlug ?? null,
           featureSlug: workflowTracking.featureSlug ?? null,
         })
@@ -1572,7 +1579,12 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "prefill_feature") {
         const args = (call.args as Record<string, unknown>) || {};
-        const result = await prefillFeature(args.slug as string, featureCallParams);
+        if (brandIds.length === 0) {
+          throw new Error(
+            "[chat] prefill_feature requires brandIds — provide x-brand-id header or context.brandId",
+          );
+        }
+        const result = await prefillFeature(args.slug as string, brandIds, featureCallParams);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -1603,8 +1615,14 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "extract_brand_fields") {
         const args = (call.args as Record<string, unknown>) || {};
+        if (brandIds.length === 0) {
+          throw new Error(
+            "[chat] extract_brand_fields requires brandIds — provide x-brand-id header or context.brandId",
+          );
+        }
         const result = await extractBrandFields(
           args.fields as Array<{ key: string; description: string }>,
+          brandIds,
           featureCallParams,
         );
         toolCalls.push({ name: call.name, args, result });

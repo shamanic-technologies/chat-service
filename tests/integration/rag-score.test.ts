@@ -113,18 +113,34 @@ function mockBrandExtract(
       if (capture && init?.body) {
         capture.body = JSON.parse(init.body as string);
       }
+      const domain = "fake-brand.example";
+      const fieldsObj: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(fields)) {
+        fieldsObj[key] = {
+          value,
+          byBrand: {
+            [domain]: {
+              value,
+              cached: false,
+              extractedAt: new Date().toISOString(),
+              expiresAt: null,
+              sourceUrls: null,
+            },
+          },
+        };
+      }
       return {
         ok: true,
         body: {
-          brandId: "fake-brand",
-          results: Object.entries(fields).map(([key, value]) => ({
-            key,
-            value,
-            cached: false,
-            extractedAt: new Date().toISOString(),
-            expiresAt: null,
-            sourceUrls: null,
-          })),
+          brands: [
+            {
+              brandId: "fake-brand",
+              domain,
+              name: "Fake Brand",
+              brandUrl: `https://${domain}`,
+            },
+          ],
+          fields: fieldsObj,
         },
       };
     },
@@ -293,6 +309,11 @@ describe("POST /orgs/rag/score", { timeout: 30_000 }, () => {
     // brand-service got our own runId (not the parent), and our own brandId in headers
     expect(brandCapture.headers?.["x-run-id"]).toBe(ownRunId);
     expect(brandCapture.headers?.["x-brand-id"]).toBe(brandId);
+    // Outbound body to api-service must include brandIds (non-empty array) — regression for rag-score 502
+    expect(brandCapture.body).toMatchObject({
+      brandIds: [brandId],
+      fields: expect.any(Array),
+    });
     // runs-service create was called with the parent runId from the request
     expect(runsCapture.headers?.["x-run-id"]).toBe(parentRunId);
 
