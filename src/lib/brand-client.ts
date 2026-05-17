@@ -13,7 +13,9 @@ export class BrandError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// POST /brands/extract-fields  (reads x-brand-id from forwarded headers)
+// POST /v1/brands/extract-fields
+// Body: { brandIds: string[] (non-empty), fields: [{key, description}] }
+// Response: { brands: [...], fields: { [key]: { value, byBrand: { [domain]: {...} } } } }
 // ---------------------------------------------------------------------------
 
 export interface ExtractFieldDef {
@@ -21,8 +23,7 @@ export interface ExtractFieldDef {
   description: string;
 }
 
-export interface ExtractFieldResult {
-  key: string;
+export interface ExtractFieldByBrand {
   value: unknown;
   cached: boolean;
   extractedAt: string;
@@ -30,20 +31,33 @@ export interface ExtractFieldResult {
   sourceUrls: string[] | null;
 }
 
-export interface ExtractFieldsResponse {
+export interface ExtractFieldEntry {
+  value: unknown;
+  byBrand: Record<string, ExtractFieldByBrand>;
+}
+
+export interface ExtractBrandMeta {
   brandId: string;
-  results: ExtractFieldResult[];
+  domain: string;
+  name: string;
+  brandUrl: string | null;
+}
+
+export interface ExtractFieldsResponse {
+  brands: ExtractBrandMeta[];
+  fields: Record<string, ExtractFieldEntry>;
 }
 
 export async function extractBrandFields(
   fields: ExtractFieldDef[],
+  brandIds: string[],
   params: BrandCallParams,
 ): Promise<ExtractFieldsResponse> {
   const res = await apiServiceFetch(
     `/v1/brands/extract-fields`,
     "POST",
     params,
-    { fields },
+    { brandIds, fields },
   );
 
   if (!res.ok) {
