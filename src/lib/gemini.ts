@@ -201,6 +201,66 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * JSON Schema keywords Gemini's OpenAPI 3.0 subset rejects with HTTP 400
+ * (`Unknown name "<field>" at 'generation_config.response_schema'`). Stripped
+ * recursively from caller-supplied `responseSchema` before forwarding to the
+ * Gemini API. The caller's object is not mutated — a new object is returned.
+ */
+const GEMINI_UNSUPPORTED_SCHEMA_KEYS = new Set([
+  "additionalProperties",
+  "unevaluatedProperties",
+  "patternProperties",
+  "dependentRequired",
+  "dependentSchemas",
+  "$schema",
+  "$id",
+  "$ref",
+  "$defs",
+  "$comment",
+  "definitions",
+  "if",
+  "then",
+  "else",
+  "not",
+  "const",
+  "examples",
+  "default",
+  "readOnly",
+  "writeOnly",
+  "contentEncoding",
+  "contentMediaType",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "multipleOf",
+]);
+
+function sanitizeGeminiSchemaInner(value: unknown, removed: Set<string>): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeGeminiSchemaInner(item, removed));
+  }
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    if (GEMINI_UNSUPPORTED_SCHEMA_KEYS.has(key)) {
+      removed.add(key);
+      continue;
+    }
+    out[key] = sanitizeGeminiSchemaInner(val, removed);
+  }
+  return out;
+}
+
+export function sanitizeGeminiSchema(
+  schema: Record<string, unknown>,
+): { schema: Record<string, unknown>; removed: string[] } {
+  const removed = new Set<string>();
+  const sanitized = sanitizeGeminiSchemaInner(schema, removed) as Record<string, unknown>;
+  return { schema: sanitized, removed: Array.from(removed) };
+}
+
+/**
  * Compute delay for exponential backoff with jitter.
  * delay = min(base * 2^attempt, max) + random jitter [0, 500ms]
  */
@@ -255,6 +315,22 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     });
   }
 
+  // Sanitize caller-supplied JSON Schema for Gemini's OpenAPI 3.0 subset.
+  // Gemini rejects unknown fields (e.g. `additionalProperties`, `$schema`,
+  // `$ref`) with HTTP 400. Stripping them lets Zod/JSON-Schema-7 schemas pass
+  // through without forcing every caller to maintain a Gemini-only variant.
+  let sanitizedSchema: Record<string, unknown> | undefined;
+  if (responseSchema != null) {
+    const result = sanitizeGeminiSchema(responseSchema);
+    sanitizedSchema = result.schema;
+    if (result.removed.length > 0) {
+      console.warn(
+        `[chat-service] Gemini schema sanitized | model=${model}` +
+        ` | removed=${result.removed.join(",")}`,
+      );
+    }
+  }
+
   // Build request body
   const body: Record<string, unknown> = {
     contents: [{ parts }],
@@ -262,7 +338,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     generationConfig: {
       ...(temperature != null ? { temperature } : {}),
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
-      ...(responseSchema != null ? { responseSchema } : {}),
+      ...(sanitizedSchema != null ? { responseSchema: sanitizedSchema } : {}),
     },
   };
 
