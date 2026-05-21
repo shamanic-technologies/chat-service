@@ -139,6 +139,169 @@ describe("completeWithGemini", () => {
     expect(requestBody.generationConfig.responseSchema).toEqual(schema);
   });
 
+  // --- responseSchema sanitization (Gemini OpenAPI 3.0 subset) ---
+
+  it("strips additionalProperties from the root of responseSchema", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: { urls: { type: "array", items: { type: "string" } } },
+      required: ["urls"],
+    };
+    await runWithTimers({ ...baseOptions, responseSchema: schema });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.responseSchema.additionalProperties).toBeUndefined();
+    expect(requestBody.generationConfig.responseSchema.type).toBe("object");
+    expect(requestBody.generationConfig.responseSchema.properties).toBeDefined();
+  });
+
+  it("strips additionalProperties from nested items (reproduces upstream 400 error path)", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    // Mirrors Gemini's reported failure path: properties[0].value.items.additionalProperties
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        outlets: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: { name: { type: "string" } },
+          },
+        },
+      },
+    };
+    await runWithTimers({ ...baseOptions, responseSchema: schema });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    const sent = requestBody.generationConfig.responseSchema;
+    expect(sent.additionalProperties).toBeUndefined();
+    expect(sent.properties.outlets.items.additionalProperties).toBeUndefined();
+    expect(sent.properties.outlets.items.type).toBe("object");
+    expect(sent.properties.outlets.items.properties.name.type).toBe("string");
+  });
+
+  it("strips $schema, $ref, $defs, definitions, patternProperties from responseSchema", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    const schema = {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      $defs: { Foo: { type: "string" } },
+      definitions: { Bar: { type: "number" } },
+      type: "object",
+      patternProperties: { "^x-": { type: "string" } },
+      properties: { ref: { $ref: "#/$defs/Foo" } },
+    };
+    await runWithTimers({ ...baseOptions, responseSchema: schema });
+    const sent = JSON.parse(fetchSpy.mock.calls[0][1].body).generationConfig.responseSchema;
+    expect(sent.$schema).toBeUndefined();
+    expect(sent.$defs).toBeUndefined();
+    expect(sent.definitions).toBeUndefined();
+    expect(sent.patternProperties).toBeUndefined();
+    expect(sent.properties.ref.$ref).toBeUndefined();
+  });
+
+  it("does not mutate the caller-provided schema", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        outlets: {
+          type: "array",
+          items: { type: "object", additionalProperties: false, properties: { name: { type: "string" } } },
+        },
+      },
+    };
+    const before = JSON.parse(JSON.stringify(schema));
+    await runWithTimers({ ...baseOptions, responseSchema: schema });
+    expect(schema).toEqual(before);
+  });
+
+  it("preserves Gemini-supported fields (anyOf, propertyOrdering, enum, format, nullable, minItems, maxItems)", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    const schema = {
+      type: "object",
+      propertyOrdering: ["urls", "status"],
+      properties: {
+        urls: {
+          type: "array",
+          minItems: 1,
+          maxItems: 10,
+          items: { type: "string", format: "uri" },
+        },
+        status: {
+          anyOf: [
+            { type: "string", enum: ["ok", "fail"] },
+            { type: "null" },
+          ],
+          nullable: true,
+          description: "status string or null",
+        },
+      },
+      required: ["urls"],
+    };
+    await runWithTimers({ ...baseOptions, responseSchema: schema });
+    const sent = JSON.parse(fetchSpy.mock.calls[0][1].body).generationConfig.responseSchema;
+    expect(sent.propertyOrdering).toEqual(["urls", "status"]);
+    expect(sent.properties.urls.minItems).toBe(1);
+    expect(sent.properties.urls.maxItems).toBe(10);
+    expect(sent.properties.urls.items.format).toBe("uri");
+    expect(sent.properties.status.anyOf).toHaveLength(2);
+    expect(sent.properties.status.anyOf[0].enum).toEqual(["ok", "fail"]);
+    expect(sent.properties.status.nullable).toBe(true);
+    expect(sent.properties.status.description).toBe("status string or null");
+    expect(sent.required).toEqual(["urls"]);
+  });
+
+  it("recursively descends into anyOf / oneOf / allOf arrays", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    const schema = {
+      anyOf: [
+        { type: "object", additionalProperties: false, properties: { a: { type: "string" } } },
+        { type: "object", additionalProperties: false, properties: { b: { type: "number" } } },
+      ],
+    };
+    await runWithTimers({ ...baseOptions, responseSchema: schema });
+    const sent = JSON.parse(fetchSpy.mock.calls[0][1].body).generationConfig.responseSchema;
+    expect(sent.anyOf[0].additionalProperties).toBeUndefined();
+    expect(sent.anyOf[1].additionalProperties).toBeUndefined();
+    expect(sent.anyOf[0].properties.a.type).toBe("string");
+    expect(sent.anyOf[1].properties.b.type).toBe("number");
+  });
+
+  it("warns once with [chat-service] prefix when fields are stripped", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        x: { type: "array", items: { type: "object", additionalProperties: false } },
+      },
+    };
+    await runWithTimers({ ...baseOptions, responseSchema: schema });
+    const warnCalls = (console.warn as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c[0] as string)
+      .filter((msg) => msg.includes("schema sanitized"));
+    expect(warnCalls).toHaveLength(1);
+    expect(warnCalls[0]).toMatch(/^\[chat-service\]/);
+    expect(warnCalls[0]).toContain("additionalProperties");
+  });
+
+  it("does not warn when responseSchema is already Gemini-compatible", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    const schema = {
+      type: "object",
+      properties: { x: { type: "string" } },
+      required: ["x"],
+    };
+    await runWithTimers({ ...baseOptions, responseSchema: schema });
+    const warnCalls = (console.warn as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c[0] as string)
+      .filter((msg) => msg.includes("schema sanitized"));
+    expect(warnCalls).toHaveLength(0);
+  });
+
   it("does not send thinkingConfig (thinking removed from API)", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     await runWithTimers(baseOptions);
