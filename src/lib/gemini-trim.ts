@@ -17,6 +17,11 @@ const MIN_KEEP_MESSAGES = 2;
 export interface HistoryMessage {
   role: "user" | "assistant";
   content: string;
+  toolCalls?: Array<{
+    name: string;
+    args: Record<string, unknown>;
+    result?: unknown;
+  }> | null;
 }
 
 export interface TrimResult {
@@ -27,7 +32,12 @@ export interface TrimResult {
 
 function estimateTokens(messages: HistoryMessage[]): number {
   let chars = 0;
-  for (const m of messages) chars += m.content.length;
+  for (const m of messages) {
+    chars += m.content.length;
+    if (m.toolCalls && m.toolCalls.length > 0) {
+      chars += JSON.stringify(m.toolCalls).length;
+    }
+  }
   return Math.ceil(chars / CHARS_PER_TOKEN);
 }
 
@@ -39,7 +49,6 @@ export function trimGeminiHistoryToBudget(
     return { history, trimmed: false, estimatedInputTokens: initialTokens };
   }
 
-  // Drop oldest messages until under target, but never fewer than MIN_KEEP_MESSAGES.
   let working = history.slice();
   while (
     working.length > MIN_KEEP_MESSAGES &&
