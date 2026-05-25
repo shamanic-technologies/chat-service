@@ -90,6 +90,15 @@ The only workflow-mutation tools exposed to the LLM are:
 
 Do NOT introduce a metadata-only update tool, a single-node-config tweak tool, or any "shortcut" mutation path. Every workflow change must commit to either `upgrade_workflow` (bug fix / metadata clarification / technical-defect repair) or `fork_workflow` (substantive change on a working workflow). "Sneak a tweak under the rug" is not a category we support.
 
+### Two unrelated `workflowSlug` namespaces — do NOT mass-rename
+
+Chat-service has two completely independent uses of `workflowSlug`-shaped identifiers. They are unrelated, must not be unified, and a grep-then-rename refactor across both is the wrong move.
+
+1. **Tracking / grouping** — `sessions.workflow_slug` column, `x-workflow-slug` request header (read in `src/middleware/auth.ts`), `workflowTracking.workflowSlug` propagated through trace events, and the `groupBy: "workflowSlug"` axis on features-service. This is the **versioned** slug (e.g. `cold-email-outreach-nova-v3`) — it identifies a specific workflow version for run-tracking and per-version analytics. It MUST stay versioned.
+2. **Workflow-service upgrade body** — `UpgradeWorkflowBody.workflowDynastySlug` (in `src/lib/workflow-client.ts`) and the `workflowDynastySlug` property on the `upgrade_workflow` Anthropic tool (in `src/lib/anthropic.ts`). This is the **dynasty** slug (e.g. `cold-email-outreach-nova`, never `-v3`) — workflow-service resolves it to whichever version is currently active. It MUST stay dynasty-only.
+
+Symptoms of conflating the two: upgrade calls fail 400 because the LLM sends a `-v3` slug; OR feature-stats grouping silently collapses all versions into one bucket because the dashboard switched to `workflowDynastySlug` everywhere. Keep the two field names distinct in tool defs, route handlers, and tests.
+
 ### Tool descriptions are the enforcement surface
 
 The system prompt is owned by the calling app (stored in `app_configs.system_prompt` / `platform_configs.system_prompt`). For behavioral rules we want to enforce regardless of the calling app — e.g. "upgrade is bug-fix only, even if the user asks otherwise" — encode them in the tool description in `src/lib/anthropic.ts`, prefixed with `HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO:`. Tool descriptions bind the model more reliably than system prompts and survive app-level config drift.
