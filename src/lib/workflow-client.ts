@@ -188,20 +188,36 @@ export async function createWorkflow(
 
 export interface UpgradeWorkflowBody {
   workflowSlug: string;
-  description: string;
+  description?: string;
   hints?: string[];
+  dag?: DAG;
 }
 
 /**
- * Upgrade an existing workflow within its dynasty. The description should
- * describe a bug fix or a metadata clarification — not a substantive change
- * (use forkWorkflow for that).
+ * Upgrade an existing workflow within its dynasty. At least one of `dag` or
+ * `description` must be supplied. When `dag` is provided, workflow-service
+ * skips LLM regeneration and applies the patch verbatim — use this for
+ * surgical fixes. When only `description` is provided, the LLM regenerates
+ * the DAG from natural language.
+ *
+ * Upgrade is reserved for bug fixes, metadata clarifications, or repairing a
+ * technically broken/non-functional workflow. Substantive changes must use
+ * forkWorkflow.
  */
 export async function upgradeWorkflow(
   body: UpgradeWorkflowBody,
   params: WorkflowCallParams,
 ): Promise<unknown> {
-  const res = await apiServiceFetch("/v1/workflows/upgrade", "POST", params, body);
+  if (!body.dag && !body.description) {
+    throw new Error(
+      `[workflow-client] upgradeWorkflow requires at least one of 'dag' or 'description'`,
+    );
+  }
+
+  const payload: UpgradeWorkflowBody = { ...body };
+  if (body.dag) payload.dag = sanitizeDag(body.dag);
+
+  const res = await apiServiceFetch("/v1/workflows/upgrade", "POST", params, payload);
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
