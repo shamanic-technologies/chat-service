@@ -64,7 +64,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const openapiPath = join(__dirname, "..", "openapi.json");
 
-import { mergeConsecutiveMessages, stripToolUseBlocks } from "./lib/merge-messages.js";
+import {
+  mergeConsecutiveMessages,
+  rebuildAnthropicHistory,
+  stripToolUseBlocks,
+  type RebuildableMessage,
+} from "./lib/merge-messages.js";
 import { streamGeminiChat, type ToolDefinition } from "./lib/gemini-chat.js";
 import { SESSION_NOT_FOUND_EVENT } from "./lib/session-errors.js";
 import { buildContextUsageEvent } from "./lib/context-usage.js";
@@ -1671,6 +1676,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         .map((m) => ({
           role: m.role as "user" | "assistant",
           content: m.content as string,
+          toolCalls: m.toolCalls,
         }));
 
       const geminiResult = await streamGeminiChat({
@@ -1698,25 +1704,16 @@ app.post("/chat", requireAuth, async (req, res) => {
     } else {
     // --- Anthropic streaming path ---
 
-    // Build Anthropic message history — use contentBlocks if available (preserves compaction blocks)
-    const rawHistory: Anthropic.MessageParam[] = history
-      .filter((m) => m.role !== "tool")
-      .map((m) => {
-        if (m.role === "assistant" && m.contentBlocks) {
-          const blocks = stripToolUseBlocks(
-            m.contentBlocks as Anthropic.ContentBlockParam[],
-          );
-          return {
-            role: "assistant" as const,
-            content: blocks.length > 0 ? blocks : (m.content as string),
-          };
-        }
-        return {
-          role: m.role as "user" | "assistant",
-          content: m.content as string | Anthropic.ContentBlockParam[],
-        };
-      });
-    const anthropicHistory = mergeConsecutiveMessages(rawHistory);
+    // Build Anthropic message history — restore tool_use + tool_result pairs
+    // from `toolCalls` jsonb so multi-turn agentic memory survives across turns.
+    const rebuildable: RebuildableMessage[] = history.map((m) => ({
+      role: m.role as RebuildableMessage["role"],
+      content: m.content as string,
+      toolCalls: m.toolCalls,
+    }));
+    const anthropicHistory = mergeConsecutiveMessages(
+      rebuildAnthropicHistory(rebuildable),
+    );
 
     const turnMessages: Anthropic.MessageParam[] = [
       ...anthropicHistory,
