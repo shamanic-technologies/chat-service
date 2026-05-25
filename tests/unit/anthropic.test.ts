@@ -487,23 +487,25 @@ describe("CREATE_WORKFLOW_TOOL", () => {
 });
 
 describe("UPGRADE_WORKFLOW_TOOL", () => {
-  it("has correct name and exposes workflowSlug, description, dag, hints", () => {
+  it("has correct name and exposes workflowDynastySlug, description, dag, hints", () => {
     expect(UPGRADE_WORKFLOW_TOOL.name).toBe("upgrade_workflow");
     const schema = UPGRADE_WORKFLOW_TOOL.input_schema as {
       properties: Record<string, unknown>;
       required: string[];
     };
-    expect(schema.properties).toHaveProperty("workflowSlug");
+    expect(schema.properties).toHaveProperty("workflowDynastySlug");
     expect(schema.properties).toHaveProperty("description");
     expect(schema.properties).toHaveProperty("dag");
     expect(schema.properties).toHaveProperty("hints");
+    // The deprecated versioned-slug field must NOT be advertised.
+    expect(schema.properties).not.toHaveProperty("workflowSlug");
   });
 
-  it("requires only workflowSlug (description optional now that dag is supported)", () => {
+  it("requires only workflowDynastySlug (description optional now that dag is supported)", () => {
     const schema = UPGRADE_WORKFLOW_TOOL.input_schema as {
       required: string[];
     };
-    expect(schema.required).toEqual(["workflowSlug"]);
+    expect(schema.required).toEqual(["workflowDynastySlug"]);
   });
 
   it("description carries the HARD RULE for bug-fix / metadata / technical-defect scope", () => {
@@ -520,12 +522,42 @@ describe("UPGRADE_WORKFLOW_TOOL", () => {
     expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/at least one of/i);
   });
 
-  it("workflowSlug description tells the LLM to use slug not UUID", () => {
+  it("description steers the LLM to `dag` for surgical $ref / wiring / template-version fixes (no regen drift)", () => {
+    const desc = UPGRADE_WORKFLOW_TOOL.description ?? "";
+    expect(desc).toMatch(/\$ref/i);
+    expect(desc).toMatch(/wiring/i);
+    expect(desc).toMatch(/verbatim/i);
+    expect(desc).toMatch(/drift|downgrade|deleted|disappear/i);
+  });
+
+  it("workflowDynastySlug description points to get_workflow_details and rules out the versioned slug + UUID", () => {
     const schema = UPGRADE_WORKFLOW_TOOL.input_schema as {
       properties: Record<string, { description: string }>;
     };
-    expect(schema.properties.workflowSlug.description).toMatch(/workflowSlug/);
-    expect(schema.properties.workflowSlug.description).toMatch(/NOT the UUID/);
+    const desc = schema.properties.workflowDynastySlug.description;
+    expect(desc).toMatch(/workflowDynastySlug/);
+    expect(desc).toMatch(/get_workflow_details/);
+    expect(desc).toMatch(/NOT the .*workflowSlug|NOT the versioned/i);
+    expect(desc).toMatch(/NOT the UUID/);
+  });
+
+  it("hints is an object {services?, nodeTypes?, expectedInputs?} — each a string[] (NOT a top-level string array)", () => {
+    const schema = UPGRADE_WORKFLOW_TOOL.input_schema as {
+      properties: Record<string, {
+        type: string;
+        items?: { type: string };
+        properties?: Record<string, { type: string; items?: { type: string } }>;
+      }>;
+    };
+    const hints = schema.properties.hints;
+    expect(hints.type).toBe("object");
+    expect(hints.items).toBeUndefined();
+    expect(hints.properties).toBeDefined();
+    for (const key of ["services", "nodeTypes", "expectedInputs"] as const) {
+      const inner = hints.properties![key];
+      expect(inner.type).toBe("array");
+      expect(inner.items?.type).toBe("string");
+    }
   });
 });
 
