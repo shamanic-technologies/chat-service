@@ -39,18 +39,20 @@ describe("workflow tool registry", () => {
     expect(schema.properties).toHaveProperty("style");
   });
 
-  it("upgrade_workflow requires only workflowSlug, exposes dag, includes HARD RULE in description", () => {
+  it("upgrade_workflow requires only workflowDynastySlug, exposes dag, includes HARD RULE in description", () => {
     const tool = TOOL_REGISTRY.upgrade_workflow;
     expect(tool.name).toBe("upgrade_workflow");
     const schema = tool.input_schema as {
       properties: Record<string, unknown>;
       required: string[];
     };
-    expect(schema.required).toEqual(["workflowSlug"]);
-    expect(schema.properties).toHaveProperty("workflowSlug");
+    expect(schema.required).toEqual(["workflowDynastySlug"]);
+    expect(schema.properties).toHaveProperty("workflowDynastySlug");
     expect(schema.properties).toHaveProperty("description");
     expect(schema.properties).toHaveProperty("dag");
     expect(schema.properties).toHaveProperty("hints");
+    // Old versioned-slug field is gone.
+    expect(schema.properties).not.toHaveProperty("workflowSlug");
     expect(tool.description).toMatch(/HARD RULE/);
     expect(tool.description?.toLowerCase()).toMatch(/fixing a bug|bug.?fix/);
     expect(tool.description?.toLowerCase()).toMatch(/metadata/);

@@ -107,7 +107,7 @@ describe("createWorkflow", () => {
 });
 
 describe("upgradeWorkflow", () => {
-  it("sends POST /v1/workflows/upgrade with workflowSlug + description", async () => {
+  it("sends POST /v1/workflows/upgrade with workflowDynastySlug + description", async () => {
     const mockResponse = {
       workflow: {
         id: "wf-v2",
@@ -126,7 +126,7 @@ describe("upgradeWorkflow", () => {
     const { upgradeWorkflow } = await loadModule();
     const result = await upgradeWorkflow(
       {
-        workflowSlug: "cold-email-outreach-nova",
+        workflowDynastySlug: "cold-email-outreach-nova",
         description: "Bug fix: the email-send step was missing the to address mapping",
       },
       { orgId: "org-1", userId: "user-1", runId: "run-1" },
@@ -145,7 +145,7 @@ describe("upgradeWorkflow", () => {
     const sentBody = JSON.parse(
       (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
     );
-    expect(sentBody.workflowSlug).toBe("cold-email-outreach-nova");
+    expect(sentBody.workflowDynastySlug).toBe("cold-email-outreach-nova");
     expect(sentBody.description).toContain("Bug fix");
     expect(result).toEqual(mockResponse);
   });
@@ -165,7 +165,7 @@ describe("upgradeWorkflow", () => {
     const { upgradeWorkflow } = await loadModule();
     const result = await upgradeWorkflow(
       {
-        workflowSlug: "cold-email-outreach-nova",
+        workflowDynastySlug: "cold-email-outreach-nova",
         dag: {
           nodes: [
             { id: "patch-script", type: "script", config: { code: "return { ok: true };" } },
@@ -179,7 +179,7 @@ describe("upgradeWorkflow", () => {
     const sentBody = JSON.parse(
       (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
     );
-    expect(sentBody.workflowSlug).toBe("cold-email-outreach-nova");
+    expect(sentBody.workflowDynastySlug).toBe("cold-email-outreach-nova");
     expect(sentBody.dag).toBeDefined();
     expect(sentBody.dag.nodes[0].id).toBe("patch-script");
     expect(sentBody.dag.nodes[0].config.code).toContain("return");
@@ -197,7 +197,7 @@ describe("upgradeWorkflow", () => {
     const { upgradeWorkflow } = await loadModule();
     await upgradeWorkflow(
       {
-        workflowSlug: "wf-slug",
+        workflowDynastySlug: "wf-slug",
         description: "Fix the broken script node",
         dag: {
           nodes: [{ id: "n1", type: "script", config: { code: "return {};" } }],
@@ -214,6 +214,37 @@ describe("upgradeWorkflow", () => {
     expect(sentBody.dag.nodes[0].id).toBe("n1");
   });
 
+  it("forwards `hints` as an object {services?, nodeTypes?, expectedInputs?} (NOT a string[])", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ workflow: { id: "wf-1" } }),
+    });
+
+    const { upgradeWorkflow } = await loadModule();
+    await upgradeWorkflow(
+      {
+        workflowDynastySlug: "wf-slug",
+        description: "Tighten the apollo enrichment scope",
+        hints: {
+          services: ["apollo", "instantly"],
+          nodeTypes: ["http.call"],
+          expectedInputs: ["campaignId", "email"],
+        },
+      },
+      { orgId: "o", userId: "u", runId: "r" },
+    );
+
+    const sentBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+    );
+    expect(sentBody.hints).toEqual({
+      services: ["apollo", "instantly"],
+      nodeTypes: ["http.call"],
+      expectedInputs: ["campaignId", "email"],
+    });
+  });
+
   it("sanitizes `dag` (strips null config / inputMapping)", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
@@ -224,7 +255,7 @@ describe("upgradeWorkflow", () => {
     const { upgradeWorkflow } = await loadModule();
     await upgradeWorkflow(
       {
-        workflowSlug: "wf-slug",
+        workflowDynastySlug: "wf-slug",
         dag: {
           nodes: [
             // @ts-expect-error — exercising the LLM's null-emitting habit
@@ -248,7 +279,7 @@ describe("upgradeWorkflow", () => {
     const { upgradeWorkflow } = await loadModule();
     await expect(
       upgradeWorkflow(
-        { workflowSlug: "wf-slug" },
+        { workflowDynastySlug: "wf-slug" },
         { orgId: "o", userId: "u", runId: "r" },
       ),
     ).rejects.toThrow(/at least one of 'dag' or 'description'/);
@@ -265,7 +296,7 @@ describe("upgradeWorkflow", () => {
     const { upgradeWorkflow } = await loadModule();
     await expect(
       upgradeWorkflow(
-        { workflowSlug: "missing", description: "fix something" },
+        { workflowDynastySlug: "missing", description: "fix something" },
         { orgId: "o", userId: "u", runId: "r" },
       ),
     ).rejects.toThrow(/returned 404.*Workflow slug not found/);
@@ -279,7 +310,7 @@ describe("upgradeWorkflow", () => {
 
     const { upgradeWorkflow } = await loadModule();
     await upgradeWorkflow(
-      { workflowSlug: "s", description: "description text" },
+      { workflowDynastySlug: "s", description: "description text" },
       {
         orgId: "o",
         userId: "u",
