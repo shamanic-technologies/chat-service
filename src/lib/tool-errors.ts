@@ -40,7 +40,7 @@ const TOOL_HINTS: Record<string, string> = {
   create_workflow:
     "Pass description (natural language, min 10 chars), featureSlug (e.g. 'cold-email-outreach'), optional hints ({services, nodeTypes, expectedInputs}), optional style ({type, name, humanId?, brandId?}). Use only for NEW workflows from scratch.",
   upgrade_workflow:
-    "Pass workflowSlug (existing workflow slug) and description (NL describing the bug fix or metadata clarification, min 10 chars). HARD RULE: upgrade is for bug fixes or metadata clarifications only — for substantive changes, use fork_workflow instead.",
+    "Pass workflowSlug (use the workflowSlug field from get_workflow_details, NOT the UUID). Then pass at least one of: description (NL describing the bug fix / metadata clarification / technical defect repair, min 10 chars) OR dag (full corrected DAG; skips LLM regen and applies the patch verbatim). HARD RULE: upgrade is for bug fixes, metadata clarifications, or repairing technically broken workflows — for substantive changes on a working workflow, use fork_workflow instead.",
   fork_workflow:
     "Pass workflowId (UUID) and dag (complete DAG with nodes and edges). Call get_workflow_details first to read the current DAG, modify it, then pass the full result. Partial DAGs are not supported.",
   get_workflow_details:
