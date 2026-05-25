@@ -50,10 +50,10 @@ interface GeminiFunctionDeclaration {
 /** Gemini message part types. */
 interface GeminiTextPart { text: string }
 interface GeminiFunctionCallPart {
-  functionCall: { name: string; args: Record<string, unknown> };
+  functionCall: { name: string; args: Record<string, unknown>; id?: string };
 }
 interface GeminiFunctionResponsePart {
-  functionResponse: { name: string; response: unknown };
+  functionResponse: { name: string; response: unknown; id?: string };
 }
 type GeminiPart = GeminiTextPart | GeminiFunctionCallPart | GeminiFunctionResponsePart;
 
@@ -61,6 +61,17 @@ interface GeminiMessage {
   role: "user" | "model";
   parts: GeminiPart[];
 }
+
+/** History entry shape consumed by toGeminiHistory. */
+export type GeminiHistoryInput = Array<{
+  role: "user" | "assistant";
+  content: string;
+  toolCalls?: Array<{
+    name: string;
+    args: Record<string, unknown>;
+    result?: unknown;
+  }> | null;
+}>;
 
 /** SSE event sender (same signature as index.ts sendSSE). */
 type SendSSE = (res: ExpressResponse, data: unknown) => void;
@@ -79,7 +90,7 @@ export interface StreamGeminiChatOptions {
   apiKey: string;
   model: string;
   systemPrompt: string;
-  history: Array<{ role: "user" | "assistant"; content: string }>;
+  history: GeminiHistoryInput;
   userMessage: string;
   tools: ToolDefinition[];
   res: ExpressResponse;
@@ -115,21 +126,62 @@ export function toGeminiFunctionDeclarations(
   }));
 }
 
-/** Convert DB message history to Gemini format. */
-function toGeminiHistory(
-  history: Array<{ role: "user" | "assistant"; content: string }>,
-): GeminiMessage[] {
+/**
+ * Convert DB message history to Gemini format.
+ *
+ * Rebuilds `functionCall` + `functionResponse` pairs from the `toolCalls`
+ * jsonb column so multi-turn agentic memory survives across turns. Without
+ * this, the model has no record of which tools were called or what they
+ * returned in prior turns and either re-fetches or hallucinates.
+ *
+ * Tool calls without a `result` are filtered out (e.g. `request_user_input`
+ * which pauses the agentic loop) so we never emit a `functionCall` with no
+ * matching `functionResponse`.
+ */
+export function toGeminiHistory(history: GeminiHistoryInput): GeminiMessage[] {
   const result: GeminiMessage[] = [];
-  for (const msg of history) {
-    const geminiRole = msg.role === "assistant" ? "model" : "user";
-    // Merge consecutive same-role messages (Gemini requires alternating roles)
+
+  const pushOrMerge = (role: "user" | "model", parts: GeminiPart[]) => {
+    if (parts.length === 0) return;
     const prev = result[result.length - 1];
-    if (prev && prev.role === geminiRole) {
-      prev.parts.push({ text: msg.content });
+    if (prev && prev.role === role) {
+      prev.parts.push(...parts);
     } else {
-      result.push({ role: geminiRole, parts: [{ text: msg.content }] });
+      result.push({ role, parts });
+    }
+  };
+
+  for (const msg of history) {
+    if (msg.role === "user") {
+      pushOrMerge("user", [{ text: msg.content }]);
+      continue;
+    }
+
+    const text = msg.content ?? "";
+    const validToolCalls = (msg.toolCalls ?? []).filter(
+      (tc) => tc.result !== undefined,
+    );
+
+    const modelParts: GeminiPart[] = [];
+    if (text.length > 0) {
+      modelParts.push({ text });
+    }
+    for (const tc of validToolCalls) {
+      modelParts.push({ functionCall: { name: tc.name, args: tc.args } });
+    }
+
+    if (modelParts.length === 0) continue;
+
+    pushOrMerge("model", modelParts);
+
+    if (validToolCalls.length > 0) {
+      const responseParts: GeminiPart[] = validToolCalls.map((tc) => ({
+        functionResponse: { name: tc.name, response: tc.result },
+      }));
+      pushOrMerge("user", responseParts);
     }
   }
+
   return result;
 }
 
@@ -143,7 +195,7 @@ interface GeminiStreamChunk {
       parts?: Array<{
         text?: string;
         thought?: boolean;
-        functionCall?: { name: string; args: Record<string, unknown> };
+        functionCall?: { name: string; args: Record<string, unknown>; id?: string };
       }>;
     };
     finishReason?: string;
@@ -253,7 +305,7 @@ export async function streamGeminiChat(
     const decoder = new TextDecoder();
     let sseBuffer = "";
     let inThinking = false;
-    const functionCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const functionCalls: Array<{ name: string; args: Record<string, unknown>; id?: string }> = [];
     let chunkTokensInput = 0;
     let chunkTokensOutput = 0;
 
@@ -320,6 +372,7 @@ export async function streamGeminiChat(
               functionCalls.push({
                 name: part.functionCall.name,
                 args: part.functionCall.args ?? {},
+                ...(part.functionCall.id ? { id: part.functionCall.id } : {}),
               });
             }
           }
@@ -345,7 +398,13 @@ export async function streamGeminiChat(
     const responseParts: GeminiPart[] = [];
 
     for (const fc of functionCalls) {
-      modelParts.push({ functionCall: fc });
+      modelParts.push({
+        functionCall: {
+          name: fc.name,
+          args: fc.args,
+          ...(fc.id ? { id: fc.id } : {}),
+        },
+      });
 
       const toolCallId = `tc_${crypto.randomUUID()}`;
       if (fc.name !== "request_user_input") {
@@ -377,6 +436,7 @@ export async function streamGeminiChat(
             functionResponse: {
               name: fc.name,
               response: { error: "Unknown tool" },
+              ...(fc.id ? { id: fc.id } : {}),
             },
           });
           continue;
@@ -388,6 +448,7 @@ export async function streamGeminiChat(
           functionResponse: {
             name: fc.name,
             response: toolResult.result,
+            ...(fc.id ? { id: fc.id } : {}),
           },
         });
       } catch (toolErr: unknown) {
@@ -399,6 +460,7 @@ export async function streamGeminiChat(
           functionResponse: {
             name: fc.name,
             response: errorResult,
+            ...(fc.id ? { id: fc.id } : {}),
           },
         });
       }

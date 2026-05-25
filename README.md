@@ -483,6 +483,15 @@ data: {"type":"tool_result","id":"tc_550e8400-e29b-41d4-a716-446655440000","name
 
 After a tool result, more `token` events follow with the AI's continuation.
 
+#### Tool memory across turns
+
+Tool calls and their results are persisted on the assistant message (in the `tool_calls` jsonb column) and replayed to the provider on every subsequent turn:
+
+- **Anthropic**: prior `tool_use` blocks + matching `tool_result` blocks are rebuilt from `tool_calls` and re-injected into the conversation history. Tool-use ids are synthesized deterministically per (message-index, tool-index) — the live agentic loop uses real Anthropic ids; only cross-turn reconstruction uses synthetic ids. Tool calls without a `result` (e.g. paused on `request_user_input`) are filtered out.
+- **Gemini**: prior `functionCall` + `functionResponse` parts are rebuilt and re-injected, merging into the existing user/model turn flow. Gemini 3 `id` fields are captured during the live loop and threaded through `functionResponse`.
+
+Anthropic's beta `clear_tool_uses_20250919` context-management edit auto-clears the oldest tool-use blocks once the input crosses 50k tokens, so multi-turn agentic conversations stay within budget without manual trimming. For Gemini, `trimGeminiHistoryToBudget` drops oldest messages (now accounting for serialized `tool_calls` length) once the heuristic estimate crosses 100k tokens.
+
 ### Available Tools
 
 The tools available in each chat session are determined by the `allowedTools` array in the config. The LLM only sees and can call tools that are listed. Unknown or unlisted tools are rejected.
