@@ -150,6 +150,111 @@ describe("upgradeWorkflow", () => {
     expect(result).toEqual(mockResponse);
   });
 
+  it("sends `dag` when supplied without description (surgical patch path)", async () => {
+    const mockResponse = {
+      workflow: { id: "wf-v3", action: "upgraded" },
+      dag: { nodes: [], edges: [] },
+      generatedDescription: "Surgical patch",
+    };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve(mockResponse),
+    });
+
+    const { upgradeWorkflow } = await loadModule();
+    const result = await upgradeWorkflow(
+      {
+        workflowSlug: "cold-email-outreach-nova",
+        dag: {
+          nodes: [
+            { id: "patch-script", type: "script", config: { code: "return { ok: true };" } },
+          ],
+          edges: [],
+        },
+      },
+      { orgId: "o", userId: "u", runId: "r" },
+    );
+
+    const sentBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+    );
+    expect(sentBody.workflowSlug).toBe("cold-email-outreach-nova");
+    expect(sentBody.dag).toBeDefined();
+    expect(sentBody.dag.nodes[0].id).toBe("patch-script");
+    expect(sentBody.dag.nodes[0].config.code).toContain("return");
+    expect(sentBody.description).toBeUndefined();
+    expect(result).toEqual(mockResponse);
+  });
+
+  it("sends both `dag` and `description` when both supplied", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({ workflow: { id: "wf-1" } }),
+    });
+
+    const { upgradeWorkflow } = await loadModule();
+    await upgradeWorkflow(
+      {
+        workflowSlug: "wf-slug",
+        description: "Fix the broken script node",
+        dag: {
+          nodes: [{ id: "n1", type: "script", config: { code: "return {};" } }],
+          edges: [],
+        },
+      },
+      { orgId: "o", userId: "u", runId: "r" },
+    );
+
+    const sentBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+    );
+    expect(sentBody.description).toBe("Fix the broken script node");
+    expect(sentBody.dag.nodes[0].id).toBe("n1");
+  });
+
+  it("sanitizes `dag` (strips null config / inputMapping)", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ workflow: { id: "wf-1" } }),
+    });
+
+    const { upgradeWorkflow } = await loadModule();
+    await upgradeWorkflow(
+      {
+        workflowSlug: "wf-slug",
+        dag: {
+          nodes: [
+            // @ts-expect-error — exercising the LLM's null-emitting habit
+            { id: "n1", type: "http.call", config: null, inputMapping: null },
+            { id: "n2", type: "script", config: { code: "return {};" } },
+          ],
+          edges: [],
+        },
+      },
+      { orgId: "o", userId: "u", runId: "r" },
+    );
+
+    const sentBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+    );
+    expect(sentBody.dag.nodes[0]).toEqual({ id: "n1", type: "http.call" });
+    expect(sentBody.dag.nodes[1].config.code).toBe("return {};");
+  });
+
+  it("throws locally (no HTTP) when both `dag` and `description` are missing", async () => {
+    const { upgradeWorkflow } = await loadModule();
+    await expect(
+      upgradeWorkflow(
+        { workflowSlug: "wf-slug" },
+        { orgId: "o", userId: "u", runId: "r" },
+      ),
+    ).rejects.toThrow(/at least one of 'dag' or 'description'/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("throws on non-OK response", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,

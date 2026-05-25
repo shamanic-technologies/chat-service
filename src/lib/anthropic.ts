@@ -178,35 +178,41 @@ export const UPGRADE_WORKFLOW_TOOL: Anthropic.Tool = {
   name: "upgrade_workflow",
   description:
     "Re-generate the DAG of an existing workflow while keeping the SAME dynasty/lineage. Returns the workflow in the same dynasty (possibly as a new version row when the regenerated DAG signature differs from the previous one).\n\n" +
-    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: upgrade_workflow may ONLY be used when (a) fixing a bug in the existing workflow's DAG, or (b) clarifying metadata that is factually wrong or imprecise. Any change in behavior, scope, intent, audience, or substantive metadata is NOT an upgrade — use fork_workflow instead. Upgrade keeps the same lineage; fork starts a new one. If you are not certain the change qualifies as a bug fix or metadata clarification, default to fork_workflow.",
+    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: upgrade_workflow may ONLY be used when (a) fixing a bug in the existing workflow's DAG, or (b) clarifying metadata that is factually wrong or imprecise. Any change in behavior, scope, intent, audience, or substantive metadata is NOT an upgrade — use fork_workflow instead. Upgrade keeps the same lineage; fork starts a new one. If the workflow is invalid or non-functional for a technical reason, and you are fixing it, then it is an upgrade.\n\n" +
+    "If you have the full corrected DAG (e.g. from get_workflow_details + a 1-node patch), pass it as `dag` — workflow-service skips LLM regen and applies the patch verbatim. If you only have a natural-language change request, pass `description` instead. At least one of `dag` / `description` is required; you may pass both.",
   input_schema: {
     type: "object" as const,
     properties: {
       workflowSlug: {
         type: "string",
         description:
-          "Slug of the existing workflow to upgrade (e.g. 'cold-email-outreach-nova'). Upgrade stays within the same dynasty.",
+          "Slug of the existing workflow to upgrade (e.g. 'cold-email-outreach-nova'). Use the `workflowSlug` field returned by get_workflow_details — NOT the UUID. Upgrade stays within the same dynasty.",
       },
       description: {
         type: "string",
         description:
-          "Natural-language description of the upgrade. Must describe the bug being fixed or the metadata being clarified — not a new behavior. Minimum 10 characters.",
+          "Natural-language description of the upgrade. Must describe the bug being fixed, the metadata being clarified, or the technical defect being repaired — not a new behavior. Minimum 10 characters. Required when `dag` is not supplied.",
       },
       hints: {
         type: "array",
         items: { type: "string" },
         description:
-          "Optional free-form hints to guide the upgrade (array of short strings).",
+          "Optional free-form hints to guide the upgrade (array of short strings). Ignored when `dag` is provided.",
+      },
+      dag: {
+        type: "object",
+        description:
+          "Full corrected DAG (nodes + edges). When supplied, workflow-service skips LLM regeneration and applies this DAG verbatim — use for surgical patches (e.g. fix a broken script node). Must be the COMPLETE DAG (call get_workflow_details first, modify, pass full result). Partial DAGs are not supported.",
       },
     },
-    required: ["workflowSlug", "description"],
+    required: ["workflowSlug"],
   },
 };
 
 export const FORK_WORKFLOW_TOOL: Anthropic.Tool = {
   name: "fork_workflow",
   description:
-    "Fork a workflow into a NEW dynasty/lineage by submitting a new DAG. Use this for any substantive change: new behavior, new scope, new intent, new audience, or a structural DAG change that isn't a bug fix. The original workflow stays active under its own lineage; this creates a new one. If the submitted DAG has the same signature as the source, no fork happens (returns _action: 'updated') — that's expected, not an error.\n\n" +
+    "Fork a workflow into a NEW dynasty/lineage by submitting a new DAG. Use this for any substantive change: new behavior, new scope, new intent, new audience, or a structural DAG change on a technically working workflow. The original workflow stays active under its own lineage; this creates a new one. If the submitted DAG has the same signature as the source, no fork happens (returns _action: 'updated') — that's expected, not an error.\n\n" +
     "Always call get_workflow_details first to read the current DAG, modify it, and pass the COMPLETE updated DAG — partial DAGs are not supported.",
   input_schema: {
     type: "object" as const,

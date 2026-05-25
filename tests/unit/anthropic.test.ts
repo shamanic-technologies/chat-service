@@ -487,7 +487,7 @@ describe("CREATE_WORKFLOW_TOOL", () => {
 });
 
 describe("UPGRADE_WORKFLOW_TOOL", () => {
-  it("has correct name and required workflowSlug + description", () => {
+  it("has correct name and exposes workflowSlug, description, dag, hints", () => {
     expect(UPGRADE_WORKFLOW_TOOL.name).toBe("upgrade_workflow");
     const schema = UPGRADE_WORKFLOW_TOOL.input_schema as {
       properties: Record<string, unknown>;
@@ -495,15 +495,37 @@ describe("UPGRADE_WORKFLOW_TOOL", () => {
     };
     expect(schema.properties).toHaveProperty("workflowSlug");
     expect(schema.properties).toHaveProperty("description");
-    expect(schema.required).toEqual(
-      expect.arrayContaining(["workflowSlug", "description"]),
-    );
+    expect(schema.properties).toHaveProperty("dag");
+    expect(schema.properties).toHaveProperty("hints");
   });
 
-  it("description carries the HARD RULE for bug-fix/metadata-clarification scope", () => {
+  it("requires only workflowSlug (description optional now that dag is supported)", () => {
+    const schema = UPGRADE_WORKFLOW_TOOL.input_schema as {
+      required: string[];
+    };
+    expect(schema.required).toEqual(["workflowSlug"]);
+  });
+
+  it("description carries the HARD RULE for bug-fix / metadata / technical-defect scope", () => {
     expect(UPGRADE_WORKFLOW_TOOL.description).toContain("HARD RULE");
-    expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/bug.?fix/i);
+    expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/fixing a bug|bug.?fix/i);
+    expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/metadata/i);
     expect(UPGRADE_WORKFLOW_TOOL.description).toContain("fork_workflow");
+    expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/non-functional/i);
+  });
+
+  it("description explains the dag vs description choice", () => {
+    expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/`dag`/);
+    expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/`description`/);
+    expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/at least one of/i);
+  });
+
+  it("workflowSlug description tells the LLM to use slug not UUID", () => {
+    const schema = UPGRADE_WORKFLOW_TOOL.input_schema as {
+      properties: Record<string, { description: string }>;
+    };
+    expect(schema.properties.workflowSlug.description).toMatch(/workflowSlug/);
+    expect(schema.properties.workflowSlug.description).toMatch(/NOT the UUID/);
   });
 });
 
@@ -519,6 +541,10 @@ describe("FORK_WORKFLOW_TOOL", () => {
     expect(schema.required).toEqual(
       expect.arrayContaining(["workflowId", "dag"]),
     );
+  });
+
+  it("description scopes fork to substantive changes on a technically working workflow", () => {
+    expect(FORK_WORKFLOW_TOOL.description).toMatch(/technically working workflow/i);
   });
 });
 

@@ -39,20 +39,23 @@ describe("workflow tool registry", () => {
     expect(schema.properties).toHaveProperty("style");
   });
 
-  it("upgrade_workflow requires workflowSlug and description, includes HARD RULE in description", () => {
+  it("upgrade_workflow requires only workflowSlug, exposes dag, includes HARD RULE in description", () => {
     const tool = TOOL_REGISTRY.upgrade_workflow;
     expect(tool.name).toBe("upgrade_workflow");
     const schema = tool.input_schema as {
       properties: Record<string, unknown>;
       required: string[];
     };
-    expect(schema.required).toEqual(
-      expect.arrayContaining(["workflowSlug", "description"]),
-    );
+    expect(schema.required).toEqual(["workflowSlug"]);
+    expect(schema.properties).toHaveProperty("workflowSlug");
+    expect(schema.properties).toHaveProperty("description");
+    expect(schema.properties).toHaveProperty("dag");
+    expect(schema.properties).toHaveProperty("hints");
     expect(tool.description).toMatch(/HARD RULE/);
-    expect(tool.description?.toLowerCase()).toMatch(/bug.?fix/);
+    expect(tool.description?.toLowerCase()).toMatch(/fixing a bug|bug.?fix/);
     expect(tool.description?.toLowerCase()).toMatch(/metadata/);
     expect(tool.description?.toLowerCase()).toMatch(/fork_workflow/);
+    expect(tool.description?.toLowerCase()).toMatch(/non-functional/);
   });
 
   it("fork_workflow requires workflowId and dag, mentions new lineage in description", () => {

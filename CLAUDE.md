@@ -85,10 +85,10 @@ JSON mode is enforced **only** via native provider metadata:
 The only workflow-mutation tools exposed to the LLM are:
 
 - `create_workflow` → `POST /v1/workflows/create` — new dynasty from NL.
-- `upgrade_workflow` → `POST /v1/workflows/upgrade` — regenerate within the same dynasty. **Bug fixes or metadata clarifications only.** Anything substantive must use `fork_workflow`.
+- `upgrade_workflow` → `POST /v1/workflows/upgrade` — regenerate within the same dynasty. **Bug fixes, metadata clarifications, or repairing a technically broken/non-functional workflow only.** Anything substantive on a technically working workflow must use `fork_workflow`. Accepts either `description` (LLM regenerates the DAG) or `dag` (skips LLM and applies the supplied DAG verbatim — use for surgical patches). At least one of the two is required.
 - `fork_workflow` → `PUT /v1/workflows/:id` with a full DAG — creates a new dynasty when the signature differs; same-signature submissions return `_action: "updated"` and are surfaced honestly to the model (not a bug).
 
-Do NOT introduce a metadata-only update tool, a single-node-config tweak tool, or any "shortcut" mutation path. Every workflow change must commit to either `upgrade_workflow` (bug fix / metadata clarification) or `fork_workflow` (substantive). "Sneak a tweak under the rug" is not a category we support.
+Do NOT introduce a metadata-only update tool, a single-node-config tweak tool, or any "shortcut" mutation path. Every workflow change must commit to either `upgrade_workflow` (bug fix / metadata clarification / technical-defect repair) or `fork_workflow` (substantive change on a working workflow). "Sneak a tweak under the rug" is not a category we support.
 
 ### Tool descriptions are the enforcement surface
 
