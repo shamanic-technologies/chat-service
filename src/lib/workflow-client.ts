@@ -186,10 +186,26 @@ export async function createWorkflow(
   return await res.json();
 }
 
+/**
+ * Hints to guide workflow generation (matches workflow-service GenerateWorkflowHintsSchema).
+ * All fields optional. Ignored when `dag` is provided on upgrade.
+ */
+export interface GenerateWorkflowHints {
+  services?: string[];
+  nodeTypes?: string[];
+  expectedInputs?: string[];
+}
+
 export interface UpgradeWorkflowBody {
-  workflowSlug: string;
+  /**
+   * Stable dynasty slug (e.g. `cold-email-outreach-nova`). Constant across all
+   * versions of the dynasty — workflow-service resolves it to the currently-
+   * active row. Use the `workflowDynastySlug` field returned by
+   * get_workflow_details, NOT the versioned `workflowSlug` and NOT the UUID.
+   */
+  workflowDynastySlug: string;
   description?: string;
-  hints?: string[];
+  hints?: GenerateWorkflowHints;
   dag?: DAG;
 }
 

@@ -179,33 +179,53 @@ export const UPGRADE_WORKFLOW_TOOL: Anthropic.Tool = {
   description:
     "Re-generate the DAG of an existing workflow while keeping the SAME dynasty/lineage. Returns the workflow in the same dynasty (possibly as a new version row when the regenerated DAG signature differs from the previous one).\n\n" +
     "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: upgrade_workflow may ONLY be used when (a) fixing a bug in the existing workflow's DAG, or (b) clarifying metadata that is factually wrong or imprecise. Any change in behavior, scope, intent, audience, or substantive metadata is NOT an upgrade — use fork_workflow instead. Upgrade keeps the same lineage; fork starts a new one. If the workflow is invalid or non-functional for a technical reason, and you are fixing it, then it is an upgrade.\n\n" +
-    "If you have the full corrected DAG (e.g. from get_workflow_details + a 1-node patch), pass it as `dag` — workflow-service skips LLM regen and applies the patch verbatim. If you only have a natural-language change request, pass `description` instead. At least one of `dag` / `description` is required; you may pass both.",
+    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: for any surgical fix on a working DAG — `$ref` path corrections, edge wiring, missing/wrong field on a single node, output-key rename, template-version bump — call get_workflow_details first, modify the DAG in memory, and pass the COMPLETE corrected DAG as `dag`. workflow-service applies that DAG verbatim with no LLM regen. Passing `description` only triggers a full LLM DAG regeneration which routinely drifts: template versions downgrade, nodes get deleted, fields disappear, working bits regress. `description`-only is reserved for cases where you genuinely do not have the DAG (e.g. the user gave a fuzzy natural-language change request and no get_workflow_details was called).\n\n" +
+    "At least one of `dag` / `description` is required; you may pass both (description then replaces the stored description on the resulting row).",
   input_schema: {
     type: "object" as const,
     properties: {
-      workflowSlug: {
+      workflowDynastySlug: {
         type: "string",
         description:
-          "Slug of the existing workflow to upgrade (e.g. 'cold-email-outreach-nova'). Use the `workflowSlug` field returned by get_workflow_details — NOT the UUID. Upgrade stays within the same dynasty.",
+          "Stable dynasty slug of the workflow to upgrade (e.g. 'cold-email-outreach-nova'). Constant across all versions of the dynasty — workflow-service resolves it to the currently-active row, so you do NOT need to track which version is active after prior upgrades. Use the `workflowDynastySlug` field returned by get_workflow_details — NOT the versioned `workflowSlug` (e.g. `...-v3`) and NOT the UUID.",
       },
       description: {
         type: "string",
         description:
-          "Natural-language description of the upgrade. Must describe the bug being fixed, the metadata being clarified, or the technical defect being repaired — not a new behavior. Minimum 10 characters. Required when `dag` is not supplied.",
+          "Natural-language description of the upgrade. Must describe the bug being fixed, the metadata being clarified, or the technical defect being repaired — not a new behavior. Minimum 10 characters. Required when `dag` is not supplied. Avoid description-only for surgical fixes (see HARD RULE in the tool description) — it triggers full LLM regen and routinely drifts.",
       },
       hints: {
-        type: "array",
-        items: { type: "string" },
+        type: "object",
         description:
-          "Optional free-form hints to guide the upgrade (array of short strings). Ignored when `dag` is provided.",
+          "Optional hints to guide regeneration. Ignored when `dag` is provided. Must be an object, NOT an array of strings.",
+        properties: {
+          services: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Scope generation to these service names (e.g. ['apollo', 'instantly']). Reduces prompt size and improves accuracy.",
+          },
+          nodeTypes: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Suggested node types for the LLM to use (e.g. ['http.call', 'script']).",
+          },
+          expectedInputs: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Expected flow_input field names the regenerated workflow should consume (e.g. ['campaignId', 'email']).",
+          },
+        },
       },
       dag: {
         type: "object",
         description:
-          "Full corrected DAG (nodes + edges). When supplied, workflow-service skips LLM regeneration and applies this DAG verbatim — use for surgical patches (e.g. fix a broken script node). Must be the COMPLETE DAG (call get_workflow_details first, modify, pass full result). Partial DAGs are not supported.",
+          "Full corrected DAG (nodes + edges). When supplied, workflow-service skips LLM regeneration and applies this DAG verbatim — REQUIRED for surgical fixes (broken $ref paths, miswired edges, wrong field on one node, template-version bump). Must be the COMPLETE DAG (call get_workflow_details first, modify, pass the full result). Partial DAGs are not supported.",
       },
     },
-    required: ["workflowSlug"],
+    required: ["workflowDynastySlug"],
   },
 };
 

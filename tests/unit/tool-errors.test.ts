@@ -66,6 +66,22 @@ describe("formatToolError", () => {
     expect(result.suggestion).toMatch(/bug.?fix|metadata/i);
   });
 
+  it("upgrade_workflow suggestion advertises workflowDynastySlug, dag-first for surgical fixes, and hints-as-object", () => {
+    const raw = "returned 400: bad request";
+    const result = formatToolError("upgrade_workflow", raw);
+
+    expect(result.suggestion).toMatch(/workflowDynastySlug/);
+    expect(result.suggestion).not.toMatch(/Pass workflowSlug\b/);
+    expect(result.suggestion).toMatch(/dag/);
+    expect(result.suggestion.toLowerCase()).toMatch(
+      /\$ref|wiring|surgical|verbatim/,
+    );
+    expect(result.suggestion).toMatch(/hints/);
+    expect(result.suggestion.toLowerCase()).toMatch(
+      /object|services|nodeTypes|expectedInputs/,
+    );
+  });
+
   it("includes tool-specific hints for update_prompt_template", () => {
     const raw = "returned 400: invalid source type";
     const result = formatToolError("update_prompt_template", raw);
