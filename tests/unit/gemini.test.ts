@@ -408,7 +408,7 @@ describe("completeWithGemini", () => {
     expect(fallbackUrl).toContain("gemini-2.5-pro");
   });
 
-  it("falls back to gemini-2.5-flash after all retries fail for flash-lite-preview", async () => {
+  it("falls back to gemini-2.5-flash after all retries fail for flash-lite", async () => {
     fetchSpy
       .mockResolvedValueOnce(errorResponse(503))
       .mockResolvedValueOnce(errorResponse(503))
@@ -416,7 +416,7 @@ describe("completeWithGemini", () => {
       .mockResolvedValueOnce(errorResponse(503))
       .mockResolvedValueOnce(okResponse("lite-fallback"));
 
-    const result = await runWithTimers({ ...baseOptions, model: "gemini-3.1-flash-lite-preview" });
+    const result = await runWithTimers({ ...baseOptions, model: "gemini-3.1-flash-lite" });
     expect(result.content).toBe("lite-fallback");
     expect(result.model).toBe("gemini-2.5-flash");
   });
