@@ -95,7 +95,7 @@ describe("Gemini completeWithGemini() — caller systemPrompt is forwarded byte-
           json: async () => ({
             candidates: [{ content: { parts: [{ text: '{"ok":true}' }] }, finishReason: "STOP" }],
             usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
-            modelVersion: "gemini-3.1-flash-lite-preview",
+            modelVersion: "gemini-3.1-flash-lite",
           }),
           headers: new Headers(),
         } as unknown as Response;
@@ -106,7 +106,7 @@ describe("Gemini completeWithGemini() — caller systemPrompt is forwarded byte-
   it("forwards systemPrompt unchanged for jsonMode requests", async () => {
     await completeWithGemini({
       apiKey: "k",
-      model: "gemini-3.1-flash-lite-preview",
+      model: "gemini-3.1-flash-lite",
       message: "hi",
       systemPrompt: CALLER_PROMPT,
       responseFormat: "json",
@@ -119,7 +119,7 @@ describe("Gemini completeWithGemini() — caller systemPrompt is forwarded byte-
     const schema = { type: "object", properties: { ok: { type: "boolean" } } };
     await completeWithGemini({
       apiKey: "k",
-      model: "gemini-3.1-flash-lite-preview",
+      model: "gemini-3.1-flash-lite",
       message: "hi",
       systemPrompt: CALLER_PROMPT,
       responseFormat: "json",

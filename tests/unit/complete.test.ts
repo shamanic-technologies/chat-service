@@ -450,9 +450,10 @@ describe("resolveModel", () => {
     expect(resolved.provider).toBe("anthropic");
   });
 
-  it("resolves google + flash-lite to gemini-3.1-flash-lite-preview", () => {
+  it("resolves google + flash-lite to gemini-3.1-flash-lite (stable, no -preview)", () => {
     const resolved = resolveModel("google", "flash-lite");
-    expect(resolved.apiModelId).toBe("gemini-3.1-flash-lite-preview");
+    expect(resolved.apiModelId).toBe("gemini-3.1-flash-lite");
+    expect(resolved.apiModelId).not.toContain("-preview");
     expect(resolved.costPrefix).toBe("google-flash-lite-3.1");
     expect(resolved.provider).toBe("google");
   });
@@ -483,8 +484,12 @@ describe("resolveModel", () => {
 // --- Gemini model helpers ---
 
 describe("isGeminiModel", () => {
-  it("returns true for gemini-3.1-flash-lite-preview", () => {
-    expect(isGeminiModel("gemini-3.1-flash-lite-preview")).toBe(true);
+  it("returns true for gemini-3.1-flash-lite", () => {
+    expect(isGeminiModel("gemini-3.1-flash-lite")).toBe(true);
+  });
+
+  it("returns false for the sunset gemini-3.1-flash-lite-preview ID", () => {
+    expect(isGeminiModel("gemini-3.1-flash-lite-preview")).toBe(false);
   });
 
   it("returns true for gemini-3-flash-preview", () => {
@@ -506,8 +511,8 @@ describe("isGeminiModel", () => {
 });
 
 describe("geminiCostPrefix", () => {
-  it("returns correct prefix for gemini-3.1-flash-lite-preview", () => {
-    expect(geminiCostPrefix("gemini-3.1-flash-lite-preview")).toBe("google-flash-lite-3.1");
+  it("returns correct prefix for gemini-3.1-flash-lite", () => {
+    expect(geminiCostPrefix("gemini-3.1-flash-lite")).toBe("google-flash-lite-3.1");
   });
 
   it("returns correct prefix for gemini-3-flash-preview", () => {
@@ -520,8 +525,8 @@ describe("geminiCostPrefix", () => {
 });
 
 describe("costPrefixForModel", () => {
-  it("returns correct prefix for gemini-3.1-flash-lite-preview", () => {
-    expect(costPrefixForModel("gemini-3.1-flash-lite-preview")).toBe("google-flash-lite-3.1");
+  it("returns correct prefix for gemini-3.1-flash-lite", () => {
+    expect(costPrefixForModel("gemini-3.1-flash-lite")).toBe("google-flash-lite-3.1");
   });
 
   it("returns correct prefix for anthropic models", () => {

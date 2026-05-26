@@ -13,7 +13,7 @@ const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const GEMINI_TIMEOUT_MS: Record<string, number> = {
   "gemini-3.1-pro-preview": 15 * 60_000,
   "gemini-3-flash-preview": 10 * 60_000,
-  "gemini-3.1-flash-lite-preview": 5 * 60_000,
+  "gemini-3.1-flash-lite": 5 * 60_000,
   "gemini-2.5-pro": 15 * 60_000,
   "gemini-2.5-flash": 10 * 60_000,
 };
