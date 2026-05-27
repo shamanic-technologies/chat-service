@@ -538,12 +538,26 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
       .status(400)
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
-  const { documents, brandId, query: queryOverride } = parsed.data;
+  const {
+    documents,
+    brandIds: brandIdsFromBody,
+    brandId: legacyBrandId,
+    query: queryOverride,
+  } = parsed.data;
 
-  // Body brandId is the authoritative target — overrides any forwarded x-brand-id.
+  // Derive canonical-sorted brandIds. `brandIds` wins; otherwise fall back to legacy
+  // `brandId`. The refine() above guarantees at least one is defined.
+  const rawBrandIds = brandIdsFromBody ?? [legacyBrandId!];
+  const brandIds = [...rawBrandIds].sort();
+  // DB column name is still `brand_id` (singular) — repurposed to hold the canonical
+  // sorted CSV. Single-brand → just the UUID (byte-identical to legacy cache rows).
+  const brandCacheKey = brandIds.join(",");
+  const isSingleBrand = brandIds.length === 1;
+
+  // Body brandIds/brandId is the authoritative target — overrides any forwarded x-brand-id.
   const trackingHeaders: Record<string, string> = {
     ...baseTrackingHeaders,
-    "x-brand-id": brandId,
+    "x-brand-id": brandCacheKey,
   };
 
   // Register run (mandatory)
@@ -556,7 +570,12 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
     );
     runId = run.id;
     traceEvent(runId, "run-created", { orgId, userId }, workflowTracking, {
-      data: { taskName: "rag-score", parentRunId, brandId, documentCount: documents.length },
+      data: {
+        taskName: "rag-score",
+        parentRunId,
+        brandIds,
+        documentCount: documents.length,
+      },
     });
   } catch (runErr) {
     console.error(`[rag-score] org="${orgId}" run creation failed:`, runErr);
@@ -567,12 +586,14 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
 
   let scoreFailed = false;
   try {
-    // Resolve brand context. Pass own runId so brand-service sees us as the parent.
+    // Resolve joint brand context. Pass own runId so brand-service sees us as the parent.
+    // For multi-brand, brand-service consolidates field values across all brandIds and
+    // returns a single `fields[key].value` per field — no client-side joining needed.
     let brandResults;
     try {
       brandResults = await extractBrandFields(
         RAG_BRAND_FIELDS,
-        [brandId],
+        brandIds,
         {
           orgId,
           userId,
@@ -583,7 +604,7 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
     } catch (err) {
       if (err instanceof BrandError && err.status === 404) {
         return res.status(404).json({
-          error: `Brand not found: ${brandId}`,
+          error: `Brand not found: ${brandCacheKey}`,
         });
       }
       throw err;
@@ -602,7 +623,7 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
     if (queryText.trim().length === 0) {
       scoreFailed = true;
       console.warn(
-        `[rag-score] org="${orgId}" brand="${brandId}" produced empty brand profile (no resolvable fields)`,
+        `[rag-score] org="${orgId}" brands="${brandCacheKey}" produced empty brand profile (no resolvable fields)`,
       );
       return res.status(400).json({
         error:
@@ -611,6 +632,8 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
     }
 
     // Cache key: hash of the resolved field values (or the override string).
+    // brandCacheKey (canonical sorted CSV) is the column-level partition; the hash
+    // covers the field values so any change in brand context invalidates the row.
     const hash = queryOverride
       ? contentHash({ __override__: queryOverride })
       : contentHash(fieldValues);
@@ -643,7 +666,7 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
       .where(
         and(
           eq(brandProfileEmbeddings.orgId, orgId),
-          eq(brandProfileEmbeddings.brandId, brandId),
+          eq(brandProfileEmbeddings.brandId, brandCacheKey),
           eq(brandProfileEmbeddings.contentHash, hash),
         ),
       )
@@ -659,7 +682,7 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
         .insert(brandProfileEmbeddings)
         .values({
           orgId,
-          brandId,
+          brandId: brandCacheKey,
           contentHash: hash,
           queryText,
           embedding: queryEmbedding,
@@ -690,7 +713,7 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
     if (runId) {
       traceEvent(runId, "rag-score-done", { orgId, userId }, workflowTracking, {
         data: {
-          brandId,
+          brandIds,
           documentCount: documents.length,
           cacheHit,
           model: DEFAULT_EMBEDDING_MODEL,
@@ -699,7 +722,10 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
     }
 
     res.json({
-      brandId,
+      brandIds,
+      // Echo legacy `brandId` only when exactly one brand was resolved, so existing
+      // single-brand consumers keep the same response shape byte-for-byte.
+      ...(isSingleBrand ? { brandId: brandIds[0] } : {}),
       queryText,
       cacheHit,
       model: DEFAULT_EMBEDDING_MODEL,
@@ -707,12 +733,12 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
     });
   } catch (err) {
     scoreFailed = true;
-    console.error(`[rag-score] org="${orgId}" brand="${brandId}" error:`, err);
+    console.error(`[rag-score] org="${orgId}" brands="${brandCacheKey}" error:`, err);
     if (runId) {
       traceEvent(runId, "rag-score-failed", { orgId, userId }, workflowTracking, {
         level: "error",
         detail: err instanceof Error ? err.message : String(err),
-        data: { brandId },
+        data: { brandIds },
       });
     }
     res.status(502).json({

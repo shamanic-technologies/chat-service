@@ -296,28 +296,43 @@ Used by **journalists-quotes-service** to rank quote requests against a brand fo
 
 **Auth:** `x-api-key` + `x-org-id` + `x-user-id` + `x-run-id` (standard).
 
-**Request:**
+**Request (multi-brand, preferred):**
 ```json
 {
-  "brandId": "550e8400-e29b-41d4-a716-446655440000",
+  "brandIds": [
+    "550e8400-e29b-41d4-a716-446655440000",
+    "660f9500-f30c-42e5-b827-557766551111"
+  ],
   "documents": [
     { "id": "quote-7c2b", "text": "Looking to interview a B2B SaaS founder about pricing experiments." },
     { "id": "quote-9f1a", "text": "Need a quote on AI safety from a research lab." }
   ],
-  "query": "B2B SaaS pricing experiments"   // optional override
+  "query": "B2B SaaS pricing experiments"
+}
+```
+
+**Request (legacy single-brand, still accepted):**
+```json
+{
+  "brandId": "550e8400-e29b-41d4-a716-446655440000",
+  "documents": [{ "id": "quote-7c2b", "text": "..." }]
 }
 ```
 
 | Field | Required | Notes |
 |---|---|---|
-| `brandId` | yes | UUID. Brand whose profile is used as the semantic query. |
+| `brandIds` | one of | 1–5 UUIDs. Brand IDs whose joint profile is used as the semantic query. brand-service consolidates field values (industry, expertise, target audience, voice) across all brands in ONE call; chat-service then computes ONE embedding against the consolidated profile. |
+| `brandId` | one of | Legacy single-brand field. Equivalent to `brandIds: [brandId]`. When both are provided, `brandIds` wins. At least one of `brandIds` / `brandId` is required. |
 | `documents` | yes | 1–100 items. Each has `id` (caller-supplied, returned verbatim) and `text` (body to embed). |
-| `query` | no | When omitted, the service synthesizes a query from the brand profile (industry, expertise, target audience, voice). When present, the override is used directly. |
+| `query` | no | When omitted, the service synthesizes a query from the (joint) brand profile. When present, the override is used directly. |
 
-**Response:**
+**Response (multi-brand):**
 ```json
 {
-  "brandId": "550e8400-e29b-41d4-a716-446655440000",
+  "brandIds": [
+    "550e8400-e29b-41d4-a716-446655440000",
+    "660f9500-f30c-42e5-b827-557766551111"
+  ],
   "queryText": "industry: B2B SaaS\nexpertise: pricing experiments\ntarget audience: founders\nvoice: data-driven",
   "cacheHit": true,
   "model": "gemini-embedding-001",
@@ -328,23 +343,36 @@ Used by **journalists-quotes-service** to rank quote requests against a brand fo
 }
 ```
 
-`results` is sorted by `score` descending. Scores are cosine similarity in `[0, 1]` (negatives clamped to `0`).
+**Response (single-brand — `brandId` echo preserved for legacy consumers):**
+```json
+{
+  "brandIds": ["550e8400-e29b-41d4-a716-446655440000"],
+  "brandId": "550e8400-e29b-41d4-a716-446655440000",
+  "queryText": "...",
+  "cacheHit": true,
+  "model": "gemini-embedding-001",
+  "results": [{ "id": "quote-7c2b", "score": 0.92 }]
+}
+```
+
+`brandIds` is always present and canonical-sorted ascending. `brandId` is echoed **only** when the request resolved to exactly one brand. `results` is sorted by `score` descending. Scores are cosine similarity in `[0, 1]` (negatives clamped to `0`).
 
 **Pipeline:**
-1. Resolve brand context from brand-service (`industry`, `expertise`, `target_audience`, `voice`).
-2. Synthesize a brand-profile query string (or use `query` override).
-3. Compute the brand-profile embedding via Gemini `gemini-embedding-001` (cached per `(orgId, brandId, contentHash)` in the `brand_profile_embeddings` table — only the brand-profile vector is cached; document vectors are recomputed per request).
-4. Batch-embed every `documents[i].text`.
-5. Cosine similarity between brand-profile vector and each document vector.
+1. Canonical-sort `brandIds` ascending (e.g. `[b, a]` → `[a, b]`).
+2. Resolve joint brand context from brand-service in ONE call (`industry`, `expertise`, `target_audience`, `voice`). brand-service merges field values across all input brands.
+3. Synthesize a brand-profile query string (or use `query` override).
+4. Compute the brand-profile embedding via Gemini `gemini-embedding-001` (cached per `(orgId, canonical-sorted brandIds CSV, contentHash)` in the `brand_profile_embeddings` table — only the brand-profile vector is cached; document vectors are recomputed per request).
+5. Batch-embed every `documents[i].text`.
+6. Cosine similarity between brand-profile vector and each document vector.
 
-The cache automatically invalidates when **any** resolved brand field changes (the hash covers all fields). Repeated calls with unchanged brand context skip the brand-profile Gemini call entirely.
+The cache automatically invalidates when **any** resolved brand field changes (the hash covers all fields). Repeated calls with unchanged brand context skip the brand-profile Gemini call entirely. Reversed-order brandIds (e.g. `[b, a]` after `[a, b]`) hit the same cache row since the key is canonical-sorted.
 
 **Errors:**
-- `400` — validation (`documents` empty, `documents.length > 100`, `brandId` not UUID, etc.) or empty resolved brand profile (provide an explicit `query` when this happens).
-- `404` — `brandId` not found in brand-service.
+- `400` — validation (`documents` empty, `documents.length > 100`, `brandIds.length > 5` or empty, non-UUID, neither `brandIds` nor `brandId` provided, etc.) or empty resolved brand profile (provide an explicit `query` when this happens).
+- `404` — one or more `brandIds` not found in brand-service.
 - `502` — upstream failure (brand-service, key-service, runs-service, or Gemini).
 
-**Volume:** designed for batches of up to **100** documents per request. Larger batches must be chunked by the caller.
+**Volume:** designed for batches of up to **100** documents per request, up to **5** brands per joint profile. Larger batches must be chunked by the caller.
 
 The Gemini embedding model defaults to `gemini-embedding-001` and is overridable via `GEMINI_EMBEDDING_MODEL`. Key resolution uses the standard `google` provider in key-service.
 

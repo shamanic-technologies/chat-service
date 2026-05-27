@@ -515,4 +515,251 @@ describe("POST /orgs/rag/score", { timeout: 30_000 }, () => {
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/Brand not found/);
   });
+
+  // --- Multi-brand (brandIds: string[]) ---
+
+  it("legacy single-brand response includes both brandId and brandIds", async () => {
+    const orgId = `org-${crypto.randomUUID()}`;
+    const brandId = crypto.randomUUID();
+    await cleanupBrandCache(orgId, brandId);
+
+    routes.push(mockRunsCreate(crypto.randomUUID()));
+    routes.push(mockRunsPatch());
+    routes.push(
+      mockBrandExtract({
+        industry: "SaaS",
+        expertise: "pricing",
+        target_audience: "founders",
+        voice: "data-driven",
+      }),
+    );
+    routes.push(mockKeyServiceDecrypt());
+    routes.push(mockGeminiBatchEmbed([[1, 0]]));
+
+    const res = await request(app)
+      .post("/orgs/rag/score")
+      .set(authHeaders(orgId, crypto.randomUUID()))
+      .send({
+        brandId,
+        documents: [{ id: "x", text: "hello" }],
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.brandId).toBe(brandId);
+    expect(res.body.brandIds).toEqual([brandId]);
+
+    await cleanupBrandCache(orgId, brandId);
+  });
+
+  it("multi-brand happy path: ONE query embed, ONE doc batch, canonical-sorted brandIds", async () => {
+    const orgId = `org-${crypto.randomUUID()}`;
+    // Pick two UUIDs and submit in REVERSE ASCII order so we can prove canonical-sort.
+    const a = "11111111-1111-4111-8111-111111111111";
+    const b = "22222222-2222-4222-8222-222222222222";
+    const cacheKey = `${a},${b}`;
+    await cleanupBrandCache(orgId, cacheKey);
+    await cleanupBrandCache(orgId, a);
+    await cleanupBrandCache(orgId, b);
+
+    const queryVector = [1, 0, 0];
+    const docVectors = [
+      [0.99, 0.1, 0],
+      [-1, 0, 0],
+    ];
+
+    const brandCapture = { headers: undefined as Record<string, string> | undefined, body: undefined as unknown };
+    const embedCapture = { calls: 0, bodies: [] as unknown[] };
+
+    routes.push(mockRunsCreate(crypto.randomUUID()));
+    routes.push(mockRunsPatch());
+    routes.push(
+      mockBrandExtract(
+        {
+          industry: "B2B SaaS",
+          expertise: "pricing experiments",
+          target_audience: "founders",
+          voice: "data-driven",
+        },
+        brandCapture,
+      ),
+    );
+    routes.push(mockKeyServiceDecrypt());
+    let embedCallIdx = 0;
+    routes.push({
+      match: (url: string) => url.includes(":batchEmbedContents"),
+      respond: (_url: string, init?: RequestInit) => {
+        embedCapture.calls += 1;
+        if (init?.body) embedCapture.bodies.push(JSON.parse(init.body as string));
+        const idx = embedCallIdx++;
+        const body = idx === 0
+          ? { embeddings: [{ values: queryVector }] }
+          : { embeddings: docVectors.map((v) => ({ values: v })) };
+        return { ok: true, body };
+      },
+    });
+
+    const res = await request(app)
+      .post("/orgs/rag/score")
+      .set(authHeaders(orgId, crypto.randomUUID()))
+      .send({
+        brandIds: [b, a],
+        documents: [
+          { id: "doc-good", text: "perfect match" },
+          { id: "doc-bad", text: "irrelevant" },
+        ],
+      });
+
+    expect(res.status).toBe(200);
+    // Response shape: brandIds canonical-sorted; brandId omitted on multi-brand.
+    expect(res.body.brandIds).toEqual([a, b]);
+    expect(res.body.brandId).toBeUndefined();
+    expect(res.body.cacheHit).toBe(false);
+    expect(res.body.results.map((r: { id: string }) => r.id)).toEqual(["doc-good", "doc-bad"]);
+
+    // Exactly ONE query embed + ONE doc batch (not N per-brand).
+    expect(embedCapture.calls).toBe(2);
+    expect((embedCapture.bodies[0] as { requests: unknown[] }).requests).toHaveLength(1);
+    expect((embedCapture.bodies[1] as { requests: unknown[] }).requests).toHaveLength(2);
+
+    // Outbound brand-service body carries canonical-sorted brandIds.
+    expect(brandCapture.body).toMatchObject({
+      brandIds: [a, b],
+      fields: expect.any(Array),
+    });
+    // Outbound x-brand-id header carries canonical CSV.
+    expect(brandCapture.headers?.["x-brand-id"]).toBe(cacheKey);
+
+    // Cache row written under canonical CSV key.
+    const cached = await db
+      .select()
+      .from(schema.brandProfileEmbeddings)
+      .where(
+        and(
+          eq(schema.brandProfileEmbeddings.orgId, orgId),
+          eq(schema.brandProfileEmbeddings.brandId, cacheKey),
+        ),
+      );
+    expect(cached).toHaveLength(1);
+    expect(cached[0].embedding).toEqual(queryVector);
+
+    await cleanupBrandCache(orgId, cacheKey);
+  });
+
+  it("cross-order brandIds hit the same cache row", async () => {
+    const orgId = `org-${crypto.randomUUID()}`;
+    const a = "33333333-3333-4333-8333-333333333333";
+    const b = "44444444-4444-4444-8444-444444444444";
+    const cacheKey = `${a},${b}`;
+    await cleanupBrandCache(orgId, cacheKey);
+
+    const queryVector = [1, 0];
+    const docVectors = [[1, 0]];
+
+    const setup = () => {
+      routes = [];
+      fetchCalls = [];
+      installFetchMock();
+      routes.push(mockRunsCreate(crypto.randomUUID()));
+      routes.push(mockRunsPatch());
+      routes.push(
+        mockBrandExtract({
+          industry: "SaaS",
+          expertise: "pricing",
+          target_audience: "founders",
+          voice: "data-driven",
+        }),
+      );
+      routes.push(mockKeyServiceDecrypt());
+      routes.push({
+        match: (url: string) => url.includes(":batchEmbedContents"),
+        respond: (_url: string, init?: RequestInit) => {
+          const body = JSON.parse(init!.body as string) as { requests: unknown[] };
+          return {
+            ok: true,
+            body:
+              body.requests.length === 1
+                ? { embeddings: [{ values: queryVector }] }
+                : { embeddings: docVectors.map((v) => ({ values: v })) },
+          };
+        },
+      });
+    };
+
+    // First call: [a, b]
+    setup();
+    const r1 = await request(app)
+      .post("/orgs/rag/score")
+      .set(authHeaders(orgId, crypto.randomUUID()))
+      .send({ brandIds: [a, b], documents: [{ id: "x", text: "hello" }] });
+    expect(r1.status).toBe(200);
+    expect(r1.body.cacheHit).toBe(false);
+    expect(r1.body.brandIds).toEqual([a, b]);
+
+    // Second call: [b, a] — reversed input must hit the same canonical cache row.
+    setup();
+    const r2 = await request(app)
+      .post("/orgs/rag/score")
+      .set(authHeaders(orgId, crypto.randomUUID()))
+      .send({ brandIds: [b, a], documents: [{ id: "x", text: "hello" }] });
+    expect(r2.status).toBe(200);
+    expect(r2.body.cacheHit).toBe(true);
+    expect(r2.body.brandIds).toEqual([a, b]);
+
+    await cleanupBrandCache(orgId, cacheKey);
+  });
+
+  it("when both brandIds and brandId are provided, brandIds wins", async () => {
+    const orgId = `org-${crypto.randomUUID()}`;
+    const a = "55555555-5555-4555-8555-555555555555";
+    const b = "66666666-6666-4666-8666-666666666666";
+    const stray = "77777777-7777-4777-8777-777777777777";
+    const cacheKey = `${a},${b}`;
+    await cleanupBrandCache(orgId, cacheKey);
+    await cleanupBrandCache(orgId, stray);
+
+    const brandCapture = { headers: undefined as Record<string, string> | undefined, body: undefined as unknown };
+
+    routes.push(mockRunsCreate(crypto.randomUUID()));
+    routes.push(mockRunsPatch());
+    routes.push(
+      mockBrandExtract(
+        { industry: "SaaS", expertise: "pricing", target_audience: "founders", voice: "data-driven" },
+        brandCapture,
+      ),
+    );
+    routes.push(mockKeyServiceDecrypt());
+    routes.push(mockGeminiBatchEmbed([[1, 0]]));
+
+    const res = await request(app)
+      .post("/orgs/rag/score")
+      .set(authHeaders(orgId, crypto.randomUUID()))
+      .send({
+        brandIds: [b, a],
+        brandId: stray,
+        documents: [{ id: "x", text: "hello" }],
+      });
+
+    expect(res.status).toBe(200);
+    // Response reflects brandIds, ignores stray legacy brandId.
+    expect(res.body.brandIds).toEqual([a, b]);
+    expect(res.body.brandId).toBeUndefined();
+    // Outbound brand-service body uses brandIds, not the stray legacy field.
+    expect(brandCapture.body).toMatchObject({ brandIds: [a, b] });
+
+    await cleanupBrandCache(orgId, cacheKey);
+  });
+
+  it("returns 400 when neither brandIds nor brandId is provided", async () => {
+    const orgId = `org-${crypto.randomUUID()}`;
+    routes.push(mockRunsCreate(crypto.randomUUID()));
+    routes.push(mockRunsPatch());
+
+    const res = await request(app)
+      .post("/orgs/rag/score")
+      .set(authHeaders(orgId, crypto.randomUUID()))
+      .send({ documents: [{ id: "x", text: "hello" }] });
+
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toMatch(/brandIds.*brandId/);
+  });
 });
