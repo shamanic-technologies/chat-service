@@ -930,9 +930,16 @@
       "RagScoreResponse": {
         "type": "object",
         "properties": {
+          "brandIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Canonical-sorted list of brand IDs used to build the joint brand profile. For a single-brand request this is a 1-element array; for multi-brand it is sorted ascending."
+          },
           "brandId": {
             "type": "string",
-            "description": "Echo of the request brandId."
+            "description": "Echo of the legacy `brandId` field. Present only when the request resolved to exactly one brand (either via legacy `brandId` or `brandIds: [single]`). Omitted on multi-brand requests."
           },
           "queryText": {
             "type": "string",
@@ -956,7 +963,7 @@
           }
         },
         "required": [
-          "brandId",
+          "brandIds",
           "queryText",
           "cacheHit",
           "model",
@@ -992,10 +999,24 @@
             "maxItems": 100,
             "description": "List of documents to score against the brand profile. At most 100 items per request."
           },
+          "brandIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 5,
+            "description": "Brand IDs whose joint profile is used as the semantic query. Resolved via brand-service (industry, expertise, target audience, voice). When more than one is provided, brand-service consolidates field values across brands and one embedding is computed against the consolidated profile. Preferred over legacy `brandId`.",
+            "example": [
+              "550e8400-e29b-41d4-a716-446655440000",
+              "660f9500-f30c-52e5-b827-557766551111"
+            ]
+          },
           "brandId": {
             "type": "string",
             "format": "uuid",
-            "description": "Brand whose profile is used as the semantic query. Resolved via brand-service (industry, expertise, target audience, voice).",
+            "description": "Legacy single-brand field. Equivalent to `brandIds: [brandId]`. When both are provided, `brandIds` wins. At least one of `brandIds` / `brandId` is required.",
             "example": "550e8400-e29b-41d4-a716-446655440000"
           },
           "query": {
@@ -1005,8 +1026,7 @@
           }
         },
         "required": [
-          "documents",
-          "brandId"
+          "documents"
         ],
         "additionalProperties": false
       },
@@ -1818,7 +1838,7 @@
           "RAG"
         ],
         "summary": "Score documents against a brand profile (semantic similarity)",
-        "description": "RAG-style semantic similarity scoring for picking the best document(s) for a brand.\n\nUsed by journalists-quotes-service to rank quote requests against a brand profile, and by any other consumer that needs cheap document-vs-brand scoring.\n\n**Pipeline:**\n1. Resolve brand context via brand-service (industry, expertise, target audience, voice).\n2. Synthesize a brand-profile query string (or use the caller-supplied `query`).\n3. Compute the brand-profile embedding via Gemini's `gemini-embedding-001` (cached per (orgId, brandId, contentHash)).\n4. Compute embeddings for each `documents[i].text` in a single batch call.\n5. Score = cosine similarity, sorted descending.\n\n**Caching:** the brand-profile embedding is cached. Repeated calls with the same brand context (same resolved fields) reuse the cached vector — only document embeddings are recomputed. The cache automatically invalidates when any resolved brand field changes.\n\n**Volume:** designed for batches up to 100 documents per request.",
+        "description": "RAG-style semantic similarity scoring for picking the best document(s) for a brand.\n\nUsed by journalists-quotes-service to rank quote requests against a brand profile, and by any other consumer that needs cheap document-vs-brand scoring.\n\n**Multi-brand:** accepts `brandIds: string[]` (1..5) for joint scoring across multiple brands. Legacy `brandId: string` is still accepted and is equivalent to `brandIds: [brandId]`. When both are provided, `brandIds` wins. At least one is required. Multi-brand calls compute ONE embedding against the consolidated brand profile (brand-service merges field values across input brands) and ONE score per document.\n\n**Pipeline:**\n1. Canonical-sort `brandIds` ascending.\n2. Resolve consolidated brand context via brand-service (industry, expertise, target audience, voice) in ONE call.\n3. Synthesize a brand-profile query string (or use the caller-supplied `query`).\n4. Compute the brand-profile embedding via Gemini's `gemini-embedding-001` (cached per (orgId, sorted(brandIds), contentHash)).\n5. Compute embeddings for each `documents[i].text` in a single batch call.\n6. Score = cosine similarity, sorted descending.\n\n**Caching:** the brand-profile embedding is cached per canonical-sorted brand set + content hash. Same brand set, same resolved fields → cache hit. Different brand set (even subset) → cache miss. The cache automatically invalidates when any resolved brand field changes.\n\n**Volume:** designed for batches up to 100 documents per request, up to 5 brands per joint profile.",
         "parameters": [
           {
             "schema": {

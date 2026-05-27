@@ -44,6 +44,11 @@ export const appConfigs = pgTable(
   (table) => [unique("app_configs_org_id_key_unique").on(table.orgId, table.key)],
 );
 
+// `brand_id` column is the canonical cache partition for /orgs/rag/score. It holds
+// either a single brand UUID (legacy single-brand cache rows + N=1 multi-brand requests)
+// or a comma-separated, ASCII-sorted list of brand UUIDs for N>=2 multi-brand requests
+// (e.g. "550e8400-...,660f9500-..."). The plural-name rename was skipped on purpose
+// so existing single-brand rows stay byte-identical and require no migration.
 export const brandProfileEmbeddings = pgTable(
   "brand_profile_embeddings",
   {
