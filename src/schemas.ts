@@ -1073,6 +1073,8 @@ export const RagScoreDocumentSchema = z
   .strict()
   .openapi("RagScoreDocument");
 
+export const RAG_SCORE_BRAND_IDS_MAX = 5;
+
 export const RagScoreRequestSchema = z
   .object({
     documents: z
@@ -1085,12 +1087,35 @@ export const RagScoreRequestSchema = z
       .openapi({
         description: `List of documents to score against the brand profile. At most ${RAG_SCORE_DOCUMENTS_MAX} items per request.`,
       }),
-    brandId: z.string().uuid("brandId must be a UUID").openapi({
-      description:
-        "Brand whose profile is used as the semantic query. Resolved via brand-service " +
-        "(industry, expertise, target audience, voice).",
-      example: "550e8400-e29b-41d4-a716-446655440000",
-    }),
+    brandIds: z
+      .array(z.string().uuid("each brandIds entry must be a UUID"))
+      .min(1, "brandIds must contain at least one item")
+      .max(
+        RAG_SCORE_BRAND_IDS_MAX,
+        `brandIds may contain at most ${RAG_SCORE_BRAND_IDS_MAX} items`,
+      )
+      .optional()
+      .openapi({
+        description:
+          "Brand IDs whose joint profile is used as the semantic query. Resolved via brand-service " +
+          "(industry, expertise, target audience, voice). When more than one is provided, " +
+          "brand-service consolidates field values across brands and one embedding is computed " +
+          "against the consolidated profile. Preferred over legacy `brandId`.",
+        example: [
+          "550e8400-e29b-41d4-a716-446655440000",
+          "660f9500-f30c-52e5-b827-557766551111",
+        ],
+      }),
+    brandId: z
+      .string()
+      .uuid("brandId must be a UUID")
+      .optional()
+      .openapi({
+        description:
+          "Legacy single-brand field. Equivalent to `brandIds: [brandId]`. When both are provided, " +
+          "`brandIds` wins. At least one of `brandIds` / `brandId` is required.",
+        example: "550e8400-e29b-41d4-a716-446655440000",
+      }),
     query: z.string().min(1).optional().openapi({
       description:
         "Optional override for the brand-profile query string. When omitted, the service " +
@@ -1098,6 +1123,14 @@ export const RagScoreRequestSchema = z
     }),
   })
   .strict()
+  .refine(
+    (data) => data.brandIds !== undefined || data.brandId !== undefined,
+    {
+      message:
+        "Provide either `brandIds: string[]` (preferred) or legacy `brandId: string`.",
+      path: ["brandIds"],
+    },
+  )
   .openapi("RagScoreRequest");
 
 export const RagScoreResultSchema = z
@@ -1115,7 +1148,16 @@ export const RagScoreResultSchema = z
 
 export const RagScoreResponseSchema = z
   .object({
-    brandId: z.string().openapi({ description: "Echo of the request brandId." }),
+    brandIds: z.array(z.string()).openapi({
+      description:
+        "Canonical-sorted list of brand IDs used to build the joint brand profile. " +
+        "For a single-brand request this is a 1-element array; for multi-brand it is sorted ascending.",
+    }),
+    brandId: z.string().optional().openapi({
+      description:
+        "Echo of the legacy `brandId` field. Present only when the request resolved to exactly one brand " +
+        "(either via legacy `brandId` or `brandIds: [single]`). Omitted on multi-brand requests.",
+    }),
     queryText: z.string().openapi({
       description:
         "The brand-profile query string that was embedded. Useful for debugging and auditing.",
@@ -1145,16 +1187,19 @@ registry.registerPath({
 
 Used by journalists-quotes-service to rank quote requests against a brand profile, and by any other consumer that needs cheap document-vs-brand scoring.
 
+**Multi-brand:** accepts \`brandIds: string[]\` (1..${RAG_SCORE_BRAND_IDS_MAX}) for joint scoring across multiple brands. Legacy \`brandId: string\` is still accepted and is equivalent to \`brandIds: [brandId]\`. When both are provided, \`brandIds\` wins. At least one is required. Multi-brand calls compute ONE embedding against the consolidated brand profile (brand-service merges field values across input brands) and ONE score per document.
+
 **Pipeline:**
-1. Resolve brand context via brand-service (industry, expertise, target audience, voice).
-2. Synthesize a brand-profile query string (or use the caller-supplied \`query\`).
-3. Compute the brand-profile embedding via Gemini's \`gemini-embedding-001\` (cached per (orgId, brandId, contentHash)).
-4. Compute embeddings for each \`documents[i].text\` in a single batch call.
-5. Score = cosine similarity, sorted descending.
+1. Canonical-sort \`brandIds\` ascending.
+2. Resolve consolidated brand context via brand-service (industry, expertise, target audience, voice) in ONE call.
+3. Synthesize a brand-profile query string (or use the caller-supplied \`query\`).
+4. Compute the brand-profile embedding via Gemini's \`gemini-embedding-001\` (cached per (orgId, sorted(brandIds), contentHash)).
+5. Compute embeddings for each \`documents[i].text\` in a single batch call.
+6. Score = cosine similarity, sorted descending.
 
-**Caching:** the brand-profile embedding is cached. Repeated calls with the same brand context (same resolved fields) reuse the cached vector — only document embeddings are recomputed. The cache automatically invalidates when any resolved brand field changes.
+**Caching:** the brand-profile embedding is cached per canonical-sorted brand set + content hash. Same brand set, same resolved fields → cache hit. Different brand set (even subset) → cache miss. The cache automatically invalidates when any resolved brand field changes.
 
-**Volume:** designed for batches up to ${RAG_SCORE_DOCUMENTS_MAX} documents per request.`,
+**Volume:** designed for batches up to ${RAG_SCORE_DOCUMENTS_MAX} documents per request, up to ${RAG_SCORE_BRAND_IDS_MAX} brands per joint profile.`,
   request: {
     headers: z.object({
       "x-api-key": z.string().openapi({
