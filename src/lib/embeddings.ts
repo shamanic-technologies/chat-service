@@ -11,9 +11,38 @@ const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 export const DEFAULT_EMBEDDING_MODEL =
   process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001";
 
-/** Cost-name prefix used for billing the embedding model. */
+/**
+ * Cost-name prefix for the embedding model, normalized to the costs-service
+ * catalog convention (`google-*`, matching `google-flash-3` / `google-pro-3.1`).
+ * The producer cost name MUST be byte-equal to the costs-service catalog row,
+ * so the Gemini model id is mapped explicitly rather than emitted verbatim.
+ * Unmapped models throw — emitting an unmatched cost name would silently
+ * under-report spend, so we fail loud instead.
+ */
+const EMBEDDING_COST_PREFIXES: Record<string, string> = {
+  "gemini-embedding-001": "google-embedding-001",
+};
+
 export function embeddingCostPrefix(model: string): string {
-  return model;
+  const prefix = EMBEDDING_COST_PREFIXES[model];
+  if (!prefix) {
+    throw new Error(
+      `[embeddings] no cost-name prefix mapped for embedding model "${model}" — ` +
+        `add it to EMBEDDING_COST_PREFIXES and the costs-service catalog`,
+    );
+  }
+  return prefix;
+}
+
+/**
+ * Rough input-token estimate for embedding-cost reporting. Gemini's
+ * batchEmbedContents returns no usageMetadata, so we approximate at ~4
+ * chars/token. The costs-service catalog price carries a safety margin, so
+ * small over/under-estimation is acceptable. Returns 0 for empty input.
+ */
+export function estimateTokens(texts: string[]): number {
+  const chars = texts.reduce((sum, t) => sum + t.length, 0);
+  return Math.ceil(chars / 4);
 }
 
 /** HTTP timeout for a single embedding call in ms. */

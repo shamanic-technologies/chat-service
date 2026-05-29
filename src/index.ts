@@ -31,7 +31,7 @@ import {
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
-import { createRun, updateRunStatus, addRunCosts } from "./lib/runs-client.js";
+import { createRun, updateRunStatus, addRunCosts, type CostItem } from "./lib/runs-client.js";
 import { traceEvent } from "./lib/trace-event.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
 import { extractBrandFields, BrandError } from "./lib/brand-client.js";
@@ -40,6 +40,8 @@ import {
   embedTexts,
   cosineSimilarity,
   contentHash,
+  embeddingCostPrefix,
+  estimateTokens,
   DEFAULT_EMBEDDING_MODEL,
 } from "./lib/embeddings.js";
 import { scrapeUrl } from "./lib/scraping-client.js";
@@ -585,6 +587,10 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
   }
 
   let scoreFailed = false;
+  // Embedding-cost accounting (reported in finally). Hoisted to handler scope
+  // because resolvedKey / docTexts live inside the try and are invisible there.
+  let embedInputTokens = 0;
+  let embedKeySource: "org" | "platform" | null = null;
   try {
     // Resolve joint brand context. Pass own runId so brand-service sees us as the parent.
     // For multi-brand, brand-service consolidates field values across all brandIds and
@@ -656,6 +662,7 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
         error: "Failed to resolve google API key. Ensure the key is configured in key-service.",
       });
     }
+    embedKeySource = resolvedKey.keySource;
 
     // Cache lookup
     let queryEmbedding: number[];
@@ -677,6 +684,8 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
       cacheHit = true;
     } else {
       queryEmbedding = await embedText(resolvedKey.key, queryText);
+      // Only a cache miss embeds the query; a hit reuses the stored vector at no cost.
+      embedInputTokens += estimateTokens([queryText]);
       // Race-safe insert: another concurrent request may have already populated it.
       await db
         .insert(brandProfileEmbeddings)
@@ -700,6 +709,8 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
     // Embed documents in batch
     const docTexts = documents.map((d) => d.text);
     const docEmbeddings = await embedTexts(resolvedKey.key, docTexts);
+    // Documents are always embedded fresh (no doc cache), so always metered.
+    embedInputTokens += estimateTokens(docTexts);
 
     // Score
     const scored = documents.map((d, i) => {
@@ -746,13 +757,34 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
     });
   } finally {
     if (runId) {
+      const runIdentity = { orgId, userId, runId };
+      // Report embedding spend (input tokens) under this run. Resolve the cost
+      // name in its own guard so an unmapped-model throw can never skip the
+      // status finalization below.
+      let costItems: CostItem[] = [];
+      if (embedInputTokens > 0 && embedKeySource) {
+        try {
+          costItems = [
+            {
+              costName: `${embeddingCostPrefix(DEFAULT_EMBEDDING_MODEL)}-tokens-input`,
+              quantity: embedInputTokens,
+              costSource: embedKeySource,
+            },
+          ];
+        } catch (prefixErr) {
+          console.error(`[rag-score] embedding cost prefix unresolved:`, prefixErr);
+        }
+      }
       try {
-        await updateRunStatus(
-          runId,
-          scoreFailed ? "failed" : "completed",
-          { orgId, userId, runId },
-          trackingHeaders,
-        );
+        await Promise.all([
+          updateRunStatus(
+            runId,
+            scoreFailed ? "failed" : "completed",
+            runIdentity,
+            trackingHeaders,
+          ),
+          addRunCosts(runId, costItems, runIdentity, trackingHeaders),
+        ]);
       } catch (runErr) {
         console.error(
           `[rag-score] failed to finalize run runId="${runId}" orgId="${orgId}":`,
@@ -808,6 +840,10 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
   }
 
   let embedFailed = false;
+  // Embedding-cost accounting (reported in finally). Hoisted to handler scope
+  // because resolvedKey / docTexts live inside the try and are invisible there.
+  let embedInputTokens = 0;
+  let embedKeySource: "org" | "platform" | null = null;
   try {
     let resolvedKey;
     try {
@@ -825,9 +861,11 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
         error: "Failed to resolve google API key. Ensure the key is configured in key-service.",
       });
     }
+    embedKeySource = resolvedKey.keySource;
 
     const docTexts = documents.map((d) => d.text);
     const docEmbeddings = await embedTexts(resolvedKey.key, docTexts);
+    embedInputTokens += estimateTokens(docTexts);
 
     if (docEmbeddings.length !== documents.length) {
       throw new Error(
@@ -869,13 +907,34 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
     });
   } finally {
     if (runId) {
+      const runIdentity = { orgId, userId, runId };
+      // Report embedding spend (input tokens) under this run. Resolve the cost
+      // name in its own guard so an unmapped-model throw can never skip the
+      // status finalization below.
+      let costItems: CostItem[] = [];
+      if (embedInputTokens > 0 && embedKeySource) {
+        try {
+          costItems = [
+            {
+              costName: `${embeddingCostPrefix(DEFAULT_EMBEDDING_MODEL)}-tokens-input`,
+              quantity: embedInputTokens,
+              costSource: embedKeySource,
+            },
+          ];
+        } catch (prefixErr) {
+          console.error(`[rag-embed] embedding cost prefix unresolved:`, prefixErr);
+        }
+      }
       try {
-        await updateRunStatus(
-          runId,
-          embedFailed ? "failed" : "completed",
-          { orgId, userId, runId },
-          trackingHeaders,
-        );
+        await Promise.all([
+          updateRunStatus(
+            runId,
+            embedFailed ? "failed" : "completed",
+            runIdentity,
+            trackingHeaders,
+          ),
+          addRunCosts(runId, costItems, runIdentity, trackingHeaders),
+        ]);
       } catch (runErr) {
         console.error(
           `[rag-embed] failed to finalize run runId="${runId}" orgId="${orgId}":`,
