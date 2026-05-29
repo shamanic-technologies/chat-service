@@ -27,6 +27,21 @@ export interface CostItem {
   costName: string;
   quantity: number;
   costSource: "platform" | "org";
+  /** Defaults to "actual" server-side. Use "provisioned" to reserve before a costly op. */
+  status?: "actual" | "provisioned" | "cancelled";
+}
+
+export interface RunCost {
+  id: string;
+  runId: string;
+  costName: string;
+  costSource: "platform" | "org";
+  quantity: string;
+  unitCostInUsdCents: string;
+  totalCostInUsdCents: string;
+  status: "actual" | "provisioned" | "cancelled";
+  idempotencyKey: string | null;
+  createdAt: string;
 }
 
 export interface TrackingHeaders {
@@ -101,7 +116,34 @@ export async function addRunCosts(
   items: CostItem[],
   identity: RunIdentityHeaders,
   trackingHeaders?: TrackingHeaders,
-): Promise<void> {
-  if (items.length === 0) return;
-  await runsRequest("POST", `/v1/runs/${id}/costs`, identity, { items }, trackingHeaders);
+): Promise<RunCost[]> {
+  if (items.length === 0) return [];
+  const res = await runsRequest<{ costs: RunCost[] }>(
+    "POST",
+    `/v1/runs/${id}/costs`,
+    identity,
+    { items },
+    trackingHeaders,
+  );
+  return res.costs;
+}
+
+/**
+ * Realize ("actual") or release ("cancelled") a previously provisioned cost.
+ * Throws on non-2xx (fail loud — a stuck provisioned cost under-reports spend).
+ */
+export async function updateRunCostStatus(
+  runId: string,
+  costId: string,
+  status: "actual" | "cancelled",
+  identity: RunIdentityHeaders,
+  trackingHeaders?: TrackingHeaders,
+): Promise<RunCost> {
+  return runsRequest<RunCost>(
+    "PATCH",
+    `/v1/runs/${runId}/costs/${costId}`,
+    identity,
+    { status },
+    trackingHeaders,
+  );
 }

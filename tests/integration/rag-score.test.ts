@@ -14,6 +14,8 @@ process.env.ADMIN_DISTRIBUTE_API_KEY = process.env.ADMIN_DISTRIBUTE_API_KEY || "
 process.env.API_SERVICE_URL = process.env.API_SERVICE_URL || "https://api.test.local";
 process.env.RUNS_SERVICE_API_KEY = process.env.RUNS_SERVICE_API_KEY || "test-runs-key";
 process.env.RUNS_SERVICE_URL = process.env.RUNS_SERVICE_URL || "https://runs.test.local";
+process.env.BILLING_SERVICE_API_KEY = process.env.BILLING_SERVICE_API_KEY || "test-billing-key";
+process.env.BILLING_SERVICE_URL = process.env.BILLING_SERVICE_URL || "https://billing.test.local";
 
 const connectionString = process.env.CHAT_SERVICE_DATABASE_URL;
 
@@ -27,6 +29,17 @@ interface MockRoute {
 let routes: MockRoute[] = [];
 let fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
 
+function buildResponse(out: { ok: boolean; status?: number; body: unknown }): Response {
+  return {
+    ok: out.ok,
+    status: out.status ?? (out.ok ? 200 : 500),
+    json: () => Promise.resolve(out.body),
+    text: () =>
+      Promise.resolve(typeof out.body === "string" ? out.body : JSON.stringify(out.body)),
+    headers: new Headers(),
+  } as unknown as Response;
+}
+
 function installFetchMock() {
   vi.stubGlobal(
     "fetch",
@@ -35,18 +48,30 @@ function installFetchMock() {
       fetchCalls.push({ url, init });
       for (const route of routes) {
         if (route.match(url, init)) {
-          const out = await route.respond(url, init);
-          return {
-            ok: out.ok,
-            status: out.status ?? (out.ok ? 200 : 500),
-            json: () => Promise.resolve(out.body),
-            text: () =>
-              Promise.resolve(
-                typeof out.body === "string" ? out.body : JSON.stringify(out.body),
-              ),
-            headers: new Headers(),
-          } as unknown as Response;
+          return buildResponse(await route.respond(url, init));
         }
+      }
+      // Happy defaults for the cost/billing infra so the many tests that don't assert
+      // on them need no per-test mocks. Explicit routes above always win.
+      const method = init?.method ?? "GET";
+      if (/\/v1\/runs\/[^/]+\/costs$/.test(url) && method === "POST") {
+        const items = init?.body
+          ? (JSON.parse(init.body as string) as { items: Array<Record<string, unknown>> }).items
+          : [];
+        return buildResponse({
+          ok: true,
+          status: 201,
+          body: { costs: items.map((it, i) => ({ id: `cost-${i}`, ...it })) },
+        });
+      }
+      if (/\/v1\/runs\/[^/]+\/costs\/[^/]+$/.test(url) && method === "PATCH") {
+        return buildResponse({ ok: true, body: { id: "cost-0", status: "actual" } });
+      }
+      if (url.includes("/v1/customer_balance/authorize") && method === "POST") {
+        return buildResponse({
+          ok: true,
+          body: { sufficient: true, balance_cents: "100000", required_cents: "1" },
+        });
       }
       throw new Error(`[test] Unmocked fetch: ${url}`);
     }),
@@ -81,32 +106,64 @@ function mockRunsCreate(returnRunId: string, capture?: { headers?: Record<string
   } satisfies MockRoute;
 }
 
-// Finalization: PATCH /v1/runs/:id (status) AND POST /v1/runs/:id/costs (embedding
-// cost). Absorbs both so embedding tests don't hit an unmocked fetch in finally.
+// Run-status PATCH /v1/runs/:id AND cost-status PATCH /v1/runs/:id/costs/:costId
+// (actualize/cancel). Provision (POST /costs) + billing are handled by installFetchMock
+// happy-defaults, so most tests only push this for the run-status close.
 function mockRunsPatch() {
   return {
     match: (url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
       return (
         (/\/v1\/runs\/[^/]+$/.test(url) && method === "PATCH") ||
-        (/\/v1\/runs\/[^/]+\/costs$/.test(url) && method === "POST")
+        (/\/v1\/runs\/[^/]+\/costs\/[^/]+$/.test(url) && method === "PATCH")
       );
     },
-    respond: () => ({ ok: true, body: { id: "ok" } }),
+    respond: () => ({ ok: true, body: { id: "ok", status: "actual" } }),
   } satisfies MockRoute;
 }
 
-// Capturing variant for asserting the embedding-cost payload. Push BEFORE
-// mockRunsPatch so it wins the POST /costs match.
-function mockRunsCosts(capture: { items?: unknown[] }) {
+// PROVISION capture (POST /v1/runs/:id/costs). Push BEFORE the default so it wins;
+// returns created cost row(s) WITH an id. `status` forces a runs-service rejection.
+function mockRunsProvision(capture?: { items?: unknown[]; calls: number }, opts?: { status?: number; body?: unknown }) {
   return {
     match: (url: string, init?: RequestInit) =>
       /\/v1\/runs\/[^/]+\/costs$/.test(url) && (init?.method ?? "GET") === "POST",
     respond: (_url: string, init?: RequestInit) => {
-      if (init?.body) {
-        capture.items = (JSON.parse(init.body as string) as { items: unknown[] }).items;
+      const items = init?.body ? (JSON.parse(init.body as string) as { items: unknown[] }).items : [];
+      if (capture) {
+        capture.calls += 1;
+        capture.items = items;
       }
-      return { ok: true, body: { ok: true } };
+      if (opts?.status && opts.status >= 400) {
+        return { ok: false, status: opts.status, body: opts.body ?? { error: "Unknown cost name" } };
+      }
+      return { ok: true, status: 201, body: { costs: items.map((it, i) => ({ id: `cost-${i}`, ...(it as object) })) } };
+    },
+  } satisfies MockRoute;
+}
+
+// PATCH /v1/runs/:id/costs/:costId — capture actualize/cancel status transitions.
+function mockRunsCostStatus(capture: { statuses: string[] }) {
+  return {
+    match: (url: string, init?: RequestInit) =>
+      /\/v1\/runs\/[^/]+\/costs\/[^/]+$/.test(url) && (init?.method ?? "GET") === "PATCH",
+    respond: (_url: string, init?: RequestInit) => {
+      const body = init?.body ? (JSON.parse(init.body as string) as { status: string }) : { status: "?" };
+      capture.statuses.push(body.status);
+      return { ok: true, body: { id: "cost-0", status: body.status } };
+    },
+  } satisfies MockRoute;
+}
+
+// Billing affordability check (platform keys). Defaults to sufficient.
+function mockBillingAuthorize(opts?: { sufficient?: boolean; capture?: { calls: number } }) {
+  const sufficient = opts?.sufficient ?? true;
+  return {
+    match: (url: string, init?: RequestInit) =>
+      url.includes("/v1/customer_balance/authorize") && (init?.method ?? "GET") === "POST",
+    respond: () => {
+      if (opts?.capture) opts.capture.calls += 1;
+      return { ok: true, body: { sufficient, balance_cents: "100000", required_cents: "1" } };
     },
   } satisfies MockRoute;
 }
@@ -268,11 +325,11 @@ describe("POST /orgs/rag/score", { timeout: 30_000 }, () => {
     const embedCapture = { calls: 0, bodies: [] as unknown[] };
     const brandCapture = { headers: undefined as Record<string, string> | undefined, body: undefined as unknown };
     const runsCapture = { headers: undefined as Record<string, string> | undefined };
-    const costCapture = { items: undefined as unknown[] | undefined };
+    const costCapture = { items: undefined as unknown[] | undefined, calls: 0 };
     const ownRunId = crypto.randomUUID();
 
     routes.push(mockRunsCreate(ownRunId, runsCapture));
-    routes.push(mockRunsCosts(costCapture));
+    routes.push(mockRunsProvision(costCapture));
     routes.push(mockRunsPatch());
     routes.push(
       mockBrandExtract(
@@ -354,17 +411,19 @@ describe("POST /orgs/rag/score", { timeout: 30_000 }, () => {
     expect(cached).toHaveLength(1);
     expect(cached[0].embedding).toEqual(queryVector);
 
-    // Embedding spend reported under the run: input tokens, costs-service catalog
-    // name (google-*), costSource derived from the resolved (platform) key.
+    // PROVISION: cost reserved before the embed with status "provisioned", google-*
+    // catalog name, costSource from the (platform) key, quantity from input tokens.
     expect(costCapture.items).toHaveLength(1);
     const costItem = costCapture.items![0] as {
       costName: string;
       quantity: number;
       costSource: string;
+      status: string;
     };
     expect(costItem.costName).toBe("google-embedding-001-tokens-input");
     expect(costItem.costSource).toBe("platform");
     expect(costItem.quantity).toBeGreaterThan(0);
+    expect(costItem.status).toBe("provisioned");
 
     await cleanupBrandCache(orgId, brandId);
   });
