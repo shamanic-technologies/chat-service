@@ -31,7 +31,7 @@ import {
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
-import { createRun, updateRunStatus, addRunCosts, type CostItem } from "./lib/runs-client.js";
+import { createRun, updateRunStatus, addRunCosts, updateRunCostStatus, type CostItem, type RunIdentityHeaders } from "./lib/runs-client.js";
 import { traceEvent } from "./lib/trace-event.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
 import { extractBrandFields, BrandError } from "./lib/brand-client.js";
@@ -526,6 +526,102 @@ function buildBrandProfileQuery(fields: Record<string, string>): string {
   return lines.join("\n");
 }
 
+/** Thrown when billing reports the org cannot afford a platform-key spend. */
+class InsufficientCreditsError extends Error {
+  constructor(
+    public readonly balanceCents: string | number,
+    public readonly requiredCents: string | number,
+  ) {
+    super("Insufficient credits");
+    this.name = "InsufficientCreditsError";
+  }
+}
+
+/**
+ * PROVISION (runs ledger) then AUTHORIZE (billing affordability, platform keys only)
+ * an embedding spend BEFORE the Gemini call. Returns the provisioned cost id to
+ * actualize/cancel later, or null when there is nothing to charge (inputTokens <= 0).
+ *
+ * Throws on any failure so the caller fails loud — never spend on an undeclarable or
+ * unaffordable cost. Releases (cancels) the provision if authorization fails.
+ */
+async function provisionAndAuthorizeEmbeddingCost(args: {
+  runId: string;
+  inputTokens: number;
+  keySource: "org" | "platform";
+  identity: RunIdentityHeaders;
+  trackingHeaders: Record<string, string>;
+  description: string;
+}): Promise<string | null> {
+  const { runId, inputTokens, keySource, identity, trackingHeaders, description } = args;
+  if (inputTokens <= 0) return null;
+
+  const costName = `${embeddingCostPrefix(DEFAULT_EMBEDDING_MODEL)}-tokens-input`;
+
+  // 1. PROVISION — reserve in the runs ledger; validates the cost name is declarable
+  //    (runs-service 422s an unknown cost name → throws → caller 502s, no spend).
+  const items: CostItem[] = [
+    { costName, quantity: inputTokens, costSource: keySource, status: "provisioned" },
+  ];
+  const costs = await addRunCosts(runId, items, identity, trackingHeaders);
+  const costId = costs[0]?.id;
+  if (!costId) {
+    throw new Error("[rag] provision returned no cost id");
+  }
+
+  // 2. AUTHORIZE — affordability, platform-key spend only (BYOK pays the provider directly).
+  if (keySource === "platform") {
+    try {
+      const auth = await authorizeCredits({
+        items: [{ costName, quantity: inputTokens }],
+        description,
+        orgId: identity.orgId,
+        userId: identity.userId,
+        runId,
+        trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders : undefined,
+      });
+      if (!auth.sufficient) {
+        await updateRunCostStatus(runId, costId, "cancelled", identity, trackingHeaders).catch((e) =>
+          console.error(`[rag] cancel after insufficient credits failed runId="${runId}":`, e),
+        );
+        throw new InsufficientCreditsError(auth.balance_cents, auth.required_cents);
+      }
+    } catch (err) {
+      if (err instanceof InsufficientCreditsError) throw err;
+      // Billing call itself failed — release the reservation, then rethrow.
+      await updateRunCostStatus(runId, costId, "cancelled", identity, trackingHeaders).catch((e) =>
+        console.error(`[rag] cancel after billing error failed runId="${runId}":`, e),
+      );
+      throw err;
+    }
+  }
+
+  return costId;
+}
+
+/** Map a provision/authorize failure to an HTTP status + body. */
+function costErrorResponse(
+  err: unknown,
+  tag: string,
+  orgId: string,
+): { status: number; body: Record<string, unknown> } {
+  if (err instanceof InsufficientCreditsError) {
+    console.warn(
+      `[${tag}] insufficient credits: org="${orgId}" balance_cents=${err.balanceCents} required_cents=${err.requiredCents}`,
+    );
+    return {
+      status: 402,
+      body: { error: "Insufficient credits", balance_cents: err.balanceCents, required_cents: err.requiredCents },
+    };
+  }
+  if (err instanceof BillingError && err.isClientError) {
+    console.error(`[${tag}] billing authorization rejected for org="${orgId}":`, err);
+    return { status: err.statusCode, body: { error: `Billing authorization rejected: ${err.upstreamBody}` } };
+  }
+  console.error(`[${tag}] cost provision/authorize failed for org="${orgId}":`, err);
+  return { status: 502, body: { error: "Cost authorization failed. Please try again." } };
+}
+
 app.post("/orgs/rag/score", requireAuth, async (req, res) => {
   const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
 
@@ -587,10 +683,9 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
   }
 
   let scoreFailed = false;
-  // Embedding-cost accounting (reported in finally). Hoisted to handler scope
-  // because resolvedKey / docTexts live inside the try and are invisible there.
-  let embedInputTokens = 0;
-  let embedKeySource: "org" | "platform" | null = null;
+  // Embedding cost is provisioned before the Gemini call and actualized/cancelled
+  // after. Hoisted so the catch can release (cancel) a provision if the embed throws.
+  let provisionedCostId: string | null = null;
   try {
     // Resolve joint brand context. Pass own runId so brand-service sees us as the parent.
     // For multi-brand, brand-service consolidates field values across all brandIds and
@@ -662,11 +757,8 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
         error: "Failed to resolve google API key. Ensure the key is configured in key-service.",
       });
     }
-    embedKeySource = resolvedKey.keySource;
-
-    // Cache lookup
-    let queryEmbedding: number[];
-    let cacheHit = false;
+    // Cache lookup — determine hit WITHOUT embedding yet. The embedding cost must be
+    // provisioned + authorized before any Gemini call.
     const cached = await db
       .select()
       .from(brandProfileEmbeddings)
@@ -678,14 +770,35 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
         ),
       )
       .limit(1);
+    const cacheHit = cached.length > 0;
 
-    if (cached.length > 0) {
+    const docTexts = documents.map((d) => d.text);
+    // Tokens are known from the inputs: the query embeds only on a cache miss; docs always.
+    const embedInputTokens =
+      (cacheHit ? 0 : estimateTokens([queryText])) + estimateTokens(docTexts);
+
+    // PROVISION (runs ledger) → AUTHORIZE (billing, platform keys) BEFORE the Gemini spend.
+    try {
+      provisionedCostId = await provisionAndAuthorizeEmbeddingCost({
+        runId,
+        inputTokens: embedInputTokens,
+        keySource: resolvedKey.keySource,
+        identity: { orgId, userId, runId },
+        trackingHeaders,
+        description: `rag-score — ${DEFAULT_EMBEDDING_MODEL}`,
+      });
+    } catch (costErr) {
+      scoreFailed = true;
+      const r = costErrorResponse(costErr, "rag-score", orgId);
+      return res.status(r.status).json(r.body);
+    }
+
+    // EXECUTE — embed now that the cost is provisioned + authorized.
+    let queryEmbedding: number[];
+    if (cacheHit) {
       queryEmbedding = cached[0].embedding;
-      cacheHit = true;
     } else {
       queryEmbedding = await embedText(resolvedKey.key, queryText);
-      // Only a cache miss embeds the query; a hit reuses the stored vector at no cost.
-      embedInputTokens += estimateTokens([queryText]);
       // Race-safe insert: another concurrent request may have already populated it.
       await db
         .insert(brandProfileEmbeddings)
@@ -706,11 +819,7 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
         });
     }
 
-    // Embed documents in batch
-    const docTexts = documents.map((d) => d.text);
     const docEmbeddings = await embedTexts(resolvedKey.key, docTexts);
-    // Documents are always embedded fresh (no doc cache), so always metered.
-    embedInputTokens += estimateTokens(docTexts);
 
     // Score
     const scored = documents.map((d, i) => {
@@ -720,6 +829,26 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
       return { id: d.id, score };
     });
     scored.sort((a, b) => b.score - a.score);
+
+    // ACTUALIZE the provisioned cost. Fail loud on failure, but leave the row
+    // `provisioned` — the embedding already happened, so never cancel a paid spend.
+    if (provisionedCostId) {
+      try {
+        await updateRunCostStatus(
+          runId,
+          provisionedCostId,
+          "actual",
+          { orgId, userId, runId },
+          trackingHeaders,
+        );
+      } catch (actErr) {
+        scoreFailed = true;
+        provisionedCostId = null;
+        console.error(`[rag-score] cost actualize failed runId="${runId}" orgId="${orgId}":`, actErr);
+        return res.status(502).json({ error: "Cost finalization failed. Please try again." });
+      }
+      provisionedCostId = null;
+    }
 
     if (runId) {
       traceEvent(runId, "rag-score-done", { orgId, userId }, workflowTracking, {
@@ -744,6 +873,19 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
     });
   } catch (err) {
     scoreFailed = true;
+    // Embedding/scoring threw AFTER provisioning → release the reservation (no spend completed).
+    if (runId && provisionedCostId) {
+      await updateRunCostStatus(
+        runId,
+        provisionedCostId,
+        "cancelled",
+        { orgId, userId, runId },
+        trackingHeaders,
+      ).catch((cancelErr) =>
+        console.error(`[rag-score] cost cancel failed runId="${runId}" orgId="${orgId}":`, cancelErr),
+      );
+      provisionedCostId = null;
+    }
     console.error(`[rag-score] org="${orgId}" brands="${brandCacheKey}" error:`, err);
     if (runId) {
       traceEvent(runId, "rag-score-failed", { orgId, userId }, workflowTracking, {
@@ -756,35 +898,16 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
       error: "RAG score failed. Please try again.",
     });
   } finally {
+    // Costs are provisioned/actualized/cancelled inline above — the finally only
+    // closes the run status (best-effort run tracking, distinct from cost integrity).
     if (runId) {
-      const runIdentity = { orgId, userId, runId };
-      // Report embedding spend (input tokens) under this run. Resolve the cost
-      // name in its own guard so an unmapped-model throw can never skip the
-      // status finalization below.
-      let costItems: CostItem[] = [];
-      if (embedInputTokens > 0 && embedKeySource) {
-        try {
-          costItems = [
-            {
-              costName: `${embeddingCostPrefix(DEFAULT_EMBEDDING_MODEL)}-tokens-input`,
-              quantity: embedInputTokens,
-              costSource: embedKeySource,
-            },
-          ];
-        } catch (prefixErr) {
-          console.error(`[rag-score] embedding cost prefix unresolved:`, prefixErr);
-        }
-      }
       try {
-        await Promise.all([
-          updateRunStatus(
-            runId,
-            scoreFailed ? "failed" : "completed",
-            runIdentity,
-            trackingHeaders,
-          ),
-          addRunCosts(runId, costItems, runIdentity, trackingHeaders),
-        ]);
+        await updateRunStatus(
+          runId,
+          scoreFailed ? "failed" : "completed",
+          { orgId, userId, runId },
+          trackingHeaders,
+        );
       } catch (runErr) {
         console.error(
           `[rag-score] failed to finalize run runId="${runId}" orgId="${orgId}":`,
@@ -840,10 +963,9 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
   }
 
   let embedFailed = false;
-  // Embedding-cost accounting (reported in finally). Hoisted to handler scope
-  // because resolvedKey / docTexts live inside the try and are invisible there.
-  let embedInputTokens = 0;
-  let embedKeySource: "org" | "platform" | null = null;
+  // Embedding cost is provisioned before the Gemini call and actualized/cancelled
+  // after. Hoisted so the catch can release (cancel) a provision if the embed throws.
+  let provisionedCostId: string | null = null;
   try {
     let resolvedKey;
     try {
@@ -861,11 +983,27 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
         error: "Failed to resolve google API key. Ensure the key is configured in key-service.",
       });
     }
-    embedKeySource = resolvedKey.keySource;
-
     const docTexts = documents.map((d) => d.text);
+    const embedInputTokens = estimateTokens(docTexts);
+
+    // PROVISION (runs ledger) → AUTHORIZE (billing, platform keys) BEFORE the Gemini spend.
+    try {
+      provisionedCostId = await provisionAndAuthorizeEmbeddingCost({
+        runId,
+        inputTokens: embedInputTokens,
+        keySource: resolvedKey.keySource,
+        identity: { orgId, userId, runId },
+        trackingHeaders,
+        description: `rag-embed — ${DEFAULT_EMBEDDING_MODEL}`,
+      });
+    } catch (costErr) {
+      embedFailed = true;
+      const r = costErrorResponse(costErr, "rag-embed", orgId);
+      return res.status(r.status).json(r.body);
+    }
+
+    // EXECUTE — embed now that the cost is provisioned + authorized.
     const docEmbeddings = await embedTexts(resolvedKey.key, docTexts);
-    embedInputTokens += estimateTokens(docTexts);
 
     if (docEmbeddings.length !== documents.length) {
       throw new Error(
@@ -877,6 +1015,26 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
       id: d.id,
       embedding: docEmbeddings[i],
     }));
+
+    // ACTUALIZE the provisioned cost. Fail loud on failure, but leave the row
+    // `provisioned` — the embedding already happened, so never cancel a paid spend.
+    if (provisionedCostId) {
+      try {
+        await updateRunCostStatus(
+          runId,
+          provisionedCostId,
+          "actual",
+          { orgId, userId, runId },
+          trackingHeaders,
+        );
+      } catch (actErr) {
+        embedFailed = true;
+        provisionedCostId = null;
+        console.error(`[rag-embed] cost actualize failed runId="${runId}" orgId="${orgId}":`, actErr);
+        return res.status(502).json({ error: "Cost finalization failed. Please try again." });
+      }
+      provisionedCostId = null;
+    }
 
     if (runId) {
       traceEvent(runId, "rag-embed-done", { orgId, userId }, workflowTracking, {
@@ -894,6 +1052,19 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
     });
   } catch (err) {
     embedFailed = true;
+    // Embedding threw AFTER provisioning → release the reservation (no spend completed).
+    if (runId && provisionedCostId) {
+      await updateRunCostStatus(
+        runId,
+        provisionedCostId,
+        "cancelled",
+        { orgId, userId, runId },
+        trackingHeaders,
+      ).catch((cancelErr) =>
+        console.error(`[rag-embed] cost cancel failed runId="${runId}" orgId="${orgId}":`, cancelErr),
+      );
+      provisionedCostId = null;
+    }
     console.error(`[rag-embed] org="${orgId}" error:`, err);
     if (runId) {
       traceEvent(runId, "rag-embed-failed", { orgId, userId }, workflowTracking, {
@@ -906,35 +1077,16 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
       error: "RAG embed failed. Please try again.",
     });
   } finally {
+    // Costs are provisioned/actualized/cancelled inline above — the finally only
+    // closes the run status (best-effort run tracking, distinct from cost integrity).
     if (runId) {
-      const runIdentity = { orgId, userId, runId };
-      // Report embedding spend (input tokens) under this run. Resolve the cost
-      // name in its own guard so an unmapped-model throw can never skip the
-      // status finalization below.
-      let costItems: CostItem[] = [];
-      if (embedInputTokens > 0 && embedKeySource) {
-        try {
-          costItems = [
-            {
-              costName: `${embeddingCostPrefix(DEFAULT_EMBEDDING_MODEL)}-tokens-input`,
-              quantity: embedInputTokens,
-              costSource: embedKeySource,
-            },
-          ];
-        } catch (prefixErr) {
-          console.error(`[rag-embed] embedding cost prefix unresolved:`, prefixErr);
-        }
-      }
       try {
-        await Promise.all([
-          updateRunStatus(
-            runId,
-            embedFailed ? "failed" : "completed",
-            runIdentity,
-            trackingHeaders,
-          ),
-          addRunCosts(runId, costItems, runIdentity, trackingHeaders),
-        ]);
+        await updateRunStatus(
+          runId,
+          embedFailed ? "failed" : "completed",
+          { orgId, userId, runId },
+          trackingHeaders,
+        );
       } catch (runErr) {
         console.error(
           `[rag-embed] failed to finalize run runId="${runId}" orgId="${orgId}":`,

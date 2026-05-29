@@ -201,6 +201,75 @@ describe("addRunCosts", () => {
   });
 });
 
+describe("addRunCosts (provisioning)", () => {
+  it("forwards status and returns the created cost rows with ids", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          costs: [
+            { id: "cost-1", runId: "run-1", costName: "google-embedding-001-tokens-input", status: "provisioned" },
+          ],
+        }),
+    });
+
+    const { addRunCosts } = await loadModule();
+    const costs = await addRunCosts(
+      "run-1",
+      [{ costName: "google-embedding-001-tokens-input", quantity: 100, costSource: "platform", status: "provisioned" }],
+      identity,
+    );
+
+    expect(costs).toHaveLength(1);
+    expect(costs[0].id).toBe("cost-1");
+    expect(costs[0].status).toBe("provisioned");
+    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.items[0].status).toBe("provisioned");
+  });
+
+  it("returns [] without a request when items are empty", async () => {
+    const { addRunCosts } = await loadModule();
+    const costs = await addRunCosts("run-1", [], identity);
+    expect(costs).toEqual([]);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateRunCostStatus", () => {
+  it("sends PATCH /v1/runs/:id/costs/:costId with the new status", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ id: "cost-1", status: "actual" }),
+    });
+
+    const { updateRunCostStatus } = await loadModule();
+    const result = await updateRunCostStatus("run-1", "cost-1", "actual", identity);
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://runs.test.local/v1/runs/run-1/costs/cost-1",
+      expect.objectContaining({
+        method: "PATCH",
+        headers: expect.objectContaining({ "x-org-id": "org-uuid-123" }),
+        body: JSON.stringify({ status: "actual" }),
+      }),
+    );
+    expect(result.status).toBe("actual");
+  });
+
+  it("supports 'cancelled' and throws on HTTP error", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: () => Promise.resolve("not found"),
+    });
+
+    const { updateRunCostStatus } = await loadModule();
+    await expect(
+      updateRunCostStatus("run-1", "missing", "cancelled", identity),
+    ).rejects.toThrow(/returned 404/);
+  });
+});
+
 describe("missing RUNS_SERVICE_API_KEY", () => {
   it("throws without making requests", async () => {
     delete process.env.RUNS_SERVICE_API_KEY;

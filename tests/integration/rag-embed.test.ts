@@ -10,6 +10,8 @@ process.env.ADMIN_DISTRIBUTE_API_KEY = process.env.ADMIN_DISTRIBUTE_API_KEY || "
 process.env.API_SERVICE_URL = process.env.API_SERVICE_URL || "https://api.test.local";
 process.env.RUNS_SERVICE_API_KEY = process.env.RUNS_SERVICE_API_KEY || "test-runs-key";
 process.env.RUNS_SERVICE_URL = process.env.RUNS_SERVICE_URL || "https://runs.test.local";
+process.env.BILLING_SERVICE_API_KEY = process.env.BILLING_SERVICE_API_KEY || "test-billing-key";
+process.env.BILLING_SERVICE_URL = process.env.BILLING_SERVICE_URL || "https://billing.test.local";
 
 interface MockRoute {
   match: (url: string, init?: RequestInit) => boolean;
@@ -73,33 +75,69 @@ function mockRunsCreate(returnRunId: string, capture?: { headers?: Record<string
   } satisfies MockRoute;
 }
 
-// Finalization: PATCH /v1/runs/:id (status) AND POST /v1/runs/:id/costs (embedding
-// cost). Absorbs both so embedding tests don't hit an unmocked fetch in finally.
+// Run-status PATCH /v1/runs/:id AND cost-status PATCH /v1/runs/:id/costs/:costId
+// (actualize/cancel). Absorbs both so tests that don't assert them don't hit an
+// unmocked fetch.
 function mockRunsPatch() {
   return {
     match: (url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
       return (
         (/\/v1\/runs\/[^/]+$/.test(url) && method === "PATCH") ||
-        (/\/v1\/runs\/[^/]+\/costs$/.test(url) && method === "POST")
+        (/\/v1\/runs\/[^/]+\/costs\/[^/]+$/.test(url) && method === "PATCH")
       );
     },
-    respond: () => ({ ok: true, body: { id: "ok" } }),
+    respond: () => ({ ok: true, body: { id: "ok", status: "actual" } }),
   } satisfies MockRoute;
 }
 
-// Capturing variant for asserting the embedding-cost payload. Push BEFORE
-// mockRunsPatch so it wins the POST /costs match.
-function mockRunsCosts(capture: { items?: unknown[]; calls: number }) {
+// PROVISION: POST /v1/runs/:id/costs. Returns created cost row(s) WITH an id so the
+// handler can actualize/cancel later. Captures the provisioned items. `status` lets a
+// test force a runs-service rejection (e.g. 422 unknown cost name).
+function mockRunsProvision(capture?: { items?: unknown[]; calls: number }, opts?: { status?: number; body?: unknown }) {
   return {
     match: (url: string, init?: RequestInit) =>
       /\/v1\/runs\/[^/]+\/costs$/.test(url) && (init?.method ?? "GET") === "POST",
     respond: (_url: string, init?: RequestInit) => {
-      capture.calls += 1;
-      if (init?.body) {
-        capture.items = (JSON.parse(init.body as string) as { items: unknown[] }).items;
+      const items = init?.body ? (JSON.parse(init.body as string) as { items: unknown[] }).items : [];
+      if (capture) {
+        capture.calls += 1;
+        capture.items = items;
       }
-      return { ok: true, body: { ok: true } };
+      if (opts?.status && opts.status >= 400) {
+        return { ok: false, status: opts.status, body: opts.body ?? { error: "Unknown cost name" } };
+      }
+      return {
+        ok: true,
+        status: 201,
+        body: { costs: items.map((it, i) => ({ id: `cost-${i}`, ...(it as object) })) },
+      };
+    },
+  } satisfies MockRoute;
+}
+
+// PATCH /v1/runs/:id/costs/:costId — capture actualize/cancel status transitions.
+function mockRunsCostStatus(capture: { statuses: string[] }) {
+  return {
+    match: (url: string, init?: RequestInit) =>
+      /\/v1\/runs\/[^/]+\/costs\/[^/]+$/.test(url) && (init?.method ?? "GET") === "PATCH",
+    respond: (_url: string, init?: RequestInit) => {
+      const body = init?.body ? (JSON.parse(init.body as string) as { status: string }) : { status: "?" };
+      capture.statuses.push(body.status);
+      return { ok: true, body: { id: "cost-0", status: body.status } };
+    },
+  } satisfies MockRoute;
+}
+
+// Billing affordability check (platform keys). Defaults to sufficient.
+function mockBillingAuthorize(opts?: { sufficient?: boolean; capture?: { calls: number } }) {
+  const sufficient = opts?.sufficient ?? true;
+  return {
+    match: (url: string, init?: RequestInit) =>
+      url.includes("/v1/customer_balance/authorize") && (init?.method ?? "GET") === "POST",
+    respond: () => {
+      if (opts?.capture) opts.capture.calls += 1;
+      return { ok: true, body: { sufficient, balance_cents: "100000", required_cents: "1" } };
     },
   } satisfies MockRoute;
 }
@@ -174,7 +212,7 @@ describe("POST /orgs/rag/embed", { timeout: 30_000 }, () => {
     };
   }
 
-  it("returns 3 embeddings in input order, ids preserved 1:1, dimensionality matches mock", async () => {
+  it("provisions → authorizes → embeds → actualizes; returns 3 embeddings in input order", async () => {
     const orgId = `org-${crypto.randomUUID()}`;
     const ownRunId = crypto.randomUUID();
     const parentRunId = crypto.randomUUID();
@@ -188,10 +226,14 @@ describe("POST /orgs/rag/embed", { timeout: 30_000 }, () => {
     const embedCapture = { calls: 0, bodies: [] as unknown[] };
     const runsCapture = { headers: undefined as Record<string, string> | undefined };
     const costCapture = { items: undefined as unknown[] | undefined, calls: 0 };
+    const billingCapture = { calls: 0 };
+    const statusCapture = { statuses: [] as string[] };
 
     routes.push(mockRunsCreate(ownRunId, runsCapture));
-    routes.push(mockRunsCosts(costCapture));
+    routes.push(mockRunsProvision(costCapture));
+    routes.push(mockRunsCostStatus(statusCapture));
     routes.push(mockRunsPatch());
+    routes.push(mockBillingAuthorize({ capture: billingCapture }));
     routes.push(mockKeyServiceDecrypt());
     routes.push(mockGeminiBatchEmbed(docVectors, embedCapture));
 
@@ -208,33 +250,41 @@ describe("POST /orgs/rag/embed", { timeout: 30_000 }, () => {
 
     expect(res.status).toBe(200);
     expect(res.body.model).toBe("gemini-embedding-001");
-    expect(res.body.results).toHaveLength(3);
-    expect(res.body.results.map((r: { id: string }) => r.id)).toEqual([
-      "alpha",
-      "beta",
-      "gamma",
-    ]);
+    expect(res.body.results.map((r: { id: string }) => r.id)).toEqual(["alpha", "beta", "gamma"]);
     for (let i = 0; i < 3; i++) {
       expect(res.body.results[i].embedding).toEqual(docVectors[i]);
-      expect(res.body.results[i].embedding).toHaveLength(4);
     }
 
     expect(embedCapture.calls).toBe(1);
-    expect((embedCapture.bodies[0] as { requests: unknown[] }).requests).toHaveLength(3);
-
     expect(runsCapture.headers?.["x-run-id"]).toBe(parentRunId);
 
-    // Embedding spend reported under the run: input tokens, costs-service catalog
-    // name (google-*), costSource derived from the resolved (platform) key.
+    // PROVISION: cost reserved with status "provisioned", google-* catalog name,
+    // costSource from the (platform) key, quantity from input tokens.
     expect(costCapture.items).toHaveLength(1);
     const costItem = costCapture.items![0] as {
       costName: string;
       quantity: number;
       costSource: string;
+      status: string;
     };
     expect(costItem.costName).toBe("google-embedding-001-tokens-input");
     expect(costItem.costSource).toBe("platform");
     expect(costItem.quantity).toBeGreaterThan(0);
+    expect(costItem.status).toBe("provisioned");
+
+    // AUTHORIZE: billing called once (platform key).
+    expect(billingCapture.calls).toBe(1);
+
+    // ACTUALIZE: the provisioned cost is realized to "actual" (no cancel).
+    expect(statusCapture.statuses).toEqual(["actual"]);
+
+    // ORDER: provision happens BEFORE the Gemini embed (never spend on an undeclarable cost).
+    const provisionIdx = fetchCalls.findIndex(
+      (c) => /\/v1\/runs\/[^/]+\/costs$/.test(c.url) && (c.init?.method ?? "GET") === "POST",
+    );
+    const embedIdx = fetchCalls.findIndex((c) => c.url.includes(":batchEmbedContents"));
+    expect(provisionIdx).toBeGreaterThanOrEqual(0);
+    expect(embedIdx).toBeGreaterThan(provisionIdx);
   });
 
   it("same input twice returns identical vectors when provider is deterministic", async () => {
@@ -246,7 +296,9 @@ describe("POST /orgs/rag/embed", { timeout: 30_000 }, () => {
       fetchCalls = [];
       installFetchMock();
       routes.push(mockRunsCreate(crypto.randomUUID()));
+      routes.push(mockRunsProvision());
       routes.push(mockRunsPatch());
+      routes.push(mockBillingAuthorize());
       routes.push(mockKeyServiceDecrypt());
       routes.push(mockGeminiBatchEmbed([fixedVector]));
     };
@@ -283,7 +335,7 @@ describe("POST /orgs/rag/embed", { timeout: 30_000 }, () => {
     const orgId = `org-${crypto.randomUUID()}`;
     const costCapture = { items: undefined as unknown[] | undefined, calls: 0 };
     routes.push(mockRunsCreate(crypto.randomUUID()));
-    routes.push(mockRunsCosts(costCapture));
+    routes.push(mockRunsProvision(costCapture));
     routes.push(mockRunsPatch());
 
     const docs = Array.from({ length: 101 }, (_, i) => ({ id: `d-${i}`, text: "x" }));
@@ -294,7 +346,7 @@ describe("POST /orgs/rag/embed", { timeout: 30_000 }, () => {
 
     expect(res.status).toBe(400);
     expect(JSON.stringify(res.body)).toMatch(/at most/);
-    // No embedding happened → no cost reported (addRunCosts no-ops on empty items).
+    // Validation fails before provisioning → no cost reserved.
     expect(costCapture.calls).toBe(0);
   });
 
@@ -325,5 +377,73 @@ describe("POST /orgs/rag/embed", { timeout: 30_000 }, () => {
 
     expect(res.status).toBe(502);
     expect(res.body.error).toMatch(/google API key/);
+  });
+
+  it("fails loud (502) and does NOT embed when provision is rejected (unknown cost name)", async () => {
+    const orgId = `org-${crypto.randomUUID()}`;
+    const embedCapture = { calls: 0, bodies: [] as unknown[] };
+    routes.push(mockRunsCreate(crypto.randomUUID()));
+    routes.push(mockRunsProvision(undefined, { status: 422, body: { error: "Unknown cost name" } }));
+    routes.push(mockRunsPatch());
+    routes.push(mockBillingAuthorize());
+    routes.push(mockKeyServiceDecrypt());
+    routes.push(mockGeminiBatchEmbed([[1, 0]], embedCapture));
+
+    const res = await request(app)
+      .post("/orgs/rag/embed")
+      .set(authHeaders(orgId, crypto.randomUUID()))
+      .send({ documents: [{ id: "x", text: "hello" }] });
+
+    expect(res.status).toBe(502);
+    // The costly Gemini call must NOT happen when the cost can't be declared.
+    expect(embedCapture.calls).toBe(0);
+  });
+
+  it("returns 402 and does NOT embed when billing reports insufficient credits", async () => {
+    const orgId = `org-${crypto.randomUUID()}`;
+    const embedCapture = { calls: 0, bodies: [] as unknown[] };
+    const statusCapture = { statuses: [] as string[] };
+    routes.push(mockRunsCreate(crypto.randomUUID()));
+    routes.push(mockRunsProvision());
+    routes.push(mockRunsCostStatus(statusCapture));
+    routes.push(mockRunsPatch());
+    routes.push(mockBillingAuthorize({ sufficient: false }));
+    routes.push(mockKeyServiceDecrypt());
+    routes.push(mockGeminiBatchEmbed([[1, 0]], embedCapture));
+
+    const res = await request(app)
+      .post("/orgs/rag/embed")
+      .set(authHeaders(orgId, crypto.randomUUID()))
+      .send({ documents: [{ id: "x", text: "hello" }] });
+
+    expect(res.status).toBe(402);
+    expect(res.body.error).toMatch(/Insufficient credits/);
+    // No spend, and the provisioned reservation is released.
+    expect(embedCapture.calls).toBe(0);
+    expect(statusCapture.statuses).toContain("cancelled");
+  });
+
+  it("cancels the provisioned cost when the embedding call fails", async () => {
+    const orgId = `org-${crypto.randomUUID()}`;
+    const statusCapture = { statuses: [] as string[] };
+    routes.push(mockRunsCreate(crypto.randomUUID()));
+    routes.push(mockRunsProvision());
+    routes.push(mockRunsCostStatus(statusCapture));
+    routes.push(mockRunsPatch());
+    routes.push(mockBillingAuthorize());
+    routes.push(mockKeyServiceDecrypt());
+    // Gemini returns a non-retryable 400 → embedTexts throws → handler cancels + 502.
+    routes.push({
+      match: (url: string) => url.includes(":batchEmbedContents"),
+      respond: () => ({ ok: false, status: 400, body: "bad request" }),
+    });
+
+    const res = await request(app)
+      .post("/orgs/rag/embed")
+      .set(authHeaders(orgId, crypto.randomUUID()))
+      .send({ documents: [{ id: "x", text: "hello" }] });
+
+    expect(res.status).toBe(502);
+    expect(statusCapture.statuses).toContain("cancelled");
   });
 });
