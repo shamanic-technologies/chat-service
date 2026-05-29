@@ -73,11 +73,34 @@ function mockRunsCreate(returnRunId: string, capture?: { headers?: Record<string
   } satisfies MockRoute;
 }
 
+// Finalization: PATCH /v1/runs/:id (status) AND POST /v1/runs/:id/costs (embedding
+// cost). Absorbs both so embedding tests don't hit an unmocked fetch in finally.
 function mockRunsPatch() {
   return {
-    match: (url: string, init?: RequestInit) =>
-      /\/v1\/runs\/[^/]+$/.test(url) && (init?.method ?? "GET") === "PATCH",
+    match: (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      return (
+        (/\/v1\/runs\/[^/]+$/.test(url) && method === "PATCH") ||
+        (/\/v1\/runs\/[^/]+\/costs$/.test(url) && method === "POST")
+      );
+    },
     respond: () => ({ ok: true, body: { id: "ok" } }),
+  } satisfies MockRoute;
+}
+
+// Capturing variant for asserting the embedding-cost payload. Push BEFORE
+// mockRunsPatch so it wins the POST /costs match.
+function mockRunsCosts(capture: { items?: unknown[]; calls: number }) {
+  return {
+    match: (url: string, init?: RequestInit) =>
+      /\/v1\/runs\/[^/]+\/costs$/.test(url) && (init?.method ?? "GET") === "POST",
+    respond: (_url: string, init?: RequestInit) => {
+      capture.calls += 1;
+      if (init?.body) {
+        capture.items = (JSON.parse(init.body as string) as { items: unknown[] }).items;
+      }
+      return { ok: true, body: { ok: true } };
+    },
   } satisfies MockRoute;
 }
 
@@ -164,8 +187,10 @@ describe("POST /orgs/rag/embed", { timeout: 30_000 }, () => {
 
     const embedCapture = { calls: 0, bodies: [] as unknown[] };
     const runsCapture = { headers: undefined as Record<string, string> | undefined };
+    const costCapture = { items: undefined as unknown[] | undefined, calls: 0 };
 
     routes.push(mockRunsCreate(ownRunId, runsCapture));
+    routes.push(mockRunsCosts(costCapture));
     routes.push(mockRunsPatch());
     routes.push(mockKeyServiceDecrypt());
     routes.push(mockGeminiBatchEmbed(docVectors, embedCapture));
@@ -198,6 +223,18 @@ describe("POST /orgs/rag/embed", { timeout: 30_000 }, () => {
     expect((embedCapture.bodies[0] as { requests: unknown[] }).requests).toHaveLength(3);
 
     expect(runsCapture.headers?.["x-run-id"]).toBe(parentRunId);
+
+    // Embedding spend reported under the run: input tokens, costs-service catalog
+    // name (google-*), costSource derived from the resolved (platform) key.
+    expect(costCapture.items).toHaveLength(1);
+    const costItem = costCapture.items![0] as {
+      costName: string;
+      quantity: number;
+      costSource: string;
+    };
+    expect(costItem.costName).toBe("google-embedding-001-tokens-input");
+    expect(costItem.costSource).toBe("platform");
+    expect(costItem.quantity).toBeGreaterThan(0);
   });
 
   it("same input twice returns identical vectors when provider is deterministic", async () => {
@@ -244,7 +281,9 @@ describe("POST /orgs/rag/embed", { timeout: 30_000 }, () => {
 
   it("returns 400 when documents.length exceeds the cap", async () => {
     const orgId = `org-${crypto.randomUUID()}`;
+    const costCapture = { items: undefined as unknown[] | undefined, calls: 0 };
     routes.push(mockRunsCreate(crypto.randomUUID()));
+    routes.push(mockRunsCosts(costCapture));
     routes.push(mockRunsPatch());
 
     const docs = Array.from({ length: 101 }, (_, i) => ({ id: `d-${i}`, text: "x" }));
@@ -255,6 +294,8 @@ describe("POST /orgs/rag/embed", { timeout: 30_000 }, () => {
 
     expect(res.status).toBe(400);
     expect(JSON.stringify(res.body)).toMatch(/at most/);
+    // No embedding happened → no cost reported (addRunCosts no-ops on empty items).
+    expect(costCapture.calls).toBe(0);
   });
 
   it("returns 400 when a document.text exceeds the per-text char cap", async () => {

@@ -172,3 +172,39 @@ describe("embedTexts", () => {
     await expect(embedTexts("test-key", ["a"])).rejects.toThrow(/empty embedding/);
   });
 });
+
+describe("embeddingCostPrefix", () => {
+  it("normalizes gemini-embedding-001 to the costs-service catalog name", async () => {
+    const { embeddingCostPrefix } = await loadModule();
+    // Producer cost name must be byte-equal to the costs-service catalog row,
+    // which follows the google-* convention (google-flash-3, google-pro-3.1).
+    expect(embeddingCostPrefix("gemini-embedding-001")).toBe("google-embedding-001");
+  });
+
+  it("throws on an unmapped model instead of emitting an unmatched cost name", async () => {
+    const { embeddingCostPrefix } = await loadModule();
+    expect(() => embeddingCostPrefix("text-embedding-004")).toThrow(
+      /no cost-name prefix mapped/,
+    );
+  });
+});
+
+describe("estimateTokens", () => {
+  it("approximates at ~4 chars per token (ceil)", async () => {
+    const { estimateTokens } = await loadModule();
+    expect(estimateTokens(["abcd"])).toBe(1); // 4 chars / 4
+    expect(estimateTokens(["a".repeat(10)])).toBe(3); // ceil(10 / 4)
+  });
+
+  it("sums across multiple texts", async () => {
+    const { estimateTokens } = await loadModule();
+    expect(estimateTokens(["ab", "cd"])).toBe(1); // 4 chars total / 4
+    expect(estimateTokens(["a".repeat(6), "b".repeat(6)])).toBe(3); // ceil(12 / 4)
+  });
+
+  it("returns 0 for empty input", async () => {
+    const { estimateTokens } = await loadModule();
+    expect(estimateTokens([])).toBe(0);
+    expect(estimateTokens(["", ""])).toBe(0);
+  });
+});

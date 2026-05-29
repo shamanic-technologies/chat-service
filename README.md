@@ -376,6 +376,8 @@ The cache automatically invalidates when **any** resolved brand field changes (t
 
 The Gemini embedding model defaults to `gemini-embedding-001` and is overridable via `GEMINI_EMBEDDING_MODEL`. Key resolution uses the standard `google` provider in key-service.
 
+**Cost reporting:** every call reports embedding input-token spend to runs-service under the call's run, as cost name `google-embedding-001-tokens-input` (matches the costs-service catalog; `costSource` is `org` or `platform` per the resolved key). Tokens are estimated at ~4 chars/token because Gemini `batchEmbedContents` returns no usage metadata. A cache hit on the brand-profile vector reports only the document tokens; a miss also includes the synthesized-query tokens. Errors that exit before embedding (validation `400`, brand `404`, key-resolve `502`) report no cost.
+
 ## RAG Embed (`/orgs/rag/embed`)
 
 `POST /orgs/rag/embed` — return raw embedding vectors for a batch of texts. Same embedding model as `/orgs/rag/score` (single source of truth).
@@ -424,6 +426,8 @@ No vector storage, no similarity, no caching — callers persist and compare vec
 - `502` — upstream failure (key-service, runs-service, or Gemini).
 
 **Volume:** designed for batches of up to **100** documents per request, **8000** characters per text. Larger inputs must be chunked or truncated by the caller.
+
+**Cost reporting:** reports embedding input-token spend to runs-service under the call's run, as cost name `google-embedding-001-tokens-input` (matches the costs-service catalog; `costSource` is `org` or `platform` per the resolved key). Tokens are estimated at ~4 chars/token. Early-exit paths (validation `400`, key-resolve `502`) report no cost.
 
 Determinism: Gemini `gemini-embedding-001` is deterministic for identical input texts under stable model versions, but Google does not contractually guarantee bit-exact output across server-side updates. Callers that depend on stable vectors over time should re-embed after a model version change.
 

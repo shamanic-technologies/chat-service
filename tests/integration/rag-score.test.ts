@@ -81,11 +81,33 @@ function mockRunsCreate(returnRunId: string, capture?: { headers?: Record<string
   } satisfies MockRoute;
 }
 
+// Finalization: PATCH /v1/runs/:id (status) AND POST /v1/runs/:id/costs (embedding
+// cost). Absorbs both so embedding tests don't hit an unmocked fetch in finally.
 function mockRunsPatch() {
   return {
-    match: (url: string, init?: RequestInit) =>
-      /\/v1\/runs\/[^/]+$/.test(url) && (init?.method ?? "GET") === "PATCH",
+    match: (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      return (
+        (/\/v1\/runs\/[^/]+$/.test(url) && method === "PATCH") ||
+        (/\/v1\/runs\/[^/]+\/costs$/.test(url) && method === "POST")
+      );
+    },
     respond: () => ({ ok: true, body: { id: "ok" } }),
+  } satisfies MockRoute;
+}
+
+// Capturing variant for asserting the embedding-cost payload. Push BEFORE
+// mockRunsPatch so it wins the POST /costs match.
+function mockRunsCosts(capture: { items?: unknown[] }) {
+  return {
+    match: (url: string, init?: RequestInit) =>
+      /\/v1\/runs\/[^/]+\/costs$/.test(url) && (init?.method ?? "GET") === "POST",
+    respond: (_url: string, init?: RequestInit) => {
+      if (init?.body) {
+        capture.items = (JSON.parse(init.body as string) as { items: unknown[] }).items;
+      }
+      return { ok: true, body: { ok: true } };
+    },
   } satisfies MockRoute;
 }
 
@@ -246,9 +268,11 @@ describe("POST /orgs/rag/score", { timeout: 30_000 }, () => {
     const embedCapture = { calls: 0, bodies: [] as unknown[] };
     const brandCapture = { headers: undefined as Record<string, string> | undefined, body: undefined as unknown };
     const runsCapture = { headers: undefined as Record<string, string> | undefined };
+    const costCapture = { items: undefined as unknown[] | undefined };
     const ownRunId = crypto.randomUUID();
 
     routes.push(mockRunsCreate(ownRunId, runsCapture));
+    routes.push(mockRunsCosts(costCapture));
     routes.push(mockRunsPatch());
     routes.push(
       mockBrandExtract(
@@ -329,6 +353,18 @@ describe("POST /orgs/rag/score", { timeout: 30_000 }, () => {
       );
     expect(cached).toHaveLength(1);
     expect(cached[0].embedding).toEqual(queryVector);
+
+    // Embedding spend reported under the run: input tokens, costs-service catalog
+    // name (google-*), costSource derived from the resolved (platform) key.
+    expect(costCapture.items).toHaveLength(1);
+    const costItem = costCapture.items![0] as {
+      costName: string;
+      quantity: number;
+      costSource: string;
+    };
+    expect(costItem.costName).toBe("google-embedding-001-tokens-input");
+    expect(costItem.costSource).toBe("platform");
+    expect(costItem.quantity).toBeGreaterThan(0);
 
     await cleanupBrandCache(orgId, brandId);
   });
