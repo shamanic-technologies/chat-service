@@ -338,49 +338,15 @@ app.post("/complete", requireAuth, async (req, res) => {
     });
   }
 
-  // Cost prefix from model resolution
+  // Cost prefix + source from model / key resolution.
   const effectiveCostPrefix = resolved.costPrefix;
+  const costSource: "platform" | "org" = resolvedKey.keySource === "org" ? "org" : "platform";
+  // Provision quantities (worst case): input estimate + output budget. /complete has no
+  // caller maxTokens param, so the model's output budget is the theoretical max.
+  const estimatedInputTokens = Math.max(Math.ceil(message.length / 4), 500);
+  const maxOutputTokens = 64_000;
 
-  // Credit authorization for platform keys
-  if (resolvedKey.keySource === "platform") {
-    const estimatedInputTokens = Math.max(Math.ceil(message.length / 4), 500);
-    const estimatedOutputTokens = 64_000;
-    try {
-      const authResult = await authorizeCredits({
-        items: [
-          { costName: `${effectiveCostPrefix}-tokens-input`, quantity: estimatedInputTokens },
-          { costName: `${effectiveCostPrefix}-tokens-output`, quantity: estimatedOutputTokens },
-        ],
-        description: `complete — ${effectiveModel}`,
-        orgId,
-        userId,
-        runId: parentRunId,
-        trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders : undefined,
-      });
-      if (!authResult.sufficient) {
-        console.warn(
-          `[complete] insufficient credits: org="${orgId}" balance_cents=${authResult.balance_cents} required_cents=${authResult.required_cents}`,
-        );
-        return res.status(402).json({
-          error: "Insufficient credits",
-          balance_cents: authResult.balance_cents,
-          required_cents: authResult.required_cents,
-        });
-      }
-    } catch (billingErr) {
-      console.error(`[complete] billing authorization failed for org="${orgId}":`, billingErr);
-      if (billingErr instanceof BillingError && billingErr.isClientError) {
-        return res.status(billingErr.statusCode).json({
-          error: `Billing authorization rejected: ${billingErr.upstreamBody}`,
-        });
-      }
-      return res.status(502).json({
-        error: "Billing service unavailable. Please try again.",
-      });
-    }
-  }
-
-  // Register run (mandatory)
+  // Register run (mandatory) — must precede provisioning (cost rows attach to the run).
   let runId: string | null = null;
   try {
     const run = await createRun(
@@ -402,7 +368,27 @@ app.post("/complete", requireAuth, async (req, res) => {
   let completeFailed = false;
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
+  let provisionedCostIds: string[] = [];
   try {
+    // PROVISION worst case → AUTHORIZE (platform) before the LLM call. Fail loud — never
+    // spend on an undeclarable or unaffordable cost.
+    try {
+      provisionedCostIds = await provisionAndAuthorizeLlmCost({
+        runId,
+        costPrefix: effectiveCostPrefix,
+        inputTokens: estimatedInputTokens,
+        outputTokens: maxOutputTokens,
+        keySource: resolvedKey.keySource,
+        identity: { orgId, userId, runId },
+        trackingHeaders,
+        description: `complete — ${effectiveModel}`,
+      });
+    } catch (costErr) {
+      completeFailed = true;
+      const r = costErrorResponse(costErr, "complete", orgId);
+      return res.status(r.status).json(r.body);
+    }
+
     let result: { content: string; tokensInput: number; tokensOutput: number; model: string };
 
     if (runId) {
@@ -479,11 +465,12 @@ app.post("/complete", requireAuth, async (req, res) => {
       error: "LLM call failed. Please try again.",
     });
   } finally {
-    // Report run status and costs
+    // Reconcile: record ACTUAL real tokens, then release the provisioned worst-case holds.
+    // If the actual POST fails, the provisioned-max rows stay as a fallback record — the
+    // cost is never silently lost.
     if (runId) {
-      const costSource: "platform" | "org" =
-        resolvedKey.keySource === "org" ? "org" : "platform";
-      const costItems = [
+      const runIdentity = { orgId, userId, runId };
+      const actualItems = [
         ...(totalPromptTokens > 0
           ? [{ costName: `${effectiveCostPrefix}-tokens-input`, quantity: totalPromptTokens, costSource }]
           : []),
@@ -491,14 +478,20 @@ app.post("/complete", requireAuth, async (req, res) => {
           ? [{ costName: `${effectiveCostPrefix}-tokens-output`, quantity: totalOutputTokens, costSource }]
           : []),
       ];
-      const runIdentity = { orgId, userId, runId };
       try {
-        await Promise.all([
-          updateRunStatus(runId, completeFailed ? "failed" : "completed", runIdentity, trackingHeaders),
-          addRunCosts(runId, costItems, runIdentity, trackingHeaders),
-        ]);
+        await updateRunStatus(runId, completeFailed ? "failed" : "completed", runIdentity, trackingHeaders);
       } catch (runErr) {
         console.error(`[chat-service] /complete failed to finalize run runId="${runId}" orgId="${orgId}":`, runErr);
+      }
+      if (provisionedCostIds.length > 0) {
+        try {
+          if (actualItems.length > 0) {
+            await addRunCosts(runId, actualItems, runIdentity, trackingHeaders);
+          }
+          await cancelProvisionedCosts(runId, provisionedCostIds, runIdentity, trackingHeaders);
+        } catch (costErr) {
+          console.error(`[complete] cost reconcile failed runId="${runId}" — provisioned-max kept as fallback:`, costErr);
+        }
       }
     }
   }
@@ -620,6 +613,90 @@ function costErrorResponse(
   }
   console.error(`[${tag}] cost provision/authorize failed for org="${orgId}":`, err);
   return { status: 502, body: { error: "Cost authorization failed. Please try again." } };
+}
+
+/** Cancel a set of provisioned cost rows (release the worst-case hold). Best-effort, logged. */
+async function cancelProvisionedCosts(
+  runId: string,
+  costIds: string[],
+  identity: RunIdentityHeaders,
+  trackingHeaders: Record<string, string>,
+): Promise<void> {
+  await Promise.all(
+    costIds.map((id) =>
+      updateRunCostStatus(runId, id, "cancelled", identity, trackingHeaders).catch((e) =>
+        console.error(`[cost] cancel provisioned failed runId="${runId}" costId="${id}":`, e),
+      ),
+    ),
+  );
+}
+
+/**
+ * Provision the worst-case LLM cost (input estimate + output max) as two `provisioned`
+ * rows. Output tokens are unknown pre-call, so reserve the max and true up to actual
+ * after (POST actual + cancel these holds). Returns the provisioned cost ids. Throws if
+ * the cost is undeclarable (runs-service 422) — caller fails loud, never spends.
+ */
+async function provisionLlmCost(args: {
+  runId: string;
+  costPrefix: string;
+  inputTokens: number;
+  outputTokens: number;
+  keySource: "org" | "platform";
+  identity: RunIdentityHeaders;
+  trackingHeaders: Record<string, string>;
+}): Promise<string[]> {
+  const { runId, costPrefix, inputTokens, outputTokens, keySource, identity, trackingHeaders } = args;
+  const items: CostItem[] = [
+    { costName: `${costPrefix}-tokens-input`, quantity: inputTokens, costSource: keySource, status: "provisioned" },
+    { costName: `${costPrefix}-tokens-output`, quantity: outputTokens, costSource: keySource, status: "provisioned" },
+  ];
+  const costs = await addRunCosts(runId, items, identity, trackingHeaders);
+  return costs.map((c) => c.id);
+}
+
+/**
+ * Provision (worst case) then authorize (platform keys) BEFORE the call. Returns the
+ * provisioned cost ids to reconcile after. Throws on any failure so the caller fails
+ * loud; releases the provision if authorization fails. Used by non-streaming `/complete`
+ * (streaming `/chat` authorizes pre-stream and calls `provisionLlmCost` directly).
+ */
+async function provisionAndAuthorizeLlmCost(args: {
+  runId: string;
+  costPrefix: string;
+  inputTokens: number;
+  outputTokens: number;
+  keySource: "org" | "platform";
+  identity: RunIdentityHeaders;
+  trackingHeaders: Record<string, string>;
+  description: string;
+}): Promise<string[]> {
+  const { runId, costPrefix, inputTokens, outputTokens, keySource, identity, trackingHeaders, description } = args;
+  const costIds = await provisionLlmCost(args);
+  if (keySource === "platform") {
+    try {
+      const auth = await authorizeCredits({
+        items: [
+          { costName: `${costPrefix}-tokens-input`, quantity: inputTokens },
+          { costName: `${costPrefix}-tokens-output`, quantity: outputTokens },
+        ],
+        description,
+        orgId: identity.orgId,
+        userId: identity.userId,
+        runId,
+        trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders : undefined,
+      });
+      if (!auth.sufficient) {
+        await cancelProvisionedCosts(runId, costIds, identity, trackingHeaders);
+        throw new InsufficientCreditsError(auth.balance_cents, auth.required_cents);
+      }
+    } catch (err) {
+      if (err instanceof InsufficientCreditsError) throw err;
+      await cancelProvisionedCosts(runId, costIds, identity, trackingHeaders);
+      throw err;
+    }
+  }
+  return costIds;
 }
 
 app.post("/orgs/rag/score", requireAuth, async (req, res) => {
@@ -1312,6 +1389,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   let chatFailed = false;
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
+  let provisionedCostIds: string[] = [];
 
   try {
     // Get or create session (scoped by org + user + app)
@@ -1381,6 +1459,33 @@ app.post("/chat", requireAuth, async (req, res) => {
         type: "error",
         code: "internal_error",
         message: "Service temporarily unavailable (run tracking). Please try again.",
+      });
+      sendSSE(res, "[DONE]");
+      res.end();
+      return;
+    }
+
+    // PROVISION worst-case LLM cost (input estimate + output budget) before the model
+    // call. Authorize already ran pre-stream above; output tokens are unknown until the
+    // stream ends, so reserve the max and true up to actual in the finally. Fail loud
+    // (SSE error — the stream is already open) if the cost can't be declared.
+    try {
+      provisionedCostIds = await provisionLlmCost({
+        runId,
+        costPrefix: resolvedModelInfo.costPrefix,
+        inputTokens: Math.max(Math.ceil(message.length / 4), 500),
+        outputTokens: 64_000,
+        keySource: resolvedKey.keySource,
+        identity: { orgId, userId, runId },
+        trackingHeaders,
+      });
+    } catch (provErr) {
+      chatFailed = true;
+      console.error(`[chat] cost provision failed runId="${runId}" org="${orgId}":`, provErr);
+      sendSSE(res, {
+        type: "error",
+        code: "internal_error",
+        message: "Cost provisioning failed. Please try again.",
       });
       sendSSE(res, "[DONE]");
       res.end();
@@ -2230,39 +2335,36 @@ app.post("/chat", requireAuth, async (req, res) => {
     // End SSE stream immediately so the client is not blocked
     res.end();
 
-    // Report run status and costs
+    // Reconcile: record ACTUAL real tokens, then release the provisioned worst-case holds.
+    // If the actual POST fails, the provisioned-max rows stay as a fallback record — the
+    // cost is never silently lost.
     if (runId) {
       const costSource: "platform" | "org" =
         resolvedKey.keySource === "org" ? "org" : "platform";
       const chatCostPrefix = resolvedModelInfo.costPrefix;
-      const costItems = [
+      const actualItems = [
         ...(totalPromptTokens > 0
-          ? [
-              {
-                costName: `${chatCostPrefix}-tokens-input`,
-                quantity: totalPromptTokens,
-                costSource,
-              },
-            ]
+          ? [{ costName: `${chatCostPrefix}-tokens-input`, quantity: totalPromptTokens, costSource }]
           : []),
         ...(totalOutputTokens > 0
-          ? [
-              {
-                costName: `${chatCostPrefix}-tokens-output`,
-                quantity: totalOutputTokens,
-                costSource,
-              },
-            ]
+          ? [{ costName: `${chatCostPrefix}-tokens-output`, quantity: totalOutputTokens, costSource }]
           : []),
       ];
       const runIdentity = { orgId, userId, runId };
       try {
-        await Promise.all([
-          updateRunStatus(runId, chatFailed ? "failed" : "completed", runIdentity, trackingHeaders),
-          addRunCosts(runId, costItems, runIdentity, trackingHeaders),
-        ]);
+        await updateRunStatus(runId, chatFailed ? "failed" : "completed", runIdentity, trackingHeaders);
       } catch (runErr) {
         console.error(`[chat-service] /chat failed to finalize run runId="${runId}" orgId="${orgId}":`, runErr);
+      }
+      if (provisionedCostIds.length > 0) {
+        try {
+          if (actualItems.length > 0) {
+            await addRunCosts(runId, actualItems, runIdentity, trackingHeaders);
+          }
+          await cancelProvisionedCosts(runId, provisionedCostIds, runIdentity, trackingHeaders);
+        } catch (costErr) {
+          console.error(`[chat] cost reconcile failed runId="${runId}" — provisioned-max kept as fallback:`, costErr);
+        }
       }
     }
   }

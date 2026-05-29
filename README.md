@@ -620,11 +620,16 @@ data: {"type":"buttons","buttons":[{"label":"Send Cold Emails","value":"Send Col
 ```
 Buttons are extracted from the AI response when it ends with lines formatted as `- [Button Text]`. The button `label` and `value` are both set to the text inside the brackets. Button lines are stripped from the token stream to prevent duplication.
 
-### Credit Authorization (402)
+### Cost: provision → authorize → execute → reconcile (402)
 
-Before streaming, the service checks credit authorization via billing-service for platform-key requests (`keySource: "platform"`). BYOK orgs (`keySource: "org"`) skip this check — they pay their provider directly.
+`POST /chat` and `POST /complete` declare LLM spend with the platform cost rule. Output tokens are unknown until the call finishes, so the **worst case** is reserved up front and trued up to the real usage after:
 
-If the org has insufficient credits, the endpoint returns a **402 JSON response** (not SSE):
+1. **Provision** — before the model call, two `provisioned` cost rows (`<costPrefix>-tokens-input` + `-tokens-output`) are written to runs-service with the worst-case quantity (input estimate + the model's output budget). Validates the cost names are declarable.
+2. **Authorize** — credit affordability is checked against billing-service for platform-key requests (`keySource: "platform"`). BYOK orgs (`keySource: "org"`) skip this — they pay their provider directly. (`/chat` authorizes pre-stream; `/complete` authorizes inline.)
+3. **Execute** — the model call runs only after provision + authorize succeed.
+4. **Reconcile** — the **actual** token counts are recorded (`actual` rows) and the provisioned worst-case holds are `cancelled`. If the actual write fails, the provisioned-max rows remain as a fallback record — the cost is never silently lost.
+
+If the org has insufficient credits, the endpoint returns a **402** (JSON, not SSE on `/chat`):
 ```json
 {
   "error": "Insufficient credits",
@@ -633,7 +638,7 @@ If the org has insufficient credits, the endpoint returns a **402 JSON response*
 }
 ```
 
-If billing-service is unreachable, a **502 JSON response** is returned instead.
+If a cost can't be declared (runs-service `422 Unknown cost name`) or billing-service is unreachable, the spend is blocked: `502` on `/complete`, an SSE `error` event on `/chat` (the stream is already open by provisioning time). The model is never called when the cost can't be declared or afforded.
 
 ### 7. Error (optional)
 Sent when the AI model returns an empty response, is overloaded, or an unexpected error occurs:
