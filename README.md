@@ -376,7 +376,14 @@ The cache automatically invalidates when **any** resolved brand field changes (t
 
 The Gemini embedding model defaults to `gemini-embedding-001` and is overridable via `GEMINI_EMBEDDING_MODEL`. Key resolution uses the standard `google` provider in key-service.
 
-**Cost reporting:** every call reports embedding input-token spend to runs-service under the call's run, as cost name `google-embedding-001-tokens-input` (matches the costs-service catalog; `costSource` is `org` or `platform` per the resolved key). Tokens are estimated at ~4 chars/token because Gemini `batchEmbedContents` returns no usage metadata. A cache hit on the brand-profile vector reports only the document tokens; a miss also includes the synthesized-query tokens. Errors that exit before embedding (validation `400`, brand `404`, key-resolve `502`) report no cost.
+**Cost handling (provision → authorize → execute → actualize):** the embedding spend is reserved **before** the Gemini call, never after. The flow per request:
+
+1. **Provision** — `POST /v1/runs/{id}/costs` with `status: "provisioned"`, cost name `google-embedding-001-tokens-input` (byte-equal to the costs-service catalog; `costSource` is `org`/`platform` per the resolved key), `quantity` = input-token estimate (~4 chars/token; a cache hit on the brand-profile vector excludes the query tokens, a miss includes them).
+2. **Authorize** — platform-key spend is checked against billing-service (`/v1/customer_balance/authorize`); BYOK/org keys skip this.
+3. **Execute** — the Gemini embed runs only after 1 + 2 succeed.
+4. **Actualize / cancel** — the provisioned cost is set to `actual` on success, or `cancelled` if the embed fails.
+
+**Fail loud:** any provision/authorize/actualize failure returns an error and skips (or aborts) the spend — `502` on a runs-service `422 Unknown cost name` or downstream error, `402` (`Insufficient credits`) when billing rejects a platform-key request. A cost that cannot be declared perfectly blocks the operation rather than under-reporting silently. Errors that exit before provisioning (validation `400`, brand `404`, key-resolve `502`) reserve nothing.
 
 ## RAG Embed (`/orgs/rag/embed`)
 
@@ -427,7 +434,7 @@ No vector storage, no similarity, no caching — callers persist and compare vec
 
 **Volume:** designed for batches of up to **100** documents per request, **8000** characters per text. Larger inputs must be chunked or truncated by the caller.
 
-**Cost reporting:** reports embedding input-token spend to runs-service under the call's run, as cost name `google-embedding-001-tokens-input` (matches the costs-service catalog; `costSource` is `org` or `platform` per the resolved key). Tokens are estimated at ~4 chars/token. Early-exit paths (validation `400`, key-resolve `502`) report no cost.
+**Cost handling:** same **provision → authorize → execute → actualize** flow as `/orgs/rag/score` (see above). The embedding cost (`google-embedding-001-tokens-input`, quantity = document input-token estimate) is provisioned in runs-service and authorized against billing (platform keys) **before** the Gemini call; actualized on success, cancelled on failure. Any cost-declaration failure fails loud (`502`, or `402` on insufficient credits) — the spend is never made if the cost cannot be declared. Early-exit paths (validation `400`, key-resolve `502`) reserve nothing.
 
 Determinism: Gemini `gemini-embedding-001` is deterministic for identical input texts under stable model versions, but Google does not contractually guarantee bit-exact output across server-side updates. Callers that depend on stable vectors over time should re-embed after a model version change.
 
