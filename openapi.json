@@ -365,7 +365,7 @@
               "google",
               null
             ],
-            "description": "LLM provider. Null means default (anthropic)."
+            "description": "LLM provider. Null means default (google)."
           },
           "model": {
             "type": "string",
@@ -446,7 +446,7 @@
               "anthropic",
               "google"
             ],
-            "description": "LLM provider for this chat mode. Omit to use the default (anthropic).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, pro)",
+            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, pro)",
             "example": "google"
           },
           "model": {
@@ -493,7 +493,7 @@
               "google",
               null
             ],
-            "description": "LLM provider. Null means default (anthropic)."
+            "description": "LLM provider. Null means default (google)."
           },
           "model": {
             "type": "string",
@@ -556,7 +556,7 @@
               "anthropic",
               "google"
             ],
-            "description": "LLM provider for this chat mode. Omit to use the default (anthropic).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, pro)",
+            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, pro)",
             "example": "google"
           },
           "model": {

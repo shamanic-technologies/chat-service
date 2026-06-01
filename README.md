@@ -91,10 +91,10 @@ Fields:
 - `key` (required) — config identifier, unique per org. Clients pass this as `configKey` in `POST /chat`.
 - `systemPrompt` (required) — the system prompt sent to the LLM for this chat mode
 - `allowedTools` (required, min 1) — which tools the LLM can use. The service rejects any tool call not in this list. See [Available Tools](#available-tools) for the full list.
-- `provider` (optional) — LLM provider: `"anthropic"` or `"google"`. Defaults to `"anthropic"` when omitted.
-- `model` (optional) — Model alias (version-free). Must match the provider: anthropic → `haiku|sonnet|opus`, google → `flash-lite|flash|pro`. Defaults to `"sonnet"` for anthropic, `"pro"` for google.
+- `provider` (optional) — LLM provider: `"anthropic"` or `"google"`. Defaults to `"google"` when omitted (Gemini is the platform default for chat); a config row with a NULL `provider` resolves to `google`.
+- `model` (optional) — Model alias (version-free). Must match the provider: anthropic → `haiku|sonnet|opus`, google → `flash-lite|flash|pro`. Defaults to `"sonnet"` for anthropic, `"pro"` for google (so an all-NULL config resolves to `google`/`pro`).
 
-This endpoint is **idempotent** (upsert on `(orgId, key)`). Call it on every cold start.
+This endpoint is **idempotent** (upsert on `(orgId, key)`). Call it on every cold start. **`provider`/`model` are only overwritten when supplied** — omitting them on a re-registration leaves the stored values unchanged, so an app that registers without `provider` does not reset an explicit override back to NULL.
 
 Response:
 ```json
