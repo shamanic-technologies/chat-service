@@ -63,6 +63,10 @@ The default LLM for `/chat` is **Gemini `google`/`pro`**, resolved in code by `r
 
 Do NOT "fix" a provider switch by flipping the DB `provider`/`model` columns alone. That reverts: apps re-register their config at every cold start via `PUT /config` / `PUT /platform-config`, and the registration **must not clobber an omitted field**. Both handlers build their `onConflictDoUpdate.set` via `buildConfigConflictSet`, which includes `provider`/`model` ONLY when the caller actually supplied them — an omitted field keeps the stored value. **Never reintroduce `provider: provider ?? null` (or `model ?? null`) into the conflict `set`** — that resets every explicit override to NULL on the next app boot, which is exactly the bug that silently put all chat back on the dead Anthropic key (incident 2026-06-01, fixed v0.32.1). The `?? null` belongs only in the INSERT `.values` (a brand-new row legitimately starts NULL, then resolves to the Gemini default).
 
+## Gemini `/chat` streaming — SSE framing must stay tolerant
+
+`/chat` on `provider:"google"` streams via `gemini-chat.ts:streamGeminiChat`. Gemini's `:streamGenerateContent?alt=sse` stream frames events with **any of `\n\n`, `\r\r`, `\r\n\r\n`** and may emit `data:` with or without a trailing space — exactly what Google's official `@google/genai` SDK handles (`processStreamResponse`: `delimiters = ['\n\n', '\r\r', '\r\n\r\n']`, prefix `data:`). `parseGeminiSSEBuffer` mirrors this. **Never narrow it back to `indexOf("\n\n")` or `startsWith("data: ")`** — the real stream uses `\r\n\r\n`, so an `\n\n`-only parser yields ZERO events and an empty chat response with HTTP 200 and no error (incident 2026-06-01, fixed v0.32.2; the bug hid for the whole Anthropic-only period because the streaming parser had no test coverage). The Gemini stream path must also **fail loud**, not return `""`: throw on an in-band `{"error":...}` chunk and on a wholly-empty stream (no content, tool calls, or usage). When touching any provider's streaming parser, confirm the wire framing against that provider's official SDK source, not an assumption.
+
 ## Code Conventions
 
 - TypeScript strict mode, ESM modules
