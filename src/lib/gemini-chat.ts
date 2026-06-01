@@ -137,6 +137,32 @@ export function toGeminiFunctionDeclarations(
 }
 
 /**
+ * Neutralize JSON-Schema / OpenAPI `$ref`s inside a tool result before it is
+ * embedded in a `functionResponse.response`.
+ *
+ * Gemini 3 interprets `{"$ref": "<name>"}` inside the structured response as a
+ * reference to a multimodal part (it substitutes the named part). A tool result
+ * that contains an OpenAPI `$ref` (e.g. `{"$ref": "#/components/schemas/OrgId"}`,
+ * returned by the api-registry / endpoint tools) collides with this: the name
+ * has no matching part `displayName`, so the API returns
+ * `400 INVALID_ARGUMENT: ... does not match to a display_name ...`.
+ *
+ * Renaming every `$ref` key to `ref` preserves the value as plain data the model
+ * can still read, but stops Gemini from resolving it as a part reference.
+ * See https://ai.google.dev/gemini-api/docs/function-calling
+ */
+export function sanitizeGeminiToolResponse(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeGeminiToolResponse);
+  if (value === null || typeof value !== "object") return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    const safeKey = key === "$ref" && !("ref" in (value as Record<string, unknown>)) ? "ref" : key === "$ref" ? "schemaRef" : key;
+    out[safeKey] = sanitizeGeminiToolResponse(val);
+  }
+  return out;
+}
+
+/**
  * Convert DB message history to Gemini format.
  *
  * Rebuilds `functionCall` + `functionResponse` pairs from the `toolCalls`
@@ -189,7 +215,7 @@ export function toGeminiHistory(history: GeminiHistoryInput): GeminiMessage[] {
 
     if (validToolCalls.length > 0) {
       const responseParts: GeminiPart[] = validToolCalls.map((tc) => ({
-        functionResponse: { name: tc.name, response: tc.result },
+        functionResponse: { name: tc.name, response: sanitizeGeminiToolResponse(tc.result) },
       }));
       pushOrMerge("user", responseParts);
     }
@@ -524,7 +550,7 @@ export async function streamGeminiChat(
         responseParts.push({
           functionResponse: {
             name: fc.name,
-            response: toolResult.result,
+            response: sanitizeGeminiToolResponse(toolResult.result),
             ...(fc.id ? { id: fc.id } : {}),
           },
         });
