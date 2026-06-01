@@ -21,6 +21,13 @@ const DEFAULT_GEMINI_TIMEOUT_MS = 10 * 60_000;
 
 const MAX_TOOL_CHAIN_DEPTH = 10;
 
+// Gemini 3 requires a `thoughtSignature` on every functionCall part when the
+// conversation history is replayed; omitting it returns a 400
+// (`Function call ... is missing a thought_signature`). For calls captured
+// before signatures were stored — or any injected call — Google sanctions a
+// dummy bypass value. See https://ai.google.dev/gemini-api/docs/thought-signatures
+const SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -51,6 +58,8 @@ interface GeminiFunctionDeclaration {
 interface GeminiTextPart { text: string }
 interface GeminiFunctionCallPart {
   functionCall: { name: string; args: Record<string, unknown>; id?: string };
+  /** Opaque Gemini-3 reasoning token — must be echoed back on history replay. */
+  thoughtSignature?: string;
 }
 interface GeminiFunctionResponsePart {
   functionResponse: { name: string; response: unknown; id?: string };
@@ -70,6 +79,7 @@ export type GeminiHistoryInput = Array<{
     name: string;
     args: Record<string, unknown>;
     result?: unknown;
+    thoughtSignature?: string;
   }> | null;
 }>;
 
@@ -167,7 +177,10 @@ export function toGeminiHistory(history: GeminiHistoryInput): GeminiMessage[] {
       modelParts.push({ text });
     }
     for (const tc of validToolCalls) {
-      modelParts.push({ functionCall: { name: tc.name, args: tc.args } });
+      modelParts.push({
+        functionCall: { name: tc.name, args: tc.args },
+        thoughtSignature: tc.thoughtSignature ?? SKIP_THOUGHT_SIGNATURE,
+      });
     }
 
     if (modelParts.length === 0) continue;
@@ -195,6 +208,7 @@ interface GeminiStreamChunk {
       parts?: Array<{
         text?: string;
         thought?: boolean;
+        thoughtSignature?: string;
         functionCall?: { name: string; args: Record<string, unknown>; id?: string };
       }>;
     };
@@ -368,7 +382,7 @@ export async function streamGeminiChat(
     const decoder = new TextDecoder();
     let sseBuffer = "";
     let inThinking = false;
-    const functionCalls: Array<{ name: string; args: Record<string, unknown>; id?: string }> = [];
+    const functionCalls: Array<{ name: string; args: Record<string, unknown>; id?: string; thoughtSignature?: string }> = [];
     let chunkTokensInput = 0;
     let chunkTokensOutput = 0;
 
@@ -422,12 +436,14 @@ export async function streamGeminiChat(
               sse(res, { type: "token", content: part.text });
             }
 
-            // Function call
+            // Function call — capture the part's thoughtSignature so it can be
+            // echoed back on the next turn (Gemini 3 requires it on replay).
             if (part.functionCall) {
               functionCalls.push({
                 name: part.functionCall.name,
                 args: part.functionCall.args ?? {},
                 ...(part.functionCall.id ? { id: part.functionCall.id } : {}),
+                ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
               });
             }
           }
@@ -459,6 +475,7 @@ export async function streamGeminiChat(
           args: fc.args,
           ...(fc.id ? { id: fc.id } : {}),
         },
+        thoughtSignature: fc.thoughtSignature ?? SKIP_THOUGHT_SIGNATURE,
       });
 
       const toolCallId = `tc_${crypto.randomUUID()}`;
@@ -497,7 +514,12 @@ export async function streamGeminiChat(
           continue;
         }
 
-        allToolCalls.push({ name: fc.name, args: fc.args, result: toolResult.result });
+        allToolCalls.push({
+          name: fc.name,
+          args: fc.args,
+          result: toolResult.result,
+          ...(fc.thoughtSignature ? { thoughtSignature: fc.thoughtSignature } : {}),
+        });
         sse(res, { type: "tool_result", id: toolCallId, name: fc.name, result: toolResult.result });
         responseParts.push({
           functionResponse: {
