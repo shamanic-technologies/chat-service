@@ -1776,7 +1776,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           {
             sourceType: args.sourceType as string,
             prompt: args.prompt as string,
-            variables: args.variables as string[],
+            variables: args.variables as Array<{ name: string; description: string }>,
           },
           {
             orgId,

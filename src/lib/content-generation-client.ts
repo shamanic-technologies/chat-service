@@ -1,10 +1,21 @@
 import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
 
+/**
+ * A template variable as declared by content-generation-service.
+ * The deployed `PUT/GET /prompts` contract requires `{ name, description }`
+ * objects (not bare strings) — the caller decides the JSON shape per name.
+ * See DIS-138 / DIS-52.
+ */
+export interface PromptVariable {
+  name: string;
+  description: string;
+}
+
 export interface PromptTemplate {
   id: string;
   type: string;
   prompt: string;
-  variables: string[];
+  variables: PromptVariable[];
   createdAt: string;
   updatedAt: string;
 }
@@ -34,7 +45,7 @@ export async function getPromptTemplate(
 export interface UpdatePromptBody {
   sourceType: string;
   prompt: string;
-  variables: string[];
+  variables: PromptVariable[];
 }
 
 export async function updatePromptTemplate(
