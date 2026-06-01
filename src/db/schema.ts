@@ -89,6 +89,13 @@ export interface ToolCallRecord {
   name: string;
   args: Record<string, unknown>;
   result?: unknown;
+  /**
+   * Gemini-3 reasoning token captured from the functionCall part. Echoed back
+   * on history replay (`toGeminiHistory`) — required or Gemini 3 returns 400.
+   * Absent on Anthropic tool calls and on Gemini calls recorded before this
+   * field existed (a dummy bypass value is substituted at replay time).
+   */
+  thoughtSignature?: string;
 }
 
 export interface ButtonRecord {

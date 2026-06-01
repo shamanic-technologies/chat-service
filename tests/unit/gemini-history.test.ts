@@ -59,6 +59,7 @@ describe("toGeminiHistory", () => {
     expect(result[1].parts[0]).toEqual({ text: "Looking it up." });
     expect(result[1].parts[1]).toEqual({
       functionCall: { name: "get_x", args: { id: "abc" } },
+      thoughtSignature: "skip_thought_signature_validator",
     });
 
     expect(result[2].role).toBe("user");
@@ -82,6 +83,42 @@ describe("toGeminiHistory", () => {
     expect(result[1].parts).toHaveLength(1);
     expect(result[1].parts[0]).toEqual({
       functionCall: { name: "tool_x", args: {} },
+      thoughtSignature: "skip_thought_signature_validator",
+    });
+  });
+
+  it("echoes a stored thoughtSignature on the functionCall part", () => {
+    const msgs: GeminiHistoryInput = [
+      { role: "user", content: "go" },
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          { name: "tool_z", args: {}, result: { ok: true }, thoughtSignature: "real-sig-abc" },
+        ],
+      },
+    ];
+    const result = toGeminiHistory(msgs);
+    expect(result[1].parts[0]).toEqual({
+      functionCall: { name: "tool_z", args: {} },
+      thoughtSignature: "real-sig-abc",
+    });
+  });
+
+  it("injects the dummy bypass signature when none was stored (Gemini-3 400 guard)", () => {
+    // Regression: replaying a stored tool call without a thoughtSignature 400'd
+    // on Gemini 3 (`Function call ... is missing a thought_signature`).
+    const msgs: GeminiHistoryInput = [
+      { role: "user", content: "go" },
+      {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ name: "validate_workflow", args: {}, result: { ok: true } }],
+      },
+    ];
+    const result = toGeminiHistory(msgs);
+    expect(result[1].parts[0]).toMatchObject({
+      thoughtSignature: "skip_thought_signature_validator",
     });
   });
 
@@ -102,6 +139,7 @@ describe("toGeminiHistory", () => {
     expect(modelParts).toHaveLength(2);
     expect(modelParts[1]).toEqual({
       functionCall: { name: "tool_ok", args: {} },
+      thoughtSignature: "skip_thought_signature_validator",
     });
 
     const responseParts = result[2].parts;
@@ -174,9 +212,11 @@ describe("toGeminiHistory", () => {
 
     expect(result[1].parts.find((p) => "functionCall" in p)).toEqual({
       functionCall: { name: "t1", args: {} },
+      thoughtSignature: "skip_thought_signature_validator",
     });
     expect(result[3].parts.find((p) => "functionCall" in p)).toEqual({
       functionCall: { name: "t2", args: {} },
+      thoughtSignature: "skip_thought_signature_validator",
     });
   });
 });
