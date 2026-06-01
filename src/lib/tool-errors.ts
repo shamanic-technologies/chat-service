@@ -54,7 +54,7 @@ const TOOL_HINTS: Record<string, string> = {
   get_prompt_template:
     "Pass type as a string (e.g. 'cold-email', 'follow-up').",
   update_prompt_template:
-    "Pass sourceType (existing prompt type), prompt (template with {{variables}}), and variables (array of variable names).",
+    "Pass sourceType (existing prompt type), prompt (template with {{variables}}), and variables (array of objects, each { name, description } — NOT bare strings).",
   list_available_services:
     "No parameters needed. Returns all services and their endpoints.",
   create_feature:

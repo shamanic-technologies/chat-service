@@ -24,7 +24,7 @@ describe("getPromptTemplate", () => {
       id: "p-1",
       type: "cold-email",
       prompt: "Write a cold email for {{leadFirstName}}",
-      variables: ["leadFirstName"],
+      variables: [{ name: "leadFirstName", description: "The lead's first name" }],
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
     };
@@ -133,12 +133,15 @@ describe("getPromptTemplate", () => {
 });
 
 describe("updatePromptTemplate", () => {
-  it("sends PUT via api-service with correct URL, headers, and body", async () => {
+  it("sends PUT via api-service with correct URL, headers, and object variables", async () => {
+    const variables = [
+      { name: "leadFirstName", description: "The lead's first name" },
+    ];
     const mockResult = {
       id: "p-2",
       type: "cold-email-v2",
       prompt: "New prompt for {{leadFirstName}}",
-      variables: ["leadFirstName"],
+      variables,
       createdAt: "2026-03-18T00:00:00Z",
       updatedAt: "2026-03-18T00:00:00Z",
     };
@@ -153,7 +156,7 @@ describe("updatePromptTemplate", () => {
       {
         sourceType: "cold-email",
         prompt: "New prompt for {{leadFirstName}}",
-        variables: ["leadFirstName"],
+        variables,
       },
       { orgId: "org-1", userId: "user-1", runId: "run-1" },
     );
@@ -172,10 +175,70 @@ describe("updatePromptTemplate", () => {
         body: JSON.stringify({
           sourceType: "cold-email",
           prompt: "New prompt for {{leadFirstName}}",
-          variables: ["leadFirstName"],
+          variables,
         }),
       }),
     );
+    expect(result).toEqual(mockResult);
+  });
+
+  // Regression — DIS-138: object-shaped `variables` must reach the wire as
+  // objects, never coerced to bare strings. Reproduces the failing prod call
+  // (blind-discovery-email-v15, 11 variables) that 400'd at content-generation
+  // ("expected object, received string" ×11) when the client still sent strings.
+  it("forwards object variables uncoerced (blind-discovery-email-v15, 11 vars)", async () => {
+    const variables = [
+      { name: "senderFirstName", description: "Sender's first name" },
+      { name: "senderCompany", description: "Sender's company name" },
+      { name: "senderRole", description: "Sender's job title" },
+      { name: "leadFirstName", description: "Lead's first name" },
+      { name: "leadCompany", description: "Lead's company name" },
+      { name: "leadRole", description: "Lead's job title" },
+      { name: "leadIndustry", description: "Lead's industry" },
+      { name: "painPoint", description: "Inferred pain point" },
+      { name: "valueProp", description: "Value proposition" },
+      { name: "callToAction", description: "Desired CTA" },
+      { name: "brandProfiles", description: "Array of brand profiles (multibrand)" },
+    ];
+    const mockResult = {
+      id: "p-15",
+      type: "blind-discovery-email-v15",
+      prompt: "Hi {{leadFirstName}} ... {{callToAction}}",
+      variables,
+      createdAt: "2026-06-01T00:00:00Z",
+      updatedAt: "2026-06-01T00:00:00Z",
+    };
+
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(mockResult),
+    });
+
+    const { updatePromptTemplate } = await loadModule();
+    const result = await updatePromptTemplate(
+      {
+        sourceType: "blind-discovery-email-v14",
+        prompt: "Hi {{leadFirstName}} ... {{callToAction}}",
+        variables,
+      },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+    );
+
+    // Assert the OUTBOUND PUT body carries object variables — not strings.
+    const sentBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string,
+    );
+    expect(sentBody.variables).toHaveLength(11);
+    for (const v of sentBody.variables) {
+      expect(typeof v).toBe("object");
+      expect(typeof v.name).toBe("string");
+      expect(typeof v.description).toBe("string");
+    }
+    expect(sentBody.variables[10]).toEqual({
+      name: "brandProfiles",
+      description: "Array of brand profiles (multibrand)",
+    });
+    // 2xx maps to the saved template.
     expect(result).toEqual(mockResult);
   });
 
