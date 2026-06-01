@@ -305,9 +305,24 @@ export const UPDATE_PROMPT_TEMPLATE_TOOL: Anthropic.Tool = {
       },
       variables: {
         type: "array",
-        items: { type: "string" },
+        items: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description:
+                "Variable name as referenced in the prompt body via {{name}}.",
+            },
+            description: {
+              type: "string",
+              description:
+                "What the caller should put for this variable. The caller decides the JSON shape per name (string, array, object) — multibrand is the default, so brand-related variables typically receive arrays or objects, not scalars.",
+            },
+          },
+          required: ["name", "description"],
+        },
         description:
-          "List of variable names used in the prompt (e.g. ['leadFirstName', 'leadCompanyName'])",
+          "Inputs the template expects, one entry per {{variable}}. Each entry is an object { name, description } (e.g. [{ name: 'leadFirstName', description: \"The lead's first name\" }]).",
       },
     },
     required: ["sourceType", "prompt", "variables"],

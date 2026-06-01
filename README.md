@@ -554,7 +554,7 @@ Read-only and supporting workflow tools:
 | `list_workflows` | Lists workflows via `GET /workflows` with optional filters |
 | `validate_workflow` | Validates a workflow's DAG structure |
 | `get_prompt_template` | Retrieves a stored prompt template by type |
-| `update_prompt_template` | Creates a new version of an existing prompt template (auto-versions) |
+| `update_prompt_template` | Creates a new version of an existing prompt template (auto-versions). `variables` is an array of `{ name, description }` objects (the deployed content-generation contract — not bare strings) |
 
 **Service discovery tools (read-only):**
 
