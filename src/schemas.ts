@@ -134,7 +134,7 @@ export const AppConfigRequestSchema = z
     }),
     provider: z.enum(["anthropic", "google"]).optional().openapi({
       description:
-        "LLM provider for this chat mode. Omit to use the default (anthropic).\n\n" +
+        "LLM provider for this chat mode. Omit to use the default (google).\n\n" +
         "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
         "- `google` — Gemini models (flash-lite, flash, pro)",
       example: "google",
@@ -172,7 +172,7 @@ export const AppConfigResponseSchema = z
     systemPrompt: z.string(),
     allowedTools: z.array(z.string()),
     provider: z.enum(["anthropic", "google"]).nullable().openapi({
-      description: "LLM provider. Null means default (anthropic).",
+      description: "LLM provider. Null means default (google).",
     }),
     model: z.string().nullable().openapi({
       description: "Model alias. Null means provider default (sonnet for anthropic, pro for google).",
@@ -273,7 +273,7 @@ export const PlatformConfigRequestSchema = z
     }),
     provider: z.enum(["anthropic", "google"]).optional().openapi({
       description:
-        "LLM provider for this chat mode. Omit to use the default (anthropic).\n\n" +
+        "LLM provider for this chat mode. Omit to use the default (google).\n\n" +
         "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
         "- `google` — Gemini models (flash-lite, flash, pro)",
       example: "google",
@@ -308,7 +308,7 @@ export const PlatformConfigResponseSchema = z
     systemPrompt: z.string(),
     allowedTools: z.array(z.string()),
     provider: z.enum(["anthropic", "google"]).nullable().openapi({
-      description: "LLM provider. Null means default (anthropic).",
+      description: "LLM provider. Null means default (google).",
     }),
     model: z.string().nullable().openapi({
       description: "Model alias. Null means provider default (sonnet for anthropic, pro for google).",

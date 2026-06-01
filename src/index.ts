@@ -19,6 +19,7 @@ import {
   resolveModel,
 } from "./lib/anthropic.js";
 import type { Provider, ModelAlias } from "./lib/anthropic.js";
+import { resolveChatProviderModel, buildConfigConflictSet } from "./lib/config-defaults.js";
 import { isGeminiModel, completeWithGemini } from "./lib/gemini.js";
 import {
   createWorkflow,
@@ -206,11 +207,10 @@ app.put("/config", requireAuth, async (req, res) => {
     })
     .onConflictDoUpdate({
       target: [appConfigs.orgId, appConfigs.key],
+      // Omitted provider/model are left out of the SET so a re-registering app
+      // doesn't clobber an explicit stored override back to NULL.
       set: {
-        systemPrompt,
-        allowedTools,
-        provider: provider ?? null,
-        model: model ?? null,
+        ...buildConfigConflictSet({ systemPrompt, allowedTools, provider, model }),
         updatedAt: new Date(),
       },
     })
@@ -259,11 +259,10 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
     })
     .onConflictDoUpdate({
       target: [platformConfigs.key],
+      // Omitted provider/model are left out of the SET so a re-registering app
+      // doesn't clobber an explicit stored override back to NULL.
       set: {
-        systemPrompt,
-        allowedTools,
-        provider: provider ?? null,
-        model: model ?? null,
+        ...buildConfigConflictSet({ systemPrompt, allowedTools, provider, model }),
         updatedAt: new Date(),
       },
     })
@@ -1301,9 +1300,9 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   const allowedToolNames: string[] = appConfig.allowedTools as string[];
 
-  // Resolve provider/model from config (NULL = default: anthropic/sonnet)
-  const chatProvider = (appConfig.provider ?? "anthropic") as Provider;
-  const chatModelAlias = (appConfig.model ?? (chatProvider === "anthropic" ? "sonnet" : "pro")) as ModelAlias;
+  // Resolve provider/model from config (NULL = default: google/pro — Gemini is
+  // the platform default; the Anthropic platform key has no credit balance).
+  const { provider: chatProvider, modelAlias: chatModelAlias } = resolveChatProviderModel(appConfig);
   const resolvedModelInfo = resolveModel(chatProvider, chatModelAlias);
 
   // Resolve API key for the configured provider
