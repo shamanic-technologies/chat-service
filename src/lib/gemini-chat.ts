@@ -206,6 +206,69 @@ interface GeminiStreamChunk {
   };
 }
 
+/**
+ * SSE event boundary. Gemini's `alt=sse` stream frames events with any of these
+ * delimiters — mirrors the official `@google/genai` SDK (`processStreamResponse`:
+ * `delimiters = ['\n\n', '\r\r', '\r\n\r\n']`). Splitting on `"\n\n"` alone misses
+ * the `\r\n\r\n` framing the API actually sends, yielding zero parsed events.
+ */
+const SSE_EVENT_BOUNDARY = /\r\n\r\n|\r\r|\n\n/;
+/** Data-line prefix, stripped then trimmed — SDK uses `data:` (no required space). */
+const SSE_DATA_PREFIX = "data:";
+
+export interface ParsedGeminiSSE {
+  /** Fully-received, JSON-parsed content chunks (error chunks excluded). */
+  chunks: GeminiStreamChunk[];
+  /** Buffer tail after the last complete event boundary — re-feed on next read. */
+  rest: string;
+  /** Set when the stream carried a `{"error":{...}}` payload (HTTP 200 + in-band error). */
+  errorMessage?: string;
+}
+
+/**
+ * Parse complete SSE events out of an accumulating buffer. Returns the parsed
+ * chunks, any in-band error message, and the unconsumed tail (a partial event
+ * still being received). Faithful to the official SDK: tolerant of `\n\n`,
+ * `\r\r`, and `\r\n\r\n` framing and of `data:` with or without a trailing space.
+ */
+export function parseGeminiSSEBuffer(buffer: string): ParsedGeminiSSE {
+  const chunks: GeminiStreamChunk[] = [];
+  let rest = buffer;
+  let errorMessage: string | undefined;
+
+  let match: RegExpExecArray | null;
+  while ((match = SSE_EVENT_BOUNDARY.exec(rest)) !== null) {
+    const eventBlock = rest.slice(0, match.index);
+    rest = rest.slice(match.index + match[0].length);
+
+    // An event may span multiple `data:` lines (SDK joins them). Collect them.
+    const dataPayload = eventBlock
+      .split(/\r\n|\n|\r/)
+      .filter((line) => line.startsWith(SSE_DATA_PREFIX))
+      .map((line) => line.slice(SSE_DATA_PREFIX.length).trim())
+      .join("");
+
+    if (dataPayload === "" || dataPayload === "[DONE]") continue;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(dataPayload);
+    } catch {
+      continue;
+    }
+
+    if (parsed && typeof parsed === "object" && "error" in (parsed as Record<string, unknown>)) {
+      const errObj = (parsed as { error?: { message?: string } }).error;
+      errorMessage = errObj?.message ?? JSON.stringify((parsed as Record<string, unknown>).error);
+      continue;
+    }
+
+    chunks.push(parsed as GeminiStreamChunk);
+  }
+
+  return { chunks, rest, ...(errorMessage !== undefined ? { errorMessage } : {}) };
+}
+
 // ---------------------------------------------------------------------------
 // Main streaming function
 // ---------------------------------------------------------------------------
@@ -317,24 +380,16 @@ export async function streamGeminiChat(
 
         sseBuffer += decoder.decode(value, { stream: true });
 
-        // Process complete SSE events
-        let eventEnd: number;
-        while ((eventEnd = sseBuffer.indexOf("\n\n")) !== -1) {
-          const eventBlock = sseBuffer.slice(0, eventEnd);
-          sseBuffer = sseBuffer.slice(eventEnd + 2);
+        // Process complete SSE events (tolerant of \n\n, \r\r, \r\n\r\n framing).
+        const parsedSSE = parseGeminiSSEBuffer(sseBuffer);
+        sseBuffer = parsedSSE.rest;
 
-          // Extract data from SSE event
-          const dataLine = eventBlock.split("\n").find((l) => l.startsWith("data: "));
-          if (!dataLine) continue;
-          const jsonStr = dataLine.slice(6);
+        // HTTP 200 + in-band error payload — fail loud, never silently empty.
+        if (parsedSSE.errorMessage !== undefined) {
+          throw new Error(`[gemini-chat] streamed API error: ${parsedSSE.errorMessage}`);
+        }
 
-          let chunk: GeminiStreamChunk;
-          try {
-            chunk = JSON.parse(jsonStr);
-          } catch {
-            continue;
-          }
-
+        for (const chunk of parsedSSE.chunks) {
           // Track usage
           if (chunk.usageMetadata) {
             chunkTokensInput = chunk.usageMetadata.promptTokenCount ?? chunkTokensInput;
@@ -469,6 +524,22 @@ export async function streamGeminiChat(
     // Append model function calls + tool results to conversation
     turnMessages.push({ role: "model", parts: modelParts });
     turnMessages.push({ role: "user", parts: responseParts });
+  }
+
+  // Fail loud on a wholly-empty result (no text, no tool calls, no input
+  // request, no usage). A silent empty response surfaces to users as "the AI
+  // returned an empty response" with no diagnostic — surface it as a 502 with
+  // context instead. (This is the failure mode the SSE-framing bug produced.)
+  if (
+    !signal.aborted &&
+    fullResponse === "" &&
+    allToolCalls.length === 0 &&
+    !emittedInputRequest &&
+    totalTokensInput === 0
+  ) {
+    throw new Error(
+      `[gemini-chat] empty response from model=${model} — no content, tool calls, or usage parsed from the stream`,
+    );
   }
 
   return {
