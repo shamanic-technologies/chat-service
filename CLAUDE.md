@@ -52,9 +52,16 @@ CI will warn if source files change without corresponding test changes. Do not s
 - `src/lib/mcp-client.ts` — MCP server connection via Streamable HTTP + tool execution
 - `src/lib/key-client.ts` — Key-service client for app-key and org-key decryption
 - `src/lib/runs-client.ts` — RunsService HTTP client for run tracking and cost reporting
+- `src/lib/config-defaults.ts` — Chat provider/model default resolution + registration merge semantics
 - `scripts/generate-openapi.ts` — Generates openapi.json from Zod schemas
 - `tests/` — Test files (`*.test.ts`)
 - `openapi.json` — Auto-generated, do NOT edit manually
+
+## Chat provider/model default — Gemini, in code (not the DB)
+
+The default LLM for `/chat` is **Gemini `google`/`pro`**, resolved in code by `resolveChatProviderModel` (`src/lib/config-defaults.ts`). A config row (`app_configs` / `platform_configs`) with `provider`/`model` NULL resolves to `google`/`pro` — **NOT** `anthropic`/`sonnet`. The Anthropic platform key has no credit balance; defaulting to it 400s every chat that uses a default config.
+
+Do NOT "fix" a provider switch by flipping the DB `provider`/`model` columns alone. That reverts: apps re-register their config at every cold start via `PUT /config` / `PUT /platform-config`, and the registration **must not clobber an omitted field**. Both handlers build their `onConflictDoUpdate.set` via `buildConfigConflictSet`, which includes `provider`/`model` ONLY when the caller actually supplied them — an omitted field keeps the stored value. **Never reintroduce `provider: provider ?? null` (or `model ?? null`) into the conflict `set`** — that resets every explicit override to NULL on the next app boot, which is exactly the bug that silently put all chat back on the dead Anthropic key (incident 2026-06-01, fixed v0.32.1). The `?? null` belongs only in the INSERT `.values` (a brand-new row legitimately starts NULL, then resolves to the Gemini default).
 
 ## Code Conventions
 
