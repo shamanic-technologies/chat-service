@@ -1,33 +1,13 @@
 import { describe, it, expect } from "vitest";
 import Anthropic from "@anthropic-ai/sdk";
+// isRetryableAnthropicError + getRetryAfterMs are the real implementations,
+// imported from the module they now live in (shared by /chat streaming and
+// complete()). No inlined copy — testing the actual code prevents drift.
+import { isRetryableAnthropicError, getRetryAfterMs } from "../../src/lib/anthropic.js";
 
 /**
- * Inline the isRetryableAnthropicError logic from src/index.ts for unit testing.
- * Mirrors the actual implementation.
- */
-function isRetryableAnthropicError(err: unknown): boolean {
-  if (!(err instanceof Anthropic.APIError)) return false;
-  const errorBody = err.error as { type?: string; error?: { type?: string } } | undefined;
-  if (errorBody?.error?.type === "overloaded_error") return true;
-  if (typeof err.status === "number" && [429, 500, 503, 529].includes(err.status)) return true;
-  return false;
-}
-
-/**
- * Inline getRetryAfterMs from src/index.ts.
- */
-function getRetryAfterMs(err: unknown): number | null {
-  if (!(err instanceof Anthropic.APIError)) return null;
-  const headers = err.headers as Headers | undefined;
-  if (!headers) return null;
-  const retryAfter = headers.get("retry-after");
-  if (!retryAfter) return null;
-  const seconds = Number(retryAfter);
-  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
-}
-
-/**
- * Inline classifyErrorForClient from src/index.ts.
+ * Inline classifyErrorForClient from src/index.ts (SSE-client-specific; stays in
+ * index.ts, which has server side-effects that make it unimportable here).
  */
 function classifyErrorForClient(err: unknown): { message: string; code: string } {
   if (err instanceof Anthropic.APIError) {

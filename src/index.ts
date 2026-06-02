@@ -17,6 +17,10 @@ import {
   COST_PREFIX,
   costPrefixForModel,
   resolveModel,
+  isRetryableAnthropicError,
+  getRetryAfterMs,
+  ANTHROPIC_STREAM_MAX_RETRIES,
+  ANTHROPIC_STREAM_RETRY_BASE_MS,
 } from "./lib/anthropic.js";
 import type { Provider, ModelAlias } from "./lib/anthropic.js";
 import { resolveChatProviderModel, buildConfigConflictSet } from "./lib/config-defaults.js";
@@ -80,41 +84,9 @@ import { buildContextUsageEvent } from "./lib/context-usage.js";
 // ---------------------------------------------------------------------------
 // Anthropic stream retry
 // ---------------------------------------------------------------------------
-
-/** Max retries for Anthropic streaming on transient errors. */
-const ANTHROPIC_STREAM_MAX_RETRIES = 2;
-
-/** Base delay for Anthropic stream retry backoff in ms. */
-const ANTHROPIC_STREAM_RETRY_BASE_MS = 2_000;
-
-/**
- * Check if an Anthropic error is retryable (overloaded, rate-limited, or server error).
- * Only safe to retry if no tokens have been emitted to the client yet.
- */
-function isRetryableAnthropicError(err: unknown): boolean {
-  if (!(err instanceof Anthropic.APIError)) return false;
-  // During streaming, the SDK throws `new APIError(undefined, parsedBody, ...)` directly.
-  // The `error` property is the raw SSE payload: { type: "error", error: { type: "overloaded_error", ... } }
-  const errorBody = err.error as { type?: string; error?: { type?: string } } | undefined;
-  if (errorBody?.error?.type === "overloaded_error") return true;
-  // Standard retryable HTTP statuses (non-streaming or future SDK changes)
-  if (typeof err.status === "number" && [429, 500, 503, 529].includes(err.status)) return true;
-  return false;
-}
-
-/**
- * Extract retry-after delay from an Anthropic error's response headers.
- * Returns the delay in ms, or null if the header is missing.
- */
-function getRetryAfterMs(err: unknown): number | null {
-  if (!(err instanceof Anthropic.APIError)) return null;
-  const headers = err.headers as Headers | undefined;
-  if (!headers) return null;
-  const retryAfter = headers.get("retry-after");
-  if (!retryAfter) return null;
-  const seconds = Number(retryAfter);
-  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
-}
+// Retry constants + transient-error helpers (isRetryableAnthropicError,
+// getRetryAfterMs) live in ./lib/anthropic.js — shared by the /chat streaming
+// loop here and the non-streaming complete() retry. Imported above.
 
 /**
  * Classify an error for the SSE error event sent to the client.
