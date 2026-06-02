@@ -788,7 +788,7 @@ src/
     index.ts        # Drizzle client init
     schema.ts       # sessions + messages + app_configs + platform_configs table definitions
   lib/
-    anthropic.ts       # Claude AI client (Sonnet 4.6), streaming + non-streaming, tool calling, adaptive thinking, context management (compaction), built-in tool declarations. Streaming retries transient errors (overloaded, 429, 5xx) up to 2× with exponential backoff when no tokens have been emitted yet
+    anthropic.ts       # Claude AI client (Sonnet 4.6), streaming + non-streaming, tool calling, adaptive thinking, context management (compaction), built-in tool declarations. Both paths retry transient errors (overloaded, 429, 5xx) up to 2× with exponential backoff: streaming (/chat) only when no tokens have been emitted yet; non-streaming complete() (/complete, /internal/platform-complete) always, since finalMessage() resolves atomically
     gemini.ts          # Gemini REST API client (non-streaming) — retry with exponential backoff (3 retries) + fallback to stable 2.5 models on failure
     gemini-chat.ts     # Gemini streaming chat client — streaming + function calling for /chat endpoint
     merge-messages.ts  # Ensures alternating user/assistant roles by merging orphaned consecutive same-role messages

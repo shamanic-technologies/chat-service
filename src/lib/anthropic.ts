@@ -14,6 +14,52 @@ const ANTHROPIC_TIMEOUT_MS: Record<string, number> = {
 const DEFAULT_ANTHROPIC_TIMEOUT_MS = 10 * 60_000; // 10 min fallback
 
 // ---------------------------------------------------------------------------
+// Transient-error retry (shared by streaming /chat and non-streaming complete())
+// ---------------------------------------------------------------------------
+
+/** Max retries on transient Anthropic errors (overloaded, 429, 5xx). */
+export const ANTHROPIC_STREAM_MAX_RETRIES = 2;
+
+/** Base delay for Anthropic retry backoff in ms. */
+export const ANTHROPIC_STREAM_RETRY_BASE_MS = 2_000;
+
+/**
+ * Check if an Anthropic error is retryable (overloaded, rate-limited, or server error).
+ * For streaming, the SDK throws `new APIError(undefined, parsedBody, ...)` mid-stream with
+ * `status === undefined` — the retryable signal lives in the SSE payload `error.type`.
+ */
+export function isRetryableAnthropicError(err: unknown): boolean {
+  if (!(err instanceof Anthropic.APIError)) return false;
+  // During streaming, the SDK throws `new APIError(undefined, parsedBody, ...)` directly.
+  // The `error` property is the raw SSE payload: { type: "error", error: { type: "overloaded_error", ... } }
+  const errorBody = err.error as { type?: string; error?: { type?: string } } | undefined;
+  if (errorBody?.error?.type === "overloaded_error") return true;
+  // Standard retryable HTTP statuses (non-streaming or future SDK changes)
+  if (typeof err.status === "number" && [429, 500, 503, 529].includes(err.status)) return true;
+  return false;
+}
+
+/**
+ * Extract retry-after delay from an Anthropic error's response headers.
+ * Returns the delay in ms, or null if the header is missing.
+ */
+export function getRetryAfterMs(err: unknown): number | null {
+  if (!(err instanceof Anthropic.APIError)) return null;
+  const headers = err.headers as Headers | undefined;
+  if (!headers) return null;
+  const retryAfter = headers.get("retry-after");
+  if (!retryAfter) return null;
+  const seconds = Number(retryAfter);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+}
+
+/** Backoff delay for retry attempt N: respects retry-after, else exponential + jitter. */
+function anthropicRetryDelayMs(err: unknown, attempt: number): number {
+  const retryAfter = getRetryAfterMs(err);
+  return retryAfter ?? (ANTHROPIC_STREAM_RETRY_BASE_MS * 2 ** attempt + Math.random() * 500);
+}
+
+// ---------------------------------------------------------------------------
 // Provider + model alias → versioned API model ID + cost prefix
 // Callers specify version-free aliases (e.g. "sonnet"); the service resolves
 // the latest versioned model ID internally.
@@ -1154,11 +1200,37 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       // Use streaming transport. Anthropic SDK rejects non-streaming requests
       // when max_tokens implies >10 min runtime ("Streaming is required..."),
       // so we stream under the hood and assemble the final Message.
-      const stream = client.messages.stream(
-        params as unknown as Anthropic.MessageStreamParams,
-        { timeout: timeoutMs },
-      );
-      const response = await stream.finalMessage();
+      //
+      // Retry transient errors (overloaded, 429, 5xx) up to ANTHROPIC_STREAM_MAX_RETRIES
+      // with exponential backoff. complete() is non-streaming from the caller's view —
+      // finalMessage() resolves the entire response atomically, so no partial tokens are
+      // emitted and the whole call is always safe to retry. The SDK's own maxRetries does
+      // NOT cover the overloaded_error event Anthropic pushes mid-stream after a 200 OK
+      // (the stack surfaces in MessageStream._createMessage → Stream.iterator), which is
+      // exactly the failure mode this loop catches.
+      let response: Anthropic.Message;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const stream = client.messages.stream(
+            params as unknown as Anthropic.MessageStreamParams,
+            { timeout: timeoutMs },
+          );
+          response = await stream.finalMessage();
+          break;
+        } catch (err) {
+          if (isRetryableAnthropicError(err) && attempt < ANTHROPIC_STREAM_MAX_RETRIES) {
+            const delay = anthropicRetryDelayMs(err, attempt);
+            console.warn(
+              `[anthropic] complete() retry ${attempt + 1}/${ANTHROPIC_STREAM_MAX_RETRIES} ` +
+                `after ${Math.round(delay)}ms | model=${effectiveModel} | ` +
+                `error=${err instanceof Error ? err.message : String(err)}`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            continue;
+          }
+          throw err; // Non-retryable or retries exhausted — propagate (route maps to 502)
+        }
+      }
 
       if (response.stop_reason === "max_tokens") {
         console.warn(
