@@ -52,9 +52,28 @@ CI will warn if source files change without corresponding test changes. Do not s
 - `src/lib/mcp-client.ts` — MCP server connection via Streamable HTTP + tool execution
 - `src/lib/key-client.ts` — Key-service client for app-key and org-key decryption
 - `src/lib/runs-client.ts` — RunsService HTTP client for run tracking and cost reporting
+- `src/lib/config-defaults.ts` — Chat provider/model default resolution + registration merge semantics
 - `scripts/generate-openapi.ts` — Generates openapi.json from Zod schemas
 - `tests/` — Test files (`*.test.ts`)
 - `openapi.json` — Auto-generated, do NOT edit manually
+
+## Chat provider/model default — Gemini, in code (not the DB)
+
+The default LLM for `/chat` is **Gemini `google`/`pro`**, resolved in code by `resolveChatProviderModel` (`src/lib/config-defaults.ts`). A config row (`app_configs` / `platform_configs`) with `provider`/`model` NULL resolves to `google`/`pro` — **NOT** `anthropic`/`sonnet`. The Anthropic platform key has no credit balance; defaulting to it 400s every chat that uses a default config.
+
+Do NOT "fix" a provider switch by flipping the DB `provider`/`model` columns alone. That reverts: apps re-register their config at every cold start via `PUT /config` / `PUT /platform-config`, and the registration **must not clobber an omitted field**. Both handlers build their `onConflictDoUpdate.set` via `buildConfigConflictSet`, which includes `provider`/`model` ONLY when the caller actually supplied them — an omitted field keeps the stored value. **Never reintroduce `provider: provider ?? null` (or `model ?? null`) into the conflict `set`** — that resets every explicit override to NULL on the next app boot, which is exactly the bug that silently put all chat back on the dead Anthropic key (incident 2026-06-01, fixed v0.32.1). The `?? null` belongs only in the INSERT `.values` (a brand-new row legitimately starts NULL, then resolves to the Gemini default).
+
+## Gemini `/chat` streaming — SSE framing must stay tolerant
+
+`/chat` on `provider:"google"` streams via `gemini-chat.ts:streamGeminiChat`. Gemini's `:streamGenerateContent?alt=sse` stream frames events with **any of `\n\n`, `\r\r`, `\r\n\r\n`** and may emit `data:` with or without a trailing space — exactly what Google's official `@google/genai` SDK handles (`processStreamResponse`: `delimiters = ['\n\n', '\r\r', '\r\n\r\n']`, prefix `data:`). `parseGeminiSSEBuffer` mirrors this. **Never narrow it back to `indexOf("\n\n")` or `startsWith("data: ")`** — the real stream uses `\r\n\r\n`, so an `\n\n`-only parser yields ZERO events and an empty chat response with HTTP 200 and no error (incident 2026-06-01, fixed v0.32.2; the bug hid for the whole Anthropic-only period because the streaming parser had no test coverage). The Gemini stream path must also **fail loud**, not return `""`: throw on an in-band `{"error":...}` chunk and on a wholly-empty stream (no content, tool calls, or usage). When touching any provider's streaming parser, confirm the wire framing against that provider's official SDK source, not an assumption.
+
+### Gemini 3 thought signatures — required on tool-call replay
+
+Gemini 3 enforces [thought signatures](https://ai.google.dev/gemini-api/docs/thought-signatures): a `functionCall` part returned by the model carries an opaque `thoughtSignature` that **must be echoed back in the same part on every later request**, or the API returns `400 INVALID_ARGUMENT: Function call ... is missing a thought_signature`. (Gemini 2.5 only warns; Gemini 3 hard-400s.) `gemini-chat.ts` captures `part.thoughtSignature` from the stream, persists it on `ToolCallRecord.thoughtSignature` (jsonb), and re-attaches it on replay (`toGeminiHistory`) and in the agentic loop's `modelParts`. For tool calls recorded before the field existed (no stored signature), it injects Google's sanctioned bypass value **`skip_thought_signature_validator`**. **Never drop `thoughtSignature` from a replayed `functionCall` part** — every functionCall sent in history must carry one (real or the dummy), or multi-turn tool chats 400 on the second turn (incident 2026-06-01, fixed v0.32.3).
+
+### Gemini 3 `functionResponse` — `$ref` in tool results must be sanitized
+
+Gemini 3 reads `{"$ref": "<name>"}` inside a `functionResponse.response` as a reference to a **multimodal part** (the model substitutes the named part — see the [function-calling docs](https://ai.google.dev/gemini-api/docs/function-calling)). Tool results that embed JSON-Schema / OpenAPI `$ref`s — e.g. the api-registry / endpoint tools returning `{"$ref": "#/components/schemas/OrgId"}` — collide: the name matches no part `displayName`, so the API returns `400 INVALID_ARGUMENT: ... does not match to a display_name ...` and kills the chat turn. `sanitizeGeminiToolResponse` recursively renames every `$ref` key to `ref` (value preserved as plain data) and is applied to **both** the live tool result and the replayed result in `toGeminiHistory` (stored `tool_calls` carry the raw `$ref`). **Never send a tool result into `functionResponse.response` without this pass** (incident 2026-06-01, fixed v0.32.4). Only the `{"$ref": ...}` key form triggers it — a bare string containing `#/...` is harmless.
 
 ## Code Conventions
 

@@ -147,3 +147,81 @@ export async function updateRunCostStatus(
     trackingHeaders,
   );
 }
+
+// --- Platform runs (no org/user identity — system-level callers) -------------
+//
+// Platform runs let internal, org-less calls (e.g. /internal/platform-complete
+// used for startup workflow upgrades) declare their LLM spend. Auth is
+// x-api-key + x-service-name only — no x-org-id/x-user-id/x-run-id. There is no
+// cost-status PATCH on platform runs, so callers declare costs as `actual`
+// after the call rather than provision→cancel.
+
+function buildPlatformHeaders(serviceName: string): Record<string, string> {
+  if (!RUNS_SERVICE_API_KEY) {
+    throw new Error("[runs-client] RUNS_SERVICE_API_KEY is required");
+  }
+  return {
+    "Content-Type": "application/json",
+    "x-api-key": RUNS_SERVICE_API_KEY,
+    "x-service-name": serviceName,
+  };
+}
+
+async function platformRunsRequest<T>(
+  method: string,
+  path: string,
+  serviceName: string,
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(`${RUNS_SERVICE_URL}${path}`, {
+    method,
+    headers: buildPlatformHeaders(serviceName),
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `[runs-client] ${method} ${path} returned ${res.status}: ${text}`,
+    );
+  }
+  return (await res.json()) as T;
+}
+
+export async function createPlatformRun(
+  params: CreateRunParams,
+): Promise<RunsRun> {
+  return platformRunsRequest<RunsRun>(
+    "POST",
+    "/v1/platform-runs",
+    params.serviceName,
+    { serviceName: params.serviceName, taskName: params.taskName },
+  );
+}
+
+export async function addPlatformRunCosts(
+  id: string,
+  serviceName: string,
+  items: CostItem[],
+): Promise<RunCost[]> {
+  if (items.length === 0) return [];
+  const res = await platformRunsRequest<{ costs: RunCost[] }>(
+    "POST",
+    `/v1/platform-runs/${id}/costs`,
+    serviceName,
+    { items },
+  );
+  return res.costs;
+}
+
+export async function updatePlatformRunStatus(
+  id: string,
+  serviceName: string,
+  status: "completed" | "failed",
+): Promise<RunsRun> {
+  return platformRunsRequest<RunsRun>(
+    "PATCH",
+    `/v1/platform-runs/${id}`,
+    serviceName,
+    { status },
+  );
+}

@@ -413,6 +413,16 @@ export const CompleteRequestSchema = z
         "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|pro.",
       example: "sonnet",
     }),
+    webSearch: z.boolean().optional().openapi({
+      description:
+        "Opt-in native web search. When true, the resolved provider answers using its OWN " +
+        "native web search — Google Search grounding for `google`, the server-side `web_search` " +
+        "tool for `anthropic` — so the response reflects live web content instead of the model's " +
+        "parametric memory. Citation source URLs are appended to `content` (text mode only). " +
+        "Omitted or false = no grounding, byte-identical to a non-grounded call (no extra cost). " +
+        "The web-search cost is metered per query/search and billed in addition to tokens.",
+      example: true,
+    }),
     imageUrl: z.string().url().optional().openapi({
       description: "URL of an image to include in the prompt. The image is fetched server-side and sent to the model as a visual input. Supported by all models, but recommended with provider: \"google\", model: \"flash-lite\" for cost-effective vision tasks (image classification, scoring, analysis).",
       example: "https://example.com/images/hero.jpg",
@@ -591,6 +601,15 @@ export const InternalPlatformCompleteRequestSchema = z
     model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "pro"]).openapi({
       description: "Model alias (version-free).",
       example: "sonnet",
+    }),
+    webSearch: z.boolean().optional().openapi({
+      description:
+        "Opt-in native web search. When true, the resolved provider answers using its OWN native " +
+        "web search (Google Search grounding for `google`, server-side `web_search` for `anthropic`). " +
+        "Citation source URLs are appended to `content` (text mode only). Omitted or false = no " +
+        "grounding, byte-identical to a non-grounded call. The web-search cost is declared on the " +
+        "platform run in addition to tokens.",
+      example: true,
     }),
   })
   .openapi("InternalPlatformCompleteRequest");
