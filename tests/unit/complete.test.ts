@@ -30,6 +30,44 @@ describe("CompleteRequestSchema", () => {
     }
   });
 
+  it("accepts webSearch boolean (true)", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "who won the match?",
+      systemPrompt: "Be brief.",
+      provider: "google",
+      model: "flash",
+      webSearch: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.webSearch).toBe(true);
+    }
+  });
+
+  it("defaults webSearch to undefined when omitted (no silent default)", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.webSearch).toBeUndefined();
+    }
+  });
+
+  it("rejects non-boolean webSearch", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      provider: "anthropic",
+      model: "sonnet",
+      webSearch: "yes",
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("accepts optional responseSchema (JSON Schema object)", () => {
     const schema = {
       type: "object",

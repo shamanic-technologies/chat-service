@@ -131,6 +131,32 @@ function mockGeminiComplete(cap: { calls: number }) {
   } satisfies MockRoute;
 }
 
+// Grounded Gemini response: 3 search queries + 1 source chunk.
+function mockGeminiGrounded(cap: { calls: number }) {
+  return {
+    match: (url: string) => url.includes(":generateContent") && url.includes("generativelanguage.googleapis.com"),
+    respond: () => {
+      cap.calls += 1;
+      return {
+        ok: true,
+        body: {
+          candidates: [
+            {
+              content: { parts: [{ text: "Live answer." }] },
+              finishReason: "STOP",
+              groundingMetadata: {
+                webSearchQueries: ["q1", "q2", "q3"],
+                groundingChunks: [{ web: { uri: "https://src.example/1", title: "Src 1" } }],
+              },
+            },
+          ],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+        },
+      };
+    },
+  } satisfies MockRoute;
+}
+
 const AUTH = { "x-api-key": "test-key", "x-org-id": "org-1", "x-user-id": "user-1", "x-run-id": "parent-run-1" };
 
 describe("POST /complete — cost provision → authorize → execute → reconcile", () => {
@@ -203,6 +229,43 @@ describe("POST /complete — cost provision → authorize → execute → reconc
 
     expect(res.status).toBe(502);
     expect(gemini.calls).toBe(0);
+  });
+
+  it("webSearch:true provisions + authorizes + actuals the google-search-query cost and appends Sources", async () => {
+    const cap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>, patchedStatuses: [] as string[] };
+    const gemini = { calls: 0 };
+    routes.push(mockRunsCreate(), mockKeyDecrypt(), mockBilling(), mockGeminiGrounded(gemini), ...mockRunsCostRoutes(cap), mockRunsStatusPatch());
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "who won?", systemPrompt: "be brief", provider: "google", model: "flash", webSearch: true });
+
+    expect(res.status).toBe(200);
+    expect(gemini.calls).toBe(1);
+
+    // PROVISION: 3 worst-case items incl the google-search-query hold (qty 5).
+    const provision = cap.postedItems[0];
+    expect(provision).toHaveLength(3);
+    expect(provision.every((i) => i.status === "provisioned")).toBe(true);
+    expect(provision.map((i) => i.costName).sort()).toEqual([
+      "google-flash-3-tokens-input",
+      "google-flash-3-tokens-output",
+      "google-search-query",
+    ]);
+    expect(provision.find((i) => i.costName === "google-search-query")!.quantity).toBe(5);
+
+    // ACTUAL: google-search-query records the REAL query count (3).
+    const actual = cap.postedItems.find((items) => items.some((i) => i.status === undefined));
+    expect(actual).toBeDefined();
+    expect(actual!.find((i) => i.costName === "google-search-query")!.quantity).toBe(3);
+
+    // Citation source URLs surface in the response content text.
+    expect(res.body.content).toContain("Sources:");
+    expect(res.body.content).toContain("https://src.example/1");
+
+    // RECONCILE: all 3 provisioned holds cancelled.
+    expect(cap.patchedStatuses.filter((s) => s === "cancelled")).toHaveLength(3);
   });
 
   it("returns 402 and does NOT call the model when billing reports insufficient credits", async () => {

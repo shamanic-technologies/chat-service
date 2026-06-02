@@ -74,6 +74,19 @@ interface GeminiCompleteOptions {
    */
   responseSchema?: Record<string, unknown>;
   temperature?: number;
+  /**
+   * Opt-in native Google Search grounding. When true, the request attaches the
+   * `googleSearch` tool so Gemini answers from live web results instead of
+   * parametric memory. Default (false/undefined) is byte-identical to a
+   * non-grounded call. See POST /complete `webSearch`.
+   */
+  webSearch?: boolean;
+}
+
+/** A web source surfaced by native grounding/search (provider-agnostic shape). */
+export interface WebSearchSource {
+  url: string;
+  title?: string;
 }
 
 interface GeminiCompleteResult {
@@ -81,6 +94,10 @@ interface GeminiCompleteResult {
   tokensInput: number;
   tokensOutput: number;
   model: string;
+  /** Number of Google Search queries the model ran (0 when grounding is off). */
+  searchCount: number;
+  /** Grounding source URLs surfaced via groundingMetadata (empty when off). */
+  sources: WebSearchSource[];
 }
 
 /**
@@ -162,6 +179,10 @@ async function callGeminiOnce(
     candidates?: Array<{
       content?: { parts?: Array<{ text?: string }> };
       finishReason?: string;
+      groundingMetadata?: {
+        webSearchQueries?: string[];
+        groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+      };
     }>;
     usageMetadata?: {
       promptTokenCount?: number;
@@ -187,11 +208,26 @@ async function callGeminiOnce(
       ?.map((p) => p.text ?? "")
       .join("") ?? "";
 
+  // Grounding metadata (present only when the googleSearch tool ran).
+  const grounding = data.candidates?.[0]?.groundingMetadata;
+  const searchCount = grounding?.webSearchQueries?.length ?? 0;
+  const seen = new Set<string>();
+  const sources: WebSearchSource[] = [];
+  for (const chunk of grounding?.groundingChunks ?? []) {
+    const uri = chunk.web?.uri;
+    if (typeof uri === "string" && uri.length > 0 && !seen.has(uri)) {
+      seen.add(uri);
+      sources.push({ url: uri, title: chunk.web?.title });
+    }
+  }
+
   return {
     content,
     tokensInput: data.usageMetadata?.promptTokenCount ?? 0,
     tokensOutput: data.usageMetadata?.candidatesTokenCount ?? 0,
     model,
+    searchCount,
+    sources,
   };
 }
 
@@ -289,6 +325,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     responseFormat,
     responseSchema,
     temperature,
+    webSearch,
   } = options;
 
   // Passing a responseSchema implies JSON mode regardless of responseFormat.
@@ -331,7 +368,9 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     }
   }
 
-  // Build request body
+  // Build request body. When webSearch is on, attach the native googleSearch
+  // grounding tool so Gemini answers from live web results. Omitted entirely
+  // when off, keeping non-grounded requests byte-identical.
   const body: Record<string, unknown> = {
     contents: [{ parts }],
     systemInstruction: { parts: [{ text: systemPrompt }] },
@@ -340,6 +379,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
       ...(sanitizedSchema != null ? { responseSchema: sanitizedSchema } : {}),
     },
+    ...(webSearch ? { tools: [{ googleSearch: {} }] } : {}),
   };
 
   // --- Retry loop on the primary model ---

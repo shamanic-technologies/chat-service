@@ -32,7 +32,7 @@ import {
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
-import { createRun, updateRunStatus, addRunCosts, updateRunCostStatus, type CostItem, type RunIdentityHeaders } from "./lib/runs-client.js";
+import { createRun, updateRunStatus, addRunCosts, updateRunCostStatus, createPlatformRun, addPlatformRunCosts, updatePlatformRunStatus, type CostItem, type RunIdentityHeaders } from "./lib/runs-client.js";
 import { traceEvent } from "./lib/trace-event.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
 import { extractBrandFields, BrandError } from "./lib/brand-client.js";
@@ -297,7 +297,8 @@ app.post("/complete", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, imageUrl, imageContext } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, imageUrl, imageContext, webSearch: webSearchRaw } = parsed.data;
+  const webSearch = webSearchRaw === true;
 
   // Passing a responseSchema implies JSON-mode parsing of the response.
   const jsonMode = responseFormat === "json" || responseSchema != null;
@@ -307,6 +308,9 @@ app.post("/complete", requireAuth, async (req, res) => {
   const effectiveModel = resolved.apiModelId;
   const isGemini = resolved.provider === "google";
   const provider = resolved.provider;
+
+  // Native web-search cost name (byte-equal to costs-service catalog) — only when opted in.
+  const searchCostName = webSearch ? webSearchCostName(isGemini) : undefined;
 
   // Anthropic JSON mode requires `responseSchema` — Anthropic API has no native
   // standalone JSON-mode flag; enforcement is only available via
@@ -367,6 +371,7 @@ app.post("/complete", requireAuth, async (req, res) => {
   let completeFailed = false;
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
+  let totalSearchCount = 0;
   let provisionedCostIds: string[] = [];
   try {
     // PROVISION worst case → AUTHORIZE (platform) before the LLM call. Fail loud — never
@@ -381,6 +386,8 @@ app.post("/complete", requireAuth, async (req, res) => {
         identity: { orgId, userId, runId },
         trackingHeaders,
         description: `complete — ${effectiveModel}`,
+        searchCostName,
+        searchQuantity: webSearch ? WORST_CASE_SEARCHES : undefined,
       });
     } catch (costErr) {
       completeFailed = true;
@@ -388,7 +395,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       return res.status(r.status).json(r.body);
     }
 
-    let result: { content: string; tokensInput: number; tokensOutput: number; model: string };
+    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }> };
 
     if (runId) {
       traceEvent(runId, "llm-call-start", { orgId, userId }, workflowTracking, {
@@ -407,6 +414,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         responseFormat,
         responseSchema,
         temperature,
+        webSearch,
       });
     } else {
       const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
@@ -416,11 +424,13 @@ app.post("/complete", requireAuth, async (req, res) => {
         temperature,
         model: effectiveModel,
         imageUrl,
+        webSearch,
       });
     }
 
     totalPromptTokens = result.tokensInput;
     totalOutputTokens = result.tokensOutput;
+    totalSearchCount = result.searchCount;
 
     if (runId) {
       traceEvent(runId, "llm-call-done", { orgId, userId }, workflowTracking, {
@@ -433,9 +443,11 @@ app.post("/complete", requireAuth, async (req, res) => {
       });
     }
 
-    // Build response
+    // Build response. In text mode, surface native-search citation URLs in the
+    // answer text itself. In JSON mode, leave content untouched — the provider
+    // returns strict JSON and appending a Sources block would corrupt the parse.
     const response: Record<string, unknown> = {
-      content: result.content,
+      content: jsonMode ? result.content : appendSources(result.content, result.sources),
       tokensInput: result.tokensInput,
       tokensOutput: result.tokensOutput,
       model: result.model,
@@ -475,6 +487,9 @@ app.post("/complete", requireAuth, async (req, res) => {
           : []),
         ...(totalOutputTokens > 0
           ? [{ costName: `${effectiveCostPrefix}-tokens-output`, quantity: totalOutputTokens, costSource }]
+          : []),
+        ...(searchCostName && totalSearchCount > 0
+          ? [{ costName: searchCostName, quantity: totalSearchCount, costSource }]
           : []),
       ];
       try {
@@ -631,6 +646,42 @@ async function cancelProvisionedCosts(
 }
 
 /**
+ * Append a deduped `Sources:` block of citation URLs to the model's text answer.
+ * Used when native web search ran, so the live source URLs surface in the
+ * response `content` itself (both providers return them in metadata, not prose;
+ * Anthropic's ToS also requires citing sources when displaying search output).
+ * No-op when there are no sources — preserves byte-identical non-grounded output.
+ */
+function appendSources(
+  content: string,
+  sources: Array<{ url: string; title?: string }>,
+): string {
+  if (!sources || sources.length === 0) return content;
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const s of sources) {
+    if (!s.url || seen.has(s.url)) continue;
+    seen.add(s.url);
+    lines.push(s.title ? `- ${s.title}: ${s.url}` : `- ${s.url}`);
+  }
+  if (lines.length === 0) return content;
+  return `${content}\n\nSources:\n${lines.join("\n")}`;
+}
+
+/**
+ * Resolve the byte-equal web-search cost-catalog name for a provider.
+ * Gemini → `google-search-query` (Google Search grounding, exists in catalog).
+ * Anthropic → `anthropic-web-search` (server-side web_search). Both must match
+ * the costs-service catalog exactly or runs-service 422s.
+ */
+function webSearchCostName(isGemini: boolean): string {
+  return isGemini ? "google-search-query" : "anthropic-web-search";
+}
+
+/** Worst-case web-search count provisioned/authorized before a call (reconciled to actual after). */
+const WORST_CASE_SEARCHES = 5;
+
+/**
  * Provision the worst-case LLM cost (input estimate + output max) as two `provisioned`
  * rows. Output tokens are unknown pre-call, so reserve the max and true up to actual
  * after (POST actual + cancel these holds). Returns the provisioned cost ids. Throws if
@@ -644,11 +695,17 @@ async function provisionLlmCost(args: {
   keySource: "org" | "platform";
   identity: RunIdentityHeaders;
   trackingHeaders: Record<string, string>;
+  /** When set (webSearch on), also provision a worst-case web-search hold. */
+  searchCostName?: string;
+  searchQuantity?: number;
 }): Promise<string[]> {
-  const { runId, costPrefix, inputTokens, outputTokens, keySource, identity, trackingHeaders } = args;
+  const { runId, costPrefix, inputTokens, outputTokens, keySource, identity, trackingHeaders, searchCostName, searchQuantity } = args;
   const items: CostItem[] = [
     { costName: `${costPrefix}-tokens-input`, quantity: inputTokens, costSource: keySource, status: "provisioned" },
     { costName: `${costPrefix}-tokens-output`, quantity: outputTokens, costSource: keySource, status: "provisioned" },
+    ...(searchCostName && searchQuantity
+      ? [{ costName: searchCostName, quantity: searchQuantity, costSource: keySource, status: "provisioned" as const }]
+      : []),
   ];
   const costs = await addRunCosts(runId, items, identity, trackingHeaders);
   return costs.map((c) => c.id);
@@ -669,8 +726,11 @@ async function provisionAndAuthorizeLlmCost(args: {
   identity: RunIdentityHeaders;
   trackingHeaders: Record<string, string>;
   description: string;
+  /** When set (webSearch on), provision + authorize a worst-case web-search hold. */
+  searchCostName?: string;
+  searchQuantity?: number;
 }): Promise<string[]> {
-  const { runId, costPrefix, inputTokens, outputTokens, keySource, identity, trackingHeaders, description } = args;
+  const { runId, costPrefix, inputTokens, outputTokens, keySource, identity, trackingHeaders, description, searchCostName, searchQuantity } = args;
   const costIds = await provisionLlmCost(args);
   if (keySource === "platform") {
     try {
@@ -678,6 +738,9 @@ async function provisionAndAuthorizeLlmCost(args: {
         items: [
           { costName: `${costPrefix}-tokens-input`, quantity: inputTokens },
           { costName: `${costPrefix}-tokens-output`, quantity: outputTokens },
+          ...(searchCostName && searchQuantity
+            ? [{ costName: searchCostName, quantity: searchQuantity }]
+            : []),
         ],
         description,
         orgId: identity.orgId,
@@ -1173,7 +1236,7 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
   }
 });
 
-// --- Internal Platform Complete (no billing, no run tracking) ---
+// --- Internal Platform Complete (platform run tracking + cost, no org billing) ---
 
 app.post("/internal/platform-complete", requireInternalAuth, async (req, res) => {
   const parsed = InternalPlatformCompleteRequestSchema.safeParse(req.body);
@@ -1183,12 +1246,16 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, webSearch: webSearchRaw } = parsed.data;
+  const webSearch = webSearchRaw === true;
 
   const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
   const effectiveModel = resolved.apiModelId;
   const isGemini = resolved.provider === "google";
   const provider = resolved.provider;
+  const costPrefix = resolved.costPrefix;
+  // Native web-search cost name (byte-equal to costs-service catalog) — only when opted in.
+  const searchCostName = webSearch ? webSearchCostName(isGemini) : undefined;
 
   // Passing a responseSchema implies JSON-mode parsing of the response.
   const jsonMode = responseFormat === "json" || responseSchema != null;
@@ -1215,8 +1282,23 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
     });
   }
 
+  // Create a platform run so LLM (and web-search) spend is declared. Platform
+  // key spend, no org → costSource "platform", no affordability authorize. Fail
+  // loud — a cost that can't be tracked must block the op, not silently spend.
+  let runId: string;
   try {
-    let result: { content: string; tokensInput: number; tokensOutput: number; model: string };
+    const run = await createPlatformRun({ serviceName: "chat-service", taskName: "platform-complete" });
+    runId = run.id;
+  } catch (runErr) {
+    console.error(`[internal/platform-complete] platform-run creation failed:`, runErr);
+    return res.status(502).json({
+      error: "Service temporarily unavailable (run tracking). Please try again.",
+    });
+  }
+
+  let platformFailed = false;
+  try {
+    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }> };
 
     if (isGemini) {
       result = await completeWithGemini({
@@ -1227,6 +1309,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
         responseFormat,
         responseSchema,
         temperature,
+        webSearch,
       });
     } else {
       const claude = createAnthropicClient({ apiKey, systemPrompt });
@@ -1235,11 +1318,28 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
         responseSchema,
         temperature,
         model: effectiveModel,
+        webSearch,
       });
     }
 
+    // Declare ACTUAL costs on the platform run BEFORE responding. Platform runs
+    // have no cost-status PATCH, so there is no provision/cancel — costs are
+    // posted as `actual` post-call. Throws (fail loud → 502) if undeclarable.
+    const costItems: CostItem[] = [
+      ...(result.tokensInput > 0
+        ? [{ costName: `${costPrefix}-tokens-input`, quantity: result.tokensInput, costSource: "platform" as const }]
+        : []),
+      ...(result.tokensOutput > 0
+        ? [{ costName: `${costPrefix}-tokens-output`, quantity: result.tokensOutput, costSource: "platform" as const }]
+        : []),
+      ...(searchCostName && result.searchCount > 0
+        ? [{ costName: searchCostName, quantity: result.searchCount, costSource: "platform" as const }]
+        : []),
+    ];
+    await addPlatformRunCosts(runId, "chat-service", costItems);
+
     const response: Record<string, unknown> = {
-      content: result.content,
+      content: jsonMode ? result.content : appendSources(result.content, result.sources),
       tokensInput: result.tokensInput,
       tokensOutput: result.tokensOutput,
       model: result.model,
@@ -1252,10 +1352,17 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
 
     res.json(response);
   } catch (err) {
+    platformFailed = true;
     console.error(`[internal/platform-complete] LLM call failed:`, err);
     res.status(502).json({
       error: "LLM call failed. Please try again.",
     });
+  } finally {
+    try {
+      await updatePlatformRunStatus(runId, "chat-service", platformFailed ? "failed" : "completed");
+    } catch (statusErr) {
+      console.error(`[internal/platform-complete] failed to finalize platform run runId="${runId}":`, statusErr);
+    }
   }
 });
 

@@ -1106,12 +1106,23 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         temperature?: number;
         model?: string;
         imageUrl?: string;
+        /**
+         * Opt-in native server-side web search. When true, attaches Anthropic's
+         * `web_search_20250305` tool so Claude answers from live web results.
+         * Default (false/undefined) is byte-identical to a non-grounded call.
+         * See POST /complete `webSearch`.
+         */
+        webSearch?: boolean;
       },
     ): Promise<{
       content: string;
       tokensInput: number;
       tokensOutput: number;
       model: string;
+      /** Number of server-side web searches Claude ran (0 when off). */
+      searchCount: number;
+      /** Citation/result source URLs surfaced by web_search (empty when off). */
+      sources: Array<{ url: string; title?: string }>;
     }> {
       const effectiveModel = options?.model ?? MODEL;
 
@@ -1148,6 +1159,15 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
               },
             }
           : {}),
+        // Native server-side web search. Attached only when requested, keeping
+        // non-grounded calls byte-identical. max_uses caps billable searches.
+        ...(options?.webSearch
+          ? {
+              tools: [
+                { type: "web_search_20250305", name: "web_search", max_uses: 5 },
+              ],
+            }
+          : {}),
       };
 
       const timeoutMs = ANTHROPIC_TIMEOUT_MS[effectiveModel] ?? DEFAULT_ANTHROPIC_TIMEOUT_MS;
@@ -1176,11 +1196,40 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       );
       const content = textBlocks.map((b) => b.text).join("");
 
+      // Native web-search accounting. The Anthropic SDK types lag the
+      // server-tool fields, so read them structurally. searchCount is the
+      // billable unit (one per `web_search_requests`); sources are the cited
+      // and returned result URLs (deduped) surfaced for the caller's answer.
+      const usage = response.usage as unknown as {
+        server_tool_use?: { web_search_requests?: number };
+      };
+      const searchCount = usage.server_tool_use?.web_search_requests ?? 0;
+      const sources: Array<{ url: string; title?: string }> = [];
+      const seenUrls = new Set<string>();
+      const addSource = (url: unknown, title: unknown) => {
+        if (typeof url !== "string" || url.length === 0 || seenUrls.has(url)) return;
+        seenUrls.add(url);
+        sources.push({ url, title: typeof title === "string" ? title : undefined });
+      };
+      for (const block of response.content as unknown as Array<Record<string, unknown>>) {
+        if (block.type === "text" && Array.isArray(block.citations)) {
+          for (const c of block.citations as Array<Record<string, unknown>>) {
+            if (c?.type === "web_search_result_location") addSource(c.url, c.title);
+          }
+        } else if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
+          for (const r of block.content as Array<Record<string, unknown>>) {
+            if (r?.type === "web_search_result") addSource(r.url, r.title);
+          }
+        }
+      }
+
       return {
         content,
         tokensInput: response.usage.input_tokens,
         tokensOutput: response.usage.output_tokens,
         model: effectiveModel,
+        searchCount,
+        sources,
       };
     },
   };
