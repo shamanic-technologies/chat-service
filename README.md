@@ -189,6 +189,11 @@ Request body:
   - **Google** → `generationConfig.responseSchema` (supported on all Gemini 2.5+ models: `pro`, `flash`, `flash-lite`). Gemini accepts only an OpenAPI 3.0 subset; chat-service auto-sanitizes the caller-supplied schema before forwarding by stripping unsupported JSON-Schema keywords (`additionalProperties`, `$schema`, `$ref`, `$defs`, `definitions`, `patternProperties`, `unevaluatedProperties`, `if`/`then`/`else`, `not`, `const`, `examples`, `default`, `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf`, etc.). A `[chat-service] Gemini schema sanitized` warning is logged once per call when any field is removed.
   - **Anthropic** → `output_config.format = { type: "json_schema", schema }` (Claude 4.x). **Strict schema required**: `additionalProperties: false` and an explicit `properties` map. Permissive schemas are rejected with 400 by Anthropic.
 - `temperature` (optional) — sampling temperature, 0–2 (default: model default)
+- `webSearch` (optional, default `false`) — opt-in native web search. When `true`, the resolved provider answers using its **own** native web search so the response reflects live web content instead of the model's parametric memory:
+  - **Google** → `googleSearch` grounding tool. The number of search queries is read from `groundingMetadata.webSearchQueries`; source URLs from `groundingMetadata.groundingChunks[].web`.
+  - **Anthropic** → server-side `web_search_20250305` tool (`max_uses: 5`). The search count is read from `usage.server_tool_use.web_search_requests`; source URLs from citation + result blocks.
+  - In **text mode**, deduped citation source URLs are appended to `content` as a trailing `Sources:` block, so they surface in the response text. In **JSON mode** (`responseFormat: "json"` / `responseSchema`) the content is left untouched (a Sources block would corrupt the JSON), but grounding still applies and the search cost is still declared.
+  - Omitted or `false` → no grounding, byte-identical to a non-grounded call (no extra cost). The web-search cost is metered per query/search and billed in addition to tokens — see the **Cost** section below.
 - `imageUrl` (optional) — URL of an image to include as visual input. The image is fetched server-side. Supported by all models, but recommended with `google` + `flash-lite` for cost-effective vision tasks.
 - `imageContext` (optional) — metadata about the image to help the model classify it: `{ alt?: string, title?: string, sourceUrl?: string }`. Injected into the prompt alongside the image. Only meaningful when `imageUrl` is provided.
 
@@ -248,13 +253,13 @@ Error responses: 400 (validation), 401 (auth), 402 (insufficient credits), 502 (
 }
 ```
 
-Same fields as `POST /complete` (including the optional `responseSchema`) except **no `imageUrl` or `imageContext`** support.
+Same fields as `POST /complete` (including the optional `responseSchema` and `webSearch`) except **no `imageUrl` or `imageContext`** support.
 
 **Key differences from `POST /complete`:**
-- **No billing** — platform-level calls are not charged to any org
-- **No run tracking** — no run is created in runs-service
-- **No campaign context** — no `x-campaign-id` enrichment
-- **Platform key resolution** — uses `GET /keys/platform/{provider}/decrypt` directly (no org-level key lookup)
+- **No org billing** — platform-level calls are not charged to any org's credit balance (no affordability authorize).
+- **Platform run tracking + cost** — a **platform run** is created in runs-service (`POST /v1/platform-runs`, `x-service-name: chat-service`, `taskName: platform-complete`) and the LLM (and web-search) spend is declared on it as `actual` costs (`costSource: platform`). Platform runs have no cost-status PATCH, so costs are posted post-call as `actual` (no provision/cancel). Fail-loud: if the platform run can't be created or its cost can't be declared, the call returns **502** rather than spending silently.
+- **No campaign context** — no `x-campaign-id` enrichment.
+- **Platform key resolution** — uses `GET /keys/platform/{provider}/decrypt` directly (no org-level key lookup).
 
 Use this endpoint when a service needs an LLM call during startup or for platform-level operations that don't belong to a specific org or user (e.g. workflow upgrades, schema analysis).
 
@@ -624,10 +629,12 @@ Buttons are extracted from the AI response when it ends with lines formatted as 
 
 `POST /chat` and `POST /complete` declare LLM spend with the platform cost rule. Output tokens are unknown until the call finishes, so the **worst case** is reserved up front and trued up to the real usage after:
 
-1. **Provision** — before the model call, two `provisioned` cost rows (`<costPrefix>-tokens-input` + `-tokens-output`) are written to runs-service with the worst-case quantity (input estimate + the model's output budget). Validates the cost names are declarable.
-2. **Authorize** — credit affordability is checked against billing-service for platform-key requests (`keySource: "platform"`). BYOK orgs (`keySource: "org"`) skip this — they pay their provider directly. (`/chat` authorizes pre-stream; `/complete` authorizes inline.)
+1. **Provision** — before the model call, two `provisioned` cost rows (`<costPrefix>-tokens-input` + `-tokens-output`) are written to runs-service with the worst-case quantity (input estimate + the model's output budget). When `webSearch: true`, a third `provisioned` web-search row is added at the worst-case search count (5). Validates the cost names are declarable.
+2. **Authorize** — credit affordability is checked against billing-service for platform-key requests (`keySource: "platform"`). BYOK orgs (`keySource: "org"`) skip this — they pay their provider directly. (`/chat` authorizes pre-stream; `/complete` authorizes inline.) The web-search hold is included in the authorize when `webSearch` is on.
 3. **Execute** — the model call runs only after provision + authorize succeed.
-4. **Reconcile** — the **actual** token counts are recorded (`actual` rows) and the provisioned worst-case holds are `cancelled`. If the actual write fails, the provisioned-max rows remain as a fallback record — the cost is never silently lost.
+4. **Reconcile** — the **actual** token counts (and, when `webSearch` ran, the **actual** search count) are recorded (`actual` rows) and the provisioned worst-case holds are `cancelled`. If the actual write fails, the provisioned-max rows remain as a fallback record — the cost is never silently lost.
+
+**Web-search cost names** (byte-equal to the costs-service catalog): Google grounding → `google-search-query`; Anthropic web search → `anthropic-web-search`. `POST /internal/platform-complete` declares the same token + web-search costs on a **platform run** as `actual` (no provision/authorize/cancel — platform spend, no org).
 
 If the org has insufficient credits, the endpoint returns a **402** (JSON, not SSE on `/chat`):
 ```json
