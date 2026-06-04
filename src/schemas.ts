@@ -136,15 +136,15 @@ export const AppConfigRequestSchema = z
       description:
         "LLM provider for this chat mode. Omit to use the default (google).\n\n" +
         "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
-        "- `google` — Gemini models (flash-lite, flash, pro)",
+        "- `google` — Gemini models (flash-lite, flash, flash-pro, pro)",
       example: "google",
     }),
-    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "pro"]).optional().openapi({
+    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro"]).optional().openapi({
       description:
         "Model alias (version-free). Omit to use the provider's default " +
-        "(sonnet for anthropic, pro for google). Must match the provider:\n\n" +
+        "(sonnet for anthropic, flash-pro for google). Must match the provider:\n\n" +
         "- anthropic → haiku, sonnet, opus\n" +
-        "- google → flash-lite, flash, pro",
+        "- google → flash-lite, flash, flash-pro, pro",
       example: "pro",
     }),
   })
@@ -153,13 +153,13 @@ export const AppConfigRequestSchema = z
     (data) => {
       if (!data.provider || !data.model) return true;
       const anthropicModels = ["haiku", "sonnet", "opus"];
-      const googleModels = ["flash-lite", "flash", "pro"];
+      const googleModels = ["flash-lite", "flash", "flash-pro", "pro"];
       if (data.provider === "anthropic") return anthropicModels.includes(data.model);
       if (data.provider === "google") return googleModels.includes(data.model);
       return false;
     },
     {
-      message: "Model must match provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|pro",
+      message: "Model must match provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro",
       path: ["model"],
     },
   )
@@ -175,7 +175,7 @@ export const AppConfigResponseSchema = z
       description: "LLM provider. Null means default (google).",
     }),
     model: z.string().nullable().openapi({
-      description: "Model alias. Null means provider default (sonnet for anthropic, pro for google).",
+      description: "Model alias. Null means provider default (sonnet for anthropic, flash-pro for google).",
     }),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -275,13 +275,13 @@ export const PlatformConfigRequestSchema = z
       description:
         "LLM provider for this chat mode. Omit to use the default (google).\n\n" +
         "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
-        "- `google` — Gemini models (flash-lite, flash, pro)",
+        "- `google` — Gemini models (flash-lite, flash, flash-pro, pro)",
       example: "google",
     }),
-    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "pro"]).optional().openapi({
+    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro"]).optional().openapi({
       description:
         "Model alias (version-free). Omit to use the provider's default " +
-        "(sonnet for anthropic, pro for google). Must match the provider.",
+        "(sonnet for anthropic, flash-pro for google). Must match the provider.",
       example: "pro",
     }),
   })
@@ -290,13 +290,13 @@ export const PlatformConfigRequestSchema = z
     (data) => {
       if (!data.provider || !data.model) return true;
       const anthropicModels = ["haiku", "sonnet", "opus"];
-      const googleModels = ["flash-lite", "flash", "pro"];
+      const googleModels = ["flash-lite", "flash", "flash-pro", "pro"];
       if (data.provider === "anthropic") return anthropicModels.includes(data.model);
       if (data.provider === "google") return googleModels.includes(data.model);
       return false;
     },
     {
-      message: "Model must match provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|pro",
+      message: "Model must match provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro",
       path: ["model"],
     },
   )
@@ -311,7 +311,7 @@ export const PlatformConfigResponseSchema = z
       description: "LLM provider. Null means default (google).",
     }),
     model: z.string().nullable().openapi({
-      description: "Model alias. Null means provider default (sonnet for anthropic, pro for google).",
+      description: "Model alias. Null means provider default (sonnet for anthropic, flash-pro for google).",
     }),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -405,12 +405,12 @@ export const CompleteRequestSchema = z
       description: "LLM provider to use.",
       example: "anthropic",
     }),
-    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "pro"]).openapi({
+    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro"]).openapi({
       description:
         "Model alias (version-free). The service resolves the latest versioned model internally.\n\n" +
         "**Anthropic models:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n" +
-        "**Google models:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `pro` (most powerful).\n\n" +
-        "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|pro.",
+        "**Google models:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.5 Flash), `pro` (most powerful).\n\n" +
+        "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro.",
       example: "sonnet",
     }),
     webSearch: z.boolean().optional().openapi({
@@ -447,7 +447,7 @@ export const CompleteRequestSchema = z
   .superRefine((data, ctx) => {
     const validModels: Record<string, string[]> = {
       anthropic: ["haiku", "sonnet", "opus"],
-      google: ["flash-lite", "flash", "pro"],
+      google: ["flash-lite", "flash", "flash-pro", "pro"],
     };
     const allowed = validModels[data.provider];
     if (allowed && !allowed.includes(data.model)) {
@@ -598,7 +598,7 @@ export const InternalPlatformCompleteRequestSchema = z
       description: "LLM provider to use.",
       example: "anthropic",
     }),
-    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "pro"]).openapi({
+    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro"]).openapi({
       description: "Model alias (version-free).",
       example: "sonnet",
     }),

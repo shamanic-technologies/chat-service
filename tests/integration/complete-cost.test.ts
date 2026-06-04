@@ -217,6 +217,33 @@ describe("POST /complete — cost provision → authorize → execute → reconc
     expect(cap.patchedStatuses.filter((s) => s === "cancelled")).toHaveLength(2);
   });
 
+  it("model:flash-pro resolves Gemini 3.5 Flash and declares google-flash-3.5 cost rows (DIS-130)", async () => {
+    const cap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>, patchedStatuses: [] as string[] };
+    const gemini = { calls: 0 };
+    routes.push(mockRunsCreate(), mockKeyDecrypt(), mockBilling(), mockGeminiComplete(gemini), ...mockRunsCostRoutes(cap), mockRunsStatusPatch());
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "hi", systemPrompt: "be brief", provider: "google", model: "flash-pro" });
+
+    expect(res.status).toBe(200);
+    expect(gemini.calls).toBe(1);
+
+    // PROVISION + ACTUAL cost names must be byte-equal to the costs-service catalog
+    // rows (google-flash-3.5-*), or runs-service 422-rejects.
+    const provision = cap.postedItems[0];
+    expect(provision.map((i) => i.costName).sort()).toEqual([
+      "google-flash-3.5-tokens-input",
+      "google-flash-3.5-tokens-output",
+    ]);
+    const actual = cap.postedItems.find((items) => items.some((i) => i.status === undefined));
+    expect(actual!.map((i) => i.costName).sort()).toEqual([
+      "google-flash-3.5-tokens-input",
+      "google-flash-3.5-tokens-output",
+    ]);
+  });
+
   it("fails loud (502) and does NOT call the model when provision is rejected", async () => {
     const cap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>, patchedStatuses: [] as string[], provisionStatus: 422 };
     const gemini = { calls: 0 };

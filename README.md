@@ -92,7 +92,7 @@ Fields:
 - `systemPrompt` (required) — the system prompt sent to the LLM for this chat mode
 - `allowedTools` (required, min 1) — which tools the LLM can use. The service rejects any tool call not in this list. See [Available Tools](#available-tools) for the full list.
 - `provider` (optional) — LLM provider: `"anthropic"` or `"google"`. Defaults to `"google"` when omitted (Gemini is the platform default for chat); a config row with a NULL `provider` resolves to `google`.
-- `model` (optional) — Model alias (version-free). Must match the provider: anthropic → `haiku|sonnet|opus`, google → `flash-lite|flash|pro`. Defaults to `"sonnet"` for anthropic, `"pro"` for google (so an all-NULL config resolves to `google`/`pro`).
+- `model` (optional) — Model alias (version-free). Must match the provider: anthropic → `haiku|sonnet|opus`, google → `flash-lite|flash|flash-pro|pro`. Defaults to `"sonnet"` for anthropic, `"flash-pro"` for google (so an all-NULL config resolves to `google`/`flash-pro`). The agentic `workflow` chat is pinned to `pro` via an explicit config row.
 
 This endpoint is **idempotent** (upsert on `(orgId, key)`). Call it on every cold start. **`provider`/`model` are only overwritten when supplied** — omitting them on a re-registration leaves the stored values unchanged, so an app that registers without `provider` does not reset an explicit override back to NULL.
 
@@ -183,7 +183,7 @@ Request body:
 - `provider` (required) — LLM provider: `"anthropic"` or `"google"`
 - `model` (required) — version-free model alias. The service resolves the latest versioned model internally. Valid combinations:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
-  - **google**: `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `pro` (most powerful). All require a Google API key in key-service.
+  - **google**: `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.5 Flash), `pro` (most powerful). All require a Google API key in key-service.
 - `responseFormat` (optional) — set to `"json"` to enable JSON-mode parsing. **For `provider: "anthropic"`, you MUST also supply `responseSchema`** — Anthropic has no native standalone JSON mode, so the request is rejected with 400 if `responseSchema` is missing. For `provider: "google"` (Gemini), `responseFormat: "json"` alone is sufficient (native `responseMimeType` enforcement).
 - `responseSchema` (optional) — JSON Schema enforced server-side by the provider's structured-output API. When set, JSON-mode parsing is implied (no need to also pass `responseFormat: "json"`). The schema is forwarded as:
   - **Google** → `generationConfig.responseSchema` (supported on all Gemini 2.5+ models: `pro`, `flash`, `flash-lite`). Gemini accepts only an OpenAPI 3.0 subset; chat-service auto-sanitizes the caller-supplied schema before forwarding by stripping unsupported JSON-Schema keywords (`additionalProperties`, `$schema`, `$ref`, `$defs`, `definitions`, `patternProperties`, `unevaluatedProperties`, `if`/`then`/`else`, `not`, `const`, `examples`, `default`, `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf`, etc.). A `[chat-service] Gemini schema sanitized` warning is logged once per call when any field is removed.

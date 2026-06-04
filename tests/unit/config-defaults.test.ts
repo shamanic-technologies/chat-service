@@ -6,12 +6,15 @@ import {
 } from "../../src/lib/config-defaults.js";
 
 describe("resolveChatProviderModel — default provider/model", () => {
-  it("NULL provider + NULL model → google/pro (Gemini is the platform default)", () => {
-    // Regression: this previously resolved to anthropic/sonnet, which 400'd
-    // once the Anthropic platform key ran out of credit.
+  it("NULL provider + NULL model → google/flash-pro (Gemini 3.5 Flash is the platform default)", () => {
+    // Regression 1: previously resolved to anthropic/sonnet, which 400'd once the
+    // Anthropic platform key ran out of credit (DIS-125).
+    // Regression 2: default moved pro → flash-pro (mid-tier Gemini 3.5 Flash) so all
+    // NULL-config dashboard chats use flash-pro. The agentic `workflow` chat is pinned
+    // to `pro` via an explicit DB row, NOT via this default (DIS-130).
     expect(resolveChatProviderModel({ provider: null, model: null })).toEqual({
       provider: "google",
-      modelAlias: "pro",
+      modelAlias: "flash-pro",
     });
   });
 
