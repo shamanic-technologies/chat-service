@@ -1210,10 +1210,14 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
           : {}),
         // Native server-side web search. Attached only when requested, keeping
         // non-grounded calls byte-identical. max_uses caps billable searches.
+        // Capped to 1 by default for cost control (each search = 1 billable
+        // web_search_request at $10/1k). A future `maxSearches` request param
+        // will make this caller-tunable (tracked in Linear). Do NOT bump back
+        // to a higher fixed value without a cost review — see README Cost.
         ...(options?.webSearch
           ? {
               tools: [
-                { type: "web_search_20250305", name: "web_search", max_uses: 5 },
+                { type: "web_search_20250305", name: "web_search", max_uses: 1 },
               ],
             }
           : {}),
