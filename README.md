@@ -464,6 +464,8 @@ Determinism: Gemini `gemini-embedding-001` is deterministic for identical input 
 
 When `jsonMode` is set, the service runs strict `JSON.parse(content)` on the model output to populate `response.json`. A parse failure means the provider violated its enforcement contract and is surfaced as a 502.
 
+**Output budget.** Both providers receive an explicit **64k** output-token budget (Gemini `generationConfig.maxOutputTokens`, Anthropic `max_tokens`) — matching the worst-case hold provisioned/authorized for the call. Without an explicit budget Gemini falls back to a lower per-model default and truncates long responses, so it is always set. If the model still stops at the budget (`finishReason: "MAX_TOKENS"`) in JSON mode, the partial output is truncated JSON; the service **fails loud** with `[gemini] Output truncated (MAX_TOKENS)` → 502 (a clear cause, not a cryptic `JSON.parse` error). In text mode the partial content is returned with a warning.
+
 ## SSE Protocol
 
 `POST /chat` with headers `Content-Type: application/json`, `x-api-key`, `x-org-id`, `x-user-id`.

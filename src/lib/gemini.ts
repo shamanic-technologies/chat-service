@@ -39,6 +39,15 @@ const MAX_RETRIES = 3;
 /** Base delay for exponential backoff in ms. */
 const RETRY_BASE_DELAY_MS = 1_000;
 
+// Explicit output-token budget for /complete. Without it Gemini falls back to
+// its (lower) per-model DEFAULT cap and truncates long responses early, raising
+// finishReason:"MAX_TOKENS" — which, in JSON mode, yields truncated JSON and a
+// cryptic downstream `JSON.parse: Unterminated string` 502. 64k matches both the
+// worst-case hold provisioned/authorized in src/index.ts AND the Anthropic path
+// (anthropic.ts MAX_TOKENS). Setting it explicitly gives MORE headroom, not less.
+// Do NOT remove (regression history: PR #140 dropped it; incident 2026-06-04).
+const GEMINI_MAX_OUTPUT_TOKENS = 64_000;
+
 /** Max delay cap for exponential backoff in ms. */
 const RETRY_MAX_DELAY_MS = 30_000;
 
@@ -144,7 +153,7 @@ async function callGeminiOnce(
   model: string,
   apiKey: string,
   body: Record<string, unknown>,
-  responseFormat: string | undefined,
+  jsonMode: boolean,
 ): Promise<GeminiCompleteResult> {
   const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const timeoutMs = GEMINI_TIMEOUT_MS[model] ?? DEFAULT_GEMINI_TIMEOUT_MS;
@@ -194,13 +203,20 @@ async function callGeminiOnce(
   const tokensIn = data.usageMetadata?.promptTokenCount ?? 0;
   const tokensOut = data.usageMetadata?.candidatesTokenCount ?? 0;
   if (finishReason === "MAX_TOKENS") {
-    console.warn(
+    const diag =
       `[gemini] MAX_TOKENS hit | model=${model}` +
       ` | tokensInput=${tokensIn}` +
       ` | tokensOutput=${tokensOut}` +
-      ` | responseFormat=${responseFormat ?? "text"}` +
-      ` — returning partial content`,
-    );
+      ` | jsonMode=${jsonMode}`;
+    // JSON mode: partial content is truncated JSON, so the strict JSON.parse in
+    // /complete would throw a cryptic "Unterminated string". Fail loud here with
+    // a clear cause instead. Text mode tolerates partial output, so return it
+    // with a warning (preserves PR #132 behavior).
+    if (jsonMode) {
+      console.error(`${diag} — output truncated, failing loud`);
+      throw new Error(`[gemini] Output truncated (MAX_TOKENS). ${diag}`);
+    }
+    console.warn(`${diag} — returning partial content`);
   }
 
   const content =
@@ -375,6 +391,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     contents: [{ parts }],
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
+      maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
       ...(temperature != null ? { temperature } : {}),
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
       ...(sanitizedSchema != null ? { responseSchema: sanitizedSchema } : {}),
@@ -393,7 +410,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
       await sleep(delay);
     }
     try {
-      return await callGeminiOnce(model, apiKey, body, responseFormat);
+      return await callGeminiOnce(model, apiKey, body, jsonMode);
     } catch (err: unknown) {
       if (err instanceof GeminiRetryableError) {
         lastError = err;
@@ -409,7 +426,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     console.warn(
       `[chat-service] All ${MAX_RETRIES} retries failed for ${model}, falling back to ${fallbackModel} | lastError=${lastError?.message}`,
     );
-    return await callGeminiOnce(fallbackModel, apiKey, body, responseFormat);
+    return await callGeminiOnce(fallbackModel, apiKey, body, jsonMode);
   }
 
   // No fallback available — re-throw the last error
