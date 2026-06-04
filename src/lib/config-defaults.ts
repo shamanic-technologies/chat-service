@@ -5,8 +5,13 @@ import type { Provider, ModelAlias } from "./anthropic.js";
 //
 // Gemini is the platform default for /chat (the Anthropic platform key has no
 // credit balance). A config row with NULL provider/model resolves to
-// google/pro here — NOT anthropic/sonnet — so the default survives every app
-// re-registration and redeploy without depending on a manual DB flip.
+// google/flash-pro here — NOT anthropic/sonnet — so the default survives every
+// app re-registration and redeploy without depending on a manual DB flip.
+//
+// flash-pro (Gemini 3.5 Flash) is the mid-tier dashboard default (DIS-130).
+// The agentic `workflow` chat is deliberately pinned to `pro` via an explicit
+// platform_configs row (provider/model NOT NULL), so the heaviest tool-calling
+// mode keeps the strongest model regardless of this NULL-config default.
 // ---------------------------------------------------------------------------
 
 /** Provider used when a chat config row leaves `provider` NULL. */
@@ -14,7 +19,7 @@ export const DEFAULT_CHAT_PROVIDER: Provider = "google";
 
 /** Per-provider model alias used when a chat config row leaves `model` NULL. */
 export function defaultModelAliasFor(provider: Provider): ModelAlias {
-  return provider === "anthropic" ? "sonnet" : "pro";
+  return provider === "anthropic" ? "sonnet" : "flash-pro";
 }
 
 /**
