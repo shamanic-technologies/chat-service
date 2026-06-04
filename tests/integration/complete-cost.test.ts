@@ -244,7 +244,8 @@ describe("POST /complete — cost provision → authorize → execute → reconc
     expect(res.status).toBe(200);
     expect(gemini.calls).toBe(1);
 
-    // PROVISION: 3 worst-case items incl the google-search-query hold (qty 5).
+    // PROVISION: 3 worst-case items incl the google-search-query hold (qty 20, the observed
+    // Gemini-3 per-query production max — the hold must not under-reserve vs real spend).
     const provision = cap.postedItems[0];
     expect(provision).toHaveLength(3);
     expect(provision.every((i) => i.status === "provisioned")).toBe(true);
@@ -253,7 +254,7 @@ describe("POST /complete — cost provision → authorize → execute → reconc
       "google-flash-3-tokens-output",
       "google-search-query",
     ]);
-    expect(provision.find((i) => i.costName === "google-search-query")!.quantity).toBe(5);
+    expect(provision.find((i) => i.costName === "google-search-query")!.quantity).toBe(20);
 
     // ACTUAL: google-search-query records the REAL query count (3).
     const actual = cap.postedItems.find((items) => items.some((i) => i.status === undefined));
