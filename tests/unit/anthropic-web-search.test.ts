@@ -63,7 +63,7 @@ describe("anthropic complete() — native web search", () => {
 
     expect(capturedParams).toBeDefined();
     expect(capturedParams!.tools).toEqual([
-      { type: "web_search_20250305", name: "web_search", max_uses: 5 },
+      { type: "web_search_20250305", name: "web_search", max_uses: 1 },
     ]);
   });
 
