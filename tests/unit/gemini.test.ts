@@ -48,7 +48,10 @@ describe("completeWithGemini", () => {
     return promise;
   }
 
-  it("returns partial content when finishReason is MAX_TOKENS in JSON mode (no throw)", async () => {
+  // Regression — incident 2026-06-04: Gemini truncated JSON on MAX_TOKENS, and
+  // the downstream strict JSON.parse in /complete threw a cryptic
+  // "Unterminated string" 502. JSON mode must fail loud HERE with a clear cause.
+  it("throws on MAX_TOKENS in JSON mode (output truncated, fail loud)", async () => {
     fetchSpy.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -62,10 +65,7 @@ describe("completeWithGemini", () => {
       }),
     });
 
-    const result = await runWithTimers(baseOptions);
-    expect(result.content).toBe('["https://example.com", "https://truncat');
-    expect(result.tokensInput).toBe(100);
-    expect(result.tokensOutput).toBe(500);
+    await expect(runWithTimers(baseOptions)).rejects.toThrow(/Output truncated \(MAX_TOKENS\)/);
   });
 
   it("returns partial content when finishReason is MAX_TOKENS in non-JSON mode", async () => {
@@ -97,11 +97,11 @@ describe("completeWithGemini", () => {
     expect(result.tokensOutput).toBe(50);
   });
 
-  it("does not send maxOutputTokens (API manages its own limits)", async () => {
+  it("sends maxOutputTokens 64000 (parity with authorized hold + Anthropic)", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     await runWithTimers(baseOptions);
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.maxOutputTokens).toBeUndefined();
+    expect(requestBody.generationConfig.maxOutputTokens).toBe(64000);
   });
 
   // --- responseSchema passthrough ---
