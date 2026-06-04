@@ -66,7 +66,7 @@ function anthropicRetryDelayMs(err: unknown, attempt: number): number {
 // ---------------------------------------------------------------------------
 
 export type Provider = "anthropic" | "google";
-export type ModelAlias = "haiku" | "sonnet" | "opus" | "flash-lite" | "flash" | "pro";
+export type ModelAlias = "haiku" | "sonnet" | "opus" | "flash-lite" | "flash" | "flash-pro" | "pro";
 
 interface ResolvedModel {
   /** Versioned model ID sent to the provider's API */
@@ -86,6 +86,8 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   google: {
     "flash-lite": { apiModelId: "gemini-3.1-flash-lite", costPrefix: "google-flash-lite-3.1", provider: "google" },
     "flash": { apiModelId: "gemini-3-flash-preview", costPrefix: "google-flash-3", provider: "google" },
+    // "flash-pro" alias → Gemini 3.5 Flash (mid-tier, between Flash 3 and Pro 3.1). DIS-130.
+    "flash-pro": { apiModelId: "gemini-3.5-flash", costPrefix: "google-flash-3.5", provider: "google" },
     "pro": { apiModelId: "gemini-3.1-pro-preview", costPrefix: "google-pro-3.1", provider: "google" },
   },
 };
@@ -93,7 +95,7 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
 /** Valid model aliases per provider — used for Zod validation. */
 export const PROVIDER_MODELS: Record<Provider, readonly ModelAlias[]> = {
   anthropic: ["haiku", "sonnet", "opus"],
-  google: ["flash-lite", "flash", "pro"],
+  google: ["flash-lite", "flash", "flash-pro", "pro"],
 };
 
 /**
@@ -118,6 +120,7 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "claude-opus-4-6": "anthropic-opus-4.6",
   "gemini-3.1-flash-lite": "google-flash-lite-3.1",
   "gemini-3-flash-preview": "google-flash-3",
+  "gemini-3.5-flash": "google-flash-3.5",
   "gemini-3.1-pro-preview": "google-pro-3.1",
   "gemini-2.5-pro": "google-pro-2.5",
   "gemini-2.5-flash": "google-flash-2.5",
