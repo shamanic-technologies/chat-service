@@ -650,8 +650,14 @@ function webSearchCostName(isGemini: boolean): string {
   return isGemini ? "google-search-query" : "anthropic-web-search";
 }
 
-/** Worst-case web-search count provisioned/authorized before a call (reconciled to actual after). */
-const WORST_CASE_SEARCHES = 5;
+/**
+ * Worst-case web-search count provisioned/authorized before a call (reconciled to actual after).
+ * Gemini 3 bills Grounding with Google Search PER executed query (a single grounded request can
+ * fan out to ~12-20 internal searches), and the actual count is only known post-call from
+ * `groundingMetadata.webSearchQueries.length`. Sized to the observed production max so the
+ * pre-call AUTHORIZE hold does not under-reserve platform credits; the actual count trues it up.
+ */
+const WORST_CASE_SEARCHES = 20;
 
 /**
  * Provision the worst-case LLM cost (input estimate + output max) as two `provisioned`
