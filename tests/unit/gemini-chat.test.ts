@@ -70,4 +70,90 @@ describe("toGeminiFunctionDeclarations", () => {
   it("handles empty tools array", () => {
     expect(toGeminiFunctionDeclarations([])).toEqual([]);
   });
+
+  // Regression: Gemini's function-declaration `parameters` is the restricted
+  // OpenAPI-3.0 Schema type and 400s on `additionalProperties` (and `$ref`,
+  // `$schema`, etc.) carried by MCP tool input schemas. They must be stripped
+  // recursively before sending. Reproduces the prod error:
+  // `Unknown name "additionalProperties" at
+  //  'tools[0].function_declarations[1].parameters.properties[0].value'`.
+  it("strips additionalProperties nested in a property value", () => {
+    const tools: ToolDefinition[] = [
+      {
+        name: "search_endpoints",
+        description: "Search endpoints",
+        input_schema: {
+          type: "object",
+          properties: {
+            filters: {
+              type: "object",
+              additionalProperties: { type: "string" },
+            },
+          },
+          required: ["filters"],
+        },
+      },
+    ];
+
+    const result = toGeminiFunctionDeclarations(tools);
+    const filters = result[0].parameters.properties.filters as Record<string, unknown>;
+
+    expect(filters).not.toHaveProperty("additionalProperties");
+    expect(filters.type).toBe("object");
+    // Whole declaration must be free of the rejected keyword.
+    expect(JSON.stringify(result)).not.toContain("additionalProperties");
+    // required is preserved.
+    expect(result[0].parameters.required).toEqual(["filters"]);
+  });
+
+  it("strips $ref / $schema recursively from tool param schemas", () => {
+    const tools: ToolDefinition[] = [
+      {
+        name: "call_api",
+        description: "Call an API",
+        input_schema: {
+          type: "object",
+          properties: {
+            body: { $ref: "#/components/schemas/OrgId", type: "object" },
+          },
+        },
+        // @ts-expect-error — JSON-Schema 7 keyword not on the typed shape but present at runtime
+        $schema: "http://json-schema.org/draft-07/schema#",
+      } as ToolDefinition,
+    ];
+
+    const result = toGeminiFunctionDeclarations(tools);
+    const serialized = JSON.stringify(result);
+
+    expect(serialized).not.toContain("$ref");
+    expect(serialized).not.toContain("$schema");
+    const body = result[0].parameters.properties.body as Record<string, unknown>;
+    expect(body.type).toBe("object");
+  });
+
+  it("preserves Gemini-supported keys (enum, description, nullable, items)", () => {
+    const tools: ToolDefinition[] = [
+      {
+        name: "filter_list",
+        description: "Filter a list",
+        input_schema: {
+          type: "object",
+          properties: {
+            status: { type: "string", enum: ["open", "closed"], description: "Status" },
+            tags: { type: "array", items: { type: "string" } },
+            note: { type: "string", nullable: true },
+          },
+          required: ["status"],
+        },
+      },
+    ];
+
+    const result = toGeminiFunctionDeclarations(tools);
+    expect(result[0].parameters.properties).toEqual({
+      status: { type: "string", enum: ["open", "closed"], description: "Status" },
+      tags: { type: "array", items: { type: "string" } },
+      note: { type: "string", nullable: true },
+    });
+    expect(result[0].parameters.required).toEqual(["status"]);
+  });
 });

@@ -6,6 +6,7 @@
 import type { Response as ExpressResponse } from "express";
 import type { ToolCallRecord } from "../db/schema.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
+import { sanitizeGeminiSchema } from "./gemini.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -121,19 +122,37 @@ export interface StreamGeminiChatResult {
 // Conversion helpers
 // ---------------------------------------------------------------------------
 
-/** Convert Anthropic-style tool definitions to Gemini functionDeclarations. */
+/**
+ * Convert Anthropic-style tool definitions to Gemini functionDeclarations.
+ *
+ * Gemini's function-declaration `parameters` is the same restricted OpenAPI-3.0
+ * `Schema` type as `responseSchema` — it rejects `additionalProperties`, `$ref`,
+ * `$schema`, `const`, `examples`, `exclusiveMinimum/Maximum`, `multipleOf`, etc.
+ * with HTTP 400 (`Unknown name "additionalProperties" at 'tools[0].
+ * function_declarations[..].parameters.properties[..].value'`). MCP tool input
+ * schemas (JSON-Schema 7) routinely carry these keywords, so strip them
+ * recursively before sending — reusing the same deny-list the `/complete`
+ * responseSchema path already applies. The supported keys the model needs
+ * (`type`, `description`, `enum`, `properties`, `required`, `items`, `nullable`,
+ * `format`, `pattern`, `minimum/maximum`, `anyOf`) are preserved.
+ * See https://ai.google.dev/api/caching#Schema
+ */
 export function toGeminiFunctionDeclarations(
   tools: ToolDefinition[],
 ): GeminiFunctionDeclaration[] {
-  return tools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    parameters: {
-      type: "object" as const,
+  return tools.map((t) => {
+    const rawParameters: Record<string, unknown> = {
+      type: "object",
       properties: t.input_schema.properties,
       ...(t.input_schema.required?.length ? { required: t.input_schema.required } : {}),
-    },
-  }));
+    };
+    const { schema } = sanitizeGeminiSchema(rawParameters);
+    return {
+      name: t.name,
+      description: t.description,
+      parameters: schema as GeminiFunctionDeclaration["parameters"],
+    };
+  });
 }
 
 /**
