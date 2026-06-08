@@ -93,6 +93,12 @@ import { buildContextUsageEvent } from "./lib/context-usage.js";
  * Returns a user-facing message and an error code the frontend can act on.
  */
 function classifyErrorForClient(err: unknown): { message: string; code: string } {
+  if (err instanceof ChatCostGateError) {
+    return {
+      code: err.statusCode === 402 ? "insufficient_credits" : "internal_error",
+      message: err.message,
+    };
+  }
   if (err instanceof Anthropic.APIError) {
     const errorBody = err.error as { type?: string; error?: { type?: string } } | undefined;
     const errorType = errorBody?.error?.type;
@@ -514,6 +520,20 @@ class InsufficientCreditsError extends Error {
     super("Insufficient credits");
     this.name = "InsufficientCreditsError";
   }
+}
+
+class ChatCostGateError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: number,
+  ) {
+    super(message);
+    this.name = "ChatCostGateError";
+  }
+}
+
+function estimateRequestTokens(payload: unknown): number {
+  return Math.max(Math.ceil(JSON.stringify(payload).length / 4), 500);
 }
 
 /**
@@ -1408,42 +1428,6 @@ app.post("/chat", requireAuth, async (req, res) => {
     });
   }
 
-  // Credit authorization — only for platform keys (BYOK orgs pay their provider directly)
-  if (resolvedKey.keySource === "platform") {
-    // Estimate token quantities: input from message length (~4 chars/token, min 500),
-    // output from MAX_TOKENS budget (64 000)
-    const estimatedInputTokens = Math.max(Math.ceil(message.length / 4), 500);
-    const estimatedOutputTokens = 64_000;
-    try {
-      const authResult = await authorizeCredits({
-        items: [
-          { costName: `${resolvedModelInfo.costPrefix}-tokens-input`, quantity: estimatedInputTokens },
-          { costName: `${resolvedModelInfo.costPrefix}-tokens-output`, quantity: estimatedOutputTokens },
-        ],
-        description: `chat — ${resolvedModelInfo.apiModelId}`,
-        orgId,
-        userId,
-        runId: parentRunId,
-        trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders : undefined,
-      });
-      if (!authResult.sufficient) {
-        console.warn(
-          `[chat] insufficient credits: org="${orgId}" balance_cents=${authResult.balance_cents} required_cents=${authResult.required_cents}`,
-        );
-        return res.status(402).json({
-          error: "Insufficient credits",
-          balance_cents: authResult.balance_cents,
-          required_cents: authResult.required_cents,
-        });
-      }
-    } catch (billingErr) {
-      console.error(`[chat] billing authorization failed for org="${orgId}":`, billingErr);
-      return res.status(502).json({
-        error: "Billing service unavailable. Please try again.",
-      });
-    }
-  }
-
   // Fetch campaign context if campaignId is present (Convention 2)
   let campaignFeatureInputs: Record<string, unknown> | null = null;
   if (workflowTracking.campaignId) {
@@ -1549,32 +1533,24 @@ app.post("/chat", requireAuth, async (req, res) => {
       return;
     }
 
-    // PROVISION worst-case LLM cost (input estimate + output budget) before the model
-    // call. Authorize already ran pre-stream above; output tokens are unknown until the
-    // stream ends, so reserve the max and true up to actual in the finally. Fail loud
-    // (SSE error — the stream is already open) if the cost can't be declared.
-    try {
-      provisionedCostIds = await provisionLlmCost({
-        runId,
-        costPrefix: resolvedModelInfo.costPrefix,
-        inputTokens: Math.max(Math.ceil(message.length / 4), 500),
-        outputTokens: 64_000,
-        keySource: resolvedKey.keySource,
-        identity: { orgId, userId, runId },
-        trackingHeaders,
-      });
-    } catch (provErr) {
-      chatFailed = true;
-      console.error(`[chat] cost provision failed runId="${runId}" org="${orgId}":`, provErr);
-      sendSSE(res, {
-        type: "error",
-        code: "internal_error",
-        message: "Cost provisioning failed. Please try again.",
-      });
-      sendSSE(res, "[DONE]");
-      res.end();
-      return;
-    }
+    const authorizeChatProviderCall = async (estimatedInputTokens: number): Promise<void> => {
+      try {
+        const costIds = await provisionAndAuthorizeLlmCost({
+          runId: runId!,
+          costPrefix: resolvedModelInfo.costPrefix,
+          inputTokens: estimatedInputTokens,
+          outputTokens: 64_000,
+          keySource: resolvedKey.keySource,
+          identity: { orgId, userId, runId: runId! },
+          trackingHeaders,
+          description: `chat — ${resolvedModelInfo.apiModelId}`,
+        });
+        provisionedCostIds.push(...costIds);
+      } catch (costErr) {
+        const r = costErrorResponse(costErr, "chat", orgId);
+        throw new ChatCostGateError(String(r.body.error), r.status);
+      }
+    };
 
     // Load conversation history (shared by both providers)
     const history = await db.query.messages.findMany({
@@ -2116,6 +2092,9 @@ app.post("/chat", requireAuth, async (req, res) => {
         sendSSE,
         executeTool,
         signal: abortController.signal,
+        beforeProviderCall: async ({ requestBody }) => {
+          await authorizeChatProviderCall(estimateRequestTokens(requestBody));
+        },
       });
 
       fullResponse = geminiResult.fullResponse;
@@ -2166,6 +2145,14 @@ app.post("/chat", requireAuth, async (req, res) => {
       for (let attempt = 0; attempt <= ANTHROPIC_STREAM_MAX_RETRIES; attempt++) {
         tokensEmitted = false;
         currentBlockType = null;
+        await authorizeChatProviderCall(
+          estimateRequestTokens({
+            model: resolvedModelInfo.apiModelId,
+            systemPrompt,
+            messages: turnMessages,
+            tools: allTools,
+          }),
+        );
         stream = claude!.createStream(turnMessages, allTools, abortController.signal);
 
         try {
