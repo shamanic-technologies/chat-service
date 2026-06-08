@@ -97,6 +97,11 @@ export type ToolExecutor = (
   call: { name: string; args: Record<string, unknown> },
 ) => Promise<ToolExecutorResult>;
 
+export type BeforeGeminiProviderCall = (details: {
+  depth: number;
+  requestBody: Record<string, unknown>;
+}) => Promise<void>;
+
 export interface StreamGeminiChatOptions {
   apiKey: string;
   model: string;
@@ -108,6 +113,7 @@ export interface StreamGeminiChatOptions {
   sendSSE: SendSSE;
   executeTool: ToolExecutor;
   signal: AbortSignal;
+  beforeProviderCall?: BeforeGeminiProviderCall;
 }
 
 export interface StreamGeminiChatResult {
@@ -350,6 +356,7 @@ export async function streamGeminiChat(
     sendSSE: sse,
     executeTool,
     signal,
+    beforeProviderCall,
   } = options;
 
   let totalTokensInput = 0;
@@ -401,6 +408,10 @@ export async function streamGeminiChat(
     };
 
     const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`;
+
+    if (beforeProviderCall) {
+      await beforeProviderCall({ depth, requestBody: body });
+    }
 
     let response: Response;
     try {
@@ -503,7 +514,7 @@ export async function streamGeminiChat(
       sse(res, { type: "thinking_stop" });
     }
 
-    totalTokensInput = chunkTokensInput;
+    totalTokensInput += chunkTokensInput;
     totalTokensOutput += chunkTokensOutput;
 
     // No function calls — we're done
