@@ -968,6 +968,162 @@ export const BROWSE_URL_TOOL: Anthropic.Tool = {
 };
 
 // ---------------------------------------------------------------------------
+// Persona-editor tools (persona-editor config) — act on the brand from
+// context.brandId. Personas are immutable except status; no hard delete.
+// ---------------------------------------------------------------------------
+
+export const LIST_PERSONAS_TOOL: Anthropic.Tool = {
+  name: "list_personas",
+  description:
+    "List the customer personas for the current brand (the brand from context.brandId — no brandId parameter needed). Optionally filter by lifecycle status. Read-only — never modifies anything. Use this to summarize personas, and to look up a persona's id before duplicating it or changing its status.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      status: {
+        type: "string",
+        enum: ["active", "paused", "archived"],
+        description:
+          "Optional. Filter to personas with this lifecycle status. Omit to list all statuses.",
+      },
+    },
+  },
+};
+
+export const CREATE_PERSONA_TOOL: Anthropic.Tool = {
+  name: "create_persona",
+  description:
+    "Create a NEW customer persona for the current brand. Personas are IMMUTABLE except for their status, so 'editing' a persona means creating a new one (and optionally archiving the old one with set_persona_status). Names are UNIQUE PER BRAND, case-insensitive, across active + paused + archived. If the result is { created: false, reason: \"name_taken\" }, tell the user the name is taken and ask for a different name — do NOT retry the same name. The new persona starts active.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      name: {
+        type: "string",
+        description: "The persona name. Must be unique for the brand (case-insensitive).",
+      },
+      filters: {
+        type: "array",
+        description:
+          "Targeting filters for the persona. Each entry is an attribute and its allowed values.",
+        items: {
+          type: "object",
+          properties: {
+            attribute: {
+              type: "string",
+              description: "Targeting attribute, e.g. 'jobTitle', 'industry', 'companySize', 'seniority'.",
+            },
+            values: {
+              type: "array",
+              items: { type: "string" },
+              description: "Allowed values for this attribute.",
+            },
+          },
+          required: ["attribute", "values"],
+        },
+      },
+    },
+    required: ["name", "filters"],
+  },
+};
+
+export const DUPLICATE_PERSONA_TOOL: Anthropic.Tool = {
+  name: "duplicate_persona",
+  description:
+    "Duplicate an existing persona of the current brand, copying its filters into a new persona. Look up the persona id with list_personas first. 'name' is optional — when omitted or already taken it is auto-uniquified server-side (e.g. 'Founders (copy)'), so duplication never fails on a name clash.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      personaId: {
+        type: "string",
+        description: "The id of the persona to duplicate (from list_personas).",
+      },
+      name: {
+        type: "string",
+        description: "Optional name for the copy. Auto-uniquified if omitted or already taken.",
+      },
+    },
+    required: ["personaId"],
+  },
+};
+
+export const SET_PERSONA_STATUS_TOOL: Anthropic.Tool = {
+  name: "set_persona_status",
+  description:
+    "Change a persona's lifecycle status — the ONLY mutable field on a persona. Map the user's intent: PAUSE → paused, RESUME / REACTIVATE / RESTORE → active, ARCHIVE → archived. Archiving NEVER deletes the persona (there is no hard delete); it stays retrievable under 'archived' and can be restored by setting it back to active. Look up the persona id with list_personas first.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      personaId: {
+        type: "string",
+        description: "The id of the persona to update (from list_personas).",
+      },
+      status: {
+        type: "string",
+        enum: ["active", "paused", "archived"],
+        description: "The new lifecycle status.",
+      },
+    },
+    required: ["personaId", "status"],
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Brand-profile-editor tools (brand-profile-editor config) — act on the brand
+// from context.brandId. The profile is versioned + immutable: each save is a
+// NEW version, prior versions are never mutated.
+// ---------------------------------------------------------------------------
+
+export const GET_BRAND_PROFILE_TOOL: Anthropic.Tool = {
+  name: "get_brand_profile",
+  description:
+    "Get the current brand profile (the latest saved version's fields) plus the list of saved versions for the current brand (from context.brandId — no brandId parameter needed). Read-only. ALWAYS call this before save_brand_profile_version so you edit from the current field values.",
+  input_schema: {
+    type: "object" as const,
+    properties: {},
+  },
+};
+
+export const SAVE_BRAND_PROFILE_VERSION_TOOL: Anthropic.Tool = {
+  name: "save_brand_profile_version",
+  description:
+    "Save a NEW immutable version of the current brand's profile. Each save creates a new version (v1 → v2 → …); prior versions are NEVER mutated. Supply ONLY the fields you want to change as `changes` — the tool reads the current version, applies your changes on top, and saves the full merged result, so unchanged fields are preserved automatically. Call get_brand_profile first to see current values.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      changes: {
+        type: "array",
+        description: "The field changes to apply on top of the current profile.",
+        items: {
+          type: "object",
+          properties: {
+            field: {
+              type: "string",
+              description: "The profile field name, e.g. 'valueProposition', 'differentiators', 'tone'.",
+            },
+            operation: {
+              type: "string",
+              enum: ["set", "setList", "add", "remove"],
+              description:
+                "'set' replaces a free-text field with `value`; 'setList' replaces a list field with `values`; 'add' appends `value` to a list field; 'remove' deletes `value` from a list field.",
+            },
+            value: {
+              type: "string",
+              description: "The text (set) or single list item (add / remove). Required for set, add, remove.",
+            },
+            values: {
+              type: "array",
+              items: { type: "string" },
+              description: "The full list of items. Required for setList.",
+            },
+          },
+          required: ["field", "operation"],
+        },
+      },
+    },
+    required: ["changes"],
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Tool registry — every tool the service knows how to execute.
 // Clients choose which subset to enable via allowedTools in their config.
 // ---------------------------------------------------------------------------
@@ -999,6 +1155,12 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   update_campaign_fields: UPDATE_CAMPAIGN_FIELDS_TOOL,
   extract_brand_fields: EXTRACT_BRAND_FIELDS_TOOL,
   browse_url: BROWSE_URL_TOOL,
+  list_personas: LIST_PERSONAS_TOOL,
+  create_persona: CREATE_PERSONA_TOOL,
+  duplicate_persona: DUPLICATE_PERSONA_TOOL,
+  set_persona_status: SET_PERSONA_STATUS_TOOL,
+  get_brand_profile: GET_BRAND_PROFILE_TOOL,
+  save_brand_profile_version: SAVE_BRAND_PROFILE_VERSION_TOOL,
 };
 
 /** All tool names available for use in allowedTools config. */

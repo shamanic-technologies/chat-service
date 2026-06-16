@@ -41,6 +41,19 @@ import { traceEvent } from "./lib/trace-event.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
 import { extractBrandFields, BrandError } from "./lib/brand-client.js";
 import {
+  listPersonas,
+  createPersona,
+  duplicatePersona,
+  setPersonaStatus,
+  getBrandProfile,
+  saveBrandProfileVersion,
+  buildPersonaFilters,
+  applyBrandProfileChanges,
+  type PersonaStatus,
+  type BrandProfileChange,
+} from "./lib/brand-content-client.js";
+import { seedPlatformConfigs } from "./lib/seed-platform-configs.js";
+import {
   embedText,
   embedTexts,
   cosineSimilarity,
@@ -2046,6 +2059,104 @@ app.post("/chat", requireAuth, async (req, res) => {
         return { name: call.name, result };
       }
 
+      // Persona-editor + brand-profile-editor tools. These act on a SINGLE
+      // brand from context.brandId — require exactly one resolved brandId.
+      const requireSingleBrandId = (toolName: string): string => {
+        if (brandIds.length === 0) {
+          throw new Error(
+            `[chat] ${toolName} requires a brand — provide context.brandId`,
+          );
+        }
+        if (brandIds.length > 1) {
+          throw new Error(
+            `[chat] ${toolName} operates on a single brand, but ${brandIds.length} were provided`,
+          );
+        }
+        return brandIds[0];
+      };
+
+      if (call.name === "list_personas") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const brandId = requireSingleBrandId("list_personas");
+        const result = await listPersonas(
+          brandId,
+          args.status as PersonaStatus | undefined,
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "create_persona") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const brandId = requireSingleBrandId("create_persona");
+        const result = await createPersona(
+          brandId,
+          String(args.name ?? ""),
+          buildPersonaFilters(
+            args.filters as Array<{ attribute: string; values: string[] }> | undefined,
+          ),
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "duplicate_persona") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const brandId = requireSingleBrandId("duplicate_persona");
+        const result = await duplicatePersona(
+          brandId,
+          String(args.personaId ?? ""),
+          args.name as string | undefined,
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "set_persona_status") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const brandId = requireSingleBrandId("set_persona_status");
+        const result = await setPersonaStatus(
+          brandId,
+          String(args.personaId ?? ""),
+          args.status as PersonaStatus,
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "get_brand_profile") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const brandId = requireSingleBrandId("get_brand_profile");
+        const result = await getBrandProfile(brandId, featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "save_brand_profile_version") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const brandId = requireSingleBrandId("save_brand_profile_version");
+        const changes = (args.changes as BrandProfileChange[] | undefined) ?? [];
+        // Read current → apply changes → save the FULL merged map as a new
+        // immutable version (brand-service replaces the whole map per version,
+        // so a partial map would drop unchanged fields).
+        const profile = await getBrandProfile(brandId, featureCallParams);
+        const mergedFields = applyBrandProfileChanges(
+          profile.current?.fields ?? {},
+          changes,
+        );
+        const result = await saveBrandProfileVersion(
+          brandId,
+          mergedFields,
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
       return null;
     }
 
@@ -2515,8 +2626,12 @@ app.post("/internal/transfer-brand", requireInternalAuth, async (req, res) => {
 // Only start server if not in test environment
 if (process.env.NODE_ENV !== "test") {
   migrate(db, { migrationsFolder: "./drizzle" })
-    .then(() => {
+    .then(async () => {
       console.log("Migrations complete");
+      // Self-seed chat-service-owned platform configs (persona-editor,
+      // brand-profile-editor). O(1) — two upserts — safe to await before
+      // listen(); fails loud so the configs are guaranteed live.
+      await seedPlatformConfigs(db);
       const server = app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });
