@@ -130,6 +130,15 @@ Fields: same as `PUT /config` — `key`, `systemPrompt`, `allowedTools` (all req
 
 This endpoint is **idempotent** (upsert on `key`). Called on every cold start by api-service.
 
+**Self-seeded configs.** Two platform configs are owned by chat-service itself and seeded at boot (in `src/lib/seed-platform-configs.ts`, run from the migrate→listen path) — they do not need any external registrar:
+
+| configKey | Tools | Purpose |
+|---|---|---|
+| `persona-editor` | `list_personas`, `create_persona`, `duplicate_persona`, `set_persona_status`, `request_user_input` | Read + curate a brand's customer personas via NL. |
+| `brand-profile-editor` | `get_brand_profile`, `save_brand_profile_version`, `request_user_input` | Read + version a brand's brand profile via NL. |
+
+Both default to `google`/`flash-pro`. The dashboard selects them by `configKey` and passes `context: { brandId }`; the tools act on that brand under the caller's org. The boot seed only upserts these two keys, so it never clobbers a dashboard-registered config.
+
 **Config resolution in POST /chat:**
 1. Per-org config `(orgId, configKey)` → if found, use it
 2. Platform config `(configKey)` → if found, use it
@@ -598,6 +607,22 @@ Read-only and supporting workflow tools:
 | `update_campaign_fields` | Passthrough tool — returns `{ fields }` so the frontend can apply values to the campaign form |
 | `extract_brand_fields` | Extracts arbitrary fields from a brand's website via brand-service AI (cached 30 days) |
 | `browse_url` | Fetches and returns the content of any public URL as markdown (via scraping-service/firecrawl). Read-only. |
+
+**Persona-editor tools** (operate on the brand from `context.brandId`; via brand-service through api-service):
+
+| Tool | Description |
+|---|---|
+| `list_personas` | Lists the brand's customer personas, optional `status` filter (`active`/`paused`/`archived`). Read-only. `GET /v1/brands/:id/personas` |
+| `create_persona` | Creates a NEW immutable persona (`name` + `filters`). Names are unique per brand (case-insensitive); a clash returns `{ created: false, reason: "name_taken" }` — never a silent failure, never a hard delete. "Editing" a persona = creating a new one. `POST /v1/brands/:id/personas` |
+| `duplicate_persona` | Duplicates a persona by id; `name` auto-uniquifies server-side (never clashes). `POST /v1/brands/:id/personas/:personaId/duplicate` |
+| `set_persona_status` | Flips lifecycle status — the only mutable field (pause→paused, resume/restore→active, archive→archived). Archiving never deletes. `PATCH /v1/brands/:id/personas/:personaId/status` |
+
+**Brand-profile-editor tools** (operate on the brand from `context.brandId`):
+
+| Tool | Description |
+|---|---|
+| `get_brand_profile` | Gets the current profile fields + version list. Read-only. `GET /v1/brands/:id/brand-profile` |
+| `save_brand_profile_version` | Saves a NEW immutable version. Supplies only `changes` (`set`/`setList`/`add`/`remove`); the tool reads current, merges, and POSTs the full field map, so prior versions are untouched and unchanged fields are preserved. `POST /v1/brands/:id/brand-profile` |
 
 **UI tools:**
 
