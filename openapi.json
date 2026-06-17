@@ -770,6 +770,63 @@
           "model"
         ]
       },
+      "GenerateImageResponse": {
+        "type": "object",
+        "properties": {
+          "imageBase64": {
+            "type": "string",
+            "description": "Base64-encoded generated image bytes. Decode and store with the returned MIME type.",
+            "example": "iVBORw0KGgoAAAANSUhEUgAA..."
+          },
+          "mimeType": {
+            "type": "string",
+            "description": "MIME type for the generated image bytes.",
+            "example": "image/png"
+          },
+          "model": {
+            "type": "string",
+            "description": "Versioned Gemini image model used by chat-service.",
+            "example": "gemini-3.1-flash-image"
+          },
+          "tokensInput": {
+            "type": "number",
+            "description": "Input tokens reported by Gemini for the prompt.",
+            "example": 120
+          },
+          "tokensOutput": {
+            "type": "number",
+            "description": "Image output tokens reported by Gemini.",
+            "example": 1290
+          },
+          "text": {
+            "type": "string",
+            "description": "Optional text part returned alongside the image, when Gemini includes one.",
+            "example": "Here is the generated avatar."
+          }
+        },
+        "required": [
+          "imageBase64",
+          "mimeType",
+          "model",
+          "tokensInput",
+          "tokensOutput"
+        ]
+      },
+      "GenerateImageRequest": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Text prompt for Gemini image generation. Chat-service owns provider/model request shaping; callers should describe the desired image, not pass Gemini generationConfig fields.",
+            "example": "Generate a square PNG avatar portrait for a B2B SaaS buyer persona: confident marketing leader, clean studio lighting, no text."
+          }
+        },
+        "required": [
+          "prompt"
+        ],
+        "additionalProperties": false
+      },
       "InternalPlatformCompleteRequest": {
         "type": "object",
         "properties": {
@@ -1547,6 +1604,160 @@
           },
           "502": {
             "description": "Upstream service unavailable (key-service, billing-service, runs-service, or LLM provider)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/images/generate": {
+      "post": {
+        "tags": [
+          "Images"
+        ],
+        "summary": "Generate an image",
+        "description": "Org-scoped service-auth image generation for user-initiated workflows such as persona avatar regeneration.\n\nChat-service owns provider key resolution, Gemini request shaping, run creation, cost provisioning, billing authorization, provider execution, and cost reconciliation. Callers pass only a text prompt and receive generated image bytes plus MIME/model metadata suitable for storage.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal org UUID from client-service",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal user UUID from client-service",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Caller's run ID"
+            },
+            "required": true,
+            "description": "Caller's run ID",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Campaign ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Campaign ID — injected automatically by workflow-service",
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+              "example": "550e8400-e29b-41d4-a716-446655440000,660f9500-f30c-52e5-b827-557766551111"
+            },
+            "required": false,
+            "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Workflow slug — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Workflow slug — injected automatically by workflow-service",
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Feature slug — propagated through the entire service chain"
+            },
+            "required": false,
+            "description": "Feature slug — propagated through the entire service chain",
+            "name": "x-feature-slug",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateImageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated image data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateImageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits (platform-key only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientCreditsResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream service unavailable or provider image generation failed",
             "content": {
               "application/json": {
                 "schema": {
