@@ -567,6 +567,109 @@ All Google models require a Google API key configured in key-service (provider: 
   },
 });
 
+// --- Image Generation ---
+
+export const GenerateImageRequestSchema = z
+  .object({
+    prompt: z.string().min(1, "prompt is required").openapi({
+      description:
+        "Text prompt for Gemini image generation. Chat-service owns provider/model request shaping; callers should describe the desired image, not pass Gemini generationConfig fields.",
+      example:
+        "Generate a square PNG avatar portrait for a B2B SaaS buyer persona: confident marketing leader, clean studio lighting, no text.",
+    }),
+  })
+  .strict()
+  .openapi("GenerateImageRequest");
+
+export const GenerateImageResponseSchema = z
+  .object({
+    imageBase64: z.string().openapi({
+      description: "Base64-encoded generated image bytes. Decode and store with the returned MIME type.",
+      example: "iVBORw0KGgoAAAANSUhEUgAA...",
+    }),
+    mimeType: z.string().openapi({
+      description: "MIME type for the generated image bytes.",
+      example: "image/png",
+    }),
+    model: z.string().openapi({
+      description: "Versioned Gemini image model used by chat-service.",
+      example: "gemini-3.1-flash-image",
+    }),
+    tokensInput: z.number().openapi({
+      description: "Input tokens reported by Gemini for the prompt.",
+      example: 120,
+    }),
+    tokensOutput: z.number().openapi({
+      description: "Image output tokens reported by Gemini.",
+      example: 1290,
+    }),
+    text: z.string().optional().openapi({
+      description: "Optional text part returned alongside the image, when Gemini includes one.",
+      example: "Here is the generated avatar.",
+    }),
+  })
+  .openapi("GenerateImageResponse");
+
+export type GenerateImageRequest = z.infer<typeof GenerateImageRequestSchema>;
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/images/generate",
+  tags: ["Images"],
+  summary: "Generate an image",
+  description: `Org-scoped service-auth image generation for user-initiated workflows such as persona avatar regeneration.
+
+Chat-service owns provider key resolution, Gemini request shaping, run creation, cost provisioning, billing authorization, provider execution, and cost reconciliation. Callers pass only a text prompt and receive generated image bytes plus MIME/model metadata suitable for storage.`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({
+        description: "Service-to-service API key",
+      }),
+      "x-org-id": z.string().openapi({
+        description: "Internal org UUID from client-service",
+      }),
+      "x-user-id": z.string().openapi({
+        description: "Internal user UUID from client-service",
+      }),
+      "x-run-id": z.string().uuid().openapi({
+        description: "Caller's run ID",
+      }),
+      ...workflowTrackingHeaders,
+    }),
+    body: {
+      content: { "application/json": { schema: GenerateImageRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Generated image data",
+      content: {
+        "application/json": { schema: GenerateImageResponseSchema },
+      },
+    },
+    400: {
+      description: "Missing or invalid request fields",
+      content: {
+        "application/json": { schema: ValidationErrorResponseSchema },
+      },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    402: {
+      description: "Insufficient credits (platform-key only)",
+      content: {
+        "application/json": { schema: InsufficientCreditsResponseSchema },
+      },
+    },
+    502: {
+      description: "Upstream service unavailable or provider image generation failed",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // --- Internal Platform Complete ---
 
 export const InternalPlatformCompleteRequestSchema = z

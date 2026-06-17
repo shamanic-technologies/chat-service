@@ -5,6 +5,10 @@
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
+export const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
+export const GEMINI_IMAGE_COST_PREFIX = "google-flash-image-3.1";
+export const GEMINI_IMAGE_MAX_OUTPUT_TOKENS = 32_000;
+
 export const GEMINI_MODELS: Record<string, string> = {
   "gemini-3.1-flash-lite": "google-flash-lite-3.1",
   "gemini-3-flash-preview": "google-flash-3",
@@ -109,6 +113,21 @@ interface GeminiCompleteResult {
   sources: WebSearchSource[];
 }
 
+interface GeminiImageGenerationOptions {
+  apiKey: string;
+  prompt: string;
+  model?: string;
+}
+
+interface GeminiImageGenerationResult {
+  imageBase64: string;
+  mimeType: string;
+  text: string;
+  tokensInput: number;
+  tokensOutput: number;
+  model: string;
+}
+
 /**
  * Fetch an image from a URL and return base64-encoded data + MIME type.
  */
@@ -142,6 +161,17 @@ class GeminiRetryableError extends Error {
   ) {
     super(message);
     this.name = "GeminiRetryableError";
+  }
+}
+
+export class GeminiProviderError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly upstreamBody: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "GeminiProviderError";
   }
 }
 
@@ -244,6 +274,85 @@ async function callGeminiOnce(
     model,
     searchCount,
     sources,
+  };
+}
+
+export async function generateImageWithGemini(
+  options: GeminiImageGenerationOptions,
+): Promise<GeminiImageGenerationResult> {
+  const model = options.model ?? GEMINI_IMAGE_MODEL;
+  const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(options.apiKey)}`;
+  const timeoutMs = GEMINI_TIMEOUT_MS[model] ?? DEFAULT_GEMINI_TIMEOUT_MS;
+  const body = {
+    contents: [{ parts: [{ text: options.prompt }] }],
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new GeminiRetryableError(
+        504,
+        `[chat-service] Gemini image generation timed out after ${timeoutMs / 1000}s | model=${model}`,
+      );
+    }
+    throw err;
+  }
+
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => "unknown error");
+    throw new GeminiProviderError(
+      res.status,
+      errorText,
+      `[gemini-image] API error ${res.status}: ${errorText}`,
+    );
+  }
+
+  const data = (await res.json()) as {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{
+          text?: string;
+          inlineData?: { mimeType?: string; data?: string };
+          inline_data?: { mime_type?: string; data?: string };
+        }>;
+      };
+      finishReason?: string;
+    }>;
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+    };
+  };
+
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  const imagePart = parts.find((part) => part.inlineData?.data || part.inline_data?.data);
+  const inlineData = imagePart?.inlineData;
+  const inlineDataSnake = imagePart?.inline_data;
+  const imageBase64 = inlineData?.data ?? inlineDataSnake?.data;
+  if (!imageBase64) {
+    const finishReason = data.candidates?.[0]?.finishReason ?? "unknown";
+    const text = parts.map((part) => part.text ?? "").join("").trim();
+    throw new GeminiProviderError(
+      502,
+      JSON.stringify({ finishReason, text }),
+      `[gemini-image] Gemini response did not include image data | model=${model} | finishReason=${finishReason}`,
+    );
+  }
+
+  return {
+    imageBase64,
+    mimeType: inlineData?.mimeType ?? inlineDataSnake?.mime_type ?? "image/png",
+    text: parts.map((part) => part.text ?? "").join("").trim(),
+    tokensInput: data.usageMetadata?.promptTokenCount ?? 0,
+    tokensOutput: data.usageMetadata?.candidatesTokenCount ?? 0,
+    model,
   };
 }
 
