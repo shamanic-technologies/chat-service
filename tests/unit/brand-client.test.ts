@@ -102,6 +102,30 @@ describe("extractBrandFields", () => {
     expect(sentBody.fields).toEqual([{ key: "x", description: "y" }]);
   });
 
+  it("can force a fresh website extraction with resetCache", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ brands: [], fields: {} }),
+    });
+
+    const { extractBrandFields } = await loadModule();
+    await extractBrandFields(
+      [{ key: "valueProposition", description: "Value proposition" }],
+      ["b-1"],
+      baseParams,
+      { resetCache: true },
+    );
+
+    const sentBody = JSON.parse(
+      (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body,
+    );
+    expect(sentBody).toEqual({
+      brandIds: ["b-1"],
+      fields: [{ key: "valueProposition", description: "Value proposition" }],
+      resetCache: true,
+    });
+  });
+
   it("throws BrandError on non-OK response", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,

@@ -14,10 +14,11 @@ const NEW_TOOLS = [
   "set_persona_status",
   "get_brand_profile",
   "save_brand_profile_version",
+  "refresh_brand_profile_from_website",
 ];
 
 describe("persona / brand-profile tool registry", () => {
-  it("registers all six new tools with matching names", () => {
+  it("registers all persona and brand-profile tools with matching names", () => {
     for (const name of NEW_TOOLS) {
       expect(TOOL_REGISTRY[name], `missing tool ${name}`).toBeDefined();
       expect(TOOL_REGISTRY[name].name).toBe(name);
@@ -61,10 +62,23 @@ describe("self-seeded platform configs", () => {
 
   it("persona-editor cannot touch brand-profile tools and vice-versa (scoping)", () => {
     expect(PERSONA_EDITOR_CONFIG.allowedTools).not.toContain("save_brand_profile_version");
+    expect(PERSONA_EDITOR_CONFIG.allowedTools).not.toContain("refresh_brand_profile_from_website");
     expect(BRAND_PROFILE_EDITOR_CONFIG.allowedTools).not.toContain("create_persona");
     // No write tool grants a hard-delete capability — none exists.
     const everyTool = [...PERSONA_EDITOR_CONFIG.allowedTools, ...BRAND_PROFILE_EDITOR_CONFIG.allowedTools];
     expect(everyTool.some((t) => /delete|destroy|remove_persona/.test(t))).toBe(false);
+  });
+
+  it("brand-profile-editor exposes the website refresh tool and prompt guard", () => {
+    expect(BRAND_PROFILE_EDITOR_CONFIG.allowedTools).toContain(
+      "refresh_brand_profile_from_website",
+    );
+    expect(BRAND_PROFILE_EDITOR_CONFIG.systemPrompt).toContain(
+      "Do not stop after get_brand_profile",
+    );
+    expect(BRAND_PROFILE_EDITOR_CONFIG.systemPrompt).toContain(
+      "When asked only to read, summarize, or give an opinion, never save",
+    );
   });
 });
 

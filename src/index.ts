@@ -52,6 +52,12 @@ import {
   type PersonaStatus,
   type BrandProfileChange,
 } from "./lib/brand-content-client.js";
+import {
+  formatBrandProfileWebsiteRefreshErrorMessage,
+  formatBrandProfileWebsiteRefreshMessage,
+  isBrandProfileWebsiteRefreshIntent,
+  refreshBrandProfileFromWebsite,
+} from "./lib/brand-profile-refresh.js";
 import { seedPlatformConfigs } from "./lib/seed-platform-configs.js";
 import {
   embedText,
@@ -1629,6 +1635,34 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     const allTools = resolveToolSet(allowedToolNames);
     const allowedToolSet = new Set(allowedToolNames);
+    const downstreamTrackingHeaders = Object.keys(trackingHeaders).length > 0
+      ? trackingHeaders as Record<string, string>
+      : undefined;
+    const featureCallParams = {
+      orgId,
+      userId,
+      runId: runId!,
+      trackingHeaders: downstreamTrackingHeaders,
+    };
+    const brandProfileWebsiteRefreshIntent =
+      configKey === "brand-profile-editor" &&
+      isBrandProfileWebsiteRefreshIntent(message);
+
+    // Persona-editor + brand-profile-editor tools act on a SINGLE brand from
+    // context.brandId — require exactly one resolved brandId.
+    const requireSingleBrandId = (toolName: string): string => {
+      if (brandIds.length === 0) {
+        throw new Error(
+          `[chat] ${toolName} requires a brand — provide context.brandId`,
+        );
+      }
+      if (brandIds.length > 1) {
+        throw new Error(
+          `[chat] ${toolName} operates on a single brand, but ${brandIds.length} were provided`,
+        );
+      }
+      return brandIds[0];
+    };
 
     // Detect client disconnect to abort in-flight streams
     const abortController = new AbortController();
@@ -1937,12 +1971,6 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
 
       // Built-in feature tools (feature-creator context only)
-      const featureCallParams = {
-        orgId,
-        userId,
-        runId: runId!,
-        trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
-      };
 
       if (call.name === "create_feature") {
         const args = (call.args as Record<string, unknown>) || {};
@@ -2059,22 +2087,6 @@ app.post("/chat", requireAuth, async (req, res) => {
         return { name: call.name, result };
       }
 
-      // Persona-editor + brand-profile-editor tools. These act on a SINGLE
-      // brand from context.brandId — require exactly one resolved brandId.
-      const requireSingleBrandId = (toolName: string): string => {
-        if (brandIds.length === 0) {
-          throw new Error(
-            `[chat] ${toolName} requires a brand — provide context.brandId`,
-          );
-        }
-        if (brandIds.length > 1) {
-          throw new Error(
-            `[chat] ${toolName} operates on a single brand, but ${brandIds.length} were provided`,
-          );
-        }
-        return brandIds[0];
-      };
-
       if (call.name === "list_personas") {
         const args = (call.args as Record<string, unknown>) || {};
         const brandId = requireSingleBrandId("list_personas");
@@ -2157,7 +2169,71 @@ app.post("/chat", requireAuth, async (req, res) => {
         return { name: call.name, result };
       }
 
+      if (call.name === "refresh_brand_profile_from_website") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const brandId = requireSingleBrandId("refresh_brand_profile_from_website");
+        const result = await refreshBrandProfileFromWebsite(
+          brandId,
+          context,
+          featureCallParams,
+          args.fields,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
       return null;
+    }
+
+    async function handleBrandProfileWebsiteRefreshIntent(): Promise<boolean> {
+      if (
+        !brandProfileWebsiteRefreshIntent ||
+        !allowedToolSet.has("refresh_brand_profile_from_website")
+      ) {
+        return false;
+      }
+
+      const args: Record<string, unknown> = {};
+      const toolCallId = `tc_${crypto.randomUUID()}`;
+      sendSSE(res, {
+        type: "tool_call",
+        id: toolCallId,
+        name: "refresh_brand_profile_from_website",
+        args,
+      });
+
+      try {
+        const brandId = requireSingleBrandId("refresh_brand_profile_from_website");
+        const result = await refreshBrandProfileFromWebsite(
+          brandId,
+          context,
+          featureCallParams,
+        );
+        toolCalls.push({ name: "refresh_brand_profile_from_website", args, result });
+        sendSSE(res, {
+          type: "tool_result",
+          id: toolCallId,
+          name: "refresh_brand_profile_from_website",
+          result,
+        });
+        fullResponse = formatBrandProfileWebsiteRefreshMessage(result);
+        sendSSE(res, { type: "token", content: fullResponse });
+      } catch (refreshErr) {
+        chatFailed = true;
+        const errorMessage = formatBrandProfileWebsiteRefreshErrorMessage(refreshErr);
+        const result = { error: errorMessage };
+        toolCalls.push({ name: "refresh_brand_profile_from_website", args, result });
+        sendSSE(res, {
+          type: "tool_result",
+          id: toolCallId,
+          name: "refresh_brand_profile_from_website",
+          result,
+        });
+        fullResponse = errorMessage;
+        sendSSE(res, { type: "token", content: fullResponse });
+      }
+
+      return true;
     }
 
     // -----------------------------------------------------------------------
@@ -2165,7 +2241,9 @@ app.post("/chat", requireAuth, async (req, res) => {
     // Provider-specific: Gemini uses streamGeminiChat(), Anthropic uses SDK
     // -----------------------------------------------------------------------
 
-    if (runId) {
+    const handledBrandProfileRefresh = await handleBrandProfileWebsiteRefreshIntent();
+
+    if (!handledBrandProfileRefresh && runId) {
       traceEvent(runId, "stream-start", { orgId, userId }, workflowTracking, {
         data: {
           provider: chatProvider,
@@ -2176,7 +2254,10 @@ app.post("/chat", requireAuth, async (req, res) => {
       });
     }
 
-    if (isGeminiChat) {
+    if (handledBrandProfileRefresh) {
+      // The deterministic brand-profile refresh already streamed its concise
+      // confirmation and populated fullResponse/toolCalls for persistence.
+    } else if (isGeminiChat) {
       // --- Gemini streaming path ---
       const geminiToolDefs: ToolDefinition[] = allTools.map((t) => ({
         name: t.name,

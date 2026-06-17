@@ -1123,6 +1123,40 @@ export const SAVE_BRAND_PROFILE_VERSION_TOOL: Anthropic.Tool = {
   },
 };
 
+export const REFRESH_BRAND_PROFILE_FROM_WEBSITE_TOOL: Anthropic.Tool = {
+  name: "refresh_brand_profile_from_website",
+  description:
+    "Refresh the current brand's profile from the latest/current website and save a NEW immutable version. Use this when the user asks to update, refresh, sync, regenerate, or save the brand profile from the latest/current website (including French requests like 'mets à jour avec mon dernier site web'). This tool reads the current profile, forces fresh website field extraction using context.fieldDefinitions when available, saves the full merged profile as a new version, and returns the new version plus changed fields. Do NOT call this for read-only questions or opinions.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      fields: {
+        type: "array",
+        description:
+          "Optional field definitions to extract if context.fieldDefinitions is unavailable. Each field needs a key and description.",
+        items: {
+          type: "object",
+          properties: {
+            key: {
+              type: "string",
+              description: "Machine-readable brand profile field key.",
+            },
+            description: {
+              type: "string",
+              description: "What to extract from the current website for this field.",
+            },
+            type: {
+              type: "string",
+              description: "Optional field type hint, e.g. text or list.",
+            },
+          },
+          required: ["key", "description"],
+        },
+      },
+    },
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Tool registry — every tool the service knows how to execute.
 // Clients choose which subset to enable via allowedTools in their config.
@@ -1161,6 +1195,7 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   set_persona_status: SET_PERSONA_STATUS_TOOL,
   get_brand_profile: GET_BRAND_PROFILE_TOOL,
   save_brand_profile_version: SAVE_BRAND_PROFILE_VERSION_TOOL,
+  refresh_brand_profile_from_website: REFRESH_BRAND_PROFILE_FROM_WEBSITE_TOOL,
 };
 
 /** All tool names available for use in allowedTools config. */
