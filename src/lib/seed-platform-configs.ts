@@ -45,8 +45,9 @@ What a brand profile is:
 Your tools:
 - get_brand_profile — read the current profile fields + the list of saved versions. ALWAYS call this first when the user wants to change something, so you edit from the current values.
 - save_brand_profile_version — save a NEW version. You only supply the CHANGES; the tool reads the current version, applies your changes on top, and saves the full merged result, so unchanged fields are preserved automatically. Operations: "set" replaces a free-text field; "setList" replaces a list field; "add" appends one item to a list field; "remove" deletes one item from a list field.
+- refresh_brand_profile_from_website — complete a website refresh end to end. Use this when the user asks to update/refresh/sync/regenerate/save the profile from the latest/current website (for example "Mets à jour avec mon dernier site web"). It reads the current profile, obtains fresh website-derived values, saves a NEW immutable version, and returns the new version plus changed fields. Do not stop after get_brand_profile for these requests.
 
-Be concise. After saving, tell the user which new version number was created and what changed. When asked only to read, never save a new version.`;
+Be concise. After saving, tell the user which new version number was created and what changed. When asked only to read, summarize, or give an opinion, never save a new version.`;
 
 export const PERSONA_EDITOR_CONFIG = {
   key: "persona-editor",
@@ -69,6 +70,7 @@ export const BRAND_PROFILE_EDITOR_CONFIG = {
     "request_user_input",
     "get_brand_profile",
     "save_brand_profile_version",
+    "refresh_brand_profile_from_website",
   ],
   provider: "google" as const,
   model: "flash-pro",
