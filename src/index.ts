@@ -24,7 +24,15 @@ import {
 } from "./lib/anthropic.js";
 import type { Provider, ModelAlias } from "./lib/anthropic.js";
 import { resolveChatProviderModel, buildConfigConflictSet } from "./lib/config-defaults.js";
-import { isGeminiModel, completeWithGemini } from "./lib/gemini.js";
+import {
+  isGeminiModel,
+  completeWithGemini,
+  generateImageWithGemini,
+  GeminiProviderError,
+  GEMINI_IMAGE_COST_PREFIX,
+  GEMINI_IMAGE_MAX_OUTPUT_TOKENS,
+  GEMINI_IMAGE_MODEL,
+} from "./lib/gemini.js";
 import {
   createWorkflow,
   upgradeWorkflow,
@@ -81,7 +89,7 @@ import {
 } from "./lib/key-client.js";
 import { authorizeCredits, BillingError } from "./lib/billing-client.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -502,6 +510,171 @@ app.post("/complete", requireAuth, async (req, res) => {
           await cancelProvisionedCosts(runId, provisionedCostIds, runIdentity, trackingHeaders);
         } catch (costErr) {
           console.error(`[complete] cost reconcile failed runId="${runId}" — provisioned-max kept as fallback:`, costErr);
+        }
+      }
+    }
+  }
+});
+
+// --- Image Generation ---
+
+app.post("/orgs/images/generate", requireAuth, async (req, res) => {
+  const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
+
+  const trackingHeaders: Record<string, string> = {};
+  if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
+  if (workflowTracking.brandId) trackingHeaders["x-brand-id"] = workflowTracking.brandId;
+  if (workflowTracking.workflowSlug) trackingHeaders["x-workflow-slug"] = workflowTracking.workflowSlug;
+  if (workflowTracking.featureSlug) trackingHeaders["x-feature-slug"] = workflowTracking.featureSlug;
+
+  const parsed = GenerateImageRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+
+  const { prompt } = parsed.data;
+  const provider = "google";
+  const effectiveModel = GEMINI_IMAGE_MODEL;
+
+  let resolvedKey: ResolvedKey;
+  try {
+    resolvedKey = await resolveKey({
+      provider,
+      orgId,
+      userId,
+      runId: parentRunId,
+      caller: { method: "POST", path: "/orgs/images/generate" },
+      trackingHeaders,
+    });
+  } catch (err) {
+    console.error(`[images/generate] Failed to resolve ${provider} key for org="${orgId}":`, err);
+    return res.status(502).json({
+      error: `Failed to resolve ${provider} API key. Ensure the key is configured in key-service.`,
+    });
+  }
+
+  const costSource: "platform" | "org" = resolvedKey.keySource === "org" ? "org" : "platform";
+  const estimatedInputTokens = Math.max(Math.ceil(prompt.length / 4), 500);
+  const maxOutputTokens = GEMINI_IMAGE_MAX_OUTPUT_TOKENS;
+
+  let runId: string | null = null;
+  try {
+    const run = await createRun(
+      { serviceName: "chat-service", taskName: "generate-image" },
+      { orgId, userId, runId: parentRunId },
+      trackingHeaders,
+    );
+    runId = run.id;
+    traceEvent(runId, "run-created", { orgId, userId }, workflowTracking, {
+      data: { taskName: "generate-image", parentRunId, provider, model: effectiveModel },
+    });
+  } catch (runErr) {
+    console.error(`[images/generate] org="${orgId}" run creation failed:`, runErr);
+    return res.status(502).json({
+      error: "Service temporarily unavailable (run tracking). Please try again.",
+    });
+  }
+
+  let imageFailed = false;
+  let totalPromptTokens = 0;
+  let totalOutputTokens = 0;
+  let provisionedCostIds: string[] = [];
+  try {
+    try {
+      provisionedCostIds = await provisionAndAuthorizeLlmCost({
+        runId,
+        costPrefix: GEMINI_IMAGE_COST_PREFIX,
+        inputTokens: estimatedInputTokens,
+        outputTokens: maxOutputTokens,
+        keySource: resolvedKey.keySource,
+        identity: { orgId, userId, runId },
+        trackingHeaders,
+        description: `generate-image — ${effectiveModel}`,
+      });
+    } catch (costErr) {
+      imageFailed = true;
+      const r = costErrorResponse(costErr, "images/generate", orgId);
+      return res.status(r.status).json(r.body);
+    }
+
+    traceEvent(runId, "llm-call-start", { orgId, userId }, workflowTracking, {
+      data: { provider, model: effectiveModel, operation: "image-generation" },
+    });
+
+    const result = await generateImageWithGemini({
+      apiKey: resolvedKey.key,
+      model: effectiveModel,
+      prompt,
+    });
+
+    // Gemini should return usageMetadata for image models. If it does not, keep
+    // the input estimate/output max as actual rows rather than cancelling all
+    // holds after a provider call that already spent.
+    totalPromptTokens = result.tokensInput > 0 ? result.tokensInput : estimatedInputTokens;
+    totalOutputTokens = result.tokensOutput > 0 ? result.tokensOutput : maxOutputTokens;
+
+    traceEvent(runId, "llm-call-done", { orgId, userId }, workflowTracking, {
+      data: {
+        provider,
+        model: result.model,
+        tokensInput: totalPromptTokens,
+        tokensOutput: totalOutputTokens,
+        mimeType: result.mimeType,
+      },
+    });
+
+    res.json({
+      imageBase64: result.imageBase64,
+      mimeType: result.mimeType,
+      model: result.model,
+      tokensInput: totalPromptTokens,
+      tokensOutput: totalOutputTokens,
+      ...(result.text ? { text: result.text } : {}),
+    });
+  } catch (err) {
+    imageFailed = true;
+    console.error(`[images/generate] org="${orgId}" error:`, err);
+    traceEvent(runId, "llm-call-failed", { orgId, userId }, workflowTracking, {
+      level: "error",
+      detail: err instanceof Error ? err.message : String(err),
+      data: { provider, model: effectiveModel },
+    });
+    if (err instanceof GeminiProviderError) {
+      return res.status(502).json({
+        error: `Gemini image generation failed with provider status ${err.status}`,
+        providerStatus: err.status,
+        providerError: err.upstreamBody,
+      });
+    }
+    res.status(502).json({
+      error: "Image generation failed. Please try again.",
+    });
+  } finally {
+    if (runId) {
+      const runIdentity = { orgId, userId, runId };
+      const actualItems = [
+        ...(totalPromptTokens > 0
+          ? [{ costName: `${GEMINI_IMAGE_COST_PREFIX}-tokens-input`, quantity: totalPromptTokens, costSource }]
+          : []),
+        ...(totalOutputTokens > 0
+          ? [{ costName: `${GEMINI_IMAGE_COST_PREFIX}-tokens-output`, quantity: totalOutputTokens, costSource }]
+          : []),
+      ];
+      try {
+        await updateRunStatus(runId, imageFailed ? "failed" : "completed", runIdentity, trackingHeaders);
+      } catch (runErr) {
+        console.error(`[chat-service] /orgs/images/generate failed to finalize run runId="${runId}" orgId="${orgId}":`, runErr);
+      }
+      if (provisionedCostIds.length > 0) {
+        try {
+          if (actualItems.length > 0) {
+            await addRunCosts(runId, actualItems, runIdentity, trackingHeaders);
+          }
+          await cancelProvisionedCosts(runId, provisionedCostIds, runIdentity, trackingHeaders);
+        } catch (costErr) {
+          console.error(`[images/generate] cost reconcile failed runId="${runId}" — provisioned-max kept as fallback:`, costErr);
         }
       }
     }
