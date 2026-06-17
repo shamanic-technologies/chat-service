@@ -48,16 +48,21 @@ export interface ExtractFieldsResponse {
   fields: Record<string, ExtractFieldEntry>;
 }
 
+export interface ExtractBrandFieldsOptions {
+  resetCache?: boolean;
+}
+
 export async function extractBrandFields(
   fields: ExtractFieldDef[],
   brandIds: string[],
   params: BrandCallParams,
+  options: ExtractBrandFieldsOptions = {},
 ): Promise<ExtractFieldsResponse> {
   const res = await apiServiceFetch(
     `/v1/brands/extract-fields`,
     "POST",
     params,
-    { brandIds, fields },
+    { brandIds, fields, ...(options.resetCache ? { resetCache: true } : {}) },
   );
 
   if (!res.ok) {

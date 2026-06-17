@@ -135,7 +135,7 @@ This endpoint is **idempotent** (upsert on `key`). Called on every cold start by
 | configKey | Tools | Purpose |
 |---|---|---|
 | `persona-editor` | `list_personas`, `create_persona`, `duplicate_persona`, `set_persona_status`, `request_user_input` | Read + curate a brand's customer personas via NL. |
-| `brand-profile-editor` | `get_brand_profile`, `save_brand_profile_version`, `request_user_input` | Read + version a brand's brand profile via NL. |
+| `brand-profile-editor` | `get_brand_profile`, `save_brand_profile_version`, `refresh_brand_profile_from_website`, `request_user_input` | Read, refresh from website, and version a brand's brand profile via NL. |
 
 Both default to `google`/`flash-pro`. The dashboard selects them by `configKey` and passes `context: { brandId }`; the tools act on that brand under the caller's org. The boot seed only upserts these two keys, so it never clobbers a dashboard-registered config.
 
@@ -623,6 +623,7 @@ Read-only and supporting workflow tools:
 |---|---|
 | `get_brand_profile` | Gets the current profile fields + version list. Read-only. `GET /v1/brands/:id/brand-profile` |
 | `save_brand_profile_version` | Saves a NEW immutable version. Supplies only `changes` (`set`/`setList`/`add`/`remove`); the tool reads current, merges, and POSTs the full field map, so prior versions are untouched and unchanged fields are preserved. `POST /v1/brands/:id/brand-profile` |
+| `refresh_brand_profile_from_website` | Handles explicit latest/current website refresh requests end to end: reads current profile, forces fresh website field extraction via `POST /v1/brands/extract-fields` with `resetCache: true`, saves the full merged field map as a NEW immutable version, and returns the new version plus changed fields. Read-only questions never use this path. |
 
 **UI tools:**
 
