@@ -116,8 +116,17 @@ Concretely forbidden in these endpoints:
 - Wrapping in any preamble or postamble
 
 JSON mode is enforced **only** via native provider metadata:
-- **Anthropic**: `output_config.format = { type: "json_schema", schema }`. Requires a strict `responseSchema` from the caller. Without it, return 400 — do not nudge via system prompt.
+- **Anthropic**: `output_config.format = { type: "json_schema", schema }`. Requires a `responseSchema` from the caller. Without it, return 400 — do not nudge via system prompt.
 - **Gemini**: `generationConfig.responseMimeType: "application/json"` (+ optional `responseSchema`).
+
+### Provider schema dialects are NORMALIZED, not delegated to the caller — and the two are MIRROR IMAGES, never unify them
+
+The caller sends one JSON-Schema-7 / Zod `responseSchema`; each provider's structured-output API accepts a DIFFERENT restricted dialect, so chat-service normalizes per provider before forwarding. The two normalizers do OPPOSITE things and must stay separate:
+
+- **Anthropic** (`prepareAnthropicSchema` in `src/lib/anthropic.ts`): strict mode REQUIRES every `type:"object"` node to carry an explicit `additionalProperties: false`. A permissive schema 400s with `output_config.format.schema: For 'object' type, 'additionalProperties' must be explicitly set to false` and — with no fallback parsing — kills the turn. `prepareAnthropicSchema` recursively STAMPS `additionalProperties:false` onto every object node (walking `properties`, `items`, `anyOf`/`allOf`/`oneOf`, `$defs`/`definitions`), preserving an explicit value the caller set. **Never forward `options.responseSchema` raw into `output_config.format`** — it must pass through `prepareAnthropicSchema` first (incident 2026-06-18, fixed v0.38.4; the bug 400'd every Anthropic `/complete` with a Zod-shaped schema). The route still 400s when JSON mode is requested with NO `responseSchema` at all — normalization fixes the *shape*, not the *absence*.
+- **Gemini** (`sanitizeGeminiSchema` in `src/lib/gemini.ts`): the OpenAPI-3.0 subset REJECTS `additionalProperties` (and `$ref`, `$schema`, `const`, etc.), so it STRIPS those keys.
+
+**Do NOT "unify" the two into one shared sanitizer** — Anthropic needs `additionalProperties:false` PRESENT, Gemini needs it ABSENT; a single deny-list/allow-list cannot serve both. Adding the key for Gemini reintroduces the v0.23.x-class 400; stripping it for Anthropic reintroduces the v0.38.3 400. Keep `prepareAnthropicSchema` (add) and `sanitizeGeminiSchema` (strip) as distinct, provider-pinned passes.
 
 **No fallback parsing.** `response.json` is populated by strict `JSON.parse(content)`. A parse failure means the provider violated its enforcement contract and surfaces as 502. Do not reintroduce `jsonrepair`, LLM-repair rounds, or any other recovery pipeline.
 
