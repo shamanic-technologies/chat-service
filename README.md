@@ -276,6 +276,39 @@ Response format is identical to `POST /complete`.
 
 Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
 
+## Internal Platform Image Generation
+
+`POST /internal/platform-images/generate` — platform-level Gemini image generation for internal service-to-service calls. Platform (no-org) twin of the org-scoped `POST /orgs/images/generate`.
+
+**Auth:** `X-API-Key` only — no `x-org-id`, `x-user-id`, or `x-run-id` headers required.
+
+```json
+{
+  "prompt": "Generate a square PNG avatar portrait for a B2B SaaS buyer persona: confident marketing leader, clean studio lighting, no text."
+}
+```
+
+Response:
+
+```json
+{
+  "imageBase64": "iVBORw0KGgoAAAANSUhEUgAA...",
+  "mimeType": "image/png",
+  "model": "gemini-3.1-flash-image",
+  "tokensInput": 120,
+  "tokensOutput": 1290
+}
+```
+
+**Key differences from `POST /orgs/images/generate`:**
+- **No org billing** — platform-level calls are not charged to any org's credit balance (no affordability authorize).
+- **Platform run tracking + cost** — a **platform run** is created in runs-service (`POST /v1/platform-runs`, `x-service-name: chat-service`, `taskName: generate-image`) and image-generation token spend is declared on it as `actual` costs (`costSource: platform`, byte-equal to the org route's catalog rows). Platform runs have no cost-status PATCH, so costs are posted post-call as `actual` (no provision/cancel). Fail-loud: if the platform run can't be created or its cost can't be declared, the call returns **502** rather than spending silently.
+- **Platform key resolution** — uses `GET /keys/platform/google/decrypt` directly (no org-level key lookup).
+
+Use this endpoint when platform tooling or agents calling through the api-registry MCP (which injects only service-auth headers and strips org id) need to generate an image with no org context.
+
+Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
+
 ## Internal: Transfer Brand
 
 `POST /internal/transfer-brand` — re-assigns solo-brand sessions from one org to another.

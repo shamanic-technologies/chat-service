@@ -1558,6 +1558,107 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   }
 });
 
+// --- Internal Platform Image Generation ---
+
+app.post("/internal/platform-images/generate", requireInternalAuth, async (req, res) => {
+  const parsed = GenerateImageRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+
+  const { prompt } = parsed.data;
+  const provider = "google";
+  const effectiveModel = GEMINI_IMAGE_MODEL;
+
+  let apiKey: string;
+  try {
+    const platformKey = await resolvePlatformKey(provider, {
+      method: "POST",
+      path: "/internal/platform-images/generate",
+    });
+    apiKey = platformKey.key;
+  } catch (err) {
+    console.error(`[internal/platform-images/generate] Failed to resolve platform ${provider} key:`, err);
+    return res.status(502).json({
+      error: `Failed to resolve platform ${provider} API key.`,
+    });
+  }
+
+  // Create a platform run so image-generation spend is declared. Platform key
+  // spend, no org → costSource "platform", no affordability authorize. Fail loud
+  // — a cost that can't be tracked must block the op, not silently spend.
+  let runId: string;
+  try {
+    const run = await createPlatformRun({ serviceName: "chat-service", taskName: "generate-image" });
+    runId = run.id;
+  } catch (runErr) {
+    console.error(`[internal/platform-images/generate] platform-run creation failed:`, runErr);
+    return res.status(502).json({
+      error: "Service temporarily unavailable (run tracking). Please try again.",
+    });
+  }
+
+  const estimatedInputTokens = Math.max(Math.ceil(prompt.length / 4), 500);
+
+  let platformFailed = false;
+  try {
+    const result = await generateImageWithGemini({
+      apiKey,
+      model: effectiveModel,
+      prompt,
+    });
+
+    // Gemini should return usageMetadata for image models. If it does not, keep
+    // the input estimate / output max as actual quantities rather than under-
+    // reporting a provider call that already spent. Mirrors /orgs/images/generate.
+    const totalPromptTokens = result.tokensInput > 0 ? result.tokensInput : estimatedInputTokens;
+    const totalOutputTokens = result.tokensOutput > 0 ? result.tokensOutput : GEMINI_IMAGE_MAX_OUTPUT_TOKENS;
+
+    // Declare ACTUAL costs on the platform run BEFORE responding. Platform runs
+    // have no cost-status PATCH, so there is no provision/cancel — costs are
+    // posted as `actual` post-call. Throws (fail loud → 502) if undeclarable.
+    const costItems: CostItem[] = [
+      ...(totalPromptTokens > 0
+        ? [{ costName: `${GEMINI_IMAGE_COST_PREFIX}-tokens-input`, quantity: totalPromptTokens, costSource: "platform" as const }]
+        : []),
+      ...(totalOutputTokens > 0
+        ? [{ costName: `${GEMINI_IMAGE_COST_PREFIX}-tokens-output`, quantity: totalOutputTokens, costSource: "platform" as const }]
+        : []),
+    ];
+    await addPlatformRunCosts(runId, "chat-service", costItems);
+
+    res.json({
+      imageBase64: result.imageBase64,
+      mimeType: result.mimeType,
+      model: result.model,
+      tokensInput: totalPromptTokens,
+      tokensOutput: totalOutputTokens,
+      ...(result.text ? { text: result.text } : {}),
+    });
+  } catch (err) {
+    platformFailed = true;
+    console.error(`[internal/platform-images/generate] image generation failed:`, err);
+    if (err instanceof GeminiProviderError) {
+      return res.status(502).json({
+        error: `Gemini image generation failed with provider status ${err.status}`,
+        providerStatus: err.status,
+        providerError: err.upstreamBody,
+      });
+    }
+    res.status(502).json({
+      error: "Image generation failed. Please try again.",
+    });
+  } finally {
+    try {
+      await updatePlatformRunStatus(runId, "chat-service", platformFailed ? "failed" : "completed");
+    } catch (statusErr) {
+      console.error(`[internal/platform-images/generate] failed to finalize platform run runId="${runId}":`, statusErr);
+    }
+  }
+});
+
 // --- Chat ---
 
 app.post("/chat", requireAuth, async (req, res) => {

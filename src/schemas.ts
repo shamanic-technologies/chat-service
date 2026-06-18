@@ -767,6 +767,56 @@ Does not support \`imageUrl\` or \`imageContext\` — use \`POST /complete\` for
   },
 });
 
+// --- Internal Platform Image Generation ---
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/platform-images/generate",
+  tags: ["Internal"],
+  summary: "Platform-level image generation (no org, no billing authorize)",
+  description: `Internal endpoint for platform-level Gemini image generation that does not belong to a specific org or user. Platform twin of \`POST /orgs/images/generate\`.
+
+**Auth:** Requires only \`x-api-key\` (no \`x-org-id\`, \`x-user-id\`, or \`x-run-id\`).
+
+**Key resolution:** Uses the platform Google key directly via \`GET /keys/platform/google/decrypt\` — no org-level key lookup.
+
+**Spend tracking:** Image-generation token spend is declared on a platform run (\`POST /v1/platform-runs\` → \`POST /v1/platform-runs/:id/costs\` with \`costSource: "platform"\`). No org affordability authorize and no provision/cancel — costs are posted as \`actual\` post-call. Fail loud (502) if spend cannot be declared.
+
+Callers pass only a text prompt and receive generated image bytes plus MIME/model metadata suitable for storage.`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({
+        description: "Service-to-service API key",
+      }),
+    }),
+    body: {
+      content: { "application/json": { schema: GenerateImageRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Generated image data",
+      content: {
+        "application/json": { schema: GenerateImageResponseSchema },
+      },
+    },
+    400: {
+      description: "Missing or invalid request fields",
+      content: {
+        "application/json": { schema: ValidationErrorResponseSchema },
+      },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: "Upstream service unavailable (key-service or runs-service) or provider image generation failed",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // --- Chat ---
 
 export const ChatRequestSchema = z
