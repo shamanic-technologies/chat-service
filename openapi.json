@@ -1841,6 +1841,78 @@
         }
       }
     },
+    "/internal/platform-images/generate": {
+      "post": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Platform-level image generation (no org, no billing authorize)",
+        "description": "Internal endpoint for platform-level Gemini image generation that does not belong to a specific org or user. Platform twin of `POST /orgs/images/generate`.\n\n**Auth:** Requires only `x-api-key` (no `x-org-id`, `x-user-id`, or `x-run-id`).\n\n**Key resolution:** Uses the platform Google key directly via `GET /keys/platform/google/decrypt` — no org-level key lookup.\n\n**Spend tracking:** Image-generation token spend is declared on a platform run (`POST /v1/platform-runs` → `POST /v1/platform-runs/:id/costs` with `costSource: \"platform\"`). No org affordability authorize and no provision/cancel — costs are posted as `actual` post-call. Fail loud (502) if spend cannot be declared.\n\nCallers pass only a text prompt and receive generated image bytes plus MIME/model metadata suitable for storage.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateImageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated image data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateImageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream service unavailable (key-service or runs-service) or provider image generation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat": {
       "post": {
         "tags": [
