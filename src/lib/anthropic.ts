@@ -59,6 +59,43 @@ function anthropicRetryDelayMs(err: unknown, attempt: number): number {
   return retryAfter ?? (ANTHROPIC_STREAM_RETRY_BASE_MS * 2 ** attempt + Math.random() * 500);
 }
 
+/**
+ * Normalize a caller-supplied JSON Schema for Anthropic's strict structured-output
+ * dialect before sending it via `output_config.format`.
+ *
+ * Anthropic's `json_schema` enforcement REQUIRES every `type: "object"` node to
+ * carry an explicit `additionalProperties: false`. A permissive schema that omits
+ * it returns HTTP 400 (`output_config.format.schema: For 'object' type,
+ * 'additionalProperties' must be explicitly set to false`) and — because /complete
+ * has no fallback parsing — kills the chat turn. Standard JSON-Schema-7 / Zod output
+ * does not emit the key, so we stamp it onto every object node here.
+ *
+ * This is the mirror image of `sanitizeGeminiSchema` (which STRIPS the key, since
+ * Gemini's OpenAPI-3.0 subset rejects it). Schema normalization for a provider's
+ * dialect — NOT prompt enrichment; the caller's prompt is untouched.
+ *
+ * Walks `properties`, `items`, `anyOf`/`allOf`/`oneOf`, and `$defs`/`definitions`.
+ * Preserves an `additionalProperties` value the caller set explicitly (no clobber).
+ * Returns a new object; the caller's schema is not mutated.
+ */
+export function prepareAnthropicSchema<T>(schema: T): T {
+  if (Array.isArray(schema)) {
+    return schema.map((item) => prepareAnthropicSchema(item)) as unknown as T;
+  }
+  if (schema === null || typeof schema !== "object") {
+    return schema;
+  }
+  const source = schema as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(source)) {
+    out[key] = prepareAnthropicSchema(value);
+  }
+  if (out.type === "object" && !("additionalProperties" in out)) {
+    out.additionalProperties = false;
+  }
+  return out as unknown as T;
+}
+
 // ---------------------------------------------------------------------------
 // Provider + model alias → versioned API model ID + cost prefix
 // Callers specify version-free aliases (e.g. "sonnet"); the service resolves
@@ -1401,7 +1438,13 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         ...(options?.responseSchema != null
           ? {
               output_config: {
-                format: { type: "json_schema", schema: options.responseSchema },
+                format: {
+                  type: "json_schema",
+                  // Anthropic strict mode requires `additionalProperties: false`
+                  // on every object node — stamp it on before sending (mirror of
+                  // the Gemini sanitizer, which strips it). See prepareAnthropicSchema.
+                  schema: prepareAnthropicSchema(options.responseSchema),
+                },
               },
             }
           : {}),
