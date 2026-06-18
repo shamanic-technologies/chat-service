@@ -78,6 +78,7 @@ import {
 } from "./lib/embeddings.js";
 import { scrapeUrl } from "./lib/scraping-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
+import { ModelJsonOutputError, parseModelJsonOutput } from "./lib/json-output.js";
 import {
   resolveKey,
   resolvePlatformKey,
@@ -458,12 +459,11 @@ app.post("/complete", requireAuth, async (req, res) => {
       model: result.model,
     };
 
-    // Parse JSON if requested. Strict parse — no fallback, no repair.
-    // Provider-side enforcement (Anthropic output_config.format, Gemini
-    // responseMimeType / responseSchema) guarantees valid JSON when jsonMode
-    // is set; a parse failure here means the provider violated the contract.
+    // Parse JSON if requested. Providers can still wrap a complete JSON value
+    // in fences or append prose despite JSON-mode metadata; accept the first
+    // complete JSON value, but fail loud when no valid JSON value is present.
     if (jsonMode) {
-      response.json = JSON.parse(result.content);
+      response.json = parseModelJsonOutput(result.content);
     }
 
     res.json(response);
@@ -478,7 +478,8 @@ app.post("/complete", requireAuth, async (req, res) => {
       });
     }
     res.status(502).json({
-      error: "LLM call failed. Please try again.",
+      error: err instanceof ModelJsonOutputError ? "LLM returned invalid JSON." : "LLM call failed. Please try again.",
+      ...(err instanceof ModelJsonOutputError ? { detail: err.message } : {}),
     });
   } finally {
     // Reconcile: record ACTUAL real tokens, then release the provisioned worst-case holds.
@@ -1535,9 +1536,9 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       model: result.model,
     };
 
-    // Strict parse — provider-side enforcement guarantees valid JSON.
+    // Same JSON parsing contract as /complete.
     if (jsonMode) {
-      response.json = JSON.parse(result.content);
+      response.json = parseModelJsonOutput(result.content);
     }
 
     res.json(response);
@@ -1545,7 +1546,8 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
     platformFailed = true;
     console.error(`[internal/platform-complete] LLM call failed:`, err);
     res.status(502).json({
-      error: "LLM call failed. Please try again.",
+      error: err instanceof ModelJsonOutputError ? "LLM returned invalid JSON." : "LLM call failed. Please try again.",
+      ...(err instanceof ModelJsonOutputError ? { detail: err.message } : {}),
     });
   } finally {
     try {
