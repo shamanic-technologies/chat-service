@@ -4,6 +4,7 @@ import {
   SELF_SEEDED_CONFIGS,
   PERSONA_EDITOR_CONFIG,
   BRAND_PROFILE_EDITOR_CONFIG,
+  AUDIENCE_EDITOR_CONFIG,
   seedPlatformConfigs,
 } from "../../src/lib/seed-platform-configs.js";
 
@@ -15,6 +16,11 @@ const NEW_TOOLS = [
   "get_brand_profile",
   "save_brand_profile_version",
   "refresh_brand_profile_from_website",
+  "list_audiences",
+  "suggest_audiences",
+  "set_audience_status",
+  "rename_audience",
+  "refresh_audience_count",
 ];
 
 describe("persona / brand-profile tool registry", () => {
@@ -34,11 +40,17 @@ describe("persona / brand-profile tool registry", () => {
     const tools = resolveToolSet([...BRAND_PROFILE_EDITOR_CONFIG.allowedTools]);
     expect(tools.map((t) => t.name)).toEqual([...BRAND_PROFILE_EDITOR_CONFIG.allowedTools]);
   });
+
+  it("resolveToolSet resolves every tool in audience-editor's allowedTools", () => {
+    const tools = resolveToolSet([...AUDIENCE_EDITOR_CONFIG.allowedTools]);
+    expect(tools.map((t) => t.name)).toEqual([...AUDIENCE_EDITOR_CONFIG.allowedTools]);
+  });
 });
 
 describe("self-seeded platform configs", () => {
-  it("declares both expected keys", () => {
+  it("declares all expected keys", () => {
     expect(SELF_SEEDED_CONFIGS.map((c) => c.key).sort()).toEqual([
+      "audience-editor",
       "brand-profile-editor",
       "persona-editor",
     ]);
@@ -69,6 +81,36 @@ describe("self-seeded platform configs", () => {
     expect(everyTool.some((t) => /delete|destroy|remove_persona/.test(t))).toBe(false);
   });
 
+  it("audience-editor is isolated from persona / brand-profile tools and vice-versa (scoping)", () => {
+    const audienceTools = [
+      "list_audiences",
+      "suggest_audiences",
+      "set_audience_status",
+      "rename_audience",
+      "refresh_audience_count",
+    ];
+    // audience-editor exposes ONLY audience tools (+ request_user_input).
+    for (const tool of AUDIENCE_EDITOR_CONFIG.allowedTools) {
+      if (tool === "request_user_input") continue;
+      expect(audienceTools, `audience-editor leaks ${tool}`).toContain(tool);
+    }
+    // persona / brand-profile editors cannot reach any audience tool.
+    for (const tool of audienceTools) {
+      expect(PERSONA_EDITOR_CONFIG.allowedTools).not.toContain(tool);
+      expect(BRAND_PROFILE_EDITOR_CONFIG.allowedTools).not.toContain(tool);
+    }
+    // audience-editor cannot reach persona / brand-profile tools.
+    for (const tool of [
+      ...PERSONA_EDITOR_CONFIG.allowedTools,
+      ...BRAND_PROFILE_EDITOR_CONFIG.allowedTools,
+    ]) {
+      if (tool === "request_user_input") continue;
+      expect(AUDIENCE_EDITOR_CONFIG.allowedTools).not.toContain(tool);
+    }
+    // No audience tool grants a hard-delete capability — none exists (archive only).
+    expect(audienceTools.some((t) => /delete|destroy|remove/.test(t))).toBe(false);
+  });
+
   it("brand-profile-editor exposes the website refresh tool and prompt guard", () => {
     expect(BRAND_PROFILE_EDITOR_CONFIG.allowedTools).toContain(
       "refresh_brand_profile_from_website",
@@ -95,7 +137,11 @@ describe("seedPlatformConfigs", () => {
     expect(onConflictDoUpdate).toHaveBeenCalledTimes(SELF_SEEDED_CONFIGS.length);
 
     const seededKeys = values.mock.calls.map((c) => (c[0] as { key: string }).key);
-    expect(seededKeys.sort()).toEqual(["brand-profile-editor", "persona-editor"]);
+    expect(seededKeys.sort()).toEqual([
+      "audience-editor",
+      "brand-profile-editor",
+      "persona-editor",
+    ]);
 
     for (const call of values.mock.calls) {
       const v = call[0] as { provider: string; model: string; allowedTools: string[] };

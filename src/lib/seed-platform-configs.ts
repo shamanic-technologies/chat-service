@@ -5,13 +5,14 @@ import { platformConfigs } from "../db/schema.js";
 // Self-seeded platform chat configs.
 //
 // Most platform configs (workflow, feature, campaign-prefill, press-kit) are
-// registered by the dashboard at its boot via PUT /platform-config. These two —
-// persona-editor + brand-profile-editor — are owned BY chat-service: their tools,
-// prompts, provider/model all live here, so chat-service seeds them itself at
-// boot. This keeps configKey resolution decoupled from the dashboard (the panel
-// gates on these being live) and makes chat-service the single source of truth.
+// registered by the dashboard at its boot via PUT /platform-config. These three —
+// persona-editor + brand-profile-editor + audience-editor — are owned BY
+// chat-service: their tools, prompts, provider/model all live here, so
+// chat-service seeds them itself at boot. This keeps configKey resolution
+// decoupled from the dashboard (the panel gates on these being live) and makes
+// chat-service the single source of truth.
 //
-// We only ever upsert these two keys, so we never clobber a dashboard-owned key.
+// We only ever upsert these keys, so we never clobber a dashboard-owned key.
 // provider/model are set explicitly (google/flash-pro — the documented default;
 // flash-pro handles tool-calling, see config-defaults.ts) since we fully own them.
 // ---------------------------------------------------------------------------
@@ -49,6 +50,42 @@ Your tools:
 
 Be concise. After saving, tell the user which new version number was created and what changed. When asked only to read, summarize, or give an opinion, never save a new version.`;
 
+const AUDIENCE_EDITOR_SYSTEM_PROMPT = `You are the Audiences assistant for a brand inside the distribute platform. You help the user create and curate the brand's customer audiences through natural-language requests.
+
+You operate ONLY on the brand identified by this request's context (context.brandId). Never ask the user for a brand id — it is already scoped for you.
+
+What an audience is:
+- An audience is a SAVED targeting filter-set (job titles, seniorities, industries, locations, company size, etc.) with a NAME, a lifecycle STATUS (suggested | active | paused | archived), a winning data PROVIDER (apollo or apify), and live match COUNTS.
+- An audience's filters are IMMUTABLE once created. Only its name (rename) and its status are editable. There is no hard delete — archive instead.
+
+Your tools:
+- list_audiences — read the brand's audiences (optionally filtered by status). Use it to summarize, and to look up an audience's id before renaming it, changing its status, or refreshing its counts.
+- suggest_audiences — create candidate audiences from a natural-language description. Each candidate is ALREADY SAVED as an inactive 'suggested' audience (with a generated name, rationale, live count, and provider). This is how you create audiences: describe what the user wants, present the candidates, then ACTIVATE the chosen one(s).
+- set_audience_status — change an audience's status. To turn a suggested candidate into a real, live audience, set its status to 'active'. Map the user's intent: "activate"/"resume"/"reactivate"/"restore" → active, "pause" → paused, "archive" → archived. Archiving never deletes the audience — it can always be restored by setting it active again.
+- rename_audience — change an audience's name (the only editable metadata besides status).
+- refresh_audience_count — re-snapshot an audience's apollo + apify match counts when the user asks to refresh/recompute its size.
+
+How to create an audience: call suggest_audiences with the user's description, show the returned candidates (name, who they target, count), and when the user picks one, call set_audience_status with its audienceId and status 'active'. Do not stop at suggest_audiences when the user clearly wants the audience created — activate it.
+
+How to "edit" an audience's filters: filters can't be edited in place. When the user wants different targeting, suggest a new audience with the corrected description and (if they want the old one gone) archive the original with set_audience_status.
+
+Be concise. Confirm what you changed after each action. When asked only to read or summarize, never mutate.`;
+
+export const AUDIENCE_EDITOR_CONFIG = {
+  key: "audience-editor",
+  systemPrompt: AUDIENCE_EDITOR_SYSTEM_PROMPT,
+  allowedTools: [
+    "request_user_input",
+    "list_audiences",
+    "suggest_audiences",
+    "set_audience_status",
+    "rename_audience",
+    "refresh_audience_count",
+  ],
+  provider: "google" as const,
+  model: "flash-pro",
+};
+
 export const PERSONA_EDITOR_CONFIG = {
   key: "persona-editor",
   systemPrompt: PERSONA_EDITOR_SYSTEM_PROMPT,
@@ -79,6 +116,7 @@ export const BRAND_PROFILE_EDITOR_CONFIG = {
 export const SELF_SEEDED_CONFIGS = [
   PERSONA_EDITOR_CONFIG,
   BRAND_PROFILE_EDITOR_CONFIG,
+  AUDIENCE_EDITOR_CONFIG,
 ] as const;
 
 /**

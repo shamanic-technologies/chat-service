@@ -1195,6 +1195,105 @@ export const REFRESH_BRAND_PROFILE_FROM_WEBSITE_TOOL: Anthropic.Tool = {
 };
 
 // ---------------------------------------------------------------------------
+// Audience-editor tools (audience-editor config) — act on the brand from
+// context.brandId, scoped to the caller's org by the forwarded identity. An
+// audience is a saved filter-set; creation is suggest -> activate (no raw
+// create tool — /suggest persists candidates the model then activates).
+// ---------------------------------------------------------------------------
+
+export const LIST_AUDIENCES_TOOL: Anthropic.Tool = {
+  name: "list_audiences",
+  description:
+    "List the customer audiences for the current brand (the brand from context.brandId — no brandId parameter needed). Optionally filter by lifecycle status. Read-only — never modifies anything. Use this to summarize audiences, and to look up an audience's id before renaming it, changing its status, or refreshing its counts.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      status: {
+        type: "string",
+        enum: ["suggested", "active", "paused", "archived"],
+        description:
+          "Optional. Filter to audiences with this lifecycle status. Omit to list all statuses. 'suggested' audiences are inactive candidates awaiting activation.",
+      },
+    },
+  },
+};
+
+export const SUGGEST_AUDIENCES_TOOL: Anthropic.Tool = {
+  name: "suggest_audiences",
+  description:
+    "Create candidate audiences for the current brand from a natural-language description (e.g. 'heads of marketing at Series A SaaS in the US'). Each returned candidate is ALREADY PERSISTED as an inactive audience at status 'suggested', with a generated name, a one-sentence rationale, a live match count, and a winning provider. Present the candidates to the user; to turn a chosen candidate into a live audience, call set_audience_status with its audienceId and status 'active'. The text drives the granularity — say 'split by country' etc. in the prompt to get one candidate per segment.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      nlPrompt: {
+        type: "string",
+        description:
+          "Natural-language description of the audience(s) to target. Express any segmentation intent (e.g. 'founders in FR and DE separately') directly in this text.",
+      },
+    },
+    required: ["nlPrompt"],
+  },
+};
+
+export const SET_AUDIENCE_STATUS_TOOL: Anthropic.Tool = {
+  name: "set_audience_status",
+  description:
+    "Change an audience's lifecycle status. Map the user's intent: ACTIVATE a suggested candidate / RESUME / REACTIVATE / RESTORE → active, PAUSE → paused, ARCHIVE → archived. Activating a 'suggested' candidate (status 'active') is how a candidate becomes a real, live audience. Archiving NEVER deletes the audience; it can always be restored by setting it back to active. Look up the audience id with list_audiences (or use the audienceId returned by suggest_audiences).",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      audienceId: {
+        type: "string",
+        description:
+          "The id of the audience to update (from list_audiences, or the audienceId of a suggest_audiences candidate).",
+      },
+      status: {
+        type: "string",
+        enum: ["active", "paused", "archived"],
+        description: "The new lifecycle status.",
+      },
+    },
+    required: ["audienceId", "status"],
+  },
+};
+
+export const RENAME_AUDIENCE_TOOL: Anthropic.Tool = {
+  name: "rename_audience",
+  description:
+    "Rename an audience of the current brand. Only the name is editable — an audience's targeting filters are immutable. Look up the audience id with list_audiences first.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      audienceId: {
+        type: "string",
+        description: "The id of the audience to rename (from list_audiences).",
+      },
+      name: {
+        type: "string",
+        description: "The new audience name.",
+      },
+    },
+    required: ["audienceId", "name"],
+  },
+};
+
+export const REFRESH_AUDIENCE_COUNT_TOOL: Anthropic.Tool = {
+  name: "refresh_audience_count",
+  description:
+    "Re-snapshot an audience's match counts (apollo + apify) using the free live dry-run. Use this when the user asks to refresh, recompute, or update the size/count of an audience. Returns the updated audience with fresh apolloCount / apifyCount. Look up the audience id with list_audiences first.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      audienceId: {
+        type: "string",
+        description: "The id of the audience to refresh (from list_audiences).",
+      },
+    },
+    required: ["audienceId"],
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Tool registry — every tool the service knows how to execute.
 // Clients choose which subset to enable via allowedTools in their config.
 // ---------------------------------------------------------------------------
@@ -1233,6 +1332,11 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   get_brand_profile: GET_BRAND_PROFILE_TOOL,
   save_brand_profile_version: SAVE_BRAND_PROFILE_VERSION_TOOL,
   refresh_brand_profile_from_website: REFRESH_BRAND_PROFILE_FROM_WEBSITE_TOOL,
+  list_audiences: LIST_AUDIENCES_TOOL,
+  suggest_audiences: SUGGEST_AUDIENCES_TOOL,
+  set_audience_status: SET_AUDIENCE_STATUS_TOOL,
+  rename_audience: RENAME_AUDIENCE_TOOL,
+  refresh_audience_count: REFRESH_AUDIENCE_COUNT_TOOL,
 };
 
 /** All tool names available for use in allowedTools config. */
