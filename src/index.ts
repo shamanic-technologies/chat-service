@@ -61,6 +61,14 @@ import {
   type BrandProfileChange,
 } from "./lib/brand-content-client.js";
 import {
+  listAudiences,
+  suggestAudiences,
+  setAudienceStatus,
+  renameAudience,
+  refreshAudienceCount,
+  type AudienceStatus,
+} from "./lib/audience-client.js";
+import {
   formatBrandProfileWebsiteRefreshErrorMessage,
   formatBrandProfileWebsiteRefreshMessage,
   isBrandProfileWebsiteRefreshIntent,
@@ -2453,6 +2461,62 @@ app.post("/chat", requireAuth, async (req, res) => {
           context,
           featureCallParams,
           args.fields,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "list_audiences") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const brandId = requireSingleBrandId("list_audiences");
+        const result = await listAudiences(
+          brandId,
+          args.status as AudienceStatus | undefined,
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "suggest_audiences") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const brandId = requireSingleBrandId("suggest_audiences");
+        const result = await suggestAudiences(
+          brandId,
+          String(args.nlPrompt ?? ""),
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "set_audience_status") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await setAudienceStatus(
+          String(args.audienceId ?? ""),
+          args.status as AudienceStatus,
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "rename_audience") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await renameAudience(
+          String(args.audienceId ?? ""),
+          String(args.name ?? ""),
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "refresh_audience_count") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await refreshAudienceCount(
+          String(args.audienceId ?? ""),
+          featureCallParams,
         );
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };

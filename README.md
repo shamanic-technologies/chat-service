@@ -130,14 +130,15 @@ Fields: same as `PUT /config` — `key`, `systemPrompt`, `allowedTools` (all req
 
 This endpoint is **idempotent** (upsert on `key`). Called on every cold start by api-service.
 
-**Self-seeded configs.** Two platform configs are owned by chat-service itself and seeded at boot (in `src/lib/seed-platform-configs.ts`, run from the migrate→listen path) — they do not need any external registrar:
+**Self-seeded configs.** Three platform configs are owned by chat-service itself and seeded at boot (in `src/lib/seed-platform-configs.ts`, run from the migrate→listen path) — they do not need any external registrar:
 
 | configKey | Tools | Purpose |
 |---|---|---|
-| `persona-editor` | `list_personas`, `create_persona`, `duplicate_persona`, `set_persona_status`, `request_user_input` | Read + curate a brand's customer personas via NL. |
+| `persona-editor` | `list_personas`, `create_persona`, `duplicate_persona`, `set_persona_status`, `request_user_input` | Read + curate a brand's customer personas via NL (brand-service). |
 | `brand-profile-editor` | `get_brand_profile`, `save_brand_profile_version`, `refresh_brand_profile_from_website`, `request_user_input` | Read, refresh from website, and version a brand's brand profile via NL. |
+| `audience-editor` | `list_audiences`, `suggest_audiences`, `set_audience_status`, `rename_audience`, `refresh_audience_count`, `request_user_input` | Create + curate a brand's customer audiences via NL (human-service, via the api-service gateway `/v1/orgs/audiences/*`). Creation is suggest→activate: `suggest_audiences` persists candidates at status `suggested`; `set_audience_status … active` makes one live. Filters are immutable; archive (never delete) and rename only. |
 
-Both default to `google`/`flash-pro`. The dashboard selects them by `configKey` and passes `context: { brandId }`; the tools act on that brand under the caller's org. The boot seed only upserts these two keys, so it never clobbers a dashboard-registered config.
+All default to `google`/`flash-pro`. The dashboard selects them by `configKey` and passes `context: { brandId }`; the tools act on that brand under the caller's org. The boot seed only upserts these keys, so it never clobbers a dashboard-registered config.
 
 **Config resolution in POST /chat:**
 1. Per-org config `(orgId, configKey)` → if found, use it
@@ -657,6 +658,16 @@ Read-only and supporting workflow tools:
 | `get_brand_profile` | Gets the current profile fields + version list. Read-only. `GET /v1/brands/:id/brand-profile` |
 | `save_brand_profile_version` | Saves a NEW immutable version. Supplies only `changes` (`set`/`setList`/`add`/`remove`); the tool reads current, merges, and POSTs the full field map, so prior versions are untouched and unchanged fields are preserved. `POST /v1/brands/:id/brand-profile` |
 | `refresh_brand_profile_from_website` | Handles explicit latest/current website refresh requests end to end: reads current profile, forces fresh website field extraction via `POST /v1/brands/extract-fields` with `resetCache: true`, saves the full merged field map as a NEW immutable version, and returns the new version plus changed fields. Read-only questions never use this path. |
+
+**Audience-editor tools** (operate on the brand from `context.brandId`; via human-service through the api-service gateway `/v1/orgs/audiences/*`, org-scoped by the forwarded `x-org-id`):
+
+| Tool | Description |
+|---|---|
+| `list_audiences` | Lists the brand's audiences, optional `status` filter (`suggested`/`active`/`paused`/`archived`). Read-only. `GET /v1/orgs/audiences?brandId=` |
+| `suggest_audiences` | Creates candidate audiences from a natural-language `nlPrompt`. Each candidate is ALREADY persisted as an inactive `suggested` audience (with generated name, rationale, live match count, winning provider). The model presents them; activation is a separate step. `POST /v1/orgs/audiences/suggest` |
+| `set_audience_status` | Flips lifecycle status (activate/resume/restore→active, pause→paused, archive→archived). Activating a `suggested` candidate makes it live. Archiving never deletes; there is no hard delete. `PATCH /v1/orgs/audiences/:id/status` |
+| `rename_audience` | Renames an audience (the only editable metadata; filters are immutable). `PATCH /v1/orgs/audiences/:id` |
+| `refresh_audience_count` | Re-snapshots apollo + apify match counts via the free live dry-run. `POST /v1/orgs/audiences/:id/refresh-count` |
 
 **UI tools:**
 
