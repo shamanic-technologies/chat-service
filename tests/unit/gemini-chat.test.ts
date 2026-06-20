@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { toGeminiFunctionDeclarations, type ToolDefinition } from "../../src/lib/gemini-chat.js";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import {
+  toGeminiFunctionDeclarations,
+  streamGeminiChat,
+  type ToolDefinition,
+} from "../../src/lib/gemini-chat.js";
 
 describe("toGeminiFunctionDeclarations", () => {
   it("converts Anthropic-style tool definitions to Gemini format", () => {
@@ -155,5 +159,117 @@ describe("toGeminiFunctionDeclarations", () => {
       note: { type: "string", nullable: true },
     });
     expect(result[0].parameters.required).toEqual(["status"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// streamGeminiChat — tool-then-empty must never surface as silence
+// ---------------------------------------------------------------------------
+
+/** Build a 200 SSE Response from a single JSON chunk (one `data:` event). */
+function sseResponse(chunk: unknown): Response {
+  const payload = `data: ${JSON.stringify(chunk)}\r\n\r\n`;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(payload));
+      controller.close();
+    },
+  });
+  return new Response(body, {
+    status: 200,
+    headers: { "content-type": "text/event-stream" },
+  });
+}
+
+function baseOptions(overrides: Partial<Parameters<typeof streamGeminiChat>[0]> = {}) {
+  const events: unknown[] = [];
+  const opts = {
+    apiKey: "test-key",
+    model: "gemini-3-flash-preview",
+    systemPrompt: "You are a helpful assistant.",
+    history: [],
+    userMessage: "Créer des audiences pour mon business",
+    tools: [
+      {
+        name: "list_audiences",
+        description: "List audiences for the current brand",
+        input_schema: { type: "object" as const, properties: {} },
+      },
+    ] as ToolDefinition[],
+    res: {} as never,
+    sendSSE: (_res: unknown, data: unknown) => {
+      events.push(data);
+    },
+    executeTool: async () => ({
+      name: "list_audiences",
+      result: { audiences: [{ id: "a1", name: "Founders" }] },
+    }),
+    signal: new AbortController().signal,
+    ...overrides,
+  };
+  return { opts, events };
+}
+
+describe("streamGeminiChat tool-then-empty guard", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("emits a fallback summary when the post-tool turn returns no text", async () => {
+    // Turn 0: the model calls list_audiences. Turn 1: empty (MAX_TOKENS during
+    // thinking) — no text parts. Without the guard this returns fullResponse:""
+    // and the dashboard freezes on the tool card.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        sseResponse({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { functionCall: { name: "list_audiences", args: {} }, thoughtSignature: "sig-1" },
+                ],
+              },
+            },
+          ],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        sseResponse({
+          candidates: [{ content: { parts: [] }, finishReason: "MAX_TOKENS" }],
+          usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 0 },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { opts, events } = baseOptions();
+    const result = await streamGeminiChat(opts);
+
+    // Tool ran...
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0].name).toBe("list_audiences");
+    // ...and the response is NOT silently empty — it summarizes the tool result.
+    expect(result.fullResponse).not.toBe("");
+    expect(result.fullResponse).toContain("list_audiences");
+    expect(result.fullResponse).toContain("Founders");
+    // The fallback text was streamed to the client as a token event.
+    const tokenText = events
+      .filter((e): e is { type: string; content: string } =>
+        typeof e === "object" && e !== null && (e as { type?: string }).type === "token",
+      )
+      .map((e) => e.content)
+      .join("");
+    expect(tokenText).toContain("Founders");
+  });
+
+  it("still fails loud on a wholly-empty stream (no tools, no usage)", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      sseResponse({ candidates: [{ content: { parts: [] } }] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { opts } = baseOptions({ tools: [] });
+    await expect(streamGeminiChat(opts)).rejects.toThrow(/empty response/);
   });
 });
