@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   toGeminiFunctionDeclarations,
   streamGeminiChat,
+  buildThinkingConfig,
   type ToolDefinition,
 } from "../../src/lib/gemini-chat.js";
 
@@ -210,9 +211,44 @@ function baseOptions(overrides: Partial<Parameters<typeof streamGeminiChat>[0]> 
   return { opts, events };
 }
 
+describe("buildThinkingConfig (generation-specific thinking field)", () => {
+  // Gemini 3.x must use thinkingLevel; the deprecated thinkingBudget produces
+  // thinking-only/empty replies on gemini-3.5-flash. Gemini 2.5 keeps budget.
+  it("uses thinkingLevel for gemini-3.5-flash", () => {
+    expect(buildThinkingConfig("gemini-3.5-flash")).toEqual({ thinkingLevel: "low" });
+  });
+  it("uses thinkingLevel for gemini-3.1-pro-preview", () => {
+    expect(buildThinkingConfig("gemini-3.1-pro-preview")).toEqual({ thinkingLevel: "low" });
+  });
+  it("uses thinkingLevel for gemini-3-flash-preview", () => {
+    expect(buildThinkingConfig("gemini-3-flash-preview")).toEqual({ thinkingLevel: "low" });
+  });
+  it("keeps thinkingBudget for gemini-2.5 models", () => {
+    expect(buildThinkingConfig("gemini-2.5-flash")).toEqual({ thinkingBudget: 8192 });
+    expect(buildThinkingConfig("gemini-2.5-pro")).toEqual({ thinkingBudget: 8192 });
+  });
+});
+
 describe("streamGeminiChat tool-then-empty guard", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("sends thinkingLevel (not thinkingBudget) for a Gemini-3 model", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      sseResponse({
+        candidates: [{ content: { parts: [{ text: "hello" }] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 2 },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { opts } = baseOptions({ model: "gemini-3.5-flash", tools: [] });
+    await streamGeminiChat(opts);
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
+    expect(JSON.stringify(body.generationConfig)).not.toContain("thinkingBudget");
   });
 
   it("emits a fallback summary when the post-tool turn returns no text", async () => {

@@ -574,6 +574,8 @@ After a tool result, more `token` events follow with the AI's continuation.
 
 **Tool-then-empty never surfaces as silence.** If one or more tools run but the model's follow-up "summarize" turn produces no text, the service emits a fallback `token` event built from the real tool results (so the user always sees what was retrieved) and logs the empty turn loudly — never a frozen tool card with a blank reply. This guards both the Gemini and Anthropic agentic loops. The `/chat` Gemini path also sets an explicit **64k** `maxOutputTokens` (Gemini-3 thinking tokens count against the output budget; without an explicit cap a post-tool summary turn can exhaust the lower default cap on thinking and emit zero answer text).
 
+**Thinking config is generation-specific.** Gemini 3.x models (`gemini-3*`, incl. `gemini-3.5-flash` = the `flash-pro` alias) use `thinkingConfig.thinkingLevel` (`"low"` here); the Gemini-2.5-era `thinkingBudget` integer is only "accepted for backwards compatibility" on Gemini 3 and produces degenerate **thinking-only / empty** replies — which is what broke every flash-pro `/chat` once Google flipped `gemini-3.5-flash` to stable. Gemini 2.5 models keep `thinkingBudget`. Selected per-model by `buildThinkingConfig(model)`.
+
 #### Tool memory across turns
 
 Tool calls and their results are persisted on the assistant message (in the `tool_calls` jsonb column) and replayed to the provider on every subsequent turn:
