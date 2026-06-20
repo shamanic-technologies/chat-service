@@ -572,6 +572,8 @@ data: {"type":"tool_result","id":"tc_550e8400-e29b-41d4-a716-446655440000","name
 
 After a tool result, more `token` events follow with the AI's continuation.
 
+**Tool-then-empty never surfaces as silence.** If one or more tools run but the model's follow-up "summarize" turn produces no text, the service emits a fallback `token` event built from the real tool results (so the user always sees what was retrieved) and logs the empty turn loudly — never a frozen tool card with a blank reply. This guards both the Gemini and Anthropic agentic loops. The `/chat` Gemini path also sets an explicit **64k** `maxOutputTokens` (Gemini-3 thinking tokens count against the output budget; without an explicit cap a post-tool summary turn can exhaust the lower default cap on thinking and emit zero answer text).
+
 #### Tool memory across turns
 
 Tool calls and their results are persisted on the assistant message (in the `tool_calls` jsonb column) and replayed to the provider on every subsequent turn:
