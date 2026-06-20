@@ -7,8 +7,17 @@ import type { Response as ExpressResponse } from "express";
 import type { ToolCallRecord } from "../db/schema.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
 import { sanitizeGeminiSchema } from "./gemini.js";
+import { buildToolResultFallback } from "./tool-fallback.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+
+// Explicit output budget for the agentic /chat path. REQUIRED — when omitted,
+// Gemini falls back to a LOWER per-model default cap, and because Gemini-3
+// thinking tokens count against the output budget, a post-tool "summarize"
+// turn can spend the entire default cap on thinking and emit ZERO answer text
+// (finishReason: MAX_TOKENS) — the silent empty follow-up that froze the
+// audiences chat after list_audiences. Mirrors the /complete path's 64k.
+const GEMINI_CHAT_MAX_OUTPUT_TOKENS = 64_000;
 
 /** Model-specific API timeouts in milliseconds. */
 const GEMINI_TIMEOUT_MS: Record<string, number> = {
@@ -400,6 +409,7 @@ export async function streamGeminiChat(
       contents: turnMessages,
       systemInstruction: { parts: [{ text: systemPrompt }] },
       generationConfig: {
+        maxOutputTokens: GEMINI_CHAT_MAX_OUTPUT_TOKENS,
         thinkingConfig: { thinkingBudget: 8192 },
       },
       ...(functionDeclarations.length > 0
@@ -602,6 +612,25 @@ export async function streamGeminiChat(
     // Append model function calls + tool results to conversation
     turnMessages.push({ role: "model", parts: modelParts });
     turnMessages.push({ role: "user", parts: responseParts });
+  }
+
+  // Tool(s) ran but the follow-up "summarize" turn produced no text. This must
+  // NEVER surface as silence (a frozen tool card with no reply) — emit a
+  // fallback assistant message built from the real tool results so the user
+  // always sees what was retrieved. Logged loudly so the empty-turn root cause
+  // (e.g. MAX_TOKENS during thinking) stays diagnosable.
+  if (
+    !signal.aborted &&
+    fullResponse === "" &&
+    !emittedInputRequest &&
+    allToolCalls.length > 0
+  ) {
+    console.error(
+      `[gemini-chat] model=${model} ran ${allToolCalls.length} tool(s) but returned no summary text — emitting fallback summary`,
+    );
+    const fallback = buildToolResultFallback(allToolCalls);
+    fullResponse = fallback;
+    sse(res, { type: "token", content: fallback });
   }
 
   // Fail loud on a wholly-empty result (no text, no tool calls, no input

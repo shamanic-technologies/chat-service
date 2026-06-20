@@ -114,6 +114,7 @@ import {
   type RebuildableMessage,
 } from "./lib/merge-messages.js";
 import { streamGeminiChat, type ToolDefinition } from "./lib/gemini-chat.js";
+import { buildToolResultFallback } from "./lib/tool-fallback.js";
 import { SESSION_NOT_FOUND_EVENT } from "./lib/session-errors.js";
 import { buildContextUsageEvent } from "./lib/context-usage.js";
 
@@ -2855,6 +2856,21 @@ app.post("/chat", requireAuth, async (req, res) => {
       : [];
     if (buttons.length > 0) {
       sendSSE(res, { type: "buttons", buttons });
+    }
+
+    // Tool(s) ran but the model produced no summary text. This must never leave
+    // a frozen tool card with no reply — build a fallback summary from the real
+    // tool results so the user always sees what was retrieved. (The Gemini path
+    // already fills fullResponse inside streamGeminiChat; this branch is the
+    // Anthropic-loop equivalent + a cross-provider backstop.) Logged loudly so
+    // the empty-turn root cause stays diagnosable.
+    if (!fullResponse && !emittedInputRequest && toolCalls.length > 0) {
+      console.error(
+        `[chat] session="${currentSessionId}" provider=${chatProvider} ran ${toolCalls.length} tool(s) ` +
+          `but produced no summary text — emitting fallback summary`,
+      );
+      fullResponse = buildToolResultFallback(toolCalls);
+      sendSSE(res, { type: "token", content: fullResponse });
     }
 
     // Detect empty stream
