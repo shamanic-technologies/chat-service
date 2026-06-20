@@ -31,6 +31,25 @@ const DEFAULT_GEMINI_TIMEOUT_MS = 10 * 60_000;
 
 const MAX_TOOL_CHAIN_DEPTH = 10;
 
+// Thinking config is GENERATION-SPECIFIC. Gemini 3.x (gemini-3*, incl
+// gemini-3.5-flash) uses `thinkingLevel` ("minimal"|"low"|"medium"|"high");
+// the Gemini-2.5-era `thinkingBudget` integer is only "accepted for backwards
+// compatibility" on Gemini 3 and produces degenerate output — the model spends
+// its whole output budget on internal thinking and emits ZERO answer text. That
+// is exactly what broke every flash-pro (gemini-3.5-flash) /chat once Google
+// flipped 3.5-flash to stable (100% empty replies, 2026-06-18→). So send
+// `thinkingLevel` to Gemini 3.x and keep `thinkingBudget` only for Gemini 2.5.
+// "low" gives enough reasoning for tool-calling while leaving budget for the
+// answer. See https://ai.google.dev/gemini-api/docs/thinking
+const GEMINI_3_THINKING_LEVEL = "low";
+const GEMINI_25_THINKING_BUDGET = 8192;
+
+export function buildThinkingConfig(model: string): Record<string, unknown> {
+  return model.startsWith("gemini-3")
+    ? { thinkingLevel: GEMINI_3_THINKING_LEVEL }
+    : { thinkingBudget: GEMINI_25_THINKING_BUDGET };
+}
+
 // Gemini 3 requires a `thoughtSignature` on every functionCall part when the
 // conversation history is replayed; omitting it returns a 400
 // (`Function call ... is missing a thought_signature`). For calls captured
@@ -410,7 +429,7 @@ export async function streamGeminiChat(
       systemInstruction: { parts: [{ text: systemPrompt }] },
       generationConfig: {
         maxOutputTokens: GEMINI_CHAT_MAX_OUTPUT_TOKENS,
-        thinkingConfig: { thinkingBudget: 8192 },
+        thinkingConfig: buildThinkingConfig(model),
       },
       ...(functionDeclarations.length > 0
         ? { tools: [{ functionDeclarations }] }
