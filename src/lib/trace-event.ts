@@ -41,6 +41,7 @@ function buildTraceHeaders(
   if (tracking.campaignId) headers["x-campaign-id"] = tracking.campaignId;
   if (tracking.workflowSlug) headers["x-workflow-slug"] = tracking.workflowSlug;
   if (tracking.featureSlug) headers["x-feature-slug"] = tracking.featureSlug;
+  if (tracking.audienceId) headers["x-audience-id"] = tracking.audienceId;
   return headers;
 }
 

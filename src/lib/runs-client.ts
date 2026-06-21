@@ -49,6 +49,7 @@ export interface TrackingHeaders {
   "x-brand-id"?: string;
   "x-workflow-slug"?: string;
   "x-feature-slug"?: string;
+  "x-audience-id"?: string;
 }
 
 function buildHeaders(

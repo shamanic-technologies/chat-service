@@ -57,6 +57,18 @@ CI will warn if source files change without corresponding test changes. Do not s
 - `tests/` — Test files (`*.test.ts`)
 - `openapi.json` — Auto-generated, do NOT edit manually
 
+## Tracking headers — allowlist-driven forward, NEVER per-field, NEVER to a vendor
+
+Inbound tracking headers (`x-campaign-id`, `x-brand-id`, `x-workflow-slug`, `x-feature-slug`, `x-audience-id`) are extracted in `src/middleware/auth.ts:extractWorkflowTracking` into `res.locals.workflowTracking`, then turned into the downstream header map by the **single allowlist helper `buildTrackingHeaders(workflowTracking)`** (same file). Every endpoint uses that helper — do NOT re-introduce the old per-field `if (workflowTracking.x) trackingHeaders["x-x"] = …` blocks at each route (they drifted: a new header had to be added in ~5 places and got missed). Add a new tracking header in exactly TWO spots: `extractWorkflowTracking` (read) + `buildTrackingHeaders` (forward), plus the `TrackingHeaders` types in `runs-client.ts`/`key-client.ts` and the `traceEvent` header builder. runs-client/key-client forward the map **generically** (`Object.entries` loop), so once a key is in the map it flows to runs-service + key-service automatically.
+
+**`x-audience-id`** = the priority audience campaign-service picks at the start of a campaign run; carried for **per-audience cost attribution** (runs-service does a flat `SUM(cost) GROUP BY COALESCE(runs_costs.audience_id, runs.audience_id)`, no hierarchy rollup — so every run AND every cost row must carry it itself). It is forwarded on `createRun` + `addRunCosts` and stamped on the `sessions` row (`audience_id` column). Optional — absent outside the campaign flow; omit, never throw.
+
+**Egress guardrail (security): tracking headers go to INTERNAL services ONLY, never to a third-party vendor.** The Gemini/Anthropic provider clients (`gemini.ts`, `gemini-chat.ts`, `anthropic.ts`) build their own vendor headers and contain ZERO tracking-header keys — keep it that way. `buildTrackingHeaders` is the only forward path and its output is asserted to be a strict subset of the internal allowlist (`tests/unit/workflow-tracking.test.ts`). Never pass `trackingHeaders` into a provider SDK call. (Standard OTel/DoorDash egress hygiene: drop everything but the vendor's own auth at the external boundary.)
+
+## Drizzle migrations are HAND-AUTHORED here — `db:generate` is corrupted, do NOT trust its output
+
+`drizzle/meta/` snapshots stop at `0009`; migrations `0010`–onward were hand-authored without snapshot updates. So `npm run db:generate` diffs against a ~0009 snapshot and emits a BOGUS full migration that re-creates tables and **DROPS** existing columns (it tried to drop `messages.run_id`/`campaign_id`/… and re-add already-live `sessions`/`app_configs` columns). NEVER ship `db:generate` output. To add a column: hand-author `drizzle/NNNN_<name>.sql` with an **idempotent** statement (`ALTER TABLE … ADD COLUMN IF NOT EXISTS …`) and add the matching `_journal.json` entry by hand (the runtime migrator keys on the journal `when` only; the snapshot JSON is not validated at runtime). Reference: `0015_add_audience_id_to_sessions.sql`.
+
 ## Chat provider/model default — Gemini, in code (not the DB)
 
 The default LLM for `/chat` is **Gemini `google`/`flash-pro`** (Gemini 3.5 Flash, mid-tier), resolved in code by `resolveChatProviderModel` (`src/lib/config-defaults.ts`). A config row (`app_configs` / `platform_configs`) with `provider`/`model` NULL resolves to `google`/`flash-pro` — **NOT** `anthropic`/`sonnet`. The Anthropic platform key has no credit balance; defaulting to it 400s every chat that uses a default config.
