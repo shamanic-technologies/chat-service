@@ -24,6 +24,10 @@ const workflowTrackingHeaders = {
   "x-feature-slug": z.string().optional().openapi({
     description: "Feature slug — propagated through the entire service chain",
   }),
+  "x-audience-id": z.string().optional().openapi({
+    description:
+      "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow.",
+  }),
 };
 
 // --- Shared schemas ---

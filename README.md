@@ -24,6 +24,7 @@ All endpoints (except `/health` and `/openapi.json`) require these headers:
 | `x-brand-id` | _(optional)_ Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. `uuid1,uuid2,uuid3`). |
 | `x-workflow-slug` | _(optional)_ Workflow slug — injected automatically by workflow-service |
 | `x-feature-slug` | _(optional)_ Feature slug — propagated through the entire service chain |
+| `x-audience-id` | _(optional)_ Priority audience ID for the campaign run — injected by campaign-service. Propagated through the chain and stamped on every runs-service run + cost (and the `sessions` row) for per-audience cost attribution. Absent outside the campaign flow. |
 
 ## App Config Registration
 

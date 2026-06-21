@@ -99,7 +99,7 @@ import {
 import { authorizeCredits, BillingError } from "./lib/billing-client.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
 import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema } from "./schemas.js";
-import { requireAuth, requireInternalAuth, type AuthLocals } from "./middleware/auth.js";
+import { requireAuth, requireInternalAuth, buildTrackingHeaders, type AuthLocals } from "./middleware/auth.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 
@@ -299,11 +299,7 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
 app.post("/complete", requireAuth, async (req, res) => {
   const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
 
-  const trackingHeaders: Record<string, string> = {};
-  if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
-  if (workflowTracking.brandId) trackingHeaders["x-brand-id"] = workflowTracking.brandId;
-  if (workflowTracking.workflowSlug) trackingHeaders["x-workflow-slug"] = workflowTracking.workflowSlug;
-  if (workflowTracking.featureSlug) trackingHeaders["x-feature-slug"] = workflowTracking.featureSlug;
+  const trackingHeaders = buildTrackingHeaders(workflowTracking);
 
   const parsed = CompleteRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -531,11 +527,7 @@ app.post("/complete", requireAuth, async (req, res) => {
 app.post("/orgs/images/generate", requireAuth, async (req, res) => {
   const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
 
-  const trackingHeaders: Record<string, string> = {};
-  if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
-  if (workflowTracking.brandId) trackingHeaders["x-brand-id"] = workflowTracking.brandId;
-  if (workflowTracking.workflowSlug) trackingHeaders["x-workflow-slug"] = workflowTracking.workflowSlug;
-  if (workflowTracking.featureSlug) trackingHeaders["x-feature-slug"] = workflowTracking.featureSlug;
+  const trackingHeaders = buildTrackingHeaders(workflowTracking);
 
   const parsed = GenerateImageRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -964,10 +956,11 @@ async function provisionAndAuthorizeLlmCost(args: {
 app.post("/orgs/rag/score", requireAuth, async (req, res) => {
   const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
 
-  const baseTrackingHeaders: Record<string, string> = {};
-  if (workflowTracking.campaignId) baseTrackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
-  if (workflowTracking.workflowSlug) baseTrackingHeaders["x-workflow-slug"] = workflowTracking.workflowSlug;
-  if (workflowTracking.featureSlug) baseTrackingHeaders["x-feature-slug"] = workflowTracking.featureSlug;
+  // Body brandIds is the authoritative cache target, so drop any forwarded
+  // x-brand-id from the base block — it is re-set below from brandCacheKey.
+  // Every other tracking header (incl. x-audience-id) flows through unchanged.
+  const baseTrackingHeaders = buildTrackingHeaders(workflowTracking);
+  delete baseTrackingHeaders["x-brand-id"];
 
   const parsed = RagScoreRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -1268,11 +1261,7 @@ app.post("/orgs/rag/score", requireAuth, async (req, res) => {
 app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
   const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
 
-  const trackingHeaders: Record<string, string> = {};
-  if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
-  if (workflowTracking.brandId) trackingHeaders["x-brand-id"] = workflowTracking.brandId;
-  if (workflowTracking.workflowSlug) trackingHeaders["x-workflow-slug"] = workflowTracking.workflowSlug;
-  if (workflowTracking.featureSlug) trackingHeaders["x-feature-slug"] = workflowTracking.featureSlug;
+  const trackingHeaders = buildTrackingHeaders(workflowTracking);
 
   const parsed = RagEmbedRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -1674,11 +1663,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
 
   // Build tracking headers to forward to downstream services
-  const trackingHeaders: Record<string, string> = {};
-  if (workflowTracking.campaignId) trackingHeaders["x-campaign-id"] = workflowTracking.campaignId;
-  if (workflowTracking.brandId) trackingHeaders["x-brand-id"] = workflowTracking.brandId;
-  if (workflowTracking.workflowSlug) trackingHeaders["x-workflow-slug"] = workflowTracking.workflowSlug;
-  if (workflowTracking.featureSlug) trackingHeaders["x-feature-slug"] = workflowTracking.featureSlug;
+  const trackingHeaders = buildTrackingHeaders(workflowTracking);
 
   const parsed = ChatRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -1783,6 +1768,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           brandIds: brandIds.length > 0 ? brandIds : null,
           workflowSlug: workflowTracking.workflowSlug ?? null,
           featureSlug: workflowTracking.featureSlug ?? null,
+          audienceId: workflowTracking.audienceId ?? null,
         })
         .returning();
       currentSessionId = session.id;

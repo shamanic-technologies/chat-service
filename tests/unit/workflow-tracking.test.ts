@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { Request, Response, NextFunction } from "express";
-import { requireAuth, type AuthLocals } from "../../src/middleware/auth.js";
+import { requireAuth, buildTrackingHeaders, type AuthLocals } from "../../src/middleware/auth.js";
 
 function mockReqRes(headers: Record<string, string> = {}) {
   const req = { headers } as unknown as Request;
@@ -28,6 +28,7 @@ describe("workflow tracking headers in auth middleware", () => {
       "x-brand-id": "brand-xyz",
       "x-workflow-slug": "outreach-v2",
       "x-feature-slug": "pr-outreach",
+      "x-audience-id": "aud-001",
     });
     requireAuth(req, res, next);
     expect(next).toHaveBeenCalled();
@@ -37,7 +38,27 @@ describe("workflow tracking headers in auth middleware", () => {
       brandId: "brand-xyz",
       workflowSlug: "outreach-v2",
       featureSlug: "pr-outreach",
+      audienceId: "aud-001",
     });
+  });
+
+  it("extracts audience-id when present alone", () => {
+    const { req, res, next } = mockReqRes({
+      ...BASE_HEADERS,
+      "x-audience-id": "aud-solo",
+    });
+    requireAuth(req, res, next);
+    expect(next).toHaveBeenCalled();
+    const locals = res.locals as unknown as AuthLocals;
+    expect(locals.workflowTracking).toEqual({ audienceId: "aud-solo" });
+  });
+
+  it("omits audience-id when absent (optional — never throws)", () => {
+    const { req, res, next } = mockReqRes(BASE_HEADERS);
+    requireAuth(req, res, next);
+    expect(next).toHaveBeenCalled();
+    const locals = res.locals as unknown as AuthLocals;
+    expect(locals.workflowTracking.audienceId).toBeUndefined();
   });
 
   it("preserves CSV x-brand-id header as-is for multi-brand campaigns", () => {
@@ -99,6 +120,60 @@ describe("workflow tracking headers in auth middleware", () => {
   });
 });
 
+describe("buildTrackingHeaders allowlist helper", () => {
+  // The full set of tracking headers chat-service may forward to INTERNAL
+  // services. The egress guardrail asserts the helper can never emit anything
+  // outside this set (so a vendor secret / arbitrary header cannot leak).
+  const INTERNAL_ALLOWLIST = [
+    "x-campaign-id",
+    "x-brand-id",
+    "x-workflow-slug",
+    "x-feature-slug",
+    "x-audience-id",
+  ];
+
+  it("maps the full tracking block to downstream headers incl. x-audience-id", () => {
+    expect(
+      buildTrackingHeaders({
+        campaignId: "camp-1",
+        brandId: "brand-1",
+        workflowSlug: "flow-1",
+        featureSlug: "feat-1",
+        audienceId: "aud-1",
+      }),
+    ).toEqual({
+      "x-campaign-id": "camp-1",
+      "x-brand-id": "brand-1",
+      "x-workflow-slug": "flow-1",
+      "x-feature-slug": "feat-1",
+      "x-audience-id": "aud-1",
+    });
+  });
+
+  it("forwards x-audience-id when it is the only field set", () => {
+    expect(buildTrackingHeaders({ audienceId: "aud-only" })).toEqual({
+      "x-audience-id": "aud-only",
+    });
+  });
+
+  it("omits absent fields (empty tracking -> empty map)", () => {
+    expect(buildTrackingHeaders({})).toEqual({});
+  });
+
+  it("egress guardrail: output keys are a strict subset of the internal allowlist", () => {
+    const headers = buildTrackingHeaders({
+      campaignId: "c",
+      brandId: "b",
+      workflowSlug: "w",
+      featureSlug: "f",
+      audienceId: "a",
+    });
+    for (const key of Object.keys(headers)) {
+      expect(INTERNAL_ALLOWLIST).toContain(key);
+    }
+  });
+});
+
 describe("runs-client forwards tracking headers", () => {
   const originalEnv = { ...process.env };
 
@@ -130,7 +205,7 @@ describe("runs-client forwards tracking headers", () => {
     await createRun(
       { serviceName: "chat-service", taskName: "chat" },
       identity,
-      { "x-campaign-id": "camp-1", "x-brand-id": "brand-1", "x-workflow-slug": "flow-1", "x-feature-slug": "feat-1" },
+      { "x-campaign-id": "camp-1", "x-brand-id": "brand-1", "x-workflow-slug": "flow-1", "x-feature-slug": "feat-1", "x-audience-id": "aud-1" },
     );
 
     expect(fetch).toHaveBeenCalledWith(
@@ -144,6 +219,7 @@ describe("runs-client forwards tracking headers", () => {
           "x-brand-id": "brand-1",
           "x-workflow-slug": "flow-1",
           "x-feature-slug": "feat-1",
+          "x-audience-id": "aud-1",
         }),
       }),
     );
@@ -195,7 +271,7 @@ describe("runs-client forwards tracking headers", () => {
       "run-1",
       [{ costName: "claude-sonnet-4-6-tokens-input", quantity: 100, costSource: "platform" as const }],
       identity,
-      { "x-brand-id": "brand-3" },
+      { "x-brand-id": "brand-3", "x-audience-id": "aud-cost" },
     );
 
     expect(fetch).toHaveBeenCalledWith(
@@ -203,6 +279,7 @@ describe("runs-client forwards tracking headers", () => {
       expect.objectContaining({
         headers: expect.objectContaining({
           "x-brand-id": "brand-3",
+          "x-audience-id": "aud-cost",
         }),
       }),
     );
