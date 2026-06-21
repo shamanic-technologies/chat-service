@@ -10,6 +10,7 @@ export const sessions = pgTable("sessions", {
   brandIds: text("brand_ids").array(),
   workflowSlug: text("workflow_slug"),
   featureSlug: text("feature_slug"),
+  audienceId: text("audience_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

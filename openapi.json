@@ -1354,6 +1354,16 @@
             "description": "Feature slug — propagated through the entire service chain",
             "name": "x-feature-slug",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow."
+            },
+            "required": false,
+            "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow.",
+            "name": "x-audience-id",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -1550,6 +1560,16 @@
             "description": "Feature slug — propagated through the entire service chain",
             "name": "x-feature-slug",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow."
+            },
+            "required": false,
+            "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow.",
+            "name": "x-audience-id",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -1703,6 +1723,16 @@
             "required": false,
             "description": "Feature slug — propagated through the entire service chain",
             "name": "x-feature-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow."
+            },
+            "required": false,
+            "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow.",
+            "name": "x-audience-id",
             "in": "header"
           }
         ],
@@ -2002,6 +2032,16 @@
             "description": "Feature slug — propagated through the entire service chain",
             "name": "x-feature-slug",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow."
+            },
+            "required": false,
+            "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow.",
+            "name": "x-audience-id",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -2218,6 +2258,16 @@
             "description": "Feature slug — propagated through the entire service chain",
             "name": "x-feature-slug",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow."
+            },
+            "required": false,
+            "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow.",
+            "name": "x-audience-id",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -2371,6 +2421,16 @@
             "required": false,
             "description": "Feature slug — propagated through the entire service chain",
             "name": "x-feature-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow."
+            },
+            "required": false,
+            "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow.",
+            "name": "x-audience-id",
             "in": "header"
           }
         ],

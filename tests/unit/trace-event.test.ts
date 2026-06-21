@@ -24,6 +24,7 @@ const tracking = {
   campaignId: "camp-1",
   workflowSlug: "wf-1",
   featureSlug: "ft-1",
+  audienceId: "aud-1",
 };
 
 function flushAsync() {
@@ -99,6 +100,7 @@ describe("traceEvent — header forwarding", () => {
     expect(headers["x-campaign-id"]).toBe("camp-1");
     expect(headers["x-workflow-slug"]).toBe("wf-1");
     expect(headers["x-feature-slug"]).toBe("ft-1");
+    expect(headers["x-audience-id"]).toBe("aud-1");
   });
 
   it("omits tracking headers that are absent", async () => {
@@ -116,6 +118,7 @@ describe("traceEvent — header forwarding", () => {
     expect(headers).not.toHaveProperty("x-campaign-id");
     expect(headers).not.toHaveProperty("x-workflow-slug");
     expect(headers).not.toHaveProperty("x-feature-slug");
+    expect(headers).not.toHaveProperty("x-audience-id");
   });
 });
 
