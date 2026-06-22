@@ -196,7 +196,7 @@ describe("POST /complete — cost provision → authorize → execute → reconc
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("provisions worst-case before the call, then records actual real tokens + cancels the holds", async () => {
+  it("provisions a right-sized hold before the call, then records actual real tokens + cancels the holds", async () => {
     const cap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>, patchedStatuses: [] as string[] };
     const gemini = { calls: 0 };
     routes.push(mockRunsCreate(), mockKeyDecrypt(), mockBilling(), mockGeminiComplete(gemini), ...mockRunsCostRoutes(cap), mockRunsStatusPatch());
@@ -217,8 +217,13 @@ describe("POST /complete — cost provision → authorize → execute → reconc
       "google-flash-3-tokens-input",
       "google-flash-3-tokens-output",
     ]);
-    // Output provisioned at the worst-case budget (64k), not the real 5.
-    expect(provision.find((i) => i.costName.endsWith("output"))!.quantity).toBe(64_000);
+    // Output provisioned at a RIGHT-SIZED estimate (well below the 64k model max),
+    // not the flat worst-case — this is what stops a high-fan-out burst from
+    // falsely 402-ing a solvent org. With no caller maxTokens, a tiny prompt
+    // floors to a 1000-token hold. The provider still receives the full 64k cap.
+    const outputHold = provision.find((i) => i.costName.endsWith("output"))!.quantity;
+    expect(outputHold).toBe(1_000);
+    expect(outputHold).toBeLessThan(64_000);
 
     // ORDER: provision precedes the Gemini call.
     const provisionIdx = fetchCalls.findIndex(
@@ -236,6 +241,21 @@ describe("POST /complete — cost provision → authorize → execute → reconc
 
     // RECONCILE: the 2 provisioned holds are cancelled.
     expect(cap.patchedStatuses.filter((s) => s === "cancelled")).toHaveLength(2);
+  });
+
+  it("sizes the provisioned output hold to the caller-declared maxTokens", async () => {
+    const cap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>, patchedStatuses: [] as string[] };
+    const gemini = { calls: 0 };
+    routes.push(mockRunsCreate(), mockKeyDecrypt(), mockBilling(), mockGeminiComplete(gemini), ...mockRunsCostRoutes(cap), mockRunsStatusPatch());
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "hi", systemPrompt: "be brief", provider: "google", model: "flash", maxTokens: 256 });
+
+    expect(res.status).toBe(200);
+    const provision = cap.postedItems[0];
+    expect(provision.find((i) => i.costName.endsWith("output"))!.quantity).toBe(256);
   });
 
   it("model:flash-pro resolves Gemini 3.5 Flash and declares google-flash-3.5 cost rows (DIS-130)", async () => {

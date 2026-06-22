@@ -1494,6 +1494,13 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         model?: string;
         imageUrl?: string;
         /**
+         * Optional output cap. Defaults to MAX_TOKENS (64k). A caller that
+         * declares a smaller budget (POST /complete `maxTokens`) caps generation
+         * here too. Anthropic's API requires `max_tokens`, so this only ever
+         * lowers it from the default, never removes it.
+         */
+        maxTokens?: number;
+        /**
          * Opt-in native server-side web search. When true, attaches Anthropic's
          * `web_search_20250305` tool so Claude answers from live web results.
          * Default (false/undefined) is byte-identical to a non-grounded call.
@@ -1535,7 +1542,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       // `responseFormat:"json"` without a schema upfront.
       const params = {
         model: effectiveModel,
-        max_tokens: MAX_TOKENS,
+        max_tokens: Math.min(options?.maxTokens ?? MAX_TOKENS, MAX_TOKENS),
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }],
         ...(options?.temperature != null ? { temperature: options.temperature } : {}),

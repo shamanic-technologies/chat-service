@@ -97,11 +97,18 @@ describe("completeWithGemini", () => {
     expect(result.tokensOutput).toBe(50);
   });
 
-  it("sends maxOutputTokens 64000 (parity with authorized hold + Anthropic)", async () => {
+  it("sends maxOutputTokens 64000 by default (parity with authorized hold + Anthropic)", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     await runWithTimers(baseOptions);
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(requestBody.generationConfig.maxOutputTokens).toBe(64000);
+  });
+
+  it("honors a caller-supplied maxOutputTokens cap", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({ ...baseOptions, maxOutputTokens: 2048 });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.maxOutputTokens).toBe(2048);
   });
 
   // --- responseSchema passthrough ---

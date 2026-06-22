@@ -88,6 +88,13 @@ interface GeminiCompleteOptions {
   responseSchema?: Record<string, unknown>;
   temperature?: number;
   /**
+   * Optional output cap. Defaults to GEMINI_MAX_OUTPUT_TOKENS (64k) — see the
+   * constant's note on why the explicit max is required to avoid the lower
+   * per-model default. A caller that declares a smaller budget (POST /complete
+   * `maxTokens`) caps generation here too.
+   */
+  maxOutputTokens?: number;
+  /**
    * Opt-in native Google Search grounding. When true, the request attaches the
    * `googleSearch` tool so Gemini answers from live web results instead of
    * parametric memory. Default (false/undefined) is byte-identical to a
@@ -450,6 +457,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     responseFormat,
     responseSchema,
     temperature,
+    maxOutputTokens,
     webSearch,
   } = options;
 
@@ -500,7 +508,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     contents: [{ parts }],
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
-      maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
+      maxOutputTokens: maxOutputTokens ?? GEMINI_MAX_OUTPUT_TOKENS,
       ...(temperature != null ? { temperature } : {}),
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
       ...(sanitizedSchema != null ? { responseSchema: sanitizedSchema } : {}),
