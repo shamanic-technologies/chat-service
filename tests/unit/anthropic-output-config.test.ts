@@ -58,6 +58,22 @@ describe("anthropic complete() output_config", () => {
     expect(capturedParams!.output_config).toBeUndefined();
   });
 
+  it("defaults max_tokens to 64000 when no maxTokens is supplied", async () => {
+    const claude = createAnthropicClient({ apiKey: "test-key", systemPrompt: "You are helpful." });
+    await claude.complete("Hello");
+
+    expect(capturedParams!.max_tokens).toBe(64000);
+  });
+
+  it("honors a caller-supplied maxTokens cap (bounded to the 64000 max)", async () => {
+    const claude = createAnthropicClient({ apiKey: "test-key", systemPrompt: "You are helpful." });
+    await claude.complete("Hello", { maxTokens: 1024 });
+    expect(capturedParams!.max_tokens).toBe(1024);
+
+    await claude.complete("Hello", { maxTokens: 999_999 });
+    expect(capturedParams!.max_tokens).toBe(64000);
+  });
+
   it("returns parsed content from text blocks", async () => {
     const claude = createAnthropicClient({ apiKey: "test-key", systemPrompt: "You are helpful." });
     const result = await claude.complete("Return JSON", { responseFormat: "json" });

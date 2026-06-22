@@ -100,6 +100,7 @@ import { authorizeCredits, BillingError } from "./lib/billing-client.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
 import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, buildTrackingHeaders, type AuthLocals } from "./middleware/auth.js";
+import { resolveOutputBudget, estimateInputTokens, estimateOutputTokens } from "./lib/provision-estimate.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 
@@ -308,7 +309,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, imageUrl, imageContext, webSearch: webSearchRaw } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, maxTokens, provider: requestedProvider, model: requestedModel, imageUrl, imageContext, webSearch: webSearchRaw } = parsed.data;
   const webSearch = webSearchRaw === true;
 
   // Passing a responseSchema implies JSON-mode parsing of the response.
@@ -355,10 +356,16 @@ app.post("/complete", requireAuth, async (req, res) => {
   // Cost prefix + source from model / key resolution.
   const effectiveCostPrefix = resolved.costPrefix;
   const costSource: "platform" | "org" = resolvedKey.keySource === "org" ? "org" : "platform";
-  // Provision quantities (worst case): input estimate + output budget. /complete has no
-  // caller maxTokens param, so the model's output budget is the theoretical max.
-  const estimatedInputTokens = Math.max(Math.ceil(message.length / 4), 500);
-  const maxOutputTokens = 64_000;
+  // Right-sized provision quantities. The HOLD reserved before the call is an
+  // affordability reservation, NOT the provider's hard cap: holding the flat 64k
+  // model max for every call let a high-fan-out caller stack dozens of maxed
+  // holds against one org balance in the same instant and falsely 402 a solvent
+  // org (real spend ~0.15c vs a ~115c hold). resolveOutputBudget sizes the hold
+  // to the caller's `maxTokens` when declared, else a realistic estimate well
+  // below 64k; the provider still gets the full budget (or the caller's cap) so
+  // long outputs are never truncated. Reconcile-to-actual keeps billing exact.
+  const { inputTokens: estimatedInputTokens, holdOutputTokens, providerMaxOutputTokens } =
+    resolveOutputBudget({ message, maxTokens });
 
   // Register run (mandatory) — must precede provisioning (cost rows attach to the run).
   let runId: string | null = null;
@@ -392,7 +399,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         runId,
         costPrefix: effectiveCostPrefix,
         inputTokens: estimatedInputTokens,
-        outputTokens: maxOutputTokens,
+        outputTokens: holdOutputTokens,
         keySource: resolvedKey.keySource,
         identity: { orgId, userId, runId },
         trackingHeaders,
@@ -425,6 +432,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         responseFormat,
         responseSchema,
         temperature,
+        maxOutputTokens: providerMaxOutputTokens,
         webSearch,
       });
     } else {
@@ -435,6 +443,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         temperature,
         model: effectiveModel,
         imageUrl,
+        maxTokens: providerMaxOutputTokens,
         webSearch,
       });
     }
@@ -558,7 +567,7 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
   }
 
   const costSource: "platform" | "org" = resolvedKey.keySource === "org" ? "org" : "platform";
-  const estimatedInputTokens = Math.max(Math.ceil(prompt.length / 4), 500);
+  const estimatedInputTokens = estimateInputTokens(prompt);
   const maxOutputTokens = GEMINI_IMAGE_MAX_OUTPUT_TOKENS;
 
   let runId: string | null = null;
@@ -1598,7 +1607,7 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
     });
   }
 
-  const estimatedInputTokens = Math.max(Math.ceil(prompt.length / 4), 500);
+  const estimatedInputTokens = estimateInputTokens(prompt);
 
   let platformFailed = false;
   try {
@@ -1829,7 +1838,10 @@ app.post("/chat", requireAuth, async (req, res) => {
           runId: runId!,
           costPrefix: resolvedModelInfo.costPrefix,
           inputTokens: estimatedInputTokens,
-          outputTokens: 64_000,
+          // Right-sized affordability hold (not the provider streaming cap, which
+          // stays at MAX_TOKENS via createStream). A flat 64k hold per agentic
+          // turn over-reserved against the org balance; reconcile records actual.
+          outputTokens: estimateOutputTokens(estimatedInputTokens),
           keySource: resolvedKey.keySource,
           identity: { orgId, userId, runId: runId! },
           trackingHeaders,
