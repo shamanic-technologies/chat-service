@@ -405,6 +405,17 @@ export const CompleteRequestSchema = z
       description: "Sampling temperature (0–2). Lower = more deterministic.",
       example: 0.3,
     }),
+    maxTokens: z.number().int().min(1).max(64_000).optional().openapi({
+      description:
+        "Optional output-token budget for this call. When set, it caps the provider's " +
+        "generation (Anthropic `max_tokens` / Gemini `maxOutputTokens`, bounded to 64000) " +
+        "AND sizes the pre-call cost reservation exactly to this budget. Omit it and the " +
+        "service reserves a right-sized estimate (well below the 64000 model max) while the " +
+        "provider keeps the full budget so long outputs are not truncated. Declare it when " +
+        "you know your output is small (e.g. scoring, short JSON, suggestion lists) — this " +
+        "prevents a burst of concurrent calls from over-reserving against your org balance.",
+      example: 4096,
+    }),
     provider: z.enum(["anthropic", "google"]).openapi({
       description: "LLM provider to use.",
       example: "anthropic",
