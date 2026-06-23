@@ -1,17 +1,28 @@
-import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
-
-export type ApiRegistryCallParams = ApiCallParams;
+const API_REGISTRY_URL =
+  process.env.API_REGISTRY_SERVICE_URL || "https://api-registry.distribute.you";
+const API_REGISTRY_API_KEY = process.env.API_REGISTRY_SERVICE_API_KEY;
 
 // ---------------------------------------------------------------------------
-// Progressive disclosure: list_services → list_service_endpoints → call_api
-// All routed through api-service gateway.
+// Progressive disclosure: list_services → list_service_endpoints
+// Called directly against api-registry (no api-service proxy).
 // ---------------------------------------------------------------------------
+
+function registryFetch(path: string): Promise<Response> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (API_REGISTRY_API_KEY) {
+    headers["X-API-Key"] = API_REGISTRY_API_KEY;
+  }
+  return fetch(`${API_REGISTRY_URL}${path}`, { method: "GET", headers });
+}
 
 /** Step 1: Lightweight overview — service names, descriptions, endpoint counts. */
 export interface ServiceOverview {
   service: string;
   title?: string;
   description?: string;
+  error?: string;
   endpointCount: number;
 }
 
@@ -22,14 +33,12 @@ export interface ListServicesResponse {
   services: ServiceOverview[];
 }
 
-export async function listServices(
-  params: ApiRegistryCallParams,
-): Promise<ListServicesResponse> {
-  const res = await apiServiceFetch("/v1/platform/llm-context", "GET", params);
+export async function listServices(): Promise<ListServicesResponse> {
+  const res = await registryFetch("/llm-context");
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[api-registry-client] GET /v1/platform/llm-context returned ${res.status}: ${text}`,
+      `[api-registry-client] GET /llm-context returned ${res.status}: ${text}`,
     );
   }
   return (await res.json()) as ListServicesResponse;
@@ -46,57 +55,29 @@ export interface ListServiceEndpointsResponse {
   service: string;
   title?: string;
   description?: string;
-  endpointCount: number;
-  endpoints: EndpointSummary[];
+  endpointCount?: number;
+  endpoints?: EndpointSummary[];
+  /** Present when the service has 30+ endpoints and results are grouped. */
+  totalEndpoints?: number;
+  groupCount?: number;
+  groups?: {
+    group: string;
+    endpointCount: number;
+    endpoints: EndpointSummary[];
+  }[];
 }
 
 export async function listServiceEndpoints(
   service: string,
-  params: ApiRegistryCallParams,
 ): Promise<ListServiceEndpointsResponse> {
-  const res = await apiServiceFetch(
-    `/v1/platform/services/${encodeURIComponent(service)}`,
-    "GET",
-    params,
+  const res = await registryFetch(
+    `/llm-context/${encodeURIComponent(service)}`,
   );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `[api-registry-client] GET /v1/platform/services/${service} returned ${res.status}: ${text}`,
+      `[api-registry-client] GET /llm-context/${service} returned ${res.status}: ${text}`,
     );
   }
   return (await res.json()) as ListServiceEndpointsResponse;
-}
-
-/** Step 3: Call an api-service endpoint directly. */
-export interface CallApiParams {
-  service: string;
-  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  path: string;
-  body?: Record<string, unknown>;
-}
-
-export interface CallApiResponse {
-  status: number;
-  ok: boolean;
-  data: unknown;
-}
-
-export async function callApi(
-  callParams: CallApiParams,
-  identityParams: ApiRegistryCallParams,
-): Promise<CallApiResponse> {
-  const res = await apiServiceFetch(
-    callParams.path,
-    callParams.method,
-    identityParams,
-    callParams.body,
-  );
-
-  const data = await res.json().catch(() => null);
-  return {
-    status: res.status,
-    ok: res.ok,
-    data,
-  };
 }
