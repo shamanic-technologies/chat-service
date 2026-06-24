@@ -438,6 +438,17 @@ export const CompleteRequestSchema = z
         "The web-search cost is metered per query/search and billed in addition to tokens.",
       example: true,
     }),
+    disableThinking: z.boolean().optional().openapi({
+      description:
+        "Minimize the model's internal reasoning (\"thinking\") so the whole output budget goes to " +
+        "the answer. Use for extraction / structured-JSON / scoring tasks that don't need " +
+        "chain-of-thought. Effect is provider-floored, NOT a guaranteed full-off (like `maxSearches`): " +
+        "Gemini 2.5 → thinking fully OFF; Anthropic → no-op (`/complete` never enables thinking); " +
+        "Gemini 3 has NO full-off, so it drops to the lowest level the gen allows — `minimal` for " +
+        "Flash (incl. the `flash-pro` default = Gemini 3.5 Flash), `low` for Pro. Omitted or false = " +
+        "the service default (bounded thinking, byte-identical to a normal call).",
+      example: true,
+    }),
     imageUrl: z.string().url().optional().openapi({
       description: "URL of an image to include in the prompt. The image is fetched server-side and sent to the model as a visual input. Supported by all models, but recommended with provider: \"google\", model: \"flash-lite\" for cost-effective vision tasks (image classification, scoring, analysis).",
       example: "https://example.com/images/hero.jpg",
@@ -727,6 +738,14 @@ export const InternalPlatformCompleteRequestSchema = z
         "Citation source URLs are appended to `content` (text mode only). Omitted or false = no " +
         "grounding, byte-identical to a non-grounded call. The web-search cost is declared on the " +
         "platform run in addition to tokens.",
+      example: true,
+    }),
+    disableThinking: z.boolean().optional().openapi({
+      description:
+        "Minimize the model's internal reasoning so the whole output budget goes to the answer. " +
+        "Provider-floored, NOT a guaranteed full-off: Gemini 2.5 → fully OFF; Anthropic → no-op; " +
+        "Gemini 3 → lowest level the gen allows (`minimal` Flash, `low` Pro — no full-off exists). " +
+        "Same semantics as POST /complete. Omitted or false = the service default (bounded thinking).",
       example: true,
     }),
   })

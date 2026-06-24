@@ -309,8 +309,9 @@ app.post("/complete", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, responseSchema, temperature, maxTokens, provider: requestedProvider, model: requestedModel, imageUrl, imageContext, webSearch: webSearchRaw } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, maxTokens, provider: requestedProvider, model: requestedModel, imageUrl, imageContext, webSearch: webSearchRaw, disableThinking: disableThinkingRaw } = parsed.data;
   const webSearch = webSearchRaw === true;
+  const disableThinking = disableThinkingRaw === true;
 
   // Passing a responseSchema implies JSON-mode parsing of the response.
   const jsonMode = responseFormat === "json" || responseSchema != null;
@@ -434,6 +435,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         temperature,
         maxOutputTokens: providerMaxOutputTokens,
         webSearch,
+        disableThinking,
       });
     } else {
       const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
@@ -1444,8 +1446,9 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, webSearch: webSearchRaw } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, webSearch: webSearchRaw, disableThinking: disableThinkingRaw } = parsed.data;
   const webSearch = webSearchRaw === true;
+  const disableThinking = disableThinkingRaw === true;
 
   const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
   const effectiveModel = resolved.apiModelId;
@@ -1508,6 +1511,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
         responseSchema,
         temperature,
         webSearch,
+        disableThinking,
       });
     } else {
       const claude = createAnthropicClient({ apiKey, systemPrompt });
