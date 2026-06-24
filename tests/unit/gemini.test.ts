@@ -111,20 +111,28 @@ describe("completeWithGemini", () => {
     expect(requestBody.generationConfig.maxOutputTokens).toBe(2048);
   });
 
-  // Regression — incident 2026-06-24 (#316): gemini-3.5-flash (a Gemini 3 model)
-  // with NO thinkingConfig defaults to high thinking, burns the whole 64k output
-  // budget reasoning, and emits 7-9 visible tokens → MAX_TOKENS → every jsonMode
-  // /complete 502s (brand-service ICP/audiences/extract-fields down). The fix
-  // bounds thinking via thinkingLevel for Gemini 3.x (thinkingBudget is a no-op
-  // disable on Gemini 3). Mirror the /chat path (commit 1991af2).
-  it("sends thinkingLevel for a Gemini 3.x model (bounds thinking so JSON gets budget)", async () => {
+  // Regression — incident 2026-06-24 (#316 follow-up): on /complete, Gemini 3 is
+  // FLOORED (Flash → "minimal", Pro → "low"). thinkingLevel "low" (the /chat
+  // default) is NOT low enough for gemini-3.5-flash on a large structured output
+  // — thinking + the schema-constrained decode exhaust the 64k budget before the
+  // JSON is emitted (MAX_TOKENS at ~8 tokens), a known model bug
+  // (googleapis/js-genai#1619). /complete is extraction and never needs CoT, so
+  // floor Gemini 3 here regardless of disableThinking.
+  it("floors a Gemini 3 Flash model to thinkingLevel minimal on /complete", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     await runWithTimers({ ...baseOptions, model: "gemini-3.5-flash" });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "minimal" });
+  });
+
+  it("floors a Gemini 3 Pro model to thinkingLevel low on /complete (Pro has no minimal)", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({ ...baseOptions, model: "gemini-3.1-pro-preview" });
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
   });
 
-  it("sends thinkingBudget for a Gemini 2.5 model", async () => {
+  it("sends thinkingBudget 8192 for a Gemini 2.5 model by default (not floored)", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     await runWithTimers({ ...baseOptions, model: "gemini-2.5-flash" });
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
@@ -155,11 +163,11 @@ describe("completeWithGemini", () => {
     expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
   });
 
-  it("disableThinking omitted → default bounded thinking (unchanged)", async () => {
+  it("Gemini 3 Flash is already floored on /complete, so disableThinking is a no-op there", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
-    await runWithTimers({ ...baseOptions, model: "gemini-3.5-flash" });
+    await runWithTimers({ ...baseOptions, model: "gemini-3.5-flash", disableThinking: true });
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "minimal" });
   });
 
   // --- responseSchema passthrough ---
@@ -362,13 +370,13 @@ describe("completeWithGemini", () => {
 
   // Was "does not send thinkingConfig" — that omission IS the #316 bug: a Gemini 3
   // model with no thinkingConfig defaults to high thinking and burns the output
-  // budget before emitting JSON (7-9-token MAX_TOKENS truncation). thinkingConfig
-  // must be sent so thinking is bounded (thinkingLevel on Gemini 3.x).
-  it("sends a bounded thinkingConfig (Gemini 3 default model → thinkingLevel)", async () => {
+  // budget before emitting JSON. thinkingConfig must be sent, and on /complete
+  // Gemini 3 is floored (baseOptions.model = gemini-3-flash-preview → "minimal").
+  it("sends a floored thinkingConfig for the Gemini 3 default model on /complete", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     await runWithTimers(baseOptions);
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "minimal" });
   });
 
   it("passes AbortSignal.timeout to the Gemini fetch call", async () => {
