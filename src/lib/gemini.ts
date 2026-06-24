@@ -61,11 +61,11 @@ const RETRY_MAX_DELAY_MS = 30_000;
 // compatibility" on Gemini 3 and produces degenerate output — the model spends
 // its whole output budget on internal thinking and emits ZERO answer text
 // (finishReason: MAX_TOKENS). On /complete that surfaces as the 7-9-token
-// truncation: gemini-3.5-flash with NO thinkingConfig defaults to high thinking,
-// burns the entire 64k output budget reasoning before emitting any JSON → every
-// jsonMode /complete 502s (incident 2026-06-24, brand-service ICP/audiences/
-// extract-fields down). The /chat path was already fixed (commit 1991af2); this
-// is the same fix on the /complete path. PR #133's old `thinkingBudget: 0` is
+// truncation: gemini-3.5-flash with NO thinkingConfig defaults to high thinking
+// and can burn the output budget reasoning before emitting JSON (incident
+// 2026-06-24, brand-service ICP/audiences/extract-fields). The /chat path was
+// already fixed (commit 1991af2); this is the same bounded-config fix on the
+// /complete path. PR #133's old `thinkingBudget: 0` is
 // NOT a valid Gemini-3 disable — it must be `thinkingLevel`.
 // "low" gives enough reasoning while leaving budget for the answer.
 // See https://ai.google.dev/gemini-api/docs/thinking
@@ -560,20 +560,6 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     }
   }
 
-  // FLOOR Gemini-3 thinking on /complete. /complete is extraction / scoring /
-  // structured-output — it never needs deep chain-of-thought, and Gemini 3.5
-  // Flash FLAKES on large structured outputs when any meaningful thinking is on:
-  // thinking + the schema-constrained decode exhaust the 64k budget before the
-  // JSON is emitted → finishReason MAX_TOKENS at ~8 output tokens (or MALFORMED).
-  // This is a known model bug (googleapis/js-genai#1619). thinkingLevel "low"
-  // (the /chat default) is NOT low enough for gemini-3.5-flash here and failed
-  // DETERMINISTICALLY in prod on a 17-field extraction (#316 follow-up). So drop
-  // Gemini 3 to its floor ("minimal" Flash / "low" Pro) on this path, freeing the
-  // whole budget for the structured decode. Gemini 2.5 keeps a small budget
-  // unless `disableThinking` zeroes it. /chat is unaffected (it keeps "low" for
-  // tool-calling and does not call completeWithGemini).
-  const minimizeThinking = disableThinking || model.startsWith("gemini-3");
-
   // Build request body. When webSearch is on, attach the native googleSearch
   // grounding tool so Gemini answers from live web results. Omitted entirely
   // when off, keeping non-grounded requests byte-identical.
@@ -582,7 +568,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
       maxOutputTokens: maxOutputTokens ?? GEMINI_MAX_OUTPUT_TOKENS,
-      thinkingConfig: buildThinkingConfig(model, minimizeThinking),
+      thinkingConfig: buildThinkingConfig(model, disableThinking),
       ...(temperature != null ? { temperature } : {}),
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
       ...(sanitizedSchema != null ? { responseSchema: sanitizedSchema } : {}),
