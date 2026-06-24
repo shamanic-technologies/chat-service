@@ -111,21 +111,17 @@ describe("completeWithGemini", () => {
     expect(requestBody.generationConfig.maxOutputTokens).toBe(2048);
   });
 
-  // Regression — incident 2026-06-24 (#316 follow-up): on /complete, Gemini 3 is
-  // FLOORED (Flash → "minimal", Pro → "low"). thinkingLevel "low" (the /chat
-  // default) is NOT low enough for gemini-3.5-flash on a large structured output
-  // — thinking + the schema-constrained decode exhaust the 64k budget before the
-  // JSON is emitted (MAX_TOKENS at ~8 tokens), a known model bug
-  // (googleapis/js-genai#1619). /complete is extraction and never needs CoT, so
-  // floor Gemini 3 here regardless of disableThinking.
-  it("floors a Gemini 3 Flash model to thinkingLevel minimal on /complete", async () => {
+  // Regression — incident 2026-06-24 (#316): /complete must send a bounded
+  // thinkingConfig for Gemini 3. The default stays normal provider behavior
+  // (low), while disableThinking is the explicit opt-in for provider-flooring.
+  it("sends normal bounded thinkingLevel low for a Gemini 3 Flash model by default", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     await runWithTimers({ ...baseOptions, model: "gemini-3.5-flash" });
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "minimal" });
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
   });
 
-  it("floors a Gemini 3 Pro model to thinkingLevel low on /complete (Pro has no minimal)", async () => {
+  it("sends normal bounded thinkingLevel low for a Gemini 3 Pro model by default", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     await runWithTimers({ ...baseOptions, model: "gemini-3.1-pro-preview" });
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
@@ -163,11 +159,11 @@ describe("completeWithGemini", () => {
     expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
   });
 
-  it("Gemini 3 Flash is already floored on /complete, so disableThinking is a no-op there", async () => {
+  it("disableThinking omitted → Gemini 3 Flash keeps the normal bounded default", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
-    await runWithTimers({ ...baseOptions, model: "gemini-3.5-flash", disableThinking: true });
+    await runWithTimers({ ...baseOptions, model: "gemini-3.5-flash" });
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "minimal" });
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
   });
 
   // --- responseSchema passthrough ---
@@ -370,13 +366,13 @@ describe("completeWithGemini", () => {
 
   // Was "does not send thinkingConfig" — that omission IS the #316 bug: a Gemini 3
   // model with no thinkingConfig defaults to high thinking and burns the output
-  // budget before emitting JSON. thinkingConfig must be sent, and on /complete
-  // Gemini 3 is floored (baseOptions.model = gemini-3-flash-preview → "minimal").
-  it("sends a floored thinkingConfig for the Gemini 3 default model on /complete", async () => {
+  // budget before emitting JSON. thinkingConfig must be sent, but the default
+  // remains normal bounded thinking (baseOptions.model = gemini-3-flash-preview).
+  it("sends a normal bounded thinkingConfig for the Gemini 3 default model on /complete", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     await runWithTimers(baseOptions);
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "minimal" });
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
   });
 
   it("passes AbortSignal.timeout to the Gemini fetch call", async () => {
