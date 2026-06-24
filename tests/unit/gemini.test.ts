@@ -131,6 +131,37 @@ describe("completeWithGemini", () => {
     expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 8192 });
   });
 
+  // disableThinking — provider-floored "minimize thinking" option (POST /complete).
+  // Gemini 3 has NO full-off, so it drops to the lowest level the gen allows;
+  // Gemini 2.5 alone goes fully off (thinkingBudget: 0).
+  it("disableThinking → Gemini 3 Flash floors at thinkingLevel minimal", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({ ...baseOptions, model: "gemini-3.5-flash", disableThinking: true });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "minimal" });
+  });
+
+  it("disableThinking → Gemini 3 Pro floors at thinkingLevel low (no minimal on Pro)", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({ ...baseOptions, model: "gemini-3.1-pro-preview", disableThinking: true });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
+  });
+
+  it("disableThinking → Gemini 2.5 fully off (thinkingBudget 0)", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({ ...baseOptions, model: "gemini-2.5-flash", disableThinking: true });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0 });
+  });
+
+  it("disableThinking omitted → default bounded thinking (unchanged)", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({ ...baseOptions, model: "gemini-3.5-flash" });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
+  });
+
   // --- responseSchema passthrough ---
 
   it("includes generationConfig.responseSchema when caller supplies a schema", async () => {
