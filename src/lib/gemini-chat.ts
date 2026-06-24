@@ -6,7 +6,7 @@
 import type { Response as ExpressResponse } from "express";
 import type { ToolCallRecord } from "../db/schema.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
-import { sanitizeGeminiSchema } from "./gemini.js";
+import { sanitizeGeminiSchema, buildThinkingConfig } from "./gemini.js";
 import { buildToolResultFallback } from "./tool-fallback.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -31,24 +31,14 @@ const DEFAULT_GEMINI_TIMEOUT_MS = 10 * 60_000;
 
 const MAX_TOOL_CHAIN_DEPTH = 10;
 
-// Thinking config is GENERATION-SPECIFIC. Gemini 3.x (gemini-3*, incl
-// gemini-3.5-flash) uses `thinkingLevel` ("minimal"|"low"|"medium"|"high");
-// the Gemini-2.5-era `thinkingBudget` integer is only "accepted for backwards
-// compatibility" on Gemini 3 and produces degenerate output — the model spends
-// its whole output budget on internal thinking and emits ZERO answer text. That
-// is exactly what broke every flash-pro (gemini-3.5-flash) /chat once Google
-// flipped 3.5-flash to stable (100% empty replies, 2026-06-18→). So send
-// `thinkingLevel` to Gemini 3.x and keep `thinkingBudget` only for Gemini 2.5.
-// "low" gives enough reasoning for tool-calling while leaving budget for the
-// answer. See https://ai.google.dev/gemini-api/docs/thinking
-const GEMINI_3_THINKING_LEVEL = "low";
-const GEMINI_25_THINKING_BUDGET = 8192;
-
-export function buildThinkingConfig(model: string): Record<string, unknown> {
-  return model.startsWith("gemini-3")
-    ? { thinkingLevel: GEMINI_3_THINKING_LEVEL }
-    : { thinkingBudget: GEMINI_25_THINKING_BUDGET };
-}
+// Thinking config (`buildThinkingConfig`) is generation-specific and shared with
+// the /complete path — it lives in gemini.ts so both paths bound Gemini-3
+// thinking identically. Gemini 3.x uses `thinkingLevel`; the Gemini-2.5-era
+// `thinkingBudget` integer produces degenerate (empty) output on Gemini 3 — the
+// model spends its whole output budget on internal thinking and emits ZERO
+// answer text. That broke every flash-pro (gemini-3.5-flash) /chat once Google
+// flipped 3.5-flash to stable (100% empty replies, 2026-06-18→) and every
+// jsonMode /complete (7-9-token MAX_TOKENS truncation, 2026-06-24).
 
 // Gemini 3 requires a `thoughtSignature` on every functionCall part when the
 // conversation history is replayed; omitting it returns a 400
