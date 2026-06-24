@@ -2,9 +2,9 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   toGeminiFunctionDeclarations,
   streamGeminiChat,
-  buildThinkingConfig,
   type ToolDefinition,
 } from "../../src/lib/gemini-chat.js";
+import { buildThinkingConfig } from "../../src/lib/gemini.js";
 
 describe("toGeminiFunctionDeclarations", () => {
   it("converts Anthropic-style tool definitions to Gemini format", () => {

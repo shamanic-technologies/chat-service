@@ -55,6 +55,34 @@ const GEMINI_MAX_OUTPUT_TOKENS = 64_000;
 /** Max delay cap for exponential backoff in ms. */
 const RETRY_MAX_DELAY_MS = 30_000;
 
+// Thinking config is GENERATION-SPECIFIC. Gemini 3.x (gemini-3*, incl
+// gemini-3.5-flash) uses `thinkingLevel` ("minimal"|"low"|"medium"|"high");
+// the Gemini-2.5-era `thinkingBudget` integer is only "accepted for backwards
+// compatibility" on Gemini 3 and produces degenerate output — the model spends
+// its whole output budget on internal thinking and emits ZERO answer text
+// (finishReason: MAX_TOKENS). On /complete that surfaces as the 7-9-token
+// truncation: gemini-3.5-flash with NO thinkingConfig defaults to high thinking,
+// burns the entire 64k output budget reasoning before emitting any JSON → every
+// jsonMode /complete 502s (incident 2026-06-24, brand-service ICP/audiences/
+// extract-fields down). The /chat path was already fixed (commit 1991af2); this
+// is the same fix on the /complete path. PR #133's old `thinkingBudget: 0` is
+// NOT a valid Gemini-3 disable — it must be `thinkingLevel`.
+// "low" gives enough reasoning while leaving budget for the answer.
+// See https://ai.google.dev/gemini-api/docs/thinking
+const GEMINI_3_THINKING_LEVEL = "low";
+const GEMINI_25_THINKING_BUDGET = 8192;
+
+/**
+ * Build the generation-specific `thinkingConfig`. Shared by /complete
+ * (gemini.ts) and /chat (gemini-chat.ts) so both paths bound Gemini-3 thinking
+ * identically.
+ */
+export function buildThinkingConfig(model: string): Record<string, unknown> {
+  return model.startsWith("gemini-3")
+    ? { thinkingLevel: GEMINI_3_THINKING_LEVEL }
+    : { thinkingBudget: GEMINI_25_THINKING_BUDGET };
+}
+
 /** Check if a model ID is a Gemini model. */
 export function isGeminiModel(model: string): boolean {
   return model in GEMINI_MODELS;
@@ -509,6 +537,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
       maxOutputTokens: maxOutputTokens ?? GEMINI_MAX_OUTPUT_TOKENS,
+      thinkingConfig: buildThinkingConfig(model),
       ...(temperature != null ? { temperature } : {}),
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
       ...(sanitizedSchema != null ? { responseSchema: sanitizedSchema } : {}),
