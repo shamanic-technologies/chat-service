@@ -72,13 +72,37 @@ const RETRY_MAX_DELAY_MS = 30_000;
 const GEMINI_3_THINKING_LEVEL = "low";
 const GEMINI_25_THINKING_BUDGET = 8192;
 
+// Provider FLOOR for `disableThinking` — the lowest thinking each Gemini gen
+// allows. Gemini 3 has NO full-off (verified against
+// https://ai.google.dev/gemini-api/docs/thinking): Flash bottoms at "minimal",
+// Pro at "low". Gemini 2.5 alone can go fully off (thinkingBudget: 0). So
+// disableThinking is "minimize to the floor", documented as such on the
+// /complete schema — NOT a guaranteed zero on Gemini 3 (mirror of maxSearches:
+// a hard knob on one provider, best-effort on the other).
+const GEMINI_3_PRO_MIN_LEVEL = "low";
+const GEMINI_3_FLASH_MIN_LEVEL = "minimal";
+const GEMINI_25_THINKING_OFF = 0;
+
 /**
  * Build the generation-specific `thinkingConfig`. Shared by /complete
  * (gemini.ts) and /chat (gemini-chat.ts) so both paths bound Gemini-3 thinking
- * identically.
+ * identically. When `disableThinking` is set, drop to the provider's floor
+ * (fully off on Gemini 2.5; lowest level on Gemini 3 — it has no full-off).
  */
-export function buildThinkingConfig(model: string): Record<string, unknown> {
-  return model.startsWith("gemini-3")
+export function buildThinkingConfig(
+  model: string,
+  disableThinking = false,
+): Record<string, unknown> {
+  const isGemini3 = model.startsWith("gemini-3");
+  if (disableThinking) {
+    if (isGemini3) {
+      // "pro" id (gemini-3.1-pro-preview) floors at "low"; Flash/flash-lite at "minimal".
+      const level = model.includes("pro") ? GEMINI_3_PRO_MIN_LEVEL : GEMINI_3_FLASH_MIN_LEVEL;
+      return { thinkingLevel: level };
+    }
+    return { thinkingBudget: GEMINI_25_THINKING_OFF };
+  }
+  return isGemini3
     ? { thinkingLevel: GEMINI_3_THINKING_LEVEL }
     : { thinkingBudget: GEMINI_25_THINKING_BUDGET };
 }
@@ -129,6 +153,12 @@ interface GeminiCompleteOptions {
    * non-grounded call. See POST /complete `webSearch`.
    */
   webSearch?: boolean;
+  /**
+   * Minimize internal thinking to the provider floor — see POST /complete
+   * `disableThinking`. Gemini 2.5 → fully off; Gemini 3 → lowest level the gen
+   * allows (no full-off exists). Default (false) keeps the bounded default.
+   */
+  disableThinking?: boolean;
 }
 
 /** A web source surfaced by native grounding/search (provider-agnostic shape). */
@@ -487,6 +517,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     temperature,
     maxOutputTokens,
     webSearch,
+    disableThinking,
   } = options;
 
   // Passing a responseSchema implies JSON mode regardless of responseFormat.
@@ -537,7 +568,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
       maxOutputTokens: maxOutputTokens ?? GEMINI_MAX_OUTPUT_TOKENS,
-      thinkingConfig: buildThinkingConfig(model),
+      thinkingConfig: buildThinkingConfig(model, disableThinking),
       ...(temperature != null ? { temperature } : {}),
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
       ...(sanitizedSchema != null ? { responseSchema: sanitizedSchema } : {}),
