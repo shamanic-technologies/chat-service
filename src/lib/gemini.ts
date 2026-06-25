@@ -7,7 +7,31 @@ const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 export const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
 export const GEMINI_IMAGE_COST_PREFIX = "google-flash-image-3.1";
-export const GEMINI_IMAGE_MAX_OUTPUT_TOKENS = 32_000;
+export const GEMINI_IMAGE_SIZES = ["small", "medium", "large", "xlarge"] as const;
+export type GeminiImageSize = (typeof GEMINI_IMAGE_SIZES)[number];
+export const DEFAULT_GEMINI_IMAGE_SIZE: GeminiImageSize = "small";
+
+const GEMINI_IMAGE_PROVIDER_SIZE: Record<GeminiImageSize, string> = {
+  small: "512",
+  medium: "1K",
+  large: "2K",
+  xlarge: "4K",
+};
+
+const GEMINI_IMAGE_OUTPUT_TOKEN_ESTIMATE: Record<GeminiImageSize, number> = {
+  small: 747,
+  medium: 1120,
+  large: 1120,
+  xlarge: 2000,
+};
+
+export function geminiImageProviderSize(size: GeminiImageSize): string {
+  return GEMINI_IMAGE_PROVIDER_SIZE[size];
+}
+
+export function estimateGeminiImageOutputTokens(size: GeminiImageSize): number {
+  return GEMINI_IMAGE_OUTPUT_TOKEN_ESTIMATE[size];
+}
 
 export const GEMINI_MODELS: Record<string, string> = {
   "gemini-3.1-flash-lite": "google-flash-lite-3.1",
@@ -182,6 +206,7 @@ interface GeminiImageGenerationOptions {
   apiKey: string;
   prompt: string;
   model?: string;
+  size?: GeminiImageSize;
 }
 
 interface GeminiImageGenerationResult {
@@ -346,10 +371,17 @@ export async function generateImageWithGemini(
   options: GeminiImageGenerationOptions,
 ): Promise<GeminiImageGenerationResult> {
   const model = options.model ?? GEMINI_IMAGE_MODEL;
+  const size = options.size ?? DEFAULT_GEMINI_IMAGE_SIZE;
   const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(options.apiKey)}`;
   const timeoutMs = GEMINI_TIMEOUT_MS[model] ?? DEFAULT_GEMINI_TIMEOUT_MS;
   const body = {
     contents: [{ parts: [{ text: options.prompt }] }],
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
+      imageConfig: {
+        imageSize: geminiImageProviderSize(size),
+      },
+    },
   };
 
   let res: Response;

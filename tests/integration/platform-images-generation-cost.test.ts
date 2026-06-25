@@ -97,7 +97,7 @@ function mockPlatformRunStatus(cap: { patchedStatuses: string[] }) {
   } satisfies MockRoute;
 }
 
-function mockGeminiImage(cap: { calls: number; bodies: Record<string, unknown>[]; status?: number }) {
+function mockGeminiImage(cap: { calls: number; bodies: Record<string, unknown>[]; status?: number; omitUsage?: boolean }) {
   return {
     match: (url: string) => url.includes(":generateContent") && url.includes("generativelanguage.googleapis.com"),
     respond: (_url: string, init?: RequestInit) => {
@@ -119,7 +119,7 @@ function mockGeminiImage(cap: { calls: number; bodies: Record<string, unknown>[]
               finishReason: "STOP",
             },
           ],
-          usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 1290 },
+          ...(cap.omitUsage ? {} : { usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 1290 } }),
         },
       };
     },
@@ -172,6 +172,13 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
       tokensInput: 12,
       tokensOutput: 1290,
     });
+    expect(gemini.bodies[0]).toMatchObject({
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { imageSize: "512" },
+      },
+    });
+    expect(JSON.stringify(gemini.bodies[0])).not.toContain("maxOutputTokens");
 
     // No org/user/run headers — body shapes the platform run.
     expect(runCap.bodies[0]).toMatchObject({ serviceName: "chat-service", taskName: "generate-image" });
@@ -187,6 +194,37 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
 
     // Run finalized completed.
     expect(statusCap.patchedStatuses).toContain("completed");
+  });
+
+  it("uses selected size estimate when Gemini omits image usage metadata", async () => {
+    const runCap = { headers: [] as Array<Record<string, unknown>>, bodies: [] as unknown[] };
+    const costCap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string; costSource?: string }>> };
+    const statusCap = { patchedStatuses: [] as string[] };
+    const gemini = { calls: 0, bodies: [] as Record<string, unknown>[], omitUsage: true };
+    routes.push(
+      mockPlatformKey(),
+      mockPlatformRunCreate(runCap),
+      mockPlatformRunCosts(costCap),
+      mockPlatformRunStatus(statusCap),
+      mockGeminiImage(gemini),
+    );
+
+    const res = await request(app)
+      .post("/internal/platform-images/generate")
+      .set(AUTH)
+      .send({ prompt: "Generate a detailed poster.", size: "xlarge" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.tokensOutput).toBe(2_000);
+    expect(gemini.bodies[0]).toMatchObject({
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { imageSize: "4K" },
+      },
+    });
+
+    const actual = costCap.postedItems[0];
+    expect(actual.find((i) => i.costName === "google-flash-image-3.1-tokens-output")!.quantity).toBe(2_000);
   });
 
   it("fails loud (502) when platform-run creation fails and does NOT call Gemini", async () => {

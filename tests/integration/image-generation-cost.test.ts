@@ -193,7 +193,7 @@ describe("POST /orgs/images/generate — cost gate and Gemini image request", ()
       "google-flash-image-3.1-tokens-input",
       "google-flash-image-3.1-tokens-output",
     ]);
-    expect(provision.find((i) => i.costName.endsWith("output"))!.quantity).toBe(32_000);
+    expect(provision.find((i) => i.costName.endsWith("output"))!.quantity).toBe(747);
 
     const provisionIdx = fetchCalls.findIndex(
       (c) => /\/v1\/runs\/[^/]+\/costs$/.test(c.url) && (c.init?.method ?? "GET") === "POST",
@@ -203,14 +203,42 @@ describe("POST /orgs/images/generate — cost gate and Gemini image request", ()
 
     expect(gemini.bodies[0]).toEqual({
       contents: [{ parts: [{ text: "Generate a square avatar, no text." }] }],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { imageSize: "512" },
+      },
     });
-    expect(gemini.bodies[0]).not.toHaveProperty("generationConfig");
+    expect(JSON.stringify(gemini.bodies[0])).not.toContain("maxOutputTokens");
 
     const actual = costCap.postedItems.find((items) => items.some((i) => i.status === undefined));
     expect(actual).toBeDefined();
     expect(actual!.find((i) => i.costName.endsWith("input"))!.quantity).toBe(12);
     expect(actual!.find((i) => i.costName.endsWith("output"))!.quantity).toBe(1290);
     expect(costCap.patchedStatuses.filter((s) => s === "cancelled")).toHaveLength(2);
+  });
+
+  it("uses caller-selected xlarge size for Gemini and provisions documented 4K image tokens", async () => {
+    const costCap = {
+      postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>,
+      patchedStatuses: [] as string[],
+    };
+    const gemini = { calls: 0, bodies: [] as Record<string, unknown>[] };
+    routes.push(mockRunsCreate(), mockRunsEvents(), mockKeyDecrypt(), mockBilling(), mockGeminiImage(gemini), ...mockRunsCostRoutes(costCap), mockRunsStatusPatch());
+
+    const res = await request(app)
+      .post("/orgs/images/generate")
+      .set(AUTH)
+      .send({ prompt: "Generate a detailed poster.", size: "xlarge" });
+
+    expect(res.status).toBe(200);
+    const provision = costCap.postedItems[0];
+    expect(provision.find((i) => i.costName.endsWith("output"))!.quantity).toBe(2_000);
+    expect(gemini.bodies[0]).toMatchObject({
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { imageSize: "4K" },
+      },
+    });
   });
 
   it("fails loud and does not call Gemini when cost provision is rejected", async () => {
