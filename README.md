@@ -684,6 +684,7 @@ Read-only and supporting workflow tools:
 | `set_audience_status` | Flips lifecycle status (activate/resume/restore→active, pause→paused, archive→archived). Activating a `suggested` candidate makes it live. Archiving never deletes; there is no hard delete. `PATCH /v1/orgs/audiences/:id/status` |
 | `rename_audience` | Renames an audience (the only editable metadata; filters are immutable). `PATCH /v1/orgs/audiences/:id` |
 | `refresh_audience_count` | Re-snapshots apollo + apify match counts via the free live dry-run. `POST /v1/orgs/audiences/:id/refresh-count` |
+| `generate_audience_avatar` | (Re)generates the audience's avatar image. Optional `prompt` steers the image; omit to derive it from the audience's descriptors. ORG-BILLED (forwards `x-user-id` like `refresh_audience_count`). Returns the updated audience with its new `avatarUrl`. `POST /v1/orgs/audiences/:id/avatar` |
 
 **UI tools:**
 
