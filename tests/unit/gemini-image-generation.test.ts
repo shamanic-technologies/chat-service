@@ -6,7 +6,7 @@ describe("generateImageWithGemini", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses the Gemini image model without text-only generationConfig fields", async () => {
+  it("uses the Gemini image model with small imageConfig by default and no maxOutputTokens", async () => {
     const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
     vi.stubGlobal(
       "fetch",
@@ -57,8 +57,60 @@ describe("generateImageWithGemini", () => {
     expect(calls[0].url).toContain("/models/gemini-3.1-flash-image:generateContent");
     expect(calls[0].body).toEqual({
       contents: [{ parts: [{ text: "Generate a square avatar, no text." }] }],
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { imageSize: "512" },
+      },
     });
-    expect(calls[0].body).not.toHaveProperty("generationConfig");
+    expect(JSON.stringify(calls[0].body)).not.toContain("maxOutputTokens");
+  });
+
+  it("honors caller-selected image size", async () => {
+    const calls: Array<{ body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({
+          body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        });
+        return {
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              candidates: [
+                {
+                  content: {
+                    parts: [
+                      {
+                        inlineData: {
+                          mimeType: "image/png",
+                          data: "iVBORw0KGgo=",
+                        },
+                      },
+                    ],
+                  },
+                  finishReason: "STOP",
+                },
+              ],
+              usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 2000 },
+            }),
+        } as Response;
+      }),
+    );
+
+    await generateImageWithGemini({
+      apiKey: "fake-key",
+      prompt: "Generate a detailed landscape.",
+      size: "xlarge",
+    });
+
+    expect(calls[0].body).toMatchObject({
+      generationConfig: {
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: { imageSize: "4K" },
+      },
+    });
   });
 
   it("surfaces provider 4xx details", async () => {

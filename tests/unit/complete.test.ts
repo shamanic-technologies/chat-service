@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CompleteRequestSchema } from "../../src/schemas.js";
+import { CompleteRequestSchema, GenerateImageRequestSchema } from "../../src/schemas.js";
 import { isGeminiModel, geminiCostPrefix, GEMINI_MODELS } from "../../src/lib/gemini.js";
 import { costPrefixForModel, SUPPORTED_MODELS, resolveModel } from "../../src/lib/anthropic.js";
 
@@ -461,6 +461,41 @@ describe("CompleteRequestSchema", () => {
     if (result.success) {
       expect(result.data.imageContext).toBeUndefined();
     }
+  });
+});
+
+describe("GenerateImageRequestSchema", () => {
+  it("accepts omitted size so the route can apply the small default", () => {
+    const result = GenerateImageRequestSchema.safeParse({
+      prompt: "Generate a square avatar, no text.",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.size).toBeUndefined();
+    }
+  });
+
+  it("accepts all supported image sizes", () => {
+    for (const size of ["small", "medium", "large", "xlarge"] as const) {
+      const result = GenerateImageRequestSchema.safeParse({
+        prompt: "Generate a square avatar, no text.",
+        size,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.size).toBe(size);
+      }
+    }
+  });
+
+  it("rejects unsupported image sizes", () => {
+    const result = GenerateImageRequestSchema.safeParse({
+      prompt: "Generate a square avatar, no text.",
+      size: "massive",
+    });
+
+    expect(result.success).toBe(false);
   });
 });
 

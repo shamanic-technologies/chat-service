@@ -292,9 +292,14 @@ Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
 
 ```json
 {
-  "prompt": "Generate a square PNG avatar portrait for a B2B SaaS buyer persona: confident marketing leader, clean studio lighting, no text."
+  "prompt": "Generate a square PNG avatar portrait for a B2B SaaS buyer persona: confident marketing leader, clean studio lighting, no text.",
+  "size": "small"
 }
 ```
+
+- `prompt` — image-generation prompt.
+- `size` (optional) — `small` (default, 512px), `medium` (1K), `large` (2K), or `xlarge` (4K). Chat-service maps this to Gemini `generationConfig.imageConfig.imageSize`.
+- Output-token cost is provisioned/declared from Gemini's documented image budget by size: `small` 747, `medium` 1120, `large` 1120, `xlarge` 2000. If Gemini returns usage metadata, the actual provider value is used.
 
 Response:
 
@@ -304,7 +309,7 @@ Response:
   "mimeType": "image/png",
   "model": "gemini-3.1-flash-image",
   "tokensInput": 120,
-  "tokensOutput": 1290
+  "tokensOutput": 747
 }
 ```
 
