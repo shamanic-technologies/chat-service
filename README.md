@@ -305,7 +305,7 @@ Response:
 
 ```json
 {
-  "imageBase64": "iVBORw0KGgoAAAANSUhEUgAA...",
+  "url": "https://cdn.distribute.you/images/audience-avatar.png",
   "mimeType": "image/png",
   "model": "gemini-3.1-flash-image",
   "tokensInput": 120,
