@@ -164,3 +164,24 @@ export async function refreshAudienceCount(
   if (!res.ok) return failLoud(res, "refresh audience count");
   return res.json() as Promise<{ audience: Audience }>;
 }
+
+/**
+ * POST /v1/orgs/audiences/:id/avatar — (re)generate the audience's avatar
+ * image. Optional `prompt` steers the image; omit it to derive the image from
+ * the audience's descriptors. ORG-BILLED downstream (forwards x-user-id like
+ * refreshAudienceCount). Returns the updated audience with its new avatarUrl.
+ */
+export async function generateAudienceAvatar(
+  audienceId: string,
+  prompt: string | undefined,
+  params: AudienceCallParams,
+): Promise<{ audience: Audience }> {
+  const res = await apiServiceFetch(
+    `/v1/orgs/audiences/${audienceId}/avatar`,
+    "POST",
+    params,
+    prompt ? { prompt } : undefined,
+  );
+  if (!res.ok) return failLoud(res, "generate audience avatar");
+  return res.json() as Promise<{ audience: Audience }>;
+}

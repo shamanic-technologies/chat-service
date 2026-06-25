@@ -67,6 +67,7 @@ import {
   setAudienceStatus,
   renameAudience,
   refreshAudienceCount,
+  generateAudienceAvatar,
   type AudienceStatus,
 } from "./lib/audience-client.js";
 import { uploadGeneratedImageToCloudflare } from "./lib/cloudflare-client.js";
@@ -2547,6 +2548,22 @@ app.post("/chat", requireAuth, async (req, res) => {
         const args = (call.args as Record<string, unknown>) || {};
         const result = await refreshAudienceCount(
           String(args.audienceId ?? ""),
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "generate_audience_avatar") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const rawPrompt = args.prompt;
+        const prompt =
+          typeof rawPrompt === "string" && rawPrompt.trim().length > 0
+            ? rawPrompt
+            : undefined;
+        const result = await generateAudienceAvatar(
+          String(args.audienceId ?? ""),
+          prompt,
           featureCallParams,
         );
         toolCalls.push({ name: call.name, args, result });

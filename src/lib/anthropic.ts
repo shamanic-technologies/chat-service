@@ -1293,6 +1293,28 @@ export const REFRESH_AUDIENCE_COUNT_TOOL: Anthropic.Tool = {
   },
 };
 
+export const GENERATE_AUDIENCE_AVATAR_TOOL: Anthropic.Tool = {
+  name: "generate_audience_avatar",
+  description:
+    "(Re)generate an audience's avatar image. Use this when the user asks to create, regenerate, or change the avatar / picture / image of an audience. Pass an optional `prompt` to steer the image; omit it to derive the image from the audience's own descriptors. Returns the updated audience with its new avatarUrl. Look up the audience id with list_audiences first.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      audienceId: {
+        type: "string",
+        description:
+          "The id of the audience whose avatar to (re)generate (from list_audiences).",
+      },
+      prompt: {
+        type: "string",
+        description:
+          "Optional natural-language steer for the generated image. Omit to derive the image from the audience's descriptors.",
+      },
+    },
+    required: ["audienceId"],
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Tool registry — every tool the service knows how to execute.
 // Clients choose which subset to enable via allowedTools in their config.
@@ -1337,6 +1359,7 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   set_audience_status: SET_AUDIENCE_STATUS_TOOL,
   rename_audience: RENAME_AUDIENCE_TOOL,
   refresh_audience_count: REFRESH_AUDIENCE_COUNT_TOOL,
+  generate_audience_avatar: GENERATE_AUDIENCE_AVATAR_TOOL,
 };
 
 /** All tool names available for use in allowedTools config. */

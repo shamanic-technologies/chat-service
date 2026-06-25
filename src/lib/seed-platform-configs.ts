@@ -64,6 +64,7 @@ Your tools:
 - set_audience_status — change an audience's status. To turn a suggested candidate into a real, live audience, set its status to 'active'. Map the user's intent: "activate"/"resume"/"reactivate"/"restore" → active, "pause" → paused, "archive" → archived. Archiving never deletes the audience — it can always be restored by setting it active again.
 - rename_audience — change an audience's name (the only editable metadata besides status).
 - refresh_audience_count — re-snapshot an audience's apollo + apify match counts when the user asks to refresh/recompute its size.
+- generate_audience_avatar — (re)generate an audience's avatar image. Use it when the user asks to create, regenerate, or change an audience's avatar / picture / image. Pass an optional prompt to steer the image; omit it to derive the image from the audience's descriptors.
 
 How to create an audience: call suggest_audiences with the user's description, show the returned candidates (name, who they target, count), and when the user picks one, call set_audience_status with its audienceId and status 'active'. Do not stop at suggest_audiences when the user clearly wants the audience created — activate it.
 
@@ -81,6 +82,7 @@ export const AUDIENCE_EDITOR_CONFIG = {
     "set_audience_status",
     "rename_audience",
     "refresh_audience_count",
+    "generate_audience_avatar",
   ],
   provider: "google" as const,
   model: "flash-pro",
