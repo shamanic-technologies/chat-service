@@ -29,9 +29,10 @@ import {
   completeWithGemini,
   generateImageWithGemini,
   GeminiProviderError,
+  DEFAULT_GEMINI_IMAGE_SIZE,
   GEMINI_IMAGE_COST_PREFIX,
-  GEMINI_IMAGE_MAX_OUTPUT_TOKENS,
   GEMINI_IMAGE_MODEL,
+  estimateGeminiImageOutputTokens,
 } from "./lib/gemini.js";
 import {
   createWorkflow,
@@ -548,6 +549,7 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
   }
 
   const { prompt } = parsed.data;
+  const imageSize = parsed.data.size ?? DEFAULT_GEMINI_IMAGE_SIZE;
   const provider = "google";
   const effectiveModel = GEMINI_IMAGE_MODEL;
 
@@ -570,7 +572,7 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
 
   const costSource: "platform" | "org" = resolvedKey.keySource === "org" ? "org" : "platform";
   const estimatedInputTokens = estimateInputTokens(prompt);
-  const maxOutputTokens = GEMINI_IMAGE_MAX_OUTPUT_TOKENS;
+  const estimatedOutputTokens = estimateGeminiImageOutputTokens(imageSize);
 
   let runId: string | null = null;
   try {
@@ -581,7 +583,7 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
     );
     runId = run.id;
     traceEvent(runId, "run-created", { orgId, userId }, workflowTracking, {
-      data: { taskName: "generate-image", parentRunId, provider, model: effectiveModel },
+      data: { taskName: "generate-image", parentRunId, provider, model: effectiveModel, imageSize },
     });
   } catch (runErr) {
     console.error(`[images/generate] org="${orgId}" run creation failed:`, runErr);
@@ -600,7 +602,7 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
         runId,
         costPrefix: GEMINI_IMAGE_COST_PREFIX,
         inputTokens: estimatedInputTokens,
-        outputTokens: maxOutputTokens,
+        outputTokens: estimatedOutputTokens,
         keySource: resolvedKey.keySource,
         identity: { orgId, userId, runId },
         trackingHeaders,
@@ -620,13 +622,14 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
       apiKey: resolvedKey.key,
       model: effectiveModel,
       prompt,
+      size: imageSize,
     });
 
     // Gemini should return usageMetadata for image models. If it does not, keep
-    // the input estimate/output max as actual rows rather than cancelling all
+    // the input/output estimates as actual rows rather than cancelling all
     // holds after a provider call that already spent.
     totalPromptTokens = result.tokensInput > 0 ? result.tokensInput : estimatedInputTokens;
-    totalOutputTokens = result.tokensOutput > 0 ? result.tokensOutput : maxOutputTokens;
+    totalOutputTokens = result.tokensOutput > 0 ? result.tokensOutput : estimatedOutputTokens;
 
     traceEvent(runId, "llm-call-done", { orgId, userId }, workflowTracking, {
       data: {
@@ -635,6 +638,7 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
         tokensInput: totalPromptTokens,
         tokensOutput: totalOutputTokens,
         mimeType: result.mimeType,
+        imageSize,
       },
     });
 
@@ -1580,6 +1584,7 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
   }
 
   const { prompt } = parsed.data;
+  const imageSize = parsed.data.size ?? DEFAULT_GEMINI_IMAGE_SIZE;
   const provider = "google";
   const effectiveModel = GEMINI_IMAGE_MODEL;
 
@@ -1612,6 +1617,7 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
   }
 
   const estimatedInputTokens = estimateInputTokens(prompt);
+  const estimatedOutputTokens = estimateGeminiImageOutputTokens(imageSize);
 
   let platformFailed = false;
   try {
@@ -1619,13 +1625,14 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
       apiKey,
       model: effectiveModel,
       prompt,
+      size: imageSize,
     });
 
     // Gemini should return usageMetadata for image models. If it does not, keep
-    // the input estimate / output max as actual quantities rather than under-
+    // the input/output estimates as actual quantities rather than under-
     // reporting a provider call that already spent. Mirrors /orgs/images/generate.
     const totalPromptTokens = result.tokensInput > 0 ? result.tokensInput : estimatedInputTokens;
-    const totalOutputTokens = result.tokensOutput > 0 ? result.tokensOutput : GEMINI_IMAGE_MAX_OUTPUT_TOKENS;
+    const totalOutputTokens = result.tokensOutput > 0 ? result.tokensOutput : estimatedOutputTokens;
 
     // Declare ACTUAL costs on the platform run BEFORE responding. Platform runs
     // have no cost-status PATCH, so there is no provision/cancel — costs are

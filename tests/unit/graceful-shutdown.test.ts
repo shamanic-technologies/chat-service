@@ -37,6 +37,7 @@ describe("server timeouts", () => {
   let server: http.Server;
 
   afterEach(() => {
+    vi.useRealTimers();
     try {
       server?.close();
     } catch {
@@ -134,8 +135,6 @@ describe("graceful shutdown", () => {
   });
 
   it("force-exits after drain timeout when connections hang", async () => {
-    vi.useFakeTimers();
-
     const app = express();
     let sseRes: express.Response | null = null;
     app.get("/stream", (_req, res) => {
@@ -150,9 +149,13 @@ describe("graceful shutdown", () => {
 
     // Open a hanging SSE connection
     const clientReq = http.get(`http://127.0.0.1:${addr.port}/stream`);
-    await vi.advanceTimersByTimeAsync(50);
+    await new Promise<void>((resolve, reject) => {
+      clientReq.on("response", () => resolve());
+      clientReq.on("error", reject);
+    });
 
     // Trigger shutdown
+    vi.useFakeTimers();
     shutdown("SIGTERM");
     await vi.advanceTimersByTimeAsync(50);
 
@@ -167,6 +170,5 @@ describe("graceful shutdown", () => {
     // Cleanup
     clientReq.destroy();
     sseRes?.end();
-    vi.useRealTimers();
   });
 });

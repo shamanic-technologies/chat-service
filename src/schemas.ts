@@ -603,6 +603,11 @@ export const GenerateImageRequestSchema = z
       example:
         "Generate a square PNG avatar portrait for a B2B SaaS buyer persona: confident marketing leader, clean studio lighting, no text.",
     }),
+    size: z.enum(["small", "medium", "large", "xlarge"]).optional().openapi({
+      description:
+        "Generated image size. Omit for `small` (512px). `medium` maps to 1K, `large` maps to 2K, and `xlarge` maps to 4K.",
+      example: "small",
+    }),
   })
   .strict()
   .openapi("GenerateImageRequest");
@@ -627,7 +632,7 @@ export const GenerateImageResponseSchema = z
     }),
     tokensOutput: z.number().openapi({
       description: "Image output tokens reported by Gemini.",
-      example: 1290,
+      example: 747,
     }),
     text: z.string().optional().openapi({
       description: "Optional text part returned alongside the image, when Gemini includes one.",
@@ -645,7 +650,7 @@ registry.registerPath({
   summary: "Generate an image",
   description: `Org-scoped service-auth image generation for user-initiated workflows such as persona avatar regeneration.
 
-Chat-service owns provider key resolution, Gemini request shaping, run creation, cost provisioning, billing authorization, provider execution, and cost reconciliation. Callers pass only a text prompt and receive generated image bytes plus MIME/model metadata suitable for storage.`,
+Chat-service owns provider key resolution, Gemini request shaping, run creation, cost provisioning, billing authorization, provider execution, and cost reconciliation. Callers pass a text prompt plus optional size and receive generated image bytes plus MIME/model metadata suitable for storage.`,
   request: {
     headers: z.object({
       "x-api-key": z.string().openapi({
@@ -816,7 +821,7 @@ registry.registerPath({
 
 **Spend tracking:** Image-generation token spend is declared on a platform run (\`POST /v1/platform-runs\` → \`POST /v1/platform-runs/:id/costs\` with \`costSource: "platform"\`). No org affordability authorize and no provision/cancel — costs are posted as \`actual\` post-call. Fail loud (502) if spend cannot be declared.
 
-Callers pass only a text prompt and receive generated image bytes plus MIME/model metadata suitable for storage.`,
+Callers pass a text prompt plus optional size and receive generated image bytes plus MIME/model metadata suitable for storage.`,
   request: {
     headers: z.object({
       "x-api-key": z.string().openapi({
