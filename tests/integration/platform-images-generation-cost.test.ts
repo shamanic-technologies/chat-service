@@ -13,6 +13,8 @@ process.env.KEY_SERVICE_API_KEY = process.env.KEY_SERVICE_API_KEY || "test-key-s
 process.env.KEY_SERVICE_URL = process.env.KEY_SERVICE_URL || "https://key.test.local";
 process.env.RUNS_SERVICE_API_KEY = process.env.RUNS_SERVICE_API_KEY || "test-runs-key";
 process.env.RUNS_SERVICE_URL = process.env.RUNS_SERVICE_URL || "https://runs.test.local";
+process.env.CLOUDFLARE_SERVICE_API_KEY = process.env.CLOUDFLARE_SERVICE_API_KEY || "test-cloudflare-key";
+process.env.CLOUDFLARE_SERVICE_URL = process.env.CLOUDFLARE_SERVICE_URL || "https://cloudflare.test.local";
 
 interface MockRoute {
   match: (url: string, init?: RequestInit) => boolean;
@@ -126,6 +128,28 @@ function mockGeminiImage(cap: { calls: number; bodies: Record<string, unknown>[]
   } satisfies MockRoute;
 }
 
+function mockCloudflarePlatformUpload(cap: { calls: number; bodies: Record<string, unknown>[]; headers: Array<Record<string, unknown>> }) {
+  return {
+    match: (url: string, init?: RequestInit) =>
+      url === "https://cloudflare.test.local/internal/upload/base64" && (init?.method ?? "GET") === "POST",
+    respond: (_url: string, init?: RequestInit) => {
+      cap.calls += 1;
+      cap.headers.push((init?.headers ?? {}) as Record<string, unknown>);
+      if (init?.body) cap.bodies.push(JSON.parse(init.body as string) as Record<string, unknown>);
+      return {
+        ok: true,
+        status: 201,
+        body: {
+          id: "file-platform-avatar-1",
+          url: "https://cdn.test.local/generated/platform-avatar.png",
+          size: 12,
+          contentType: "image/png",
+        },
+      };
+    },
+  } satisfies MockRoute;
+}
+
 const AUTH = { "x-api-key": "test-key" };
 
 describe("POST /internal/platform-images/generate — platform run tracking + cost", () => {
@@ -145,17 +169,19 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("creates a platform run, declares actual image token costs, and returns image bytes", async () => {
+  it("creates a platform run, declares actual image token costs, uploads the image, and returns a Cloudflare URL", async () => {
     const runCap = { headers: [] as Array<Record<string, unknown>>, bodies: [] as unknown[] };
     const costCap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string; costSource?: string }>> };
     const statusCap = { patchedStatuses: [] as string[] };
     const gemini = { calls: 0, bodies: [] as Record<string, unknown>[] };
+    const cloudflare = { calls: 0, bodies: [] as Record<string, unknown>[], headers: [] as Array<Record<string, unknown>> };
     routes.push(
       mockPlatformKey(),
       mockPlatformRunCreate(runCap),
       mockPlatformRunCosts(costCap),
       mockPlatformRunStatus(statusCap),
       mockGeminiImage(gemini),
+      mockCloudflarePlatformUpload(cloudflare),
     );
 
     const res = await request(app)
@@ -166,11 +192,23 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
     expect(res.status).toBe(200);
     expect(gemini.calls).toBe(1);
     expect(res.body).toMatchObject({
-      imageBase64: "iVBORw0KGgo=",
+      url: "https://cdn.test.local/generated/platform-avatar.png",
       mimeType: "image/png",
       model: "gemini-3.1-flash-image",
       tokensInput: 12,
       tokensOutput: 1290,
+    });
+    expect(res.body.imageBase64).toBeUndefined();
+    expect(cloudflare.calls).toBe(1);
+    expect(cloudflare.bodies[0]).toMatchObject({
+      contentBase64: "iVBORw0KGgo=",
+      contentType: "image/png",
+    });
+    expect(cloudflare.bodies[0].folder).toEqual(expect.stringContaining("chat-service"));
+    expect(cloudflare.bodies[0].filename).toEqual(expect.stringMatching(/\.png$/));
+    expect(cloudflare.headers[0]).toMatchObject({
+      "x-api-key": "test-cloudflare-key",
+      "x-service-name": "chat-service",
     });
     expect(gemini.bodies[0]).toMatchObject({
       generationConfig: {
@@ -201,12 +239,14 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
     const costCap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string; costSource?: string }>> };
     const statusCap = { patchedStatuses: [] as string[] };
     const gemini = { calls: 0, bodies: [] as Record<string, unknown>[], omitUsage: true };
+    const cloudflare = { calls: 0, bodies: [] as Record<string, unknown>[], headers: [] as Array<Record<string, unknown>> };
     routes.push(
       mockPlatformKey(),
       mockPlatformRunCreate(runCap),
       mockPlatformRunCosts(costCap),
       mockPlatformRunStatus(statusCap),
       mockGeminiImage(gemini),
+      mockCloudflarePlatformUpload(cloudflare),
     );
 
     const res = await request(app)
@@ -215,6 +255,7 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
       .send({ prompt: "Generate a detailed poster.", size: "xlarge" });
 
     expect(res.status).toBe(200);
+    expect(res.body.url).toBe("https://cdn.test.local/generated/platform-avatar.png");
     expect(res.body.tokensOutput).toBe(2_000);
     expect(gemini.bodies[0]).toMatchObject({
       generationConfig: {

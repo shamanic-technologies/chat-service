@@ -69,6 +69,7 @@ import {
   refreshAudienceCount,
   type AudienceStatus,
 } from "./lib/audience-client.js";
+import { uploadGeneratedImageToCloudflare } from "./lib/cloudflare-client.js";
 import {
   formatBrandProfileWebsiteRefreshErrorMessage,
   formatBrandProfileWebsiteRefreshMessage,
@@ -642,9 +643,22 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
       },
     });
 
-    res.json({
+    const uploadedImage = await uploadGeneratedImageToCloudflare({
       imageBase64: result.imageBase64,
       mimeType: result.mimeType,
+      folder: `chat-service/images/orgs/${orgId}`,
+      scope: {
+        type: "org",
+        orgId,
+        userId,
+        runId,
+        trackingHeaders,
+      },
+    });
+
+    res.json({
+      url: uploadedImage.url,
+      mimeType: uploadedImage.contentType,
       model: result.model,
       tokensInput: totalPromptTokens,
       tokensOutput: totalOutputTokens,
@@ -1647,9 +1661,16 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
     ];
     await addPlatformRunCosts(runId, "chat-service", costItems);
 
-    res.json({
+    const uploadedImage = await uploadGeneratedImageToCloudflare({
       imageBase64: result.imageBase64,
       mimeType: result.mimeType,
+      folder: "chat-service/images/platform",
+      scope: { type: "platform" },
+    });
+
+    res.json({
+      url: uploadedImage.url,
+      mimeType: uploadedImage.contentType,
       model: result.model,
       tokensInput: totalPromptTokens,
       tokensOutput: totalOutputTokens,
