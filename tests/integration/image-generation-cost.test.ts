@@ -10,6 +10,8 @@ process.env.RUNS_SERVICE_API_KEY = process.env.RUNS_SERVICE_API_KEY || "test-run
 process.env.RUNS_SERVICE_URL = process.env.RUNS_SERVICE_URL || "https://runs.test.local";
 process.env.BILLING_SERVICE_API_KEY = process.env.BILLING_SERVICE_API_KEY || "test-billing-key";
 process.env.BILLING_SERVICE_URL = process.env.BILLING_SERVICE_URL || "https://billing.test.local";
+process.env.CLOUDFLARE_SERVICE_API_KEY = process.env.CLOUDFLARE_SERVICE_API_KEY || "test-cloudflare-key";
+process.env.CLOUDFLARE_SERVICE_URL = process.env.CLOUDFLARE_SERVICE_URL || "https://cloudflare.test.local";
 
 interface MockRoute {
   match: (url: string, init?: RequestInit) => boolean;
@@ -145,6 +147,28 @@ function mockGeminiImage(cap: { calls: number; bodies: Record<string, unknown>[]
   } satisfies MockRoute;
 }
 
+function mockCloudflareOrgUpload(cap: { calls: number; bodies: Record<string, unknown>[]; headers: Array<Record<string, unknown>> }) {
+  return {
+    match: (url: string, init?: RequestInit) =>
+      url === "https://cloudflare.test.local/upload/base64" && (init?.method ?? "GET") === "POST",
+    respond: (_url: string, init?: RequestInit) => {
+      cap.calls += 1;
+      cap.headers.push((init?.headers ?? {}) as Record<string, unknown>);
+      if (init?.body) cap.bodies.push(JSON.parse(init.body as string) as Record<string, unknown>);
+      return {
+        ok: true,
+        status: 201,
+        body: {
+          id: "file-avatar-1",
+          url: "https://cdn.test.local/generated/avatar.png",
+          size: 12,
+          contentType: "image/png",
+        },
+      };
+    },
+  } satisfies MockRoute;
+}
+
 const AUTH = { "x-api-key": "test-key", "x-org-id": "org-1", "x-user-id": "user-1", "x-run-id": "parent-run-1" };
 
 describe("POST /orgs/images/generate — cost gate and Gemini image request", () => {
@@ -164,13 +188,23 @@ describe("POST /orgs/images/generate — cost gate and Gemini image request", ()
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("provisions image costs before Gemini and returns generated image bytes", async () => {
+  it("provisions image costs before Gemini, uploads the image, and returns a Cloudflare URL", async () => {
     const costCap = {
       postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>,
       patchedStatuses: [] as string[],
     };
     const gemini = { calls: 0, bodies: [] as Record<string, unknown>[] };
-    routes.push(mockRunsCreate(), mockRunsEvents(), mockKeyDecrypt(), mockBilling(), mockGeminiImage(gemini), ...mockRunsCostRoutes(costCap), mockRunsStatusPatch());
+    const cloudflare = { calls: 0, bodies: [] as Record<string, unknown>[], headers: [] as Array<Record<string, unknown>> };
+    routes.push(
+      mockRunsCreate(),
+      mockRunsEvents(),
+      mockKeyDecrypt(),
+      mockBilling(),
+      mockGeminiImage(gemini),
+      mockCloudflareOrgUpload(cloudflare),
+      ...mockRunsCostRoutes(costCap),
+      mockRunsStatusPatch(),
+    );
 
     const res = await request(app)
       .post("/orgs/images/generate")
@@ -179,11 +213,26 @@ describe("POST /orgs/images/generate — cost gate and Gemini image request", ()
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
-      imageBase64: "iVBORw0KGgo=",
+      url: "https://cdn.test.local/generated/avatar.png",
       mimeType: "image/png",
       model: "gemini-3.1-flash-image",
       tokensInput: 12,
       tokensOutput: 1290,
+    });
+    expect(res.body.imageBase64).toBeUndefined();
+
+    expect(cloudflare.calls).toBe(1);
+    expect(cloudflare.bodies[0]).toMatchObject({
+      contentBase64: "iVBORw0KGgo=",
+      contentType: "image/png",
+    });
+    expect(cloudflare.bodies[0].folder).toEqual(expect.stringContaining("chat-service"));
+    expect(cloudflare.bodies[0].filename).toEqual(expect.stringMatching(/\.png$/));
+    expect(cloudflare.headers[0]).toMatchObject({
+      "x-api-key": "test-cloudflare-key",
+      "x-org-id": "org-1",
+      "x-user-id": "user-1",
+      "x-run-id": "run-image-1",
     });
 
     const provision = costCap.postedItems[0];
@@ -199,7 +248,9 @@ describe("POST /orgs/images/generate — cost gate and Gemini image request", ()
       (c) => /\/v1\/runs\/[^/]+\/costs$/.test(c.url) && (c.init?.method ?? "GET") === "POST",
     );
     const geminiIdx = fetchCalls.findIndex((c) => c.url.includes(":generateContent"));
+    const cloudflareIdx = fetchCalls.findIndex((c) => c.url === "https://cloudflare.test.local/upload/base64");
     expect(geminiIdx).toBeGreaterThan(provisionIdx);
+    expect(cloudflareIdx).toBeGreaterThan(geminiIdx);
 
     expect(gemini.bodies[0]).toEqual({
       contents: [{ parts: [{ text: "Generate a square avatar, no text." }] }],
@@ -223,7 +274,17 @@ describe("POST /orgs/images/generate — cost gate and Gemini image request", ()
       patchedStatuses: [] as string[],
     };
     const gemini = { calls: 0, bodies: [] as Record<string, unknown>[] };
-    routes.push(mockRunsCreate(), mockRunsEvents(), mockKeyDecrypt(), mockBilling(), mockGeminiImage(gemini), ...mockRunsCostRoutes(costCap), mockRunsStatusPatch());
+    const cloudflare = { calls: 0, bodies: [] as Record<string, unknown>[], headers: [] as Array<Record<string, unknown>> };
+    routes.push(
+      mockRunsCreate(),
+      mockRunsEvents(),
+      mockKeyDecrypt(),
+      mockBilling(),
+      mockGeminiImage(gemini),
+      mockCloudflareOrgUpload(cloudflare),
+      ...mockRunsCostRoutes(costCap),
+      mockRunsStatusPatch(),
+    );
 
     const res = await request(app)
       .post("/orgs/images/generate")
@@ -231,6 +292,7 @@ describe("POST /orgs/images/generate — cost gate and Gemini image request", ()
       .send({ prompt: "Generate a detailed poster.", size: "xlarge" });
 
     expect(res.status).toBe(200);
+    expect(res.body.url).toBe("https://cdn.test.local/generated/avatar.png");
     const provision = costCap.postedItems[0];
     expect(provision.find((i) => i.costName.endsWith("output"))!.quantity).toBe(2_000);
     expect(gemini.bodies[0]).toMatchObject({
