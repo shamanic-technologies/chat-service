@@ -21,6 +21,7 @@ const NEW_TOOLS = [
   "set_audience_status",
   "rename_audience",
   "refresh_audience_count",
+  "generate_audience_avatar",
 ];
 
 describe("persona / brand-profile tool registry", () => {
@@ -88,6 +89,7 @@ describe("self-seeded platform configs", () => {
       "set_audience_status",
       "rename_audience",
       "refresh_audience_count",
+      "generate_audience_avatar",
     ];
     // audience-editor exposes ONLY audience tools (+ request_user_input).
     for (const tool of AUDIENCE_EDITOR_CONFIG.allowedTools) {
