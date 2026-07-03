@@ -39,6 +39,9 @@ export const appConfigs = pgTable(
     allowedTools: jsonb("allowed_tools").notNull().$type<string[]>(),
     provider: text("provider").$type<"anthropic" | "google">(),
     model: text("model"),
+    // Per-config Gemini-3 thinking level for the /chat path. NULL = code default
+    // ("low"). Never read by /complete. See src/lib/gemini.ts buildThinkingConfig.
+    thinkingLevel: text("thinking_level").$type<"minimal" | "low" | "medium" | "high">(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -82,6 +85,9 @@ export const platformConfigs = pgTable("platform_configs", {
   allowedTools: jsonb("allowed_tools").notNull().$type<string[]>(),
   provider: text("provider").$type<"anthropic" | "google">(),
   model: text("model"),
+  // Per-config Gemini-3 thinking level for the /chat path. NULL = code default
+  // ("low"). Never read by /complete. See src/lib/gemini.ts buildThinkingConfig.
+  thinkingLevel: text("thinking_level").$type<"minimal" | "low" | "medium" | "high">(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

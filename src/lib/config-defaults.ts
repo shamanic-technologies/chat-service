@@ -43,6 +43,8 @@ export interface ConfigConflictSetInput {
   provider?: "anthropic" | "google";
   /** Omitted (undefined) means "leave the stored value unchanged". */
   model?: string;
+  /** Omitted (undefined) means "leave the stored value unchanged". */
+  thinkingLevel?: "minimal" | "low" | "medium" | "high";
 }
 
 export interface ConfigConflictSet {
@@ -50,15 +52,16 @@ export interface ConfigConflictSet {
   allowedTools: string[];
   provider?: "anthropic" | "google";
   model?: string;
+  thinkingLevel?: "minimal" | "low" | "medium" | "high";
 }
 
 /**
  * Build the `onConflictDoUpdate.set` payload for a config re-registration.
  *
- * `provider`/`model` are included ONLY when the caller actually supplied them.
- * An omitted field is left out of the SET so the existing stored value is
- * preserved — a registering app that doesn't send `provider` no longer clobbers
- * an explicit override back to NULL.
+ * `provider`/`model`/`thinkingLevel` are included ONLY when the caller actually
+ * supplied them. An omitted field is left out of the SET so the existing stored
+ * value is preserved — a registering app that doesn't send `provider` (or
+ * `thinkingLevel`) no longer clobbers an explicit override back to NULL.
  */
 export function buildConfigConflictSet(input: ConfigConflictSetInput): ConfigConflictSet {
   const set: ConfigConflictSet = {
@@ -67,5 +70,6 @@ export function buildConfigConflictSet(input: ConfigConflictSetInput): ConfigCon
   };
   if (input.provider !== undefined) set.provider = input.provider;
   if (input.model !== undefined) set.model = input.model;
+  if (input.thinkingLevel !== undefined) set.thinkingLevel = input.thinkingLevel;
   return set;
 }

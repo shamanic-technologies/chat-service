@@ -257,7 +257,7 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { key, systemPrompt, allowedTools, provider, model } = parsed.data;
+  const { key, systemPrompt, allowedTools, provider, model, thinkingLevel } = parsed.data;
 
   // Validate all tool names
   const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t));
@@ -275,13 +275,14 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
       allowedTools,
       provider: provider ?? null,
       model: model ?? null,
+      thinkingLevel: thinkingLevel ?? null,
     })
     .onConflictDoUpdate({
       target: [platformConfigs.key],
-      // Omitted provider/model are left out of the SET so a re-registering app
-      // doesn't clobber an explicit stored override back to NULL.
+      // Omitted provider/model/thinkingLevel are left out of the SET so a
+      // re-registering app doesn't clobber an explicit stored override back to NULL.
       set: {
-        ...buildConfigConflictSet({ systemPrompt, allowedTools, provider, model }),
+        ...buildConfigConflictSet({ systemPrompt, allowedTools, provider, model, thinkingLevel }),
         updatedAt: new Date(),
       },
     })
@@ -293,6 +294,7 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
     allowedTools: config.allowedTools,
     provider: config.provider,
     model: config.model,
+    thinkingLevel: config.thinkingLevel,
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString(),
   });
@@ -2672,6 +2674,9 @@ app.post("/chat", requireAuth, async (req, res) => {
         sendSSE,
         executeTool,
         signal: abortController.signal,
+        // Per-config Gemini-3 thinking level (NULL → code default "low"). Only
+        // the /chat path reads this; /complete never raises thinking.
+        thinkingLevel: appConfig.thinkingLevel ?? undefined,
         beforeProviderCall: async ({ requestBody }) => {
           await authorizeChatProviderCall(estimateRequestTokens(requestBody));
         },
