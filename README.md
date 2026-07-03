@@ -608,8 +608,8 @@ The three workflow write tools are intent-specific. The frontend's system prompt
 | Tool | Intent | Endpoint |
 |---|---|---|
 | `create_workflow` | Brand-new workflow from natural language. No existing workflow being modified. Starts a new dynasty. | `POST /v1/workflows/create` |
-| `upgrade_workflow` | Re-generate or patch the DAG of an existing workflow within its dynasty. **Hard rule: bug fixes, metadata clarifications, or repairing a technically broken/non-functional workflow only.** Substantive changes on a working workflow must use `fork_workflow`. Accepts either `description` (LLM regenerates) or `dag` (skips LLM, applies verbatim — surgical patch). | `POST /v1/workflows/upgrade` |
-| `fork_workflow` | Substantive change to an existing workflow. Submits a new DAG to `PUT /v1/workflows/:id`; the workflow-service creates a new dynasty when the DAG signature differs. Same-signature submissions return `_action: "updated"` (no-op). | `PUT /v1/workflows/:id` |
+| `upgrade_workflow` | Re-generate or patch the DAG of an existing workflow within its dynasty. **Hard rule: the discriminator vs fork is INTENT, not topology.** Use for fixing a bug or repairing incorrect/broken/non-functional behavior — **even when the fix adds/removes/rewires nodes** (topology change stays in the same dynasty as a new version) — or clarifying metadata. Introducing NEW behavior/scope/intent/audience must use `fork_workflow`. Accepts either `description` (LLM regenerates) or `dag` (skips LLM, applies verbatim — surgical patch). | `POST /v1/workflows/upgrade` |
+| `fork_workflow` | Introduce NEW behavior/scope/intent/audience to an existing workflow. A structural/topology change alone does NOT justify a fork (that's an upgrade). **Never call without explicit user confirmation** — a fork creates a new production dynasty (effectively irreversible). Submits a new DAG to `PUT /v1/workflows/:id`; workflow-service creates a new dynasty when the DAG signature differs. Same-signature submissions return `_action: "updated"` (no-op). | `PUT /v1/workflows/:id` |
 
 Read-only and supporting workflow tools:
 

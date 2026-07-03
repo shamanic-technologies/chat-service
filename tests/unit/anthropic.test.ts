@@ -540,6 +540,16 @@ describe("UPGRADE_WORKFLOW_TOOL", () => {
     expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/non-functional/i);
   });
 
+  it("discriminator is INTENT, not topology — a bug fix that changes topology stays an upgrade", () => {
+    const desc = UPGRADE_WORKFLOW_TOOL.description ?? "";
+    expect(desc).toMatch(/discriminator.*is intent/i);
+    // Repairing behavior stays an upgrade even when the DAG topology changes.
+    expect(desc).toMatch(/even if the fix changes the dag topology/i);
+    expect(desc).toMatch(/adds, removes, or rewires nodes/i);
+    // A structural change alone does not force a fork.
+    expect(desc).toMatch(/does not by itself require a fork/i);
+  });
+
   it("description explains the dag vs description choice", () => {
     expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/`dag`/);
     expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/`description`/);
@@ -599,8 +609,23 @@ describe("FORK_WORKFLOW_TOOL", () => {
     );
   });
 
-  it("description scopes fork to substantive changes on a technically working workflow", () => {
-    expect(FORK_WORKFLOW_TOOL.description).toMatch(/technically working workflow/i);
+  it("description scopes fork to NEW behavior/scope/intent/audience, not topology changes", () => {
+    const desc = FORK_WORKFLOW_TOOL.description ?? "";
+    expect(desc).toMatch(/new behavior/i);
+    expect(desc).toMatch(/new scope/i);
+    expect(desc).toMatch(/new intent/i);
+    expect(desc).toMatch(/new audience/i);
+    // A topology/structural change is NO LONGER a fork trigger — it must route to upgrade.
+    expect(desc).toMatch(/topology change.*does not by itself/i);
+    expect(desc).toMatch(/upgrade_workflow instead/i);
+  });
+
+  it("description requires explicit user confirmation before forking (irreversible new dynasty)", () => {
+    const desc = FORK_WORKFLOW_TOOL.description ?? "";
+    expect(desc).toContain("HARD RULE");
+    expect(desc).toMatch(/never call fork_workflow without explicit user confirmation/i);
+    expect(desc).toMatch(/if the user asked for an upgrade, never fork/i);
+    expect(desc).toMatch(/irreversible/i);
   });
 });
 

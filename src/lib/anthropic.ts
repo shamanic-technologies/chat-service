@@ -209,7 +209,7 @@ export const REQUEST_USER_INPUT_TOOL: Anthropic.Tool = {
 export const CREATE_WORKFLOW_TOOL: Anthropic.Tool = {
   name: "create_workflow",
   description:
-    "Create a brand-new workflow dynasty from a natural-language description. Uses an LLM on workflow-service to generate a valid DAG, validates it, and deploys it. Use this ONLY when no existing workflow is being modified — e.g. the user is starting from scratch. If an existing workflow is being changed in any way, use upgrade_workflow (bug fix or metadata clarification) or fork_workflow (substantive change) instead.",
+    "Create a brand-new workflow dynasty from a natural-language description. Uses an LLM on workflow-service to generate a valid DAG, validates it, and deploys it. Use this ONLY when no existing workflow is being modified — e.g. the user is starting from scratch. If an existing workflow is being changed in any way, use upgrade_workflow (fixing a bug or repairing incorrect/broken behavior — even when the fix adds/removes/rewires nodes — or clarifying metadata) or fork_workflow (introducing NEW behavior/scope/intent/audience; requires explicit user confirmation) instead.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -264,7 +264,7 @@ export const UPGRADE_WORKFLOW_TOOL: Anthropic.Tool = {
   name: "upgrade_workflow",
   description:
     "Re-generate the DAG of an existing workflow while keeping the SAME dynasty/lineage. Returns the workflow in the same dynasty (possibly as a new version row when the regenerated DAG signature differs from the previous one).\n\n" +
-    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: upgrade_workflow may ONLY be used when (a) fixing a bug in the existing workflow's DAG, or (b) clarifying metadata that is factually wrong or imprecise. Any change in behavior, scope, intent, audience, or substantive metadata is NOT an upgrade — use fork_workflow instead. Upgrade keeps the same lineage; fork starts a new one. If the workflow is invalid or non-functional for a technical reason, and you are fixing it, then it is an upgrade.\n\n" +
+    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: the discriminator between upgrade_workflow and fork_workflow is INTENT, not whether the DAG topology changes. upgrade_workflow is the correct tool whenever you are (a) fixing a bug or repairing incorrect / broken / non-functional behavior in the existing workflow — EVEN IF the fix changes the DAG topology (adds, removes, or rewires nodes/edges) — or (b) clarifying metadata that is factually wrong or imprecise. Example: a workflow that runs but passes the wrong URL into a node, where the fix adds a node to fetch the correct value, is an UPGRADE — it repairs incorrect behavior within the same dynasty. Only introducing NEW behavior, scope, intent, or audience is a fork. Upgrade keeps the same lineage; fork starts a new one. A structural / topology change (adding, removing, or rewiring nodes) does NOT by itself require a fork.\n\n" +
     "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: for any surgical fix on a working DAG — `$ref` path corrections, edge wiring, missing/wrong field on a single node, output-key rename, template-version bump — call get_workflow_details first, modify the DAG in memory, and pass the COMPLETE corrected DAG as `dag`. workflow-service applies that DAG verbatim with no LLM regen. Passing `description` only triggers a full LLM DAG regeneration which routinely drifts: template versions downgrade, nodes get deleted, fields disappear, working bits regress. `description`-only is reserved for cases where you genuinely do not have the DAG (e.g. the user gave a fuzzy natural-language change request and no get_workflow_details was called).\n\n" +
     "At least one of `dag` / `description` is required; you may pass both (description then replaces the stored description on the resulting row).",
   input_schema: {
@@ -278,7 +278,7 @@ export const UPGRADE_WORKFLOW_TOOL: Anthropic.Tool = {
       description: {
         type: "string",
         description:
-          "Natural-language description of the upgrade. Must describe the bug being fixed, the metadata being clarified, or the technical defect being repaired — not a new behavior. Minimum 10 characters. Required when `dag` is not supplied. Avoid description-only for surgical fixes (see HARD RULE in the tool description) — it triggers full LLM regen and routinely drifts.",
+          "Natural-language description of the upgrade. Must describe the bug being fixed, the incorrect/broken behavior being repaired (topology changes such as adding/removing/rewiring a node are fine — they stay in the same dynasty), the technical defect being repaired, or the metadata being clarified — not a new behavior. Minimum 10 characters. Required when `dag` is not supplied. Avoid description-only for surgical fixes (see HARD RULE in the tool description) — it triggers full LLM regen and routinely drifts.",
       },
       hints: {
         type: "object",
@@ -318,7 +318,9 @@ export const UPGRADE_WORKFLOW_TOOL: Anthropic.Tool = {
 export const FORK_WORKFLOW_TOOL: Anthropic.Tool = {
   name: "fork_workflow",
   description:
-    "Fork a workflow into a NEW dynasty/lineage by submitting a new DAG. Use this for any substantive change: new behavior, new scope, new intent, new audience, or a structural DAG change on a technically working workflow. The original workflow stays active under its own lineage; this creates a new one. If the submitted DAG has the same signature as the source, no fork happens (returns _action: 'updated') — that's expected, not an error.\n\n" +
+    "Fork a workflow into a NEW dynasty/lineage by submitting a new DAG. Use this ONLY to introduce NEW behavior, NEW scope, NEW intent, or a NEW audience. A structural / topology change (adding, removing, or rewiring nodes) does NOT by itself justify a fork — if the change repairs incorrect or broken behavior, it is a bug fix and MUST use upgrade_workflow instead, even when it changes topology.\n\n" +
+    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: a fork creates a NEW production dynasty and changes which workflow future campaigns run — this is effectively irreversible. NEVER call fork_workflow without explicit user confirmation in the conversation that they want a fork (a new dynasty). If the user asked for an upgrade, NEVER fork. If you believe a change genuinely requires a fork, STOP and ask the user first — do not fork silently.\n\n" +
+    "The original workflow stays active under its own lineage; this creates a new one. If the submitted DAG has the same signature as the source, no fork happens (returns _action: 'updated') — that's expected, not an error.\n\n" +
     "Always call get_workflow_details first to read the current DAG, modify it, and pass the COMPLETE updated DAG — partial DAGs are not supported.",
   input_schema: {
     type: "object" as const,
