@@ -308,7 +308,7 @@ export const UPGRADE_WORKFLOW_TOOL: Anthropic.Tool = {
       dag: {
         type: "object",
         description:
-          "Full corrected DAG (nodes + edges). When supplied, workflow-service skips LLM regeneration and applies this DAG verbatim — REQUIRED for surgical fixes (broken $ref paths, miswired edges, wrong field on one node, template-version bump). Must be the COMPLETE DAG (call get_workflow_details first, modify, pass the full result). Partial DAGs are not supported.",
+          "Full corrected DAG (nodes + edges). When supplied, workflow-service skips LLM regeneration and applies this DAG verbatim — REQUIRED for surgical fixes (broken $ref paths, miswired edges, wrong field on one node, template-version bump). Must be the COMPLETE DAG (call get_workflow_details first, modify, pass the full result). Partial DAGs are not supported. Every node must carry its FULL `config` for its type — e.g. a `script` node requires a non-empty `config.code` (inline JS string). Omitting a required config field fails validation (e.g. `nodes[<id>].config.code missing required config field \"code\"`); never emit a node with an empty or partial config.",
       },
     },
     required: ["workflowDynastySlug"],
@@ -333,7 +333,7 @@ export const FORK_WORKFLOW_TOOL: Anthropic.Tool = {
       dag: {
         type: "object",
         description:
-          "Full DAG definition with nodes and edges. Must include the complete DAG — partial updates are not supported. Use get_workflow_details first to read the current DAG, then modify and pass the full result.",
+          "Full DAG definition with nodes and edges. Must include the complete DAG — partial updates are not supported. Use get_workflow_details first to read the current DAG, then modify and pass the full result. Every node must carry its FULL `config` for its type — e.g. a `script` node requires a non-empty `config.code` (inline JS string); omitting a required config field fails validation.",
       },
     },
     required: ["workflowId", "dag"],

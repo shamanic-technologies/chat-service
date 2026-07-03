@@ -110,4 +110,43 @@ describe("formatToolError", () => {
     expect(result).toHaveProperty("tool", "get_prompt_template");
     expect(result).toHaveProperty("suggestion");
   });
+
+  // Regression: workflow-service DAG validation surfaces as a double-encoded
+  // body — api-service wraps the workflow-service 400 as { error: "<json>" } and
+  // returns it as a 500. The actionable field detail must still be extracted.
+  it("parses a double-encoded workflow-service DAG error wrapped in a 500", () => {
+    const raw =
+      "[workflow-client] POST /v1/workflows/upgrade returned 500: " +
+      JSON.stringify({
+        error: JSON.stringify({
+          error: "Invalid DAG",
+          details: [
+            {
+              field: "nodes[ensure-brand-name].config.code",
+              message:
+                'script node "ensure-brand-name" is missing required config field "code" (non-empty string of inline JS).',
+            },
+          ],
+        }),
+      });
+
+    const result = formatToolError("upgrade_workflow", raw);
+
+    expect(result.error).toContain("Validation failed");
+    expect(result.error).toContain("nodes[ensure-brand-name].config.code");
+    expect(result.error).toContain("missing required config field");
+    expect(result.suggestion).toMatch(/workflowDynastySlug/);
+    expect(result.tool).toBe("upgrade_workflow");
+  });
+
+  // Same shape but NOT double-wrapped and returned as a plain 400 (direct
+  // workflow-service surface). Field/message array must still parse.
+  it("parses a single-level workflow-service details array (400)", () => {
+    const raw =
+      '[workflow-client] POST /v1/workflows/create returned 400: {"error":"Invalid DAG","details":[{"field":"nodes[x].config.url","message":"http node missing url"}]}';
+
+    const result = formatToolError("create_workflow", raw);
+
+    expect(result.error).toContain("nodes[x].config.url: http node missing url");
+  });
 });
