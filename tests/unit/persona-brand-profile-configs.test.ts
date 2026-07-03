@@ -73,6 +73,12 @@ describe("self-seeded platform configs", () => {
     }
   });
 
+  it("boots each editor config at medium Gemini-3 thinking (raised above the low /chat default)", () => {
+    for (const config of SELF_SEEDED_CONFIGS) {
+      expect(config.thinkingLevel).toBe("medium");
+    }
+  });
+
   it("persona-editor cannot touch brand-profile tools and vice-versa (scoping)", () => {
     expect(PERSONA_EDITOR_CONFIG.allowedTools).not.toContain("save_brand_profile_version");
     expect(PERSONA_EDITOR_CONFIG.allowedTools).not.toContain("refresh_brand_profile_from_website");
@@ -146,9 +152,10 @@ describe("seedPlatformConfigs", () => {
     ]);
 
     for (const call of values.mock.calls) {
-      const v = call[0] as { provider: string; model: string; allowedTools: string[] };
+      const v = call[0] as { provider: string; model: string; thinkingLevel: string; allowedTools: string[] };
       expect(v.provider).toBe("google");
       expect(v.model).toBe("flash-pro");
+      expect(v.thinkingLevel).toBe("medium");
       expect(Array.isArray(v.allowedTools)).toBe(true);
     }
   });

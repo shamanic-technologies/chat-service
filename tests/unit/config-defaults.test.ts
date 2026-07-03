@@ -75,4 +75,14 @@ describe("buildConfigConflictSet — re-registration keep-existing", () => {
     expect(set.provider).toBe("anthropic");
     expect(set).not.toHaveProperty("model");
   });
+
+  it("omits thinkingLevel when not supplied (preserves stored value on re-register)", () => {
+    const set = buildConfigConflictSet({ ...base });
+    expect(set).not.toHaveProperty("thinkingLevel");
+  });
+
+  it("includes thinkingLevel when supplied", () => {
+    const set = buildConfigConflictSet({ ...base, thinkingLevel: "medium" });
+    expect(set.thinkingLevel).toBe("medium");
+  });
 });

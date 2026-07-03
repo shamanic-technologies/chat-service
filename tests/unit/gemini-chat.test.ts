@@ -227,6 +227,31 @@ describe("buildThinkingConfig (generation-specific thinking field)", () => {
     expect(buildThinkingConfig("gemini-2.5-flash")).toEqual({ thinkingBudget: 8192 });
     expect(buildThinkingConfig("gemini-2.5-pro")).toEqual({ thinkingBudget: 8192 });
   });
+
+  // Per-config `level` override (from a chat config's stored thinking_level).
+  it("applies a per-config level override on Gemini 3 (medium)", () => {
+    expect(buildThinkingConfig("gemini-3.5-flash", false, "medium")).toEqual({
+      thinkingLevel: "medium",
+    });
+    expect(buildThinkingConfig("gemini-3.1-pro-preview", false, "high")).toEqual({
+      thinkingLevel: "high",
+    });
+  });
+  it("falls back to the default low when no level is supplied on Gemini 3", () => {
+    expect(buildThinkingConfig("gemini-3.5-flash", false, undefined)).toEqual({
+      thinkingLevel: "low",
+    });
+  });
+  it("disableThinking floor wins over a supplied level (Gemini 3 Flash → minimal)", () => {
+    expect(buildThinkingConfig("gemini-3.5-flash", true, "high")).toEqual({
+      thinkingLevel: "minimal",
+    });
+  });
+  it("ignores a level on Gemini 2.5 (keeps thinkingBudget)", () => {
+    expect(buildThinkingConfig("gemini-2.5-flash", false, "medium")).toEqual({
+      thinkingBudget: 8192,
+    });
+  });
 });
 
 describe("streamGeminiChat tool-then-empty guard", () => {
@@ -249,6 +274,22 @@ describe("streamGeminiChat tool-then-empty guard", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
     expect(JSON.stringify(body.generationConfig)).not.toContain("thinkingBudget");
+  });
+
+  it("sends a per-config thinkingLevel (medium) when the option is set", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      sseResponse({
+        candidates: [{ content: { parts: [{ text: "hi" }] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 2 },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { opts } = baseOptions({ model: "gemini-3.5-flash", tools: [], thinkingLevel: "medium" });
+    await streamGeminiChat(opts);
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "medium" });
   });
 
   it("emits a fallback summary when the post-tool turn returns no text", async () => {

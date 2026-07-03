@@ -107,28 +107,41 @@ const GEMINI_3_PRO_MIN_LEVEL = "low";
 const GEMINI_3_FLASH_MIN_LEVEL = "minimal";
 const GEMINI_25_THINKING_OFF = 0;
 
+/** Gemini-3 thinking levels a config may raise the /chat path to. */
+export type GeminiThinkingLevel = "minimal" | "low" | "medium" | "high";
+
 /**
  * Build the generation-specific `thinkingConfig`. Shared by /complete
  * (gemini.ts) and /chat (gemini-chat.ts) so both paths bound Gemini-3 thinking
  * identically. When `disableThinking` is set, drop to the provider's floor
  * (fully off on Gemini 2.5; lowest level on Gemini 3 — it has no full-off).
+ *
+ * `level` is a per-config Gemini-3 override (from a chat config's stored
+ * `thinking_level`) used ONLY by /chat to raise thinking above the global "low"
+ * default per configKey. It applies only to Gemini 3 and only when thinking is
+ * NOT being disabled (disableThinking floors win). /complete passes no `level`,
+ * so it always resolves to GEMINI_3_THINKING_LEVEL ("low") — do NOT thread a
+ * level through /complete (medium/high burns the JSON output budget → MAX_TOKENS
+ * truncation, see #316/#317/#322/#324).
  */
 export function buildThinkingConfig(
   model: string,
   disableThinking = false,
+  level?: GeminiThinkingLevel,
 ): Record<string, unknown> {
   const isGemini3 = model.startsWith("gemini-3");
   if (disableThinking) {
     if (isGemini3) {
       // "pro" id (gemini-3.1-pro-preview) floors at "low"; Flash/flash-lite at "minimal".
-      const level = model.includes("pro") ? GEMINI_3_PRO_MIN_LEVEL : GEMINI_3_FLASH_MIN_LEVEL;
-      return { thinkingLevel: level };
+      const floor = model.includes("pro") ? GEMINI_3_PRO_MIN_LEVEL : GEMINI_3_FLASH_MIN_LEVEL;
+      return { thinkingLevel: floor };
     }
     return { thinkingBudget: GEMINI_25_THINKING_OFF };
   }
-  return isGemini3
-    ? { thinkingLevel: GEMINI_3_THINKING_LEVEL }
-    : { thinkingBudget: GEMINI_25_THINKING_BUDGET };
+  if (isGemini3) {
+    return { thinkingLevel: level ?? GEMINI_3_THINKING_LEVEL };
+  }
+  return { thinkingBudget: GEMINI_25_THINKING_BUDGET };
 }
 
 /** Check if a model ID is a Gemini model. */

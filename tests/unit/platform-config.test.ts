@@ -75,4 +75,35 @@ describe("PlatformConfigRequestSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts an optional thinkingLevel enum", () => {
+    const result = PlatformConfigRequestSchema.safeParse({
+      key: "audience-editor",
+      systemPrompt: "You are a helpful assistant.",
+      allowedTools: ["request_user_input"],
+      thinkingLevel: "medium",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.thinkingLevel).toBe("medium");
+  });
+
+  it("omits thinkingLevel when not supplied (undefined, not null)", () => {
+    const result = PlatformConfigRequestSchema.safeParse({
+      key: "workflow",
+      systemPrompt: "You are a helpful assistant.",
+      allowedTools: ["request_user_input"],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.thinkingLevel).toBeUndefined();
+  });
+
+  it("rejects an invalid thinkingLevel value", () => {
+    const result = PlatformConfigRequestSchema.safeParse({
+      key: "workflow",
+      systemPrompt: "You are a helpful assistant.",
+      allowedTools: ["request_user_input"],
+      thinkingLevel: "ultra",
+    });
+    expect(result.success).toBe(false);
+  });
 });

@@ -72,6 +72,11 @@ How to "edit" an audience's filters: filters can't be edited in place. When the 
 
 Be concise. Confirm what you changed after each action. When asked only to read or summarize, never mutate.`;
 
+// These self-owned editor chats run at `medium` Gemini-3 thinking (the global
+// /chat default is "low") — richer tool-calling reasoning for the curation
+// flows. Only the /chat path reads this; /complete is untouched (stays "low").
+const EDITOR_THINKING_LEVEL = "medium" as const;
+
 export const AUDIENCE_EDITOR_CONFIG = {
   key: "audience-editor",
   systemPrompt: AUDIENCE_EDITOR_SYSTEM_PROMPT,
@@ -86,6 +91,7 @@ export const AUDIENCE_EDITOR_CONFIG = {
   ],
   provider: "google" as const,
   model: "flash-pro",
+  thinkingLevel: EDITOR_THINKING_LEVEL,
 };
 
 export const PERSONA_EDITOR_CONFIG = {
@@ -100,6 +106,7 @@ export const PERSONA_EDITOR_CONFIG = {
   ],
   provider: "google" as const,
   model: "flash-pro",
+  thinkingLevel: EDITOR_THINKING_LEVEL,
 };
 
 export const BRAND_PROFILE_EDITOR_CONFIG = {
@@ -113,6 +120,7 @@ export const BRAND_PROFILE_EDITOR_CONFIG = {
   ],
   provider: "google" as const,
   model: "flash-pro",
+  thinkingLevel: EDITOR_THINKING_LEVEL,
 };
 
 export const SELF_SEEDED_CONFIGS = [
@@ -138,6 +146,7 @@ export async function seedPlatformConfigs(database: typeof db): Promise<void> {
         allowedTools: [...config.allowedTools],
         provider: config.provider,
         model: config.model,
+        thinkingLevel: config.thinkingLevel,
       })
       .onConflictDoUpdate({
         target: [platformConfigs.key],
@@ -146,6 +155,7 @@ export async function seedPlatformConfigs(database: typeof db): Promise<void> {
           allowedTools: [...config.allowedTools],
           provider: config.provider,
           model: config.model,
+          thinkingLevel: config.thinkingLevel,
           updatedAt: new Date(),
         },
       });

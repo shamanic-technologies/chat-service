@@ -501,6 +501,18 @@
             "nullable": true,
             "description": "Model alias. Null means provider default (sonnet for anthropic, flash-pro for google)."
           },
+          "thinkingLevel": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              null
+            ],
+            "description": "Per-config Gemini-3 thinking level for /chat. Null means the default (\"low\")."
+          },
           "createdAt": {
             "type": "string"
           },
@@ -514,6 +526,7 @@
           "allowedTools",
           "provider",
           "model",
+          "thinkingLevel",
           "createdAt",
           "updatedAt"
         ]
@@ -573,6 +586,17 @@
             ],
             "description": "Model alias (version-free). Omit to use the provider's default (sonnet for anthropic, flash-pro for google). Must match the provider.",
             "example": "pro"
+          },
+          "thinkingLevel": {
+            "type": "string",
+            "enum": [
+              "minimal",
+              "low",
+              "medium",
+              "high"
+            ],
+            "description": "Per-config Gemini-3 thinking level applied ONLY on the /chat path. Omit to use the default (\"low\"). Higher levels give the model more reasoning on this chat mode. Ignored for Anthropic configs and never applied on /complete. Omitting on a re-register preserves the stored value.",
+            "example": "medium"
           }
         },
         "required": [
