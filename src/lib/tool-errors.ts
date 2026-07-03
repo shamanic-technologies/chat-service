@@ -9,23 +9,85 @@ interface ToolErrorResult {
   suggestion: string;
 }
 
-/**
- * Parse a Zod validation error from a downstream service response.
- * Returns a list of human-readable field errors.
- */
-function parseZodErrors(raw: string): string[] | null {
+function tryParse(s: string): unknown {
   try {
-    const match = raw.match(/\{.*"issues":\[.*\].*\}/s);
-    if (!match) return null;
-    const parsed = JSON.parse(match[0]);
-    const issues = parsed.details?.issues ?? parsed.issues;
-    if (!Array.isArray(issues)) return null;
-    return issues.map((i: { path?: string[]; message?: string }) =>
-      `${(i.path ?? []).join(".")}: ${i.message ?? "invalid"}`,
-    );
+    return JSON.parse(s);
   } catch {
     return null;
   }
+}
+
+/**
+ * Extract field-level validation errors from a single parsed error node, in
+ * either dialect we receive:
+ *   - Zod:              { issues: [{ path: string[], message }] }
+ *                       (also nested as { details: { issues: [...] } })
+ *   - workflow-service: { details: [{ field: string, message }] }  (DAG validation)
+ */
+function extractFieldErrors(node: unknown): string[] | null {
+  if (!node || typeof node !== "object") return null;
+  const obj = node as { issues?: unknown; details?: unknown };
+
+  // Zod: top-level `issues`, or `details.issues`.
+  const detailsIssues =
+    obj.details && typeof obj.details === "object" && !Array.isArray(obj.details)
+      ? (obj.details as { issues?: unknown }).issues
+      : undefined;
+  const issues = Array.isArray(obj.issues)
+    ? obj.issues
+    : Array.isArray(detailsIssues)
+      ? detailsIssues
+      : null;
+  if (Array.isArray(issues)) {
+    return (issues as Array<{ path?: string[]; message?: string }>).map(
+      (i) => `${(i.path ?? []).join(".")}: ${i.message ?? "invalid"}`,
+    );
+  }
+
+  // workflow-service DAG validation: `details` is an array of {field, message}.
+  if (Array.isArray(obj.details)) {
+    return (obj.details as Array<{ field?: string; message?: string }>).map((d) =>
+      d.field ? `${d.field}: ${d.message ?? "invalid"}` : d.message ?? "invalid",
+    );
+  }
+  return null;
+}
+
+/**
+ * Parse field-level validation errors from a downstream service response.
+ *
+ * Handles two complications beyond a plain Zod parse:
+ *   1. The message is prefixed by the client wrapper
+ *      (`[workflow-client] POST /... returned NNN: <body>`) — we strip to the body.
+ *   2. api-service wraps a downstream service's error as
+ *      `{ "error": "<stringified downstream JSON>" }`, sometimes turning a
+ *      workflow-service 400 into a 500 in the process. We peel nested `.error`
+ *      string wrappers until we find the `issues`/`details` payload.
+ */
+function parseValidationErrors(raw: string): string[] | null {
+  const bodyMatch = raw.match(/returned \d{3}: ?([\s\S]*)$/);
+  const candidate = bodyMatch ? bodyMatch[1] : raw;
+
+  let node = tryParse(candidate);
+  if (node == null) return null;
+
+  for (let depth = 0; depth < 5; depth++) {
+    const found = extractFieldErrors(node);
+    if (found) return found;
+    // Unwrap `{ error: "<json string>" }` (api-service double-encode).
+    if (
+      node &&
+      typeof node === "object" &&
+      typeof (node as { error?: unknown }).error === "string"
+    ) {
+      const inner = tryParse((node as { error: string }).error);
+      if (inner == null) return null;
+      node = inner;
+      continue;
+    }
+    return null;
+  }
+  return null;
 }
 
 /**
@@ -69,14 +131,17 @@ const TOOL_HINTS: Record<string, string> = {
 
 export function formatToolError(toolName: string, rawError: string): ToolErrorResult {
   const status = parseStatusCode(rawError);
-  const zodErrors = parseZodErrors(rawError);
+  const fieldErrors = parseValidationErrors(rawError);
 
   let error: string;
   let suggestion: string;
 
-  if (zodErrors && zodErrors.length > 0) {
-    const fieldList = zodErrors.slice(0, 5).join("; ");
-    error = `Validation failed: ${fieldList}${zodErrors.length > 5 ? ` (and ${zodErrors.length - 5} more)` : ""}`;
+  // Field-level validation errors are checked BEFORE status, because
+  // api-service can surface a downstream 400 wrapped in a 500 — the actionable
+  // detail is in the body regardless of the outer status code.
+  if (fieldErrors && fieldErrors.length > 0) {
+    const fieldList = fieldErrors.slice(0, 5).join("; ");
+    error = `Validation failed: ${fieldList}${fieldErrors.length > 5 ? ` (and ${fieldErrors.length - 5} more)` : ""}`;
     suggestion = `Fix the invalid fields listed above. ${TOOL_HINTS[toolName] ?? ""}`;
   } else if (status === 404) {
     error = "Resource not found. Check that the ID exists and is correct.";

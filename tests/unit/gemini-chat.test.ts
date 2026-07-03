@@ -349,4 +349,76 @@ describe("streamGeminiChat tool-then-empty guard", () => {
     const { opts } = baseOptions({ tools: [] });
     await expect(streamGeminiChat(opts)).rejects.toThrow(/empty response/);
   });
+
+  // A failing tool call must reach the model as a STRUCTURED, parsed error
+  // (parity with the Anthropic path) — not a raw double-encoded blob — so it
+  // can self-correct. Regression for the upgrade_workflow config.code incident.
+  it("surfaces a tool failure through formatToolError (structured, not raw)", async () => {
+    const rawErr =
+      "[workflow-client] POST /v1/workflows/upgrade returned 500: " +
+      JSON.stringify({
+        error: JSON.stringify({
+          error: "Invalid DAG",
+          details: [
+            {
+              field: "nodes[ensure-brand-name].config.code",
+              message:
+                'script node "ensure-brand-name" is missing required config field "code" (non-empty string of inline JS).',
+            },
+          ],
+        }),
+      });
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        sseResponse({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { functionCall: { name: "upgrade_workflow", args: {} }, thoughtSignature: "sig-1" },
+                ],
+              },
+            },
+          ],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        sseResponse({
+          candidates: [
+            { content: { parts: [{ text: "Let me fix that." }] }, finishReason: "STOP" },
+          ],
+          usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 4 },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { opts, events } = baseOptions({
+      tools: [
+        {
+          name: "upgrade_workflow",
+          description: "Upgrade a workflow",
+          input_schema: { type: "object" as const, properties: {} },
+        },
+      ] as ToolDefinition[],
+      executeTool: async () => {
+        throw new Error(rawErr);
+      },
+    });
+    await streamGeminiChat(opts);
+
+    const toolResult = events.find(
+      (e): e is { type: string; name: string; result: { error: string; tool: string; suggestion: string } } =>
+        typeof e === "object" &&
+        e !== null &&
+        (e as { type?: string }).type === "tool_result",
+    );
+    expect(toolResult).toBeDefined();
+    expect(toolResult!.result.tool).toBe("upgrade_workflow");
+    expect(toolResult!.result.error).toContain("nodes[ensure-brand-name].config.code");
+    expect(toolResult!.result.error).toContain("missing required config field");
+    expect(toolResult!.result.suggestion).toBeTruthy();
+  });
 });

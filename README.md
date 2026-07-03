@@ -582,7 +582,7 @@ data: {"type":"tool_result","id":"tc_550e8400-e29b-41d4-a716-446655440000","name
 - `id` — unique identifier matching a `tool_call` to its `tool_result`
 - `name` — the tool name
 - `args` — input arguments as an object
-- `result` — the tool output (string or object)
+- `result` — the tool output (string or object). On a tool **failure**, both the Anthropic and Gemini agentic loops emit a structured `result` of shape `{ error, tool, suggestion }` (parsed from the downstream error via `formatToolError`) rather than a raw error blob — this is also what is fed back to the model so it can self-correct. Field-level validation errors (Zod `issues[].path` or workflow-service DAG `details[].field`) are extracted even when api-service double-encodes a downstream 400 as a 500.
 
 After a tool result, more `token` events follow with the AI's continuation.
 
