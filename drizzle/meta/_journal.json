@@ -113,6 +113,13 @@
       "when": 1782050021108,
       "tag": "0015_add_audience_id_to_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1782136421108,
+      "tag": "0016_add_thinking_level_to_configs",
+      "breakpoints": true
     }
   ]
 }

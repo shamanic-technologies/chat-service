@@ -127,7 +127,9 @@ Register a platform-wide config for a given key. Used as fallback when no per-or
 }
 ```
 
-Fields: same as `PUT /config` — `key`, `systemPrompt`, `allowedTools` (all required), plus optional `provider` and `model`.
+Fields: same as `PUT /config` — `key`, `systemPrompt`, `allowedTools` (all required), plus optional `provider`, `model`, and `thinkingLevel`.
+
+**`thinkingLevel`** (optional, `"minimal" | "low" | "medium" | "high"`) — per-config Gemini-3 thinking level applied **only** on the `/chat` path. Omit to use the code default (`"low"`). Raise it (e.g. `"medium"`) to give a specific chat mode more reasoning. It is ignored for Anthropic configs and is **never** applied on `/complete` (higher thinking there burns the JSON output budget → truncation). Like `provider`/`model`, omitting `thinkingLevel` on a re-register **preserves** the stored value (never clobbers it back to null).
 
 This endpoint is **idempotent** (upsert on `key`). Called on every cold start by api-service.
 
@@ -139,7 +141,7 @@ This endpoint is **idempotent** (upsert on `key`). Called on every cold start by
 | `brand-profile-editor` | `get_brand_profile`, `save_brand_profile_version`, `refresh_brand_profile_from_website`, `request_user_input` | Read, refresh from website, and version a brand's brand profile via NL. |
 | `audience-editor` | `list_audiences`, `suggest_audiences`, `set_audience_status`, `rename_audience`, `refresh_audience_count`, `request_user_input` | Create + curate a brand's customer audiences via NL (human-service, via the api-service gateway `/v1/orgs/audiences/*`). Creation is suggest→activate: `suggest_audiences` persists candidates at status `suggested`; `set_audience_status … active` makes one live. Filters are immutable; archive (never delete) and rename only. |
 
-All default to `google`/`flash-pro`. The dashboard selects them by `configKey` and passes `context: { brandId }`; the tools act on that brand under the caller's org. The boot seed only upserts these keys, so it never clobbers a dashboard-registered config.
+All default to `google`/`flash-pro` and boot at `thinkingLevel: "medium"` (raised above the global `/chat` default of `"low"` for richer tool-calling reasoning on the curation flows). The dashboard selects them by `configKey` and passes `context: { brandId }`; the tools act on that brand under the caller's org. The boot seed only upserts these keys, so it never clobbers a dashboard-registered config.
 
 **Config resolution in POST /chat:**
 1. Per-org config `(orgId, configKey)` → if found, use it
@@ -586,7 +588,7 @@ After a tool result, more `token` events follow with the AI's continuation.
 
 **Tool-then-empty never surfaces as silence.** If one or more tools run but the model's follow-up "summarize" turn produces no text, the service emits a fallback `token` event built from the real tool results (so the user always sees what was retrieved) and logs the empty turn loudly — never a frozen tool card with a blank reply. This guards both the Gemini and Anthropic agentic loops. The `/chat` Gemini path also sets an explicit **64k** `maxOutputTokens` (Gemini-3 thinking tokens count against the output budget; without an explicit cap a post-tool summary turn can exhaust the lower default cap on thinking and emit zero answer text).
 
-**Thinking config is generation-specific.** Gemini 3.x models (`gemini-3*`, incl. `gemini-3.5-flash` = the `flash-pro` alias) use `thinkingConfig.thinkingLevel` (`"low"` here); the Gemini-2.5-era `thinkingBudget` integer is only "accepted for backwards compatibility" on Gemini 3 and produces degenerate **thinking-only / empty** replies — which is what broke every flash-pro `/chat` once Google flipped `gemini-3.5-flash` to stable. Gemini 2.5 models keep `thinkingBudget`. Selected per-model by `buildThinkingConfig(model)`.
+**Thinking config is generation-specific.** Gemini 3.x models (`gemini-3*`, incl. `gemini-3.5-flash` = the `flash-pro` alias) use `thinkingConfig.thinkingLevel` (`"low"` here); the Gemini-2.5-era `thinkingBudget` integer is only "accepted for backwards compatibility" on Gemini 3 and produces degenerate **thinking-only / empty** replies — which is what broke every flash-pro `/chat` once Google flipped `gemini-3.5-flash` to stable. Gemini 2.5 models keep `thinkingBudget`. Selected per-model by `buildThinkingConfig(model, disableThinking, level)`. On `/chat` a config's stored `thinkingLevel` is threaded in as `level` to raise a Gemini-3 chat mode above the `"low"` default (e.g. the self-seeded editor configs run at `"medium"`); `/complete` passes no `level`, so it always stays `"low"`.
 
 #### Tool memory across turns
 

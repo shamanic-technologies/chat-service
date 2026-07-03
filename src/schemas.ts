@@ -288,6 +288,14 @@ export const PlatformConfigRequestSchema = z
         "(sonnet for anthropic, flash-pro for google). Must match the provider.",
       example: "pro",
     }),
+    thinkingLevel: z.enum(["minimal", "low", "medium", "high"]).optional().openapi({
+      description:
+        "Per-config Gemini-3 thinking level applied ONLY on the /chat path. " +
+        "Omit to use the default (\"low\"). Higher levels give the model more " +
+        "reasoning on this chat mode. Ignored for Anthropic configs and never " +
+        "applied on /complete. Omitting on a re-register preserves the stored value.",
+      example: "medium",
+    }),
   })
   .strict()
   .refine(
@@ -316,6 +324,9 @@ export const PlatformConfigResponseSchema = z
     }),
     model: z.string().nullable().openapi({
       description: "Model alias. Null means provider default (sonnet for anthropic, flash-pro for google).",
+    }),
+    thinkingLevel: z.enum(["minimal", "low", "medium", "high"]).nullable().openapi({
+      description: "Per-config Gemini-3 thinking level for /chat. Null means the default (\"low\").",
     }),
     createdAt: z.string(),
     updatedAt: z.string(),

@@ -6,7 +6,7 @@
 import type { Response as ExpressResponse } from "express";
 import type { ToolCallRecord } from "../db/schema.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
-import { sanitizeGeminiSchema, buildThinkingConfig } from "./gemini.js";
+import { sanitizeGeminiSchema, buildThinkingConfig, type GeminiThinkingLevel } from "./gemini.js";
 import { buildToolResultFallback } from "./tool-fallback.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -132,6 +132,12 @@ export interface StreamGeminiChatOptions {
   executeTool: ToolExecutor;
   signal: AbortSignal;
   beforeProviderCall?: BeforeGeminiProviderCall;
+  /**
+   * Per-config Gemini-3 thinking level from the chat config's stored
+   * `thinking_level`. Absent → the code default ("low"). Only applied on Gemini
+   * 3 and only when thinking is not disabled. See buildThinkingConfig.
+   */
+  thinkingLevel?: GeminiThinkingLevel;
 }
 
 export interface StreamGeminiChatResult {
@@ -375,6 +381,7 @@ export async function streamGeminiChat(
     executeTool,
     signal,
     beforeProviderCall,
+    thinkingLevel,
   } = options;
 
   let totalTokensInput = 0;
@@ -419,7 +426,7 @@ export async function streamGeminiChat(
       systemInstruction: { parts: [{ text: systemPrompt }] },
       generationConfig: {
         maxOutputTokens: GEMINI_CHAT_MAX_OUTPUT_TOKENS,
-        thinkingConfig: buildThinkingConfig(model),
+        thinkingConfig: buildThinkingConfig(model, false, thinkingLevel),
       },
       ...(functionDeclarations.length > 0
         ? { tools: [{ functionDeclarations }] }
