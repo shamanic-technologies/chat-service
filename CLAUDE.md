@@ -191,6 +191,12 @@ Symptoms of conflating the two: upgrade calls fail 400 because the LLM sends a `
 
 The system prompt is owned by the calling app (stored in `app_configs.system_prompt` / `platform_configs.system_prompt`). For behavioral rules we want to enforce regardless of the calling app — e.g. "upgrade is bug-fix only, even if the user asks otherwise" — encode them in the tool description in `src/lib/anthropic.ts`, prefixed with `HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO:`. Tool descriptions bind the model more reliably than system prompts and survive app-level config drift.
 
+### Tool-error surfacing — BOTH agentic loops must run failures through `formatToolError`
+
+A tool-call failure must reach the model as a **parsed, structured** `{error, tool, suggestion}` so it can self-correct — NOT a raw client error string. This applies to BOTH agentic loops and they must stay in parity: the Anthropic loop (`src/index.ts` catch → `formatToolError`) and the Gemini loop (`src/lib/gemini-chat.ts` catch → `formatToolError`). Do NOT reintroduce a bare `{ error: rawMsg }` on the Gemini path — that regresses to handing the model an unparsed blob (incident 2026-07-03: `upgrade_workflow` with a `script` node missing `config.code` failed and the Gemini path passed the raw error through, unlike Anthropic).
+
+`formatToolError` (`src/lib/tool-errors.ts`) must extract field-level detail from **two** validation dialects and through api-service's double-encoding: Zod `issues[].path/message` AND workflow-service DAG `details[].field/message`. api-service commonly wraps a downstream **400 as a 500** and stringifies the body as `{"error":"<json>"}` (sometimes nested twice) — `parseValidationErrors` peels the nested `.error` wrappers and checks the field-errors BEFORE the status branch, so the actionable message survives the 500 wrapper. When adding a new downstream that returns a different validation shape, extend `extractFieldErrors`, don't special-case at the call site.
+
 ## Multi-turn tool history — never strip globally
 
 The Anthropic + Gemini APIs are stateless: every request must include the full prior conversation. For agentic chats this means each turn must replay every prior `tool_use` block paired with its matching `tool_result` block (or `functionCall` + `functionResponse` for Gemini). Without this pairing, the model has no record of which tools were called or what they returned in prior turns and either re-fetches or hallucinates — a silent UX regression that users perceive as "the assistant forgot what we just looked up".

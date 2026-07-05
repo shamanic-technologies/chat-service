@@ -8,6 +8,7 @@ import type { ToolCallRecord } from "../db/schema.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
 import { sanitizeGeminiSchema, buildThinkingConfig, type GeminiThinkingLevel } from "./gemini.js";
 import { buildToolResultFallback } from "./tool-fallback.js";
+import { formatToolError } from "./tool-errors.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -613,7 +614,11 @@ export async function streamGeminiChat(
       } catch (toolErr: unknown) {
         const rawMsg = toolErr instanceof Error ? toolErr.message : String(toolErr);
         console.error(`[gemini-chat] Tool call ${fc.name} failed:`, rawMsg);
-        const errorResult = { error: rawMsg };
+        // Parse the raw client error into a structured {error, tool, suggestion}
+        // so the model can self-correct — parity with the Anthropic path
+        // (src/index.ts). Raw double-encoded blobs (api-service wrapping a
+        // workflow-service 400 as a 500) are hard for the model to act on.
+        const errorResult = formatToolError(fc.name, rawMsg);
         sse(res, { type: "tool_result", id: toolCallId, name: fc.name, result: errorResult });
         responseParts.push({
           functionResponse: {

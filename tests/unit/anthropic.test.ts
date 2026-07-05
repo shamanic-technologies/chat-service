@@ -556,6 +556,14 @@ describe("UPGRADE_WORKFLOW_TOOL", () => {
     expect(UPGRADE_WORKFLOW_TOOL.description).toMatch(/at least one of/i);
   });
 
+  it("dag param warns that every node needs its full config (script → config.code)", () => {
+    const schema = UPGRADE_WORKFLOW_TOOL.input_schema as {
+      properties: { dag: { description: string } };
+    };
+    expect(schema.properties.dag.description).toMatch(/config\.code/);
+    expect(schema.properties.dag.description).toMatch(/script/i);
+  });
+
   it("description steers the LLM to `dag` for surgical $ref / wiring / template-version fixes (no regen drift)", () => {
     const desc = UPGRADE_WORKFLOW_TOOL.description ?? "";
     expect(desc).toMatch(/\$ref/i);
@@ -607,6 +615,14 @@ describe("FORK_WORKFLOW_TOOL", () => {
     expect(schema.required).toEqual(
       expect.arrayContaining(["workflowId", "dag"]),
     );
+  });
+
+  it("dag param warns that every node needs its full config (script → config.code)", () => {
+    const schema = FORK_WORKFLOW_TOOL.input_schema as {
+      properties: { dag: { description: string } };
+    };
+    expect(schema.properties.dag.description).toMatch(/config\.code/);
+    expect(schema.properties.dag.description).toMatch(/script/i);
   });
 
   it("description scopes fork to NEW behavior/scope/intent/audience, not topology changes", () => {
