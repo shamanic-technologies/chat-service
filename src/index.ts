@@ -314,7 +314,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, responseSchema, temperature, maxTokens, provider: requestedProvider, model: requestedModel, imageUrl, imageContext, webSearch: webSearchRaw, disableThinking: disableThinkingRaw } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, maxTokens, provider: requestedProvider, model: requestedModel, imageUrl, imageContext, webSearch: webSearchRaw, disableThinking: disableThinkingRaw, thinkingLevel } = parsed.data;
   const webSearch = webSearchRaw === true;
   const disableThinking = disableThinkingRaw === true;
 
@@ -441,6 +441,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         maxOutputTokens: providerMaxOutputTokens,
         webSearch,
         disableThinking,
+        thinkingLevel,
       });
     } else {
       const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
@@ -1467,7 +1468,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, webSearch: webSearchRaw, disableThinking: disableThinkingRaw } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, webSearch: webSearchRaw, disableThinking: disableThinkingRaw, thinkingLevel } = parsed.data;
   const webSearch = webSearchRaw === true;
   const disableThinking = disableThinkingRaw === true;
 
@@ -1533,6 +1534,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
         temperature,
         webSearch,
         disableThinking,
+        thinkingLevel,
       });
     } else {
       const claude = createAnthropicClient({ apiKey, systemPrompt });

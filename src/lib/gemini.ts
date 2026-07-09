@@ -116,13 +116,18 @@ export type GeminiThinkingLevel = "minimal" | "low" | "medium" | "high";
  * identically. When `disableThinking` is set, drop to the provider's floor
  * (fully off on Gemini 2.5; lowest level on Gemini 3 — it has no full-off).
  *
- * `level` is a per-config Gemini-3 override (from a chat config's stored
- * `thinking_level`) used ONLY by /chat to raise thinking above the global "low"
- * default per configKey. It applies only to Gemini 3 and only when thinking is
- * NOT being disabled (disableThinking floors win). /complete passes no `level`,
- * so it always resolves to GEMINI_3_THINKING_LEVEL ("low") — do NOT thread a
- * level through /complete (medium/high burns the JSON output budget → MAX_TOKENS
- * truncation, see #316/#317/#322/#324).
+ * `level` is a Gemini-3 override that applies only to Gemini 3 and only when
+ * thinking is NOT being disabled (disableThinking floors win). Two callers
+ * supply it:
+ *   - /chat threads a chat config's stored `thinking_level` to raise thinking
+ *     above the global "low" default per configKey.
+ *   - /complete + /internal/platform-complete thread the OPTIONAL per-call
+ *     `thinkingLevel` request param. When the caller omits it, `level` is
+ *     undefined and this resolves to GEMINI_3_THINKING_LEVEL ("low") — i.e.
+ *     current behavior byte-for-byte. A caller that explicitly asks for
+ *     medium/high on /complete OWNS the tradeoff (medium/high can burn the JSON
+ *     output budget → MAX_TOKENS truncation, see #316/#317/#322/#324); the
+ *     service no longer floors it silently, but the DEFAULT stays "low".
  */
 export function buildThinkingConfig(
   model: string,
@@ -196,6 +201,13 @@ interface GeminiCompleteOptions {
    * allows (no full-off exists). Default (false) keeps the bounded default.
    */
   disableThinking?: boolean;
+  /**
+   * Optional per-call Gemini-3 thinking level — see POST /complete
+   * `thinkingLevel`. Applies only to Gemini 3 and only when `disableThinking`
+   * is not set (the floor wins). Omitted → the service default ("low"),
+   * byte-identical to a normal call. No-op on Gemini 2.5 / Anthropic.
+   */
+  thinkingLevel?: GeminiThinkingLevel;
 }
 
 /** A web source surfaced by native grounding/search (provider-agnostic shape). */
@@ -563,6 +575,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     maxOutputTokens,
     webSearch,
     disableThinking,
+    thinkingLevel,
   } = options;
 
   // Passing a responseSchema implies JSON mode regardless of responseFormat.
@@ -613,7 +626,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
       maxOutputTokens: maxOutputTokens ?? GEMINI_MAX_OUTPUT_TOKENS,
-      thinkingConfig: buildThinkingConfig(model, disableThinking),
+      thinkingConfig: buildThinkingConfig(model, disableThinking, thinkingLevel),
       ...(temperature != null ? { temperature } : {}),
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
       ...(sanitizedSchema != null ? { responseSchema: sanitizedSchema } : {}),

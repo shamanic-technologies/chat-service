@@ -68,6 +68,46 @@ describe("CompleteRequestSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts optional thinkingLevel (each graduated level)", () => {
+    for (const level of ["minimal", "low", "medium", "high"] as const) {
+      const result = CompleteRequestSchema.safeParse({
+        message: "Extract fields",
+        systemPrompt: "You are helpful.",
+        provider: "google",
+        model: "flash-pro",
+        thinkingLevel: level,
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.thinkingLevel).toBe(level);
+      }
+    }
+  });
+
+  it("defaults thinkingLevel to undefined when omitted (existing callers unchanged)", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      provider: "google",
+      model: "flash-pro",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.thinkingLevel).toBeUndefined();
+    }
+  });
+
+  it("rejects an invalid thinkingLevel value", () => {
+    const result = CompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      provider: "google",
+      model: "flash-pro",
+      thinkingLevel: "ultra",
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("accepts optional responseSchema (JSON Schema object)", () => {
     const schema = {
       type: "object",

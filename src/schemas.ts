@@ -460,6 +460,18 @@ export const CompleteRequestSchema = z
         "the service default (bounded thinking, byte-identical to a normal call).",
       example: true,
     }),
+    thinkingLevel: z.enum(["minimal", "low", "medium", "high"]).optional().openapi({
+      description:
+        "Optional per-call Gemini-3 thinking level — the same graduated levels the /chat config " +
+        "path supports. Lets a caller dial reasoning effort without changing the model. Precedence: " +
+        "`disableThinking` (when set) always wins → the provider floor, ignoring this field. Otherwise " +
+        "the model generates at this level. Omitted = the service default (\"low\"), byte-identical to " +
+        "a normal call (existing callers see ZERO change). Applies only to Gemini-3 models; a safe " +
+        "no-op on Gemini 2.5 (uses its bounded budget) and Anthropic (thinking is never enabled on " +
+        "/complete). Example use: an extraction task asks for \"low\" — cheaper/faster than default " +
+        "but above the floor.",
+      example: "low",
+    }),
     imageUrl: z.string().url().optional().openapi({
       description: "URL of an image to include in the prompt. The image is fetched server-side and sent to the model as a visual input. Supported by all models, but recommended with provider: \"google\", model: \"flash-lite\" for cost-effective vision tasks (image classification, scoring, analysis).",
       example: "https://example.com/images/hero.jpg",
@@ -763,6 +775,13 @@ export const InternalPlatformCompleteRequestSchema = z
         "Gemini 3 → lowest level the gen allows (`minimal` Flash, `low` Pro — no full-off exists). " +
         "Same semantics as POST /complete. Omitted or false = the service default (bounded thinking).",
       example: true,
+    }),
+    thinkingLevel: z.enum(["minimal", "low", "medium", "high"]).optional().openapi({
+      description:
+        "Optional per-call Gemini-3 thinking level. Same semantics as POST /complete: `disableThinking` " +
+        "(when set) wins → floor; otherwise the model generates at this level; omitted = the service " +
+        "default (\"low\"), byte-identical to a normal call. No-op on Gemini 2.5 and Anthropic.",
+      example: "low",
     }),
   })
   .openapi("InternalPlatformCompleteRequest");
