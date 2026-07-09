@@ -213,6 +213,7 @@ Request body:
   - **Google, Gemini 3** (`gemini-3.*`, incl. the `flash-pro` default = Gemini 3.5 Flash) → drops to the lowest level the generation allows: `thinkingLevel: "minimal"` for Flash / flash-lite, `thinkingLevel: "low"` for Pro. **Gemini 3 has no full-off** ([thinking docs](https://ai.google.dev/gemini-api/docs/thinking)), so this is "minimize", not zero.
   - **Anthropic** → no-op: `/complete` never enables extended thinking, so the field is accepted and ignored.
   - Omitted or `false` → the service default (bounded thinking: `thinkingLevel: "low"` on Gemini 3, `thinkingBudget: 8192` on Gemini 2.5), byte-identical to a normal call.
+- `thinkingLevel` (optional, `"minimal" | "low" | "medium" | "high"`) — per-call Gemini-3 thinking level, the same graduated levels the `/chat` config path supports. Lets a caller dial reasoning effort **without changing the model** (e.g. an extraction task that wants `"low"` — cheaper/faster than default but above the floor). Precedence: **`disableThinking` (when set) always wins → the provider floor, ignoring this field.** Otherwise the model generates at this level. **Omitted → the service default (`"low"`), byte-identical to a normal call — existing callers see ZERO change.** Applies only to Gemini 3; a safe **no-op** on Gemini 2.5 (uses its bounded `thinkingBudget: 8192`) and Anthropic (thinking is never enabled on `/complete`). A caller that opts up to `medium`/`high` owns the tradeoff — higher thinking can consume the output budget on large JSON outputs (`MAX_TOKENS`), so size `maxTokens`/your schema accordingly.
 - `imageUrl` (optional) — URL of an image to include as visual input. The image is fetched server-side. Supported by all models, but recommended with `google` + `flash-lite` for cost-effective vision tasks.
 - `imageContext` (optional) — metadata about the image to help the model classify it: `{ alt?: string, title?: string, sourceUrl?: string }`. Injected into the prompt alongside the image. Only meaningful when `imageUrl` is provided.
 
@@ -272,7 +273,7 @@ Error responses: 400 (validation), 401 (auth), 402 (insufficient credits), 502 (
 }
 ```
 
-Same fields as `POST /complete` (including the optional `responseSchema` and `webSearch`) except **no `imageUrl` or `imageContext`** support.
+Same fields as `POST /complete` (including the optional `responseSchema`, `webSearch`, `disableThinking`, and `thinkingLevel`) except **no `imageUrl` or `imageContext`** support.
 
 **Key differences from `POST /complete`:**
 - **No org billing** — platform-level calls are not charged to any org's credit balance (no affordability authorize).

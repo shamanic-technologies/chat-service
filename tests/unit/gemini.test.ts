@@ -166,6 +166,58 @@ describe("completeWithGemini", () => {
     expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
   });
 
+  // thinkingLevel — optional per-call Gemini-3 level (POST /complete +
+  // /internal/platform-complete). Graduated levels the /chat config path already
+  // supports, now selectable per request. Precedence: disableThinking wins →
+  // floor; else the level; else the "low" default. No-op on Gemini 2.5.
+  it("thinkingLevel honored on Gemini 3 Flash (medium)", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({ ...baseOptions, model: "gemini-3.5-flash", thinkingLevel: "medium" });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "medium" });
+  });
+
+  it("thinkingLevel honored on Gemini 3 Flash (low — below default cost, above floor)", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({ ...baseOptions, model: "gemini-3.5-flash", thinkingLevel: "low" });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
+  });
+
+  it("thinkingLevel honored on Gemini 3 Pro (high)", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({ ...baseOptions, model: "gemini-3.1-pro-preview", thinkingLevel: "high" });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "high" });
+  });
+
+  it("disableThinking wins over thinkingLevel (floor, not the requested level)", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({
+      ...baseOptions,
+      model: "gemini-3.5-flash",
+      disableThinking: true,
+      thinkingLevel: "high",
+    });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    // Floor (minimal on Flash), NOT the requested "high".
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "minimal" });
+  });
+
+  it("thinkingLevel omitted → Gemini 3 default stays low (existing callers unchanged)", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({ ...baseOptions, model: "gemini-3.5-flash" });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
+  });
+
+  it("thinkingLevel is a safe no-op on Gemini 2.5 (uses its bounded budget)", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({ ...baseOptions, model: "gemini-2.5-flash", thinkingLevel: "high" });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 8192 });
+  });
+
   // --- responseSchema passthrough ---
 
   it("includes generationConfig.responseSchema when caller supplies a schema", async () => {

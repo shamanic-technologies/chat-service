@@ -107,6 +107,42 @@ describe("InternalPlatformCompleteRequestSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts optional thinkingLevel and defaults to undefined when omitted", () => {
+    const withLevel = InternalPlatformCompleteRequestSchema.safeParse({
+      message: "Extract fields",
+      systemPrompt: "You are helpful.",
+      provider: "google",
+      model: "flash-pro",
+      thinkingLevel: "medium",
+    });
+    expect(withLevel.success).toBe(true);
+    if (withLevel.success) {
+      expect(withLevel.data.thinkingLevel).toBe("medium");
+    }
+
+    const omitted = InternalPlatformCompleteRequestSchema.safeParse({
+      message: "Extract fields",
+      systemPrompt: "You are helpful.",
+      provider: "google",
+      model: "flash-pro",
+    });
+    expect(omitted.success).toBe(true);
+    if (omitted.success) {
+      expect(omitted.data.thinkingLevel).toBeUndefined();
+    }
+  });
+
+  it("rejects an invalid thinkingLevel value", () => {
+    const result = InternalPlatformCompleteRequestSchema.safeParse({
+      message: "Hello",
+      systemPrompt: "You are helpful.",
+      provider: "google",
+      model: "flash-pro",
+      thinkingLevel: "turbo",
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("does NOT accept imageUrl (not supported on internal endpoint)", () => {
     const result = InternalPlatformCompleteRequestSchema.safeParse({
       message: "Hello",
