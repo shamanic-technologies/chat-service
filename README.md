@@ -775,6 +775,45 @@ The Anthropic path relies on the SDK's beta `compact_20260112` to keep the input
 data: "[DONE]"
 ```
 
+## Session History (read)
+
+`GET /sessions/{sessionId}` returns the full ordered conversation for a session so a client holding its `sessionId` can rebuild the chat panel exactly as the user last saw it — e.g. after a dashboard page refresh, where the client kept only the `sessionId`. It is **read-only** over the same `sessions`/`messages` tables `POST /chat` writes: no new storage, no run tracking, no cost, and no change to session lifecycle.
+
+Headers: `x-api-key`, `x-org-id`, `x-user-id`, `x-run-id` (same auth as `POST /chat`). **Org-scoped** — the session must belong to the caller's `x-org-id`.
+
+- **404** — an unknown `sessionId`, or one owned by a different org, returns `{"error":"Session not found. …"}` (the same message the `POST /chat` stream emits for `session_not_found`; existence is not leaked across orgs).
+- **400** — `sessionId` is not a valid UUID.
+
+Response `200`:
+```json
+{
+  "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+  "orgId": "org-1",
+  "campaignId": null,
+  "brandIds": null,
+  "workflowSlug": null,
+  "featureSlug": null,
+  "audienceId": null,
+  "createdAt": "2026-07-16T10:00:00.000Z",
+  "updatedAt": "2026-07-16T10:05:00.000Z",
+  "messages": [
+    { "id": "…", "role": "user", "content": "hi", "contentBlocks": null, "toolCalls": null, "buttons": null, "tokenCount": null, "createdAt": "2026-07-16T10:00:01.000Z" },
+    {
+      "id": "…",
+      "role": "assistant",
+      "content": "hello",
+      "contentBlocks": [{ "type": "thinking", "thinking": "…" }, { "type": "text", "text": "hello" }],
+      "toolCalls": [{ "name": "list_workflows", "args": { "limit": 5 }, "result": { "workflows": [] } }],
+      "buttons": [{ "label": "More", "value": "more" }],
+      "tokenCount": 12,
+      "createdAt": "2026-07-16T10:00:02.000Z"
+    }
+  ]
+}
+```
+
+`messages` is oldest-first. Per turn: `role`, plain-text `content`, optional provider `contentBlocks` (Anthropic content blocks including `thinking` reasoning — richer than `content`, which is the safe text fallback), and any `toolCalls` (tool `name` + input `args` + `result`; `result` is absent for a paused call such as `request_user_input`). The internal Gemini `thoughtSignature` replay token is not surfaced.
+
 ### Health Check
 
 `GET /health` returns `{"status":"ok"}`.
