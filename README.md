@@ -143,6 +143,8 @@ This endpoint is **idempotent** (upsert on `key`). Called on every cold start by
 
 All default to `google`/`flash-pro` and boot at `thinkingLevel: "medium"` (raised above the global `/chat` default of `"low"` for richer tool-calling reasoning on the curation flows). The dashboard selects them by `configKey` and passes `context: { brandId }`; the tools act on that brand under the caller's org. The boot seed only upserts these keys, so it never clobbers a dashboard-registered config.
 
+All three prompts share a **voice + ground-truth guardrail block** (`VOICE_AND_GROUND_TRUTH_RULES`, appended to each prompt in `seed-platform-configs.ts`): the assistant must never surface internal plumbing in user-facing prose (entity/provider ids, raw filter JSON or field names, tool names, tool errors / HTTP status / 404s, raw count fields — filters become plain language, counts a single rounded number); it may only state an action as done **after** the corresponding tool call returns success (no pre-announcing avatars/creation/activation); and it must reuse only ids returned verbatim by a prior tool result (never construct or guess one — re-list on a not-found). This exists because real sessions leaked UUIDs/`apolloAudienceId`/filter JSON into the prose and fabricated completion before the tools ran.
+
 **Config resolution in POST /chat:**
 1. Per-org config `(orgId, configKey)` → if found, use it
 2. Platform config `(configKey)` → if found, use it
