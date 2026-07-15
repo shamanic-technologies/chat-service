@@ -101,7 +101,7 @@ import {
 } from "./lib/key-client.js";
 import { authorizeCredits, BillingError } from "./lib/billing-client.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, GetSessionParamsSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, buildTrackingHeaders, type AuthLocals } from "./middleware/auth.js";
 import { resolveOutputBudget, estimateInputTokens, estimateOutputTokens } from "./lib/provision-estimate.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
@@ -119,7 +119,8 @@ import {
 } from "./lib/merge-messages.js";
 import { streamGeminiChat, type ToolDefinition } from "./lib/gemini-chat.js";
 import { buildToolResultFallback } from "./lib/tool-fallback.js";
-import { SESSION_NOT_FOUND_EVENT } from "./lib/session-errors.js";
+import { SESSION_NOT_FOUND_EVENT, SESSION_NOT_FOUND_MESSAGE } from "./lib/session-errors.js";
+import { serializeSessionHistory } from "./lib/session-history.js";
 import { buildContextUsageEvent } from "./lib/context-usage.js";
 
 // ---------------------------------------------------------------------------
@@ -1704,6 +1705,40 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
 });
 
 // --- Chat ---
+
+// Read-only playback of a session's stored conversation. Lets a client that
+// holds a valid sessionId (e.g. the dashboard "Edit with AI" panel after a page
+// refresh) rebuild the visible history it lost. Org-scoped exactly like the
+// POST /chat session-continue check; no run tracking, no cost, no writes.
+app.get("/sessions/:sessionId", requireAuth, async (req, res) => {
+  const { orgId } = res.locals as AuthLocals;
+
+  const parsed = GetSessionParamsSchema.safeParse(req.params);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const { sessionId } = parsed.data;
+
+  const [session] = await db
+    .select()
+    .from(sessions)
+    .where(eq(sessions.id, sessionId));
+
+  // Mirror POST /chat: an unknown session OR one owned by another org is a 404
+  // with the same message — existence is not leaked across orgs.
+  if (!session || session.orgId !== orgId) {
+    return res.status(404).json({ error: SESSION_NOT_FOUND_MESSAGE });
+  }
+
+  const history = await db.query.messages.findMany({
+    where: eq(messages.sessionId, sessionId),
+    orderBy: (m, { asc }) => [asc(m.createdAt)],
+  });
+
+  return res.json(serializeSessionHistory(session, history));
+});
 
 app.post("/chat", requireAuth, async (req, res) => {
   const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;

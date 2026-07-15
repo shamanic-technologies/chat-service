@@ -1217,6 +1217,121 @@ Each \`data:\` line contains a JSON object. Events arrive in this order:
   },
 });
 
+// --- Session History (read) ---
+
+export const GetSessionParamsSchema = z
+  .object({
+    sessionId: z.string().uuid("sessionId must be a valid UUID").openapi({
+      description: "UUID of the session to read back.",
+      example: "550e8400-e29b-41d4-a716-446655440000",
+    }),
+  })
+  .openapi("GetSessionParams");
+
+export const SessionHistoryToolCallSchema = z
+  .object({
+    name: z.string().openapi({ description: "Tool name invoked on this turn." }),
+    args: z.record(z.string(), z.unknown()).openapi({
+      description: "Input arguments passed to the tool.",
+    }),
+    result: z.unknown().optional().openapi({
+      description:
+        "Tool output. Absent for a tool call that paused the turn without completing (e.g. request_user_input).",
+    }),
+  })
+  .openapi("SessionHistoryToolCall");
+
+export const SessionHistoryMessageSchema = z
+  .object({
+    id: z.string().uuid(),
+    role: z.enum(["user", "assistant", "tool"]).openapi({
+      description: "Who produced this turn.",
+    }),
+    content: z.string().openapi({
+      description: "Plain-text rendering of the turn.",
+    }),
+    contentBlocks: z.array(z.unknown()).nullable().openapi({
+      description:
+        "Provider content blocks captured at persist time (Anthropic content blocks, including `thinking` " +
+        "reasoning blocks). Null when the turn stored none. Richer than `content` for clients that render " +
+        "reasoning; `content` is the safe text fallback.",
+    }),
+    toolCalls: z.array(SessionHistoryToolCallSchema).nullable().openapi({
+      description: "Tool calls made on this turn, in order. Null when the turn made none.",
+    }),
+    buttons: z
+      .array(z.object({ label: z.string(), value: z.string() }))
+      .nullable()
+      .openapi({ description: "Quick-reply buttons extracted from the turn. Null when none." }),
+    tokenCount: z.number().int().nullable().openapi({
+      description: "Token count recorded for the turn, when available.",
+    }),
+    createdAt: z.string().openapi({ description: "ISO 8601 timestamp of the turn." }),
+  })
+  .openapi("SessionHistoryMessage");
+
+export const SessionHistoryResponseSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    orgId: z.string(),
+    campaignId: z.string().nullable(),
+    brandIds: z.array(z.string()).nullable(),
+    workflowSlug: z.string().nullable(),
+    featureSlug: z.string().nullable(),
+    audienceId: z.string().nullable(),
+    createdAt: z.string().openapi({ description: "ISO 8601 session creation timestamp." }),
+    updatedAt: z.string().openapi({ description: "ISO 8601 session last-update timestamp." }),
+    messages: z.array(SessionHistoryMessageSchema).openapi({
+      description: "Full ordered conversation, oldest turn first.",
+    }),
+  })
+  .openapi("SessionHistoryResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/sessions/{sessionId}",
+  tags: ["Chat"],
+  summary: "Read a session's conversation history",
+  description:
+    "Returns the full ordered visible conversation for a session so a client holding its `sessionId` can " +
+    "rebuild the chat panel exactly as the user last saw it — e.g. after a page refresh. Read-only over the " +
+    "same `sessions`/`messages` tables POST /chat writes; it creates no state and does not change session " +
+    "lifecycle.\n\n" +
+    "**Org-scoped.** The session must belong to the caller's org (`x-org-id`). An unknown sessionId, or one " +
+    "belonging to a different org, returns 404 with the same message the POST /chat stream emits for " +
+    "`session_not_found` (existence is not leaked across orgs).\n\n" +
+    "Each message carries its `role`, plain-text `content`, optional provider `contentBlocks` (including " +
+    "`thinking` reasoning blocks), and any `toolCalls` (tool name + input `args` + `result`).",
+  request: {
+    params: GetSessionParamsSchema,
+    headers: z.object({
+      "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+      "x-org-id": z.string().openapi({ description: "Internal org UUID from client-service" }),
+      "x-user-id": z.string().openapi({ description: "Internal user UUID from client-service" }),
+      "x-run-id": z.string().uuid().openapi({ description: "Caller's run ID" }),
+      ...workflowTrackingHeaders,
+    }),
+  },
+  responses: {
+    200: {
+      description: "Ordered session history",
+      content: { "application/json": { schema: SessionHistoryResponseSchema } },
+    },
+    400: {
+      description: "sessionId is not a valid UUID",
+      content: { "application/json": { schema: ValidationErrorResponseSchema } },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: "Session does not exist or belongs to a different org",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // --- Internal: Transfer Brand ---
 
 export const TransferBrandRequestSchema = z
