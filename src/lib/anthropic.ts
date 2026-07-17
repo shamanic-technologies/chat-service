@@ -1318,6 +1318,215 @@ export const GENERATE_AUDIENCE_AVATAR_TOOL: Anthropic.Tool = {
 };
 
 // ---------------------------------------------------------------------------
+// Funnel tools — the end-to-end "operate the platform" surface a dashboard user
+// drives: create a brand from a URL (onboarding-equivalent), launch a campaign,
+// set the daily budget, and pause/resume a brand. These let a chat agent (e.g.
+// the WhatsApp "Distribute.you" assistant) take an org from nothing to a running,
+// managed campaign. Every call routes through api-service with the caller's
+// forwarded identity, so the underlying operation is metered against the caller's
+// org by the downstream service (chat-service adds no cost of its own here).
+//
+// Unlike the brand-scoped editor tools (which act on a single context.brandId),
+// these take the brandId / brandUrl explicitly, so they work in a brand-less
+// onboarding session where the agent creates or selects the brand mid-conversation.
+// ---------------------------------------------------------------------------
+
+export const CREATE_BRAND_FROM_URL_TOOL: Anthropic.Tool = {
+  name: "create_brand_from_url",
+  description:
+    "Create (or upsert) a brand from its website URL — the onboarding step. Give the brand's homepage URL; the platform scrapes it and provisions the brand, returning its brandId. This is the first step to set up a new brand from scratch. If the org already has this brand, it is upserted (not duplicated). Use list_brands first if you are unsure whether the brand already exists. Save the returned brandId to set its daily budget, pause/resume it, or reference it later.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      url: {
+        type: "string",
+        description: "The brand's website URL (e.g. 'https://acme.com').",
+      },
+    },
+    required: ["url"],
+  },
+};
+
+export const LIST_BRANDS_TOOL: Anthropic.Tool = {
+  name: "list_brands",
+  description:
+    "List every brand in the caller's org, with each brand's id, name, and URL. Read-only. Use it to find an existing brand's id/URL before launching a campaign, setting a budget, or pausing/resuming it — and to check whether a brand already exists before creating one.",
+  input_schema: {
+    type: "object" as const,
+    properties: {},
+  },
+};
+
+export const LAUNCH_CAMPAIGN_TOOL: Anthropic.Tool = {
+  name: "launch_campaign",
+  description:
+    "Launch a new campaign for a brand — this is how the brand starts running. Requires: a campaign `name`; `brandUrls` (one or more brand website URLs — the first is the primary brand; use the URL from create_brand_from_url or list_brands); `featureInputs` (the free-form inputs the chosen feature needs — discover the required keys with get_feature_inputs); and a feature + a workflow to run. Prefer the stable dynasty slugs: pass `featureDynastySlug` (from list_features) and `workflowDynastySlug` (from list_workflows) so the latest version is used automatically. Optionally cap spend with `maxBudgetDailyUsd` / `maxBudgetTotalUsd`, limit `maxLeads`, or set an `endDate`. On success the campaign is created and starts; report the campaign name and status to the user.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      name: { type: "string", description: "Campaign name." },
+      brandUrls: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Brand website URLs. The first URL is the primary brand; additional URLs are secondary brands.",
+      },
+      featureInputs: {
+        type: "object",
+        description:
+          "The feature's free-form inputs (key → value). Discover the expected keys with get_feature_inputs for the chosen feature.",
+      },
+      featureDynastySlug: {
+        type: "string",
+        description:
+          "Stable feature dynasty slug (from list_features), e.g. 'pr-cold-email-outreach'. Resolves to the latest version. Preferred. Provide this OR featureSlug.",
+      },
+      featureSlug: {
+        type: "string",
+        description:
+          "Exact versioned feature slug — use only to pin a specific version. Provide this OR featureDynastySlug.",
+      },
+      workflowDynastySlug: {
+        type: "string",
+        description:
+          "Stable workflow dynasty slug (from list_workflows), e.g. 'sales-email-cold-outreach-sienna'. Resolves to the latest version. Preferred. Provide this OR workflowSlug.",
+      },
+      workflowSlug: {
+        type: "string",
+        description:
+          "Exact versioned workflow slug — use only to pin a specific version. Provide this OR workflowDynastySlug.",
+      },
+      maxBudgetDailyUsd: {
+        type: "string",
+        description: "Optional max daily budget in USD (e.g. '20').",
+      },
+      maxBudgetTotalUsd: {
+        type: "string",
+        description: "Optional max total budget in USD (e.g. '500').",
+      },
+      maxLeads: {
+        type: "integer",
+        description: "Optional cap on the number of leads to contact.",
+      },
+      endDate: {
+        type: "string",
+        description: "Optional campaign end date (ISO date string).",
+      },
+    },
+    required: ["name", "brandUrls", "featureInputs"],
+  },
+};
+
+export const LIST_CAMPAIGNS_TOOL: Anthropic.Tool = {
+  name: "list_campaigns",
+  description:
+    "List the org's campaigns, with each campaign's id, name, status (e.g. 'active', 'stopped'), brand(s), and budgets. Read-only. Optionally filter by `brandId` or `status`. Use it to find a campaign's id before stopping it, or to report what is currently running.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: {
+        type: "string",
+        description: "Optional. Filter to campaigns for this brand id.",
+      },
+      status: {
+        type: "string",
+        description:
+          "Optional. Filter by status (e.g. 'active', 'stopped', 'all').",
+      },
+    },
+  },
+};
+
+export const STOP_CAMPAIGN_TOOL: Anthropic.Tool = {
+  name: "stop_campaign",
+  description:
+    "Stop a running campaign. Look up the campaign id with list_campaigns first. This halts the campaign's execution. To pause a whole brand's activity instead of a single campaign, use set_brand_pause.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      campaignId: {
+        type: "string",
+        description: "The id of the campaign to stop (from list_campaigns).",
+      },
+    },
+    required: ["campaignId"],
+  },
+};
+
+export const GET_DAILY_BUDGET_TOOL: Anthropic.Tool = {
+  name: "get_daily_budget",
+  description:
+    "Read a brand's current daily budget (its per-day spend ceiling, in cents; null means unset). Read-only. Look up the brand id with list_brands (or use the id from create_brand_from_url).",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: {
+        type: "string",
+        description: "The brand id (from list_brands or create_brand_from_url).",
+      },
+    },
+    required: ["brandId"],
+  },
+};
+
+export const SET_DAILY_BUDGET_TOOL: Anthropic.Tool = {
+  name: "set_daily_budget",
+  description:
+    "Set a brand's daily budget — its per-day spend ceiling. `dailyBudgetCents` is IN CENTS (e.g. $20/day = 2000). Convert the user's dollar amount to cents yourself. Setting 0 pauses spend. Look up the brand id with list_brands (or use the id from create_brand_from_url). Confirm the new budget in dollars to the user after it succeeds.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: {
+        type: "string",
+        description: "The brand id (from list_brands or create_brand_from_url).",
+      },
+      dailyBudgetCents: {
+        type: "integer",
+        description:
+          "The daily spend ceiling in CENTS (e.g. $25/day = 2500). 0 = pause spend.",
+      },
+    },
+    required: ["brandId", "dailyBudgetCents"],
+  },
+};
+
+export const GET_BRAND_PAUSE_TOOL: Anthropic.Tool = {
+  name: "get_brand_pause",
+  description:
+    "Read whether a brand is currently paused. Read-only. Look up the brand id with list_brands (or use the id from create_brand_from_url).",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: {
+        type: "string",
+        description: "The brand id (from list_brands or create_brand_from_url).",
+      },
+    },
+    required: ["brandId"],
+  },
+};
+
+export const SET_BRAND_PAUSE_TOOL: Anthropic.Tool = {
+  name: "set_brand_pause",
+  description:
+    "Pause or resume a brand's activity. Pass `paused: true` to PAUSE the brand (halt all its campaigns) or `paused: false` to RESUME it. Map the user's intent: 'pause'/'stop my brand'/'hold' → true; 'resume'/'restart'/'unpause'/'go live again' → false. Look up the brand id with list_brands (or use the id from create_brand_from_url). Confirm the new state to the user after it succeeds.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: {
+        type: "string",
+        description: "The brand id (from list_brands or create_brand_from_url).",
+      },
+      paused: {
+        type: "boolean",
+        description: "true to pause the brand, false to resume it.",
+      },
+    },
+    required: ["brandId", "paused"],
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Tool registry — every tool the service knows how to execute.
 // Clients choose which subset to enable via allowedTools in their config.
 // ---------------------------------------------------------------------------
@@ -1362,6 +1571,15 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   rename_audience: RENAME_AUDIENCE_TOOL,
   refresh_audience_count: REFRESH_AUDIENCE_COUNT_TOOL,
   generate_audience_avatar: GENERATE_AUDIENCE_AVATAR_TOOL,
+  create_brand_from_url: CREATE_BRAND_FROM_URL_TOOL,
+  list_brands: LIST_BRANDS_TOOL,
+  launch_campaign: LAUNCH_CAMPAIGN_TOOL,
+  list_campaigns: LIST_CAMPAIGNS_TOOL,
+  stop_campaign: STOP_CAMPAIGN_TOOL,
+  get_daily_budget: GET_DAILY_BUDGET_TOOL,
+  set_daily_budget: SET_DAILY_BUDGET_TOOL,
+  get_brand_pause: GET_BRAND_PAUSE_TOOL,
+  set_brand_pause: SET_BRAND_PAUSE_TOOL,
 };
 
 /** All tool names available for use in allowedTools config. */

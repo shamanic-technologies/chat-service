@@ -101,6 +101,18 @@ import {
 } from "./lib/key-client.js";
 import { authorizeCredits, BillingError } from "./lib/billing-client.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
+import {
+  createBrandFromUrl,
+  listBrands,
+  launchCampaign,
+  listCampaigns,
+  stopCampaign,
+  getBrandDailyBudget,
+  setBrandDailyBudget,
+  getBrandPauseState,
+  setBrandPauseState,
+  type LaunchCampaignBody,
+} from "./lib/funnel-client.js";
 import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, GetSessionParamsSchema } from "./schemas.js";
 import { requireAuth, requireInternalAuth, buildTrackingHeaders, type AuthLocals } from "./middleware/auth.js";
 import { resolveOutputBudget, estimateInputTokens, estimateOutputTokens } from "./lib/provision-estimate.js";
@@ -2603,6 +2615,93 @@ app.post("/chat", requireAuth, async (req, res) => {
         const result = await generateAudienceAvatar(
           String(args.audienceId ?? ""),
           prompt,
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // ---------------------------------------------------------------------
+      // Funnel tools — full end-to-end platform operation (create brand from a
+      // URL, launch, set daily budget, pause/resume). These take the brand /
+      // campaign identifier explicitly (agent-resolved via list_brands /
+      // create_brand_from_url / list_campaigns), so they work in a brand-less
+      // onboarding session. All route through api-service with forwarded
+      // identity — org-billed by the downstream service, no chat-service cost.
+      // ---------------------------------------------------------------------
+      if (call.name === "create_brand_from_url") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await createBrandFromUrl(String(args.url ?? ""), featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "list_brands") {
+        const result = await listBrands(featureCallParams);
+        toolCalls.push({ name: call.name, args: {}, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "launch_campaign") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await launchCampaign(
+          args as unknown as LaunchCampaignBody,
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "list_campaigns") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await listCampaigns(
+          {
+            brandId: args.brandId as string | undefined,
+            status: args.status as string | undefined,
+          },
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "stop_campaign") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await stopCampaign(String(args.campaignId ?? ""), featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "get_daily_budget") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await getBrandDailyBudget(String(args.brandId ?? ""), featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "set_daily_budget") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await setBrandDailyBudget(
+          String(args.brandId ?? ""),
+          args.dailyBudgetCents as number | string,
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "get_brand_pause") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await getBrandPauseState(String(args.brandId ?? ""), featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "set_brand_pause") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await setBrandPauseState(
+          String(args.brandId ?? ""),
+          Boolean(args.paused),
           featureCallParams,
         );
         toolCalls.push({ name: call.name, args, result });
