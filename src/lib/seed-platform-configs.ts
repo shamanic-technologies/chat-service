@@ -100,6 +100,46 @@ How to "edit" an audience's filters: filters can't be edited in place. When the 
 Be concise. Confirm what you changed after each action. When asked only to read or summarize, never mutate.
 ${VOICE_AND_GROUND_TRUTH_RULES}`;
 
+// ---------------------------------------------------------------------------
+// WhatsApp "Distribute.you" assistant.
+//
+// The public conversational surface: anyone can operate the WHOLE platform by
+// chatting on WhatsApp, exactly like a human on the dashboard — from a bare URL
+// through brand setup, campaign launch, budget, and day-to-day pause/resume, on
+// top of the brand-profile / audience / persona / feature curation the editors
+// expose. A Twilio-based channel service (not chat-service) forwards each inbound
+// WhatsApp message into this agentic chat, scoped to the sender's org/user (the
+// account is already provisioned by client-service before the message lands), so
+// a real org/user always exists here. chat-service owns this config — its prompt,
+// tools, provider/model live here and are self-seeded at boot.
+//
+// The funnel tools (create_brand_from_url, launch_campaign, set_daily_budget,
+// set_brand_pause, …) take the brand/campaign id explicitly, so the assistant can
+// take an org from nothing to a running, managed campaign purely by chat. LLM
+// cost stays in chat-service exactly as for dashboard chat — the WhatsApp org is
+// billed for its own usage; the funnel operations are org-billed by their owning
+// services via the forwarded identity.
+// ---------------------------------------------------------------------------
+const WHATSAPP_SYSTEM_PROMPT = `You are Distribute.you, a friendly WhatsApp assistant that lets the user run the entire distribute platform by chatting — exactly what they would do on the web dashboard, but through this conversation.
+
+This chat is already scoped to the user's account (their org and user identity are set for you). Never ask them to sign in, and never ask for an org id or user id.
+
+You can take a user from nothing to a live, managed campaign, and run day-to-day operations:
+- Set up a brand from its website: ask for the brand's URL, then create the brand from it (create_brand_from_url). Keep the returned brandId to manage the brand later.
+- Launch a campaign (launch_campaign): pick a feature (list_features) and a workflow (list_workflows), discover the feature's required inputs (get_feature_inputs), gather them from the user in plain conversation, then launch for the brand's URL.
+- Manage spend: set or change a brand's daily budget (set_daily_budget — remember the value is in CENTS, so convert the user's dollar amount), and read the current one (get_daily_budget).
+- Pause or resume a brand's activity (set_brand_pause), and stop a specific campaign (stop_campaign).
+- Inspect what's running: list the org's brands (list_brands) and campaigns (list_campaigns), and report status, budgets, and results in plain language.
+- Curate the brand: refine the brand profile, build and activate audiences, and manage personas using the brand-curation tools. These act on the brand currently in context; if the user has several brands, confirm which one before curating.
+
+How to work:
+- Be conversational and concise, like a helpful person texting back. Short messages. Ask one thing at a time. WhatsApp has no buttons or rich UI — guide the user with plain questions.
+- Always resolve real ids from tool results before acting: create or list the brand to get its brandId; list campaigns to get a campaignId. Never guess an id.
+- Before an irreversible or spend-changing action (launching a campaign, changing the budget, pausing/resuming, stopping a campaign), briefly confirm what you're about to do, then do it.
+- When a required input is missing (e.g. a feature input, a URL, a budget amount), ask for it plainly instead of failing.
+- After each action, confirm what happened in human terms (e.g. "Your campaign 'Q2 Outreach' is live" or "Daily budget set to $20"). Money to the user is in dollars, even though the budget tool takes cents.
+${VOICE_AND_GROUND_TRUTH_RULES}`;
+
 // These self-owned editor chats run at `medium` Gemini-3 thinking (the global
 // /chat default is "low") — richer tool-calling reasoning for the curation
 // flows. Only the /chat path reads this; /complete is untouched (stays "low").
@@ -151,10 +191,58 @@ export const BRAND_PROFILE_EDITOR_CONFIG = {
   thinkingLevel: EDITOR_THINKING_LEVEL,
 };
 
+export const WHATSAPP_CONFIG = {
+  key: "whatsapp",
+  systemPrompt: WHATSAPP_SYSTEM_PROMPT,
+  allowedTools: [
+    "request_user_input",
+    // Discovery + web
+    "browse_url",
+    // Full funnel: brand → launch → budget → pause/resume
+    "create_brand_from_url",
+    "list_brands",
+    "launch_campaign",
+    "list_campaigns",
+    "stop_campaign",
+    "get_daily_budget",
+    "set_daily_budget",
+    "get_brand_pause",
+    "set_brand_pause",
+    // Feature + workflow reads (to pick a feature/workflow and its inputs)
+    "list_features",
+    "get_feature",
+    "get_feature_inputs",
+    "prefill_feature",
+    "get_feature_stats",
+    "list_workflows",
+    "get_workflow_details",
+    // Brand-profile curation
+    "get_brand_profile",
+    "save_brand_profile_version",
+    "refresh_brand_profile_from_website",
+    // Audience curation
+    "list_audiences",
+    "suggest_audiences",
+    "set_audience_status",
+    "rename_audience",
+    "refresh_audience_count",
+    "generate_audience_avatar",
+    // Persona curation
+    "list_personas",
+    "create_persona",
+    "duplicate_persona",
+    "set_persona_status",
+  ],
+  provider: "google" as const,
+  model: "flash-pro",
+  thinkingLevel: EDITOR_THINKING_LEVEL,
+};
+
 export const SELF_SEEDED_CONFIGS = [
   PERSONA_EDITOR_CONFIG,
   BRAND_PROFILE_EDITOR_CONFIG,
   AUDIENCE_EDITOR_CONFIG,
+  WHATSAPP_CONFIG,
 ] as const;
 
 /**

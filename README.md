@@ -133,17 +133,18 @@ Fields: same as `PUT /config` — `key`, `systemPrompt`, `allowedTools` (all req
 
 This endpoint is **idempotent** (upsert on `key`). Called on every cold start by api-service.
 
-**Self-seeded configs.** Three platform configs are owned by chat-service itself and seeded at boot (in `src/lib/seed-platform-configs.ts`, run from the migrate→listen path) — they do not need any external registrar:
+**Self-seeded configs.** Four platform configs are owned by chat-service itself and seeded at boot (in `src/lib/seed-platform-configs.ts`, run from the migrate→listen path) — they do not need any external registrar:
 
 | configKey | Tools | Purpose |
 |---|---|---|
 | `persona-editor` | `list_personas`, `create_persona`, `duplicate_persona`, `set_persona_status`, `request_user_input` | Read + curate a brand's customer personas via NL (brand-service). |
 | `brand-profile-editor` | `get_brand_profile`, `save_brand_profile_version`, `refresh_brand_profile_from_website`, `request_user_input` | Read, refresh from website, and version a brand's brand profile via NL. |
 | `audience-editor` | `list_audiences`, `suggest_audiences`, `set_audience_status`, `rename_audience`, `refresh_audience_count`, `request_user_input` | Create + curate a brand's customer audiences via NL (human-service, via the api-service gateway `/v1/orgs/audiences/*`). Creation is suggest→activate: `suggest_audiences` persists candidates at status `suggested`; `set_audience_status … active` makes one live. Filters are immutable; archive (never delete) and rename only. |
+| `whatsapp` | Full funnel (`create_brand_from_url`, `list_brands`, `launch_campaign`, `list_campaigns`, `stop_campaign`, `get_daily_budget`, `set_daily_budget`, `get_brand_pause`, `set_brand_pause`) + `browse_url` + feature/workflow reads + the brand-profile / audience / persona curation tools. | The public "Distribute.you" WhatsApp assistant — lets a user operate the WHOLE platform by chat, exactly like the dashboard: from a bare URL through brand setup, campaign launch, budget, and pause/resume, on top of the curation tools. A Twilio-based channel service (not chat-service) forwards each inbound WhatsApp message here, scoped to the sender's org/user (the account is provisioned by client-service before the message lands). The funnel tools take the brand/campaign id explicitly, so the assistant can go from nothing to a running campaign purely by chat. LLM cost stays in chat-service exactly as for dashboard chat (the WhatsApp org is billed for its own usage). |
 
-All default to `google`/`flash-pro` and boot at `thinkingLevel: "medium"` (raised above the global `/chat` default of `"low"` for richer tool-calling reasoning on the curation flows). The dashboard selects them by `configKey` and passes `context: { brandId }`; the tools act on that brand under the caller's org. The boot seed only upserts these keys, so it never clobbers a dashboard-registered config.
+All default to `google`/`flash-pro` and boot at `thinkingLevel: "medium"` (raised above the global `/chat` default of `"low"` for richer tool-calling reasoning). The dashboard selects the editor configs by `configKey` and passes `context: { brandId }`; the channel service selects `whatsapp` and forwards the sender's identity. The boot seed only upserts these keys, so it never clobbers a dashboard-registered config.
 
-All three prompts share a **voice + ground-truth guardrail block** (`VOICE_AND_GROUND_TRUTH_RULES`, appended to each prompt in `seed-platform-configs.ts`): the assistant must never surface internal plumbing in user-facing prose (entity/provider ids, raw filter JSON or field names, tool names, tool errors / HTTP status / 404s, raw count fields — filters become plain language, counts a single rounded number); it may only state an action as done **after** the corresponding tool call returns success (no pre-announcing avatars/creation/activation); and it must reuse only ids returned verbatim by a prior tool result (never construct or guess one — re-list on a not-found). This exists because real sessions leaked UUIDs/`apolloAudienceId`/filter JSON into the prose and fabricated completion before the tools ran.
+All four prompts share a **voice + ground-truth guardrail block** (`VOICE_AND_GROUND_TRUTH_RULES`, appended to each prompt in `seed-platform-configs.ts`): the assistant must never surface internal plumbing in user-facing prose (entity/provider ids, raw filter JSON or field names, tool names, tool errors / HTTP status / 404s, raw count fields — filters become plain language, counts a single rounded number); it may only state an action as done **after** the corresponding tool call returns success (no pre-announcing avatars/creation/activation); and it must reuse only ids returned verbatim by a prior tool result (never construct or guess one — re-list on a not-found). This exists because real sessions leaked UUIDs/`apolloAudienceId`/filter JSON into the prose and fabricated completion before the tools ran.
 
 **Config resolution in POST /chat:**
 1. Per-org config `(orgId, configKey)` → if found, use it
@@ -690,6 +691,20 @@ Read-only and supporting workflow tools:
 | `rename_audience` | Renames an audience (the only editable metadata; filters are immutable). `PATCH /v1/orgs/audiences/:id` |
 | `refresh_audience_count` | Re-snapshots apollo + apify match counts via the free live dry-run. `POST /v1/orgs/audiences/:id/refresh-count` |
 | `generate_audience_avatar` | (Re)generates the audience's avatar image. Optional `prompt` steers the image; omit to derive it from the audience's descriptors. ORG-BILLED (forwards `x-user-id` like `refresh_audience_count`). Returns the updated audience with its new `avatarUrl`. `POST /v1/orgs/audiences/:id/avatar` |
+
+**Funnel tools** (full end-to-end platform operation — take the brand/campaign id explicitly, so they work in a brand-less onboarding session; all route through api-service with the forwarded identity, so the underlying op is org-billed by the owning service — chat-service adds no cost of its own):
+
+| Tool | Description |
+|---|---|
+| `create_brand_from_url` | Creates/upserts a brand from its website `url` (onboarding-equivalent) and returns the brandId. `POST /v1/brands` |
+| `list_brands` | Lists the org's brands (id, name, URL). Read-only. `GET /v1/brands` |
+| `launch_campaign` | Launches a campaign: `name` + `brandUrls` + `featureInputs` + a feature (`featureDynastySlug` preferred) + a workflow (`workflowDynastySlug` preferred); optional budget caps / `maxLeads` / `endDate`. `POST /v1/campaigns` |
+| `list_campaigns` | Lists the org's campaigns (id, name, status, brands, budgets); optional `brandId` / `status` filter. Read-only. `GET /v1/campaigns` |
+| `stop_campaign` | Stops a running campaign by `campaignId`. `POST /v1/campaigns/:id/stop` |
+| `get_daily_budget` | Reads a brand's current daily budget (`dailyBudgetCents`, null = unset). Read-only. `GET /v1/brands/:brandId/daily-budget` |
+| `set_daily_budget` | Sets a brand's daily spend ceiling — `dailyBudgetCents` (IN CENTS; 0 = pause spend). `PATCH /v1/brands/:brandId/daily-budget` |
+| `get_brand_pause` | Reads whether a brand is paused. Read-only. `GET /v1/brands/:brandId/pause` |
+| `set_brand_pause` | Pauses (`paused: true`) or resumes (`paused: false`) a brand's activity. `PATCH /v1/brands/:brandId/pause` |
 
 **UI tools:**
 
