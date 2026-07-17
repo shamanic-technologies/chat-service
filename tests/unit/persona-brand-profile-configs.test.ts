@@ -54,6 +54,7 @@ describe("self-seeded platform configs", () => {
       "audience-editor",
       "brand-profile-editor",
       "persona-editor",
+      "whatsapp",
     ]);
   });
 
@@ -149,6 +150,7 @@ describe("seedPlatformConfigs", () => {
       "audience-editor",
       "brand-profile-editor",
       "persona-editor",
+      "whatsapp",
     ]);
 
     for (const call of values.mock.calls) {
