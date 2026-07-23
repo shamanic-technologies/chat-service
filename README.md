@@ -251,7 +251,7 @@ Response:
 ```
 
 - `content` — raw text response (always present).
-- `json` — parsed JSON object (present when `responseFormat: "json"` or when `responseSchema` is set). Populated via strict `JSON.parse(content)` — no jsonrepair, no LLM-assisted repair. Provider-native enforcement (`output_config.format` for Anthropic, `responseMimeType` / `responseSchema` for Gemini) guarantees the output is valid JSON. A parse failure means the provider violated its contract and the endpoint returns **502**.
+- `json` — parsed JSON object (present when `responseFormat: "json"` or when `responseSchema` is set). Populated by a strict `JSON.parse(content)` fast path, with a **first-complete-value recovery** for two provider quirks: a value wrapped in a markdown ```` ``` ```` fence, or a complete value followed by trailing prose (Gemini 3 thinking models leak trailing content despite JSON-mode metadata). Recovery is a balanced, string-aware scan only — no jsonrepair, no LLM-assisted repair. Genuinely broken output (empty, leading non-fence prose, truncated/unbalanced JSON) still returns **502**.
 - `tokensInput` / `tokensOutput` — token usage
 - `model` — the versioned model ID that was actually used (resolved from the provider + alias)
 
@@ -523,7 +523,7 @@ Determinism: Gemini `gemini-embedding-001` is deterministic for identical input 
 | **Anthropic** | **Rejected (400)** — Anthropic has no native standalone JSON mode. Supply `responseSchema`. | Passed to Anthropic as `output_config.format = { type: "json_schema", schema }`. Anthropic enforces server-side. |
 | **Google (Gemini)** | Native — passed as `generationConfig.responseMimeType: "application/json"`. | Both passed as `responseMimeType` + `responseSchema` in `generationConfig`. |
 
-When `jsonMode` is set, the service runs strict `JSON.parse(content)` on the model output to populate `response.json`. A parse failure means the provider violated its enforcement contract and is surfaced as a 502.
+When `jsonMode` is set, the service populates `response.json` from the model output: a strict `JSON.parse(content)` fast path, falling back to recovery of the **first complete JSON value** when the provider wraps it in a markdown fence or appends trailing prose (Gemini 3 thinking models do this despite JSON-mode metadata). Recovery is a balanced, string-aware scan — no jsonrepair, no LLM repair rounds. If no complete JSON value is extractable (empty response, leading non-fence prose, truncated/unbalanced JSON), the provider violated its enforcement contract and it is surfaced as a 502 with a classified `detail`.
 
 **Output budget.** Both providers receive an explicit **64k** output-token budget (Gemini `generationConfig.maxOutputTokens`, Anthropic `max_tokens`) — matching the worst-case hold provisioned/authorized for the call. Without an explicit budget Gemini falls back to a lower per-model default and truncates long responses, so it is always set. If the model still stops at the budget (`finishReason: "MAX_TOKENS"`) in JSON mode, the partial output is truncated JSON; the service **fails loud** with `[gemini] Output truncated (MAX_TOKENS)` → 502 (a clear cause, not a cryptic `JSON.parse` error). In text mode the partial content is returned with a warning.
 

@@ -285,7 +285,7 @@ describe("POST /complete — cost provision → authorize → execute → reconc
     ]);
   });
 
-  it("fails with a clear 502 when the provider appends prose after a complete JSON object", async () => {
+  it("recovers the JSON value (200) when the provider appends prose after a complete JSON object", async () => {
     const cap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>, patchedStatuses: [] as string[] };
     const gemini = { calls: 0 };
     routes.push(mockRunsCreate(), mockKeyDecrypt(), mockBilling(), mockGeminiJsonWithTrailingText(gemini), ...mockRunsCostRoutes(cap), mockRunsStatusPatch());
@@ -295,10 +295,16 @@ describe("POST /complete — cost provision → authorize → execute → reconc
       .set(AUTH)
       .send({ message: "extract", systemPrompt: "return json", provider: "google", model: "flash", responseFormat: "json" });
 
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(200);
     expect(gemini.calls).toBe(1);
-    expect(res.body.error).toBe("LLM returned invalid JSON.");
-    expect(res.body.detail).toContain("trailing non-JSON content");
+    // Trailing "Parsed successfully." is dropped; the first complete value is returned.
+    expect(res.body.json).toEqual({ subject: "ok", emails: [] });
+
+    // The recovered path is a SUCCESS, so it actualizes real tokens like any 200.
+    const actual = cap.postedItems.find((items) => items.some((i) => i.status === undefined));
+    expect(actual).toBeDefined();
+    expect(actual!.find((i) => i.costName.endsWith("input"))!.quantity).toBe(10);
+    expect(actual!.find((i) => i.costName.endsWith("output"))!.quantity).toBe(5);
   });
 
   it("fails loud (502) and does NOT call the model when provision is rejected", async () => {
