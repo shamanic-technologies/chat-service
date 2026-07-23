@@ -13,16 +13,33 @@ describe("parseModelJsonOutput", () => {
     expect(parseModelJsonOutput('\n  {"ok":true}\n')).toEqual({ ok: true });
   });
 
-  it("rejects JSON wrapped in a markdown fence", () => {
-    expect(() => parseModelJsonOutput('```json\n{"ok":true}\n```')).toThrow(
-      "Model returned markdown-fenced JSON in JSON mode.",
-    );
+  it("recovers JSON wrapped in a markdown fence", () => {
+    expect(parseModelJsonOutput('```json\n{"ok":true}\n```')).toEqual({ ok: true });
   });
 
-  it("rejects trailing prose after a complete JSON value", () => {
-    expect(() => parseModelJsonOutput('{"ok":true}\n\nDone.')).toThrow(
-      "Model returned trailing non-JSON content after a JSON value.",
-    );
+  it("recovers JSON wrapped in a bare fence", () => {
+    expect(parseModelJsonOutput('```\n{"ok":true}\n```')).toEqual({ ok: true });
+  });
+
+  it("recovers a value with trailing prose after a complete JSON object", () => {
+    expect(parseModelJsonOutput('{"ok":true}\n\nDone.')).toEqual({ ok: true });
+  });
+
+  it("recovers a value with trailing prose after a complete JSON array", () => {
+    expect(parseModelJsonOutput('[1,2,3]\n\nThat is the list.')).toEqual([1, 2, 3]);
+  });
+
+  it("ignores delimiters inside strings when scanning", () => {
+    expect(parseModelJsonOutput('{"a":"}] not real","b":[1,2]}\ntrailing')).toEqual({
+      a: "}] not real",
+      b: [1, 2],
+    });
+  });
+
+  it("recovers when escaped quotes appear inside strings", () => {
+    expect(parseModelJsonOutput('{"a":"he said \\"hi\\" }"}\nDone')).toEqual({
+      a: 'he said "hi" }',
+    });
   });
 
   it("rejects prose before a JSON value", () => {
@@ -31,9 +48,27 @@ describe("parseModelJsonOutput", () => {
     );
   });
 
-  it("rejects malformed JSON", () => {
+  it("rejects malformed / truncated (unbalanced) JSON", () => {
     expect(() => parseModelJsonOutput('{"ok":true')).toThrow(
       "Model returned malformed or truncated JSON.",
     );
   });
+
+  it("rejects an unbalanced object even with trailing prose", () => {
+    expect(() => parseModelJsonOutput('{"ok":true, "items":[1,2\n\nDone.')).toThrow(
+      ModelJsonOutputErrorMessage(),
+    );
+  });
+
+  it("rejects an empty response", () => {
+    expect(() => parseModelJsonOutput("")).toThrow(
+      "Model returned an empty JSON-mode response.",
+    );
+  });
 });
+
+// Both the trailing/prefix classification branches produce distinct messages;
+// an unbalanced-with-trailing case surfaces the trailing-content classification.
+function ModelJsonOutputErrorMessage(): RegExp {
+  return /Model returned (trailing non-JSON content after a JSON value|malformed or truncated JSON)\./;
+}

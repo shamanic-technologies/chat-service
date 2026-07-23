@@ -152,6 +152,48 @@ function mockGeminiJsonWithTrailingText(cap: { calls: number }) {
   } satisfies MockRoute;
 }
 
+function mockGeminiJsonFenced(cap: { calls: number }) {
+  return {
+    match: (url: string) => url.includes(":generateContent") && url.includes("generativelanguage.googleapis.com"),
+    respond: () => {
+      cap.calls += 1;
+      return {
+        ok: true,
+        body: {
+          candidates: [
+            {
+              content: { parts: [{ text: '```json\n{"subject":"ok","emails":[]}\n```' }] },
+              finishReason: "STOP",
+            },
+          ],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+        },
+      };
+    },
+  } satisfies MockRoute;
+}
+
+function mockGeminiJsonUnbalanced(cap: { calls: number }) {
+  return {
+    match: (url: string) => url.includes(":generateContent") && url.includes("generativelanguage.googleapis.com"),
+    respond: () => {
+      cap.calls += 1;
+      return {
+        ok: true,
+        body: {
+          candidates: [
+            {
+              content: { parts: [{ text: '{"subject":"ok","emails":[' }] },
+              finishReason: "STOP",
+            },
+          ],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+        },
+      };
+    },
+  } satisfies MockRoute;
+}
+
 // Grounded Gemini response: 3 search queries + 1 source chunk.
 function mockGeminiGrounded(cap: { calls: number }) {
   return {
@@ -285,7 +327,7 @@ describe("POST /complete — cost provision → authorize → execute → reconc
     ]);
   });
 
-  it("fails with a clear 502 when the provider appends prose after a complete JSON object", async () => {
+  it("recovers the first JSON value (200) when the provider appends prose after a complete JSON object", async () => {
     const cap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>, patchedStatuses: [] as string[] };
     const gemini = { calls: 0 };
     routes.push(mockRunsCreate(), mockKeyDecrypt(), mockBilling(), mockGeminiJsonWithTrailingText(gemini), ...mockRunsCostRoutes(cap), mockRunsStatusPatch());
@@ -295,10 +337,48 @@ describe("POST /complete — cost provision → authorize → execute → reconc
       .set(AUTH)
       .send({ message: "extract", systemPrompt: "return json", provider: "google", model: "flash", responseFormat: "json" });
 
+    expect(res.status).toBe(200);
+    expect(gemini.calls).toBe(1);
+    expect(res.body.json).toEqual({ subject: "ok", emails: [] });
+
+    // Recovered success still actualizes real tokens like any 200.
+    const actual = cap.postedItems.find((items) => items.some((i) => i.status === undefined));
+    expect(actual).toBeDefined();
+    expect(actual!.map((i) => i.costName).sort()).toEqual([
+      "google-flash-3-tokens-input",
+      "google-flash-3-tokens-output",
+    ]);
+  });
+
+  it("recovers the first JSON value (200) when the provider wraps it in a markdown fence", async () => {
+    const cap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>, patchedStatuses: [] as string[] };
+    const gemini = { calls: 0 };
+    routes.push(mockRunsCreate(), mockKeyDecrypt(), mockBilling(), mockGeminiJsonFenced(gemini), ...mockRunsCostRoutes(cap), mockRunsStatusPatch());
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "extract", systemPrompt: "return json", provider: "google", model: "flash", responseFormat: "json" });
+
+    expect(res.status).toBe(200);
+    expect(gemini.calls).toBe(1);
+    expect(res.body.json).toEqual({ subject: "ok", emails: [] });
+  });
+
+  it("fails loud (502) when the provider returns unbalanced/truncated JSON", async () => {
+    const cap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>, patchedStatuses: [] as string[] };
+    const gemini = { calls: 0 };
+    routes.push(mockRunsCreate(), mockKeyDecrypt(), mockBilling(), mockGeminiJsonUnbalanced(gemini), ...mockRunsCostRoutes(cap), mockRunsStatusPatch());
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "extract", systemPrompt: "return json", provider: "google", model: "flash", responseFormat: "json" });
+
     expect(res.status).toBe(502);
     expect(gemini.calls).toBe(1);
     expect(res.body.error).toBe("LLM returned invalid JSON.");
-    expect(res.body.detail).toContain("trailing non-JSON content");
+    expect(res.body.detail).toMatch(/malformed or truncated/);
   });
 
   it("fails loud (502) and does NOT call the model when provision is rejected", async () => {
