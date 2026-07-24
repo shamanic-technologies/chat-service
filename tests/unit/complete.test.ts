@@ -571,10 +571,17 @@ describe("resolveModel", () => {
     expect(resolved.provider).toBe("google");
   });
 
-  it("resolves google + flash to gemini-3-flash-preview", () => {
+  it("resolves google + flash to gemini-3.5-flash-lite", () => {
     const resolved = resolveModel("google", "flash");
-    expect(resolved.apiModelId).toBe("gemini-3-flash-preview");
-    expect(resolved.costPrefix).toBe("google-flash-3");
+    expect(resolved.apiModelId).toBe("gemini-3.5-flash-lite");
+    expect(resolved.costPrefix).toBe("google-flash-lite-3.5");
+    expect(resolved.provider).toBe("google");
+  });
+
+  it("resolves google + flash-pro to gemini-3.6-flash", () => {
+    const resolved = resolveModel("google", "flash-pro");
+    expect(resolved.apiModelId).toBe("gemini-3.6-flash");
+    expect(resolved.costPrefix).toBe("google-flash-3.6");
     expect(resolved.provider).toBe("google");
   });
 

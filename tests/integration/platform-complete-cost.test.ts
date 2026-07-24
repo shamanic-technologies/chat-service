@@ -164,8 +164,8 @@ describe("POST /internal/platform-complete — platform run tracking + cost", ()
 
     // ACTUAL token costs posted (no provisioned status), costSource platform.
     const actual = costCap.postedItems[0];
-    expect(actual.find((i) => i.costName === "google-flash-3-tokens-input")!.quantity).toBe(12);
-    expect(actual.find((i) => i.costName === "google-flash-3-tokens-output")!.quantity).toBe(7);
+    expect(actual.find((i) => i.costName === "google-flash-lite-3.5-tokens-input")!.quantity).toBe(12);
+    expect(actual.find((i) => i.costName === "google-flash-lite-3.5-tokens-output")!.quantity).toBe(7);
     expect(actual.every((i) => i.status === undefined)).toBe(true);
     expect(actual.every((i) => i.costSource === "platform")).toBe(true);
 
