@@ -35,6 +35,8 @@ export function estimateGeminiImageOutputTokens(size: GeminiImageSize): number {
 
 export const GEMINI_MODELS: Record<string, string> = {
   "gemini-3.1-flash-lite": "google-flash-lite-3.1",
+  "gemini-3.5-flash-lite": "google-flash-lite-3.5",
+  "gemini-3.6-flash": "google-flash-3.6",
   "gemini-3-flash-preview": "google-flash-3",
   "gemini-3.1-pro-preview": "google-pro-3.1",
   "gemini-2.5-pro": "google-pro-2.5",
@@ -44,17 +46,21 @@ export const GEMINI_MODELS: Record<string, string> = {
 /** Model-specific API timeouts in milliseconds. */
 const GEMINI_TIMEOUT_MS: Record<string, number> = {
   "gemini-3.1-pro-preview": 15 * 60_000,       // 15 min — Pro
-  "gemini-3-flash-preview": 10 * 60_000,        // 10 min — Flash
-  "gemini-3.1-flash-lite": 5 * 60_000,          //  5 min — Flash Lite
+  "gemini-3.6-flash": 10 * 60_000,              // 10 min — Flash (flash-pro alias)
+  "gemini-3-flash-preview": 10 * 60_000,        // 10 min — Flash 3 (legacy)
+  "gemini-3.5-flash-lite": 5 * 60_000,          //  5 min — Flash-Lite 3.5 (flash alias)
+  "gemini-3.1-flash-lite": 5 * 60_000,          //  5 min — Flash Lite 3.1
   "gemini-2.5-pro": 15 * 60_000,                // 15 min — 2.5 Pro
   "gemini-2.5-flash": 10 * 60_000,              // 10 min — 2.5 Flash
 };
 const DEFAULT_GEMINI_TIMEOUT_MS = 10 * 60_000;  // 10 min fallback
 
-/** Fallback from preview 3.x models to stable 2.5 models. */
+/** Fallback from 3.x models to stable 2.5 models. */
 const GEMINI_FALLBACK_MODEL: Record<string, string> = {
   "gemini-3.1-pro-preview": "gemini-2.5-pro",
+  "gemini-3.6-flash": "gemini-2.5-flash",
   "gemini-3-flash-preview": "gemini-2.5-flash",
+  "gemini-3.5-flash-lite": "gemini-2.5-flash-lite",
   "gemini-3.1-flash-lite": "gemini-2.5-flash",
 };
 
