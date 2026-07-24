@@ -8,7 +8,7 @@ import type { Provider, ModelAlias } from "./anthropic.js";
 // google/flash-pro here — NOT anthropic/sonnet — so the default survives every
 // app re-registration and redeploy without depending on a manual DB flip.
 //
-// flash-pro (Gemini 3.5 Flash) is the mid-tier dashboard default (DIS-130).
+// flash-pro (Gemini 3.6 Flash) is the mid-tier dashboard default (DIS-130).
 // The agentic `workflow` chat is deliberately pinned to `pro` via an explicit
 // platform_configs row (provider/model NOT NULL), so the heaviest tool-calling
 // mode keeps the strongest model regardless of this NULL-config default.

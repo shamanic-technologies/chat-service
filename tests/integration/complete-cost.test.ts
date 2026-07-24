@@ -214,8 +214,8 @@ describe("POST /complete — cost provision → authorize → execute → reconc
     expect(provision).toHaveLength(2);
     expect(provision.every((i) => i.status === "provisioned")).toBe(true);
     expect(provision.map((i) => i.costName).sort()).toEqual([
-      "google-flash-3-tokens-input",
-      "google-flash-3-tokens-output",
+      "google-flash-lite-3.5-tokens-input",
+      "google-flash-lite-3.5-tokens-output",
     ]);
     // Output provisioned at a RIGHT-SIZED estimate (well below the 64k model max),
     // not the flat worst-case — this is what stops a high-fan-out burst from
@@ -258,7 +258,7 @@ describe("POST /complete — cost provision → authorize → execute → reconc
     expect(provision.find((i) => i.costName.endsWith("output"))!.quantity).toBe(256);
   });
 
-  it("model:flash-pro resolves Gemini 3.5 Flash and declares google-flash-3.5 cost rows (DIS-130)", async () => {
+  it("model:flash-pro resolves Gemini 3.6 Flash and declares google-flash-3.6 cost rows (DIS-130)", async () => {
     const cap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>, patchedStatuses: [] as string[] };
     const gemini = { calls: 0 };
     routes.push(mockRunsCreate(), mockKeyDecrypt(), mockBilling(), mockGeminiComplete(gemini), ...mockRunsCostRoutes(cap), mockRunsStatusPatch());
@@ -272,16 +272,16 @@ describe("POST /complete — cost provision → authorize → execute → reconc
     expect(gemini.calls).toBe(1);
 
     // PROVISION + ACTUAL cost names must be byte-equal to the costs-service catalog
-    // rows (google-flash-3.5-*), or runs-service 422-rejects.
+    // rows (google-flash-3.6-*), or runs-service 422-rejects.
     const provision = cap.postedItems[0];
     expect(provision.map((i) => i.costName).sort()).toEqual([
-      "google-flash-3.5-tokens-input",
-      "google-flash-3.5-tokens-output",
+      "google-flash-3.6-tokens-input",
+      "google-flash-3.6-tokens-output",
     ]);
     const actual = cap.postedItems.find((items) => items.some((i) => i.status === undefined));
     expect(actual!.map((i) => i.costName).sort()).toEqual([
-      "google-flash-3.5-tokens-input",
-      "google-flash-3.5-tokens-output",
+      "google-flash-3.6-tokens-input",
+      "google-flash-3.6-tokens-output",
     ]);
   });
 
@@ -340,8 +340,8 @@ describe("POST /complete — cost provision → authorize → execute → reconc
     expect(provision).toHaveLength(3);
     expect(provision.every((i) => i.status === "provisioned")).toBe(true);
     expect(provision.map((i) => i.costName).sort()).toEqual([
-      "google-flash-3-tokens-input",
-      "google-flash-3-tokens-output",
+      "google-flash-lite-3.5-tokens-input",
+      "google-flash-lite-3.5-tokens-output",
       "google-search-query",
     ]);
     expect(provision.find((i) => i.costName === "google-search-query")!.quantity).toBe(20);
