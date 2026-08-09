@@ -51,6 +51,30 @@ jobs:
 
   test-integration:
     runs-on: ubuntu-latest
+
+    # The database is a container inside the runner: created when the job
+    # starts, reachable by nothing else, destroyed with the runner. That is the
+    # isolation the per-PR Neon branch existed for, without an API key, an
+    # external project, or a delete step that can leave something behind.
+    # postgres:17 matches the version the fleet runs in production.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chat_service_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      CHAT_SERVICE_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/chat_service_test
+
     steps:
       - uses: actions/checkout@v4
 
@@ -61,28 +85,13 @@ jobs:
 
       - run: npm ci
 
-      - name: Create Neon branch for PR
-        id: neon
-        uses: neondatabase/create-branch-action@v6
-        with:
-          project_id: ${{ vars.NEON_PROJECT_ID }}
-          branch_name: pr-${{ github.event.number }}
-          api_key: ${{ secrets.NEON_API_KEY }}
-
-      - name: Push schema to PR branch
-        run: npx drizzle-kit push --force
-        env:
-          CHAT_SERVICE_DATABASE_URL: ${{ steps.neon.outputs.db_url_pooled }}
+      # Replays drizzle/*.sql in journal order — the same path the boot migrator
+      # runs in production, so CI builds production's schema rather than a diff
+      # of it. `drizzle-kit push` is deliberately NOT used: it derives the schema
+      # from schema.ts (which this repo hand-authors migrations against, see
+      # CLAUDE.md) and it exits 0 after a statement it could not execute.
+      - name: Build the schema from the migration journal
+        run: ./node_modules/.bin/drizzle-kit migrate
 
       - name: Run integration tests
         run: npm run test:integration
-        env:
-          CHAT_SERVICE_DATABASE_URL: ${{ steps.neon.outputs.db_url_pooled }}
-
-      - name: Delete Neon branch
-        if: always()
-        uses: neondatabase/delete-branch-action@v3
-        with:
-          project_id: ${{ vars.NEON_PROJECT_ID }}
-          branch: pr-${{ github.event.number }}
-          api_key: ${{ secrets.NEON_API_KEY }}

@@ -1,19 +1,26 @@
 import { pgTable, uuid, text, timestamp, jsonb, integer, unique, index } from "drizzle-orm/pg-core";
 
-export const sessions = pgTable("sessions", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  orgId: text("org_id").notNull(),
-  userId: text("user_id"),
-  runId: uuid("run_id"),
-  parentRunId: uuid("parent_run_id"),
-  campaignId: text("campaign_id"),
-  brandIds: text("brand_ids").array(),
-  workflowSlug: text("workflow_slug"),
-  featureSlug: text("feature_slug"),
-  audienceId: text("audience_id"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    userId: text("user_id"),
+    runId: uuid("run_id"),
+    parentRunId: uuid("parent_run_id"),
+    campaignId: text("campaign_id"),
+    brandIds: text("brand_ids").array(),
+    workflowSlug: text("workflow_slug"),
+    featureSlug: text("feature_slug"),
+    audienceId: text("audience_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Created by migration 0012 for transfer-brand queries and live in production
+  // since. Declared here so schema.ts describes the real schema — without it,
+  // `drizzle-kit push` reads the index as drift and drops it.
+  (table) => [index("sessions_org_brand_idx").on(table.orgId, table.brandIds)],
+);
 
 export const messages = pgTable("messages", {
   id: uuid("id").primaryKey().defaultRandom(),
