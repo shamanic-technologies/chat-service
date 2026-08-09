@@ -907,9 +907,11 @@ Every PR that touches `src/` must include corresponding tests. CI enforces this:
 
 - **`check-tests`** — fails if source files change without new or updated test files
 - **`run-tests`** — runs `npm run test:unit` on every PR
-- **`test-integration`** — creates an isolated Neon database branch per PR, pushes the schema, and runs `npm run test:integration`
+- **`test-integration`** — starts a `postgres:17` service container, builds the schema by replaying `drizzle/*.sql`, and runs `npm run test:integration`
 
-Integration tests use Neon's branch-per-PR pattern: each PR gets a copy-on-write database branch (`pr-<number>`), so concurrent PRs never interfere with each other. Branches are automatically deleted when the PR closes (via `neon-cleanup.yml`).
+Integration tests get their own database per run: the service container is created when the job starts, is reachable only from that job, and dies with the runner. Concurrent PRs never interfere, and nothing outlives the run — there is no external project to provision and no cleanup step that can leave a database behind.
+
+The schema is built with `drizzle-kit migrate` (journal replay), the same path the boot migrator takes in production, rather than `drizzle-kit push` — migrations here are hand-authored and `push` derives the schema from `schema.ts` instead. `tests/integration/schema-parity.test.ts` then asserts every table, column and index `schema.ts` declares is actually present, so a migration that fails to build the database fails the suite by name rather than somewhere unrelated.
 
 Bug fixes must include a regression test that reproduces the issue. New features need unit tests covering the happy path and edge cases.
 
