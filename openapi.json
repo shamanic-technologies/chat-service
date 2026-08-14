@@ -742,9 +742,10 @@
             "type": "string",
             "enum": [
               "anthropic",
-              "google"
+              "google",
+              "vercel"
             ],
-            "description": "LLM provider to use.",
+            "description": "LLM provider to use. `anthropic` and `google` are native clients; `vercel` routes through the Vercel AI Gateway (OpenAI-compatible) and is opt-in per call — no existing caller reaches it implicitly.",
             "example": "anthropic"
           },
           "model": {
@@ -756,9 +757,10 @@
               "flash-lite",
               "flash",
               "flash-pro",
-              "pro"
+              "pro",
+              "deepseek-flash"
             ],
-            "description": "Model alias (version-free). The service resolves the latest versioned model internally.\n\n**Anthropic models:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n**Google models:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.5 Flash), `pro` (most powerful).\n\nThe model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro.",
+            "description": "Model alias (version-free). The service resolves the latest versioned model internally.\n\n**Anthropic models:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n**Google models:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.5 Flash), `pro` (most powerful).\n**Vercel AI Gateway models:** `deepseek-flash` (DeepSeek V4 Flash — cheapest per unit of intelligence; 1M context). Text only: no vision, no web search, no image generation on this path.\n\nThe model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, vercel → deepseek-flash.",
             "example": "sonnet"
           },
           "webSearch": {
@@ -925,9 +927,10 @@
             "type": "string",
             "enum": [
               "anthropic",
-              "google"
+              "google",
+              "vercel"
             ],
-            "description": "LLM provider to use.",
+            "description": "LLM provider to use. `vercel` routes through the Vercel AI Gateway (OpenAI-compatible).",
             "example": "anthropic"
           },
           "model": {
@@ -939,9 +942,10 @@
               "flash-lite",
               "flash",
               "flash-pro",
-              "pro"
+              "pro",
+              "deepseek-flash"
             ],
-            "description": "Model alias (version-free).",
+            "description": "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, vercel → deepseek-flash.",
             "example": "sonnet"
           },
           "webSearch": {

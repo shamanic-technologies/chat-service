@@ -427,16 +427,21 @@ export const CompleteRequestSchema = z
         "prevents a burst of concurrent calls from over-reserving against your org balance.",
       example: 4096,
     }),
-    provider: z.enum(["anthropic", "google"]).openapi({
-      description: "LLM provider to use.",
+    provider: z.enum(["anthropic", "google", "vercel"]).openapi({
+      description:
+        "LLM provider to use. `anthropic` and `google` are native clients; `vercel` routes " +
+        "through the Vercel AI Gateway (OpenAI-compatible) and is opt-in per call — no existing " +
+        "caller reaches it implicitly.",
       example: "anthropic",
     }),
-    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro"]).openapi({
+    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro", "deepseek-flash"]).openapi({
       description:
         "Model alias (version-free). The service resolves the latest versioned model internally.\n\n" +
         "**Anthropic models:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n" +
-        "**Google models:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.5 Flash), `pro` (most powerful).\n\n" +
-        "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro.",
+        "**Google models:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.5 Flash), `pro` (most powerful).\n" +
+        "**Vercel AI Gateway models:** `deepseek-flash` (DeepSeek V4 Flash — cheapest per unit of intelligence; 1M context). " +
+        "Text only: no vision, no web search, no image generation on this path.\n\n" +
+        "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, vercel → deepseek-flash.",
       example: "sonnet",
     }),
     webSearch: z.boolean().optional().openapi({
@@ -497,6 +502,7 @@ export const CompleteRequestSchema = z
     const validModels: Record<string, string[]> = {
       anthropic: ["haiku", "sonnet", "opus"],
       google: ["flash-lite", "flash", "flash-pro", "pro"],
+      vercel: ["deepseek-flash"],
     };
     const allowed = validModels[data.provider];
     if (allowed && !allowed.includes(data.model)) {
@@ -751,12 +757,15 @@ export const InternalPlatformCompleteRequestSchema = z
       description: "Sampling temperature (0–2). Lower = more deterministic.",
       example: 0.3,
     }),
-    provider: z.enum(["anthropic", "google"]).openapi({
-      description: "LLM provider to use.",
+    provider: z.enum(["anthropic", "google", "vercel"]).openapi({
+      description:
+        "LLM provider to use. `vercel` routes through the Vercel AI Gateway (OpenAI-compatible).",
       example: "anthropic",
     }),
-    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro"]).openapi({
-      description: "Model alias (version-free).",
+    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro", "deepseek-flash"]).openapi({
+      description:
+        "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus, " +
+        "google → flash-lite|flash|flash-pro|pro, vercel → deepseek-flash.",
       example: "sonnet",
     }),
     webSearch: z.boolean().optional().openapi({
