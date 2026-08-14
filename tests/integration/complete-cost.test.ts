@@ -258,7 +258,7 @@ describe("POST /complete — cost provision → authorize → execute → reconc
     expect(provision.find((i) => i.costName.endsWith("output"))!.quantity).toBe(256);
   });
 
-  it("model:flash-pro resolves Gemini 3.6 Flash and declares google-flash-3.6 cost rows (DIS-130)", async () => {
+  it("model:flash-pro resolves Gemini 3.7 Flash and declares google-flash-3.7 cost rows (DIS-130)", async () => {
     const cap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>, patchedStatuses: [] as string[] };
     const gemini = { calls: 0 };
     routes.push(mockRunsCreate(), mockKeyDecrypt(), mockBilling(), mockGeminiComplete(gemini), ...mockRunsCostRoutes(cap), mockRunsStatusPatch());
@@ -272,16 +272,16 @@ describe("POST /complete — cost provision → authorize → execute → reconc
     expect(gemini.calls).toBe(1);
 
     // PROVISION + ACTUAL cost names must be byte-equal to the costs-service catalog
-    // rows (google-flash-3.6-*), or runs-service 422-rejects.
+    // rows (google-flash-3.7-*), or runs-service 422-rejects.
     const provision = cap.postedItems[0];
     expect(provision.map((i) => i.costName).sort()).toEqual([
-      "google-flash-3.6-tokens-input",
-      "google-flash-3.6-tokens-output",
+      "google-flash-3.7-tokens-input",
+      "google-flash-3.7-tokens-output",
     ]);
     const actual = cap.postedItems.find((items) => items.some((i) => i.status === undefined));
     expect(actual!.map((i) => i.costName).sort()).toEqual([
-      "google-flash-3.6-tokens-input",
-      "google-flash-3.6-tokens-output",
+      "google-flash-3.7-tokens-input",
+      "google-flash-3.7-tokens-output",
     ]);
   });
 

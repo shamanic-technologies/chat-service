@@ -90,11 +90,11 @@ describe("costPrefixForModel", () => {
   });
 });
 
-describe("flash-pro alias (Gemini 3.6 Flash, DIS-130 upgraded 2026-07-24)", () => {
-  it("resolveModel google/flash-pro → gemini-3.6-flash + google-flash-3.6 cost prefix", () => {
+describe("flash-pro alias (Gemini 3.7 Flash, DIS-130 upgraded 2026-08-14)", () => {
+  it("resolveModel google/flash-pro → gemini-3.7-flash + google-flash-3.7 cost prefix", () => {
     expect(resolveModel("google", "flash-pro")).toEqual({
-      apiModelId: "gemini-3.6-flash",
-      costPrefix: "google-flash-3.6",
+      apiModelId: "gemini-3.7-flash",
+      costPrefix: "google-flash-3.7",
       provider: "google",
     });
   });
@@ -102,13 +102,24 @@ describe("flash-pro alias (Gemini 3.6 Flash, DIS-130 upgraded 2026-07-24)", () =
   it("declared cost names are byte-equal to the costs-service catalog rows", () => {
     const { costPrefix } = resolveModel("google", "flash-pro");
     // Must match costs-service catalog exactly or runs-service 422-rejects.
-    expect(`${costPrefix}-tokens-input`).toBe("google-flash-3.6-tokens-input");
-    expect(`${costPrefix}-tokens-output`).toBe("google-flash-3.6-tokens-output");
+    expect(`${costPrefix}-tokens-input`).toBe("google-flash-3.7-tokens-input");
+    expect(`${costPrefix}-tokens-output`).toBe("google-flash-3.7-tokens-output");
   });
 
   it("flash-pro is a valid google alias and SUPPORTED_MODELS maps the real model ID", () => {
     expect(PROVIDER_MODELS.google).toContain("flash-pro");
+    expect(SUPPORTED_MODELS["gemini-3.7-flash"]).toBe("google-flash-3.7");
+  });
+
+  it("keeps the superseded 3.6 Flash model ID resolvable for callers passing it raw", () => {
+    // Callers may pass a versioned model ID directly; dropping it would strand
+    // their cost declaration on the default prefix.
     expect(SUPPORTED_MODELS["gemini-3.6-flash"]).toBe("google-flash-3.6");
+  });
+
+  it("leaves the flash and pro aliases untouched", () => {
+    expect(resolveModel("google", "flash").apiModelId).toBe("gemini-3.5-flash-lite");
+    expect(resolveModel("google", "pro").apiModelId).toBe("gemini-3.1-pro-preview");
   });
 });
 
