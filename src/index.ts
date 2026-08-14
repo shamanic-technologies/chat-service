@@ -34,6 +34,7 @@ import {
   GEMINI_IMAGE_MODEL,
   estimateGeminiImageOutputTokens,
 } from "./lib/gemini.js";
+import { completeWithGateway, GATEWAY_PROVIDER } from "./lib/gateway.js";
 import {
   createWorkflow,
   upgradeWorkflow,
@@ -338,10 +339,22 @@ app.post("/complete", requireAuth, async (req, res) => {
   const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
   const effectiveModel = resolved.apiModelId;
   const isGemini = resolved.provider === "google";
+  const isGateway = resolved.provider === GATEWAY_PROVIDER;
   const provider = resolved.provider;
 
   // Native web-search cost name (byte-equal to costs-service catalog) — only when opted in.
-  const searchCostName = webSearch ? webSearchCostName(isGemini) : undefined;
+  const searchCostName = webSearch && !isGateway ? webSearchCostName(isGemini) : undefined;
+
+  // The gateway path is text-in / text-out only. Reject the two features it
+  // cannot serve rather than silently ignoring them — a caller that asked for
+  // grounding or vision must not get an ungrounded/blind answer back at 200.
+  if (isGateway && (webSearch || imageUrl)) {
+    return res.status(400).json({
+      error:
+        `provider "${GATEWAY_PROVIDER}" does not support ${webSearch ? "webSearch" : "imageUrl"}. ` +
+        `The Vercel AI Gateway path is text-only; use provider "google" or "anthropic" for that.`,
+    });
+  }
 
   // Anthropic JSON mode requires `responseSchema` — Anthropic API has no native
   // standalone JSON-mode flag; enforcement is only available via
@@ -440,7 +453,18 @@ app.post("/complete", requireAuth, async (req, res) => {
       });
     }
 
-    if (isGemini) {
+    if (isGateway) {
+      result = await completeWithGateway({
+        apiKey: resolvedKey.key,
+        model: effectiveModel,
+        message,
+        systemPrompt,
+        responseFormat,
+        responseSchema,
+        temperature,
+        maxOutputTokens: providerMaxOutputTokens,
+      });
+    } else if (isGemini) {
       result = await completeWithGemini({
         apiKey: resolvedKey.key,
         model: effectiveModel,
@@ -1488,10 +1512,20 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
   const effectiveModel = resolved.apiModelId;
   const isGemini = resolved.provider === "google";
+  const isGateway = resolved.provider === GATEWAY_PROVIDER;
   const provider = resolved.provider;
   const costPrefix = resolved.costPrefix;
   // Native web-search cost name (byte-equal to costs-service catalog) — only when opted in.
-  const searchCostName = webSearch ? webSearchCostName(isGemini) : undefined;
+  const searchCostName = webSearch && !isGateway ? webSearchCostName(isGemini) : undefined;
+
+  // Text-only path — same rejection as /complete (see there for rationale).
+  if (isGateway && webSearch) {
+    return res.status(400).json({
+      error:
+        `provider "${GATEWAY_PROVIDER}" does not support webSearch. The Vercel AI Gateway path ` +
+        `is text-only; use provider "google" or "anthropic" for grounded answers.`,
+    });
+  }
 
   // Passing a responseSchema implies JSON-mode parsing of the response.
   const jsonMode = responseFormat === "json" || responseSchema != null;
@@ -1536,7 +1570,17 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   try {
     let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }> };
 
-    if (isGemini) {
+    if (isGateway) {
+      result = await completeWithGateway({
+        apiKey,
+        model: effectiveModel,
+        message,
+        systemPrompt,
+        responseFormat,
+        responseSchema,
+        temperature,
+      });
+    } else if (isGemini) {
       result = await completeWithGemini({
         apiKey,
         model: effectiveModel,
