@@ -111,7 +111,8 @@ export type ModelAlias =
   | "flash"
   | "flash-pro"
   | "pro"
-  | "deepseek-flash";
+  | "deepseek-flash"
+  | "deepseek-pro";
 
 interface ResolvedModel {
   /** Versioned model ID sent to the provider's API */
@@ -152,6 +153,15 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       costPrefix: "deepseek-v4-flash",
       provider: "vercel",
     },
+    // DeepSeek V4 Pro — the reasoning-heavy sibling of V4 Flash. The gateway
+    // catalog also carries dated ids (`deepseek/deepseek-v4-pro-0813`); our
+    // aliases are version-free, so we route to the undated id and let the
+    // gateway resolve the current build (same convention as V4 Flash).
+    "deepseek-pro": {
+      apiModelId: "deepseek/deepseek-v4-pro",
+      costPrefix: "deepseek-v4-pro",
+      provider: "vercel",
+    },
   },
 };
 
@@ -159,7 +169,7 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
 export const PROVIDER_MODELS: Record<Provider, readonly ModelAlias[]> = {
   anthropic: ["haiku", "sonnet", "opus"],
   google: ["flash-lite", "flash", "flash-pro", "pro"],
-  vercel: ["deepseek-flash"],
+  vercel: ["deepseek-flash", "deepseek-pro"],
 };
 
 /**
@@ -192,6 +202,7 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "gemini-2.5-pro": "google-pro-2.5",
   "gemini-2.5-flash": "google-flash-2.5",
   "deepseek/deepseek-v4-flash": "deepseek-v4-flash",
+  "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */
