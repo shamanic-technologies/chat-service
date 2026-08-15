@@ -25,10 +25,10 @@ const MODEL = "deepseek-v4-flash";
 const ALIASES = [
   { provider: "deepseek", alias: "deepseek-flash", modelId: "deepseek-v4-flash", prefix: "deepseek-v4-flash" },
   { provider: "deepseek", alias: "deepseek-pro", modelId: "deepseek-v4-pro", prefix: "deepseek-v4-pro" },
-  { provider: "zai", alias: "glm-flash", modelId: "glm-4.7-flashx", prefix: "glm-4.7-flashx" },
-  { provider: "zai", alias: "glm-pro", modelId: "glm-5.2", prefix: "glm-5.2" },
-  { provider: "moonshot", alias: "kimi-flash", modelId: "kimi-k2.6", prefix: "kimi-k2.6" },
-  { provider: "moonshot", alias: "kimi-pro", modelId: "kimi-k3", prefix: "kimi-k3" },
+  { provider: "zai", alias: "glm-flash", modelId: "glm-4.7-flashx", prefix: "zai-glm-4.7-flashx" },
+  { provider: "zai", alias: "glm-pro", modelId: "glm-5.2", prefix: "zai-glm-5.2" },
+  { provider: "moonshot", alias: "kimi-flash", modelId: "kimi-k2.6", prefix: "moonshot-kimi-k2.6" },
+  { provider: "moonshot", alias: "kimi-pro", modelId: "kimi-k3", prefix: "moonshot-kimi-k3" },
 ] as const;
 
 function okBody(overrides: Record<string, unknown> = {}) {
