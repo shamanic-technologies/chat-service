@@ -221,10 +221,10 @@ describe("POST /complete — direct vendor routing", () => {
   const CASES = [
     { provider: "deepseek", model: "deepseek-flash", host: DEEPSEEK_URL, wire: "deepseek-v4-flash", prefix: "deepseek-v4-flash" },
     { provider: "deepseek", model: "deepseek-pro", host: DEEPSEEK_URL, wire: "deepseek-v4-pro", prefix: "deepseek-v4-pro" },
-    { provider: "zai", model: "glm-flash", host: ZAI_URL, wire: "glm-4.7-flashx", prefix: "glm-4.7-flashx" },
-    { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.2", prefix: "glm-5.2" },
-    { provider: "moonshot", model: "kimi-flash", host: MOONSHOT_URL, wire: "kimi-k2.6", prefix: "kimi-k2.6" },
-    { provider: "moonshot", model: "kimi-pro", host: MOONSHOT_URL, wire: "kimi-k3", prefix: "kimi-k3" },
+    { provider: "zai", model: "glm-flash", host: ZAI_URL, wire: "glm-4.7-flashx", prefix: "zai-glm-4.7-flashx" },
+    { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.2", prefix: "zai-glm-5.2" },
+    { provider: "moonshot", model: "kimi-flash", host: MOONSHOT_URL, wire: "kimi-k2.6", prefix: "moonshot-kimi-k2.6" },
+    { provider: "moonshot", model: "kimi-pro", host: MOONSHOT_URL, wire: "kimi-k3", prefix: "moonshot-kimi-k3" },
   ] as const;
 
   for (const c of CASES) {
@@ -357,8 +357,8 @@ describe("POST /complete — direct vendor routing", () => {
 
     expect(res.status).toBe(200);
     const actual = actualItems(cap.postedItems);
-    expect(quantityOf(actual, "glm-5.2-tokens-input")).toBe(50);
-    expect(quantityOf(actual, "glm-5.2-tokens-cached-input")).toBe(750);
+    expect(quantityOf(actual, "zai-glm-5.2-tokens-input")).toBe(50);
+    expect(quantityOf(actual, "zai-glm-5.2-tokens-cached-input")).toBe(750);
   });
 
   it("bills Moonshot cache hits from the flat cached_tokens field", async () => {
@@ -384,8 +384,8 @@ describe("POST /complete — direct vendor routing", () => {
 
     expect(res.status).toBe(200);
     const actual = actualItems(cap.postedItems);
-    expect(quantityOf(actual, "kimi-k3-tokens-input")).toBe(60);
-    expect(quantityOf(actual, "kimi-k3-tokens-cached-input")).toBe(540);
+    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-input")).toBe(60);
+    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-cached-input")).toBe(540);
   });
 
   it("declares NO cached-input row when the vendor reported no cache hit", async () => {
@@ -575,9 +575,9 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     expect(vendor.bodies[0].model).toBe("kimi-k2.6");
 
     const actual = costCap.postedItems[0];
-    expect(quantityOf(actual, "kimi-k2.6-tokens-input")).toBe(40);
-    expect(quantityOf(actual, "kimi-k2.6-tokens-cached-input")).toBe(360);
-    expect(quantityOf(actual, "kimi-k2.6-tokens-output")).toBe(25);
+    expect(quantityOf(actual, "moonshot-kimi-k2.6-tokens-input")).toBe(40);
+    expect(quantityOf(actual, "moonshot-kimi-k2.6-tokens-cached-input")).toBe(360);
+    expect(quantityOf(actual, "moonshot-kimi-k2.6-tokens-output")).toBe(25);
     // Platform runs post actuals only — no provision, no hold.
     expect(actual.every((i) => i.status === undefined)).toBe(true);
     expect(actual.every((i) => i.costSource === "platform")).toBe(true);

@@ -274,12 +274,12 @@ The vendors differ in exactly three things, and all three are *data* in the `VEN
 |---|---|---|---|---|
 | `deepseek` | `deepseek-flash` | `deepseek-v4-flash` | `deepseek-v4-flash` | `https://api.deepseek.com/v1` |
 | `deepseek` | `deepseek-pro` | `deepseek-v4-pro` | `deepseek-v4-pro` | `https://api.deepseek.com/v1` |
-| `zai` | `glm-flash` | `glm-4.7-flashx` | `glm-4.7-flashx` | `https://api.z.ai/api/paas/v4` |
-| `zai` | `glm-pro` | `glm-5.2` | `glm-5.2` | `https://api.z.ai/api/paas/v4` |
-| `moonshot` | `kimi-flash` | `kimi-k2.6` | `kimi-k2.6` | `https://api.moonshot.ai/v1` |
-| `moonshot` | `kimi-pro` | `kimi-k3` | `kimi-k3` | `https://api.moonshot.ai/v1` |
+| `zai` | `glm-flash` | `glm-4.7-flashx` | `zai-glm-4.7-flashx` | `https://api.z.ai/api/paas/v4` |
+| `zai` | `glm-pro` | `glm-5.2` | `zai-glm-5.2` | `https://api.z.ai/api/paas/v4` |
+| `moonshot` | `kimi-flash` | `kimi-k2.6` | `moonshot-kimi-k2.6` | `https://api.moonshot.ai/v1` |
+| `moonshot` | `kimi-pro` | `kimi-k3` | `moonshot-kimi-k3` | `https://api.moonshot.ai/v1` |
 
-Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix **is** the vendor's own model id, so there is no translation table to drift. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-v4-pro-0813` is accepted; a different model is not).
+Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`deepseek-v4-flash` stays bare; `glm-5.2` becomes `zai-glm-5.2`). These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-v4-pro-0813` is accepted; a different model is not).
 
 **Scope.** `/complete` and `/internal/platform-complete` only, non-streaming, text in / text out. Not wired: `/chat` (agentic tool-calling is unproven on these models and must be measured first), web search, image input, image generation, embeddings. `webSearch` or `imageUrl` on any of these providers returns **400** naming the vendor, rather than silently answering ungrounded or blind.
 
@@ -339,7 +339,7 @@ Only **connect-phase** failures are retried (a thrown fetch rejection whose caus
 ### Operational prerequisites
 
 1. **One key per vendor** in key-service, stored under that vendor's slug: `deepseek`, `zai`, `moonshot`. Org-scoped calls read `GET /keys/{provider}/decrypt`; `/internal/platform-complete` reads `GET /keys/platform/{provider}/decrypt`. A missing key returns **502** naming the vendor and the slug it must live under — not a generic failure — so "which of the three is unconfigured" is answered by the error itself.
-2. The **three** catalog rows per alias live in production costs-service.
+2. The **three** catalog rows per alias live in production costs-service. As of 2026-08-15 the catalog (costs-service v0.44.0) carries the input/output rows for DeepSeek and Z.ai only: the two Moonshot models and the `-tokens-cached-input` row for **all six** are still outstanding — tracked in [costs-service#205](https://github.com/shamanic-technologies/costs-service/issues/205). Until they land, a Moonshot call and any call that gets a **cache hit** cannot declare its spend: runs-service 422s the cost, which on `/complete` leaves the provisioned hold as the fallback record (the caller still gets its answer) and on `/internal/platform-complete` is a loud 502. A call with no cache hit is unaffected.
 
 ### Replacing the Vercel AI Gateway
 
