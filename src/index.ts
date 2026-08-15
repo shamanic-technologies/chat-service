@@ -34,7 +34,13 @@ import {
   GEMINI_IMAGE_MODEL,
   estimateGeminiImageOutputTokens,
 } from "./lib/gemini.js";
-import { completeWithGateway, GATEWAY_PROVIDER } from "./lib/gateway.js";
+import {
+  completeWithVendor,
+  isVendorProvider,
+  vendorConfig,
+  keyResolutionErrorMessage,
+  type VendorId,
+} from "./lib/openai-compatible.js";
 import {
   createWorkflow,
   upgradeWorkflow,
@@ -339,20 +345,22 @@ app.post("/complete", requireAuth, async (req, res) => {
   const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
   const effectiveModel = resolved.apiModelId;
   const isGemini = resolved.provider === "google";
-  const isGateway = resolved.provider === GATEWAY_PROVIDER;
+  const isVendor = isVendorProvider(resolved.provider);
   const provider = resolved.provider;
 
   // Native web-search cost name (byte-equal to costs-service catalog) — only when opted in.
-  const searchCostName = webSearch && !isGateway ? webSearchCostName(isGemini) : undefined;
+  const searchCostName = webSearch && !isVendor ? webSearchCostName(isGemini) : undefined;
 
-  // The gateway path is text-in / text-out only. Reject the two features it
-  // cannot serve rather than silently ignoring them — a caller that asked for
+  // The direct-vendor paths are text-in / text-out only: none of the three
+  // serves web search or image input on its OpenAI-compatible chat-completions
+  // endpoint. Reject rather than silently ignore — a caller that asked for
   // grounding or vision must not get an ungrounded/blind answer back at 200.
-  if (isGateway && (webSearch || imageUrl)) {
+  if (isVendor && (webSearch || imageUrl)) {
+    const { label } = vendorConfig(provider);
     return res.status(400).json({
       error:
-        `provider "${GATEWAY_PROVIDER}" does not support ${webSearch ? "webSearch" : "imageUrl"}. ` +
-        `The Vercel AI Gateway path is text-only; use provider "google" or "anthropic" for that.`,
+        `provider "${provider}" (${label}) does not support ${webSearch ? "webSearch" : "imageUrl"}. ` +
+        `The direct-vendor paths are text-only; use provider "google" or "anthropic" for that.`,
     });
   }
 
@@ -381,7 +389,7 @@ app.post("/complete", requireAuth, async (req, res) => {
   } catch (err) {
     console.error(`[complete] Failed to resolve ${provider} key for org="${orgId}":`, err);
     return res.status(502).json({
-      error: `Failed to resolve ${provider} API key. Ensure the key is configured in key-service.`,
+      error: keyResolutionErrorMessage(provider, "org"),
     });
   }
 
@@ -422,6 +430,10 @@ app.post("/complete", requireAuth, async (req, res) => {
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
   let totalSearchCount = 0;
+  // Prompt tokens the vendor served from its own cache. A subset of
+  // totalPromptTokens, declared under a separate (far cheaper) catalog name —
+  // see the reconcile block below. Stays 0 on the Anthropic/Google paths.
+  let totalCachedInputTokens = 0;
   let provisionedCostIds: string[] = [];
   try {
     // PROVISION worst case → AUTHORIZE (platform) before the LLM call. Fail loud — never
@@ -445,7 +457,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       return res.status(r.status).json(r.body);
     }
 
-    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }> };
+    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }>; cachedInputTokens?: number };
 
     if (runId) {
       traceEvent(runId, "llm-call-start", { orgId, userId }, workflowTracking, {
@@ -453,8 +465,9 @@ app.post("/complete", requireAuth, async (req, res) => {
       });
     }
 
-    if (isGateway) {
-      result = await completeWithGateway({
+    if (isVendor) {
+      result = await completeWithVendor({
+        vendor: provider as VendorId,
         apiKey: resolvedKey.key,
         model: effectiveModel,
         message,
@@ -496,6 +509,7 @@ app.post("/complete", requireAuth, async (req, res) => {
     totalPromptTokens = result.tokensInput;
     totalOutputTokens = result.tokensOutput;
     totalSearchCount = result.searchCount;
+    totalCachedInputTokens = result.cachedInputTokens ?? 0;
 
     if (runId) {
       traceEvent(runId, "llm-call-done", { orgId, userId }, workflowTracking, {
@@ -546,9 +560,21 @@ app.post("/complete", requireAuth, async (req, res) => {
     // cost is never silently lost.
     if (runId) {
       const runIdentity = { orgId, userId, runId };
+      // Split the prompt tokens the vendor served from ITS cache out of the
+      // input quantity. Every direct vendor prices a cache hit far below a
+      // fresh token (50x at DeepSeek), and the dominant workload is a large
+      // stable prompt with a small per-item block — so billing the whole prompt
+      // at the miss rate would overstate real spend on most calls. The
+      // Anthropic/Google paths report no cached count, so the split is a no-op
+      // there and their declaration is byte-identical to before.
+      const cachedInputTokens = Math.min(totalCachedInputTokens, totalPromptTokens);
+      const freshInputTokens = totalPromptTokens - cachedInputTokens;
       const actualItems = [
-        ...(totalPromptTokens > 0
-          ? [{ costName: `${effectiveCostPrefix}-tokens-input`, quantity: totalPromptTokens, costSource }]
+        ...(freshInputTokens > 0
+          ? [{ costName: `${effectiveCostPrefix}-tokens-input`, quantity: freshInputTokens, costSource }]
+          : []),
+        ...(cachedInputTokens > 0
+          ? [{ costName: `${effectiveCostPrefix}-tokens-cached-input`, quantity: cachedInputTokens, costSource }]
           : []),
         ...(totalOutputTokens > 0
           ? [{ costName: `${effectiveCostPrefix}-tokens-output`, quantity: totalOutputTokens, costSource }]
@@ -1512,18 +1538,19 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
   const effectiveModel = resolved.apiModelId;
   const isGemini = resolved.provider === "google";
-  const isGateway = resolved.provider === GATEWAY_PROVIDER;
+  const isVendor = isVendorProvider(resolved.provider);
   const provider = resolved.provider;
   const costPrefix = resolved.costPrefix;
   // Native web-search cost name (byte-equal to costs-service catalog) — only when opted in.
-  const searchCostName = webSearch && !isGateway ? webSearchCostName(isGemini) : undefined;
+  const searchCostName = webSearch && !isVendor ? webSearchCostName(isGemini) : undefined;
 
   // Text-only path — same rejection as /complete (see there for rationale).
-  if (isGateway && webSearch) {
+  if (isVendor && webSearch) {
+    const { label } = vendorConfig(provider);
     return res.status(400).json({
       error:
-        `provider "${GATEWAY_PROVIDER}" does not support webSearch. The Vercel AI Gateway path ` +
-        `is text-only; use provider "google" or "anthropic" for grounded answers.`,
+        `provider "${provider}" (${label}) does not support webSearch. The direct-vendor paths ` +
+        `are text-only; use provider "google" or "anthropic" for grounded answers.`,
     });
   }
 
@@ -1548,7 +1575,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   } catch (err) {
     console.error(`[internal/platform-complete] Failed to resolve platform ${provider} key:`, err);
     return res.status(502).json({
-      error: `Failed to resolve platform ${provider} API key.`,
+      error: keyResolutionErrorMessage(provider, "platform"),
     });
   }
 
@@ -1568,10 +1595,11 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
 
   let platformFailed = false;
   try {
-    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }> };
+    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }>; cachedInputTokens?: number };
 
-    if (isGateway) {
-      result = await completeWithGateway({
+    if (isVendor) {
+      result = await completeWithVendor({
+        vendor: provider as VendorId,
         apiKey,
         model: effectiveModel,
         message,
@@ -1607,9 +1635,16 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
     // Declare ACTUAL costs on the platform run BEFORE responding. Platform runs
     // have no cost-status PATCH, so there is no provision/cancel — costs are
     // posted as `actual` post-call. Throws (fail loud → 502) if undeclarable.
+    // Same cache split as /complete: cached prompt tokens are declared under
+    // the vendor's far cheaper cached-input name, not billed as fresh input.
+    const cachedInputTokens = Math.min(result.cachedInputTokens ?? 0, result.tokensInput);
+    const freshInputTokens = result.tokensInput - cachedInputTokens;
     const costItems: CostItem[] = [
-      ...(result.tokensInput > 0
-        ? [{ costName: `${costPrefix}-tokens-input`, quantity: result.tokensInput, costSource: "platform" as const }]
+      ...(freshInputTokens > 0
+        ? [{ costName: `${costPrefix}-tokens-input`, quantity: freshInputTokens, costSource: "platform" as const }]
+        : []),
+      ...(cachedInputTokens > 0
+        ? [{ costName: `${costPrefix}-tokens-cached-input`, quantity: cachedInputTokens, costSource: "platform" as const }]
         : []),
       ...(result.tokensOutput > 0
         ? [{ costName: `${costPrefix}-tokens-output`, quantity: result.tokensOutput, costSource: "platform" as const }]

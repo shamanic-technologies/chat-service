@@ -427,22 +427,33 @@ export const CompleteRequestSchema = z
         "prevents a burst of concurrent calls from over-reserving against your org balance.",
       example: 4096,
     }),
-    provider: z.enum(["anthropic", "google", "vercel"]).openapi({
+    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot"]).openapi({
       description:
-        "LLM provider to use. `anthropic` and `google` are native clients; `vercel` routes " +
-        "through the Vercel AI Gateway (OpenAI-compatible) and is opt-in per call — no existing " +
-        "caller reaches it implicitly.",
+        "LLM provider to use. `anthropic` and `google` are native clients with the full feature " +
+        "set (vision, web search, thinking controls). `deepseek`, `zai` (Z.ai / GLM) and " +
+        "`moonshot` (Kimi) are called directly over their OpenAI-compatible APIs by one shared " +
+        "adapter — text in / text out only, opt-in per call, no existing caller reaches them " +
+        "implicitly. Each vendor resolves its OWN API key from key-service under this exact slug.",
       example: "anthropic",
     }),
-    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro", "deepseek-flash", "deepseek-pro"]).openapi({
+    model: z.enum([
+      "haiku", "sonnet", "opus",
+      "flash-lite", "flash", "flash-pro", "pro",
+      "deepseek-flash", "deepseek-pro",
+      "glm-flash", "glm-pro",
+      "kimi-flash", "kimi-pro",
+    ]).openapi({
       description:
-        "Model alias (version-free). The service resolves the latest versioned model internally.\n\n" +
-        "**Anthropic models:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n" +
-        "**Google models:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.5 Flash), `pro` (most powerful).\n" +
-        "**Vercel AI Gateway models:** `deepseek-flash` (DeepSeek V4 Flash — cheapest per unit of intelligence; 1M context), " +
-        "`deepseek-pro` (DeepSeek V4 Pro — the reasoning-heavy sibling; same gateway path, same limits). " +
-        "Text only: no vision, no web search, no image generation on this path.\n\n" +
-        "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, vercel → deepseek-flash|deepseek-pro.",
+        "Model alias (version-free). The service resolves the current versioned model internally.\n\n" +
+        "**anthropic:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n" +
+        "**google:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.7 Flash), `pro` (most powerful).\n" +
+        "**deepseek:** `deepseek-flash` → DeepSeek V4 Flash (cheapest per unit of intelligence; 1M context), " +
+        "`deepseek-pro` → DeepSeek V4 Pro (reasoning-heavy sibling).\n" +
+        "**zai:** `glm-flash` → `glm-4.7-flashx` (fast, very cheap), `glm-pro` → `glm-5.2` (flagship).\n" +
+        "**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n\n" +
+        "The three direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\n" +
+        "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, " +
+        "deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro.",
       example: "sonnet",
     }),
     webSearch: z.boolean().optional().openapi({
@@ -503,7 +514,9 @@ export const CompleteRequestSchema = z
     const validModels: Record<string, string[]> = {
       anthropic: ["haiku", "sonnet", "opus"],
       google: ["flash-lite", "flash", "flash-pro", "pro"],
-      vercel: ["deepseek-flash", "deepseek-pro"],
+      deepseek: ["deepseek-flash", "deepseek-pro"],
+      zai: ["glm-flash", "glm-pro"],
+      moonshot: ["kimi-flash", "kimi-pro"],
     };
     const allowed = validModels[data.provider];
     if (allowed && !allowed.includes(data.model)) {
@@ -758,17 +771,27 @@ export const InternalPlatformCompleteRequestSchema = z
       description: "Sampling temperature (0–2). Lower = more deterministic.",
       example: 0.3,
     }),
-    provider: z.enum(["anthropic", "google", "vercel"]).openapi({
+    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot"]).openapi({
       description:
-        "LLM provider to use. `vercel` routes through the Vercel AI Gateway (OpenAI-compatible).",
+        "LLM provider to use. `anthropic` and `google` are native clients; `deepseek`, `zai` " +
+        "(Z.ai / GLM) and `moonshot` (Kimi) are called directly over their OpenAI-compatible " +
+        "APIs, text-only. Each vendor resolves its own platform key from key-service under this " +
+        "exact slug.",
       example: "anthropic",
     }),
-    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro", "deepseek-flash", "deepseek-pro"]).openapi({
+    model: z.enum([
+      "haiku", "sonnet", "opus",
+      "flash-lite", "flash", "flash-pro", "pro",
+      "deepseek-flash", "deepseek-pro",
+      "glm-flash", "glm-pro",
+      "kimi-flash", "kimi-pro",
+    ]).openapi({
       description:
         "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus, " +
-        "google → flash-lite|flash|flash-pro|pro, vercel → deepseek-flash|deepseek-pro " +
-        "(`deepseek-flash` = DeepSeek V4 Flash, `deepseek-pro` = DeepSeek V4 Pro; both text-only " +
-        "on the Vercel AI Gateway path).",
+        "google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro " +
+        "(DeepSeek V4 Flash / V4 Pro), zai → glm-flash|glm-pro (`glm-4.7-flashx` / `glm-5.2`), " +
+        "moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`). The direct-vendor models are " +
+        "text-only: `webSearch` is rejected with 400.",
       example: "sonnet",
     }),
     webSearch: z.boolean().optional().openapi({
@@ -795,6 +818,26 @@ export const InternalPlatformCompleteRequestSchema = z
         "default (\"low\"), byte-identical to a normal call. No-op on Gemini 2.5 and Anthropic.",
       example: "low",
     }),
+  })
+  .superRefine((data, ctx) => {
+    // Same provider/model pairing check as POST /complete. Without it an
+    // invalid pair reaches resolveModel and surfaces as a 500 instead of a 400
+    // naming the accepted set.
+    const validModels: Record<string, string[]> = {
+      anthropic: ["haiku", "sonnet", "opus"],
+      google: ["flash-lite", "flash", "flash-pro", "pro"],
+      deepseek: ["deepseek-flash", "deepseek-pro"],
+      zai: ["glm-flash", "glm-pro"],
+      moonshot: ["kimi-flash", "kimi-pro"],
+    };
+    const allowed = validModels[data.provider];
+    if (allowed && !allowed.includes(data.model)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Model "${data.model}" is not valid for provider "${data.provider}". Valid models: ${allowed.join(", ")}`,
+        path: ["model"],
+      });
+    }
   })
   .openapi("InternalPlatformCompleteRequest");
 
