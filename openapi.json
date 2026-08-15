@@ -743,9 +743,11 @@
             "enum": [
               "anthropic",
               "google",
-              "vercel"
+              "deepseek",
+              "zai",
+              "moonshot"
             ],
-            "description": "LLM provider to use. `anthropic` and `google` are native clients; `vercel` routes through the Vercel AI Gateway (OpenAI-compatible) and is opt-in per call — no existing caller reaches it implicitly.",
+            "description": "LLM provider to use. `anthropic` and `google` are native clients with the full feature set (vision, web search, thinking controls). `deepseek`, `zai` (Z.ai / GLM) and `moonshot` (Kimi) are called directly over their OpenAI-compatible APIs by one shared adapter — text in / text out only, opt-in per call, no existing caller reaches them implicitly. Each vendor resolves its OWN API key from key-service under this exact slug.",
             "example": "anthropic"
           },
           "model": {
@@ -759,9 +761,13 @@
               "flash-pro",
               "pro",
               "deepseek-flash",
-              "deepseek-pro"
+              "deepseek-pro",
+              "glm-flash",
+              "glm-pro",
+              "kimi-flash",
+              "kimi-pro"
             ],
-            "description": "Model alias (version-free). The service resolves the latest versioned model internally.\n\n**Anthropic models:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n**Google models:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.5 Flash), `pro` (most powerful).\n**Vercel AI Gateway models:** `deepseek-flash` (DeepSeek V4 Flash — cheapest per unit of intelligence; 1M context), `deepseek-pro` (DeepSeek V4 Pro — the reasoning-heavy sibling; same gateway path, same limits). Text only: no vision, no web search, no image generation on this path.\n\nThe model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, vercel → deepseek-flash|deepseek-pro.",
+            "description": "Model alias (version-free). The service resolves the current versioned model internally.\n\n**anthropic:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n**google:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.7 Flash), `pro` (most powerful).\n**deepseek:** `deepseek-flash` → DeepSeek V4 Flash (cheapest per unit of intelligence; 1M context), `deepseek-pro` → DeepSeek V4 Pro (reasoning-heavy sibling).\n**zai:** `glm-flash` → `glm-4.7-flashx` (fast, very cheap), `glm-pro` → `glm-5.2` (flagship).\n**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n\nThe three direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\nThe model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro.",
             "example": "sonnet"
           },
           "webSearch": {
@@ -929,9 +935,11 @@
             "enum": [
               "anthropic",
               "google",
-              "vercel"
+              "deepseek",
+              "zai",
+              "moonshot"
             ],
-            "description": "LLM provider to use. `vercel` routes through the Vercel AI Gateway (OpenAI-compatible).",
+            "description": "LLM provider to use. `anthropic` and `google` are native clients; `deepseek`, `zai` (Z.ai / GLM) and `moonshot` (Kimi) are called directly over their OpenAI-compatible APIs, text-only. Each vendor resolves its own platform key from key-service under this exact slug.",
             "example": "anthropic"
           },
           "model": {
@@ -945,9 +953,13 @@
               "flash-pro",
               "pro",
               "deepseek-flash",
-              "deepseek-pro"
+              "deepseek-pro",
+              "glm-flash",
+              "glm-pro",
+              "kimi-flash",
+              "kimi-pro"
             ],
-            "description": "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, vercel → deepseek-flash|deepseek-pro (`deepseek-flash` = DeepSeek V4 Flash, `deepseek-pro` = DeepSeek V4 Pro; both text-only on the Vercel AI Gateway path).",
+            "description": "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro (DeepSeek V4 Flash / V4 Pro), zai → glm-flash|glm-pro (`glm-4.7-flashx` / `glm-5.2`), moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`). The direct-vendor models are text-only: `webSearch` is rejected with 400.",
             "example": "sonnet"
           },
           "webSearch": {
