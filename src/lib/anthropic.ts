@@ -102,7 +102,7 @@ export function prepareAnthropicSchema<T>(schema: T): T {
 // the latest versioned model ID internally.
 // ---------------------------------------------------------------------------
 
-export type Provider = "anthropic" | "google" | "vercel";
+export type Provider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot";
 export type ModelAlias =
   | "haiku"
   | "sonnet"
@@ -112,7 +112,11 @@ export type ModelAlias =
   | "flash-pro"
   | "pro"
   | "deepseek-flash"
-  | "deepseek-pro";
+  | "deepseek-pro"
+  | "glm-flash"
+  | "glm-pro"
+  | "kimi-flash"
+  | "kimi-pro";
 
 interface ResolvedModel {
   /** Versioned model ID sent to the provider's API */
@@ -120,7 +124,7 @@ interface ResolvedModel {
   /** Cost-name prefix for costs-service */
   costPrefix: string;
   /** Provider key used for key-service resolution */
-  provider: "anthropic" | "google" | "vercel";
+  provider: Provider;
 }
 
 const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
@@ -139,28 +143,67 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     "flash-pro": { apiModelId: "gemini-3.7-flash", costPrefix: "google-flash-3.7", provider: "google" },
     "pro": { apiModelId: "gemini-3.1-pro-preview", costPrefix: "google-pro-3.1", provider: "google" },
   },
-  // Vercel AI Gateway — one OpenAI-compatible client fronting many models.
+  // ---------------------------------------------------------------------
+  // Direct-vendor models — one OpenAI-compatible adapter, three vendors.
   //
-  // EVERY alias here costs exactly two costs-service catalog rows
-  // (`<costPrefix>-tokens-input` / `-tokens-output`), which must exist in
-  // PRODUCTION before the alias ships, or runs-service 422s and the call fails
-  // loud. resolveModel throws on any alias absent from this map, so the
-  // gateway's ~330-model breadth never becomes catalog breadth: a model is
-  // unreachable until someone deliberately adds it here AND to the catalog.
-  vercel: {
+  // Each vendor is its own `provider` (and its own key-service slug), served by
+  // the SAME client (src/lib/openai-compatible.ts). Two tiers per vendor,
+  // named on one pattern: `<family>-flash` = the cheap tier, `<family>-pro` =
+  // the strong tier. The two DeepSeek aliases predate the direct path and are
+  // unchanged from the caller's side — only the transport underneath moved
+  // (2026-08-15), so `deepseek-flash` / `deepseek-pro` keep working verbatim.
+  //
+  // EVERY alias here costs THREE costs-service catalog rows —
+  // `<costPrefix>-tokens-input`, `-tokens-output` and `-tokens-cached-input` —
+  // which must exist in PRODUCTION before the alias ships, or runs-service 422s
+  // and the call fails loud. resolveModel throws on any alias absent from this
+  // map, so a vendor's full catalog never becomes OUR catalog: a model is
+  // unreachable until someone deliberately adds it here AND to costs-service.
+  //
+  // costPrefix is the vendor's own model id, byte-equal — one name, no
+  // translation table to drift.
+  // ---------------------------------------------------------------------
+  deepseek: {
+    // https://api-docs.deepseek.com/quick_start/pricing — read 2026-08-15.
     "deepseek-flash": {
-      apiModelId: "deepseek/deepseek-v4-flash",
+      apiModelId: "deepseek-v4-flash",
       costPrefix: "deepseek-v4-flash",
-      provider: "vercel",
+      provider: "deepseek",
     },
-    // DeepSeek V4 Pro — the reasoning-heavy sibling of V4 Flash. The gateway
-    // catalog also carries dated ids (`deepseek/deepseek-v4-pro-0813`); our
-    // aliases are version-free, so we route to the undated id and let the
-    // gateway resolve the current build (same convention as V4 Flash).
+    // DeepSeek V4 Pro — the reasoning-heavy sibling of V4 Flash. DeepSeek also
+    // publishes dated builds (`deepseek-v4-pro-0813`); our aliases are
+    // version-free, so we send the undated id and let the vendor resolve the
+    // current build (assertModelMatches accepts a dated echo of it).
     "deepseek-pro": {
-      apiModelId: "deepseek/deepseek-v4-pro",
+      apiModelId: "deepseek-v4-pro",
       costPrefix: "deepseek-v4-pro",
-      provider: "vercel",
+      provider: "deepseek",
+    },
+  },
+  zai: {
+    // https://docs.z.ai/guides/overview/pricing — read 2026-08-15.
+    "glm-flash": {
+      apiModelId: "glm-4.7-flashx",
+      costPrefix: "glm-4.7-flashx",
+      provider: "zai",
+    },
+    "glm-pro": {
+      apiModelId: "glm-5.2",
+      costPrefix: "glm-5.2",
+      provider: "zai",
+    },
+  },
+  moonshot: {
+    // https://platform.kimi.ai/docs/pricing/chat — read 2026-08-15.
+    "kimi-flash": {
+      apiModelId: "kimi-k2.6",
+      costPrefix: "kimi-k2.6",
+      provider: "moonshot",
+    },
+    "kimi-pro": {
+      apiModelId: "kimi-k3",
+      costPrefix: "kimi-k3",
+      provider: "moonshot",
     },
   },
 };
@@ -169,7 +212,9 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
 export const PROVIDER_MODELS: Record<Provider, readonly ModelAlias[]> = {
   anthropic: ["haiku", "sonnet", "opus"],
   google: ["flash-lite", "flash", "flash-pro", "pro"],
-  vercel: ["deepseek-flash", "deepseek-pro"],
+  deepseek: ["deepseek-flash", "deepseek-pro"],
+  zai: ["glm-flash", "glm-pro"],
+  moonshot: ["kimi-flash", "kimi-pro"],
 };
 
 /**
@@ -179,9 +224,24 @@ export const PROVIDER_MODELS: Record<Provider, readonly ModelAlias[]> = {
  */
 export function resolveModel(provider: Provider, modelAlias: ModelAlias): ResolvedModel {
   const providerMap = MODEL_MAP[provider];
-  if (!providerMap) throw new Error(`Unknown provider: ${provider}`);
+  if (!providerMap) {
+    throw new Error(
+      `Unknown provider: ${provider}. Accepted providers: ${Object.keys(MODEL_MAP).join(", ")}`,
+    );
+  }
   const resolved = providerMap[modelAlias];
-  if (!resolved) throw new Error(`Unknown model "${modelAlias}" for provider "${provider}"`);
+  if (!resolved) {
+    // Name the accepted set. An alias that is real but sent under the wrong
+    // provider is the common mistake, so say where it does live.
+    const elsewhere = (Object.keys(MODEL_MAP) as Provider[]).find(
+      (p) => p !== provider && MODEL_MAP[p][modelAlias],
+    );
+    throw new Error(
+      `Unknown model "${modelAlias}" for provider "${provider}". ` +
+        `Accepted models for "${provider}": ${Object.keys(providerMap).join(", ")}.` +
+        (elsewhere ? ` "${modelAlias}" belongs to provider "${elsewhere}".` : ""),
+    );
+  }
   return resolved;
 }
 
@@ -201,8 +261,13 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "gemini-3.1-pro-preview": "google-pro-3.1",
   "gemini-2.5-pro": "google-pro-2.5",
   "gemini-2.5-flash": "google-flash-2.5",
-  "deepseek/deepseek-v4-flash": "deepseek-v4-flash",
-  "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
+  // Direct-vendor models: the cost prefix IS the vendor model id.
+  "deepseek-v4-flash": "deepseek-v4-flash",
+  "deepseek-v4-pro": "deepseek-v4-pro",
+  "glm-4.7-flashx": "glm-4.7-flashx",
+  "glm-5.2": "glm-5.2",
+  "kimi-k2.6": "kimi-k2.6",
+  "kimi-k3": "kimi-k3",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */

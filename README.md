@@ -196,11 +196,15 @@ Request body:
 
 - `message` (required) — the prompt to send to the LLM
 - `systemPrompt` (required) — inline system prompt (no pre-registered config needed). Empty string is allowed: the provider receives no system prompt and falls back to its default behavior. The value is forwarded byte-equal to the provider.
-- `provider` (required) — LLM provider: `"anthropic"`, `"google"`, or `"vercel"` (see [Vercel AI Gateway](#vercel-ai-gateway))
-- `model` (required) — version-free model alias. The service resolves the latest versioned model internally. Valid combinations:
+- `provider` (required) — LLM provider: `"anthropic"`, `"google"`, `"deepseek"`, `"zai"`, or `"moonshot"` (see [Direct vendor models](#direct-vendor-models))
+- `model` (required) — version-free model alias. The service resolves the current versioned model internally. Valid combinations:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
   - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.7 Flash), `pro` (most powerful, Gemini 3.1 Pro). All require a Google API key in key-service.
-  - **vercel**: `deepseek-flash` (DeepSeek V4 Flash via the Vercel AI Gateway — cheapest per unit of intelligence, 1M context), `deepseek-pro` (DeepSeek V4 Pro — the reasoning-heavy sibling, same gateway path). Text only: `imageUrl` and `webSearch` are rejected with 400 on this provider, for every gateway model. Requires a `vercel` key in key-service.
+  - **deepseek**: `deepseek-flash` (DeepSeek V4 Flash — cheapest per unit of intelligence, 1M context), `deepseek-pro` (DeepSeek V4 Pro — the reasoning-heavy sibling)
+  - **zai**: `glm-flash` (`glm-4.7-flashx` — fast and very cheap), `glm-pro` (`glm-5.2` — Z.ai's flagship)
+  - **moonshot**: `kimi-flash` (`kimi-k2.6` — value tier), `kimi-pro` (`kimi-k3` — flagship, 1M context)
+
+  The three direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400 on every one of their models. Each needs its OWN key in key-service, stored under its provider slug.
 - `responseFormat` (optional) — set to `"json"` to enable JSON-mode parsing. **For `provider: "anthropic"`, you MUST also supply `responseSchema`** — Anthropic has no native standalone JSON mode, so the request is rejected with 400 if `responseSchema` is missing. For `provider: "google"` (Gemini), `responseFormat: "json"` alone is sufficient (native `responseMimeType` enforcement).
 - `responseSchema` (optional) — JSON Schema enforced server-side by the provider's structured-output API. When set, JSON-mode parsing is implied (no need to also pass `responseFormat: "json"`). The schema is forwarded as:
   - **Google** → `generationConfig.responseSchema` (supported on all Gemini 2.5+ models: `pro`, `flash`, `flash-lite`). Gemini accepts only an OpenAPI 3.0 subset; chat-service auto-sanitizes the caller-supplied schema before forwarding by stripping unsupported JSON-Schema keywords (`additionalProperties`, `$schema`, `$ref`, `$defs`, `definitions`, `patternProperties`, `unevaluatedProperties`, `if`/`then`/`else`, `not`, `const`, `examples`, `default`, `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf`, etc.). A `[chat-service] Gemini schema sanitized` warning is logged once per call when any field is removed.
@@ -260,20 +264,33 @@ Unlike POST /chat, this endpoint is **stateless** (no sessions), accepts an **in
 
 Error responses: 400 (validation), 401 (auth), 402 (insufficient credits), 502 (upstream failure).
 
-## Vercel AI Gateway
+## Direct vendor models
 
-A third provider path alongside the two native clients. Where `anthropic.ts` and `gemini.ts` each speak a vendor-specific dialect and carry that vendor's accumulated quirks, `src/lib/gateway.ts` speaks one generic dialect — OpenAI Chat Completions, `POST https://ai-gateway.vercel.sh/v1/chat/completions` — against a gateway that fronts hundreds of models. Adding a model behind it is a `MODEL_MAP` entry, not a new client.
+A third provider path alongside the two native clients. Where `anthropic.ts` and `gemini.ts` each speak a vendor-specific dialect and carry that vendor's accumulated quirks, `src/lib/openai-compatible.ts` speaks one generic dialect — OpenAI Chat Completions — against vendors that all serve it. **One adapter, three vendors, six models.**
 
-**Scope.** `/complete` and `/internal/platform-complete` only, non-streaming, text in / text out. Not wired: `/chat` (agentic tool-calling is unproven on these models and must be measured first), web search, image input, image generation, embeddings. `webSearch` or `imageUrl` with `provider: "vercel"` returns **400** rather than silently answering ungrounded or blind.
+The vendors differ in exactly three things, and all three are *data* in the `VENDORS` registry rather than code: the base URL, the key-service provider slug, and where the usage payload reports cached prompt tokens. So adding a seventh model is a `MODEL_MAP` entry, and adding a fourth vendor is a `VENDORS` entry. Neither is a new client.
 
-**Opt-in.** No existing caller reaches this path implicitly. `/chat` config defaults are untouched (`google`/`flash-pro`), and a caller must pass `provider: "vercel"` explicitly.
+| Provider | Alias | Vendor model id | Cost prefix | Base URL |
+|---|---|---|---|---|
+| `deepseek` | `deepseek-flash` | `deepseek-v4-flash` | `deepseek-v4-flash` | `https://api.deepseek.com/v1` |
+| `deepseek` | `deepseek-pro` | `deepseek-v4-pro` | `deepseek-v4-pro` | `https://api.deepseek.com/v1` |
+| `zai` | `glm-flash` | `glm-4.7-flashx` | `glm-4.7-flashx` | `https://api.z.ai/api/paas/v4` |
+| `zai` | `glm-pro` | `glm-5.2` | `glm-5.2` | `https://api.z.ai/api/paas/v4` |
+| `moonshot` | `kimi-flash` | `kimi-k2.6` | `kimi-k2.6` | `https://api.moonshot.ai/v1` |
+| `moonshot` | `kimi-pro` | `kimi-k3` | `kimi-k3` | `https://api.moonshot.ai/v1` |
+
+Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix **is** the vendor's own model id, so there is no translation table to drift. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-v4-pro-0813` is accepted; a different model is not).
+
+**Scope.** `/complete` and `/internal/platform-complete` only, non-streaming, text in / text out. Not wired: `/chat` (agentic tool-calling is unproven on these models and must be measured first), web search, image input, image generation, embeddings. `webSearch` or `imageUrl` on any of these providers returns **400** naming the vendor, rather than silently answering ungrounded or blind.
+
+**Opt-in.** No existing caller reaches these implicitly. `/chat` config defaults are untouched (`google`/`flash-pro`), and a caller must name the provider explicitly.
 
 ```json
 {
   "message": "Extract the company's industry and HQ country from this page.",
   "systemPrompt": "You are an extraction assistant. Return JSON only.",
-  "provider": "vercel",
-  "model": "deepseek-flash",
+  "provider": "zai",
+  "model": "glm-pro",
   "responseFormat": "json",
   "temperature": 0
 }
@@ -281,43 +298,54 @@ A third provider path alongside the two native clients. Where `anthropic.ts` and
 
 ### Model breadth is not catalog breadth
 
-The gateway serves ~330 models. chat-service reaches exactly the aliases declared in `MODEL_MAP.vercel`, and `resolveModel` throws on anything else. Each alias costs exactly **two** costs-service catalog rows (`<costPrefix>-tokens-input` / `-tokens-output`) which must exist in **production** before the alias ships — otherwise runs-service 422s the cost declaration and the call fails loud. So enumerating the gateway's catalog is neither required nor possible by accident: a model is unreachable until someone adds it to both places deliberately.
+Each vendor serves a large catalog; chat-service reaches exactly the aliases declared in `MODEL_MAP`, and `resolveModel` throws on anything else with the accepted set in the message. Every alias costs **three** costs-service catalog rows — `<costPrefix>-tokens-input`, `-tokens-output` and `-tokens-cached-input` — which must exist in **production** before the alias is called, or runs-service 422s the cost declaration and the call fails loud. A model is unreachable until someone adds it to both places deliberately.
 
-Currently declared:
+### Cache-hit pricing
 
-| Alias | Gateway model id | Cost names |
+All three vendors price a cached input token far below a fresh one, and our dominant workload is a large stable prompt with a small per-item block — so **cache hits are the normal case, not the exception**. Billing the whole prompt at the miss rate would overstate real spend on most calls, so the declaration splits it:
+
+- `<prefix>-tokens-input` ← `prompt_tokens − cached`, the fresh tokens at the miss rate
+- `<prefix>-tokens-cached-input` ← the cached tokens, at the vendor's cache rate
+- `<prefix>-tokens-output` ← unchanged
+
+The split is exhaustive (the two input quantities always sum to `prompt_tokens`) and the cached row is omitted entirely when the count is zero. The response's `tokensInput` still reports the **total** prompt count — only billing is split.
+
+Each vendor reports the count in a different place, which is the entire reason `readCachedTokens` is per-vendor data:
+
+| Vendor | Field | Cache-hit vs miss (per 1M input) |
 |---|---|---|
-| `deepseek-flash` | `deepseek/deepseek-v4-flash` | `deepseek-v4-flash-tokens-{input,output}` |
-| `deepseek-pro` | `deepseek/deepseek-v4-pro` | `deepseek-v4-pro-tokens-{input,output}` |
+| DeepSeek | `usage.prompt_cache_hit_tokens` | $0.014 vs $0.44 (V4 Flash, peak) — 31x |
+| Z.ai | `usage.prompt_tokens_details.cached_tokens` | $0.26 vs $1.40 (`glm-5.2`) |
+| Moonshot | `usage.cached_tokens` | $0.30 vs $3.00 (`kimi-k3`) |
 
-The gateway catalog also carries **dated** ids for these models (e.g. `deepseek/deepseek-v4-pro-0813`). Our aliases are version-free by convention, so `MODEL_MAP` routes to the **undated** id and lets the gateway resolve the current build — the same choice made for V4 Flash.
+A cached count larger than the prompt total is clamped: a negative fresh-token quantity would make runs-service reject the whole declaration and fail a call that actually succeeded.
 
-### Pricing: peak rate, no cache discount
+**Price at the PEAK rate.** DeepSeek splits into peak (01:00–04:00 and 06:00–10:00 UTC) and off-peak at half. The catalog carries the peak list price, so cheaper hours are margin, never a shortfall — the same reasoning as pricing Gemini at its post-promotion rate.
 
-Two rules, both deliberately conservative:
+### No routing knobs, no fallback, and the model is asserted
 
-- **Price at the PEAK rate.** DeepSeek splits into peak (01:00–04:00 and 06:00–10:00 UTC) and off-peak pricing at half the peak rate, and the gateway routes dynamically across ~10 providers of the same model whose rates differ roughly 3×. The catalog carries DeepSeek's published peak list price ($0.44 / $1.32 per 1M input / output), which is above every provider's current rate. Cheaper hours and cheaper routing are margin, never a shortfall. Same reasoning as pricing Gemini at its post-promotion rate.
-- **Cached input tokens are billed at the full cache-miss rate.** The gateway reports `prompt_tokens_details.cached_tokens`, and `GatewayCompleteResult.cachedInputTokens` carries it — for observability only. It is not discounted, because (a) AI Gateway currently bills implicit-cache tokens at full input price for OpenAI/DeepSeek-class providers ([vercel/ai#13907](https://github.com/vercel/ai/issues/13907), open), so the discount does not exist on our invoice yet, and (b) the costs catalog has no `-tokens-cached-input` name for any provider — Anthropic cache reads are already billed as full input today. Both must change together before a third price is introduced.
+The request body deliberately carries **no** `models` fallback array, **no** `sort`, and **no** provider `order`/`only`. A request that silently resolved to a different model than the alias we priced would declare the wrong cost name. `assertModelMatches` closes the loop: if the response's `model` is not the requested one (or a dated build of it), the call throws rather than billing under a catalog name that no longer describes the spend.
 
-### No routing knobs, and the model is asserted
-
-The request body deliberately carries **no** `models` fallback array, **no** `sort`, and **no** provider `order`/`only`. A request that silently resolved to a different model than the alias we priced would declare the wrong cost name. `assertModelMatches` closes the loop: if the response's `model` is not the one requested, the call throws rather than billing under a catalog name that no longer describes the spend.
-
-Every call logs the gateway's own reported cost (`provider_metadata.gateway.cost`) and the provider that actually served it, so declared-vs-charged can be reconciled.
+There is likewise **no cross-vendor fallback**. A vendor being down fails loud: substituting another model would hand the caller an answer from a model it did not choose and bill it under a name that does not describe what ran.
 
 ### JSON mode is best-effort here
 
-`responseSchema` is forwarded as native `response_format: { type: "json_schema", ... }`, but not every model behind the gateway enforces it — neither DeepSeek V4 Flash nor V4 Pro advertises `response_format` support on any of its endpoints, so the provider may ignore it. This is not a silent fallback: `parseModelJsonOutput` still fails loud (502) on output it cannot read. It is also precisely what a bake-off has to measure before any existing caller is migrated onto a gateway model.
+`responseSchema` is forwarded as native `response_format: { type: "json_schema", ... }`, but enforcement strength varies by vendor and model, so the request may reach a model that treats it as a hint. This is not a silent fallback: `parseModelJsonOutput` still fails loud (502) on output it cannot read. It is also precisely what a bake-off has to measure before any existing caller is migrated onto one of these models.
 
 ### Retry behaviour
 
-Only **connect-phase** failures are retried (a thrown fetch rejection whose cause is a transient socket code — `ECONNRESET`, `ECONNREFUSED`, `ETIMEDOUT`, …), with 250/500/1000 ms backoff. A completed HTTP response — including a 5xx — is a real answer from the gateway and may already have been billed upstream, so it is never replayed. This is intentionally stricter than `gemini.ts`, which retries 429/5xx status codes.
+Only **connect-phase** failures are retried (a thrown fetch rejection whose cause is a transient socket code — `ECONNRESET`, `ECONNREFUSED`, `ETIMEDOUT`, …), with 250/500/1000 ms backoff. A completed HTTP response — including a 5xx — is a real answer from the vendor and may already have been billed upstream, so it is never replayed. This is intentionally stricter than `gemini.ts`, which retries 429/5xx status codes.
 
 ### Operational prerequisites
 
-1. A `vercel` **platform key** in key-service holding the AI Gateway API key (`GET /keys/platform/vercel/decrypt`). Without it, `provider: "vercel"` returns 502 at key resolution.
-2. The two catalog rows **per alias** live in production costs-service (provider `vercel`, plan `pay-as-you-go`/`monthly`).
-3. The Vercel account must have gateway credits. On the free tier the gateway serves only a subset of its catalog and returns **403** for the rest — both `deepseek-flash` and `deepseek-pro` are currently in that bucket. That is an account-billing state, not a chat-service failure: the 403 surfaces as a loud upstream error and is never worked around by substituting another model.
+1. **One key per vendor** in key-service, stored under that vendor's slug: `deepseek`, `zai`, `moonshot`. Org-scoped calls read `GET /keys/{provider}/decrypt`; `/internal/platform-complete` reads `GET /keys/platform/{provider}/decrypt`. A missing key returns **502** naming the vendor and the slug it must live under — not a generic failure — so "which of the three is unconfigured" is answered by the error itself.
+2. The **three** catalog rows per alias live in production costs-service.
+
+### Replacing the Vercel AI Gateway
+
+These six models replaced a single gateway path (removed 2026-08-15). The gateway resold the same DeepSeek models above their vendor list price (1.4x on V4 Flash, 4x on V4 Pro), charged a payment-processing fee on every top-up, and gated recent models behind a paid tier. It is removed, not deprecated: there is no fallback to it, and `provider: "vercel"` is rejected with the accepted provider set.
+
+`deepseek-flash` and `deepseek-pro` are **unchanged for callers** — same alias, same cost prefix, same request shape. What moved is the transport underneath, so one externally visible detail changed with it: the response's `model` field now echoes the vendor's own id (`deepseek-v4-flash`) rather than the gateway's namespaced form (`deepseek/deepseek-v4-flash`).
 
 ## Internal Platform Completion
 
