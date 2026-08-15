@@ -200,7 +200,7 @@ Request body:
 - `model` (required) — version-free model alias. The service resolves the latest versioned model internally. Valid combinations:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
   - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.7 Flash), `pro` (most powerful, Gemini 3.1 Pro). All require a Google API key in key-service.
-  - **vercel**: `deepseek-flash` (DeepSeek V4 Flash via the Vercel AI Gateway — cheapest per unit of intelligence, 1M context). Text only: `imageUrl` and `webSearch` are rejected with 400 on this provider. Requires a `vercel` key in key-service.
+  - **vercel**: `deepseek-flash` (DeepSeek V4 Flash via the Vercel AI Gateway — cheapest per unit of intelligence, 1M context), `deepseek-pro` (DeepSeek V4 Pro — the reasoning-heavy sibling, same gateway path). Text only: `imageUrl` and `webSearch` are rejected with 400 on this provider, for every gateway model. Requires a `vercel` key in key-service.
 - `responseFormat` (optional) — set to `"json"` to enable JSON-mode parsing. **For `provider: "anthropic"`, you MUST also supply `responseSchema`** — Anthropic has no native standalone JSON mode, so the request is rejected with 400 if `responseSchema` is missing. For `provider: "google"` (Gemini), `responseFormat: "json"` alone is sufficient (native `responseMimeType` enforcement).
 - `responseSchema` (optional) — JSON Schema enforced server-side by the provider's structured-output API. When set, JSON-mode parsing is implied (no need to also pass `responseFormat: "json"`). The schema is forwarded as:
   - **Google** → `generationConfig.responseSchema` (supported on all Gemini 2.5+ models: `pro`, `flash`, `flash-lite`). Gemini accepts only an OpenAPI 3.0 subset; chat-service auto-sanitizes the caller-supplied schema before forwarding by stripping unsupported JSON-Schema keywords (`additionalProperties`, `$schema`, `$ref`, `$defs`, `definitions`, `patternProperties`, `unevaluatedProperties`, `if`/`then`/`else`, `not`, `const`, `examples`, `default`, `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf`, etc.). A `[chat-service] Gemini schema sanitized` warning is logged once per call when any field is removed.
@@ -283,7 +283,14 @@ A third provider path alongside the two native clients. Where `anthropic.ts` and
 
 The gateway serves ~330 models. chat-service reaches exactly the aliases declared in `MODEL_MAP.vercel`, and `resolveModel` throws on anything else. Each alias costs exactly **two** costs-service catalog rows (`<costPrefix>-tokens-input` / `-tokens-output`) which must exist in **production** before the alias ships — otherwise runs-service 422s the cost declaration and the call fails loud. So enumerating the gateway's catalog is neither required nor possible by accident: a model is unreachable until someone adds it to both places deliberately.
 
-Currently declared: `deepseek-flash` → `deepseek/deepseek-v4-flash` → `deepseek-v4-flash-tokens-{input,output}`.
+Currently declared:
+
+| Alias | Gateway model id | Cost names |
+|---|---|---|
+| `deepseek-flash` | `deepseek/deepseek-v4-flash` | `deepseek-v4-flash-tokens-{input,output}` |
+| `deepseek-pro` | `deepseek/deepseek-v4-pro` | `deepseek-v4-pro-tokens-{input,output}` |
+
+The gateway catalog also carries **dated** ids for these models (e.g. `deepseek/deepseek-v4-pro-0813`). Our aliases are version-free by convention, so `MODEL_MAP` routes to the **undated** id and lets the gateway resolve the current build — the same choice made for V4 Flash.
 
 ### Pricing: peak rate, no cache discount
 
@@ -300,7 +307,7 @@ Every call logs the gateway's own reported cost (`provider_metadata.gateway.cost
 
 ### JSON mode is best-effort here
 
-`responseSchema` is forwarded as native `response_format: { type: "json_schema", ... }`, but not every model behind the gateway enforces it — DeepSeek V4 Flash does not advertise `response_format` support on any of its endpoints, so the provider may ignore it. This is not a silent fallback: `parseModelJsonOutput` still fails loud (502) on output it cannot read. It is also precisely what a bake-off has to measure before any existing caller is migrated onto a gateway model.
+`responseSchema` is forwarded as native `response_format: { type: "json_schema", ... }`, but not every model behind the gateway enforces it — neither DeepSeek V4 Flash nor V4 Pro advertises `response_format` support on any of its endpoints, so the provider may ignore it. This is not a silent fallback: `parseModelJsonOutput` still fails loud (502) on output it cannot read. It is also precisely what a bake-off has to measure before any existing caller is migrated onto a gateway model.
 
 ### Retry behaviour
 
@@ -309,7 +316,8 @@ Only **connect-phase** failures are retried (a thrown fetch rejection whose caus
 ### Operational prerequisites
 
 1. A `vercel` **platform key** in key-service holding the AI Gateway API key (`GET /keys/platform/vercel/decrypt`). Without it, `provider: "vercel"` returns 502 at key resolution.
-2. The two catalog rows live in production costs-service (provider `vercel`, plan `pay-as-you-go`/`monthly`).
+2. The two catalog rows **per alias** live in production costs-service (provider `vercel`, plan `pay-as-you-go`/`monthly`).
+3. The Vercel account must have gateway credits. On the free tier the gateway serves only a subset of its catalog and returns **403** for the rest — both `deepseek-flash` and `deepseek-pro` are currently in that bucket. That is an account-billing state, not a chat-service failure: the 403 surfaces as a loud upstream error and is never worked around by substituting another model.
 
 ## Internal Platform Completion
 
