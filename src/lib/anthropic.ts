@@ -160,8 +160,12 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   // map, so a vendor's full catalog never becomes OUR catalog: a model is
   // unreachable until someone deliberately adds it here AND to costs-service.
   //
-  // costPrefix is the vendor's own model id, byte-equal — one name, no
-  // translation table to drift.
+  // costPrefix follows the costs-service catalog's own shape (verified against
+  // its seed, v0.44.0): the vendor's model id, prefixed with the vendor slug
+  // UNLESS the id already names the vendor. So `deepseek-v4-flash` stays bare
+  // while `glm-5.2` becomes `zai-glm-5.2`. These strings are byte-equal to the
+  // catalog rows — a prefix the catalog does not carry is 422-rejected at
+  // declaration and fails the request.
   // ---------------------------------------------------------------------
   deepseek: {
     // https://api-docs.deepseek.com/quick_start/pricing — read 2026-08-15.
@@ -184,12 +188,12 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     // https://docs.z.ai/guides/overview/pricing — read 2026-08-15.
     "glm-flash": {
       apiModelId: "glm-4.7-flashx",
-      costPrefix: "glm-4.7-flashx",
+      costPrefix: "zai-glm-4.7-flashx",
       provider: "zai",
     },
     "glm-pro": {
       apiModelId: "glm-5.2",
-      costPrefix: "glm-5.2",
+      costPrefix: "zai-glm-5.2",
       provider: "zai",
     },
   },
@@ -197,12 +201,12 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     // https://platform.kimi.ai/docs/pricing/chat — read 2026-08-15.
     "kimi-flash": {
       apiModelId: "kimi-k2.6",
-      costPrefix: "kimi-k2.6",
+      costPrefix: "moonshot-kimi-k2.6",
       provider: "moonshot",
     },
     "kimi-pro": {
       apiModelId: "kimi-k3",
-      costPrefix: "kimi-k3",
+      costPrefix: "moonshot-kimi-k3",
       provider: "moonshot",
     },
   },
@@ -264,10 +268,10 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   // Direct-vendor models: the cost prefix IS the vendor model id.
   "deepseek-v4-flash": "deepseek-v4-flash",
   "deepseek-v4-pro": "deepseek-v4-pro",
-  "glm-4.7-flashx": "glm-4.7-flashx",
-  "glm-5.2": "glm-5.2",
-  "kimi-k2.6": "kimi-k2.6",
-  "kimi-k3": "kimi-k3",
+  "glm-4.7-flashx": "zai-glm-4.7-flashx",
+  "glm-5.2": "zai-glm-5.2",
+  "kimi-k2.6": "moonshot-kimi-k2.6",
+  "kimi-k3": "moonshot-kimi-k3",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */
