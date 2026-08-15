@@ -196,10 +196,11 @@ Request body:
 
 - `message` (required) — the prompt to send to the LLM
 - `systemPrompt` (required) — inline system prompt (no pre-registered config needed). Empty string is allowed: the provider receives no system prompt and falls back to its default behavior. The value is forwarded byte-equal to the provider.
-- `provider` (required) — LLM provider: `"anthropic"` or `"google"`
+- `provider` (required) — LLM provider: `"anthropic"`, `"google"`, or `"vercel"` (see [Vercel AI Gateway](#vercel-ai-gateway))
 - `model` (required) — version-free model alias. The service resolves the latest versioned model internally. Valid combinations:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
-  - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.6 Flash), `pro` (most powerful, Gemini 3.1 Pro). All require a Google API key in key-service.
+  - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.7 Flash), `pro` (most powerful, Gemini 3.1 Pro). All require a Google API key in key-service.
+  - **vercel**: `deepseek-flash` (DeepSeek V4 Flash via the Vercel AI Gateway — cheapest per unit of intelligence, 1M context). Text only: `imageUrl` and `webSearch` are rejected with 400 on this provider. Requires a `vercel` key in key-service.
 - `responseFormat` (optional) — set to `"json"` to enable JSON-mode parsing. **For `provider: "anthropic"`, you MUST also supply `responseSchema`** — Anthropic has no native standalone JSON mode, so the request is rejected with 400 if `responseSchema` is missing. For `provider: "google"` (Gemini), `responseFormat: "json"` alone is sufficient (native `responseMimeType` enforcement).
 - `responseSchema` (optional) — JSON Schema enforced server-side by the provider's structured-output API. When set, JSON-mode parsing is implied (no need to also pass `responseFormat: "json"`). The schema is forwarded as:
   - **Google** → `generationConfig.responseSchema` (supported on all Gemini 2.5+ models: `pro`, `flash`, `flash-lite`). Gemini accepts only an OpenAPI 3.0 subset; chat-service auto-sanitizes the caller-supplied schema before forwarding by stripping unsupported JSON-Schema keywords (`additionalProperties`, `$schema`, `$ref`, `$defs`, `definitions`, `patternProperties`, `unevaluatedProperties`, `if`/`then`/`else`, `not`, `const`, `examples`, `default`, `exclusiveMinimum`/`exclusiveMaximum`, `multipleOf`, etc.). A `[chat-service] Gemini schema sanitized` warning is logged once per call when any field is removed.
@@ -213,7 +214,7 @@ Request body:
   - Omitted or `false` → no grounding, byte-identical to a non-grounded call (no extra cost). The web-search cost is metered per query/search and billed in addition to tokens — see the **Cost** section below.
 - `disableThinking` (optional, default `false`) — minimize the model's internal reasoning ("thinking") so the whole output budget goes to the answer. Use for extraction / structured-JSON / scoring tasks that don't need chain-of-thought. **Provider-floored, NOT a guaranteed full-off** (same pattern as a per-provider cap):
   - **Google, Gemini 2.5** (`gemini-2.5-*`) → `thinkingConfig.thinkingBudget: 0` — thinking fully OFF.
-  - **Google, Gemini 3** (`gemini-3.*`, incl. the `flash-pro` default = Gemini 3.6 Flash) → drops to the lowest level the generation allows: `thinkingLevel: "minimal"` for Flash / flash-lite, `thinkingLevel: "low"` for Pro. **Gemini 3 has no full-off** ([thinking docs](https://ai.google.dev/gemini-api/docs/thinking)), so this is "minimize", not zero.
+  - **Google, Gemini 3** (`gemini-3.*`, incl. the `flash-pro` default = Gemini 3.7 Flash) → drops to the lowest level the generation allows: `thinkingLevel: "minimal"` for Flash / flash-lite, `thinkingLevel: "low"` for Pro. **Gemini 3 has no full-off** ([thinking docs](https://ai.google.dev/gemini-api/docs/thinking)), so this is "minimize", not zero.
   - **Anthropic** → no-op: `/complete` never enables extended thinking, so the field is accepted and ignored.
   - Omitted or `false` → the service default (bounded thinking: `thinkingLevel: "low"` on Gemini 3, `thinkingBudget: 8192` on Gemini 2.5), byte-identical to a normal call.
 - `thinkingLevel` (optional, `"minimal" | "low" | "medium" | "high"`) — per-call Gemini-3 thinking level, the same graduated levels the `/chat` config path supports. Lets a caller dial reasoning effort **without changing the model** (e.g. an extraction task that wants `"low"` — cheaper/faster than default but above the floor). Precedence: **`disableThinking` (when set) always wins → the provider floor, ignoring this field.** Otherwise the model generates at this level. **Omitted → the service default (`"low"`), byte-identical to a normal call — existing callers see ZERO change.** Applies only to Gemini 3; a safe **no-op** on Gemini 2.5 (uses its bounded `thinkingBudget: 8192`) and Anthropic (thinking is never enabled on `/complete`). A caller that opts up to `medium`/`high` owns the tradeoff — higher thinking can consume the output budget on large JSON outputs (`MAX_TOKENS`), so size `maxTokens`/your schema accordingly.
@@ -258,6 +259,57 @@ Response:
 Unlike POST /chat, this endpoint is **stateless** (no sessions), accepts an **inline systemPrompt**, and returns **JSON** instead of SSE. Run tracking and billing work identically to POST /chat.
 
 Error responses: 400 (validation), 401 (auth), 402 (insufficient credits), 502 (upstream failure).
+
+## Vercel AI Gateway
+
+A third provider path alongside the two native clients. Where `anthropic.ts` and `gemini.ts` each speak a vendor-specific dialect and carry that vendor's accumulated quirks, `src/lib/gateway.ts` speaks one generic dialect — OpenAI Chat Completions, `POST https://ai-gateway.vercel.sh/v1/chat/completions` — against a gateway that fronts hundreds of models. Adding a model behind it is a `MODEL_MAP` entry, not a new client.
+
+**Scope.** `/complete` and `/internal/platform-complete` only, non-streaming, text in / text out. Not wired: `/chat` (agentic tool-calling is unproven on these models and must be measured first), web search, image input, image generation, embeddings. `webSearch` or `imageUrl` with `provider: "vercel"` returns **400** rather than silently answering ungrounded or blind.
+
+**Opt-in.** No existing caller reaches this path implicitly. `/chat` config defaults are untouched (`google`/`flash-pro`), and a caller must pass `provider: "vercel"` explicitly.
+
+```json
+{
+  "message": "Extract the company's industry and HQ country from this page.",
+  "systemPrompt": "You are an extraction assistant. Return JSON only.",
+  "provider": "vercel",
+  "model": "deepseek-flash",
+  "responseFormat": "json",
+  "temperature": 0
+}
+```
+
+### Model breadth is not catalog breadth
+
+The gateway serves ~330 models. chat-service reaches exactly the aliases declared in `MODEL_MAP.vercel`, and `resolveModel` throws on anything else. Each alias costs exactly **two** costs-service catalog rows (`<costPrefix>-tokens-input` / `-tokens-output`) which must exist in **production** before the alias ships — otherwise runs-service 422s the cost declaration and the call fails loud. So enumerating the gateway's catalog is neither required nor possible by accident: a model is unreachable until someone adds it to both places deliberately.
+
+Currently declared: `deepseek-flash` → `deepseek/deepseek-v4-flash` → `deepseek-v4-flash-tokens-{input,output}`.
+
+### Pricing: peak rate, no cache discount
+
+Two rules, both deliberately conservative:
+
+- **Price at the PEAK rate.** DeepSeek splits into peak (01:00–04:00 and 06:00–10:00 UTC) and off-peak pricing at half the peak rate, and the gateway routes dynamically across ~10 providers of the same model whose rates differ roughly 3×. The catalog carries DeepSeek's published peak list price ($0.44 / $1.32 per 1M input / output), which is above every provider's current rate. Cheaper hours and cheaper routing are margin, never a shortfall. Same reasoning as pricing Gemini at its post-promotion rate.
+- **Cached input tokens are billed at the full cache-miss rate.** The gateway reports `prompt_tokens_details.cached_tokens`, and `GatewayCompleteResult.cachedInputTokens` carries it — for observability only. It is not discounted, because (a) AI Gateway currently bills implicit-cache tokens at full input price for OpenAI/DeepSeek-class providers ([vercel/ai#13907](https://github.com/vercel/ai/issues/13907), open), so the discount does not exist on our invoice yet, and (b) the costs catalog has no `-tokens-cached-input` name for any provider — Anthropic cache reads are already billed as full input today. Both must change together before a third price is introduced.
+
+### No routing knobs, and the model is asserted
+
+The request body deliberately carries **no** `models` fallback array, **no** `sort`, and **no** provider `order`/`only`. A request that silently resolved to a different model than the alias we priced would declare the wrong cost name. `assertModelMatches` closes the loop: if the response's `model` is not the one requested, the call throws rather than billing under a catalog name that no longer describes the spend.
+
+Every call logs the gateway's own reported cost (`provider_metadata.gateway.cost`) and the provider that actually served it, so declared-vs-charged can be reconciled.
+
+### JSON mode is best-effort here
+
+`responseSchema` is forwarded as native `response_format: { type: "json_schema", ... }`, but not every model behind the gateway enforces it — DeepSeek V4 Flash does not advertise `response_format` support on any of its endpoints, so the provider may ignore it. This is not a silent fallback: `parseModelJsonOutput` still fails loud (502) on output it cannot read. It is also precisely what a bake-off has to measure before any existing caller is migrated onto a gateway model.
+
+### Retry behaviour
+
+Only **connect-phase** failures are retried (a thrown fetch rejection whose cause is a transient socket code — `ECONNRESET`, `ECONNREFUSED`, `ETIMEDOUT`, …), with 250/500/1000 ms backoff. A completed HTTP response — including a 5xx — is a real answer from the gateway and may already have been billed upstream, so it is never replayed. This is intentionally stricter than `gemini.ts`, which retries 429/5xx status codes.
+
+### Operational prerequisites
+
+1. A `vercel` **platform key** in key-service holding the AI Gateway API key (`GET /keys/platform/vercel/decrypt`). Without it, `provider: "vercel"` returns 502 at key resolution.
+2. The two catalog rows live in production costs-service (provider `vercel`, plan `pay-as-you-go`/`monthly`).
 
 ## Internal Platform Completion
 
@@ -592,7 +644,7 @@ After a tool result, more `token` events follow with the AI's continuation.
 
 **Tool-then-empty never surfaces as silence.** If one or more tools run but the model's follow-up "summarize" turn produces no text, the service emits a fallback `token` event built from the real tool results (so the user always sees what was retrieved) and logs the empty turn loudly — never a frozen tool card with a blank reply. This guards both the Gemini and Anthropic agentic loops. The `/chat` Gemini path also sets an explicit **64k** `maxOutputTokens` (Gemini-3 thinking tokens count against the output budget; without an explicit cap a post-tool summary turn can exhaust the lower default cap on thinking and emit zero answer text).
 
-**Thinking config is generation-specific.** Gemini 3.x models (`gemini-3*`, incl. `gemini-3.6-flash` = the `flash-pro` alias) use `thinkingConfig.thinkingLevel` (`"low"` here); the Gemini-2.5-era `thinkingBudget` integer is only "accepted for backwards compatibility" on Gemini 3 and produces degenerate **thinking-only / empty** replies — which is what broke every flash-pro `/chat` once Google flipped `gemini-3.5-flash` to stable. Gemini 2.5 models keep `thinkingBudget`. Selected per-model by `buildThinkingConfig(model, disableThinking, level)`. On `/chat` a config's stored `thinkingLevel` is threaded in as `level` to raise a Gemini-3 chat mode above the `"low"` default (e.g. the self-seeded editor configs run at `"medium"`); `/complete` passes no `level`, so it always stays `"low"`.
+**Thinking config is generation-specific.** Gemini 3.x models (`gemini-3*`, incl. `gemini-3.7-flash` = the `flash-pro` alias) use `thinkingConfig.thinkingLevel` (`"low"` here); the Gemini-2.5-era `thinkingBudget` integer is only "accepted for backwards compatibility" on Gemini 3 and produces degenerate **thinking-only / empty** replies — which is what broke every flash-pro `/chat` once Google flipped `gemini-3.5-flash` to stable. Gemini 2.5 models keep `thinkingBudget`. Selected per-model by `buildThinkingConfig(model, disableThinking, level)`. On `/chat` a config's stored `thinkingLevel` is threaded in as `level` to raise a Gemini-3 chat mode above the `"low"` default (e.g. the self-seeded editor configs run at `"medium"`); `/complete` passes no `level`, so it always stays `"low"`.
 
 #### Tool memory across turns
 

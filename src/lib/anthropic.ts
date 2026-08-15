@@ -102,8 +102,16 @@ export function prepareAnthropicSchema<T>(schema: T): T {
 // the latest versioned model ID internally.
 // ---------------------------------------------------------------------------
 
-export type Provider = "anthropic" | "google";
-export type ModelAlias = "haiku" | "sonnet" | "opus" | "flash-lite" | "flash" | "flash-pro" | "pro";
+export type Provider = "anthropic" | "google" | "vercel";
+export type ModelAlias =
+  | "haiku"
+  | "sonnet"
+  | "opus"
+  | "flash-lite"
+  | "flash"
+  | "flash-pro"
+  | "pro"
+  | "deepseek-flash";
 
 interface ResolvedModel {
   /** Versioned model ID sent to the provider's API */
@@ -111,7 +119,7 @@ interface ResolvedModel {
   /** Cost-name prefix for costs-service */
   costPrefix: string;
   /** Provider key used for key-service resolution */
-  provider: "anthropic" | "google";
+  provider: "anthropic" | "google" | "vercel";
 }
 
 const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
@@ -124,9 +132,26 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     "flash-lite": { apiModelId: "gemini-3.1-flash-lite", costPrefix: "google-flash-lite-3.1", provider: "google" },
     // "flash" alias → Gemini 3.5 Flash-Lite (GA, cheaper than the retired Flash-3 preview). 2026-07-24.
     "flash": { apiModelId: "gemini-3.5-flash-lite", costPrefix: "google-flash-lite-3.5", provider: "google" },
-    // "flash-pro" alias → Gemini 3.6 Flash (GA mid-tier, output -17% vs the retired 3.5 Flash). DIS-130, upgraded 2026-07-24.
-    "flash-pro": { apiModelId: "gemini-3.6-flash", costPrefix: "google-flash-3.6", provider: "google" },
+    // "flash-pro" alias → Gemini 3.7 Flash (GA mid-tier). Same list price as the 3.6 Flash it
+    // replaces ($1.50/$7.50 per MTok from 2027-01-01, both on the same promo until then), with
+    // upgraded coding/agentic quality. DIS-130, upgraded 3.5→3.6 2026-07-24, 3.6→3.7 2026-08-14.
+    "flash-pro": { apiModelId: "gemini-3.7-flash", costPrefix: "google-flash-3.7", provider: "google" },
     "pro": { apiModelId: "gemini-3.1-pro-preview", costPrefix: "google-pro-3.1", provider: "google" },
+  },
+  // Vercel AI Gateway — one OpenAI-compatible client fronting many models.
+  //
+  // EVERY alias here costs exactly two costs-service catalog rows
+  // (`<costPrefix>-tokens-input` / `-tokens-output`), which must exist in
+  // PRODUCTION before the alias ships, or runs-service 422s and the call fails
+  // loud. resolveModel throws on any alias absent from this map, so the
+  // gateway's ~330-model breadth never becomes catalog breadth: a model is
+  // unreachable until someone deliberately adds it here AND to the catalog.
+  vercel: {
+    "deepseek-flash": {
+      apiModelId: "deepseek/deepseek-v4-flash",
+      costPrefix: "deepseek-v4-flash",
+      provider: "vercel",
+    },
   },
 };
 
@@ -134,6 +159,7 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
 export const PROVIDER_MODELS: Record<Provider, readonly ModelAlias[]> = {
   anthropic: ["haiku", "sonnet", "opus"],
   google: ["flash-lite", "flash", "flash-pro", "pro"],
+  vercel: ["deepseek-flash"],
 };
 
 /**
@@ -161,9 +187,11 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "gemini-3-flash-preview": "google-flash-3",
   "gemini-3.5-flash": "google-flash-3.5",
   "gemini-3.6-flash": "google-flash-3.6",
+  "gemini-3.7-flash": "google-flash-3.7",
   "gemini-3.1-pro-preview": "google-pro-3.1",
   "gemini-2.5-pro": "google-pro-2.5",
   "gemini-2.5-flash": "google-flash-2.5",
+  "deepseek/deepseek-v4-flash": "deepseek-v4-flash",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */

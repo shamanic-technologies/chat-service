@@ -578,10 +578,10 @@ describe("resolveModel", () => {
     expect(resolved.provider).toBe("google");
   });
 
-  it("resolves google + flash-pro to gemini-3.6-flash", () => {
+  it("resolves google + flash-pro to gemini-3.7-flash", () => {
     const resolved = resolveModel("google", "flash-pro");
-    expect(resolved.apiModelId).toBe("gemini-3.6-flash");
-    expect(resolved.costPrefix).toBe("google-flash-3.6");
+    expect(resolved.apiModelId).toBe("gemini-3.7-flash");
+    expect(resolved.costPrefix).toBe("google-flash-3.7");
     expect(resolved.provider).toBe("google");
   });
 
