@@ -8,8 +8,10 @@ import {
   GATEWAY_PROVIDER,
 } from "../../src/lib/gateway.js";
 import { resolveModel, PROVIDER_MODELS, costPrefixForModel } from "../../src/lib/anthropic.js";
+import { CompleteRequestSchema, InternalPlatformCompleteRequestSchema } from "../../src/schemas.js";
 
 const MODEL = "deepseek/deepseek-v4-flash";
+const PRO_MODEL = "deepseek/deepseek-v4-pro";
 
 function okBody(overrides: Record<string, unknown> = {}) {
   return {
@@ -53,17 +55,75 @@ describe("gateway model resolution", () => {
     expect(() => resolveModel("vercel", "sonnet")).toThrow(/Unknown model/);
   });
 
-  it("exposes exactly one gateway alias for Zod validation", () => {
-    expect(PROVIDER_MODELS.vercel).toEqual(["deepseek-flash"]);
+  it("resolves the deepseek-pro alias to the undated gateway model id and cost prefix", () => {
+    const resolved = resolveModel("vercel", "deepseek-pro");
+    // The catalog also carries dated ids (`-0813`); our aliases are version-free.
+    expect(resolved.apiModelId).toBe(PRO_MODEL);
+    expect(resolved.costPrefix).toBe("deepseek-v4-pro");
+    expect(resolved.provider).toBe(GATEWAY_PROVIDER);
   });
 
-  it("maps the gateway model id back to its cost prefix", () => {
+  it("declares exactly the two catalog names for the pro alias", () => {
+    const { costPrefix } = resolveModel("vercel", "deepseek-pro");
+    expect(`${costPrefix}-tokens-input`).toBe("deepseek-v4-pro-tokens-input");
+    expect(`${costPrefix}-tokens-output`).toBe("deepseek-v4-pro-tokens-output");
+  });
+
+  it("leaves the flash alias byte-identical after adding pro", () => {
+    expect(resolveModel("vercel", "deepseek-flash")).toEqual({
+      apiModelId: "deepseek/deepseek-v4-flash",
+      costPrefix: "deepseek-v4-flash",
+      provider: "vercel",
+    });
+  });
+
+  it("exposes exactly the declared gateway aliases for Zod validation", () => {
+    expect(PROVIDER_MODELS.vercel).toEqual(["deepseek-flash", "deepseek-pro"]);
+  });
+
+  it("maps the gateway model ids back to their cost prefixes", () => {
     expect(costPrefixForModel(MODEL)).toBe("deepseek-v4-flash");
+    expect(costPrefixForModel(PRO_MODEL)).toBe("deepseek-v4-pro");
   });
 
   it("leaves the native provider maps untouched", () => {
     expect(resolveModel("google", "flash-pro").costPrefix).toBe("google-flash-3.7");
     expect(resolveModel("anthropic", "sonnet").costPrefix).toBe("anthropic-sonnet-4.6");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Request schemas — the caller reads these to learn which models exist
+// ---------------------------------------------------------------------------
+
+describe("gateway aliases on the request schemas", () => {
+  const base = { message: "hi", systemPrompt: "" };
+
+  for (const model of ["deepseek-flash", "deepseek-pro"] as const) {
+    it(`accepts provider "vercel" + model "${model}" on POST /complete`, () => {
+      expect(CompleteRequestSchema.safeParse({ ...base, provider: "vercel", model }).success).toBe(true);
+    });
+
+    it(`accepts provider "vercel" + model "${model}" on /internal/platform-complete`, () => {
+      expect(
+        InternalPlatformCompleteRequestSchema.safeParse({ ...base, provider: "vercel", model }).success,
+      ).toBe(true);
+    });
+  }
+
+  it("rejects an unknown gateway model and names the accepted set", () => {
+    const parsed = CompleteRequestSchema.safeParse({ ...base, provider: "vercel", model: "deepseek-ultra" });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("rejects a gateway alias sent with a native provider", () => {
+    const parsed = CompleteRequestSchema.safeParse({ ...base, provider: "google", model: "deepseek-pro" });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues.map((i) => i.message).join(" ")).toMatch(
+        /not valid for provider "google".*flash-lite, flash, flash-pro, pro/s,
+      );
+    }
   });
 });
 
