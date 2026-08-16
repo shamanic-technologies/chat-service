@@ -351,7 +351,7 @@ Only **connect-phase** failures are retried (a thrown fetch rejection whose caus
 ### Operational prerequisites
 
 1. **One key per vendor** in key-service, stored under that vendor's slug: `deepseek`, `zai`, `moonshot`. Org-scoped calls read `GET /keys/{provider}/decrypt`; `/internal/platform-complete` reads `GET /keys/platform/{provider}/decrypt`. A missing key returns **502** naming the vendor and the slug it must live under — not a generic failure — so "which of the three is unconfigured" is answered by the error itself.
-2. The catalog rows for the alias live in production costs-service. As of 2026-08-16 the catalog carries the twelve regime-and-cache DeepSeek rows and the three Z.ai rows per model. **Moonshot carries nothing** — its prices are unconfirmed — so a `kimi-flash` / `kimi-pro` call returns **502** naming the three rows someone must seed (`missingCostNames` in the body), before any key fetch, run or vendor call. That failure is deliberate: a wrong price is silent, a missing one is not. Seed the rows in costs-service `src/db/seed.ts` (`SEED_PROVIDERS_COSTS`) and deploy to production to lift it.
+2. The catalog rows for the alias live in production costs-service. As of 2026-08-16 every reachable model is priced: the twelve regime-and-cache DeepSeek rows, and three rows per model (`-tokens-{input,cached-input,output}`) for both Z.ai and Moonshot. An alias added ahead of its rows still returns **502** naming the three rows someone must seed (`missingCostNames` in the body), before any key fetch, run or vendor call — a wrong price is silent, a missing one is not. Seed them in costs-service `src/db/seed.ts` (`SEED_PROVIDERS_COSTS`) and deploy to production to lift it.
 
 ### Out-of-credit alerting
 
