@@ -42,6 +42,12 @@ import {
   type VendorId,
 } from "./lib/openai-compatible.js";
 import {
+  buildLlmCostNames,
+  flatCostNames,
+  UnpricedModelError,
+  type LlmCostNames,
+} from "./lib/cost-names.js";
+import {
   createWorkflow,
   upgradeWorkflow,
   forkWorkflow,
@@ -375,6 +381,22 @@ app.post("/complete", requireAuth, async (req, res) => {
     });
   }
 
+  // Catalog names for this call. Resolved BEFORE anything is fetched or spent:
+  // a model costs-service cannot price must fail while the request is still
+  // free. ONE timestamp for the whole request — a DeepSeek call that straddles
+  // a peak boundary must hold and bill against the same regime, not one each.
+  const costClock = new Date();
+  let costNames: LlmCostNames;
+  try {
+    costNames = buildLlmCostNames({ provider, costPrefix: resolved.costPrefix, at: costClock });
+  } catch (err) {
+    if (err instanceof UnpricedModelError) {
+      console.error(`[complete] org="${orgId}" model has no catalog price:`, err.message);
+      return res.status(502).json({ error: err.message, missingCostNames: err.missingCostNames });
+    }
+    throw err;
+  }
+
   // Resolve API key per-request
   let resolvedKey: ResolvedKey;
   try {
@@ -393,8 +415,6 @@ app.post("/complete", requireAuth, async (req, res) => {
     });
   }
 
-  // Cost prefix + source from model / key resolution.
-  const effectiveCostPrefix = resolved.costPrefix;
   const costSource: "platform" | "org" = resolvedKey.keySource === "org" ? "org" : "platform";
   // Right-sized provision quantities. The HOLD reserved before the call is an
   // affordability reservation, NOT the provider's hard cap: holding the flat 64k
@@ -441,7 +461,7 @@ app.post("/complete", requireAuth, async (req, res) => {
     try {
       provisionedCostIds = await provisionAndAuthorizeLlmCost({
         runId,
-        costPrefix: effectiveCostPrefix,
+        costNames,
         inputTokens: estimatedInputTokens,
         outputTokens: holdOutputTokens,
         keySource: resolvedKey.keySource,
@@ -567,17 +587,22 @@ app.post("/complete", requireAuth, async (req, res) => {
       // at the miss rate would overstate real spend on most calls. The
       // Anthropic/Google paths report no cached count, so the split is a no-op
       // there and their declaration is byte-identical to before.
-      const cachedInputTokens = Math.min(totalCachedInputTokens, totalPromptTokens);
+      // A vendor whose catalog prices no cache dimension has no cached name:
+      // its whole prompt count is billed at the one input rate, which is what
+      // the vendor itself charges — not an approximation of a hit as a miss.
+      const cachedInputTokens = costNames.cachedInput
+        ? Math.min(totalCachedInputTokens, totalPromptTokens)
+        : 0;
       const freshInputTokens = totalPromptTokens - cachedInputTokens;
       const actualItems = [
         ...(freshInputTokens > 0
-          ? [{ costName: `${effectiveCostPrefix}-tokens-input`, quantity: freshInputTokens, costSource }]
+          ? [{ costName: costNames.input, quantity: freshInputTokens, costSource }]
           : []),
-        ...(cachedInputTokens > 0
-          ? [{ costName: `${effectiveCostPrefix}-tokens-cached-input`, quantity: cachedInputTokens, costSource }]
+        ...(costNames.cachedInput && cachedInputTokens > 0
+          ? [{ costName: costNames.cachedInput, quantity: cachedInputTokens, costSource }]
           : []),
         ...(totalOutputTokens > 0
-          ? [{ costName: `${effectiveCostPrefix}-tokens-output`, quantity: totalOutputTokens, costSource }]
+          ? [{ costName: costNames.output, quantity: totalOutputTokens, costSource }]
           : []),
         ...(searchCostName && totalSearchCount > 0
           ? [{ costName: searchCostName, quantity: totalSearchCount, costSource }]
@@ -668,7 +693,7 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
     try {
       provisionedCostIds = await provisionAndAuthorizeLlmCost({
         runId,
-        costPrefix: GEMINI_IMAGE_COST_PREFIX,
+        costNames: flatCostNames(GEMINI_IMAGE_COST_PREFIX),
         inputTokens: estimatedInputTokens,
         outputTokens: estimatedOutputTokens,
         keySource: resolvedKey.keySource,
@@ -977,7 +1002,8 @@ const WORST_CASE_SEARCHES = 20;
  */
 async function provisionLlmCost(args: {
   runId: string;
-  costPrefix: string;
+  /** Catalog names for this call — regime- and cache-resolved by buildLlmCostNames. */
+  costNames: LlmCostNames;
   inputTokens: number;
   outputTokens: number;
   keySource: "org" | "platform";
@@ -987,10 +1013,10 @@ async function provisionLlmCost(args: {
   searchCostName?: string;
   searchQuantity?: number;
 }): Promise<string[]> {
-  const { runId, costPrefix, inputTokens, outputTokens, keySource, identity, trackingHeaders, searchCostName, searchQuantity } = args;
+  const { runId, costNames, inputTokens, outputTokens, keySource, identity, trackingHeaders, searchCostName, searchQuantity } = args;
   const items: CostItem[] = [
-    { costName: `${costPrefix}-tokens-input`, quantity: inputTokens, costSource: keySource, status: "provisioned" },
-    { costName: `${costPrefix}-tokens-output`, quantity: outputTokens, costSource: keySource, status: "provisioned" },
+    { costName: costNames.input, quantity: inputTokens, costSource: keySource, status: "provisioned" },
+    { costName: costNames.output, quantity: outputTokens, costSource: keySource, status: "provisioned" },
     ...(searchCostName && searchQuantity
       ? [{ costName: searchCostName, quantity: searchQuantity, costSource: keySource, status: "provisioned" as const }]
       : []),
@@ -1007,7 +1033,7 @@ async function provisionLlmCost(args: {
  */
 async function provisionAndAuthorizeLlmCost(args: {
   runId: string;
-  costPrefix: string;
+  costNames: LlmCostNames;
   inputTokens: number;
   outputTokens: number;
   keySource: "org" | "platform";
@@ -1018,14 +1044,14 @@ async function provisionAndAuthorizeLlmCost(args: {
   searchCostName?: string;
   searchQuantity?: number;
 }): Promise<string[]> {
-  const { runId, costPrefix, inputTokens, outputTokens, keySource, identity, trackingHeaders, description, searchCostName, searchQuantity } = args;
+  const { runId, costNames, inputTokens, outputTokens, keySource, identity, trackingHeaders, description, searchCostName, searchQuantity } = args;
   const costIds = await provisionLlmCost(args);
   if (keySource === "platform") {
     try {
       const auth = await authorizeCredits({
         items: [
-          { costName: `${costPrefix}-tokens-input`, quantity: inputTokens },
-          { costName: `${costPrefix}-tokens-output`, quantity: outputTokens },
+          { costName: costNames.input, quantity: inputTokens },
+          { costName: costNames.output, quantity: outputTokens },
           ...(searchCostName && searchQuantity
             ? [{ costName: searchCostName, quantity: searchQuantity }]
             : []),
@@ -1540,7 +1566,6 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   const isGemini = resolved.provider === "google";
   const isVendor = isVendorProvider(resolved.provider);
   const provider = resolved.provider;
-  const costPrefix = resolved.costPrefix;
   // Native web-search cost name (byte-equal to costs-service catalog) — only when opted in.
   const searchCostName = webSearch && !isVendor ? webSearchCostName(isGemini) : undefined;
 
@@ -1563,6 +1588,19 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       error:
         "Anthropic JSON mode requires responseSchema. Per Anthropic API, JSON output is only enforceable via output_config.format with a JSON Schema. Supply responseSchema in the request body.",
     });
+  }
+
+  // Catalog names, resolved before any fetch — same one-timestamp rule as
+  // /complete: the regime is picked once, from the UTC clock at declaration.
+  let costNames: LlmCostNames;
+  try {
+    costNames = buildLlmCostNames({ provider, costPrefix: resolved.costPrefix, at: new Date() });
+  } catch (err) {
+    if (err instanceof UnpricedModelError) {
+      console.error(`[internal/platform-complete] model has no catalog price:`, err.message);
+      return res.status(502).json({ error: err.message, missingCostNames: err.missingCostNames });
+    }
+    throw err;
   }
 
   let apiKey: string;
@@ -1637,17 +1675,19 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
     // posted as `actual` post-call. Throws (fail loud → 502) if undeclarable.
     // Same cache split as /complete: cached prompt tokens are declared under
     // the vendor's far cheaper cached-input name, not billed as fresh input.
-    const cachedInputTokens = Math.min(result.cachedInputTokens ?? 0, result.tokensInput);
+    const cachedInputTokens = costNames.cachedInput
+      ? Math.min(result.cachedInputTokens ?? 0, result.tokensInput)
+      : 0;
     const freshInputTokens = result.tokensInput - cachedInputTokens;
     const costItems: CostItem[] = [
       ...(freshInputTokens > 0
-        ? [{ costName: `${costPrefix}-tokens-input`, quantity: freshInputTokens, costSource: "platform" as const }]
+        ? [{ costName: costNames.input, quantity: freshInputTokens, costSource: "platform" as const }]
         : []),
-      ...(cachedInputTokens > 0
-        ? [{ costName: `${costPrefix}-tokens-cached-input`, quantity: cachedInputTokens, costSource: "platform" as const }]
+      ...(costNames.cachedInput && cachedInputTokens > 0
+        ? [{ costName: costNames.cachedInput, quantity: cachedInputTokens, costSource: "platform" as const }]
         : []),
       ...(result.tokensOutput > 0
-        ? [{ costName: `${costPrefix}-tokens-output`, quantity: result.tokensOutput, costSource: "platform" as const }]
+        ? [{ costName: costNames.output, quantity: result.tokensOutput, costSource: "platform" as const }]
         : []),
       ...(searchCostName && result.searchCount > 0
         ? [{ costName: searchCostName, quantity: result.searchCount, costSource: "platform" as const }]
@@ -1999,7 +2039,9 @@ app.post("/chat", requireAuth, async (req, res) => {
       try {
         const costIds = await provisionAndAuthorizeLlmCost({
           runId: runId!,
-          costPrefix: resolvedModelInfo.costPrefix,
+          // /chat is not wired to the direct-vendor providers, so the flat
+          // Anthropic/Google names apply — unchanged from before.
+          costNames: flatCostNames(resolvedModelInfo.costPrefix),
           inputTokens: estimatedInputTokens,
           // Right-sized affordability hold (not the provider streaming cap, which
           // stays at MAX_TOKENS via createStream). A flat 64k hold per agentic

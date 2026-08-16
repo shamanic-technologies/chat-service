@@ -211,20 +211,31 @@ describe("POST /complete — direct vendor routing", () => {
     routes = [];
     fetchCalls = [];
     installFetchMock();
+    // DeepSeek's cost names carry the regime in force at the moment of
+    // declaration, so the clock is pinned: 02:00Z sits inside the first peak
+    // window (01:00-04:00 UTC). Without this the suite would bill a different
+    // name depending on the hour CI happens to run.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-20T02:00:00Z"));
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
   // Each row: alias → the vendor host, the model id on the wire, the key slug,
-  // and the catalog prefix. This is the acceptance criterion "a caller can
-  // select any of the six models and reach the right vendor with the right
-  // model id", asserted rather than assumed.
+  // and the catalog prefix the declared names are built from. This is the
+  // acceptance criterion "a caller can select any of the priced models and
+  // reach the right vendor with the right model id", asserted rather than
+  // assumed. The DeepSeek prefixes carry a regime segment because DeepSeek's
+  // catalog prices by time of day; Z.ai's do not because its catalog does not.
+  // Moonshot is absent: it has no rows at all and is covered by its own
+  // fail-loud tests below.
   const CASES = [
-    { provider: "deepseek", model: "deepseek-flash", host: DEEPSEEK_URL, wire: "deepseek-v4-flash", prefix: "deepseek-v4-flash" },
-    { provider: "deepseek", model: "deepseek-pro", host: DEEPSEEK_URL, wire: "deepseek-v4-pro", prefix: "deepseek-v4-pro" },
+    { provider: "deepseek", model: "deepseek-flash", host: DEEPSEEK_URL, wire: "deepseek-v4-flash", prefix: "deepseek-v4-flash-peak" },
+    { provider: "deepseek", model: "deepseek-pro", host: DEEPSEEK_URL, wire: "deepseek-v4-pro", prefix: "deepseek-v4-pro-peak" },
     { provider: "zai", model: "glm-flash", host: ZAI_URL, wire: "glm-4.7-flashx", prefix: "zai-glm-4.7-flashx" },
     { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.2", prefix: "zai-glm-5.2" },
-    { provider: "moonshot", model: "kimi-flash", host: MOONSHOT_URL, wire: "kimi-k2.6", prefix: "moonshot-kimi-k2.6" },
-    { provider: "moonshot", model: "kimi-pro", host: MOONSHOT_URL, wire: "kimi-k3", prefix: "moonshot-kimi-k3" },
   ] as const;
 
   for (const c of CASES) {
@@ -320,15 +331,20 @@ describe("POST /complete — direct vendor routing", () => {
     expect(res.status).toBe(200);
 
     const actual = actualItems(cap.postedItems);
-    // 40 fresh tokens at the miss rate, 960 at the (50x cheaper) cache rate.
-    expect(quantityOf(actual, "deepseek-v4-flash-tokens-input")).toBe(40);
-    expect(quantityOf(actual, "deepseek-v4-flash-tokens-cached-input")).toBe(960);
-    expect(quantityOf(actual, "deepseek-v4-flash-tokens-output")).toBe(20);
+    // 40 fresh tokens at the miss rate, 960 at the (50x cheaper) cache rate —
+    // both under the peak names, because the pinned clock is 02:00 UTC.
+    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-input")).toBe(40);
+    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-cached-input")).toBe(960);
+    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-output")).toBe(20);
     // The split is exhaustive: nothing is billed twice, nothing is dropped.
     expect(
-      quantityOf(actual, "deepseek-v4-flash-tokens-input")! +
-        quantityOf(actual, "deepseek-v4-flash-tokens-cached-input")!,
+      quantityOf(actual, "deepseek-v4-flash-peak-tokens-input")! +
+        quantityOf(actual, "deepseek-v4-flash-peak-tokens-cached-input")!,
     ).toBe(1000);
+    // The superseded flat names are frozen in the catalog and never declared.
+    expect(actual.some((i) => i.costName === "deepseek-v4-flash-tokens-input")).toBe(false);
+    expect(actual.some((i) => i.costName === "deepseek-v4-flash-tokens-cached-input")).toBe(false);
+    expect(actual.some((i) => i.costName === "deepseek-v4-flash-tokens-output")).toBe(false);
 
     // The caller still sees the TOTAL prompt count; only billing is split.
     expect(res.body.tokensInput).toBe(1000);
@@ -361,17 +377,22 @@ describe("POST /complete — direct vendor routing", () => {
     expect(quantityOf(actual, "zai-glm-5.2-tokens-cached-input")).toBe(750);
   });
 
-  it("bills Moonshot cache hits from the flat cached_tokens field", async () => {
+  it("declares DeepSeek against the off-peak names one minute after a peak window closes", async () => {
+    // 04:00 UTC is the first off-peak minute after the 01:00-04:00 window. The
+    // regime is read from the clock, so the same request declared at 03:59
+    // would have carried the peak names asserted above.
+    vi.setSystemTime(new Date("2026-08-20T04:00:00Z"));
+
     const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
     const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
     routes.push(
       mockRunsCreate(),
-      mockVendorKey("moonshot"),
+      mockVendorKey("deepseek"),
       mockBilling(),
       mockVendor(vendor, {
-        host: MOONSHOT_URL,
-        model: "kimi-k3",
-        usage: { prompt_tokens: 600, completion_tokens: 11, cached_tokens: 540 },
+        host: DEEPSEEK_URL,
+        model: "deepseek-v4-flash",
+        usage: { prompt_tokens: 1000, completion_tokens: 20, prompt_cache_hit_tokens: 960, prompt_cache_miss_tokens: 40 },
       }),
       ...mockRunsCostRoutes(cap),
       mockRunsStatusPatch(),
@@ -380,12 +401,82 @@ describe("POST /complete — direct vendor routing", () => {
     const res = await request(app)
       .post("/complete")
       .set(AUTH)
-      .send({ message: "hi", systemPrompt: "big stable prompt", provider: "moonshot", model: "kimi-pro" });
+      .send({ message: "hi", systemPrompt: "big stable prompt", provider: "deepseek", model: "deepseek-flash" });
+
+    expect(res.status).toBe(200);
+
+    // The pre-call HOLD and the post-call ACTUAL agree on the regime — one
+    // timestamp per request, so a call cannot hold peak and bill off-peak.
+    expect(cap.postedItems[0].map((i) => i.costName).sort()).toEqual([
+      "deepseek-v4-flash-off-peak-tokens-input",
+      "deepseek-v4-flash-off-peak-tokens-output",
+    ]);
+    const actual = actualItems(cap.postedItems);
+    expect(quantityOf(actual, "deepseek-v4-flash-off-peak-tokens-input")).toBe(40);
+    expect(quantityOf(actual, "deepseek-v4-flash-off-peak-tokens-cached-input")).toBe(960);
+    expect(quantityOf(actual, "deepseek-v4-flash-off-peak-tokens-output")).toBe(20);
+    expect(actual.some((i) => i.costName.includes("-peak-tokens") && !i.costName.includes("off-peak"))).toBe(false);
+  });
+
+  it("declares DeepSeek against the peak names on the first minute a peak window opens", async () => {
+    // 06:00 UTC opens the second peak window (06:00-10:00). 05:59 is off-peak.
+    vi.setSystemTime(new Date("2026-08-20T06:00:00Z"));
+
+    const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+    const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+    routes.push(
+      mockRunsCreate(),
+      mockVendorKey("deepseek"),
+      mockBilling(),
+      mockVendor(vendor, {
+        host: DEEPSEEK_URL,
+        model: "deepseek-v4-pro",
+        usage: { prompt_tokens: 500, completion_tokens: 12, prompt_cache_hit_tokens: 400 },
+      }),
+      ...mockRunsCostRoutes(cap),
+      mockRunsStatusPatch(),
+    );
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "hi", systemPrompt: "big stable prompt", provider: "deepseek", model: "deepseek-pro" });
 
     expect(res.status).toBe(200);
     const actual = actualItems(cap.postedItems);
-    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-input")).toBe(60);
-    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-cached-input")).toBe(540);
+    expect(quantityOf(actual, "deepseek-v4-pro-peak-tokens-input")).toBe(100);
+    expect(quantityOf(actual, "deepseek-v4-pro-peak-tokens-cached-input")).toBe(400);
+    expect(quantityOf(actual, "deepseek-v4-pro-peak-tokens-output")).toBe(12);
+  });
+
+  it("fails loud on Moonshot — names the missing catalog rows, spends nothing", async () => {
+    // costs-service carries no Moonshot rows. Billing a Kimi call under a
+    // guessed name would be silent; refusing it is not.
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "hi", systemPrompt: "", provider: "moonshot", model: "kimi-pro" });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toContain("moonshot-kimi-k3-tokens-input");
+    expect(res.body.missingCostNames).toEqual([
+      "moonshot-kimi-k3-tokens-input",
+      "moonshot-kimi-k3-tokens-cached-input",
+      "moonshot-kimi-k3-tokens-output",
+    ]);
+    // Rejected before the key fetch, the run, and the vendor call.
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  it("fails loud on the other Moonshot alias too", async () => {
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "hi", systemPrompt: "", provider: "moonshot", model: "kimi-flash" });
+
+    expect(res.status).toBe(502);
+    expect(res.body.missingCostNames[0]).toBe("moonshot-kimi-k2.6-tokens-input");
+    expect(fetchCalls).toHaveLength(0);
   });
 
   it("declares NO cached-input row when the vendor reported no cache hit", async () => {
@@ -413,7 +504,7 @@ describe("POST /complete — direct vendor routing", () => {
 
     const actual = actualItems(cap.postedItems);
     expect(actual.some((i) => i.costName.endsWith("-tokens-cached-input"))).toBe(false);
-    expect(quantityOf(actual, "deepseek-v4-flash-tokens-input")).toBe(100);
+    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-input")).toBe(100);
   });
 
   it("leaves the Gemini declaration untouched — no cached row on a native path", async () => {
@@ -547,40 +638,93 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     routes = [];
     fetchCalls = [];
     installFetchMock();
+    // DeepSeek's cost names carry the regime in force at the moment of
+    // declaration, so the clock is pinned: 02:00Z sits inside the first peak
+    // window (01:00-04:00 UTC). Without this the suite would bill a different
+    // name depending on the hour CI happens to run.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-20T02:00:00Z"));
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
-  it("reaches the vendor with its platform key and declares actual costs with the cache split", async () => {
+  it("reaches the vendor with its platform key and declares actual costs with the regime + cache split", async () => {
     const costCap = { postedItems: [] as CostItem[][] };
     const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
     routes.push(
-      mockVendorPlatformKey("moonshot"),
+      mockVendorPlatformKey("deepseek"),
       mockPlatformRunCreate(),
       mockPlatformRunCosts(costCap),
       mockPlatformRunStatus(),
       mockVendor(vendor, {
-        host: MOONSHOT_URL,
-        model: "kimi-k2.6",
-        usage: { prompt_tokens: 400, completion_tokens: 25, cached_tokens: 360 },
+        host: DEEPSEEK_URL,
+        model: "deepseek-v4-flash",
+        usage: { prompt_tokens: 400, completion_tokens: 25, prompt_cache_hit_tokens: 360, prompt_cache_miss_tokens: 40 },
       }),
     );
 
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(INTERNAL_AUTH)
-      .send({ message: "hi", systemPrompt: "be brief", provider: "moonshot", model: "kimi-flash" });
+      .send({ message: "hi", systemPrompt: "be brief", provider: "deepseek", model: "deepseek-flash" });
 
     expect(res.status).toBe(200);
     expect(vendor.calls).toBe(1);
-    expect(vendor.bodies[0].model).toBe("kimi-k2.6");
+    expect(vendor.bodies[0].model).toBe("deepseek-v4-flash");
 
+    // Clock pinned to 02:00 UTC → peak.
     const actual = costCap.postedItems[0];
-    expect(quantityOf(actual, "moonshot-kimi-k2.6-tokens-input")).toBe(40);
-    expect(quantityOf(actual, "moonshot-kimi-k2.6-tokens-cached-input")).toBe(360);
-    expect(quantityOf(actual, "moonshot-kimi-k2.6-tokens-output")).toBe(25);
+    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-input")).toBe(40);
+    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-cached-input")).toBe(360);
+    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-output")).toBe(25);
+    expect(actual.some((i) => i.costName === "deepseek-v4-flash-tokens-input")).toBe(false);
     // Platform runs post actuals only — no provision, no hold.
     expect(actual.every((i) => i.status === undefined)).toBe(true);
     expect(actual.every((i) => i.costSource === "platform")).toBe(true);
+  });
+
+  it("declares Z.ai cached input with no regime segment", async () => {
+    const costCap = { postedItems: [] as CostItem[][] };
+    const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+    routes.push(
+      mockVendorPlatformKey("zai"),
+      mockPlatformRunCreate(),
+      mockPlatformRunCosts(costCap),
+      mockPlatformRunStatus(),
+      mockVendor(vendor, {
+        host: ZAI_URL,
+        model: "glm-5.2",
+        usage: { prompt_tokens: 300, completion_tokens: 8, prompt_tokens_details: { cached_tokens: 250 } },
+      }),
+    );
+
+    const res = await request(app)
+      .post("/internal/platform-complete")
+      .set(INTERNAL_AUTH)
+      .send({ message: "hi", systemPrompt: "be brief", provider: "zai", model: "glm-pro" });
+
+    expect(res.status).toBe(200);
+    const actual = costCap.postedItems[0];
+    expect(quantityOf(actual, "zai-glm-5.2-tokens-input")).toBe(50);
+    expect(quantityOf(actual, "zai-glm-5.2-tokens-cached-input")).toBe(250);
+    expect(actual.every((i) => !i.costName.includes("peak"))).toBe(true);
+  });
+
+  it("fails loud on Moonshot before creating the platform run", async () => {
+    const res = await request(app)
+      .post("/internal/platform-complete")
+      .set(INTERNAL_AUTH)
+      .send({ message: "hi", systemPrompt: "", provider: "moonshot", model: "kimi-flash" });
+
+    expect(res.status).toBe(502);
+    expect(res.body.missingCostNames).toEqual([
+      "moonshot-kimi-k2.6-tokens-input",
+      "moonshot-kimi-k2.6-tokens-cached-input",
+      "moonshot-kimi-k2.6-tokens-output",
+    ]);
+    expect(fetchCalls).toHaveLength(0);
   });
 
   it("says WHICH vendor platform key is missing", async () => {

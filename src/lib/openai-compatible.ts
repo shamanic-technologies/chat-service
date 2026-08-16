@@ -71,6 +71,48 @@ export interface VendorUsage {
   prompt_tokens_details?: { cached_tokens?: number };
 }
 
+/**
+ * A vendor's time-of-day price schedule, mirrored from the catalog rows.
+ *
+ * `peakWindowsUtc` is the costs-service `regimeHoursUtc` value split on the
+ * comma, and the two segments are the literal name parts the catalog uses — so
+ * the string this produces is byte-equal to a real row rather than an
+ * independently-invented convention.
+ */
+export interface PricingRegimeSchedule {
+  /** UTC windows in which the peak regime applies, `"HH:MM-HH:MM"` each. */
+  peakWindowsUtc: string[];
+  /** Name segment for the peak rows. */
+  peakSegment: string;
+  /** Name segment for every other hour. */
+  offPeakSegment: string;
+}
+
+/**
+ * What a vendor's costs-service catalog actually prices.
+ *
+ * The three vendors do not agree, and the asymmetry is real rather than an
+ * oversight: DeepSeek prices a cache hit AND a time-of-day regime, Z.ai prices
+ * a cache hit only, Moonshot prices nothing yet. Declaring a dimension a vendor
+ * does not carry names a row that does not exist (422 at declaration); assuming
+ * one it does carry bills a hit at the miss rate. So each vendor states its own
+ * dimensions here and `buildLlmCostNames` (src/lib/cost-names.ts) reads them —
+ * a vendor added later declares what it prices and nothing else.
+ */
+export type VendorPricing =
+  | {
+      kind: "priced";
+      /** True when the catalog carries a separate `-tokens-cached-input` row. */
+      cachedInput: boolean;
+      /** Non-null when the catalog splits prices by time of day. */
+      regime: PricingRegimeSchedule | null;
+    }
+  | {
+      kind: "unpriced";
+      /** Why there is no price yet — surfaced in the fail-loud message. */
+      reason: string;
+    };
+
 export interface VendorConfig {
   id: VendorId;
   /** Human-readable name, used in caller-facing error messages. */
@@ -92,6 +134,11 @@ export interface VendorConfig {
    * number is used for.
    */
   readCachedTokens: (usage: VendorUsage) => number;
+  /**
+   * The priced dimensions THIS vendor's catalog rows carry. Read at cost
+   * declaration; see `VendorPricing`.
+   */
+  pricing: VendorPricing;
 }
 
 export const VENDORS: Record<VendorId, VendorConfig> = {
@@ -104,6 +151,21 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     docsUrl: "https://api-docs.deepseek.com",
     // DeepSeek splits the prompt count itself: prompt_tokens = hit + miss.
     readCachedTokens: (usage) => usage.prompt_cache_hit_tokens ?? 0,
+    // Both dimensions. Peak hours are DeepSeek's own, copied from the catalog
+    // rows' regimeHoursUtc ("01:00-04:00,06:00-10:00"); every other hour is
+    // off-peak. The time-of-day rates take effect 2026-08-16T16:00Z and
+    // costs-service handled that with effective-dated price points — both
+    // regimes already carry today's identical rate — so the regime is selected
+    // by the clock alone, never by the date.
+    pricing: {
+      kind: "priced",
+      cachedInput: true,
+      regime: {
+        peakWindowsUtc: ["01:00-04:00", "06:00-10:00"],
+        peakSegment: "peak",
+        offPeakSegment: "off-peak",
+      },
+    },
   },
   // https://docs.z.ai/api-reference/llm/chat-completion — read 2026-08-15.
   // Cached input $0.26 vs $1.4 per 1M on glm-5.2; $0.01 vs $0.07 on flashx.
@@ -114,6 +176,10 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     docsUrl: "https://docs.z.ai",
     // Follows the OpenAI convention: usage.prompt_tokens_details.cached_tokens.
     readCachedTokens: (usage) => usage.prompt_tokens_details?.cached_tokens ?? 0,
+    // Cached input is its own catalog row; Z.ai publishes no time-of-day
+    // schedule, so its rows carry no regime and the names have no regime
+    // segment. Inventing one here would name a row that does not exist.
+    pricing: { kind: "priced", cachedInput: true, regime: null },
   },
   // https://platform.kimi.ai/docs/api/chat — read 2026-08-15.
   // Cache hit $0.30 vs $3.00 per 1M on kimi-k3; $0.16 vs $0.95 on kimi-k2.6.
@@ -127,6 +193,14 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // the count (and with it the cache discount).
     readCachedTokens: (usage) =>
       usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0,
+    // costs-service carries no Moonshot rows: the vendor's prices are not
+    // confirmed. A Kimi call therefore fails loud at declaration rather than
+    // billing against a guessed or borrowed name — a wrong price is silent, a
+    // missing one is not.
+    pricing: {
+      kind: "unpriced",
+      reason: "Moonshot prices are unconfirmed, so no rows were seeded.",
+    },
   },
 };
 
