@@ -91,6 +91,7 @@ import {
   refreshBrandProfileFromWebsite,
 } from "./lib/brand-profile-refresh.js";
 import { seedPlatformConfigs } from "./lib/seed-platform-configs.js";
+import { registerEmailTemplates } from "./lib/register-email-templates.js";
 import {
   embedText,
   embedTexts,
@@ -3378,6 +3379,11 @@ if (process.env.NODE_ENV !== "test") {
       // brand-profile-editor). O(1) — two upserts — safe to await before
       // listen(); fails loud so the configs are guaranteed live.
       await seedPlatformConfigs(db);
+      // Register the email templates chat-service OWNS (the direct-vendor
+      // out-of-credit alert). Idempotent upsert, never throws, and deliberately
+      // NOT awaited before listen(): serving completions must not wait on a
+      // notification template.
+      void registerEmailTemplates();
       const server = app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });

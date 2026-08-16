@@ -353,6 +353,28 @@ Only **connect-phase** failures are retried (a thrown fetch rejection whose caus
 1. **One key per vendor** in key-service, stored under that vendor's slug: `deepseek`, `zai`, `moonshot`. Org-scoped calls read `GET /keys/{provider}/decrypt`; `/internal/platform-complete` reads `GET /keys/platform/{provider}/decrypt`. A missing key returns **502** naming the vendor and the slug it must live under — not a generic failure — so "which of the three is unconfigured" is answered by the error itself.
 2. The catalog rows for the alias live in production costs-service. As of 2026-08-16 every reachable model is priced: the twelve regime-and-cache DeepSeek rows, and three rows per model (`-tokens-{input,cached-input,output}`) for both Z.ai and Moonshot. An alias added ahead of its rows still returns **502** naming the three rows someone must seed (`missingCostNames` in the body), before any key fetch, run or vendor call — a wrong price is silent, a missing one is not. Seed them in costs-service `src/db/seed.ts` (`SEED_PROVIDERS_COSTS`) and deploy to production to lift it.
 
+### Out-of-credit alerting
+
+Each of the three vendors holds its own prepaid balance, and two of them have no auto-reload. When a balance runs dry the vendor refuses every call and the whole model tier stops answering, so **chat-service emails the platform owner, naming the vendor**.
+
+The alert changes nothing about the failure. There is no fallback vendor, no fallback model, no retry: the call fails exactly as it did before, with the same error and the same status. The email is a notification alongside the failure, never a recovery.
+
+**Only out-of-credit alerts.** A rate limit, an auth failure, a bad request and an unknown model all send nothing. That distinction cannot be made from the status code — two of the three vendors answer an empty balance with the same `429` they use for a rate limit — so the classification reads what the vendor actually said, and each vendor states its own signal as data in the `VENDORS` registry (`src/lib/openai-compatible.ts`):
+
+| Vendor | Out-of-credit signal | Its rate limit, for contrast |
+| --- | --- | --- |
+| DeepSeek | HTTP **402**, "Insufficient Balance … you have run out of balance" ([error codes](https://api-docs.deepseek.com/quick_start/error_codes)) | HTTP 429, "Rate Limit Reached" |
+| Z.ai | HTTP 429 with body code **`1113`**, "Insufficient balance or no resource package. Please recharge." | HTTP 429, a different code |
+| Moonshot | HTTP 429 with error type **`exceeded_current_quota_error`**, "… is suspended due to insufficient balance, please recharge" | HTTP 429, `rate_limit_reached_error` |
+
+A shared prose fallback (`insufficient balance` / `run out of balance` / `no resource package`) catches a vendor that rewords its body without changing its code. Adding a fourth vendor means adding its `isOutOfCreditRefusal` predicate to its `VENDORS` entry — the test table in `tests/unit/vendor-credit-alert.test.ts` fails until it is there.
+
+**One email per outage, not per call.** A campaign drives many calls a minute, so the alert latches per vendor: the first out-of-credit refusal sends, every later one is silent, and the latch is released the moment that vendor serves a completion again. The latch is **in-process**, which has one consequence worth stating plainly: a restart during an outage re-arms it, so the next refused call sends one more email (and each running instance sends at most one). The balance does not refill because the process restarted — a duplicate alert during an outage is a much smaller problem than a missed one, and this keeps a write off the failure path.
+
+**Sending never blocks the request.** The email is dispatched fire-and-forget; the failing call does not wait on it. A send that fails is logged and dropped, and leaves the latch set — retrying an email once per refused call while the email path is down is the same flood by another route.
+
+The email goes through the fleet's transactional path (`transactional-email-service`). chat-service **owns** the `vendor_out_of_credit` template — a template name has exactly one owner, the service that sends it — and registers it at boot via `PUT /templates` under `appId: "chat-service"` (idempotent upsert, never throws, not awaited before `listen()`). No other service should carry a copy. Requires `TRANSACTIONAL_EMAIL_SERVICE_URL`, `TRANSACTIONAL_EMAIL_SERVICE_API_KEY` and `PLATFORM_OWNER_EMAIL`; with any of them unset the alert logs and does not send.
+
 ### Replacing the Vercel AI Gateway
 
 These six models replaced a single gateway path (removed 2026-08-15). The gateway resold the same DeepSeek models above their vendor list price (1.4x on V4 Flash, 4x on V4 Pro), charged a payment-processing fee on every top-up, and gated recent models behind a paid tier. It is removed, not deprecated: there is no fallback to it, and `provider: "vercel"` is rejected with the accepted provider set.
@@ -955,6 +977,9 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `BILLING_SERVICE_URL` | No | Billing-service endpoint (default: `https://billing.mcpfactory.org`) |
 | `BILLING_SERVICE_API_KEY` | Yes | API key for billing-service — required for credit authorization on platform-key requests |
 | `GEMINI_EMBEDDING_MODEL` | No | Gemini embedding model used by `/orgs/rag/score` and `/orgs/rag/embed` (default: `gemini-embedding-001`) |
+| `TRANSACTIONAL_EMAIL_SERVICE_URL` | No | Transactional-email-service endpoint (default: `https://transactional-email.distribute.you`) |
+| `TRANSACTIONAL_EMAIL_SERVICE_API_KEY` | No | API key for transactional-email-service. Unset → the `vendor_out_of_credit` template is not registered and the alert does not send (logged, never fatal) |
+| `PLATFORM_OWNER_EMAIL` | No | Recipient of the direct-vendor out-of-credit alert. Unset → the alert logs and does not send |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
