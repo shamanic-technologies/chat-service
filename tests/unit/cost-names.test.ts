@@ -106,22 +106,64 @@ describe("buildLlmCostNames — per-vendor dimensions", () => {
     expect(offHour).toEqual(peakHour);
   });
 
-  it("Moonshot: fails loud, naming every missing row", () => {
-    let thrown: unknown;
-    try {
-      buildLlmCostNames({ provider: "moonshot", costPrefix: "moonshot-kimi-k3", at: at("2026-08-20T02:00:00Z") });
-    } catch (err) {
-      thrown = err;
+  it("Moonshot: cached input, no regime — the hour changes nothing", () => {
+    // costs-service v0.46.0 seeded the six Moonshot rows (flat, cache-priced,
+    // no time-of-day schedule) and they resolve in production, so Kimi is
+    // declarable now — it used to throw UnpricedModelError here.
+    const peakHour = buildLlmCostNames({ provider: "moonshot", costPrefix: "moonshot-kimi-k3", at: at("2026-08-20T02:00:00Z") });
+    const offHour = buildLlmCostNames({ provider: "moonshot", costPrefix: "moonshot-kimi-k3", at: at("2026-08-20T12:00:00Z") });
+    expect(peakHour).toEqual({
+      input: "moonshot-kimi-k3-tokens-input",
+      cachedInput: "moonshot-kimi-k3-tokens-cached-input",
+      output: "moonshot-kimi-k3-tokens-output",
+    });
+    expect(offHour).toEqual(peakHour);
+  });
+
+  it("every reachable model now resolves a name — nothing is left unpriced", () => {
+    // The guard that mattered while Moonshot was unseeded: no vendor may be
+    // reachable without a catalog row behind it. Kept pointing at the real
+    // model set so a future alias added ahead of its rows fails HERE.
+    const models: Array<[string, string]> = [
+      ["deepseek", "deepseek-v4-flash"],
+      ["deepseek", "deepseek-v4-pro"],
+      ["zai", "zai-glm-4.7-flashx"],
+      ["zai", "zai-glm-5.2"],
+      ["moonshot", "moonshot-kimi-k2.6"],
+      ["moonshot", "moonshot-kimi-k3"],
+    ];
+    for (const [provider, costPrefix] of models) {
+      const names = buildLlmCostNames({ provider, costPrefix, at: at("2026-08-20T02:00:00Z") });
+      expect(names.input.startsWith(costPrefix), costPrefix).toBe(true);
+      expect(names.cachedInput, costPrefix).not.toBeNull();
+      expect(names.output.endsWith("-tokens-output"), costPrefix).toBe(true);
     }
-    expect(thrown).toBeInstanceOf(UnpricedModelError);
-    const err = thrown as UnpricedModelError;
-    expect(err.missingCostNames).toEqual([
-      "moonshot-kimi-k3-tokens-input",
-      "moonshot-kimi-k3-tokens-cached-input",
-      "moonshot-kimi-k3-tokens-output",
-    ]);
-    expect(err.message).toContain("moonshot-kimi-k3-tokens-input");
-    expect(err.message).toContain("costs-service");
+  });
+
+  it("still fails loud for a vendor whose catalog rows are missing", () => {
+    // UnpricedModelError is the mechanism, not a Moonshot fact — exercise it
+    // through a vendor stubbed unpriced so the path stays covered.
+    const unpriced = { kind: "unpriced" as const, reason: "Stub vendor has no rows." };
+    const original = VENDORS.moonshot.pricing;
+    (VENDORS.moonshot as { pricing: typeof unpriced | typeof original }).pricing = unpriced;
+    try {
+      let thrown: unknown;
+      try {
+        buildLlmCostNames({ provider: "moonshot", costPrefix: "moonshot-kimi-k3", at: at("2026-08-20T02:00:00Z") });
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(UnpricedModelError);
+      const err = thrown as UnpricedModelError;
+      expect(err.missingCostNames).toEqual([
+        "moonshot-kimi-k3-tokens-input",
+        "moonshot-kimi-k3-tokens-cached-input",
+        "moonshot-kimi-k3-tokens-output",
+      ]);
+      expect(err.message).toContain("costs-service");
+    } finally {
+      (VENDORS.moonshot as { pricing: typeof original }).pricing = original;
+    }
   });
 
   it("Anthropic and Google keep the flat names, unchanged", () => {

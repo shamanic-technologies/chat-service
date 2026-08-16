@@ -193,14 +193,12 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // the count (and with it the cache discount).
     readCachedTokens: (usage) =>
       usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0,
-    // costs-service carries no Moonshot rows: the vendor's prices are not
-    // confirmed. A Kimi call therefore fails loud at declaration rather than
-    // billing against a guessed or borrowed name — a wrong price is silent, a
-    // missing one is not.
-    pricing: {
-      kind: "unpriced",
-      reason: "Moonshot prices are unconfirmed, so no rows were seeded.",
-    },
+    // Cached input is its own catalog row (costs-service v0.46.0, live in
+    // production 2026-08-16 — verified by resolving all six names against the
+    // prod `/v1/platform-prices/{name}`). Moonshot publishes no time-of-day
+    // schedule, so its rows carry no regime and the names have no regime
+    // segment — the same shape as Z.ai.
+    pricing: { kind: "priced", cachedInput: true, regime: null },
   },
 };
 
