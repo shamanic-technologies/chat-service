@@ -268,16 +268,16 @@ Error responses: 400 (validation), 401 (auth), 402 (insufficient credits), 502 (
 
 A third provider path alongside the two native clients. Where `anthropic.ts` and `gemini.ts` each speak a vendor-specific dialect and carry that vendor's accumulated quirks, `src/lib/openai-compatible.ts` speaks one generic dialect — OpenAI Chat Completions — against vendors that all serve it. **One adapter, three vendors, six models.**
 
-The vendors differ in exactly three things, and all three are *data* in the `VENDORS` registry rather than code: the base URL, the key-service provider slug, and where the usage payload reports cached prompt tokens. So adding a seventh model is a `MODEL_MAP` entry, and adding a fourth vendor is a `VENDORS` entry. Neither is a new client.
+The vendors differ in exactly four things, and all four are *data* in the `VENDORS` registry rather than code: the base URL, the key-service provider slug, where the usage payload reports cached prompt tokens, and **which price dimensions that vendor's catalog actually carries** (`pricing`). So adding a seventh model is a `MODEL_MAP` entry, and adding a fourth vendor is a `VENDORS` entry. Neither is a new client.
 
-| Provider | Alias | Vendor model id | Cost prefix | Base URL |
-|---|---|---|---|---|
-| `deepseek` | `deepseek-flash` | `deepseek-v4-flash` | `deepseek-v4-flash` | `https://api.deepseek.com/v1` |
-| `deepseek` | `deepseek-pro` | `deepseek-v4-pro` | `deepseek-v4-pro` | `https://api.deepseek.com/v1` |
-| `zai` | `glm-flash` | `glm-4.7-flashx` | `zai-glm-4.7-flashx` | `https://api.z.ai/api/paas/v4` |
-| `zai` | `glm-pro` | `glm-5.2` | `zai-glm-5.2` | `https://api.z.ai/api/paas/v4` |
-| `moonshot` | `kimi-flash` | `kimi-k2.6` | `moonshot-kimi-k2.6` | `https://api.moonshot.ai/v1` |
-| `moonshot` | `kimi-pro` | `kimi-k3` | `moonshot-kimi-k3` | `https://api.moonshot.ai/v1` |
+| Provider | Alias | Vendor model id | Cost prefix | Priced dimensions | Base URL |
+|---|---|---|---|---|---|
+| `deepseek` | `deepseek-flash` | `deepseek-v4-flash` | `deepseek-v4-flash` | cache + regime | `https://api.deepseek.com/v1` |
+| `deepseek` | `deepseek-pro` | `deepseek-v4-pro` | `deepseek-v4-pro` | cache + regime | `https://api.deepseek.com/v1` |
+| `zai` | `glm-flash` | `glm-4.7-flashx` | `zai-glm-4.7-flashx` | cache | `https://api.z.ai/api/paas/v4` |
+| `zai` | `glm-pro` | `glm-5.2` | `zai-glm-5.2` | cache | `https://api.z.ai/api/paas/v4` |
+| `moonshot` | `kimi-flash` | `kimi-k2.6` | `moonshot-kimi-k2.6` | none seeded → 502 | `https://api.moonshot.ai/v1` |
+| `moonshot` | `kimi-pro` | `kimi-k3` | `moonshot-kimi-k3` | none seeded → 502 | `https://api.moonshot.ai/v1` |
 
 Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`deepseek-v4-flash` stays bare; `glm-5.2` becomes `zai-glm-5.2`). These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-v4-pro-0813` is accepted; a different model is not).
 
@@ -298,15 +298,15 @@ Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` t
 
 ### Model breadth is not catalog breadth
 
-Each vendor serves a large catalog; chat-service reaches exactly the aliases declared in `MODEL_MAP`, and `resolveModel` throws on anything else with the accepted set in the message. Every alias costs **three** costs-service catalog rows — `<costPrefix>-tokens-input`, `-tokens-output` and `-tokens-cached-input` — which must exist in **production** before the alias is called, or runs-service 422s the cost declaration and the call fails loud. A model is unreachable until someone adds it to both places deliberately.
+Each vendor serves a large catalog; chat-service reaches exactly the aliases declared in `MODEL_MAP`, and `resolveModel` throws on anything else with the accepted set in the message. Every alias costs a set of costs-service catalog rows — three per alias for a vendor with no time-of-day schedule (`<costPrefix>-tokens-{input,cached-input,output}`), six for one with a peak/off-peak schedule — which must exist in **production** before the alias is called, or runs-service 422s the cost declaration and the call fails loud. A model is unreachable until someone adds it to both places deliberately.
 
 ### Cache-hit pricing
 
 All three vendors price a cached input token far below a fresh one, and our dominant workload is a large stable prompt with a small per-item block — so **cache hits are the normal case, not the exception**. Billing the whole prompt at the miss rate would overstate real spend on most calls, so the declaration splits it:
 
-- `<prefix>-tokens-input` ← `prompt_tokens − cached`, the fresh tokens at the miss rate
-- `<prefix>-tokens-cached-input` ← the cached tokens, at the vendor's cache rate
-- `<prefix>-tokens-output` ← unchanged
+- `<prefix>[-<regime>]-tokens-input` ← `prompt_tokens − cached`, the fresh tokens at the miss rate
+- `<prefix>[-<regime>]-tokens-cached-input` ← the cached tokens, at the vendor's cache rate
+- `<prefix>[-<regime>]-tokens-output` ← unchanged
 
 The split is exhaustive (the two input quantities always sum to `prompt_tokens`) and the cached row is omitted entirely when the count is zero. The response's `tokensInput` still reports the **total** prompt count — only billing is split.
 
@@ -320,7 +320,19 @@ Each vendor reports the count in a different place, which is the entire reason `
 
 A cached count larger than the prompt total is clamped: a negative fresh-token quantity would make runs-service reject the whole declaration and fail a call that actually succeeded.
 
-**Price at the PEAK rate.** DeepSeek splits into peak (01:00–04:00 and 06:00–10:00 UTC) and off-peak at half. The catalog carries the peak list price, so cheaper hours are margin, never a shortfall — the same reasoning as pricing Gemini at its post-promotion rate.
+### Time-of-day pricing (DeepSeek only)
+
+DeepSeek charges **peak** rates during 01:00–04:00 and 06:00–10:00 UTC and **off-peak** rates at every other hour, so costs-service carries one row per regime and the regime is part of the cost name:
+
+```
+deepseek-v4-{flash,pro}-{peak,off-peak}-tokens-{input,cached-input,output}
+```
+
+`buildLlmCostNames` (`src/lib/cost-names.ts`) selects the regime from the **UTC clock at declaration**, never from the date: costs-service gave both regimes an identical price point before the schedule takes effect (2026-08-16T16:00Z) and effective-dated the new rates, so the catalog resolves the right price for when the cost was written. Each window is half-open `[start, end)` — 01:00:00 is the first peak minute, 04:00:00 the first off-peak minute again — so at every instant exactly one name matches and no regime-free fallback is needed.
+
+**One timestamp per request.** The pre-call hold and the post-call actual are built from the same `Date`, so a call that straddles a boundary cannot hold against peak and bill against off-peak.
+
+The four regime-free names (`deepseek-v4-{flash,pro}-tokens-{input,output}`) are **superseded and frozen** in the catalog: they still resolve, which is exactly why they must not be declared — they carry the pre-schedule flat rate and would silently under-bill peak traffic. Z.ai publishes no schedule, so its names carry no regime segment; inventing one would name a row that does not exist.
 
 ### No routing knobs, no fallback, and the model is asserted
 
@@ -339,13 +351,13 @@ Only **connect-phase** failures are retried (a thrown fetch rejection whose caus
 ### Operational prerequisites
 
 1. **One key per vendor** in key-service, stored under that vendor's slug: `deepseek`, `zai`, `moonshot`. Org-scoped calls read `GET /keys/{provider}/decrypt`; `/internal/platform-complete` reads `GET /keys/platform/{provider}/decrypt`. A missing key returns **502** naming the vendor and the slug it must live under — not a generic failure — so "which of the three is unconfigured" is answered by the error itself.
-2. The **three** catalog rows per alias live in production costs-service. As of 2026-08-15 the catalog (costs-service v0.44.0) carries the input/output rows for DeepSeek and Z.ai only: the two Moonshot models and the `-tokens-cached-input` row for **all six** are still outstanding — tracked in [costs-service#205](https://github.com/shamanic-technologies/costs-service/issues/205). Until they land, a Moonshot call and any call that gets a **cache hit** cannot declare its spend: runs-service 422s the cost, which on `/complete` leaves the provisioned hold as the fallback record (the caller still gets its answer) and on `/internal/platform-complete` is a loud 502. A call with no cache hit is unaffected.
+2. The catalog rows for the alias live in production costs-service. As of 2026-08-16 the catalog carries the twelve regime-and-cache DeepSeek rows and the three Z.ai rows per model. **Moonshot carries nothing** — its prices are unconfirmed — so a `kimi-flash` / `kimi-pro` call returns **502** naming the three rows someone must seed (`missingCostNames` in the body), before any key fetch, run or vendor call. That failure is deliberate: a wrong price is silent, a missing one is not. Seed the rows in costs-service `src/db/seed.ts` (`SEED_PROVIDERS_COSTS`) and deploy to production to lift it.
 
 ### Replacing the Vercel AI Gateway
 
 These six models replaced a single gateway path (removed 2026-08-15). The gateway resold the same DeepSeek models above their vendor list price (1.4x on V4 Flash, 4x on V4 Pro), charged a payment-processing fee on every top-up, and gated recent models behind a paid tier. It is removed, not deprecated: there is no fallback to it, and `provider: "vercel"` is rejected with the accepted provider set.
 
-`deepseek-flash` and `deepseek-pro` are **unchanged for callers** — same alias, same cost prefix, same request shape. What moved is the transport underneath, so one externally visible detail changed with it: the response's `model` field now echoes the vendor's own id (`deepseek-v4-flash`) rather than the gateway's namespaced form (`deepseek/deepseek-v4-flash`).
+`deepseek-flash` and `deepseek-pro` are **unchanged for callers** — same alias, same request shape (the cost prefix now carries a regime segment, which is internal to the declaration). What moved is the transport underneath, so one externally visible detail changed with it: the response's `model` field now echoes the vendor's own id (`deepseek-v4-flash`) rather than the gateway's namespaced form (`deepseek/deepseek-v4-flash`).
 
 ## Internal Platform Completion
 
