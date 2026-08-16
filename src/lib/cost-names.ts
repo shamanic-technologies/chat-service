@@ -11,7 +11,8 @@
 //             tokens-{input,cached-input,output}`.
 //   Z.ai      cache-hit input priced apart from a miss, no schedule → 3 names
 //             per model, `zai-glm-5.2-tokens-{input,cached-input,output}`.
-//   Moonshot  nothing seeded yet — its prices are unconfirmed.
+//   Moonshot  cache-hit input priced apart from a miss, no schedule → 3 names
+//             per model, `moonshot-kimi-k3-tokens-{input,cached-input,output}`.
 //   Anthropic / Google  the flat `<prefix>-tokens-{input,cached-input,output}`
 //             shape they have always used. Untouched by this module's vendor
 //             logic; `flatCostNames` reproduces those strings byte-equal.

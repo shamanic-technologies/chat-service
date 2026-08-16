@@ -3,7 +3,6 @@ import {
   buildLlmCostNames,
   flatCostNames,
   selectPricingRegime,
-  UnpricedModelError,
 } from "../../src/lib/cost-names.js";
 import { VENDORS } from "../../src/lib/openai-compatible.js";
 
@@ -106,22 +105,35 @@ describe("buildLlmCostNames — per-vendor dimensions", () => {
     expect(offHour).toEqual(peakHour);
   });
 
-  it("Moonshot: fails loud, naming every missing row", () => {
-    let thrown: unknown;
-    try {
-      buildLlmCostNames({ provider: "moonshot", costPrefix: "moonshot-kimi-k3", at: at("2026-08-20T02:00:00Z") });
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).toBeInstanceOf(UnpricedModelError);
-    const err = thrown as UnpricedModelError;
-    expect(err.missingCostNames).toEqual([
-      "moonshot-kimi-k3-tokens-input",
-      "moonshot-kimi-k3-tokens-cached-input",
-      "moonshot-kimi-k3-tokens-output",
-    ]);
-    expect(err.message).toContain("moonshot-kimi-k3-tokens-input");
-    expect(err.message).toContain("costs-service");
+  // Moonshot was unpriced until costs-service v0.46.0 read its per-model pages.
+  // It prices a cache hit apart from a miss and publishes no time-of-day
+  // schedule, so it takes the same three-name shape as Z.ai — no regime segment.
+  it("Moonshot: cached input priced apart, and no regime in the name", () => {
+    const names = buildLlmCostNames({
+      provider: "moonshot",
+      costPrefix: "moonshot-kimi-k3",
+      at: at("2026-08-20T02:00:00Z"),
+    });
+    expect(names).toEqual({
+      input: "moonshot-kimi-k3-tokens-input",
+      cachedInput: "moonshot-kimi-k3-tokens-cached-input",
+      output: "moonshot-kimi-k3-tokens-output",
+    });
+  });
+
+  it("Moonshot: the same names at every hour, because it has no peak schedule", () => {
+    const peakHour = buildLlmCostNames({
+      provider: "moonshot",
+      costPrefix: "moonshot-kimi-k2.6",
+      at: at("2026-08-20T02:00:00Z"),
+    });
+    const offPeakHour = buildLlmCostNames({
+      provider: "moonshot",
+      costPrefix: "moonshot-kimi-k2.6",
+      at: at("2026-08-20T14:00:00Z"),
+    });
+    expect(peakHour).toEqual(offPeakHour);
+    expect(peakHour.input).not.toContain("peak");
   });
 
   it("Anthropic and Google keep the flat names, unchanged", () => {
