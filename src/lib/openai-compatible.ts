@@ -21,6 +21,8 @@
 // tool calling, no web search, no images, no embeddings.
 // ---------------------------------------------------------------------------
 
+import { markVendorServing, notifyVendorOutOfCredit } from "./vendor-credit-alert.js";
+
 /** Request timeout. Matches the Gemini Flash-tier budget. */
 const VENDOR_TIMEOUT_MS = 10 * 60_000;
 
@@ -113,6 +115,25 @@ export type VendorPricing =
       reason: string;
     };
 
+/**
+ * What a vendor told us when it refused a call, reduced to the few fields the
+ * three of them actually use to say WHY.
+ *
+ * Built by `parseVendorRefusal` from the HTTP status and the raw body, so a
+ * vendor that answers with an unparseable body still yields a usable signal
+ * (status + text) rather than throwing inside the error path.
+ */
+export interface VendorRefusalSignal {
+  /** HTTP status of the refusal. */
+  status: number;
+  /** Vendor error code as a string, `""` when absent. Z.ai's `1113` lives here. */
+  code: string;
+  /** Vendor error type, `""` when absent. Moonshot's quota type lives here. */
+  type: string;
+  /** Whole raw body, lowercased, for the vendors that only say it in prose. */
+  text: string;
+}
+
 export interface VendorConfig {
   id: VendorId;
   /** Human-readable name, used in caller-facing error messages. */
@@ -139,7 +160,32 @@ export interface VendorConfig {
    * declaration; see `VendorPricing`.
    */
   pricing: VendorPricing;
+  /**
+   * True when THIS vendor's refusal means "the prepaid balance is empty", as
+   * opposed to every other reason it refuses.
+   *
+   * This is the whole point of the predicate being per-vendor DATA: two of the
+   * three report an empty balance with the SAME 429 they use for a rate limit,
+   * and each words the distinction differently. Keying an alert on the status
+   * alone would either cry wolf on every burst or bury a real outage in that
+   * noise, so the classification reads what the vendor actually said. Wording
+   * observed 2026-08-15; the vendors' own docs are linked per entry.
+   *
+   * Deliberately NARROW: an auth failure, a bad request, a missing model and a
+   * plain rate limit must all return false. A false positive emails the owner
+   * about a balance that is fine; a false negative is silence during a real
+   * outage. Both are bad, so match the vendor's own out-of-credit vocabulary
+   * rather than anything adjacent to it.
+   */
+  isOutOfCreditRefusal: (signal: VendorRefusalSignal) => boolean;
 }
+
+/**
+ * Prose both Z.ai and Moonshot use for an empty balance, and DeepSeek uses in
+ * the body of its 402. All three tell the reader to top the account up, which
+ * is the phrase no rate-limit or auth error carries.
+ */
+const EMPTY_BALANCE_PROSE = /insufficient balance|run out of balance|no resource package/;
 
 export const VENDORS: Record<VendorId, VendorConfig> = {
   // https://api-docs.deepseek.com/quick_start/pricing — read 2026-08-15.
@@ -166,6 +212,14 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
         offPeakSegment: "off-peak",
       },
     },
+    // DeepSeek is the one vendor that does NOT overload 429 for this: its
+    // documented codes give an empty balance its own status, 402 "Insufficient
+    // Balance — You have run out of balance", while 429 is only "Rate Limit
+    // Reached". https://api-docs.deepseek.com/quick_start/error_codes (read
+    // 2026-08-16). We had not observed a DeepSeek out-of-credit refusal when
+    // this shipped, so the status is paired with the vendor's own documented
+    // prose rather than trusted alone.
+    isOutOfCreditRefusal: (s) => s.status === 402 || EMPTY_BALANCE_PROSE.test(s.text),
   },
   // https://docs.z.ai/api-reference/llm/chat-completion — read 2026-08-15.
   // Cached input $0.26 vs $1.4 per 1M on glm-5.2; $0.01 vs $0.07 on flashx.
@@ -180,6 +234,11 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // schedule, so its rows carry no regime and the names have no regime
     // segment. Inventing one here would name a row that does not exist.
     pricing: { kind: "priced", cachedInput: true, regime: null },
+    // Z.ai answers an empty balance with a 429 — the same status as a rate
+    // limit — and separates the two in the body: code 1113, "Insufficient
+    // balance or no resource package. Please recharge." (observed 2026-08-15).
+    // So the code is the signal and the status is not.
+    isOutOfCreditRefusal: (s) => s.code === "1113" || EMPTY_BALANCE_PROSE.test(s.text),
   },
   // https://platform.kimi.ai/docs/api/chat — read 2026-08-15.
   // Cache hit $0.30 vs $3.00 per 1M on kimi-k3; $0.16 vs $0.95 on kimi-k2.6.
@@ -201,8 +260,58 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
       kind: "unpriced",
       reason: "Moonshot prices are unconfirmed, so no rows were seeded.",
     },
+    // Moonshot also overloads 429, and names the case in the error TYPE:
+    // `exceeded_current_quota_error`, "account ... is suspended due to
+    // insufficient balance, please recharge" (observed 2026-08-15). Its
+    // rate-limit 429 carries `rate_limit_reached_error` instead.
+    isOutOfCreditRefusal: (s) =>
+      s.type === "exceeded_current_quota_error" || EMPTY_BALANCE_PROSE.test(s.text),
   },
 };
+
+/**
+ * Reduce a refused HTTP response to a `VendorRefusalSignal`.
+ *
+ * Never throws: a vendor that refuses with an HTML error page or a truncated
+ * body still has to produce a usable signal, because this runs on the path that
+ * is already failing. An unreadable body degrades to status + raw text, which
+ * is exactly what the prose predicates read.
+ */
+export function parseVendorRefusal(status: number, bodyText: string): VendorRefusalSignal {
+  let code = "";
+  let type = "";
+  try {
+    const parsed = JSON.parse(bodyText) as {
+      code?: unknown;
+      type?: unknown;
+      error?: { code?: unknown; type?: unknown };
+    };
+    const err = typeof parsed?.error === "object" && parsed.error !== null ? parsed.error : {};
+    const rawCode = err.code ?? parsed?.code;
+    const rawType = err.type ?? parsed?.type;
+    if (rawCode != null && typeof rawCode !== "object") code = String(rawCode);
+    if (rawType != null && typeof rawType !== "object") type = String(rawType);
+  } catch {
+    // Not JSON. Status and prose still classify it.
+  }
+  return { status, code, type, text: bodyText.toLowerCase() };
+}
+
+/**
+ * True when this refusal is the vendor saying its prepaid balance is empty.
+ *
+ * Out-of-credit is the one vendor failure that stops an entire model tier until
+ * a human tops the account up, so it is the one the owner is emailed about. It
+ * changes NOTHING about the failure itself — the caller still sees the same
+ * error it saw before this existed.
+ */
+export function isOutOfCreditRefusal(
+  vendor: VendorId,
+  status: number,
+  bodyText: string,
+): boolean {
+  return vendorConfig(vendor).isOutOfCreditRefusal(parseVendorRefusal(status, bodyText));
+}
 
 export const VENDOR_IDS = Object.keys(VENDORS) as VendorId[];
 
@@ -472,6 +581,21 @@ export async function completeWithVendor(
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
+
+      // Out-of-credit stops the whole model tier until a human tops the account
+      // up, so the owner is emailed — once per outage, detached from this
+      // request. Everything else about this failure is unchanged: no fallback,
+      // no retry, same error to the caller. A rate-limit 429 alerts nothing.
+      if (config.isOutOfCreditRefusal(parseVendorRefusal(res.status, text))) {
+        notifyVendorOutOfCredit({
+          vendor,
+          vendorLabel: config.label,
+          model,
+          status: res.status,
+          vendorMessage: text.slice(0, 500),
+        });
+      }
+
       throw new VendorProviderError(
         `[vendor:${vendor}] ${res.status} from ${model}: ${text.slice(0, 500)}`,
       );
@@ -479,6 +603,9 @@ export async function completeWithVendor(
 
     const json = (await res.json()) as VendorResponseBody;
     const result = mapVendorResponse(vendor, model, json);
+
+    // The vendor answered, so its balance is not empty — re-arm the alert.
+    markVendorServing(vendor);
 
     // Reconciliation breadcrumb: the cache split drives what we declare, so log
     // it next to the totals rather than only the totals.
