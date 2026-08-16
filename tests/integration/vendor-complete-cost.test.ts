@@ -449,34 +449,68 @@ describe("POST /complete — direct vendor routing", () => {
     expect(quantityOf(actual, "deepseek-v4-pro-peak-tokens-output")).toBe(12);
   });
 
-  it("fails loud on Moonshot — names the missing catalog rows, spends nothing", async () => {
-    // costs-service carries no Moonshot rows. Billing a Kimi call under a
-    // guessed name would be silent; refusing it is not.
+  it("bills Moonshot against the flat cache-split names, at any hour", async () => {
+    // costs-service v0.46.0 seeded the six Moonshot rows and they resolve in
+    // production, so a Kimi call declares rather than refusing. Moonshot
+    // publishes no time-of-day schedule, so the names carry no regime segment
+    // even at an hour that is peak for DeepSeek.
+    const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+    const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+    routes.push(
+      mockRunsCreate(),
+      mockVendorKey("moonshot"),
+      mockBilling(),
+      mockVendor(vendor, {
+        host: MOONSHOT_URL,
+        model: "kimi-k3",
+        usage: { prompt_tokens: 700, completion_tokens: 18, cached_tokens: 640 },
+      }),
+      ...mockRunsCostRoutes(cap),
+      mockRunsStatusPatch(),
+    );
+
     const res = await request(app)
       .post("/complete")
       .set(AUTH)
-      .send({ message: "hi", systemPrompt: "", provider: "moonshot", model: "kimi-pro" });
+      .send({ message: "hi", systemPrompt: "big stable prompt", provider: "moonshot", model: "kimi-pro" });
 
-    expect(res.status).toBe(502);
-    expect(res.body.error).toContain("moonshot-kimi-k3-tokens-input");
-    expect(res.body.missingCostNames).toEqual([
-      "moonshot-kimi-k3-tokens-input",
-      "moonshot-kimi-k3-tokens-cached-input",
-      "moonshot-kimi-k3-tokens-output",
-    ]);
-    // Rejected before the key fetch, the run, and the vendor call.
-    expect(fetchCalls).toHaveLength(0);
+    expect(res.status).toBe(200);
+    expect(vendor.calls).toBe(1);
+
+    const actual = actualItems(cap.postedItems);
+    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-input")).toBe(60);
+    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-cached-input")).toBe(640);
+    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-output")).toBe(18);
+    // No regime segment — that belongs to DeepSeek alone.
+    expect(actual.every((i) => !/-(peak|off-peak)-tokens-/.test(i.costName))).toBe(true);
   });
 
-  it("fails loud on the other Moonshot alias too", async () => {
+  it("bills the other Moonshot alias under its own catalog names", async () => {
+    const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+    const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+    routes.push(
+      mockRunsCreate(),
+      mockVendorKey("moonshot"),
+      mockBilling(),
+      mockVendor(vendor, {
+        host: MOONSHOT_URL,
+        model: "kimi-k2.6",
+        usage: { prompt_tokens: 200, completion_tokens: 8, cached_tokens: 150 },
+      }),
+      ...mockRunsCostRoutes(cap),
+      mockRunsStatusPatch(),
+    );
+
     const res = await request(app)
       .post("/complete")
       .set(AUTH)
       .send({ message: "hi", systemPrompt: "", provider: "moonshot", model: "kimi-flash" });
 
-    expect(res.status).toBe(502);
-    expect(res.body.missingCostNames[0]).toBe("moonshot-kimi-k2.6-tokens-input");
-    expect(fetchCalls).toHaveLength(0);
+    expect(res.status).toBe(200);
+    const actual = actualItems(cap.postedItems);
+    expect(quantityOf(actual, "moonshot-kimi-k2.6-tokens-input")).toBe(50);
+    expect(quantityOf(actual, "moonshot-kimi-k2.6-tokens-cached-input")).toBe(150);
+    expect(quantityOf(actual, "moonshot-kimi-k2.6-tokens-output")).toBe(8);
   });
 
   it("declares NO cached-input row when the vendor reported no cache hit", async () => {
@@ -712,19 +746,35 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     expect(actual.every((i) => !i.costName.includes("peak"))).toBe(true);
   });
 
-  it("fails loud on Moonshot before creating the platform run", async () => {
+  it("declares Moonshot actuals on the platform run with the cache split", async () => {
+    const costCap = { postedItems: [] as CostItem[][] };
+    const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+    routes.push(
+      mockVendorPlatformKey("moonshot"),
+      mockPlatformRunCreate(),
+      mockPlatformRunCosts(costCap),
+      mockPlatformRunStatus(),
+      mockVendor(vendor, {
+        host: MOONSHOT_URL,
+        model: "kimi-k2.6",
+        usage: { prompt_tokens: 400, completion_tokens: 25, cached_tokens: 360 },
+      }),
+    );
+
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(INTERNAL_AUTH)
-      .send({ message: "hi", systemPrompt: "", provider: "moonshot", model: "kimi-flash" });
+      .send({ message: "hi", systemPrompt: "be brief", provider: "moonshot", model: "kimi-flash" });
 
-    expect(res.status).toBe(502);
-    expect(res.body.missingCostNames).toEqual([
-      "moonshot-kimi-k2.6-tokens-input",
-      "moonshot-kimi-k2.6-tokens-cached-input",
-      "moonshot-kimi-k2.6-tokens-output",
-    ]);
-    expect(fetchCalls).toHaveLength(0);
+    expect(res.status).toBe(200);
+    expect(vendor.bodies[0].model).toBe("kimi-k2.6");
+
+    const actual = costCap.postedItems[0];
+    expect(quantityOf(actual, "moonshot-kimi-k2.6-tokens-input")).toBe(40);
+    expect(quantityOf(actual, "moonshot-kimi-k2.6-tokens-cached-input")).toBe(360);
+    expect(quantityOf(actual, "moonshot-kimi-k2.6-tokens-output")).toBe(25);
+    expect(actual.every((i) => i.status === undefined)).toBe(true);
+    expect(actual.every((i) => i.costSource === "platform")).toBe(true);
   });
 
   it("says WHICH vendor platform key is missing", async () => {
