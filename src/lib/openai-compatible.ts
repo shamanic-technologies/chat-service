@@ -222,7 +222,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     isOutOfCreditRefusal: (s) => s.status === 402 || EMPTY_BALANCE_PROSE.test(s.text),
   },
   // https://docs.z.ai/api-reference/llm/chat-completion — read 2026-08-15.
-  // Cached input $0.26 vs $1.4 per 1M on glm-5.2; $0.01 vs $0.07 on flashx.
+  // Cached input $0.26 vs $1.4 per 1M on glm-5.3; $0.01 vs $0.07 on flashx.
   zai: {
     id: "zai",
     label: "Z.ai",
@@ -336,7 +336,7 @@ export function vendorConfig(provider: string): VendorConfig {
 export interface VendorCompleteOptions {
   vendor: VendorId;
   apiKey: string;
-  /** Vendor model id, e.g. "deepseek-v4-flash", "glm-5.2", "kimi-k3". */
+  /** Vendor model id, e.g. "deepseek-v4-flash", "glm-5.3", "kimi-k3". */
   model: string;
   message: string;
   systemPrompt?: string;

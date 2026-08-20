@@ -26,7 +26,7 @@ const ALIASES = [
   { provider: "deepseek", alias: "deepseek-flash", modelId: "deepseek-v4-flash", prefix: "deepseek-v4-flash" },
   { provider: "deepseek", alias: "deepseek-pro", modelId: "deepseek-v4-pro", prefix: "deepseek-v4-pro" },
   { provider: "zai", alias: "glm-flash", modelId: "glm-4.7-flashx", prefix: "zai-glm-4.7-flashx" },
-  { provider: "zai", alias: "glm-pro", modelId: "glm-5.2", prefix: "zai-glm-5.2" },
+  { provider: "zai", alias: "glm-pro", modelId: "glm-5.3", prefix: "zai-glm-5.3" },
   { provider: "moonshot", alias: "kimi-flash", modelId: "kimi-k2.6", prefix: "moonshot-kimi-k2.6" },
   { provider: "moonshot", alias: "kimi-pro", modelId: "kimi-k3", prefix: "moonshot-kimi-k3" },
 ] as const;
@@ -250,7 +250,7 @@ describe("buildVendorRequestBody", () => {
 
   it("forwards the caller's systemPrompt byte-equal (no preamble, no nudge)", () => {
     const systemPrompt = "Return ONLY the value. Do not explain.";
-    const body = buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "glm-5.2", message: "m", systemPrompt });
+    const body = buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "glm-5.3", message: "m", systemPrompt });
     const messages = body.messages as Array<{ role: string; content: string }>;
     expect(messages.find((m) => m.role === "system")?.content).toBe(systemPrompt);
   });
@@ -316,7 +316,7 @@ describe("assertModelMatches", () => {
 
   it("throws when the vendor served a different model", () => {
     expect(() => assertModelMatches(MODEL, "deepseek-v4-pro")).toThrow(/Model mismatch/);
-    expect(() => assertModelMatches("glm-5.2", "glm-4.7")).toThrow(/Model mismatch/);
+    expect(() => assertModelMatches("glm-5.3", "glm-4.7")).toThrow(/Model mismatch/);
   });
 
   it("tolerates a missing model echo rather than inventing a mismatch", () => {
@@ -350,10 +350,10 @@ describe("mapVendorResponse", () => {
 
   it("carries Z.ai's nested cached_tokens", () => {
     const body = okBody({
-      model: "glm-5.2",
+      model: "glm-5.3",
       usage: { prompt_tokens: 500, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 460 } },
     });
-    const r = mapVendorResponse("zai", "glm-5.2", body);
+    const r = mapVendorResponse("zai", "glm-5.3", body);
     expect(r.cachedInputTokens).toBe(460);
   });
 
@@ -422,7 +422,7 @@ describe("completeWithVendor", () => {
 
   const endpoints: Array<[VendorId, string, string]> = [
     ["deepseek", "deepseek-v4-flash", "https://api.deepseek.com/v1/chat/completions"],
-    ["zai", "glm-5.2", "https://api.z.ai/api/paas/v4/chat/completions"],
+    ["zai", "glm-5.3", "https://api.z.ai/api/paas/v4/chat/completions"],
     ["moonshot", "kimi-k3", "https://api.moonshot.ai/v1/chat/completions"],
   ];
 
@@ -482,7 +482,7 @@ describe("completeWithVendor", () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(
-      completeWithVendor({ vendor: "zai", apiKey: "k", model: "glm-5.2", message: "m" }),
+      completeWithVendor({ vendor: "zai", apiKey: "k", model: "glm-5.3", message: "m" }),
     ).rejects.toThrow(/503/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.z.ai/api/paas/v4/chat/completions");

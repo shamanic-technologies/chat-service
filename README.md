@@ -201,7 +201,7 @@ Request body:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
   - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.7 Flash), `pro` (most powerful, Gemini 3.1 Pro). All require a Google API key in key-service.
   - **deepseek**: `deepseek-flash` (DeepSeek V4 Flash — cheapest per unit of intelligence, 1M context), `deepseek-pro` (DeepSeek V4 Pro — the reasoning-heavy sibling)
-  - **zai**: `glm-flash` (`glm-4.7-flashx` — fast and very cheap), `glm-pro` (`glm-5.2` — Z.ai's flagship)
+  - **zai**: `glm-flash` (`glm-4.7-flashx` — fast and very cheap), `glm-pro` (`glm-5.3` — Z.ai's flagship)
   - **moonshot**: `kimi-flash` (`kimi-k2.6` — value tier), `kimi-pro` (`kimi-k3` — flagship, 1M context)
 
   The three direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400 on every one of their models. Each needs its OWN key in key-service, stored under its provider slug.
@@ -275,11 +275,11 @@ The vendors differ in exactly four things, and all four are *data* in the `VENDO
 | `deepseek` | `deepseek-flash` | `deepseek-v4-flash` | `deepseek-v4-flash` | cache + regime | `https://api.deepseek.com/v1` |
 | `deepseek` | `deepseek-pro` | `deepseek-v4-pro` | `deepseek-v4-pro` | cache + regime | `https://api.deepseek.com/v1` |
 | `zai` | `glm-flash` | `glm-4.7-flashx` | `zai-glm-4.7-flashx` | cache | `https://api.z.ai/api/paas/v4` |
-| `zai` | `glm-pro` | `glm-5.2` | `zai-glm-5.2` | cache | `https://api.z.ai/api/paas/v4` |
+| `zai` | `glm-pro` | `glm-5.3` | `zai-glm-5.3` | cache | `https://api.z.ai/api/paas/v4` |
 | `moonshot` | `kimi-flash` | `kimi-k2.6` | `moonshot-kimi-k2.6` | none seeded → 502 | `https://api.moonshot.ai/v1` |
 | `moonshot` | `kimi-pro` | `kimi-k3` | `moonshot-kimi-k3` | none seeded → 502 | `https://api.moonshot.ai/v1` |
 
-Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`deepseek-v4-flash` stays bare; `glm-5.2` becomes `zai-glm-5.2`). These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-v4-pro-0813` is accepted; a different model is not).
+Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`deepseek-v4-flash` stays bare; `glm-5.3` becomes `zai-glm-5.3`). These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-v4-pro-0813` is accepted; a different model is not). `glm-pro` pointed at `glm-5.2` until 2026-08-20; Z.ai publishes GLM-5.3 as a drop-in swap at an identical list price, so the alias moved and callers saw no contract change.
 
 **Scope.** `/complete` and `/internal/platform-complete` only, non-streaming, text in / text out. Not wired: `/chat` (agentic tool-calling is unproven on these models and must be measured first), web search, image input, image generation, embeddings. `webSearch` or `imageUrl` on any of these providers returns **400** naming the vendor, rather than silently answering ungrounded or blind.
 
@@ -315,7 +315,7 @@ Each vendor reports the count in a different place, which is the entire reason `
 | Vendor | Field | Cache-hit vs miss (per 1M input) |
 |---|---|---|
 | DeepSeek | `usage.prompt_cache_hit_tokens` | $0.014 vs $0.44 (V4 Flash, peak) — 31x |
-| Z.ai | `usage.prompt_tokens_details.cached_tokens` | $0.26 vs $1.40 (`glm-5.2`) |
+| Z.ai | `usage.prompt_tokens_details.cached_tokens` | $0.26 vs $1.40 (`glm-5.3`) |
 | Moonshot | `usage.cached_tokens` | $0.30 vs $3.00 (`kimi-k3`) |
 
 A cached count larger than the prompt total is clamped: a negative fresh-token quantity would make runs-service reject the whole declaration and fail a call that actually succeeded.

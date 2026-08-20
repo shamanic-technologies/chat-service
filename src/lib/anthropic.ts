@@ -163,7 +163,7 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   // costPrefix follows the costs-service catalog's own shape (verified against
   // its seed, v0.44.0): the vendor's model id, prefixed with the vendor slug
   // UNLESS the id already names the vendor. So `deepseek-v4-flash` stays bare
-  // while `glm-5.2` becomes `zai-glm-5.2`. These strings are byte-equal to the
+  // while `glm-5.3` becomes `zai-glm-5.3`. These strings are byte-equal to the
   // catalog rows — a prefix the catalog does not carry is 422-rejected at
   // declaration and fails the request.
   // ---------------------------------------------------------------------
@@ -191,9 +191,14 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       costPrefix: "zai-glm-4.7-flashx",
       provider: "zai",
     },
+    // GLM-5.3 (released 2026-08-20) replaced GLM-5.2 here: Z.ai publishes it as
+    // a drop-in swap at an identical list price ($1.4 / $0.26 cached / $4.4 per
+    // 1M), so `glm-pro` keeps meaning "Z.ai's flagship" and callers see no
+    // contract change. GLM-5.2 is no longer reachable — reaching it again would
+    // be a deliberate fourth alias, not a fallback.
     "glm-pro": {
-      apiModelId: "glm-5.2",
-      costPrefix: "zai-glm-5.2",
+      apiModelId: "glm-5.3",
+      costPrefix: "zai-glm-5.3",
       provider: "zai",
     },
   },
@@ -270,6 +275,7 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "deepseek-v4-pro": "deepseek-v4-pro",
   "glm-4.7-flashx": "zai-glm-4.7-flashx",
   "glm-5.2": "zai-glm-5.2",
+  "glm-5.3": "zai-glm-5.3",
   "kimi-k2.6": "moonshot-kimi-k2.6",
   "kimi-k3": "moonshot-kimi-k3",
 };

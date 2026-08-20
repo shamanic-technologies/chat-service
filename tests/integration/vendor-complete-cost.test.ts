@@ -235,7 +235,7 @@ describe("POST /complete — direct vendor routing", () => {
     { provider: "deepseek", model: "deepseek-flash", host: DEEPSEEK_URL, wire: "deepseek-v4-flash", prefix: "deepseek-v4-flash-peak" },
     { provider: "deepseek", model: "deepseek-pro", host: DEEPSEEK_URL, wire: "deepseek-v4-pro", prefix: "deepseek-v4-pro-peak" },
     { provider: "zai", model: "glm-flash", host: ZAI_URL, wire: "glm-4.7-flashx", prefix: "zai-glm-4.7-flashx" },
-    { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.2", prefix: "zai-glm-5.2" },
+    { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.3", prefix: "zai-glm-5.3" },
   ] as const;
 
   for (const c of CASES) {
@@ -286,7 +286,7 @@ describe("POST /complete — direct vendor routing", () => {
       mockRunsCreate(),
       mockVendorKey("zai"),
       mockBilling(),
-      mockVendor(vendor, { host: ZAI_URL, model: "glm-5.2", usage: { prompt_tokens: 10, completion_tokens: 2 } }),
+      mockVendor(vendor, { host: ZAI_URL, model: "glm-5.3", usage: { prompt_tokens: 10, completion_tokens: 2 } }),
       ...mockRunsCostRoutes(cap),
       mockRunsStatusPatch(),
     );
@@ -359,7 +359,7 @@ describe("POST /complete — direct vendor routing", () => {
       mockBilling(),
       mockVendor(vendor, {
         host: ZAI_URL,
-        model: "glm-5.2",
+        model: "glm-5.3",
         usage: { prompt_tokens: 800, completion_tokens: 15, prompt_tokens_details: { cached_tokens: 750 } },
       }),
       ...mockRunsCostRoutes(cap),
@@ -373,8 +373,8 @@ describe("POST /complete — direct vendor routing", () => {
 
     expect(res.status).toBe(200);
     const actual = actualItems(cap.postedItems);
-    expect(quantityOf(actual, "zai-glm-5.2-tokens-input")).toBe(50);
-    expect(quantityOf(actual, "zai-glm-5.2-tokens-cached-input")).toBe(750);
+    expect(quantityOf(actual, "zai-glm-5.3-tokens-input")).toBe(50);
+    expect(quantityOf(actual, "zai-glm-5.3-tokens-cached-input")).toBe(750);
   });
 
   it("declares DeepSeek against the off-peak names one minute after a peak window closes", async () => {
@@ -729,7 +729,7 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
       mockPlatformRunStatus(),
       mockVendor(vendor, {
         host: ZAI_URL,
-        model: "glm-5.2",
+        model: "glm-5.3",
         usage: { prompt_tokens: 300, completion_tokens: 8, prompt_tokens_details: { cached_tokens: 250 } },
       }),
     );
@@ -741,8 +741,8 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
 
     expect(res.status).toBe(200);
     const actual = costCap.postedItems[0];
-    expect(quantityOf(actual, "zai-glm-5.2-tokens-input")).toBe(50);
-    expect(quantityOf(actual, "zai-glm-5.2-tokens-cached-input")).toBe(250);
+    expect(quantityOf(actual, "zai-glm-5.3-tokens-input")).toBe(50);
+    expect(quantityOf(actual, "zai-glm-5.3-tokens-cached-input")).toBe(250);
     expect(actual.every((i) => !i.costName.includes("peak"))).toBe(true);
   });
 
