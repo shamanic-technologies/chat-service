@@ -180,7 +180,7 @@ describe("alert latch", () => {
   const context = (vendor: VendorId) => ({
     vendor,
     vendorLabel: vendor.toUpperCase(),
-    model: "glm-5.2",
+    model: "glm-5.3",
     status: 429,
     vendorMessage: "Insufficient balance",
   });
@@ -309,8 +309,8 @@ describe("completeWithVendor wiring", () => {
         ),
     );
 
-    await expect(completeWithVendor(options("zai", "glm-5.2"))).rejects.toThrow(VendorProviderError);
-    await expect(completeWithVendor(options("zai", "glm-5.2"))).rejects.toThrow(/429 from glm-5.2/);
+    await expect(completeWithVendor(options("zai", "glm-5.3"))).rejects.toThrow(VendorProviderError);
+    await expect(completeWithVendor(options("zai", "glm-5.3"))).rejects.toThrow(/429 from glm-5.3/);
 
     await vi.waitFor(() => expect(emailCalls).toHaveLength(1));
     expect(JSON.parse(emailCalls[0].body as string).metadata.vendorSlug).toBe("zai");
@@ -325,7 +325,7 @@ describe("completeWithVendor wiring", () => {
         ),
     );
 
-    await expect(completeWithVendor(options("zai", "glm-5.2"))).rejects.toThrow(VendorProviderError);
+    await expect(completeWithVendor(options("zai", "glm-5.3"))).rejects.toThrow(VendorProviderError);
     expect(emailCalls).toHaveLength(0);
     expect(isVendorCreditAlertLatched("zai")).toBe(false);
   });
