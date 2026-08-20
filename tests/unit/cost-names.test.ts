@@ -96,12 +96,12 @@ describe("buildLlmCostNames — per-vendor dimensions", () => {
   });
 
   it("Z.ai: cached input, no regime — the hour changes nothing", () => {
-    const peakHour = buildLlmCostNames({ provider: "zai", costPrefix: "zai-glm-5.2", at: at("2026-08-20T02:00:00Z") });
-    const offHour = buildLlmCostNames({ provider: "zai", costPrefix: "zai-glm-5.2", at: at("2026-08-20T12:00:00Z") });
+    const peakHour = buildLlmCostNames({ provider: "zai", costPrefix: "zai-glm-5.3", at: at("2026-08-20T02:00:00Z") });
+    const offHour = buildLlmCostNames({ provider: "zai", costPrefix: "zai-glm-5.3", at: at("2026-08-20T12:00:00Z") });
     expect(peakHour).toEqual({
-      input: "zai-glm-5.2-tokens-input",
-      cachedInput: "zai-glm-5.2-tokens-cached-input",
-      output: "zai-glm-5.2-tokens-output",
+      input: "zai-glm-5.3-tokens-input",
+      cachedInput: "zai-glm-5.3-tokens-cached-input",
+      output: "zai-glm-5.3-tokens-output",
     });
     expect(offHour).toEqual(peakHour);
   });
@@ -128,7 +128,7 @@ describe("buildLlmCostNames — per-vendor dimensions", () => {
       ["deepseek", "deepseek-v4-flash"],
       ["deepseek", "deepseek-v4-pro"],
       ["zai", "zai-glm-4.7-flashx"],
-      ["zai", "zai-glm-5.2"],
+      ["zai", "zai-glm-5.3"],
       ["moonshot", "moonshot-kimi-k2.6"],
       ["moonshot", "moonshot-kimi-k3"],
     ];
