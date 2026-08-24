@@ -105,25 +105,86 @@ const RETRY_MAX_DELAY_MS = 30_000;
 const GEMINI_3_THINKING_LEVEL = "low";
 const GEMINI_25_THINKING_BUDGET = 8192;
 
-// Provider FLOOR for `disableThinking` — the lowest thinking each Gemini gen
-// allows. Gemini 3 has NO full-off (verified against
-// https://ai.google.dev/gemini-api/docs/thinking): Flash bottoms at "minimal",
-// Pro at "low". Gemini 2.5 alone can go fully off (thinkingBudget: 0). So
-// disableThinking is "minimize to the floor", documented as such on the
+// Provider FLOOR for `disableThinking` — the lowest thinking level each Gemini
+// model accepts. Gemini 3 has NO full-off, and the floor is PER MODEL, not per
+// generation: within Gemini 3 some models accept "minimal" and some reject it
+// with `400 INVALID_ARGUMENT: Thinking level MINIMAL is not supported for this
+// model`. Gemini 2.5 alone can go fully off (thinkingBudget: 0). So
+// disableThinking is "minimize to the model's floor", documented as such on the
 // /complete schema — NOT a guaranteed zero on Gemini 3 (mirror of maxSearches:
 // a hard knob on one provider, best-effort on the other).
-const GEMINI_3_PRO_MIN_LEVEL = "low";
-const GEMINI_3_FLASH_MIN_LEVEL = "minimal";
+//
+// Values below are transcribed from Google's live "Controlling thinking" table
+// (https://ai.google.dev/gemini-api/docs/thinking, read 2026-08-24) and each
+// one was additionally confirmed against the real API on the same day
+// (`thinking_level: "minimal"` accepted vs 400). Do NOT derive a floor from the
+// model id — the generation + a substring test for "pro" is exactly what
+// shipped the 2026-08-14 outage: `flash-pro` was upgraded to gemini-3.7-flash,
+// whose id contains neither "pro" nor any hint that Google dropped "minimal"
+// for it, so every `disableThinking: true` call 400'd for 10 days.
+//
+// Doc table, verbatim (the "Levels Supported" column):
+//   gemini-3.7-flash            | On (medium)  | low, medium, high
+//   gemini-3.6-flash            | On (medium)  | minimal, low, medium, high
+//   gemini-3.5-flash            | On (medium)  | minimal, low, medium, high
+//   gemini-3.5-flash-lite       | On (minimal) | minimal, low, medium, high
+//   gemini-3.1-pro-preview      | On (high)    | low, medium, high
+//   gemini-3-flash-preview      | On (high)    | minimal, low, medium, high
+//   gemini-3-pro-preview        | On (high)    | low, high
+// gemini-3.1-flash-lite has no row in that table; its floor ("minimal") is
+// recorded from the live-API probe (accepted, 200) rather than guessed.
+//
+// A Gemini-3 model absent from this map has NO recorded floor, so
+// buildThinkingConfig THROWS rather than guessing one. Adding a model alias
+// means adding its floor here, verified against the doc/API — never inferred.
+const GEMINI_3_THINKING_FLOOR: Record<string, GeminiThinkingLevel> = {
+  "gemini-3.1-flash-lite": "minimal",
+  "gemini-3.5-flash-lite": "minimal",
+  "gemini-3.5-flash": "minimal",
+  "gemini-3.6-flash": "minimal",
+  "gemini-3-flash-preview": "minimal",
+  "gemini-3.7-flash": "low",
+  "gemini-3.1-pro-preview": "low",
+  "gemini-3-pro-preview": "low",
+};
 const GEMINI_25_THINKING_OFF = 0;
 
 /** Gemini-3 thinking levels a config may raise the /chat path to. */
 export type GeminiThinkingLevel = "minimal" | "low" | "medium" | "high";
 
+/** Ordering of the Gemini-3 thinking levels, lowest first. */
+const THINKING_LEVEL_ORDER: readonly GeminiThinkingLevel[] = ["minimal", "low", "medium", "high"];
+
+/**
+ * The lowest thinking level `model` accepts. Throws for a Gemini-3 model with
+ * no recorded floor — a guessed floor is what caused the gemini-3.7-flash
+ * outage, so an unknown model fails loud at the call site instead of sending a
+ * level the provider will reject.
+ */
+export function geminiThinkingFloor(model: string): GeminiThinkingLevel {
+  const floor = GEMINI_3_THINKING_FLOOR[model];
+  if (!floor) {
+    throw new Error(
+      `[gemini] No recorded minimum thinking level for model "${model}". ` +
+        `Add it to GEMINI_3_THINKING_FLOOR in src/lib/gemini.ts, verified against ` +
+        `https://ai.google.dev/gemini-api/docs/thinking — never inferred from the model id.`,
+    );
+  }
+  return floor;
+}
+
+/** Every Gemini-3 model id with a recorded thinking floor. */
+export function geminiModelsWithThinkingFloor(): string[] {
+  return Object.keys(GEMINI_3_THINKING_FLOOR);
+}
+
 /**
  * Build the generation-specific `thinkingConfig`. Shared by /complete
  * (gemini.ts) and /chat (gemini-chat.ts) so both paths bound Gemini-3 thinking
- * identically. When `disableThinking` is set, drop to the provider's floor
- * (fully off on Gemini 2.5; lowest level on Gemini 3 — it has no full-off).
+ * identically. When `disableThinking` is set, drop to the model's floor (fully
+ * off on Gemini 2.5; the lowest level THAT MODEL accepts on Gemini 3 — it has
+ * no full-off, and the floor differs between models of the same generation,
+ * see GEMINI_3_THINKING_FLOOR). A Gemini-3 model with no recorded floor throws.
  *
  * `level` is a Gemini-3 override that applies only to Gemini 3 and only when
  * thinking is NOT being disabled (disableThinking floors win). Two callers
@@ -146,14 +207,32 @@ export function buildThinkingConfig(
   const isGemini3 = model.startsWith("gemini-3");
   if (disableThinking) {
     if (isGemini3) {
-      // "pro" id (gemini-3.1-pro-preview) floors at "low"; Flash/flash-lite at "minimal".
-      const floor = model.includes("pro") ? GEMINI_3_PRO_MIN_LEVEL : GEMINI_3_FLASH_MIN_LEVEL;
-      return { thinkingLevel: floor };
+      // Per-model floor, read from the recorded table. Never derived from the id.
+      return { thinkingLevel: geminiThinkingFloor(model) };
     }
     return { thinkingBudget: GEMINI_25_THINKING_OFF };
   }
   if (isGemini3) {
-    return { thinkingLevel: level ?? GEMINI_3_THINKING_LEVEL };
+    const floor = geminiThinkingFloor(model);
+    const floorRank = THINKING_LEVEL_ORDER.indexOf(floor);
+    if (level !== undefined && THINKING_LEVEL_ORDER.indexOf(level) < floorRank) {
+      // An EXPLICIT caller/config level the model rejects fails loud here rather
+      // than as an opaque provider 400 — and is never silently swapped for a
+      // different level. `disableThinking: true` is the way to ask for "as
+      // little as this model allows".
+      throw new Error(
+        `[gemini] thinkingLevel "${level}" is not supported by model "${model}" ` +
+          `(lowest accepted level is "${floor}"). Use disableThinking to request the model's floor.`,
+      );
+    }
+    // No explicit level: the service-wide default. Raise it to the floor for a
+    // model whose floor sits above it (the default is ours, not a caller ask).
+    const effective =
+      level ??
+      (THINKING_LEVEL_ORDER.indexOf(GEMINI_3_THINKING_LEVEL) < floorRank
+        ? floor
+        : GEMINI_3_THINKING_LEVEL);
+    return { thinkingLevel: effective };
   }
   return { thinkingBudget: GEMINI_25_THINKING_BUDGET };
 }
