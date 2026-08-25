@@ -274,6 +274,58 @@ export interface VendorRefusalSignal {
   text: string;
 }
 
+/**
+ * Whether THIS vendor lets a caller turn the model's REASONING off, and what
+ * the request field is called when it does.
+ *
+ * Recorded here for the same reason the price and the concurrency are: it is a
+ * property of the vendor that decides what a generation costs, and it is not
+ * the same string at any two of them. Every model we reach on these three
+ * vendors reasons by default, we are billed for every reasoning token as
+ * output, and `/complete` hands the caller the answer only — the reasoning is
+ * read by nobody and thrown away at the parse.
+ *
+ * Measured in production the day this shipped: the same cold-email campaign at
+ * the same daily budget spent 316 output tokens per generation on Gemini and
+ * 9,633 on GLM — thirty times the output for the same three emails, and the
+ * whole difference was reasoning we discard. Turning it off on GLM-5.2 cut a
+ * probe from 703 output tokens to 389 with the answer intact (1,955 chars
+ * against 1,565 — same three emails, less padding), and on Kimi K2.6 from
+ * 1,173 to 452 while the answer got LONGER (1,140 → 1,866 chars).
+ *
+ * `requestFields` is merged into the request body verbatim, so a fourth vendor
+ * that spells it differently is a data entry rather than a branch. What it must
+ * never be is one vendor's field name sent to another: DeepSeek and Z.ai both
+ * accept and silently IGNORE an unknown top-level field (probed 2026-08-25 with
+ * a junk key: 200, reasoning still on), so a wrong name buys nothing and looks
+ * exactly like success.
+ */
+export type VendorReasoning =
+  | {
+      kind: "disablable";
+      /** Merged into the request body when reasoning is being turned off. */
+      requestFields: Record<string, unknown>;
+      /**
+       * Vendor model ids that REFUSE this field, and what the vendor answers.
+       *
+       * Recorded, not worked around. A model listed here still gets the field
+       * and still fails loud with the vendor's own words (400, retryable:false)
+       * — silently dropping the option would hide a model that cannot serve the
+       * workload cheaply behind an invoice nobody reads. Empty for a vendor
+       * where every model we reach accepts it.
+       */
+      refusedBy: Record<string, string>;
+      /** Where the field name comes from. */
+      source: string;
+      /** What was measured, and when. */
+      evidence: string;
+    }
+  | {
+      kind: "none";
+      /** Why this vendor has no such control — surfaced in the docs, not guessed. */
+      reason: string;
+    };
+
 export interface VendorConfig {
   id: VendorId;
   /** Human-readable name, used in caller-facing error messages. */
@@ -328,6 +380,12 @@ export interface VendorConfig {
    * `tests/unit/openai-compatible.test.ts` asserts every vendor declares one.
    */
   structuredOutput: "json_schema" | "json_object";
+  /**
+   * Whether reasoning can be turned off on THIS vendor, and how. See
+   * `VendorReasoning` — it decides what a generation costs, so it sits next to
+   * the price and the concurrency rather than in a branch.
+   */
+  reasoning: VendorReasoning;
   /**
    * True when THIS vendor's refusal means "the prepaid balance is empty", as
    * opposed to every other reason it refuses.
@@ -404,6 +462,26 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // had never been called in production, so no request had ever carried a
     // responseSchema to this vendor.
     structuredOutput: "json_object",
+    // Reasoning is disablable, and it is the SAME field on all three vendors —
+    // which is a fact about these three, not a rule: it is recorded per vendor
+    // because a fourth may spell it differently, and because DeepSeek proves a
+    // wrong name is silent. `enable_thinking: false` and
+    // `reasoning_effort: "minimal"` both returned 200 here with reasoning still
+    // running (226 and 781 reasoning chars), exactly like the junk-key control.
+    // Probed 2026-08-25 on deepseek-v4-flash: 205 → 450 output tokens with the
+    // answer growing 761 → 1,959 chars, and on deepseek-v4-pro 369 → 293 output
+    // tokens at an unchanged answer (1,165 → 1,131 chars). DeepSeek reasons
+    // least of the three to begin with, so it is also the one that saves least.
+    reasoning: {
+      kind: "disablable",
+      requestFields: { thinking: { type: "disabled" } },
+      refusedBy: {},
+      source: "https://api-docs.deepseek.com/guides/reasoning_model",
+      evidence:
+        "Probed 2026-08-25. flash 205→450 out tok (answer 761→1,959 chars), pro 369→293 out tok " +
+        "(answer 1,165→1,131 chars); reasoning_content empty in both. enable_thinking / " +
+        "reasoning_effort are ignored by this vendor, like an unknown key.",
+    },
     // DeepSeek is the one vendor that does NOT overload 429 for this: its
     // documented codes give an empty balance its own status, 402 "Insufficient
     // Balance — You have run out of balance", while 429 is only "Rate Limit
@@ -450,6 +528,39 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // the vendor actually serves, and downgrading it would silently drop
     // enforcement a caller asked for.
     structuredOutput: "json_schema",
+    // Z.ai is the vendor this was measured on and the one it saves most on.
+    // `thinking: {type:"disabled"}` on glm-5.2 took a probe from 703 to 389
+    // output tokens with the answer intact (1,955 → 1,565 chars — the same
+    // three emails, less padding), while a junk key on the identical prompt
+    // left reasoning running at 3,431 chars. `reasoning_effort:"minimal"` made
+    // it think MORE (4,353 reasoning chars, 1,384 output tokens), which is the
+    // clearest possible demonstration that the field name is a per-vendor fact
+    // and not a guess.
+    //
+    // GLM-5.3 REFUSES the field outright and is recorded rather than special-
+    // cased: nothing routes to it today (`glm-pro` was moved back to 5.2 after
+    // the concurrency incident), and if anything ever does, its refusal must
+    // reach the caller as a 400 in Z.ai's own words instead of being quietly
+    // dropped into a bill nobody reads.
+    reasoning: {
+      kind: "disablable",
+      requestFields: { thinking: { type: "disabled" } },
+      refusedBy: {
+        // Verbatim, 2026-08-25: `400 {"error":{"code":"1210","message":"This model always
+        // engages in thinking and cannot be disabled; please use low, high, or max"}}`. It also
+        // burned the entire 2,000-token cap on reasoning and returned a ZERO-character answer
+        // when forced to think, which is the other half of why the alias no longer points at it.
+        "glm-5.3":
+          'Z.ai 400 code 1210 — "This model always engages in thinking and cannot be disabled; ' +
+          'please use low, high, or max" (observed 2026-08-25).',
+      },
+      source: "https://docs.z.ai/api-reference/llm/chat-completion",
+      evidence:
+        "Probed 2026-08-25 on glm-5.2: 703→389 out tok (answer 1,955→1,565 chars), reasoning " +
+        "1,035→0 chars; on glm-4.7-flashx 1,036→329 out tok (answer 2,091→1,433 chars). An " +
+        "unknown key on the same prompt left reasoning at 3,431 chars, and reasoning_effort:" +
+        "'minimal' raised it to 4,353.",
+    },
     // Z.ai answers an empty balance with a 429 — the same status as a rate
     // limit — and separates the two in the body: code 1113, "Insufficient
     // balance or no resource package. Please recharge." (observed 2026-08-15).
@@ -488,12 +599,35 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
         "Tier is set by cumulative recharge ($1 / $10 / $20 / $100 / $1,000 / $3,000), not by model, " +
         "so a Kimi alias swap cannot change our throughput — only the balance can. Which tier THIS " +
         "account sits on is a console fact, not published by the API, so it is deliberately not " +
-        "asserted here; Tier 0's single slot is the one state that would put Kimi in GLM-5.3's position.",
+        "asserted here; Tier 0's single slot is the one state that would put Kimi in GLM-5.3's " +
+        "position. OBSERVED 2026-08-25, and it is that state: Moonshot refused a second in-flight " +
+        "request with `429 rate_limit_reached_error` saying \"request reached max organization " +
+        "concurrency: 1\", i.e. this account is on Tier 0. That is a BALANCE fact and nothing here " +
+        "can fix it — a top-up to $10 moves it to 50 — but any Kimi alias serves one request at a " +
+        "time until someone does.",
       source: "https://platform.kimi.ai/docs/pricing/limits",
       observedOn: "2026-08-25",
     },
     // json_schema accepted — probed 2026-08-25 against kimi-k2.6 (200).
     structuredOutput: "json_schema",
+    // Moonshot reasons the hardest of the three and answers the shortest while
+    // doing it: kimi-k2.6 spent 1,173 output tokens on 3,808 chars of reasoning
+    // and 1,140 chars of answer. With `thinking: {type:"disabled"}` it spent 452
+    // and the ANSWER GOT LONGER (1,866 chars) — the reasoning was not feeding
+    // the answer, it was replacing it. `enable_thinking:false` and
+    // `reasoning_effort:"low"` are ignored here exactly as they are at DeepSeek
+    // (1,418 and 1,310 output tokens, reasoning still running), so the field
+    // name matters and the vendor will not tell you when you get it wrong.
+    reasoning: {
+      kind: "disablable",
+      requestFields: { thinking: { type: "disabled" } },
+      refusedBy: {},
+      source: "https://platform.kimi.ai/docs/api/chat",
+      evidence:
+        "Probed 2026-08-25 on kimi-k2.6: 1,173→452 out tok, reasoning 3,808→0 chars, answer " +
+        "1,140→1,866 chars; on kimi-k3 543→360 out tok, reasoning 639→0 chars, answer " +
+        "1,652→1,406 chars. enable_thinking / reasoning_effort ignored, like an unknown key.",
+    },
     // Moonshot also overloads 429, and names the case in the error TYPE:
     // `exceeded_current_quota_error`, "account ... is suspended due to
     // insufficient balance, please recharge" (observed 2026-08-15). Its
@@ -621,6 +755,18 @@ export interface VendorCompleteOptions {
   responseSchema?: Record<string, unknown>;
   temperature?: number;
   maxOutputTokens?: number;
+  /**
+   * Caller's explicit reasoning choice, TRI-STATE on purpose.
+   *
+   * `true` turns reasoning off, `false` keeps it on, and OMITTED takes the
+   * default in `shouldDisableVendorReasoning` — which is what makes the default
+   * overridable in both directions. Same field the Gemini path already exposes
+   * on `/complete` (`disableThinking`), so a caller learns one knob, not two.
+   *
+   * On a vendor with no such control this is a documented no-op, exactly like
+   * `disableThinking` on Anthropic.
+   */
+  disableThinking?: boolean;
 }
 
 export interface VendorCompleteResult {
@@ -703,6 +849,44 @@ function jittered(ms: number): number {
  * The caller's `systemPrompt` is forwarded byte-equal — no preamble, no
  * postamble, no "respond with JSON" nudge (README "Prompt Ownership").
  */
+/**
+ * True when the caller asked for a machine-readable answer.
+ *
+ * Either form counts: a `responseSchema` (the vendor enforces a shape) or
+ * `responseFormat: "json"` (the vendor's own JSON mode). Both mean the caller
+ * is going to `JSON.parse` the content and read fields out of it.
+ */
+function isStructuredRequest(options: VendorCompleteOptions): boolean {
+  return options.responseSchema != null || options.responseFormat === "json";
+}
+
+/**
+ * Should this request turn the model's reasoning off?
+ *
+ * The DEFAULT is "yes, when the caller asked for structured output" — and the
+ * reason is what the caller does with the answer, not what it costs. A request
+ * carrying a `responseSchema` (or `responseFormat: "json"`) is going to be
+ * strict-parsed into an object and read field by field; the reasoning is not in
+ * the object, is never returned to the caller by either completion route, and
+ * is billed as output tokens at the full output rate. Nobody reads it and
+ * everybody pays for it.
+ *
+ * Free-TEXT requests keep the provider-normal behaviour. That is the half of
+ * this where reasoning may genuinely be doing work — an explanation, an
+ * analysis, a piece of prose whose quality the reasoning shaped — and there is
+ * no measurement saying it is safe to take away, so it is left alone. The
+ * saving is claimed only where the evidence is.
+ *
+ * Either way the caller overrides: `disableThinking: false` keeps reasoning on
+ * for a structured request, `disableThinking: true` turns it off for a text
+ * one. The caller owns the tradeoff; the default is what the callers of this
+ * service are all doing today.
+ */
+export function shouldDisableVendorReasoning(options: VendorCompleteOptions): boolean {
+  if (options.disableThinking != null) return options.disableThinking;
+  return isStructuredRequest(options);
+}
+
 export function buildVendorRequestBody(options: VendorCompleteOptions): Record<string, unknown> {
   const { model, message, systemPrompt, responseFormat, responseSchema, temperature, maxOutputTokens } = options;
 
@@ -737,6 +921,20 @@ export function buildVendorRequestBody(options: VendorCompleteOptions): Record<s
     }
   } else if (responseFormat === "json") {
     body.response_format = { type: "json_object" };
+  }
+
+  // Reasoning off, in THIS vendor's own words. `requestFields` is merged
+  // verbatim — no field name is assumed to carry across vendors, because two of
+  // the three accept a wrong one with a 200 and keep reasoning anyway.
+  //
+  // A vendor with no such control gets nothing added and is documented as
+  // unaffected; a MODEL that refuses the field still receives it and still
+  // fails loud with the vendor's own message (VendorUnsupportedOptionError →
+  // 400, retryable:false). Dropping it for a known-refusing model would hide
+  // the one thing worth knowing: that this model cannot do the job cheaply.
+  const { reasoning } = vendorConfig(options.vendor);
+  if (reasoning.kind === "disablable" && shouldDisableVendorReasoning(options)) {
+    Object.assign(body, reasoning.requestFields);
   }
 
   return body;
@@ -970,10 +1168,22 @@ export async function completeWithVendor(
       // that let a permanently-refused option burn 335 calls looking like
       // flakiness (incident 2026-08-25).
       if (isUnsupportedOptionRefusal(res.status)) {
+        // When the request carried the reasoning-off field AND this model is
+        // recorded as refusing it, say so in the same breath. The refusal is
+        // the information — a model that cannot serve a structured workload
+        // without being billed for reasoning is a model to stop routing to,
+        // and that only gets acted on if the error names it.
+        const reasoningNote =
+          config.reasoning.kind === "disablable" &&
+          config.reasoning.refusedBy[model] &&
+          shouldDisableVendorReasoning(options)
+            ? ` This request asked ${config.label} to disable reasoning, which this model refuses: ` +
+              `${config.reasoning.refusedBy[model]}`
+            : "";
         throw new VendorUnsupportedOptionError(
           `[vendor:${vendor}] ${config.label} rejected the request as sent (${res.status} from ${model}): ` +
-            `${text.slice(0, 500)}. This is a request-configuration error — retrying will not help. ` +
-            `Vendor docs: ${config.docsUrl}`,
+            `${text.slice(0, 500)}. This is a request-configuration error — retrying will not help.` +
+            `${reasoningNote} Vendor docs: ${config.docsUrl}`,
           res.status,
           text,
         );

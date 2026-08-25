@@ -499,6 +499,10 @@ app.post("/complete", requireAuth, async (req, res) => {
         responseSchema,
         temperature,
         maxOutputTokens: providerMaxOutputTokens,
+        // The RAW field, not the coerced boolean: on these vendors the knob is
+        // tri-state (on / off / take the default), so an omitted field has to
+        // stay omitted rather than collapse to false.
+        disableThinking: disableThinkingRaw,
       });
     } else if (isGemini) {
       result = await completeWithGemini({
@@ -1671,6 +1675,8 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
         responseFormat,
         responseSchema,
         temperature,
+        // Tri-state — see the same call on POST /complete.
+        disableThinking: disableThinkingRaw,
       });
     } else if (isGemini) {
       result = await completeWithGemini({

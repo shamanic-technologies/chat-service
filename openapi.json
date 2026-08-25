@@ -777,7 +777,7 @@
           },
           "disableThinking": {
             "type": "boolean",
-            "description": "Minimize the model's internal reasoning (\"thinking\") so the whole output budget goes to the answer. Use for extraction / structured-JSON / scoring tasks that don't need chain-of-thought. Effect is provider-floored, NOT a guaranteed full-off (like `maxSearches`): Gemini 2.5 → thinking fully OFF; Anthropic → no-op (`/complete` never enables thinking); Gemini 3 has NO full-off, so it drops to the lowest level the gen allows — `minimal` for Flash (incl. the `flash-pro` default = Gemini 3.5 Flash), `low` for Pro. Omitted or false = the service default (bounded thinking, byte-identical to a normal call).",
+            "description": "Minimize the model's internal reasoning (\"thinking\") so the whole output budget goes to the answer. Use for extraction / structured-JSON / scoring tasks that don't need chain-of-thought. Effect is provider-floored, NOT a guaranteed full-off (like `maxSearches`): Gemini 2.5 → thinking fully OFF; Anthropic → no-op (`/complete` never enables thinking); Gemini 3 has NO full-off, so it drops to the lowest level the gen allows — `minimal` for Flash (incl. the `flash-pro` default = Gemini 3.5 Flash), `low` for Pro. On the direct vendors (`deepseek`, `zai`, `moonshot`) reasoning goes fully OFF, and that is ALREADY the default for any request asking for structured output (a `responseSchema` or `responseFormat: \"json\"`) — those callers parse the object and never see the reasoning, which is billed as output tokens (measured 2026-08-25: GLM-5.2 703 → 389 output tokens, Kimi K2.6 1,173 → 452, same answers). Pass `false` to keep reasoning ON for a structured request; pass `true` to turn it off for a free-text one. Omitted = the service default (bounded thinking on the native providers, byte-identical to a normal call; reasoning off for structured vendor calls, provider-normal for text ones). A vendor model that refuses the option fails loud with a 400 in its own words rather than silently reasoning anyway.",
             "example": true
           },
           "thinkingLevel": {
@@ -969,7 +969,7 @@
           },
           "disableThinking": {
             "type": "boolean",
-            "description": "Minimize the model's internal reasoning so the whole output budget goes to the answer. Provider-floored, NOT a guaranteed full-off: Gemini 2.5 → fully OFF; Anthropic → no-op; Gemini 3 → lowest level the gen allows (`minimal` Flash, `low` Pro — no full-off exists). Same semantics as POST /complete. Omitted or false = the service default (bounded thinking).",
+            "description": "Minimize the model's internal reasoning so the whole output budget goes to the answer. Provider-floored, NOT a guaranteed full-off: Gemini 2.5 → fully OFF; Anthropic → no-op; Gemini 3 → lowest level the gen allows (`minimal` Flash, `low` Pro — no full-off exists); the direct vendors (`deepseek`, `zai`, `moonshot`) → fully OFF, and already off by default for structured-output requests. Same semantics as POST /complete. Omitted = the service default; pass `false` to keep vendor reasoning on for a structured request.",
             "example": true
           },
           "thinkingLevel": {
