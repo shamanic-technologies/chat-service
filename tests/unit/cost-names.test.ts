@@ -22,9 +22,10 @@ describe("selectPricingRegime — DeepSeek peak windows", () => {
     return pricing.regime;
   })();
 
-  // The catalog's own regimeHoursUtc: peak 01:00-04:00 and 06:00-10:00 UTC,
-  // Monday through Friday.
-  it("mirrors the catalog's peak windows verbatim", () => {
+  // The vendor's published schedule: peak 01:00-04:00 and 06:00-10:00 UTC,
+  // Monday through Friday. costs-service holds its own copy of the same rule;
+  // this asserts ours, and a vendor change has to land in both repos.
+  it("holds the vendor's published peak windows", () => {
     expect(schedule.peakWindowsUtc).toEqual(["01:00-04:00", "06:00-10:00"]);
     expect(schedule.peakDaysUtc).toEqual([1, 2, 3, 4, 5]);
     expect(schedule.peakDaysFrom?.toISOString()).toBe("2026-08-22T16:00:00.000Z");

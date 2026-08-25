@@ -177,12 +177,16 @@ export interface VendorUsage {
 }
 
 /**
- * A vendor's time-of-day price schedule, mirrored from the catalog rows.
+ * A vendor's time-of-day price schedule: OUR OWN copy of the vendor's published
+ * rule, held here so a cost name can be built without a runtime call to
+ * costs-service. That is deliberate, and it has a price: the same vendor rule is
+ * written down in two repos. costs-service publishes it too, in its own grammar,
+ * next to the price points — so a vendor that moves its schedule is a change in
+ * BOTH places, and neither copy can be derived from the other by transforming a
+ * string. Read the vendor's pricing page, then update both.
  *
- * `peakWindowsUtc` is the costs-service `regimeHoursUtc` value split on the
- * comma, and the two segments are the literal name parts the catalog uses — so
- * the string this produces is byte-equal to a real row rather than an
- * independently-invented convention.
+ * The segments (`peakSegment` / `offPeakSegment`) are the literal name parts the
+ * catalog uses, so the name this produces is byte-equal to a real row.
  *
  * A schedule can also be scoped to certain DAYS: DeepSeek charges peak rates on
  * weekdays only, from 2026-08-22T16:00Z. `peakDaysUtc` says which UTC weekdays
@@ -444,9 +448,12 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     docsUrl: "https://api-docs.deepseek.com",
     // DeepSeek splits the prompt count itself: prompt_tokens = hit + miss.
     readCachedTokens: (usage) => usage.prompt_cache_hit_tokens ?? 0,
-    // Both dimensions. Peak hours are DeepSeek's own, copied from the catalog
-    // rows' regimeHoursUtc ("01:00-04:00,06:00-10:00"); every other hour is
-    // off-peak. The time-of-day rates take effect 2026-08-16T16:00Z and
+    // Both dimensions. The peak hours are DeepSeek's own, read off its pricing
+    // page and held here as our own copy; every other hour is off-peak.
+    // costs-service publishes the same vendor rule separately, alongside the
+    // price points — a schedule change is a change in both repos, and neither
+    // copy is a transformation of the other. The time-of-day rates take effect
+    // 2026-08-16T16:00Z and
     // costs-service handled that with effective-dated price points — both
     // regimes already carry today's identical rate — so the regime is selected
     // by the clock, never by the date the price changed.
