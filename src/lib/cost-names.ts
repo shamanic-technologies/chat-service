@@ -121,8 +121,11 @@ function assertDayScopeIsUnambiguous(schedule: PricingRegimeSchedule): void {
 }
 
 /**
- * Pick the regime in force at `at`, from the SAME `regimeHoursUtc` string the
- * catalog rows carry (`"01:00-04:00,06:00-10:00"`) and the day scope beside it.
+ * Pick the regime in force at `at`, from this repo's own copy of the vendor's
+ * published schedule (`VENDORS[...].pricing.regime`) — the windows and the day
+ * scope beside them. costs-service states the same vendor rule separately, in
+ * its own grammar; the two are kept in step by hand, not derived from one
+ * another, so a vendor that moves its schedule has to be applied in both.
  *
  * Each window is half-open, `[start, end)`: 01:00 sharp is the first peak
  * minute and 04:00 sharp is the first off-peak minute again. That is what makes
