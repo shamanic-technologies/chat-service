@@ -8,6 +8,8 @@ import {
   isVendorProvider,
   vendorConfig,
   VendorProviderError,
+  VendorUnsupportedOptionError,
+  isUnsupportedOptionRefusal,
   VENDORS,
   VENDOR_IDS,
   type VendorId,
@@ -263,9 +265,9 @@ describe("buildVendorRequestBody", () => {
   it("requests structured output natively when a responseSchema is supplied", () => {
     const schema = { type: "object", properties: { a: { type: "string" } } };
     const body = buildVendorRequestBody({
-      vendor: "deepseek",
+      vendor: "zai",
       apiKey: "k",
-      model: MODEL,
+      model: "glm-5.3",
       message: "m",
       responseSchema: schema,
     });
@@ -273,6 +275,64 @@ describe("buildVendorRequestBody", () => {
       type: "json_schema",
       json_schema: { name: "response", schema },
     });
+  });
+
+  // -------------------------------------------------------------------------
+  // Structured output is per-vendor. Regression for the 2026-08-25 incident:
+  // every deepseek-pro completion 400'd with "This response_format type is
+  // unavailable now" because the json_schema form was sent to a vendor that
+  // implements json_object only.
+  // -------------------------------------------------------------------------
+
+  it("sends DeepSeek its own json_object mode when a responseSchema is supplied", () => {
+    const schema = { type: "object", properties: { a: { type: "string" } } };
+    for (const model of ["deepseek-v4-flash", "deepseek-v4-pro"]) {
+      const body = buildVendorRequestBody({
+        vendor: "deepseek",
+        apiKey: "k",
+        model,
+        message: "m",
+        responseSchema: schema,
+      });
+      expect(body.response_format).toEqual({ type: "json_object" });
+      // The refused form must not appear anywhere on the wire.
+      expect(JSON.stringify(body)).not.toContain("json_schema");
+    }
+  });
+
+  it("leaves the json_schema vendors untouched — only DeepSeek downgrades", () => {
+    const schema = { type: "object", properties: { a: { type: "string" } } };
+    const bodies = [
+      buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "glm-4.7-flashx", message: "m", responseSchema: schema }),
+      buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "glm-5.3", message: "m", responseSchema: schema }),
+      buildVendorRequestBody({ vendor: "moonshot", apiKey: "k", model: "kimi-k2.6", message: "m", responseSchema: schema }),
+      buildVendorRequestBody({ vendor: "moonshot", apiKey: "k", model: "kimi-k3", message: "m", responseSchema: schema }),
+    ];
+    for (const body of bodies) {
+      expect(body.response_format).toEqual({
+        type: "json_schema",
+        json_schema: { name: "response", schema },
+      });
+    }
+  });
+
+  it("asks every vendor for plain json_object when json mode carries no schema", () => {
+    for (const vendor of VENDOR_IDS) {
+      const body = buildVendorRequestBody({
+        vendor,
+        apiKey: "k",
+        model: "m",
+        message: "m",
+        responseFormat: "json",
+      });
+      expect(body.response_format).toEqual({ type: "json_object" });
+    }
+  });
+
+  it("every vendor declares which response_format it implements", () => {
+    for (const vendor of VENDOR_IDS) {
+      expect(["json_schema", "json_object"]).toContain(VENDORS[vendor].structuredOutput);
+    }
   });
 
   it("falls back to json_object when json mode is requested without a schema", () => {
@@ -517,6 +577,74 @@ describe("completeWithVendor", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4); // initial + 3 retries
   });
 
+  // -------------------------------------------------------------------------
+  // A refused request SHAPE is a configuration error, not a transient one.
+  // -------------------------------------------------------------------------
+
+  it("classifies a vendor 400 as an unsupported-option error, not a transient failure", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () =>
+        '{"error":{"message":"This response_format type is unavailable now","type":"invalid_request_error"}}',
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const err = await completeWithVendor({
+      vendor: "deepseek",
+      apiKey: "k",
+      model: "deepseek-v4-pro",
+      message: "m",
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(VendorUnsupportedOptionError);
+    expect(err).toBeInstanceOf(VendorProviderError);
+    expect((err as VendorUnsupportedOptionError).status).toBe(400);
+    expect((err as Error).message).toMatch(/retrying will not help/);
+    expect((err as Error).message).toMatch(/This response_format type is unavailable now/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a transient refusal a plain provider error", async () => {
+    for (const status of [429, 500, 503]) {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status,
+        text: async () => "later",
+      }) as unknown as typeof fetch;
+
+      const err = await completeWithVendor({
+        vendor: "zai",
+        apiKey: "k",
+        model: "glm-5.3",
+        message: "m",
+      }).catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(VendorProviderError);
+      expect(err).not.toBeInstanceOf(VendorUnsupportedOptionError);
+    }
+  });
+
+  it("leaves an empty balance (402) a transient-shaped provider error, not a config error", async () => {
+    // Out-of-credit is account state, not request shape: it clears when the
+    // balance is topped up, so it must not be reported as a bad request.
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 402,
+      text: async () => "Insufficient Balance",
+    }) as unknown as typeof fetch;
+
+    const err = await completeWithVendor({
+      vendor: "deepseek",
+      apiKey: "k",
+      model: MODEL,
+      message: "m",
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(VendorProviderError);
+    expect(err).not.toBeInstanceOf(VendorUnsupportedOptionError);
+  });
+
   it("does not retry a non-transient thrown error", async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error("bad input"));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -554,5 +682,22 @@ describe("keyResolutionErrorMessage", () => {
 
   it("still says something useful for a native provider", () => {
     expect(keyResolutionErrorMessage("anthropic", "org")).toMatch(/Failed to resolve anthropic API key/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Refusal classification
+// ---------------------------------------------------------------------------
+
+describe("isUnsupportedOptionRefusal", () => {
+  it("treats a rejected request shape as unsupported", () => {
+    expect(isUnsupportedOptionRefusal(400)).toBe(true);
+    expect(isUnsupportedOptionRefusal(422)).toBe(true);
+  });
+
+  it("treats auth, credit, rate limits and outages as retryable/account state", () => {
+    for (const status of [401, 402, 403, 404, 429, 500, 502, 503, 529]) {
+      expect(isUnsupportedOptionRefusal(status)).toBe(false);
+    }
   });
 });
