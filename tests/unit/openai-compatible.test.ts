@@ -9,7 +9,10 @@ import {
   vendorConfig,
   VendorProviderError,
   VendorUnsupportedOptionError,
+  VendorRateLimitError,
   isUnsupportedOptionRefusal,
+  parseRetryAfterMs,
+  publishedConcurrency,
   VENDORS,
   VENDOR_IDS,
   type VendorId,
@@ -28,7 +31,7 @@ const ALIASES = [
   { provider: "deepseek", alias: "deepseek-flash", modelId: "deepseek-v4-flash", prefix: "deepseek-v4-flash" },
   { provider: "deepseek", alias: "deepseek-pro", modelId: "deepseek-v4-pro", prefix: "deepseek-v4-pro" },
   { provider: "zai", alias: "glm-flash", modelId: "glm-4.7-flashx", prefix: "zai-glm-4.7-flashx" },
-  { provider: "zai", alias: "glm-pro", modelId: "glm-5.3", prefix: "zai-glm-5.3" },
+  { provider: "zai", alias: "glm-pro", modelId: "glm-5.2", prefix: "zai-glm-5.2" },
   { provider: "moonshot", alias: "kimi-flash", modelId: "kimi-k2.6", prefix: "moonshot-kimi-k2.6" },
   { provider: "moonshot", alias: "kimi-pro", modelId: "kimi-k3", prefix: "moonshot-kimi-k3" },
 ] as const;
@@ -252,7 +255,7 @@ describe("buildVendorRequestBody", () => {
 
   it("forwards the caller's systemPrompt byte-equal (no preamble, no nudge)", () => {
     const systemPrompt = "Return ONLY the value. Do not explain.";
-    const body = buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "glm-5.3", message: "m", systemPrompt });
+    const body = buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "glm-5.2", message: "m", systemPrompt });
     const messages = body.messages as Array<{ role: string; content: string }>;
     expect(messages.find((m) => m.role === "system")?.content).toBe(systemPrompt);
   });
@@ -267,7 +270,7 @@ describe("buildVendorRequestBody", () => {
     const body = buildVendorRequestBody({
       vendor: "zai",
       apiKey: "k",
-      model: "glm-5.3",
+      model: "glm-5.2",
       message: "m",
       responseSchema: schema,
     });
@@ -304,7 +307,7 @@ describe("buildVendorRequestBody", () => {
     const schema = { type: "object", properties: { a: { type: "string" } } };
     const bodies = [
       buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "glm-4.7-flashx", message: "m", responseSchema: schema }),
-      buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "glm-5.3", message: "m", responseSchema: schema }),
+      buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "glm-5.2", message: "m", responseSchema: schema }),
       buildVendorRequestBody({ vendor: "moonshot", apiKey: "k", model: "kimi-k2.6", message: "m", responseSchema: schema }),
       buildVendorRequestBody({ vendor: "moonshot", apiKey: "k", model: "kimi-k3", message: "m", responseSchema: schema }),
     ];
@@ -376,7 +379,7 @@ describe("assertModelMatches", () => {
 
   it("throws when the vendor served a different model", () => {
     expect(() => assertModelMatches(MODEL, "deepseek-v4-pro")).toThrow(/Model mismatch/);
-    expect(() => assertModelMatches("glm-5.3", "glm-4.7")).toThrow(/Model mismatch/);
+    expect(() => assertModelMatches("glm-5.2", "glm-4.7")).toThrow(/Model mismatch/);
   });
 
   it("tolerates a missing model echo rather than inventing a mismatch", () => {
@@ -410,10 +413,10 @@ describe("mapVendorResponse", () => {
 
   it("carries Z.ai's nested cached_tokens", () => {
     const body = okBody({
-      model: "glm-5.3",
+      model: "glm-5.2",
       usage: { prompt_tokens: 500, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 460 } },
     });
-    const r = mapVendorResponse("zai", "glm-5.3", body);
+    const r = mapVendorResponse("zai", "glm-5.2", body);
     expect(r.cachedInputTokens).toBe(460);
   });
 
@@ -482,7 +485,7 @@ describe("completeWithVendor", () => {
 
   const endpoints: Array<[VendorId, string, string]> = [
     ["deepseek", "deepseek-v4-flash", "https://api.deepseek.com/v1/chat/completions"],
-    ["zai", "glm-5.3", "https://api.z.ai/api/paas/v4/chat/completions"],
+    ["zai", "glm-5.2", "https://api.z.ai/api/paas/v4/chat/completions"],
     ["moonshot", "kimi-k3", "https://api.moonshot.ai/v1/chat/completions"],
   ];
 
@@ -508,13 +511,13 @@ describe("completeWithVendor", () => {
   it("throws on a non-2xx response, naming the vendor", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
-      status: 429,
-      text: async () => "rate limited",
+      status: 500,
+      text: async () => "upstream boom",
     }) as unknown as typeof fetch;
 
     await expect(
       completeWithVendor({ vendor: "moonshot", apiKey: "k", model: "kimi-k3", message: "m" }),
-    ).rejects.toThrow(/\[vendor:moonshot\] 429/);
+    ).rejects.toThrow(/\[vendor:moonshot\] 500/);
   });
 
   it("does NOT retry a completed HTTP response — it may already have been billed", async () => {
@@ -542,7 +545,7 @@ describe("completeWithVendor", () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(
-      completeWithVendor({ vendor: "zai", apiKey: "k", model: "glm-5.3", message: "m" }),
+      completeWithVendor({ vendor: "zai", apiKey: "k", model: "glm-5.2", message: "m" }),
     ).rejects.toThrow(/503/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.z.ai/api/paas/v4/chat/completions");
@@ -606,7 +609,7 @@ describe("completeWithVendor", () => {
   });
 
   it("keeps a transient refusal a plain provider error", async () => {
-    for (const status of [429, 500, 503]) {
+    for (const status of [500, 503]) {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,
         status,
@@ -616,7 +619,7 @@ describe("completeWithVendor", () => {
       const err = await completeWithVendor({
         vendor: "zai",
         apiKey: "k",
-        model: "glm-5.3",
+        model: "glm-5.2",
         message: "m",
       }).catch((e: unknown) => e);
 
@@ -699,5 +702,209 @@ describe("isUnsupportedOptionRefusal", () => {
     for (const status of [401, 402, 403, 404, 429, 500, 502, 503, 529]) {
       expect(isUnsupportedOptionRefusal(status)).toBe(false);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rate limits — a 429 is transitory and must not throw the run away
+//
+// The two refusal classes pull in opposite directions and the tests below are
+// the guard that keeps them apart: a 400 on an option the vendor does not
+// implement is permanent and must fail on the FIRST call; a 429 clears on its
+// own and must be replayed. Getting either backwards costs real money — the
+// first burned 335 calls over five hours looking like flakiness, the second
+// killed about half of one night's runs after they had already paid for their
+// upstream enrichment.
+// ---------------------------------------------------------------------------
+
+describe("rate-limit retry", () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    globalThis.fetch = originalFetch;
+  });
+
+  /** Start the call, let every backoff timer fire, then settle. */
+  async function drive<T>(promise: Promise<T>): Promise<T | unknown> {
+    const settled = promise.catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+    return settled;
+  }
+
+  const rateLimited = (body = '{"error":{"code":"1302","message":"Rate limit reached for requests"}}') => ({
+    ok: false,
+    status: 429,
+    text: async () => body,
+    headers: new Headers(),
+  });
+
+  it("retries a 429 and returns the completion the run had already paid for", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(rateLimited())
+      .mockResolvedValueOnce(rateLimited())
+      .mockResolvedValue({ ok: true, status: 200, json: async () => okBody({ model: "glm-5.2" }) });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await drive(
+      completeWithVendor({ vendor: "zai", apiKey: "k", model: "glm-5.2", message: "m" }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect((result as { content: string }).content).toBe('{"ok":true}');
+  });
+
+  it("gives up within a bound and stays loud about the saturation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(rateLimited());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const err = await drive(
+      completeWithVendor({ vendor: "zai", apiKey: "k", model: "glm-5.2", message: "m" }),
+    );
+
+    // Bounded: the initial attempt plus the four-step backoff, never an
+    // unbounded wait on a vendor that is simply over capacity.
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(err).toBeInstanceOf(VendorRateLimitError);
+    expect(err).toBeInstanceOf(VendorProviderError);
+    expect((err as VendorRateLimitError).attempts).toBe(5);
+    expect((err as VendorRateLimitError).waitedMs).toBeGreaterThan(0);
+    // Names the capacity, so "we asked for more parallelism than we bought" is
+    // readable straight off the error rather than inferred.
+    expect((err as Error).message).toMatch(/rate limiting "glm-5\.2"/);
+    expect((err as Error).message).toMatch(/published concurrency: 10/);
+  });
+
+  it("does NOT retry a 400 on an option the vendor does not implement", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () => '{"error":{"message":"This response_format type is unavailable now"}}',
+      headers: new Headers(),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const err = await drive(
+      completeWithVendor({ vendor: "deepseek", apiKey: "k", model: "deepseek-v4-pro", message: "m" }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(err).toBeInstanceOf(VendorUnsupportedOptionError);
+    expect(err).not.toBeInstanceOf(VendorRateLimitError);
+  });
+
+  it("does NOT retry an out-of-credit 429 — an empty balance does not clear by waiting", async () => {
+    // Z.ai reports an empty balance with the SAME status as a rate limit and
+    // separates them in the body (1113 vs 1302). Retrying 1113 would burn the
+    // budget on a certainty and delay the error the owner has to act on.
+    const fetchMock = vi.fn().mockResolvedValue(
+      rateLimited('{"error":{"code":"1113","message":"Insufficient balance or no resource package."}}'),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const err = await drive(
+      completeWithVendor({ vendor: "zai", apiKey: "k", model: "glm-5.2", message: "m" }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(err).toBeInstanceOf(VendorProviderError);
+    expect(err).not.toBeInstanceOf(VendorRateLimitError);
+  });
+
+  it("does NOT retry a 5xx — that response may already have been billed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => "boom",
+      headers: new Headers(),
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const err = await drive(
+      completeWithVendor({ vendor: "moonshot", apiKey: "k", model: "kimi-k3", message: "m" }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(err).not.toBeInstanceOf(VendorRateLimitError);
+  });
+
+  it("never answers a rate limit from a different model or vendor", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(rateLimited());
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await drive(completeWithVendor({ vendor: "zai", apiKey: "k", model: "glm-5.2", message: "m" }));
+
+    for (const [url, init] of fetchMock.mock.calls) {
+      expect(url).toBe("https://api.z.ai/api/paas/v4/chat/completions");
+      expect(JSON.parse(init.body).model).toBe("glm-5.2");
+    }
+  });
+
+  it("honours a short Retry-After and ignores an absurd one", () => {
+    expect(parseRetryAfterMs("2")).toBe(2000);
+    expect(parseRetryAfterMs("0.5")).toBe(500);
+    // Beyond the bound: discarded, so the caller falls back to the bounded step
+    // rather than holding the request open for minutes.
+    expect(parseRetryAfterMs("600")).toBeNull();
+    expect(parseRetryAfterMs("nonsense")).toBeNull();
+    expect(parseRetryAfterMs(null)).toBeNull();
+    expect(parseRetryAfterMs("0")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Concurrency is recorded next to the price, because price alone hid a 10x cut
+// ---------------------------------------------------------------------------
+
+describe("published vendor concurrency", () => {
+  it("every vendor records how much parallelism it sells", () => {
+    for (const id of VENDOR_IDS) {
+      const { concurrency } = VENDORS[id];
+      expect(concurrency.source).toMatch(/^http/);
+      expect(concurrency.observedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      if (concurrency.scope === "per-model") {
+        expect(Object.keys(concurrency.limits).length).toBeGreaterThan(0);
+      } else {
+        expect(Object.keys(concurrency.tierLimits).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("reads a per-model limit and refuses to invent one it was never given", () => {
+    expect(publishedConcurrency("zai", "glm-5.2")).toBe(10);
+    expect(publishedConcurrency("zai", "glm-5.3")).toBe(1);
+    expect(publishedConcurrency("deepseek", "deepseek-v4-pro")).toBe(500);
+    // glm-4.7-flashx has no published row. Null is the honest answer — reading
+    // it off the sibling glm-4.7 would be a number the vendor never gave us.
+    expect(publishedConcurrency("zai", "glm-4.7-flashx")).toBeNull();
+    // Moonshot's limit belongs to the ACCOUNT tier, not the model.
+    expect(publishedConcurrency("moonshot", "kimi-k3")).toBeNull();
+  });
+
+  it("no production alias resolves to a single-in-flight-slot model", () => {
+    // The regression guard for 2026-08-20: glm-pro was pointed at GLM-5.3 on an
+    // identical list price, which serves ONE concurrent request against
+    // GLM-5.2's ten. Three campaigns then contended for that one slot. A future
+    // swap onto a one-slot model fails here instead of in production.
+    for (const { provider, alias, modelId } of ALIASES) {
+      const limit = publishedConcurrency(provider as VendorId, modelId);
+      if (limit == null) continue; // vendor publishes nothing for this model
+      expect(
+        limit,
+        `alias "${alias}" resolves to ${modelId}, published at ${limit} concurrent request(s)`,
+      ).toBeGreaterThan(1);
+    }
+  });
+
+  it("keeps glm-pro on the flagship that serves our parallelism", () => {
+    const resolved = resolveModel("zai", "glm-pro");
+    expect(resolved.apiModelId).toBe("glm-5.2");
+    expect(publishedConcurrency("zai", resolved.apiModelId)).toBe(10);
   });
 });

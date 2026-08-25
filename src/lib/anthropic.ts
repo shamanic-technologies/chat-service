@@ -163,7 +163,7 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   // costPrefix follows the costs-service catalog's own shape (verified against
   // its seed, v0.44.0): the vendor's model id, prefixed with the vendor slug
   // UNLESS the id already names the vendor. So `deepseek-v4-flash` stays bare
-  // while `glm-5.3` becomes `zai-glm-5.3`. These strings are byte-equal to the
+  // while `glm-5.2` becomes `zai-glm-5.2`. These strings are byte-equal to the
   // catalog rows — a prefix the catalog does not carry is 422-rejected at
   // declaration and fails the request.
   // ---------------------------------------------------------------------
@@ -191,14 +191,30 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       costPrefix: "zai-glm-4.7-flashx",
       provider: "zai",
     },
-    // GLM-5.3 (released 2026-08-20) replaced GLM-5.2 here: Z.ai publishes it as
-    // a drop-in swap at an identical list price ($1.4 / $0.26 cached / $4.4 per
-    // 1M), so `glm-pro` keeps meaning "Z.ai's flagship" and callers see no
-    // contract change. GLM-5.2 is no longer reachable — reaching it again would
-    // be a deliberate fourth alias, not a fallback.
+    // GLM-5.2. Z.ai's flagship tier at the concurrency we actually use it at.
+    //
+    // This alias was moved to GLM-5.3 on 2026-08-20 and moved back on
+    // 2026-08-25. The 5.3 swap was justified on price — identical list price
+    // ($1.4 / $0.26 cached / $4.4 per 1M), therefore "drop-in", therefore "no
+    // contract change" — and price was the only axis compared. Z.ai's published
+    // rate limits cap requests IN FLIGHT per model, and there the two models are
+    // not interchangeable at all: GLM-5.2 serves 10 concurrent requests, GLM-5.3
+    // serves ONE. So the swap held the price and divided our throughput by ten.
+    //
+    // What that cost, measured: three cold-email workflows sharing that single
+    // slot produced 127 rate-limit refusals in five hours and killed about half
+    // their runs — and a run that dies at the LLM has already paid for its lead
+    // enrichment, so roughly two thirds of what those workflows spent bought no
+    // email. Reproduced directly against the live API on 2026-08-25: six
+    // parallel completions returned 6/6 200 on glm-5.2 and 2/6 on glm-5.3.
+    //
+    // GLM-5.3 is deliberately NOT reachable under another alias. Nothing needs
+    // it (it is the same price and the same tier), and leaving it exposed leaves
+    // the one-slot trap available to the next caller. Adding it back would mean
+    // pairing it with a real serialisation story, not just an enum entry.
     "glm-pro": {
-      apiModelId: "glm-5.3",
-      costPrefix: "zai-glm-5.3",
+      apiModelId: "glm-5.2",
+      costPrefix: "zai-glm-5.2",
       provider: "zai",
     },
   },

@@ -235,7 +235,7 @@ describe("POST /complete — direct vendor routing", () => {
     { provider: "deepseek", model: "deepseek-flash", host: DEEPSEEK_URL, wire: "deepseek-v4-flash", prefix: "deepseek-v4-flash-peak" },
     { provider: "deepseek", model: "deepseek-pro", host: DEEPSEEK_URL, wire: "deepseek-v4-pro", prefix: "deepseek-v4-pro-peak" },
     { provider: "zai", model: "glm-flash", host: ZAI_URL, wire: "glm-4.7-flashx", prefix: "zai-glm-4.7-flashx" },
-    { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.3", prefix: "zai-glm-5.3" },
+    { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.2", prefix: "zai-glm-5.2" },
   ] as const;
 
   for (const c of CASES) {
@@ -286,7 +286,7 @@ describe("POST /complete — direct vendor routing", () => {
       mockRunsCreate(),
       mockVendorKey("zai"),
       mockBilling(),
-      mockVendor(vendor, { host: ZAI_URL, model: "glm-5.3", usage: { prompt_tokens: 10, completion_tokens: 2 } }),
+      mockVendor(vendor, { host: ZAI_URL, model: "glm-5.2", usage: { prompt_tokens: 10, completion_tokens: 2 } }),
       ...mockRunsCostRoutes(cap),
       mockRunsStatusPatch(),
     );
@@ -359,7 +359,7 @@ describe("POST /complete — direct vendor routing", () => {
       mockBilling(),
       mockVendor(vendor, {
         host: ZAI_URL,
-        model: "glm-5.3",
+        model: "glm-5.2",
         usage: { prompt_tokens: 800, completion_tokens: 15, prompt_tokens_details: { cached_tokens: 750 } },
       }),
       ...mockRunsCostRoutes(cap),
@@ -373,8 +373,8 @@ describe("POST /complete — direct vendor routing", () => {
 
     expect(res.status).toBe(200);
     const actual = actualItems(cap.postedItems);
-    expect(quantityOf(actual, "zai-glm-5.3-tokens-input")).toBe(50);
-    expect(quantityOf(actual, "zai-glm-5.3-tokens-cached-input")).toBe(750);
+    expect(quantityOf(actual, "zai-glm-5.2-tokens-input")).toBe(50);
+    expect(quantityOf(actual, "zai-glm-5.2-tokens-cached-input")).toBe(750);
   });
 
   it("declares DeepSeek against the off-peak names one minute after a peak window closes", async () => {
@@ -686,7 +686,7 @@ describe("POST /complete — direct vendor routing", () => {
 
   it("still sends Z.ai and Moonshot the full json_schema form — only DeepSeek differs", async () => {
     for (const c of [
-      { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.3" },
+      { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.2" },
       { provider: "moonshot", model: "kimi-pro", host: MOONSHOT_URL, wire: "kimi-k3" },
     ] as const) {
       routes = [];
@@ -767,7 +767,7 @@ describe("POST /complete — direct vendor routing", () => {
       mockBilling(),
       {
         match: (url: string) => url.startsWith(ZAI_URL),
-        respond: () => ({ ok: false, status: 429, body: '{"error":{"code":"1302","message":"Rate limit reached"}}' }),
+        respond: () => ({ ok: false, status: 500, body: '{"error":{"message":"internal"}}' }),
       },
       ...mockRunsCostRoutes(cap),
       mockRunsStatusPatch(),
@@ -780,6 +780,88 @@ describe("POST /complete — direct vendor routing", () => {
 
     expect(res.status).toBe(502);
   });
+
+  it("retries a vendor rate limit rather than throwing the run away", async () => {
+    // The run has already paid for its upstream work by the time it reaches the
+    // LLM, so a refusal that clears on its own must not cost it that spend.
+    const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+    let vendorCalls = 0;
+    routes.push(
+      mockRunsCreate(),
+      mockVendorKey("zai"),
+      mockBilling(),
+      {
+        match: (url: string) => url.startsWith(ZAI_URL),
+        respond: () => {
+          vendorCalls++;
+          if (vendorCalls === 1) {
+            return {
+              ok: false,
+              status: 429,
+              body: '{"error":{"code":"1302","message":"Rate limit reached for requests"}}',
+            };
+          }
+          return {
+            ok: true,
+            status: 200,
+            body: {
+              id: "chatcmpl-1",
+              model: "glm-5.2",
+              choices: [{ message: { content: "hello" }, finish_reason: "stop" }],
+              usage: { prompt_tokens: 10, completion_tokens: 2 },
+            },
+          };
+        },
+      },
+      ...mockRunsCostRoutes(cap),
+      mockRunsStatusPatch(),
+    );
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "hi", systemPrompt: "", provider: "zai", model: "glm-pro" });
+
+    expect(vendorCalls).toBe(2);
+    expect(res.status).toBe(200);
+    expect(res.body.content).toBe("hello");
+    // The spend that DID happen is still declared under the model that ran.
+    const actual = cap.postedItems.flat().filter((i) => i.costName.startsWith("zai-glm-5.2"));
+    expect(actual.length).toBeGreaterThan(0);
+  }, 20_000);
+
+  it("surfaces a persistently saturated vendor as 429, not as a generic failure", async () => {
+    // Retrying must not HIDE capacity: after the bounded budget the caller is
+    // told the vendor is at capacity, with retryable true, so "we are asking
+    // for more parallelism than we bought" stays visible.
+    const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+    routes.push(
+      mockRunsCreate(),
+      mockVendorKey("zai"),
+      mockBilling(),
+      {
+        match: (url: string) => url.startsWith(ZAI_URL),
+        respond: () => ({
+          ok: false,
+          status: 429,
+          body: '{"error":{"code":"1302","message":"Rate limit reached for requests"}}',
+        }),
+      },
+      ...mockRunsCostRoutes(cap),
+      mockRunsStatusPatch(),
+    );
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "hi", systemPrompt: "", provider: "zai", model: "glm-pro" });
+
+    expect(res.status).toBe(429);
+    expect(res.body.retryable).toBe(true);
+    expect(res.body.detail).toMatch(/rate limiting "glm-5\.2"/);
+    // The hold is released — a refused call spent nothing.
+    expect(cap.patchedStatuses).toContain("cancelled");
+  }, 30_000);
 
   it("fails loud when the vendor is down — no substitute model, no substitute vendor", async () => {
     const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
@@ -903,7 +985,7 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
       mockPlatformRunStatus(),
       mockVendor(vendor, {
         host: ZAI_URL,
-        model: "glm-5.3",
+        model: "glm-5.2",
         usage: { prompt_tokens: 300, completion_tokens: 8, prompt_tokens_details: { cached_tokens: 250 } },
       }),
     );
@@ -915,8 +997,8 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
 
     expect(res.status).toBe(200);
     const actual = costCap.postedItems[0];
-    expect(quantityOf(actual, "zai-glm-5.3-tokens-input")).toBe(50);
-    expect(quantityOf(actual, "zai-glm-5.3-tokens-cached-input")).toBe(250);
+    expect(quantityOf(actual, "zai-glm-5.2-tokens-input")).toBe(50);
+    expect(quantityOf(actual, "zai-glm-5.2-tokens-cached-input")).toBe(250);
     expect(actual.every((i) => !i.costName.includes("peak"))).toBe(true);
   });
 
