@@ -13,6 +13,7 @@ import {
   isUnsupportedOptionRefusal,
   parseRetryAfterMs,
   publishedConcurrency,
+  shouldDisableVendorReasoning,
   VENDORS,
   VENDOR_IDS,
   type VendorId,
@@ -906,5 +907,213 @@ describe("published vendor concurrency", () => {
     const resolved = resolveModel("zai", "glm-pro");
     expect(resolved.apiModelId).toBe("glm-5.2");
     expect(publishedConcurrency("zai", resolved.apiModelId)).toBe(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reasoning — we pay for every token of it as output, and nobody reads it
+//
+// Measured in production 2026-08-25: the same cold-email campaign at the same
+// $24 daily budget spent 316 output tokens per generation on Gemini and 9,633
+// on GLM. Thirty times the output for the same three emails, all of it the
+// model narrating its way to an answer the caller parses and discards. Probed
+// live the same day, `thinking: {type:"disabled"}` took GLM-5.2 from 703 to 389
+// output tokens and Kimi K2.6 from 1,173 to 452 — with the answers intact
+// (1,955 → 1,565 chars and 1,140 → 1,866 chars respectively).
+// ---------------------------------------------------------------------------
+
+describe("vendor reasoning capability", () => {
+  it("every vendor declares whether reasoning can be turned off", () => {
+    // A fourth vendor fails here until it says. Silence would read as "no
+    // control exists" and quietly keep paying for reasoning.
+    for (const id of VENDOR_IDS) {
+      const { reasoning } = VENDORS[id];
+      if (reasoning.kind === "disablable") {
+        expect(Object.keys(reasoning.requestFields).length).toBeGreaterThan(0);
+        expect(reasoning.source).toMatch(/^http/);
+        expect(reasoning.evidence).toMatch(/\d{4}-\d{2}-\d{2}/);
+      } else {
+        expect(reasoning.reason.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("sends each vendor its OWN field, never another vendor's name", () => {
+    // DeepSeek and Z.ai both answer 200 to an unknown top-level key and keep
+    // reasoning running, so a wrong name buys nothing and looks like success.
+    for (const id of VENDOR_IDS) {
+      const { reasoning } = VENDORS[id];
+      if (reasoning.kind !== "disablable") continue;
+      const body = buildVendorRequestBody({
+        vendor: id,
+        apiKey: "k",
+        model: "m",
+        message: "m",
+        responseFormat: "json",
+      });
+      for (const [field, value] of Object.entries(reasoning.requestFields)) {
+        expect(body[field]).toEqual(value);
+      }
+    }
+  });
+});
+
+describe("shouldDisableVendorReasoning", () => {
+  const base = { vendor: "zai" as VendorId, apiKey: "k", model: "glm-5.2", message: "m" };
+
+  it("defaults to OFF for a structured request — the caller parses the object and never sees the reasoning", () => {
+    expect(shouldDisableVendorReasoning({ ...base, responseSchema: { type: "object" } })).toBe(true);
+    expect(shouldDisableVendorReasoning({ ...base, responseFormat: "json" })).toBe(true);
+  });
+
+  it("leaves free-text requests provider-normal — no measurement says that reasoning is safe to take away", () => {
+    expect(shouldDisableVendorReasoning(base)).toBe(false);
+    expect(shouldDisableVendorReasoning({ ...base, responseFormat: "text" })).toBe(false);
+  });
+
+  it("lets the caller override in BOTH directions", () => {
+    expect(
+      shouldDisableVendorReasoning({ ...base, responseSchema: { type: "object" }, disableThinking: false }),
+    ).toBe(false);
+    expect(shouldDisableVendorReasoning({ ...base, disableThinking: true })).toBe(true);
+  });
+});
+
+describe("buildVendorRequestBody — reasoning", () => {
+  const schema = { type: "object", properties: { a: { type: "string" } } };
+
+  it("turns reasoning off on a structured request", () => {
+    const body = buildVendorRequestBody({
+      vendor: "zai",
+      apiKey: "k",
+      model: "glm-5.2",
+      message: "m",
+      responseSchema: schema,
+    });
+    expect(body.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("turns reasoning off on a json-mode request with no schema", () => {
+    const body = buildVendorRequestBody({
+      vendor: "moonshot",
+      apiKey: "k",
+      model: "kimi-k2.6",
+      message: "m",
+      responseFormat: "json",
+    });
+    expect(body.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("leaves a free-text request untouched", () => {
+    const body = buildVendorRequestBody({
+      vendor: "deepseek",
+      apiKey: "k",
+      model: MODEL,
+      message: "m",
+    });
+    expect(body.thinking).toBeUndefined();
+  });
+
+  it("keeps reasoning ON when the caller explicitly asks for it on a structured request", () => {
+    const body = buildVendorRequestBody({
+      vendor: "zai",
+      apiKey: "k",
+      model: "glm-5.2",
+      message: "m",
+      responseSchema: schema,
+      disableThinking: false,
+    });
+    expect(body.thinking).toBeUndefined();
+  });
+
+  it("turns reasoning off on a free-text request when the caller asks", () => {
+    const body = buildVendorRequestBody({
+      vendor: "deepseek",
+      apiKey: "k",
+      model: MODEL,
+      message: "m",
+      disableThinking: true,
+    });
+    expect(body.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("still sends the field to a model recorded as REFUSING it — a refusal is information", () => {
+    // GLM-5.3 answers 400. Dropping the field for it would hide the one fact
+    // worth knowing (this model cannot serve a structured workload without
+    // being billed for reasoning) behind an invoice nobody reads.
+    const body = buildVendorRequestBody({
+      vendor: "zai",
+      apiKey: "k",
+      model: "glm-5.3",
+      message: "m",
+      responseSchema: schema,
+    });
+    expect(body.thinking).toEqual({ type: "disabled" });
+    const zai = VENDORS.zai.reasoning;
+    expect(zai.kind === "disablable" && zai.refusedBy["glm-5.3"]).toBeTruthy();
+  });
+
+  it("does not carry a routing or fallback knob alongside it", () => {
+    const body = buildVendorRequestBody({
+      vendor: "zai",
+      apiKey: "k",
+      model: "glm-5.2",
+      message: "m",
+      responseSchema: schema,
+    });
+    expect(body.models).toBeUndefined();
+    expect(body.sort).toBeUndefined();
+    expect(body.provider).toBeUndefined();
+  });
+});
+
+describe("a vendor refusing to disable reasoning", () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("fails loud with the vendor's own words and names the refused option", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () => '{"error":{"message":"thinking is not supported for this model","code":"1210"}}',
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const call = completeWithVendor({
+      vendor: "zai",
+      apiKey: "k",
+      model: "glm-5.3",
+      message: "m",
+      responseSchema: { type: "object" },
+    });
+
+    await expect(call).rejects.toThrow(VendorUnsupportedOptionError);
+    await expect(call).rejects.toThrow(/thinking is not supported for this model/);
+    await expect(call).rejects.toThrow(/asked Z\.ai to disable reasoning/);
+    // Permanent: refused on the FIRST call, never replayed (the three
+    // assertions above await the one promise, so one fetch).
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not blame the reasoning option for an unrelated 400", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: async () => "messages: field required",
+    }) as unknown as typeof fetch;
+
+    await expect(
+      completeWithVendor({ vendor: "zai", apiKey: "k", model: "glm-5.2", message: "m", responseSchema: {} }),
+    ).rejects.toThrow(/messages: field required/);
+    await expect(
+      completeWithVendor({ vendor: "zai", apiKey: "k", model: "glm-5.2", message: "m", responseSchema: {} }),
+    ).rejects.not.toThrow(/disable reasoning/);
   });
 });
