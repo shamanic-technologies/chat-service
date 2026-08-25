@@ -10,7 +10,7 @@
 //             schedule → 12 names, `deepseek-v4-{flash,pro}-{peak,off-peak}-
 //             tokens-{input,cached-input,output}`.
 //   Z.ai      cache-hit input priced apart from a miss, no schedule → 3 names
-//             per model, `zai-glm-5.3-tokens-{input,cached-input,output}`.
+//             per model, `zai-glm-5.2-tokens-{input,cached-input,output}`.
 //   Moonshot  cache-hit input priced apart from a miss, no schedule → 3 names
 //             per model, `moonshot-kimi-k3-tokens-{input,cached-input,output}`.
 //   Anthropic / Google  the flat `<prefix>-tokens-{input,cached-input,output}`

@@ -201,7 +201,7 @@ Request body:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
   - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.7 Flash), `pro` (most powerful, Gemini 3.1 Pro). All require a Google API key in key-service.
   - **deepseek**: `deepseek-flash` (DeepSeek V4 Flash — cheapest per unit of intelligence, 1M context), `deepseek-pro` (DeepSeek V4 Pro — the reasoning-heavy sibling)
-  - **zai**: `glm-flash` (`glm-4.7-flashx` — fast and very cheap), `glm-pro` (`glm-5.3` — Z.ai's flagship)
+  - **zai**: `glm-flash` (`glm-4.7-flashx` — fast and very cheap), `glm-pro` (`glm-5.2` — Z.ai's flagship, 10 concurrent requests)
   - **moonshot**: `kimi-flash` (`kimi-k2.6` — value tier), `kimi-pro` (`kimi-k3` — flagship, 1M context)
 
   The three direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400 on every one of their models. Each needs its OWN key in key-service, stored under its provider slug.
@@ -271,7 +271,7 @@ Response:
 
 Unlike POST /chat, this endpoint is **stateless** (no sessions), accepts an **inline systemPrompt**, and returns **JSON** instead of SSE. Run tracking and billing work identically to POST /chat.
 
-Error responses: 400 (validation, or a provider refusing a request option — see [Direct vendor models](#direct-vendor-models)), 401 (auth), 402 (insufficient credits), 502 (upstream failure).
+Error responses: 400 (validation, or a provider refusing a request option — see [Direct vendor models](#direct-vendor-models)), 401 (auth), 402 (insufficient credits), 429 (a direct vendor still at capacity after the bounded rate-limit retry — `retryable: true`), 502 (upstream failure).
 
 ## Direct vendor models
 
@@ -284,11 +284,11 @@ The vendors differ in exactly five things, and all five are *data* in the `VENDO
 | `deepseek` | `deepseek-flash` | `deepseek-v4-flash` | `deepseek-v4-flash` | cache + regime | `https://api.deepseek.com/v1` |
 | `deepseek` | `deepseek-pro` | `deepseek-v4-pro` | `deepseek-v4-pro` | cache + regime | `https://api.deepseek.com/v1` |
 | `zai` | `glm-flash` | `glm-4.7-flashx` | `zai-glm-4.7-flashx` | cache | `https://api.z.ai/api/paas/v4` |
-| `zai` | `glm-pro` | `glm-5.3` | `zai-glm-5.3` | cache | `https://api.z.ai/api/paas/v4` |
+| `zai` | `glm-pro` | `glm-5.2` | `zai-glm-5.2` | cache | `https://api.z.ai/api/paas/v4` |
 | `moonshot` | `kimi-flash` | `kimi-k2.6` | `moonshot-kimi-k2.6` | cache | `https://api.moonshot.ai/v1` |
 | `moonshot` | `kimi-pro` | `kimi-k3` | `moonshot-kimi-k3` | cache | `https://api.moonshot.ai/v1` |
 
-Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`deepseek-v4-flash` stays bare; `glm-5.3` becomes `zai-glm-5.3`). These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-v4-pro-0813` is accepted; a different model is not). `glm-pro` pointed at `glm-5.2` until 2026-08-20; Z.ai publishes GLM-5.3 as a drop-in swap at an identical list price, so the alias moved and callers saw no contract change.
+Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`deepseek-v4-flash` stays bare; `glm-5.2` becomes `zai-glm-5.2`). These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-v4-pro-0813` is accepted; a different model is not). `glm-pro` was moved to `glm-5.3` on 2026-08-20 and moved back on 2026-08-25 — see [Concurrency is part of the model choice](#concurrency-is-part-of-the-model-choice).
 
 **Scope.** `/complete` and `/internal/platform-complete` only, non-streaming, text in / text out. Not wired: `/chat` (agentic tool-calling is unproven on these models and must be measured first), web search, image input, image generation, embeddings. `webSearch` or `imageUrl` on any of these providers returns **400** naming the vendor, rather than silently answering ungrounded or blind.
 
@@ -324,7 +324,7 @@ Each vendor reports the count in a different place, which is the entire reason `
 | Vendor | Field | Cache-hit vs miss (per 1M input) |
 |---|---|---|
 | DeepSeek | `usage.prompt_cache_hit_tokens` | $0.014 vs $0.44 (V4 Flash, peak) — 31x |
-| Z.ai | `usage.prompt_tokens_details.cached_tokens` | $0.26 vs $1.40 (`glm-5.3`) |
+| Z.ai | `usage.prompt_tokens_details.cached_tokens` | $0.26 vs $1.40 (`glm-5.2`) |
 | Moonshot | `usage.cached_tokens` | $0.30 vs $3.00 (`kimi-k3`) |
 
 A cached count larger than the prompt total is clamped: a negative fresh-token quantity would make runs-service reject the whole declaration and fail a call that actually succeeded.
@@ -380,11 +380,46 @@ The two ways a vendor call fails need opposite advice, and the caller cannot tel
 }
 ```
 
-Deliberately narrow: `401`, `402` (empty balance), `404`, `429` and every `5xx` stay a 502 — those are account state or genuine outages that clear on their own. This is the last line of defence, not the first: the capability table above is what stops us sending a refused option at all. It exists because on 2026-08-25 a permanently-refused option looked like flakiness for five hours — 335 `deepseek-pro` calls, zero successes, three campaigns spending and producing nothing.
+Deliberately narrow: `401`, `402` (empty balance), `404` and every `5xx` stay a 502 — those are account state or genuine outages that clear on their own. A `429` is retried and then surfaces as its own **429** (see [Retry behaviour](#retry-behaviour)). This is the last line of defence, not the first: the capability table above is what stops us sending a refused option at all. It exists because on 2026-08-25 a permanently-refused option looked like flakiness for five hours — 335 `deepseek-pro` calls, zero successes, three campaigns spending and producing nothing.
+
+### Concurrency is part of the model choice
+
+Every vendor here caps requests **in flight**, and that cap is recorded next to the price in `VENDORS[...].concurrency` — because reading only the price is what let a ten-fold throughput cut ship as a free swap.
+
+| Vendor | Scope | Published limits | Source |
+|---|---|---|---|
+| DeepSeek | per model | `deepseek-v4-pro` 500, `deepseek-v4-flash` 2500 (free expansion on request) | [rate limit](https://api-docs.deepseek.com/quick_start/rate_limit) |
+| Z.ai | per model | GLM-5.1 **10**, GLM-5.2 **10**, GLM-5.3 **1**, GLM-4.7 2, GLM-4.6V-FlashX 3 | account console (`https://z.ai/manage-apikey/rate-limits`) |
+| Moonshot | per **account** tier | Tier 0 ($1) 1 · Tier 1 ($10) 50 · Tier 2 ($20) 100 · Tier 3 200 · Tier 4 400 · Tier 5 1000 | [limits](https://platform.kimi.ai/docs/pricing/limits) |
+
+**Why this is documented at all.** On 2026-08-20 `glm-pro` was repointed from GLM-5.2 to GLM-5.3 on the reasoning that the list price is identical, therefore the swap is drop-in, therefore callers see no contract change. The price was identical; the concurrency was not — GLM-5.3 serves **one** in-flight request against GLM-5.2's ten, so the swap kept the price and divided our throughput by ten. Three cold-email workflows contending for that single slot produced 127 rate-limit refusals in five hours and killed about half their runs; because a run reaches the LLM only after paying for its lead enrichment, roughly two thirds of what those workflows spent bought no email. Reproduced directly against the live API on 2026-08-25: six parallel completions returned **6/6 200 on `glm-5.2`** and **2/6 on `glm-5.3`**, the other four `429 code 1302 "Rate limit reached for requests"`.
+
+`glm-pro` therefore resolves to **GLM-5.2**, and GLM-5.3 is deliberately not reachable under any alias — exposing it would leave the one-slot trap available to the next caller. `publishedConcurrency(vendor, modelId)` returns `null` where a vendor publishes nothing (e.g. `glm-4.7-flashx`); that is an honest "not published", never a number inferred from a sibling model. A unit test walks every declared alias and fails the build if one resolves to a model published at a single slot.
 
 ### Retry behaviour
 
-Only **connect-phase** failures are retried (a thrown fetch rejection whose cause is a transient socket code — `ECONNRESET`, `ECONNREFUSED`, `ETIMEDOUT`, …), with 250/500/1000 ms backoff. A completed HTTP response — including a 5xx — is a real answer from the vendor and may already have been billed upstream, so it is never replayed. This is intentionally stricter than `gemini.ts`, which retries 429/5xx status codes.
+Two independent, bounded retry budgets. Everything else fails on the first response.
+
+**Connect-phase** — a thrown fetch rejection whose cause is a transient socket code (`ECONNRESET`, `ECONNREFUSED`, `ETIMEDOUT`, …). Retried 3 times with 250/500/1000 ms backoff. The request never reached the server, so replaying it cannot double-spend.
+
+**Rate limit (`429`)** — retried 4 times with 500/1500/3500/7500 ms backoff, jittered ±25%, honouring a `Retry-After` header up to 10 s. A 429 is the one completed response that is safe to replay: the vendor turned the request away at its front door, so no model ran and nothing was billed — and the in-flight slot it was waiting on frees up on its own. Not retrying it is what makes a rate limit expensive: a run reaches the LLM only after paying for its upstream work, so a refused completion throws that spend away for a reason that would have cleared in a second.
+
+Two exclusions, both deliberate:
+
+- **An out-of-credit 429 is never retried.** Z.ai (body code `1113`) and Moonshot (error type `exceeded_current_quota_error`) report an empty balance with the same status as a rate limit. An empty balance does not clear by waiting, so retrying it would burn the budget on a certainty and delay the error the owner has to act on.
+- **A `400`/`422` is never retried.** The vendor refused the request's *shape*; the identical request will be refused forever.
+
+**Retrying must not hide saturation.** After the budget the call throws `VendorRateLimitError` — carrying the attempt count, the total backoff, and the model's published concurrency — and both completion routes answer **429**:
+
+```json
+{
+  "error": "Provider is at capacity for this model.",
+  "detail": "[vendor:zai] Z.ai is rate limiting \"glm-5.2\": still 429 after 5 attempts over 13000ms. The vendor is at capacity for this model (published concurrency: 10). ...",
+  "retryable": true
+}
+```
+
+Worst case the call spends ~13 s of waiting before that, which is what keeps a saturated vendor from turning into a hung request. A completed **5xx** is still never replayed — it is a real answer that may already have been billed. This is intentionally different from `gemini.ts`, which retries 5xx as well; do not align them.
 
 ### Operational prerequisites
 
@@ -448,7 +483,7 @@ Use this endpoint when a service needs an LLM call during startup or for platfor
 
 Response format is identical to `POST /complete`.
 
-Error responses: 400 (validation, or a provider refusing a request option — see [Direct vendor models](#direct-vendor-models)), 401 (auth), 502 (upstream failure).
+Error responses: 400 (validation, or a provider refusing a request option — see [Direct vendor models](#direct-vendor-models)), 401 (auth), 429 (a direct vendor still at capacity after the bounded rate-limit retry — `retryable: true`), 502 (upstream failure).
 
 ## Internal Platform Image Generation
 

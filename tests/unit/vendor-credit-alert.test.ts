@@ -180,7 +180,7 @@ describe("alert latch", () => {
   const context = (vendor: VendorId) => ({
     vendor,
     vendorLabel: vendor.toUpperCase(),
-    model: "glm-5.3",
+    model: "glm-5.2",
     status: 429,
     vendorMessage: "Insufficient balance",
   });
@@ -309,14 +309,18 @@ describe("completeWithVendor wiring", () => {
         ),
     );
 
-    await expect(completeWithVendor(options("zai", "glm-5.3"))).rejects.toThrow(VendorProviderError);
-    await expect(completeWithVendor(options("zai", "glm-5.3"))).rejects.toThrow(/429 from glm-5.3/);
+    await expect(completeWithVendor(options("zai", "glm-5.2"))).rejects.toThrow(VendorProviderError);
+    await expect(completeWithVendor(options("zai", "glm-5.2"))).rejects.toThrow(/429 from glm-5.2/);
 
     await vi.waitFor(() => expect(emailCalls).toHaveLength(1));
     expect(JSON.parse(emailCalls[0].body as string).metadata.vendorSlug).toBe("zai");
   });
 
   it("sends nothing on a rate-limit 429", async () => {
+    // A plain rate limit is retried (bounded) and then fails loud. It must
+    // alert nothing: the balance is fine, the account is simply at capacity,
+    // and an email per burst would bury the one that means "top up".
+    vi.useFakeTimers();
     const { emailCalls } = stubFetch(
       () =>
         new Response(
@@ -325,7 +329,12 @@ describe("completeWithVendor wiring", () => {
         ),
     );
 
-    await expect(completeWithVendor(options("zai", "glm-5.3"))).rejects.toThrow(VendorProviderError);
+    const settled = completeWithVendor(options("zai", "glm-5.2")).catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+    const err = await settled;
+    vi.useRealTimers();
+
+    expect(err).toBeInstanceOf(VendorProviderError);
     expect(emailCalls).toHaveLength(0);
     expect(isVendorCreditAlertLatched("zai")).toBe(false);
   });

@@ -40,6 +40,7 @@ import {
   vendorConfig,
   keyResolutionErrorMessage,
   VendorUnsupportedOptionError,
+  VendorRateLimitError,
   type VendorId,
 } from "./lib/openai-compatible.js";
 import {
@@ -581,6 +582,17 @@ app.post("/complete", requireAuth, async (req, res) => {
         error: "Provider rejected a request option.",
         detail: err.message,
         retryable: false,
+      });
+    } else if (err instanceof VendorRateLimitError) {
+      // The vendor was still refusing new work after the whole retry budget.
+      // Reported as its own thing rather than folded into the generic failure:
+      // a saturated vendor is a capacity fact someone has to act on (fewer
+      // concurrent runs, a higher-concurrency model, a raised limit), and it
+      // must not read as one more flaky upstream.
+      res.status(429).json({
+        error: "Provider is at capacity for this model.",
+        detail: err.message,
+        retryable: true,
       });
     } else {
       res.status(502).json({
@@ -1731,6 +1743,13 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
         error: "Provider rejected a request option.",
         detail: err.message,
         retryable: false,
+      });
+    } else if (err instanceof VendorRateLimitError) {
+      // Same split as /complete: a saturated vendor is a 429, not a 502.
+      res.status(429).json({
+        error: "Provider is at capacity for this model.",
+        detail: err.message,
+        retryable: true,
       });
     } else {
       res.status(502).json({
