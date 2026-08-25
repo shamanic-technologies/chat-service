@@ -21,7 +21,11 @@
 // tool calling, no web search, no images, no embeddings.
 // ---------------------------------------------------------------------------
 
-import { markVendorServing, notifyVendorOutOfCredit } from "./vendor-credit-alert.js";
+import {
+  markVendorServing,
+  notifyVendorOutOfCredit,
+  type VendorAlertIdentity,
+} from "./vendor-credit-alert.js";
 
 /** Request timeout. Matches the Gemini Flash-tier budget. */
 const VENDOR_TIMEOUT_MS = 10 * 60_000;
@@ -179,10 +183,27 @@ export interface VendorUsage {
  * comma, and the two segments are the literal name parts the catalog uses — so
  * the string this produces is byte-equal to a real row rather than an
  * independently-invented convention.
+ *
+ * A schedule can also be scoped to certain DAYS: DeepSeek charges peak rates on
+ * weekdays only, from 2026-08-22T16:00Z. `peakDaysUtc` says which UTC weekdays
+ * the windows apply on and `peakDaysFrom` says when that scope took effect —
+ * before it, the windows applied every day, which is what the vendor's rule
+ * actually was, so past instants keep resolving the way they were billed.
  */
 export interface PricingRegimeSchedule {
   /** UTC windows in which the peak regime applies, `"HH:MM-HH:MM"` each. */
   peakWindowsUtc: string[];
+  /**
+   * UTC weekdays the peak windows apply on, `0` Sunday … `6` Saturday, as
+   * returned by `Date#getUTCDay`. Null when the vendor's peak applies every day.
+   */
+  peakDaysUtc: number[] | null;
+  /**
+   * The instant `peakDaysUtc` took effect. Null when the day scope has always
+   * been in force (or when there is none). Before it, every day carries the
+   * peak windows.
+   */
+  peakDaysFrom: Date | null;
   /** Name segment for the peak rows. */
   peakSegment: string;
   /** Name segment for every other hour. */
@@ -428,12 +449,28 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // off-peak. The time-of-day rates take effect 2026-08-16T16:00Z and
     // costs-service handled that with effective-dated price points — both
     // regimes already carry today's identical rate — so the regime is selected
-    // by the clock alone, never by the date.
+    // by the clock, never by the date the price changed.
+    //
+    // The vendor scoped peak to WEEKDAYS from 00:00 Beijing on Sunday
+    // 2026-08-23 (= 2026-08-22T16:00Z): "off-peak rates applying throughout the
+    // day on weekends (Saturdays and Sundays, Beijing Time)". Its pricing page
+    // now reads "01:00 - 04:00 and 06:00 - 10:00 UTC, Monday through Friday"
+    // (read 2026-08-25).
+    //
+    // The vendor states the weekend in BEIJING days, which run Friday 16:00Z to
+    // Sunday 16:00Z, and we select on UTC days. The two agree only because every
+    // peak window ends by 10:00 UTC, so no window can land in the Beijing-weekend
+    // stretch that falls on a UTC weekday (Friday 16:00Z–24:00Z) nor in the UTC
+    // Sunday stretch that is already Beijing Monday (16:00Z–24:00Z). That is a
+    // fact about today's windows, not a law — `selectPricingRegime` asserts it
+    // rather than trusting it, and throws if a window ever crosses 16:00 UTC.
     pricing: {
       kind: "priced",
       cachedInput: true,
       regime: {
         peakWindowsUtc: ["01:00-04:00", "06:00-10:00"],
+        peakDaysUtc: [1, 2, 3, 4, 5],
+        peakDaysFrom: new Date("2026-08-22T16:00:00Z"),
         peakSegment: "peak",
         offPeakSegment: "off-peak",
       },
@@ -767,6 +804,15 @@ export interface VendorCompleteOptions {
    * `disableThinking` on Anthropic.
    */
   disableThinking?: boolean;
+  /**
+   * Identity of the inbound request, forwarded ONLY to the out-of-credit staff
+   * alert — never to the vendor (see the egress guardrail in CLAUDE.md).
+   *
+   * The staff alert path is org-scoped, so without this the alert cannot be
+   * raised at all; `/complete` supplies it and `/internal/platform-complete`
+   * has no org to supply.
+   */
+  identity?: VendorAlertIdentity;
 }
 
 export interface VendorCompleteResult {
@@ -1115,6 +1161,7 @@ export async function completeWithVendor(
           model,
           status: res.status,
           vendorMessage: text.slice(0, 500),
+          identity: options.identity,
         });
       }
 

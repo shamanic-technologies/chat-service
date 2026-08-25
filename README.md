@@ -332,13 +332,17 @@ A cached count larger than the prompt total is clamped: a negative fresh-token q
 
 ### Time-of-day pricing (DeepSeek only)
 
-DeepSeek charges **peak** rates during 01:00–04:00 and 06:00–10:00 UTC and **off-peak** rates at every other hour, so costs-service carries one row per regime and the regime is part of the cost name:
+DeepSeek charges **peak** rates during 01:00–04:00 and 06:00–10:00 UTC **Monday through Friday**, and **off-peak** rates at every other hour and all weekend, so costs-service carries one row per regime and the regime is part of the cost name:
 
 ```
 deepseek-v4-{flash,pro}-{peak,off-peak}-tokens-{input,cached-input,output}
 ```
 
 `buildLlmCostNames` (`src/lib/cost-names.ts`) selects the regime from the **UTC clock at declaration**, never from the date: costs-service gave both regimes an identical price point before the schedule takes effect (2026-08-16T16:00Z) and effective-dated the new rates, so the catalog resolves the right price for when the cost was written. Each window is half-open `[start, end)` — 01:00:00 is the first peak minute, 04:00:00 the first off-peak minute again — so at every instant exactly one name matches and no regime-free fallback is needed.
+
+**Weekends are off-peak.** From 00:00 Beijing on Sunday 2026-08-23 (2026-08-22T16:00Z) DeepSeek applies off-peak rates "throughout the day on weekends (Saturdays and Sundays, Beijing Time)", so a Saturday 02:00 UTC call declares the **off-peak** name even though that hour is a peak window on a weekday. The scope is dated: an instant before 2026-08-22T16:00Z still resolves to peak, which is what the vendor charged then.
+
+The vendor states its weekend in Beijing days while the selector reads the UTC weekday. The two agree only because every peak window ends by 10:00 UTC, six hours before the Beijing day rolls over at 16:00 UTC. `selectPricingRegime` asserts that rather than assuming it, and throws `AmbiguousPricingRegimeError` if the vendor ever publishes a peak window running past 16:00 UTC — at which point the day has to be evaluated in the vendor's own timezone, deliberately, instead of being silently mispriced.
 
 **One timestamp per request.** The pre-call hold and the post-call actual are built from the same `Date`, so a call that straddles a boundary cannot hold against peak and bill against off-peak.
 
@@ -471,7 +475,7 @@ Worst case the call spends ~13 s of waiting before that, which is what keeps a s
 
 ### Out-of-credit alerting
 
-Each of the three vendors holds its own prepaid balance, and two of them have no auto-reload. When a balance runs dry the vendor refuses every call and the whole model tier stops answering, so **chat-service emails the platform owner, naming the vendor**.
+Each of the three vendors holds its own prepaid balance, and two of them have no auto-reload. When a balance runs dry the vendor refuses every call and the whole model tier stops answering, so **chat-service raises the fleet's staff alert, naming the vendor**.
 
 The alert changes nothing about the failure. There is no fallback vendor, no fallback model, no retry: the call fails exactly as it did before, with the same error and the same status. The email is a notification alongside the failure, never a recovery.
 
@@ -487,9 +491,11 @@ A shared prose fallback (`insufficient balance` / `run out of balance` / `no res
 
 **One email per outage, not per call.** A campaign drives many calls a minute, so the alert latches per vendor: the first out-of-credit refusal sends, every later one is silent, and the latch is released the moment that vendor serves a completion again. The latch is **in-process**, which has one consequence worth stating plainly: a restart during an outage re-arms it, so the next refused call sends one more email (and each running instance sends at most one). The balance does not refill because the process restarted — a duplicate alert during an outage is a much smaller problem than a missed one, and this keeps a write off the failure path.
 
-**Sending never blocks the request.** The email is dispatched fire-and-forget; the failing call does not wait on it. A send that fails is logged and dropped, and leaves the latch set — retrying an email once per refused call while the email path is down is the same flood by another route.
+**A send that FAILS is retried, bounded by a 60s cooldown.** The latch holds indefinitely only for a send that actually reached transactional-email-service; a rejected one holds for `ALERT_COOLDOWN_MS` (60s) and then the next refusal tries again. A dead email path therefore costs one attempt a minute rather than the whole outage — which is what it cost on 2026-08-25, when the send was rejected on the first refusal and DeepSeek stayed down for hours with nobody told.
 
-The email goes through the fleet's transactional path (`transactional-email-service`). chat-service **owns** the `vendor_out_of_credit` template — a template name has exactly one owner, the service that sends it — and registers it at boot via `PUT /templates` under `appId: "chat-service"` (idempotent upsert, never throws, not awaited before `listen()`). No other service should carry a copy. Requires `TRANSACTIONAL_EMAIL_SERVICE_URL`, `TRANSACTIONAL_EMAIL_SERVICE_API_KEY` and `PLATFORM_OWNER_EMAIL`; with any of them unset the alert logs and does not send.
+**Sending never blocks the request.** The email is dispatched fire-and-forget; the failing call does not wait on it. A send that fails is logged loudly, and the vendor's call fails exactly as it would have anyway.
+
+The alert is the fleet's existing staff event **`provider_credits_exhausted`**, posted to `POST /platform-send` on transactional-email-service. That service owns the template, the hardcoded internal staff recipient list, and the per-org per-day dedup — chat-service registers **no** template and supplies **no** recipient (`recipientEmail`/`bccEmails` are rejected for staff-bound events, and `orgId` is filled in from the header). Metadata carries `provider` (the vendor label), `reason` (why we concluded the balance is empty) and `detail` (the model, the HTTP status and the vendor's own words). The path is org-scoped, so `POST /complete` forwards its `{orgId, userId, runId}` for this alert only — never to the vendor. `POST /internal/platform-complete` has a platform run and no org, so it cannot raise the event: it logs loudly that no alert could be sent rather than fabricating an org. Every observed outage came through the org-scoped `/complete`. Requires `TRANSACTIONAL_EMAIL_SERVICE_URL` and `TRANSACTIONAL_EMAIL_SERVICE_API_KEY`; without the key the alert logs and does not send.
 
 ### Replacing the Vercel AI Gateway
 
@@ -1094,8 +1100,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `BILLING_SERVICE_API_KEY` | Yes | API key for billing-service — required for credit authorization on platform-key requests |
 | `GEMINI_EMBEDDING_MODEL` | No | Gemini embedding model used by `/orgs/rag/score` and `/orgs/rag/embed` (default: `gemini-embedding-001`) |
 | `TRANSACTIONAL_EMAIL_SERVICE_URL` | No | Transactional-email-service endpoint (default: `https://transactional-email.distribute.you`) |
-| `TRANSACTIONAL_EMAIL_SERVICE_API_KEY` | No | API key for transactional-email-service. Unset → the `vendor_out_of_credit` template is not registered and the alert does not send (logged, never fatal) |
-| `PLATFORM_OWNER_EMAIL` | No | Recipient of the direct-vendor out-of-credit alert. Unset → the alert logs and does not send |
+| `TRANSACTIONAL_EMAIL_SERVICE_API_KEY` | No | API key for transactional-email-service. Unset → the out-of-credit staff alert does not send (logged, never fatal) |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database

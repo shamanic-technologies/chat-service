@@ -12,9 +12,11 @@ import {
   markVendorServing,
   resetVendorCreditAlerts,
   isVendorCreditAlertLatched,
-  CHAT_SERVICE_APP_ID,
-  VENDOR_OUT_OF_CREDIT_EVENT,
+  ALERT_COOLDOWN_MS,
+  PROVIDER_CREDITS_EXHAUSTED_EVENT,
 } from "../../src/lib/vendor-credit-alert.js";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * The refusals each vendor actually sends, verbatim from what was observed on
@@ -157,7 +159,6 @@ describe("alert latch", () => {
   beforeEach(() => {
     resetVendorCreditAlerts();
     process.env.TRANSACTIONAL_EMAIL_SERVICE_API_KEY = "test-key";
-    process.env.PLATFORM_OWNER_EMAIL = "owner@example.com";
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -165,14 +166,14 @@ describe("alert latch", () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
+    vi.useRealTimers();
     vi.restoreAllMocks();
     resetVendorCreditAlerts();
     delete process.env.TRANSACTIONAL_EMAIL_SERVICE_API_KEY;
-    delete process.env.PLATFORM_OWNER_EMAIL;
   });
 
-  function stubEmailFetch() {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ results: [] }), { status: 200 }));
+  function stubEmailFetch(status = 200) {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ results: [] }), { status }));
     global.fetch = fetchMock as unknown as typeof fetch;
     return fetchMock;
   }
@@ -183,6 +184,7 @@ describe("alert latch", () => {
     model: "glm-5.2",
     status: 429,
     vendorMessage: "Insufficient balance",
+    identity: { orgId: "org-1", userId: "user-1", runId: "run-1" },
   });
 
   it("sends one email for a burst of failures from the same vendor", async () => {
@@ -194,22 +196,48 @@ describe("alert latch", () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   });
 
-  it("posts to the transactional email path, naming the vendor", async () => {
+  it("posts the staff event to /platform-send with the org header and no recipient", async () => {
     const fetchMock = stubEmailFetch();
 
     notifyVendorOutOfCredit({ ...context("zai"), vendorLabel: "Z.ai" });
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toMatch(/\/send$/);
-    expect((init.headers as Record<string, string>)["x-api-key"]).toBe("test-key");
+    expect(url).toMatch(/\/platform-send$/);
+
+    const headers = init.headers as Record<string, string>;
+    expect(headers["x-api-key"]).toBe("test-key");
+    expect(headers["x-org-id"]).toBe("org-1");
+    expect(headers["x-user-id"]).toBe("user-1");
+    expect(headers["x-run-id"]).toBe("run-1");
 
     const body = JSON.parse(init.body as string);
-    expect(body.appId).toBe(CHAT_SERVICE_APP_ID);
-    expect(body.eventType).toBe(VENDOR_OUT_OF_CREDIT_EVENT);
-    expect(body.recipientEmail).toBe("owner@example.com");
-    expect(body.metadata.vendor).toBe("Z.ai");
-    expect(body.metadata.vendorSlug).toBe("zai");
+    expect(body.eventType).toBe(PROVIDER_CREDITS_EXHAUSTED_EVENT);
+    expect(PROVIDER_CREDITS_EXHAUSTED_EVENT).toBe("provider_credits_exhausted");
+    // Staff-bound events refuse a caller-supplied recipient, and the producer
+    // fills orgId from the header.
+    expect(body.recipientEmail).toBeUndefined();
+    expect(body.bccEmails).toBeUndefined();
+    expect(body.appId).toBeUndefined();
+    expect(body.metadata.orgId).toBeUndefined();
+    // provider + reason are required non-empty by the producer.
+    expect(body.metadata.provider).toBe("Z.ai");
+    expect(String(body.metadata.reason).length).toBeGreaterThan(0);
+    expect(body.metadata.detail).toContain("glm-5.2");
+    expect(body.metadata.detail).toContain("Insufficient balance");
+  });
+
+  it("omits x-user-id and x-run-id when the caller has none", async () => {
+    const fetchMock = stubEmailFetch();
+
+    notifyVendorOutOfCredit({ ...context("zai"), identity: { orgId: "org-2" } });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    const headers = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
+      .headers as Record<string, string>;
+    expect(headers["x-org-id"]).toBe("org-2");
+    expect(headers["x-user-id"]).toBeUndefined();
+    expect(headers["x-run-id"]).toBeUndefined();
   });
 
   it("alerts each vendor independently — one latch per vendor", async () => {
@@ -235,23 +263,92 @@ describe("alert latch", () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 
-  it("stays latched when the email fails to send — one outage must not become two", async () => {
-    const fetchMock = vi.fn(async () => new Response("boom", { status: 500 }));
-    global.fetch = fetchMock as unknown as typeof fetch;
+  it("does not re-send after a SUCCESSFUL send, even once the cooldown lapses", async () => {
+    vi.useFakeTimers();
+    const fetchMock = stubEmailFetch();
 
     expect(notifyVendorOutOfCredit(context("zai"))).toBe(true);
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
+    await vi.advanceTimersByTimeAsync(ALERT_COOLDOWN_MS * 3);
     expect(notifyVendorOutOfCredit(context("zai"))).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("does not attempt a send when the owner address is not configured", () => {
-    delete process.env.PLATFORM_OWNER_EMAIL;
+  it("retries after the cooldown when the send FAILED — one rejection must not lose the outage", async () => {
+    vi.useFakeTimers();
+    // This is the 2026-08-25 shape: the producer rejected the send, and the
+    // old latch stayed set, so the whole outage alerted nobody.
+    const fetchMock = stubEmailFetch(400);
+
+    expect(notifyVendorOutOfCredit(context("zai"))).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Bounded: within the cooldown a burst still costs exactly one attempt.
+    expect(notifyVendorOutOfCredit(context("zai"))).toBe(false);
+    await vi.advanceTimersByTimeAsync(ALERT_COOLDOWN_MS - 1);
+    expect(notifyVendorOutOfCredit(context("zai"))).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(2);
+    expect(notifyVendorOutOfCredit(context("zai"))).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends nothing and says why when the failing call carried no org", async () => {
+    const fetchMock = stubEmailFetch();
+    const errorSpy = console.error as unknown as ReturnType<typeof vi.fn>;
+
+    // /internal/platform-complete has a platform run and no org. The staff
+    // path is org-scoped, so the alert cannot be raised — loudly, never with a
+    // fabricated org.
+    expect(notifyVendorOutOfCredit({ ...context("zai"), identity: undefined })).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(errorSpy.mock.calls.flat().join(" ")).toContain("carried no org");
+  });
+
+  it("does not attempt a send when the service api key is not configured", async () => {
+    delete process.env.TRANSACTIONAL_EMAIL_SERVICE_API_KEY;
     const fetchMock = stubEmailFetch();
 
     expect(notifyVendorOutOfCredit(context("zai"))).toBe(true);
+    await vi.waitFor(() => expect(console.error).toHaveBeenCalled());
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("no parallel template implementation", () => {
+  // PR #396 invented a chat-service-owned event and registered a template for
+  // it at boot; both were rejected by the deployed producer and the alert never
+  // reached anyone. transactional-email-service owns the staff template. This
+  // test fails if either comes back.
+  function sourceFiles(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) return sourceFiles(full);
+      return entry.isFile() && entry.name.endsWith(".ts") ? [full] : [];
+    });
+  }
+
+  const BANNED = [
+    ["vendor", "out", "of", "credit"].join("_"),
+    "register-email-templates",
+    "registerEmailTemplates",
+    "/templates",
+  ];
+
+  it("carries no chat-service-owned email template or private event name", () => {
+    const offenders: string[] = [];
+    for (const file of sourceFiles("src")) {
+      const text = readFileSync(file, "utf8");
+      for (const banned of BANNED) {
+        if (text.includes(banned)) offenders.push(`${file}: ${banned}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -261,9 +358,9 @@ describe("completeWithVendor wiring", () => {
   beforeEach(() => {
     resetVendorCreditAlerts();
     process.env.TRANSACTIONAL_EMAIL_SERVICE_API_KEY = "test-key";
-    process.env.PLATFORM_OWNER_EMAIL = "owner@example.com";
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -271,7 +368,6 @@ describe("completeWithVendor wiring", () => {
     vi.restoreAllMocks();
     resetVendorCreditAlerts();
     delete process.env.TRANSACTIONAL_EMAIL_SERVICE_API_KEY;
-    delete process.env.PLATFORM_OWNER_EMAIL;
   });
 
   /**
@@ -281,7 +377,7 @@ describe("completeWithVendor wiring", () => {
   function stubFetch(vendorResponse: () => Response) {
     const emailCalls: RequestInit[] = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).includes("/send")) {
+      if (String(url).includes("/platform-send")) {
         emailCalls.push(init!);
         return new Response(JSON.stringify({ results: [] }), { status: 200 });
       }
@@ -296,9 +392,10 @@ describe("completeWithVendor wiring", () => {
     apiKey: "vendor-key",
     model,
     message: "hi",
+    identity: { orgId: "org-1", userId: "user-1", runId: "run-1" },
   });
 
-  it("still fails the call, unchanged, while emailing the owner", async () => {
+  it("still fails the call, unchanged, while alerting staff", async () => {
     const { emailCalls } = stubFetch(
       () =>
         new Response(
@@ -313,7 +410,34 @@ describe("completeWithVendor wiring", () => {
     await expect(completeWithVendor(options("zai", "glm-5.2"))).rejects.toThrow(/429 from glm-5.2/);
 
     await vi.waitFor(() => expect(emailCalls).toHaveLength(1));
-    expect(JSON.parse(emailCalls[0].body as string).metadata.vendorSlug).toBe("zai");
+    const body = JSON.parse(emailCalls[0].body as string);
+    expect(body.eventType).toBe(PROVIDER_CREDITS_EXHAUSTED_EVENT);
+    expect((emailCalls[0].headers as Record<string, string>)["x-org-id"]).toBe("org-1");
+  });
+
+  it("never forwards the identity headers to the vendor itself", async () => {
+    const { fetchMock } = stubFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            id: "x",
+            model: "glm-5.2",
+            choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 10, completion_tokens: 2 },
+          }),
+          { status: 200 },
+        ),
+    );
+
+    await completeWithVendor(options("zai", "glm-5.2"));
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(Object.keys(headers).map((k) => k.toLowerCase())).toEqual([
+      "authorization",
+      "content-type",
+    ]);
+    expect(init.body as string).not.toContain("org-1");
   });
 
   it("sends nothing on a rate-limit 429", async () => {
