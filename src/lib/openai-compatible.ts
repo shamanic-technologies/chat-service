@@ -33,6 +33,46 @@ const MAX_CONNECT_RETRIES = 3;
 const RETRY_DELAYS_MS = [250, 500, 1000];
 
 /**
+ * Backoff schedule for a vendor RATE LIMIT (429), in ms — a SECOND, independent
+ * budget from the connect-phase one above.
+ *
+ * A 429 is the one completed HTTP response that is safe to replay: the vendor
+ * refused the request at its front door, so no model ran, no tokens were
+ * emitted and nothing was billed. It is also transitory by definition — every
+ * vendor here caps requests IN FLIGHT, so the slot that was full when we asked
+ * is free again a second later.
+ *
+ * Not retrying it is expensive in a way the log does not show: by the time a
+ * campaign reaches the LLM it has already paid for lead enrichment and the rest
+ * of its upstream work, so a refused completion throws away everything spent
+ * before it — the run dies having produced nothing, for a reason that would
+ * have cleared on its own.
+ *
+ * The bound is what keeps this from turning a saturated vendor into a hung
+ * request: four retries over ~13s of waiting, worst case. A vendor still
+ * refusing after that is genuinely over capacity, and `VendorRateLimitError`
+ * says so rather than hiding it behind an eventual success.
+ *
+ * ONE schedule for all three vendors, deliberately: the CONCURRENCY they allow
+ * differs per vendor and per model (see `VendorConfig.concurrency`), but a 429
+ * means the same thing everywhere — "not right now" — and there is no vendor
+ * evidence that a different curve suits one of them. Per-vendor tuning would be
+ * three numbers to keep true instead of one.
+ */
+const RATE_LIMIT_BACKOFF_MS = [500, 1500, 3500, 7500];
+
+/** Max rate-limit retries before failing loud. */
+const MAX_RATE_LIMIT_RETRIES = RATE_LIMIT_BACKOFF_MS.length;
+
+/**
+ * Longest `Retry-After` we will honour. A vendor asking us to wait longer than
+ * the whole backoff budget is telling us it is saturated, not busy — waiting it
+ * out would hold the caller's request open for minutes, which is the failure
+ * mode this retry exists to avoid, not one to trade into.
+ */
+const MAX_RETRY_AFTER_MS = 10_000;
+
+/**
  * Transient connect-phase error codes. A request that fails with one of these
  * NEVER reached the server, so replaying it cannot double-spend.
  */
@@ -80,6 +120,34 @@ export class VendorUnsupportedOptionError extends VendorProviderError {
     super(message);
     this.name = "VendorUnsupportedOptionError";
     this.status = status;
+    this.vendorMessage = vendorMessage;
+  }
+}
+
+/**
+ * The vendor is refusing new work RIGHT NOW, and kept refusing for the whole
+ * retry budget.
+ *
+ * Distinct from a plain `VendorProviderError` because the two say different
+ * things to whoever reads the log: a 500 is the vendor being broken, this is us
+ * asking for more parallelism than the account is allowed. It carries the
+ * numbers that make that actionable — how many times we asked and over how
+ * long — so a persistently saturated vendor stays VISIBLE instead of being
+ * smoothed away by the retry that precedes it.
+ */
+export class VendorRateLimitError extends VendorProviderError {
+  /** Total attempts made, including the first. */
+  readonly attempts: number;
+  /** Wall-clock ms spent waiting between attempts. */
+  readonly waitedMs: number;
+  /** Vendor's own message from the final refusal. */
+  readonly vendorMessage: string;
+
+  constructor(message: string, attempts: number, waitedMs: number, vendorMessage: string) {
+    super(message);
+    this.name = "VendorRateLimitError";
+    this.attempts = attempts;
+    this.waitedMs = waitedMs;
     this.vendorMessage = vendorMessage;
   }
 }
@@ -147,6 +215,47 @@ export type VendorPricing =
     };
 
 /**
+ * How many requests a vendor will serve us AT ONCE, as the vendor publishes it.
+ *
+ * Recorded here for the same reason the price is: it is a property of the model
+ * that decides whether the model can carry our workload, and reading only the
+ * price makes a swap look free when it is not. GLM-5.3 arrived at GLM-5.2's
+ * exact list price and one TENTH of its concurrency; that swap shipped as a
+ * "drop-in" because price was the only axis anyone compared (2026-08-20, undone
+ * five days later after three campaigns on one shared slot produced 127
+ * refusals in five hours).
+ *
+ * The vendors scope the limit differently and that difference is load-bearing:
+ * DeepSeek and Z.ai publish a number PER MODEL (so an alias swap can change it
+ * without anything else changing), Moonshot publishes it PER ACCOUNT by spend
+ * tier (so it moves when the balance moves, never when the model does).
+ *
+ * This is DOCUMENTATION with a test attached, not a runtime limiter — nothing
+ * here throttles or queues. `assertAliasConcurrency` in the unit tests reads it
+ * to fail the build if a production alias is ever pointed at a model published
+ * at a single in-flight slot again.
+ */
+export type VendorConcurrency =
+  | {
+      scope: "per-model";
+      /** Vendor model id → published in-flight request limit. */
+      limits: Record<string, number>;
+      /** Where the numbers come from. */
+      source: string;
+      /** ISO date the numbers were read. */
+      observedOn: string;
+    }
+  | {
+      scope: "per-account";
+      /** Tier label → published in-flight request limit for that tier. */
+      tierLimits: Record<string, number>;
+      /** What decides which tier applies, and what is NOT known here. */
+      note: string;
+      source: string;
+      observedOn: string;
+    };
+
+/**
  * What a vendor told us when it refused a call, reduced to the few fields the
  * three of them actually use to say WHY.
  *
@@ -191,6 +300,12 @@ export interface VendorConfig {
    * declaration; see `VendorPricing`.
    */
   pricing: VendorPricing;
+  /**
+   * How much parallelism THIS vendor sells us. See `VendorConcurrency` — it
+   * sits next to the price because reading the price alone is what let a
+   * ten-fold throughput cut ship as a drop-in swap.
+   */
+  concurrency: VendorConcurrency;
   /**
    * The strongest `response_format` THIS vendor accepts.
    *
@@ -265,6 +380,18 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
         offPeakSegment: "off-peak",
       },
     },
+    // DeepSeek publishes concurrency per model and sells far more of it than
+    // we use — and says so plainly: "A request counts as one concurrent
+    // connection from the time it is sent until the model response is
+    // complete", and "when the concurrency limit is exceeded, you will receive
+    // an HTTP 429 error code". Expansion is free on request. Neither DeepSeek
+    // alias is anywhere near these, so no alias choice here is throughput-bound.
+    concurrency: {
+      scope: "per-model",
+      limits: { "deepseek-v4-pro": 500, "deepseek-v4-flash": 2500 },
+      source: "https://api-docs.deepseek.com/quick_start/rate_limit",
+      observedOn: "2026-08-25",
+    },
     // json_object ONLY. DeepSeek's JSON-output guide documents
     // `{"type":"json_object"}` and nothing else
     // (https://api-docs.deepseek.com/guides/json_mode, read 2026-08-25), and
@@ -299,6 +426,24 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // schedule, so its rows carry no regime and the names have no regime
     // segment. Inventing one here would name a row that does not exist.
     pricing: { kind: "priced", cachedInput: true, regime: null },
+    // Z.ai is the vendor where this number decides the alias, and it does NOT
+    // track the price: GLM-5.1, 5.2 and 5.3 all list at $1.4/$4.4 per 1M while
+    // 5.3 serves ONE in-flight request against 5.2's ten. Its rate-limit page
+    // is behind the account console rather than the public docs, so the table
+    // is copied here verbatim, and confirmed against the live API on the same
+    // day: six parallel completions returned 6/6 200 on glm-5.2 and 2/6 on
+    // glm-5.3, the other four `429 {"error":{"code":"1302","message":"Rate
+    // limit reached for requests"}}`.
+    //
+    // glm-4.7-flashx (our `glm-flash`) is not listed in that table; the value
+    // is recorded only where the vendor publishes one, never inferred from a
+    // sibling model.
+    concurrency: {
+      scope: "per-model",
+      limits: { "glm-5.1": 10, "glm-5.2": 10, "glm-5.3": 1, "glm-4.7": 2, "glm-4.6v-flashx": 3 },
+      source: "https://z.ai/manage-apikey/rate-limits (account console; login required)",
+      observedOn: "2026-08-25",
+    },
     // json_schema accepted. Z.ai's reference lists only text/json_object, but
     // the live API answers 200 to the json_schema form — probed 2026-08-25
     // against glm-4.7-flashx. Kept at the stronger form because that is what
@@ -329,6 +474,24 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // schedule, so its rows carry no regime and the names have no regime
     // segment — the same shape as Z.ai.
     pricing: { kind: "priced", cachedInput: true, regime: null },
+    // Moonshot publishes concurrency PER ACCOUNT, by cumulative spend tier, not
+    // per model: Tier 0 ($1) 1 concurrency / 3 RPM, Tier 1 ($10) 50 / 200, Tier
+    // 2 ($20) 100 / 500, up to Tier 5 ($3,000) 1,000 / 10,000. So a Kimi alias
+    // swap cannot change our throughput — only the balance can, which means the
+    // number to watch here is the account tier, and Tier 0's single slot is the
+    // one state that would put Kimi in GLM-5.3's position. Recorded at the tier
+    // this account is on.
+    concurrency: {
+      scope: "per-account",
+      tierLimits: { "tier-0": 1, "tier-1": 50, "tier-2": 100, "tier-3": 200, "tier-4": 400, "tier-5": 1000 },
+      note:
+        "Tier is set by cumulative recharge ($1 / $10 / $20 / $100 / $1,000 / $3,000), not by model, " +
+        "so a Kimi alias swap cannot change our throughput — only the balance can. Which tier THIS " +
+        "account sits on is a console fact, not published by the API, so it is deliberately not " +
+        "asserted here; Tier 0's single slot is the one state that would put Kimi in GLM-5.3's position.",
+      source: "https://platform.kimi.ai/docs/pricing/limits",
+      observedOn: "2026-08-25",
+    },
     // json_schema accepted — probed 2026-08-25 against kimi-k2.6 (200).
     structuredOutput: "json_schema",
     // Moonshot also overloads 429, and names the case in the error TYPE:
@@ -406,6 +569,47 @@ export function vendorConfig(provider: string): VendorConfig {
   return config;
 }
 
+/**
+ * Published in-flight limit for a vendor model, or null when the vendor does
+ * not publish one for it.
+ *
+ * Null is a real answer and must NOT be read as "unlimited" or filled in from a
+ * sibling model — glm-4.7-flashx has no published row, and guessing it from
+ * glm-4.7 would invent a number the vendor never gave us. Only the per-model
+ * vendors can answer at all; Moonshot's limit belongs to the account, so it
+ * answers null for every model by construction.
+ */
+export function publishedConcurrency(vendor: VendorId, apiModelId: string): number | null {
+  const { concurrency } = vendorConfig(vendor);
+  if (concurrency.scope !== "per-model") return null;
+  return concurrency.limits[apiModelId] ?? null;
+}
+
+/**
+ * Read a `Retry-After` header into ms, or null when absent/unusable.
+ *
+ * Both documented forms are accepted (delay-seconds and an HTTP-date). A value
+ * beyond `MAX_RETRY_AFTER_MS` is DISCARDED rather than honoured — the caller
+ * falls back to the bounded backoff step, so a vendor asking for a five-minute
+ * wait cannot hold the request open for five minutes.
+ */
+export function parseRetryAfterMs(headerValue: string | null | undefined): number | null {
+  if (!headerValue) return null;
+  const raw = headerValue.trim();
+  let ms: number | null = null;
+
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) {
+    ms = seconds * 1000;
+  } else {
+    const at = Date.parse(raw);
+    if (Number.isFinite(at)) ms = at - Date.now();
+  }
+
+  if (ms == null || ms <= 0) return null;
+  return ms > MAX_RETRY_AFTER_MS ? null : ms;
+}
+
 export interface VendorCompleteOptions {
   vendor: VendorId;
   apiKey: string;
@@ -473,6 +677,19 @@ function isTransientConnectError(err: unknown, depth = 0): boolean {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Spread a backoff step by ±25%.
+ *
+ * The requests that collide on a concurrency limit are the ones that started
+ * together — a campaign fanning out — so an unjittered schedule marches them
+ * into the same retry instant and they refuse each other again. The jitter is
+ * what makes the second attempt land in a free slot rather than the same
+ * contended one.
+ */
+function jittered(ms: number): number {
+  return ms * (0.75 + Math.random() * 0.5);
+}
 
 /**
  * Build the OpenAI-compatible request body.
@@ -642,8 +859,16 @@ export async function completeWithVendor(
   const body = buildVendorRequestBody(options);
 
   let lastConnectError: unknown = null;
+  let connectAttempt = 0;
+  let rateLimitAttempt = 0;
+  let rateLimitWaitedMs = 0;
 
-  for (let attempt = 0; attempt <= MAX_CONNECT_RETRIES; attempt++) {
+  // Two independent budgets, because the two failures are different events. A
+  // connect failure never reached the vendor; a 429 reached it and was turned
+  // away. Sharing one counter would let a burst of socket resets eat the
+  // rate-limit budget (or the reverse) and cut short the retry that had a
+  // chance of working.
+  for (;;) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), VENDOR_TIMEOUT_MS);
 
@@ -660,13 +885,14 @@ export async function completeWithVendor(
       });
     } catch (err) {
       clearTimeout(timeout);
-      if (isTransientConnectError(err) && attempt < MAX_CONNECT_RETRIES) {
+      if (isTransientConnectError(err) && connectAttempt < MAX_CONNECT_RETRIES) {
         lastConnectError = err;
         console.warn(
           `[chat-service] [vendor:${vendor}] Connect-phase failure for "${model}" ` +
-            `(attempt ${attempt + 1}/${MAX_CONNECT_RETRIES + 1}), retrying.`,
+            `(attempt ${connectAttempt + 1}/${MAX_CONNECT_RETRIES + 1}), retrying.`,
         );
-        await sleep(RETRY_DELAYS_MS[attempt] ?? 1000);
+        await sleep(RETRY_DELAYS_MS[connectAttempt] ?? 1000);
+        connectAttempt++;
         continue;
       }
       throw err instanceof Error ? err : new VendorProviderError(String(err ?? lastConnectError));
@@ -677,11 +903,14 @@ export async function completeWithVendor(
     if (!res.ok) {
       const text = await res.text().catch(() => "");
 
+      const refusal = parseVendorRefusal(res.status, text);
+      const outOfCredit = config.isOutOfCreditRefusal(refusal);
+
       // Out-of-credit stops the whole model tier until a human tops the account
       // up, so the owner is emailed — once per outage, detached from this
       // request. Everything else about this failure is unchanged: no fallback,
       // no retry, same error to the caller. A rate-limit 429 alerts nothing.
-      if (config.isOutOfCreditRefusal(parseVendorRefusal(res.status, text))) {
+      if (outOfCredit) {
         notifyVendorOutOfCredit({
           vendor,
           vendorLabel: config.label,
@@ -689,6 +918,50 @@ export async function completeWithVendor(
           status: res.status,
           vendorMessage: text.slice(0, 500),
         });
+      }
+
+      // A rate limit is the one completed response worth replaying: the vendor
+      // turned the request away at the door, so no model ran and nothing was
+      // billed — and the slot it was waiting on frees up on its own.
+      //
+      // Out-of-credit is excluded even though TWO of the three vendors report
+      // it with this same 429 (Z.ai code 1113, Moonshot
+      // `exceeded_current_quota_error`). An empty balance does not clear by
+      // waiting, so retrying it would burn the budget on a certainty and delay
+      // the error the owner needs to see.
+      if (res.status === 429 && !outOfCredit) {
+        if (rateLimitAttempt < MAX_RATE_LIMIT_RETRIES) {
+          const wait = parseRetryAfterMs(res.headers?.get?.("retry-after")) ??
+            jittered(RATE_LIMIT_BACKOFF_MS[rateLimitAttempt] ?? 7500);
+          console.warn(
+            `[chat-service] [vendor:${vendor}] Rate limited on "${model}" ` +
+              `(attempt ${rateLimitAttempt + 1}/${MAX_RATE_LIMIT_RETRIES + 1}), ` +
+              `retrying in ${Math.round(wait)}ms: ${text.slice(0, 200)}`,
+          );
+          await sleep(wait);
+          rateLimitWaitedMs += wait;
+          rateLimitAttempt++;
+          continue;
+        }
+
+        // Still refusing after the whole budget. That is capacity, not a blip,
+        // and it must stay visible — so it gets its own error carrying how hard
+        // we tried, rather than reading like any other upstream failure.
+        const attempts = rateLimitAttempt + 1;
+        console.error(
+          `[chat-service] [vendor:${vendor}] Still rate limited on "${model}" after ${attempts} attempts ` +
+            `over ${Math.round(rateLimitWaitedMs)}ms of backoff. Concurrency published for this model: ` +
+            `${publishedConcurrency(vendor, model) ?? "not published"}.`,
+        );
+        throw new VendorRateLimitError(
+          `[vendor:${vendor}] ${config.label} is rate limiting "${model}": still 429 after ${attempts} ` +
+            `attempts over ${Math.round(rateLimitWaitedMs)}ms. The vendor is at capacity for this model ` +
+            `(published concurrency: ${publishedConcurrency(vendor, model) ?? "not published"}). ` +
+            `${text.slice(0, 300)}`,
+          attempts,
+          rateLimitWaitedMs,
+          text,
+        );
       }
 
       // A rejected request SHAPE is a configuration error, not a transient
@@ -726,10 +999,6 @@ export async function completeWithVendor(
 
     return result;
   }
-
-  throw new VendorProviderError(
-    `[vendor:${vendor}] Exhausted connect retries for "${model}": ${String(lastConnectError)}`,
-  );
 }
 
 /**
