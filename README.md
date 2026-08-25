@@ -384,6 +384,7 @@ Thirty times the output for the same three emails. So a request that asks for st
 | `zai` / `glm-5.2` | 703 → **389** | 1,035 → 0 | 1,955 → 1,565 |
 | `zai` / `glm-4.7-flashx` | 1,036 → **329** | 2,747 → 0 | 2,091 → 1,433 |
 | `moonshot` / `kimi-k2.6` | 1,173 → **452** | 3,808 → 0 | 1,140 → **1,866** |
+| `moonshot` / `kimi-k3` | 543 → **360** | 639 → 0 | 1,652 → 1,406 |
 | `deepseek` / `deepseek-v4-flash` | 205 → 450 | 144 → 0 | 761 → 1,959 |
 | `deepseek` / `deepseek-v4-pro` | 369 → **293** | 375 → 0 | 1,165 → 1,131 |
 

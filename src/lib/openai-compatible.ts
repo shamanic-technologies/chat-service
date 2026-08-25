@@ -625,7 +625,8 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
       source: "https://platform.kimi.ai/docs/api/chat",
       evidence:
         "Probed 2026-08-25 on kimi-k2.6: 1,173→452 out tok, reasoning 3,808→0 chars, answer " +
-        "1,140→1,866 chars. enable_thinking / reasoning_effort ignored, like an unknown key.",
+        "1,140→1,866 chars; on kimi-k3 543→360 out tok, reasoning 639→0 chars, answer " +
+        "1,652→1,406 chars. enable_thinking / reasoning_effort ignored, like an unknown key.",
     },
     // Moonshot also overloads 429, and names the case in the error TYPE:
     // `exceeded_current_quota_error`, "account ... is suspended due to
