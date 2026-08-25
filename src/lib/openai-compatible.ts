@@ -54,6 +54,37 @@ export class VendorProviderError extends Error {
 }
 
 /**
+ * The vendor refused the SHAPE of the request, not the work.
+ *
+ * A distinct class because the two failures need opposite handling and the
+ * caller cannot tell them apart from the status alone. A vendor being down, a
+ * rate limit, a socket reset — all transient, "try again" is honest advice. A
+ * vendor rejecting an OPTION we sent (an unsupported `response_format`, a
+ * parameter it does not implement) will refuse the identical request forever:
+ * every retry burns a run and a hold, and the caller reads the 502 as
+ * flakiness. So this surfaces as a 400 naming the option and the vendor,
+ * which is what "wrong configuration" actually looks like.
+ *
+ * This is the LAST line, not the first: the per-vendor capability data below
+ * is what stops us sending an option a vendor cannot serve. This catches the
+ * ones we have not learned yet, loudly, on the first call rather than the
+ * three-hundredth.
+ */
+export class VendorUnsupportedOptionError extends VendorProviderError {
+  /** HTTP status the vendor refused with. */
+  readonly status: number;
+  /** Vendor's own message, untruncated by this class. */
+  readonly vendorMessage: string;
+
+  constructor(message: string, status: number, vendorMessage: string) {
+    super(message);
+    this.name = "VendorUnsupportedOptionError";
+    this.status = status;
+    this.vendorMessage = vendorMessage;
+  }
+}
+
+/**
  * Vendors reachable through this adapter. The id doubles as the API `provider`
  * value AND the key-service provider slug — one vendor, one key, one name.
  */
@@ -161,6 +192,28 @@ export interface VendorConfig {
    */
   pricing: VendorPricing;
   /**
+   * The strongest `response_format` THIS vendor accepts.
+   *
+   * "OpenAI-compatible" is a description of the request SHAPE, not a promise
+   * about which values inside it are implemented — and structured output is
+   * exactly where the three diverge. Z.ai and Moonshot accept the full
+   * `{type:"json_schema", json_schema:{schema}}` form; DeepSeek accepts only
+   * `{type:"json_object"}` and answers anything else with
+   * `400 "This response_format type is unavailable now"`.
+   *
+   * So this is DATA, like every other per-vendor difference here. Sending a
+   * caller's `responseSchema` to a `json_object` vendor as `json_object` is
+   * that vendor's OWN native JSON mode, not a fallback: it is the strongest
+   * enforcement the vendor offers, the model is the one the caller asked for,
+   * and `parseModelJsonOutput` still fails loud (502) on output it cannot
+   * read. What we must never do is send a form the vendor refuses — that is
+   * not stricter, it is zero completions.
+   *
+   * A fourth vendor states its own value here after probing the live API;
+   * `tests/unit/openai-compatible.test.ts` asserts every vendor declares one.
+   */
+  structuredOutput: "json_schema" | "json_object";
+  /**
    * True when THIS vendor's refusal means "the prepaid balance is empty", as
    * opposed to every other reason it refuses.
    *
@@ -212,6 +265,18 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
         offPeakSegment: "off-peak",
       },
     },
+    // json_object ONLY. DeepSeek's JSON-output guide documents
+    // `{"type":"json_object"}` and nothing else
+    // (https://api-docs.deepseek.com/guides/json_mode, read 2026-08-25), and
+    // the API refuses the json_schema form outright: `400 {"error":{"message":
+    // "This response_format type is unavailable now","type":
+    // "invalid_request_error"}}` — reproduced 2026-08-25 against BOTH
+    // deepseek-v4-flash and deepseek-v4-pro, while the same probe with
+    // json_object returned valid JSON on both. That refusal is what made every
+    // deepseek-pro completion fail for five hours the night before: the alias
+    // had never been called in production, so no request had ever carried a
+    // responseSchema to this vendor.
+    structuredOutput: "json_object",
     // DeepSeek is the one vendor that does NOT overload 429 for this: its
     // documented codes give an empty balance its own status, 402 "Insufficient
     // Balance — You have run out of balance", while 429 is only "Rate Limit
@@ -234,6 +299,12 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // schedule, so its rows carry no regime and the names have no regime
     // segment. Inventing one here would name a row that does not exist.
     pricing: { kind: "priced", cachedInput: true, regime: null },
+    // json_schema accepted. Z.ai's reference lists only text/json_object, but
+    // the live API answers 200 to the json_schema form — probed 2026-08-25
+    // against glm-4.7-flashx. Kept at the stronger form because that is what
+    // the vendor actually serves, and downgrading it would silently drop
+    // enforcement a caller asked for.
+    structuredOutput: "json_schema",
     // Z.ai answers an empty balance with a 429 — the same status as a rate
     // limit — and separates the two in the body: code 1113, "Insufficient
     // balance or no resource package. Please recharge." (observed 2026-08-15).
@@ -258,6 +329,8 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // schedule, so its rows carry no regime and the names have no regime
     // segment — the same shape as Z.ai.
     pricing: { kind: "priced", cachedInput: true, regime: null },
+    // json_schema accepted — probed 2026-08-25 against kimi-k2.6 (200).
+    structuredOutput: "json_schema",
     // Moonshot also overloads 429, and names the case in the error TYPE:
     // `exceeded_current_quota_error`, "account ... is suspended due to
     // insufficient balance, please recharge" (observed 2026-08-15). Its
@@ -425,20 +498,44 @@ export function buildVendorRequestBody(options: VendorCompleteOptions): Record<s
   if (temperature != null) body.temperature = temperature;
   if (maxOutputTokens != null) body.max_tokens = maxOutputTokens;
 
-  // JSON mode via native provider metadata only. Enforcement strength varies by
-  // vendor and model, so the request may reach a model that treats it as a hint.
-  // That is acceptable and NOT a silent fallback: parseModelJsonOutput still
-  // fails loud (502) on output it cannot read.
+  // JSON mode via native provider metadata only, in the strongest form THIS
+  // vendor implements (`structuredOutput`). Enforcement strength varies by
+  // vendor and model, so the request may reach a model that treats it as a
+  // hint. That is acceptable and NOT a silent fallback: parseModelJsonOutput
+  // still fails loud (502) on output it cannot read.
+  //
+  // A caller's responseSchema reaching a json_object-only vendor is served as
+  // that vendor's own JSON mode rather than refused — the caller asked for
+  // THIS model and gets THIS model, which is the whole point of an A/B test.
+  // The schema is not sent because the vendor has nowhere to put it, so it
+  // stops being enforced provider-side; the strict parse downstream still is.
   if (responseSchema != null) {
-    body.response_format = {
-      type: "json_schema",
-      json_schema: { name: "response", schema: responseSchema },
-    };
+    if (vendorConfig(options.vendor).structuredOutput === "json_schema") {
+      body.response_format = {
+        type: "json_schema",
+        json_schema: { name: "response", schema: responseSchema },
+      };
+    } else {
+      body.response_format = { type: "json_object" };
+    }
   } else if (responseFormat === "json") {
     body.response_format = { type: "json_object" };
   }
 
   return body;
+}
+
+/**
+ * True when a refusal is the vendor rejecting the request's SHAPE.
+ *
+ * Narrow on purpose. A 400/422 from an OpenAI-compatible chat completion is a
+ * malformed or unsupported request by definition — the vendor never started
+ * work, so no retry can change the outcome. Everything else (401, 402, 404,
+ * 429, every 5xx) stays a plain VendorProviderError: auth and credit are
+ * account state, and the rest is genuinely worth trying again.
+ */
+export function isUnsupportedOptionRefusal(status: number): boolean {
+  return status === 400 || status === 422;
 }
 
 /**
@@ -592,6 +689,21 @@ export async function completeWithVendor(
           status: res.status,
           vendorMessage: text.slice(0, 500),
         });
+      }
+
+      // A rejected request SHAPE is a configuration error, not a transient
+      // one. Separate class so the route answers 400 with the vendor's own
+      // words instead of "LLM call failed. Please try again." — the advice
+      // that let a permanently-refused option burn 335 calls looking like
+      // flakiness (incident 2026-08-25).
+      if (isUnsupportedOptionRefusal(res.status)) {
+        throw new VendorUnsupportedOptionError(
+          `[vendor:${vendor}] ${config.label} rejected the request as sent (${res.status} from ${model}): ` +
+            `${text.slice(0, 500)}. This is a request-configuration error — retrying will not help. ` +
+            `Vendor docs: ${config.docsUrl}`,
+          res.status,
+          text,
+        );
       }
 
       throw new VendorProviderError(

@@ -39,6 +39,7 @@ import {
   isVendorProvider,
   vendorConfig,
   keyResolutionErrorMessage,
+  VendorUnsupportedOptionError,
   type VendorId,
 } from "./lib/openai-compatible.js";
 import {
@@ -571,10 +572,22 @@ app.post("/complete", requireAuth, async (req, res) => {
         data: { provider, model: effectiveModel },
       });
     }
-    res.status(502).json({
-      error: err instanceof ModelJsonOutputError ? "LLM returned invalid JSON." : "LLM call failed. Please try again.",
-      ...(err instanceof ModelJsonOutputError ? { detail: err.message } : {}),
-    });
+    // A provider that refused the request's SHAPE will refuse it identically
+    // forever, so it must not be dressed as a transient failure — "please try
+    // again" is false advice that turns a configuration bug into hours of
+    // silent spend. 400 with the provider's own words instead.
+    if (err instanceof VendorUnsupportedOptionError) {
+      res.status(400).json({
+        error: "Provider rejected a request option.",
+        detail: err.message,
+        retryable: false,
+      });
+    } else {
+      res.status(502).json({
+        error: err instanceof ModelJsonOutputError ? "LLM returned invalid JSON." : "LLM call failed. Please try again.",
+        ...(err instanceof ModelJsonOutputError ? { detail: err.message } : {}),
+      });
+    }
   } finally {
     // Reconcile: record ACTUAL real tokens, then release the provisioned worst-case holds.
     // If the actual POST fails, the provisioned-max rows stay as a fallback record — the
@@ -1712,10 +1725,19 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   } catch (err) {
     platformFailed = true;
     console.error(`[internal/platform-complete] LLM call failed:`, err);
-    res.status(502).json({
-      error: err instanceof ModelJsonOutputError ? "LLM returned invalid JSON." : "LLM call failed. Please try again.",
-      ...(err instanceof ModelJsonOutputError ? { detail: err.message } : {}),
-    });
+    // Same split as /complete: a refused request option is a 400, not a 502.
+    if (err instanceof VendorUnsupportedOptionError) {
+      res.status(400).json({
+        error: "Provider rejected a request option.",
+        detail: err.message,
+        retryable: false,
+      });
+    } else {
+      res.status(502).json({
+        error: err instanceof ModelJsonOutputError ? "LLM returned invalid JSON." : "LLM call failed. Please try again.",
+        ...(err instanceof ModelJsonOutputError ? { detail: err.message } : {}),
+      });
+    }
   } finally {
     try {
       await updatePlatformRunStatus(runId, "chat-service", platformFailed ? "failed" : "completed");
