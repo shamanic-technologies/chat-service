@@ -8,7 +8,9 @@
 //
 //   DeepSeek  cache-hit input priced apart from a miss, AND a peak/off-peak
 //             schedule → 12 names, `deepseek-v4-{flash,pro}-{peak,off-peak}-
-//             tokens-{input,cached-input,output}`.
+//             tokens-{input,cached-input,output}`. The schedule is hours AND
+//             days: peak applies 01:00-04:00 / 06:00-10:00 UTC on weekdays
+//             only, the vendor having exempted weekends from 2026-08-22T16:00Z.
 //   Z.ai      cache-hit input priced apart from a miss, no schedule → 3 names
 //             per model, `zai-glm-5.2-tokens-{input,cached-input,output}`.
 //   Moonshot  cache-hit input priced apart from a miss, no schedule → 3 names
@@ -72,22 +74,84 @@ function minuteOfDay(hhmm: string): number {
 }
 
 /**
+ * The UTC minute at which a Beijing (UTC+8) day starts — 16:00 UTC the day
+ * before. A peak window that reached this minute would sit on two Beijing days
+ * at once, and a vendor rule stated in Beijing weekdays could then no longer be
+ * evaluated on the UTC weekday. See `assertDayScopeIsUnambiguous`.
+ */
+const BEIJING_DAY_START_MINUTE_UTC = 16 * 60;
+
+/**
+ * A schedule whose windows and day scope cannot both be honoured. Thrown before
+ * any spend, like `UnpricedModelError`: a regime we cannot resolve exactly is a
+ * regime we must not guess at, because the wrong guess is a customer overbill.
+ */
+export class AmbiguousPricingRegimeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AmbiguousPricingRegimeError";
+  }
+}
+
+/**
+ * DeepSeek publishes its peak HOURS in UTC and its weekend EXEMPTION in Beijing
+ * days. We select on UTC days, which is only equivalent while every peak window
+ * lies wholly inside one Beijing day — true today because the windows end by
+ * 10:00 UTC, six hours before the Beijing day rolls over at 16:00 UTC.
+ *
+ * If the vendor ever publishes a window at or past 16:00 UTC, that equivalence
+ * breaks: a Friday 17:00 UTC window is Beijing Saturday (exempt) while its UTC
+ * weekday says Friday (peak). Rather than silently bill the wrong regime for
+ * that hour, throw — the correct fix is to evaluate the day in the vendor's own
+ * timezone, and that is a change someone should make deliberately.
+ */
+function assertDayScopeIsUnambiguous(schedule: PricingRegimeSchedule): void {
+  if (!schedule.peakDaysUtc) return;
+  for (const window of schedule.peakWindowsUtc) {
+    const [, end] = window.split("-");
+    if (minuteOfDay(end) > BEIJING_DAY_START_MINUTE_UTC) {
+      throw new AmbiguousPricingRegimeError(
+        `[cost] peak window "${window}" runs past 16:00 UTC, where the vendor's Beijing ` +
+          `calendar day has already rolled over, so a weekday-scoped peak cannot be resolved ` +
+          `from the UTC weekday. Evaluate the day in the vendor's own timezone before ` +
+          `serving this schedule.`,
+      );
+    }
+  }
+}
+
+/**
  * Pick the regime in force at `at`, from the SAME `regimeHoursUtc` string the
- * catalog rows carry (`"01:00-04:00,06:00-10:00"`).
+ * catalog rows carry (`"01:00-04:00,06:00-10:00"`) and the day scope beside it.
  *
  * Each window is half-open, `[start, end)`: 01:00 sharp is the first peak
  * minute and 04:00 sharp is the first off-peak minute again. That is what makes
  * the two regimes a partition — every instant matches exactly one, so a caller
  * never has to fall back to a regime-free name (which, from 2026-08-16T16:00Z,
  * would have no honest price behind it).
+ *
+ * The day scope narrows peak further, and only from `peakDaysFrom`: DeepSeek
+ * exempted weekends from 2026-08-22T16:00Z, so a Saturday 02:00 call declares
+ * off-peak today and still resolves to peak for an instant before that date,
+ * which is what the vendor actually charged then. Off-peak is the WIDER regime
+ * in both directions, so narrowing peak can only ever move a call to the rate
+ * the vendor is charging — never off the partition.
  */
 export function selectPricingRegime(schedule: PricingRegimeSchedule, at: Date): string {
+  assertDayScopeIsUnambiguous(schedule);
+
   const minute = at.getUTCHours() * 60 + at.getUTCMinutes();
-  const inPeak = schedule.peakWindowsUtc.some((window) => {
+  const inPeakWindow = schedule.peakWindowsUtc.some((window) => {
     const [start, end] = window.split("-");
     return minute >= minuteOfDay(start) && minute < minuteOfDay(end);
   });
-  return inPeak ? schedule.peakSegment : schedule.offPeakSegment;
+
+  const dayScopeApplies =
+    schedule.peakDaysUtc !== null &&
+    (schedule.peakDaysFrom === null || at.getTime() >= schedule.peakDaysFrom.getTime());
+  const dayCarriesPeak = !dayScopeApplies || schedule.peakDaysUtc!.includes(at.getUTCDay());
+
+  return inPeakWindow && dayCarriesPeak ? schedule.peakSegment : schedule.offPeakSegment;
 }
 
 /**

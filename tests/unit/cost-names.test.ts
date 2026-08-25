@@ -3,6 +3,7 @@ import {
   buildLlmCostNames,
   flatCostNames,
   selectPricingRegime,
+  AmbiguousPricingRegimeError,
   UnpricedModelError,
 } from "../../src/lib/cost-names.js";
 import { VENDORS } from "../../src/lib/openai-compatible.js";
@@ -21,9 +22,12 @@ describe("selectPricingRegime — DeepSeek peak windows", () => {
     return pricing.regime;
   })();
 
-  // The catalog's own regimeHoursUtc: peak 01:00-04:00 and 06:00-10:00 UTC.
+  // The catalog's own regimeHoursUtc: peak 01:00-04:00 and 06:00-10:00 UTC,
+  // Monday through Friday.
   it("mirrors the catalog's peak windows verbatim", () => {
     expect(schedule.peakWindowsUtc).toEqual(["01:00-04:00", "06:00-10:00"]);
+    expect(schedule.peakDaysUtc).toEqual([1, 2, 3, 4, 5]);
+    expect(schedule.peakDaysFrom?.toISOString()).toBe("2026-08-22T16:00:00.000Z");
     expect(schedule.peakSegment).toBe("peak");
     expect(schedule.offPeakSegment).toBe("off-peak");
   });
@@ -58,11 +62,103 @@ describe("selectPricingRegime — DeepSeek peak windows", () => {
     expect(selectPricingRegime(schedule, at("2026-08-20T13:30:00Z"))).toBe("off-peak");
   });
 
-  it("selects by the clock alone — the same hour resolves the same before and after the schedule starts", () => {
+  it("selects by the clock, not the price-change date — a weekday hour resolves the same either side of it", () => {
     // costs-service gave both regimes an identical price point before
-    // 2026-08-16T16:00Z, so the caller never branches on the date.
-    expect(selectPricingRegime(schedule, at("2026-01-05T02:00:00Z"))).toBe("peak");
-    expect(selectPricingRegime(schedule, at("2027-01-05T02:00:00Z"))).toBe("peak");
+    // 2026-08-16T16:00Z, so the caller never branches on when the rates moved.
+    expect(selectPricingRegime(schedule, at("2026-01-05T02:00:00Z"))).toBe("peak"); // Monday
+    expect(selectPricingRegime(schedule, at("2027-01-05T02:00:00Z"))).toBe("peak"); // Tuesday
+  });
+});
+
+// From 00:00 Beijing on Sunday 2026-08-23 (= 2026-08-22T16:00Z) DeepSeek bills
+// off-peak "throughout the day on weekends". Without this, a Saturday 02:00
+// call declares the peak name while the vendor invoices off-peak — the org is
+// charged up to 2x what we are, on ~14 hours a week.
+describe("selectPricingRegime — DeepSeek weekend exemption", () => {
+  const schedule = (() => {
+    const pricing = VENDORS.deepseek.pricing;
+    if (pricing.kind !== "priced" || !pricing.regime) throw new Error("DeepSeek must carry a regime");
+    return pricing.regime;
+  })();
+
+  // Every hour a weekday would call peak, on both weekend days.
+  const WEEKEND_PEAK_HOURS = [
+    "2026-08-29T01:00:00Z", // Saturday, first peak minute of window 1
+    "2026-08-29T02:30:00Z",
+    "2026-08-29T03:59:59Z",
+    "2026-08-29T06:00:00Z", // Saturday, window 2
+    "2026-08-29T09:59:59Z",
+    "2026-08-30T01:00:00Z", // Sunday
+    "2026-08-30T07:30:00Z",
+    "2026-08-30T09:59:59Z",
+  ];
+  for (const iso of WEEKEND_PEAK_HOURS) {
+    it(`${iso} is off-peak — a former peak hour on a weekend`, () => {
+      expect(selectPricingRegime(schedule, at(iso))).toBe("off-peak");
+    });
+  }
+
+  it("keeps peak on the weekdays either side of that weekend", () => {
+    expect(selectPricingRegime(schedule, at("2026-08-28T02:00:00Z"))).toBe("peak"); // Friday
+    expect(selectPricingRegime(schedule, at("2026-08-31T02:00:00Z"))).toBe("peak"); // Monday
+  });
+
+  it("leaves a weekend hour outside every window off-peak, as it always was", () => {
+    expect(selectPricingRegime(schedule, at("2026-08-29T13:00:00Z"))).toBe("off-peak");
+    expect(selectPricingRegime(schedule, at("2026-08-30T23:59:59Z"))).toBe("off-peak");
+  });
+
+  // The rule took effect mid-Saturday UTC. Before that instant the vendor did
+  // charge peak on a weekend, so the selector must still say so.
+  it("does not backdate the exemption past 2026-08-22T16:00Z", () => {
+    expect(selectPricingRegime(schedule, at("2026-08-15T02:00:00Z"))).toBe("peak"); // Saturday, before
+    expect(selectPricingRegime(schedule, at("2026-08-16T07:00:00Z"))).toBe("peak"); // Sunday, before
+    expect(selectPricingRegime(schedule, at("2026-08-22T15:59:59Z"))).toBe("off-peak"); // Sat, but 15:59 is outside every window anyway
+    expect(selectPricingRegime(schedule, at("2026-08-23T02:00:00Z"))).toBe("off-peak"); // Sunday, first affected day
+  });
+
+  // Peak and off-peak stay a partition across a whole week: every hour of every
+  // day matches exactly one regime name, so no call ever has to guess.
+  it("matches exactly one regime for every hour of a full week", () => {
+    for (let day = 24; day <= 30; day++) {
+      for (let hour = 0; hour < 24; hour++) {
+        const iso = `2026-08-${day}T${String(hour).padStart(2, "0")}:00:00Z`;
+        const regime = selectPricingRegime(schedule, at(iso));
+        expect([schedule.peakSegment, schedule.offPeakSegment]).toContain(regime);
+      }
+    }
+  });
+});
+
+describe("selectPricingRegime — day scope must be resolvable from the UTC weekday", () => {
+  it("throws when a peak window runs past the Beijing day boundary", () => {
+    expect(() =>
+      selectPricingRegime(
+        {
+          peakWindowsUtc: ["15:00-18:00"],
+          peakDaysUtc: [1, 2, 3, 4, 5],
+          peakDaysFrom: null,
+          peakSegment: "peak",
+          offPeakSegment: "off-peak",
+        },
+        at("2026-08-28T16:00:00Z"),
+      ),
+    ).toThrow(AmbiguousPricingRegimeError);
+  });
+
+  it("allows a late window when the schedule has no day scope", () => {
+    expect(
+      selectPricingRegime(
+        {
+          peakWindowsUtc: ["15:00-18:00"],
+          peakDaysUtc: null,
+          peakDaysFrom: null,
+          peakSegment: "peak",
+          offPeakSegment: "off-peak",
+        },
+        at("2026-08-28T16:00:00Z"),
+      ),
+    ).toBe("peak");
   });
 });
 
@@ -77,6 +173,16 @@ describe("buildLlmCostNames — per-vendor dimensions", () => {
     });
     expect(
       buildLlmCostNames({ provider: "deepseek", costPrefix: "deepseek-v4-pro", at: at("2026-08-20T12:00:00Z") }),
+    ).toEqual({
+      input: "deepseek-v4-pro-off-peak-tokens-input",
+      cachedInput: "deepseek-v4-pro-off-peak-tokens-cached-input",
+      output: "deepseek-v4-pro-off-peak-tokens-output",
+    });
+  });
+
+  it("DeepSeek: a former peak hour on a Saturday declares off-peak names", () => {
+    expect(
+      buildLlmCostNames({ provider: "deepseek", costPrefix: "deepseek-v4-pro", at: at("2026-08-29T02:00:00Z") }),
     ).toEqual({
       input: "deepseek-v4-pro-off-peak-tokens-input",
       cachedInput: "deepseek-v4-pro-off-peak-tokens-cached-input",
