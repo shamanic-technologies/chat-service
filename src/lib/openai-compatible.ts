@@ -21,7 +21,11 @@
 // tool calling, no web search, no images, no embeddings.
 // ---------------------------------------------------------------------------
 
-import { markVendorServing, notifyVendorOutOfCredit } from "./vendor-credit-alert.js";
+import {
+  markVendorServing,
+  notifyVendorOutOfCredit,
+  type VendorAlertIdentity,
+} from "./vendor-credit-alert.js";
 
 /** Request timeout. Matches the Gemini Flash-tier budget. */
 const VENDOR_TIMEOUT_MS = 10 * 60_000;
@@ -800,6 +804,15 @@ export interface VendorCompleteOptions {
    * `disableThinking` on Anthropic.
    */
   disableThinking?: boolean;
+  /**
+   * Identity of the inbound request, forwarded ONLY to the out-of-credit staff
+   * alert — never to the vendor (see the egress guardrail in CLAUDE.md).
+   *
+   * The staff alert path is org-scoped, so without this the alert cannot be
+   * raised at all; `/complete` supplies it and `/internal/platform-complete`
+   * has no org to supply.
+   */
+  identity?: VendorAlertIdentity;
 }
 
 export interface VendorCompleteResult {
@@ -1148,6 +1161,7 @@ export async function completeWithVendor(
           model,
           status: res.status,
           vendorMessage: text.slice(0, 500),
+          identity: options.identity,
         });
       }
 
