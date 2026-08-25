@@ -216,7 +216,7 @@ Request body:
   - **Anthropic** → server-side `web_search_20250305` tool (`max_uses: 1`). Capped to **1** search per request for cost control (each search is one billable `web_search_requests` unit at $10/1k); single-fact lookups are unaffected, multi-entity comparison answers lose breadth. The search count is read from `usage.server_tool_use.web_search_requests`; source URLs from citation + result blocks.
   - In **text mode**, deduped citation source URLs are appended to `content` as a trailing `Sources:` block, so they surface in the response text. In **JSON mode** (`responseFormat: "json"` / `responseSchema`) the content is left untouched (a Sources block would corrupt the JSON), but grounding still applies and the search cost is still declared.
   - Omitted or `false` → no grounding, byte-identical to a non-grounded call (no extra cost). The web-search cost is metered per query/search and billed in addition to tokens — see the **Cost** section below.
-- `disableThinking` (optional, default `false`) — minimize the model's internal reasoning ("thinking") so the whole output budget goes to the answer. Use for extraction / structured-JSON / scoring tasks that don't need chain-of-thought. **Provider-floored, NOT a guaranteed full-off** (same pattern as a per-provider cap):
+- `disableThinking` (optional, **tri-state**) — minimize the model's internal reasoning ("thinking") so the whole output budget goes to the answer. Use for extraction / structured-JSON / scoring tasks that don't need chain-of-thought. **Provider-floored, NOT a guaranteed full-off** (same pattern as a per-provider cap):
   - **Google, Gemini 2.5** (`gemini-2.5-*`) → `thinkingConfig.thinkingBudget: 0` — thinking fully OFF.
   - **Google, Gemini 3** (`gemini-3.*`) → drops to the lowest level **that model** accepts. **Gemini 3 has no full-off** ([thinking docs](https://ai.google.dev/gemini-api/docs/thinking)), so this is "minimize", not zero — and the floor is **per model, not per generation**: Google publishes the accepted levels model by model and they differ inside one generation. Current aliases (floors read from the thinking docs on 2026-08-24 and confirmed against the live API the same day):
 
@@ -229,7 +229,8 @@ Request body:
 
     A model with no recorded floor **throws** rather than resolving to a guessed one — so upgrading an alias to a model whose floor was never checked fails a unit test, not production. (Sending `minimal` to a model that rejects it returns `400 INVALID_ARGUMENT: Thinking level MINIMAL is not supported for this model` — that is exactly what a generation-plus-substring floor did to `flash-pro` between 2026-08-14 and 2026-08-24.)
   - **Anthropic** → no-op: `/complete` never enables extended thinking, so the field is accepted and ignored.
-  - Omitted or `false` → the service default (bounded thinking: `thinkingLevel: "low"` on Gemini 3, `thinkingBudget: 8192` on Gemini 2.5), byte-identical to a normal call.
+  - **Direct vendors** (`deepseek`, `zai`, `moonshot`) → reasoning fully **OFF**, and it is **already off by default for any request that asks for structured output** (`responseSchema`, or `responseFormat: "json"`) — those callers parse the object and never see the reasoning, which is billed as output tokens. Pass `false` to keep reasoning on for a structured request; pass `true` to turn it off for a free-text one. See [Reasoning is off by default for structured output](#reasoning-is-off-by-default-for-structured-output).
+  - Omitted or `false` → on the native providers, the service default (bounded thinking: `thinkingLevel: "low"` on Gemini 3, `thinkingBudget: 8192` on Gemini 2.5), byte-identical to a normal call. On the direct vendors, omitted takes the structured-output default above and `false` explicitly keeps reasoning on.
 - `thinkingLevel` (optional, `"minimal" | "low" | "medium" | "high"`) — per-call Gemini-3 thinking level, the same graduated levels the `/chat` config path supports. Lets a caller dial reasoning effort **without changing the model** (e.g. an extraction task that wants `"low"` — cheaper/faster than default but above the floor). Precedence: **`disableThinking` (when set) always wins → the model's floor, ignoring this field.** Otherwise the model generates at this level — and an explicit level **below** that model's floor is rejected with a clear 5xx naming the lowest accepted level, never silently swapped for a different one (use `disableThinking` to ask for the floor). **Omitted → the service default (`"low"`), byte-identical to a normal call — existing callers see ZERO change.** Applies only to Gemini 3; a safe **no-op** on Gemini 2.5 (uses its bounded `thinkingBudget: 8192`) and Anthropic (thinking is never enabled on `/complete`). A caller that opts up to `medium`/`high` owns the tradeoff — higher thinking can consume the output budget on large JSON outputs (`MAX_TOKENS`), so size `maxTokens`/your schema accordingly.
 - `imageUrl` (optional) — URL of an image to include as visual input. The image is fetched server-side. Supported by all models, but recommended with `google` + `flash-lite` for cost-effective vision tasks.
 - `imageContext` (optional) — metadata about the image to help the model classify it: `{ alt?: string, title?: string, sourceUrl?: string }`. Injected into the prompt alongside the image. Only meaningful when `imageUrl` is provided.
@@ -277,7 +278,7 @@ Error responses: 400 (validation, or a provider refusing a request option — se
 
 A third provider path alongside the two native clients. Where `anthropic.ts` and `gemini.ts` each speak a vendor-specific dialect and carry that vendor's accumulated quirks, `src/lib/openai-compatible.ts` speaks one generic dialect — OpenAI Chat Completions — against vendors that all serve it. **One adapter, three vendors, six models.**
 
-The vendors differ in exactly five things, and all five are *data* in the `VENDORS` registry rather than code: the base URL, the key-service provider slug, where the usage payload reports cached prompt tokens, **which price dimensions that vendor's catalog actually carries** (`pricing`), and **which `response_format` it implements** (`structuredOutput`). So adding a seventh model is a `MODEL_MAP` entry, and adding a fourth vendor is a `VENDORS` entry. Neither is a new client.
+The vendors differ in exactly six things, and all six are *data* in the `VENDORS` registry rather than code: the base URL, the key-service provider slug, where the usage payload reports cached prompt tokens, **which price dimensions that vendor's catalog actually carries** (`pricing`), **which `response_format` it implements** (`structuredOutput`), and **whether its models' reasoning can be turned off, and what that field is called** (`reasoning`). So adding a seventh model is a `MODEL_MAP` entry, and adding a fourth vendor is a `VENDORS` entry. Neither is a new client.
 
 | Provider | Alias | Vendor model id | Cost prefix | Priced dimensions | Base URL |
 |---|---|---|---|---|---|
@@ -365,6 +366,45 @@ Enforcement strength therefore varies by vendor and model, and a request may rea
 
 **A vendor added later declares its own value after probing the live API** — the docs are not sufficient (Z.ai's reference lists only `text`/`json_object`, while its API accepts the schema form). `tests/unit/openai-compatible.test.ts` fails until the value is declared.
 
+### Reasoning is off by default for structured output
+
+Every model reachable on these three vendors reasons before it answers, the reasoning is billed as **output tokens** at the full output rate, and neither completion route ever returns it. A caller that sent a `responseSchema` parses the content into an object and reads fields out of it; the reasoning is not in the object. We were paying for a monologue nobody reads.
+
+Measured in production on 2026-08-25 — the same cold-email campaign, the same $24 daily budget, two consecutive days:
+
+| | Gemini | GLM |
+|---|---:|---:|
+| output tokens per generation | 316 | **9,633** |
+| cost per email | $0.098 | $0.256 |
+
+Thirty times the output for the same three emails. So a request that asks for structured output (`responseSchema`, or `responseFormat: "json"`) now tells the vendor to skip the reasoning. Probed against the live API the same day, one prompt, `max_tokens: 2000`:
+
+| Vendor / model | Output tokens | Reasoning chars | Answer chars |
+|---|---:|---:|---:|
+| `zai` / `glm-5.2` | 703 → **389** | 1,035 → 0 | 1,955 → 1,565 |
+| `zai` / `glm-4.7-flashx` | 1,036 → **329** | 2,747 → 0 | 2,091 → 1,433 |
+| `moonshot` / `kimi-k2.6` | 1,173 → **452** | 3,808 → 0 | 1,140 → **1,866** |
+| `deepseek` / `deepseek-v4-flash` | 205 → 450 | 144 → 0 | 761 → 1,959 |
+| `deepseek` / `deepseek-v4-pro` | 369 → **293** | 375 → 0 | 1,165 → 1,131 |
+
+The answers survive. On Kimi the answer got *longer* once the reasoning stopped — it was replacing the answer, not feeding it. DeepSeek barely reasons to begin with (144 chars on Flash), so it is the one vendor where the change is close to a wash and Flash spends slightly more, on a longer answer.
+
+**The field name is per-vendor data, and a wrong one is silent.** All three currently take `thinking: {"type": "disabled"}`, which is a fact about these three rather than a rule — DeepSeek and Z.ai both answer **200** to an unknown top-level key and keep reasoning at full volume, so a field name borrowed from another vendor looks exactly like success on the invoice. Probed on the same prompt, `enable_thinking: false` and `reasoning_effort` were ignored by DeepSeek and Moonshot, and `reasoning_effort: "minimal"` made GLM-5.2 think *more* (4,353 reasoning chars, 1,384 output tokens). Each vendor states its own field in `VENDORS[...].reasoning`, with the measurement that justified it.
+
+**Free-text requests are untouched.** The default keeps provider-normal behaviour for anything that is not structured output: that is the half where reasoning may genuinely shape the answer, and there is no measurement here saying it is safe to take away. The saving is claimed only where the evidence is.
+
+**The caller overrides in both directions** with the same `disableThinking` field the Gemini path already exposes — it is tri-state on these vendors:
+
+| `disableThinking` | Structured request | Free-text request |
+|---|---|---|
+| omitted | reasoning **off** (the default) | provider-normal |
+| `false` | reasoning **on** | provider-normal |
+| `true` | reasoning **off** | reasoning **off** |
+
+**A model that refuses the option fails loud.** GLM-5.3 answers `400 code 1210 "This model always engages in thinking and cannot be disabled; please use low, high, or max"` (and, when forced to think, burned the entire 2,000-token cap on reasoning and returned a **zero-character answer**). It is recorded in `VENDORS.zai.reasoning.refusedBy` and the field is still sent: the request surfaces as a **400** carrying Z.ai's own words plus a line naming the option that was refused. Quietly dropping the field for a known-refusing model would hide the one fact worth acting on — that this model cannot serve a structured workload without being billed for reasoning — behind an invoice nobody reads. Nothing routes to GLM-5.3 today; the record is there for whoever points an alias at it next.
+
+**Vendors with no such control** declare `reasoning: {kind: "none", reason}` and are documented as unaffected — nothing is added to their request body. All three current vendors have a control; a fourth states its own after probing the live API, and `tests/unit/openai-compatible.test.ts` fails until it does.
+
 ### A refused request option is a 400, not a 502
 
 The two ways a vendor call fails need opposite advice, and the caller cannot tell them apart from a 502:
@@ -391,6 +431,8 @@ Every vendor here caps requests **in flight**, and that cap is recorded next to 
 | DeepSeek | per model | `deepseek-v4-pro` 500, `deepseek-v4-flash` 2500 (free expansion on request) | [rate limit](https://api-docs.deepseek.com/quick_start/rate_limit) |
 | Z.ai | per model | GLM-5.1 **10**, GLM-5.2 **10**, GLM-5.3 **1**, GLM-4.7 2, GLM-4.6V-FlashX 3 | account console (`https://z.ai/manage-apikey/rate-limits`) |
 | Moonshot | per **account** tier | Tier 0 ($1) 1 · Tier 1 ($10) 50 · Tier 2 ($20) 100 · Tier 3 200 · Tier 4 400 · Tier 5 1000 | [limits](https://platform.kimi.ai/docs/pricing/limits) |
+
+**This Moonshot account is on Tier 0 — one in-flight request**, observed against the live API on 2026-08-25: a second concurrent completion came back `429 rate_limit_reached_error`, "request reached max organization concurrency: 1". Both Kimi aliases are therefore in exactly the position GLM-5.3 was in, and no code change here can move them — the tier is set by cumulative recharge (a top-up to $10 buys 50 slots), not by the model. Nothing routes to Kimi by default today; anything that starts to should top the account up first.
 
 **Why this is documented at all.** On 2026-08-20 `glm-pro` was repointed from GLM-5.2 to GLM-5.3 on the reasoning that the list price is identical, therefore the swap is drop-in, therefore callers see no contract change. The price was identical; the concurrency was not — GLM-5.3 serves **one** in-flight request against GLM-5.2's ten, so the swap kept the price and divided our throughput by ten. Three cold-email workflows contending for that single slot produced 127 rate-limit refusals in five hours and killed about half their runs; because a run reaches the LLM only after paying for its lead enrichment, roughly two thirds of what those workflows spent bought no email. Reproduced directly against the live API on 2026-08-25: six parallel completions returned **6/6 200 on `glm-5.2`** and **2/6 on `glm-5.3`**, the other four `429 code 1302 "Rate limit reached for requests"`.
 
