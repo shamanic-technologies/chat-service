@@ -332,13 +332,17 @@ A cached count larger than the prompt total is clamped: a negative fresh-token q
 
 ### Time-of-day pricing (DeepSeek only)
 
-DeepSeek charges **peak** rates during 01:00–04:00 and 06:00–10:00 UTC and **off-peak** rates at every other hour, so costs-service carries one row per regime and the regime is part of the cost name:
+DeepSeek charges **peak** rates during 01:00–04:00 and 06:00–10:00 UTC **Monday through Friday**, and **off-peak** rates at every other hour and all weekend, so costs-service carries one row per regime and the regime is part of the cost name:
 
 ```
 deepseek-v4-{flash,pro}-{peak,off-peak}-tokens-{input,cached-input,output}
 ```
 
 `buildLlmCostNames` (`src/lib/cost-names.ts`) selects the regime from the **UTC clock at declaration**, never from the date: costs-service gave both regimes an identical price point before the schedule takes effect (2026-08-16T16:00Z) and effective-dated the new rates, so the catalog resolves the right price for when the cost was written. Each window is half-open `[start, end)` — 01:00:00 is the first peak minute, 04:00:00 the first off-peak minute again — so at every instant exactly one name matches and no regime-free fallback is needed.
+
+**Weekends are off-peak.** From 00:00 Beijing on Sunday 2026-08-23 (2026-08-22T16:00Z) DeepSeek applies off-peak rates "throughout the day on weekends (Saturdays and Sundays, Beijing Time)", so a Saturday 02:00 UTC call declares the **off-peak** name even though that hour is a peak window on a weekday. The scope is dated: an instant before 2026-08-22T16:00Z still resolves to peak, which is what the vendor charged then.
+
+The vendor states its weekend in Beijing days while the selector reads the UTC weekday. The two agree only because every peak window ends by 10:00 UTC, six hours before the Beijing day rolls over at 16:00 UTC. `selectPricingRegime` asserts that rather than assuming it, and throws `AmbiguousPricingRegimeError` if the vendor ever publishes a peak window running past 16:00 UTC — at which point the day has to be evaluated in the vendor's own timezone, deliberately, instead of being silently mispriced.
 
 **One timestamp per request.** The pre-call hold and the post-call actual are built from the same `Date`, so a call that straddles a boundary cannot hold against peak and bill against off-peak.
 
