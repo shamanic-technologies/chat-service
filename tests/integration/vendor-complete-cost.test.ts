@@ -633,6 +633,154 @@ describe("POST /complete — direct vendor routing", () => {
     expect(res.body.error).not.toContain("moonshot");
   });
 
+  // -------------------------------------------------------------------------
+  // Structured output per vendor. On 2026-08-25 every deepseek-pro completion
+  // 400'd — 335 calls, zero successes, three campaigns spending and producing
+  // nothing — because the caller's responseSchema was sent to DeepSeek in the
+  // json_schema form it does not implement. These pin the shape that reaches
+  // each vendor's wire.
+  // -------------------------------------------------------------------------
+
+  const SCHEMA = {
+    type: "object",
+    properties: { subject: { type: "string" }, body: { type: "string" } },
+    required: ["subject", "body"],
+  };
+
+  for (const model of ["deepseek-flash", "deepseek-pro"] as const) {
+    it(`sends "${model}" a json_object response_format for a caller's responseSchema, and succeeds`, async () => {
+      const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+      const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+      routes.push(
+        mockRunsCreate(),
+        mockVendorKey("deepseek"),
+        mockBilling(),
+        mockVendor(vendor, {
+          host: DEEPSEEK_URL,
+          model: model === "deepseek-flash" ? "deepseek-v4-flash" : "deepseek-v4-pro",
+          usage: { prompt_tokens: 30, completion_tokens: 9 },
+          content: '{"subject":"s","body":"b"}',
+        }),
+        ...mockRunsCostRoutes(cap),
+        mockRunsStatusPatch(),
+      );
+
+      const res = await request(app)
+        .post("/complete")
+        .set(AUTH)
+        .send({
+          message: "write one",
+          systemPrompt: "be brief",
+          provider: "deepseek",
+          model,
+          responseSchema: SCHEMA,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.json).toEqual({ subject: "s", body: "b" });
+      expect(vendor.bodies[0].response_format).toEqual({ type: "json_object" });
+      // The refused form must not reach DeepSeek in any shape.
+      expect(JSON.stringify(vendor.bodies[0])).not.toContain("json_schema");
+    });
+  }
+
+  it("still sends Z.ai and Moonshot the full json_schema form — only DeepSeek differs", async () => {
+    for (const c of [
+      { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.3" },
+      { provider: "moonshot", model: "kimi-pro", host: MOONSHOT_URL, wire: "kimi-k3" },
+    ] as const) {
+      routes = [];
+      fetchCalls = [];
+      const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+      const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+      routes.push(
+        mockRunsCreate(),
+        mockVendorKey(c.provider),
+        mockBilling(),
+        mockVendor(vendor, {
+          host: c.host,
+          model: c.wire,
+          usage: { prompt_tokens: 30, completion_tokens: 9 },
+          content: '{"subject":"s","body":"b"}',
+        }),
+        ...mockRunsCostRoutes(cap),
+        mockRunsStatusPatch(),
+      );
+
+      const res = await request(app)
+        .post("/complete")
+        .set(AUTH)
+        .send({
+          message: "write one",
+          systemPrompt: "be brief",
+          provider: c.provider,
+          model: c.model,
+          responseSchema: SCHEMA,
+        });
+
+      expect(res.status).toBe(200);
+      expect(vendor.bodies[0].response_format).toEqual({
+        type: "json_schema",
+        json_schema: { name: "response", schema: SCHEMA },
+      });
+    }
+  });
+
+  it("answers 400, not 502, when the vendor refuses a request option", async () => {
+    // The caller must be able to tell a permanent configuration error from a
+    // transient one: "please try again" on a request that can never succeed is
+    // what let this burn for five hours reading as flakiness.
+    const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+    routes.push(
+      mockRunsCreate(),
+      mockVendorKey("deepseek"),
+      mockBilling(),
+      {
+        match: (url: string) => url.startsWith(DEEPSEEK_URL),
+        respond: () => ({
+          ok: false,
+          status: 400,
+          body: '{"error":{"message":"This response_format type is unavailable now","type":"invalid_request_error"}}',
+        }),
+      },
+      ...mockRunsCostRoutes(cap),
+      mockRunsStatusPatch(),
+    );
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "hi", systemPrompt: "", provider: "deepseek", model: "deepseek-pro" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.retryable).toBe(false);
+    expect(res.body.detail).toMatch(/This response_format type is unavailable now/);
+    expect(res.body.detail).toMatch(/retrying will not help/);
+    expect(res.body.error).not.toMatch(/try again/i);
+  });
+
+  it("keeps a transient vendor failure a 502 — the caller SHOULD retry that one", async () => {
+    const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+    routes.push(
+      mockRunsCreate(),
+      mockVendorKey("zai"),
+      mockBilling(),
+      {
+        match: (url: string) => url.startsWith(ZAI_URL),
+        respond: () => ({ ok: false, status: 429, body: '{"error":{"code":"1302","message":"Rate limit reached"}}' }),
+      },
+      ...mockRunsCostRoutes(cap),
+      mockRunsStatusPatch(),
+    );
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "hi", systemPrompt: "", provider: "zai", model: "glm-pro" });
+
+    expect(res.status).toBe(502);
+  });
+
   it("fails loud when the vendor is down — no substitute model, no substitute vendor", async () => {
     const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
     routes.push(
@@ -682,6 +830,32 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("answers 400, not 502, when the vendor refuses a request option", async () => {
+    routes.push(
+      mockVendorPlatformKey("deepseek"),
+      mockPlatformRunCreate(),
+      mockPlatformRunCosts({ postedItems: [] }),
+      mockPlatformRunStatus(),
+      {
+        match: (url: string) => url.startsWith(DEEPSEEK_URL),
+        respond: () => ({
+          ok: false,
+          status: 400,
+          body: '{"error":{"message":"This response_format type is unavailable now","type":"invalid_request_error"}}',
+        }),
+      },
+    );
+
+    const res = await request(app)
+      .post("/internal/platform-complete")
+      .set(INTERNAL_AUTH)
+      .send({ message: "hi", systemPrompt: "", provider: "deepseek", model: "deepseek-pro" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.retryable).toBe(false);
+    expect(res.body.detail).toMatch(/retrying will not help/);
   });
 
   it("reaches the vendor with its platform key and declares actual costs with the regime + cache split", async () => {

@@ -271,13 +271,13 @@ Response:
 
 Unlike POST /chat, this endpoint is **stateless** (no sessions), accepts an **inline systemPrompt**, and returns **JSON** instead of SSE. Run tracking and billing work identically to POST /chat.
 
-Error responses: 400 (validation), 401 (auth), 402 (insufficient credits), 502 (upstream failure).
+Error responses: 400 (validation, or a provider refusing a request option — see [Direct vendor models](#direct-vendor-models)), 401 (auth), 402 (insufficient credits), 502 (upstream failure).
 
 ## Direct vendor models
 
 A third provider path alongside the two native clients. Where `anthropic.ts` and `gemini.ts` each speak a vendor-specific dialect and carry that vendor's accumulated quirks, `src/lib/openai-compatible.ts` speaks one generic dialect — OpenAI Chat Completions — against vendors that all serve it. **One adapter, three vendors, six models.**
 
-The vendors differ in exactly four things, and all four are *data* in the `VENDORS` registry rather than code: the base URL, the key-service provider slug, where the usage payload reports cached prompt tokens, and **which price dimensions that vendor's catalog actually carries** (`pricing`). So adding a seventh model is a `MODEL_MAP` entry, and adding a fourth vendor is a `VENDORS` entry. Neither is a new client.
+The vendors differ in exactly five things, and all five are *data* in the `VENDORS` registry rather than code: the base URL, the key-service provider slug, where the usage payload reports cached prompt tokens, **which price dimensions that vendor's catalog actually carries** (`pricing`), and **which `response_format` it implements** (`structuredOutput`). So adding a seventh model is a `MODEL_MAP` entry, and adding a fourth vendor is a `VENDORS` entry. Neither is a new client.
 
 | Provider | Alias | Vendor model id | Cost prefix | Priced dimensions | Base URL |
 |---|---|---|---|---|---|
@@ -285,8 +285,8 @@ The vendors differ in exactly four things, and all four are *data* in the `VENDO
 | `deepseek` | `deepseek-pro` | `deepseek-v4-pro` | `deepseek-v4-pro` | cache + regime | `https://api.deepseek.com/v1` |
 | `zai` | `glm-flash` | `glm-4.7-flashx` | `zai-glm-4.7-flashx` | cache | `https://api.z.ai/api/paas/v4` |
 | `zai` | `glm-pro` | `glm-5.3` | `zai-glm-5.3` | cache | `https://api.z.ai/api/paas/v4` |
-| `moonshot` | `kimi-flash` | `kimi-k2.6` | `moonshot-kimi-k2.6` | none seeded → 502 | `https://api.moonshot.ai/v1` |
-| `moonshot` | `kimi-pro` | `kimi-k3` | `moonshot-kimi-k3` | none seeded → 502 | `https://api.moonshot.ai/v1` |
+| `moonshot` | `kimi-flash` | `kimi-k2.6` | `moonshot-kimi-k2.6` | cache | `https://api.moonshot.ai/v1` |
+| `moonshot` | `kimi-pro` | `kimi-k3` | `moonshot-kimi-k3` | cache | `https://api.moonshot.ai/v1` |
 
 Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`deepseek-v4-flash` stays bare; `glm-5.3` becomes `zai-glm-5.3`). These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-v4-pro-0813` is accepted; a different model is not). `glm-pro` pointed at `glm-5.2` until 2026-08-20; Z.ai publishes GLM-5.3 as a drop-in swap at an identical list price, so the alias moved and callers saw no contract change.
 
@@ -349,9 +349,38 @@ The request body deliberately carries **no** `models` fallback array, **no** `so
 
 There is likewise **no cross-vendor fallback**. A vendor being down fails loud: substituting another model would hand the caller an answer from a model it did not choose and bill it under a name that does not describe what ran.
 
-### JSON mode is best-effort here
+### JSON mode is per-vendor, and best-effort here
 
-`responseSchema` is forwarded as native `response_format: { type: "json_schema", ... }`, but enforcement strength varies by vendor and model, so the request may reach a model that treats it as a hint. This is not a silent fallback: `parseModelJsonOutput` still fails loud (502) on output it cannot read. It is also precisely what a bake-off has to measure before any existing caller is migrated onto one of these models.
+"OpenAI-compatible" describes the request *shape*, not which values inside it a vendor implements — and structured output is where the three diverge. Each states the strongest `response_format` it accepts in `VENDORS[...].structuredOutput`:
+
+| Vendor | `response_format` accepted | Evidence |
+|---|---|---|
+| `deepseek` | `{ type: "json_object" }` only | [JSON-output guide](https://api-docs.deepseek.com/guides/json_mode) documents no other value; the API answers the `json_schema` form `400 "This response_format type is unavailable now"` on both v4 models (probed 2026-08-25) |
+| `zai` | `{ type: "json_schema", ... }` | live API returns 200 for the schema form (probed 2026-08-25) |
+| `moonshot` | `{ type: "json_schema", ... }` | live API returns 200 for the schema form (probed 2026-08-25) |
+
+A caller's `responseSchema` is forwarded as `json_schema` to a vendor that implements it, and as that vendor's own `json_object` mode to one that does not. The second case is **not a fallback**: the caller gets the model it asked for, under the strongest enforcement that vendor offers, and the schema simply has nowhere to travel — the vendor has no field for it. What we must never do is send a form the vendor refuses, which is not stricter, it is zero completions.
+
+Enforcement strength therefore varies by vendor and model, and a request may reach a model that treats JSON mode as a hint. This is still not silent: `parseModelJsonOutput` fails loud (**502**) on output it cannot read, and a schema mismatch surfaces to the caller rather than being repaired. It is also precisely what a bake-off has to measure before any existing caller is migrated onto one of these models.
+
+**A vendor added later declares its own value after probing the live API** — the docs are not sufficient (Z.ai's reference lists only `text`/`json_object`, while its API accepts the schema form). `tests/unit/openai-compatible.test.ts` fails until the value is declared.
+
+### A refused request option is a 400, not a 502
+
+The two ways a vendor call fails need opposite advice, and the caller cannot tell them apart from a 502:
+
+- **Transient** — the vendor is down, rate-limited, out of credit, or the socket died. `502 "LLM call failed. Please try again."` Retrying is honest advice.
+- **The request shape was refused** (HTTP `400`/`422` from the vendor) — an unsupported `response_format`, a parameter the vendor does not implement. This throws `VendorUnsupportedOptionError` and both completion routes answer **400** with `retryable: false` and the vendor's own message in `detail`. Retrying cannot help; something has to change.
+
+```json
+{
+  "error": "Provider rejected a request option.",
+  "detail": "[vendor:deepseek] DeepSeek rejected the request as sent (400 from deepseek-v4-pro): {\"error\":{\"message\":\"This response_format type is unavailable now\",...}}. This is a request-configuration error — retrying will not help. Vendor docs: https://api-docs.deepseek.com",
+  "retryable": false
+}
+```
+
+Deliberately narrow: `401`, `402` (empty balance), `404`, `429` and every `5xx` stay a 502 — those are account state or genuine outages that clear on their own. This is the last line of defence, not the first: the capability table above is what stops us sending a refused option at all. It exists because on 2026-08-25 a permanently-refused option looked like flakiness for five hours — 335 `deepseek-pro` calls, zero successes, three campaigns spending and producing nothing.
 
 ### Retry behaviour
 
@@ -419,7 +448,7 @@ Use this endpoint when a service needs an LLM call during startup or for platfor
 
 Response format is identical to `POST /complete`.
 
-Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
+Error responses: 400 (validation, or a provider refusing a request option — see [Direct vendor models](#direct-vendor-models)), 401 (auth), 502 (upstream failure).
 
 ## Internal Platform Image Generation
 
