@@ -234,7 +234,7 @@ describe("POST /complete — direct vendor routing", () => {
   const CASES = [
     { provider: "deepseek", model: "deepseek-flash", host: DEEPSEEK_URL, wire: "deepseek-v4-flash", prefix: "deepseek-v4-flash-peak" },
     { provider: "deepseek", model: "deepseek-pro", host: DEEPSEEK_URL, wire: "deepseek-v4-pro", prefix: "deepseek-v4-pro-peak" },
-    { provider: "zai", model: "glm-flash", host: ZAI_URL, wire: "glm-4.7-flashx", prefix: "zai-glm-4.7-flashx" },
+    { provider: "zai", model: "glm-flash", host: ZAI_URL, wire: "glm-5.3-flash", prefix: "zai-glm-5.3-flash" },
     { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.3", prefix: "zai-glm-5.3" },
   ] as const;
 
