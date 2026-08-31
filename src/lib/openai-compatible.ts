@@ -331,6 +331,25 @@ export type VendorReasoning =
       /** Merged into the request body when reasoning is being turned off. */
       requestFields: Record<string, unknown>;
       /**
+       * Vendor model ids whose field is spelled DIFFERENTLY from the vendor
+       * default above, and what to send instead.
+       *
+       * The field name is a property of the vendor right up until the vendor
+       * changes it mid-generation, which Z.ai did: GLM-5.2 and GLM-4.7-FlashX
+       * take `thinking: {"type":"disabled"}` while the whole GLM-5.3 family
+       * refuses it (`400 code 1210 — "This model always engages in thinking and
+       * cannot be disabled; please use low, high, or max"`) and takes
+       * `reasoning_effort` instead. So one entry per vendor is not enough to
+       * describe a vendor, and a model absent here uses `requestFields`.
+       *
+       * Note this is the OPPOSITE of what the same field name does one
+       * generation earlier: `reasoning_effort: "minimal"` made GLM-5.2 think
+       * MORE (4,353 reasoning chars against a 1,035 baseline). A field name
+       * that helps on one model and hurts on its predecessor is exactly why
+       * this is per-model DATA and never inferred from a sibling.
+       */
+      perModel?: Record<string, Record<string, unknown>>;
+      /**
        * Vendor model ids that REFUSE this field, and what the vendor answers.
        *
        * Recorded, not worked around. A model listed here still gets the field
@@ -549,22 +568,37 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // segment. Inventing one here would name a row that does not exist.
     pricing: { kind: "priced", cachedInput: true, regime: null },
     // Z.ai is the vendor where this number decides the alias, and it does NOT
-    // track the price: GLM-5.1, 5.2 and 5.3 all list at $1.4/$4.4 per 1M while
-    // 5.3 serves ONE in-flight request against 5.2's ten. Its rate-limit page
-    // is behind the account console rather than the public docs, so the table
-    // is copied here verbatim, and confirmed against the live API on the same
-    // day: six parallel completions returned 6/6 200 on glm-5.2 and 2/6 on
-    // glm-5.3, the other four `429 {"error":{"code":"1302","message":"Rate
-    // limit reached for requests"}}`.
+    // track the price: GLM-5.1, 5.2 and 5.3 all list at $1.4/$4.4 per 1M on
+    // wildly different parallelism. It is also the number Z.ai MOVES: 5.3
+    // served ONE in-flight request when it launched (which is what took
+    // `glm-pro` off it on 2026-08-25 after three campaigns contended for that
+    // slot) and serves FIFTEEN as of 2026-08-31. So this table is a snapshot
+    // with a date on it, never a property of the model — re-read the console
+    // before concluding anything about a model from a value here.
+    //
+    // The rate-limit page is behind the account console rather than the public
+    // docs, so the table is copied verbatim and confirmed against the live API
+    // the same day: twelve parallel completions returned 12/12 200 on both
+    // glm-5.3 and glm-5.3-flash, against 2/6 on glm-5.3 six days earlier.
     //
     // glm-4.7-flashx (our `glm-flash`) is not listed in that table; the value
     // is recorded only where the vendor publishes one, never inferred from a
     // sibling model.
     concurrency: {
       scope: "per-model",
-      limits: { "glm-5.1": 10, "glm-5.2": 10, "glm-5.3": 1, "glm-4.7": 2, "glm-4.6v-flashx": 3 },
+      limits: {
+        "glm-4.6": 3,
+        "glm-4.6v-flashx": 3,
+        "glm-4.7": 2,
+        "glm-5-turbo": 1,
+        "glm-5v-turbo": 1,
+        "glm-5.1": 10,
+        "glm-5.2": 10,
+        "glm-5.3": 15,
+        "glm-5.3-flash": 50,
+      },
       source: "https://z.ai/manage-apikey/rate-limits (account console; login required)",
-      observedOn: "2026-08-25",
+      observedOn: "2026-08-31",
     },
     // json_schema accepted. Z.ai's reference lists only text/json_object, but
     // the live API answers 200 to the json_schema form — probed 2026-08-25
@@ -581,29 +615,41 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // clearest possible demonstration that the field name is a per-vendor fact
     // and not a guess.
     //
-    // GLM-5.3 REFUSES the field outright and is recorded rather than special-
-    // cased: nothing routes to it today (`glm-pro` was moved back to 5.2 after
-    // the concurrency incident), and if anything ever does, its refusal must
-    // reach the caller as a 400 in Z.ai's own words instead of being quietly
-    // dropped into a bill nobody reads.
+    // The GLM-5.3 family spells it DIFFERENTLY, which is why `perModel` exists.
+    // `thinking: {"type":"disabled"}` is a hard `400 code 1210 — "This model
+    // always engages in thinking and cannot be disabled; please use low, high,
+    // or max"` on both 5.3 and 5.3-flash, and the vendor's own message names
+    // the replacement: `reasoning_effort`, which takes low | high | max and
+    // NOTHING else ("minimal" is refused by the same 1210).
+    //
+    // On 5.3-flash `reasoning_effort: "low"` is not merely lower, it is silent:
+    // 0 reasoning chars against a 216-char control on the identical prompt.
+    // Left unsent, the family is unusable for structured work — a 2,000-token
+    // cap went entirely to reasoning and returned a ZERO-character answer,
+    // twice.
+    //
+    // Note the inversion against the generation below it: `reasoning_effort:
+    // "minimal"` made GLM-5.2 think MORE (4,353 chars). Same vendor, same field
+    // name, opposite effect one model apart — no value here is transferable by
+    // family resemblance, and every one of them was probed live.
     reasoning: {
       kind: "disablable",
       requestFields: { thinking: { type: "disabled" } },
-      refusedBy: {
-        // Verbatim, 2026-08-25: `400 {"error":{"code":"1210","message":"This model always
-        // engages in thinking and cannot be disabled; please use low, high, or max"}}`. It also
-        // burned the entire 2,000-token cap on reasoning and returned a ZERO-character answer
-        // when forced to think, which is the other half of why the alias no longer points at it.
-        "glm-5.3":
-          'Z.ai 400 code 1210 — "This model always engages in thinking and cannot be disabled; ' +
-          'please use low, high, or max" (observed 2026-08-25).',
+      perModel: {
+        "glm-5.3": { reasoning_effort: "low" },
+        "glm-5.3-flash": { reasoning_effort: "low" },
       },
+      refusedBy: {},
       source: "https://docs.z.ai/api-reference/llm/chat-completion",
       evidence:
         "Probed 2026-08-25 on glm-5.2: 703→389 out tok (answer 1,955→1,565 chars), reasoning " +
         "1,035→0 chars; on glm-4.7-flashx 1,036→329 out tok (answer 2,091→1,433 chars). An " +
         "unknown key on the same prompt left reasoning at 3,431 chars, and reasoning_effort:" +
-        "'minimal' raised it to 4,353.",
+        "'minimal' raised it to 4,353. Re-probed 2026-08-31 on the 5.3 family: thinking:" +
+        "{type:'disabled'} and thinking:{type:'low'} both 400 (code 1210), reasoning_effort:" +
+        "'minimal' likewise; reasoning_effort:'low' took glm-5.3-flash from 50 out tok / 216 " +
+        "reasoning chars to 3 out tok / 0 reasoning chars on a short prompt, and on the " +
+        "structured cold-email prompt to 514 out tok / 0 reasoning chars against glm-5.2's 531.",
     },
     // Z.ai answers an empty balance with a 429 — the same status as a rate
     // limit — and separates the two in the body: code 1113, "Insufficient
@@ -940,6 +986,22 @@ export function shouldDisableVendorReasoning(options: VendorCompleteOptions): bo
   return isStructuredRequest(options);
 }
 
+/**
+ * The reasoning-off fields for THIS model on THIS vendor.
+ *
+ * A per-model entry wins outright over the vendor default rather than merging
+ * with it: the two spellings are alternatives, not layers, and sending both
+ * would hand a model a field it refuses (`thinking` on the GLM-5.3 family is a
+ * hard 400) alongside the one it accepts. Whole-value replacement keeps the
+ * request to exactly what the vendor documented for that model.
+ */
+export function vendorReasoningFields(
+  reasoning: Extract<VendorReasoning, { kind: "disablable" }>,
+  model: string,
+): Record<string, unknown> {
+  return reasoning.perModel?.[model] ?? reasoning.requestFields;
+}
+
 export function buildVendorRequestBody(options: VendorCompleteOptions): Record<string, unknown> {
   const { model, message, systemPrompt, responseFormat, responseSchema, temperature, maxOutputTokens } = options;
 
@@ -987,7 +1049,7 @@ export function buildVendorRequestBody(options: VendorCompleteOptions): Record<s
   // the one thing worth knowing: that this model cannot do the job cheaply.
   const { reasoning } = vendorConfig(options.vendor);
   if (reasoning.kind === "disablable" && shouldDisableVendorReasoning(options)) {
-    Object.assign(body, reasoning.requestFields);
+    Object.assign(body, vendorReasoningFields(reasoning, model));
   }
 
   return body;

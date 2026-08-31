@@ -201,7 +201,7 @@ Request body:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
   - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.7 Flash), `pro` (most powerful, Gemini 3.1 Pro). All require a Google API key in key-service.
   - **deepseek**: `deepseek-flash` (DeepSeek V4 Flash — cheapest per unit of intelligence, 1M context), `deepseek-pro` (DeepSeek V4 Pro — the reasoning-heavy sibling)
-  - **zai**: `glm-flash` (`glm-4.7-flashx` — fast and very cheap), `glm-pro` (`glm-5.2` — Z.ai's flagship, 10 concurrent requests)
+  - **zai**: `glm-flash` (`glm-4.7-flashx` — fast and very cheap), `glm-pro` (`glm-5.3` — Z.ai's flagship, 15 concurrent requests)
   - **moonshot**: `kimi-flash` (`kimi-k2.6` — value tier), `kimi-pro` (`kimi-k3` — flagship, 1M context)
 
   The three direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400 on every one of their models. Each needs its OWN key in key-service, stored under its provider slug.
@@ -285,11 +285,11 @@ The vendors differ in exactly six things, and all six are *data* in the `VENDORS
 | `deepseek` | `deepseek-flash` | `deepseek-v4-flash` | `deepseek-v4-flash` | cache + regime | `https://api.deepseek.com/v1` |
 | `deepseek` | `deepseek-pro` | `deepseek-v4-pro` | `deepseek-v4-pro` | cache + regime | `https://api.deepseek.com/v1` |
 | `zai` | `glm-flash` | `glm-4.7-flashx` | `zai-glm-4.7-flashx` | cache | `https://api.z.ai/api/paas/v4` |
-| `zai` | `glm-pro` | `glm-5.2` | `zai-glm-5.2` | cache | `https://api.z.ai/api/paas/v4` |
+| `zai` | `glm-pro` | `glm-5.3` | `zai-glm-5.3` | cache | `https://api.z.ai/api/paas/v4` |
 | `moonshot` | `kimi-flash` | `kimi-k2.6` | `moonshot-kimi-k2.6` | cache | `https://api.moonshot.ai/v1` |
 | `moonshot` | `kimi-pro` | `kimi-k3` | `moonshot-kimi-k3` | cache | `https://api.moonshot.ai/v1` |
 
-Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`deepseek-v4-flash` stays bare; `glm-5.2` becomes `zai-glm-5.2`). These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-v4-pro-0813` is accepted; a different model is not). `glm-pro` was moved to `glm-5.3` on 2026-08-20 and moved back on 2026-08-25 — see [Concurrency is part of the model choice](#concurrency-is-part-of-the-model-choice).
+Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`deepseek-v4-flash` stays bare; `glm-5.3` becomes `zai-glm-5.3`). These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-v4-pro-0813` is accepted; a different model is not). `glm-pro` went to `glm-5.3` on 2026-08-20, back to `glm-5.2` on 2026-08-25, and to `glm-5.3` again on 2026-08-31 — see [Concurrency is part of the model choice](#concurrency-is-part-of-the-model-choice).
 
 **Scope.** `/complete` and `/internal/platform-complete` only, non-streaming, text in / text out. Not wired: `/chat` (agentic tool-calling is unproven on these models and must be measured first), web search, image input, image generation, embeddings. `webSearch` or `imageUrl` on any of these providers returns **400** naming the vendor, rather than silently answering ungrounded or blind.
 
@@ -396,7 +396,18 @@ Thirty times the output for the same three emails. So a request that asks for st
 
 The answers survive. On Kimi the answer got *longer* once the reasoning stopped — it was replacing the answer, not feeding it. DeepSeek barely reasons to begin with (144 chars on Flash), so it is the one vendor where the change is close to a wash and Flash spends slightly more, on a longer answer.
 
-**The field name is per-vendor data, and a wrong one is silent.** All three currently take `thinking: {"type": "disabled"}`, which is a fact about these three rather than a rule — DeepSeek and Z.ai both answer **200** to an unknown top-level key and keep reasoning at full volume, so a field name borrowed from another vendor looks exactly like success on the invoice. Probed on the same prompt, `enable_thinking: false` and `reasoning_effort` were ignored by DeepSeek and Moonshot, and `reasoning_effort: "minimal"` made GLM-5.2 think *more* (4,353 reasoning chars, 1,384 output tokens). Each vendor states its own field in `VENDORS[...].reasoning`, with the measurement that justified it.
+**The field name is per-vendor data AND per-model data, and a wrong one is silent.** The baseline for all three is `thinking: {"type": "disabled"}`, which is a fact about these three rather than a rule — DeepSeek and Z.ai both answer **200** to an unknown top-level key and keep reasoning at full volume, so a field name borrowed from another vendor looks exactly like success on the invoice. Probed on the same prompt, `enable_thinking: false` and `reasoning_effort` were ignored by DeepSeek and Moonshot, and `reasoning_effort: "minimal"` made GLM-5.2 think *more* (4,353 reasoning chars, 1,384 output tokens).
+
+Z.ai then changed the spelling one model later, which is why `VENDORS[...].reasoning.perModel` exists. The **GLM-5.3 family refuses `thinking` outright** — `400 code 1210 "This model always engages in thinking and cannot be disabled; please use low, high, or max"`, on both GLM-5.3 and GLM-5.3-Flash — and takes `reasoning_effort` instead, which accepts `low | high | max` and nothing else (`"minimal"` draws the same 1210). Note that this is the *opposite* of what the same field name does one generation down, where `reasoning_effort` made GLM-5.2 reason harder. Probed 2026-08-31 on GLM-5.3-Flash:
+
+| Request | Output tokens | Reasoning chars | Answer chars |
+|---|---:|---:|---:|
+| plain (control, short prompt) | 50 | 216 | 5 |
+| `reasoning_effort: "low"` | **3** | **0** | 5 |
+| `thinking: {"type":"disabled"}` | — | — | `400` code 1210 |
+| structured cold-email prompt, `reasoning_effort: "low"` | **514** | **0** | 2,159 |
+
+Left unsent, the family is not merely more expensive — it is unusable: a 2,000-token cap went **entirely** to reasoning and returned a zero-character answer, twice. A per-model entry REPLACES the vendor default rather than merging with it; sending both would hand the model the field it refuses alongside the one it accepts, and the refusal fails the whole request. Each vendor states its own fields in `VENDORS[...].reasoning`, with the measurement that justified them.
 
 **Free-text requests are untouched.** The default keeps provider-normal behaviour for anything that is not structured output: that is the half where reasoning may genuinely shape the answer, and there is no measurement here saying it is safe to take away. The saving is claimed only where the evidence is.
 
@@ -408,7 +419,9 @@ The answers survive. On Kimi the answer got *longer* once the reasoning stopped 
 | `false` | reasoning **on** | provider-normal |
 | `true` | reasoning **off** | reasoning **off** |
 
-**A model that refuses the option fails loud.** GLM-5.3 answers `400 code 1210 "This model always engages in thinking and cannot be disabled; please use low, high, or max"` (and, when forced to think, burned the entire 2,000-token cap on reasoning and returned a **zero-character answer**). It is recorded in `VENDORS.zai.reasoning.refusedBy` and the field is still sent: the request surfaces as a **400** carrying Z.ai's own words plus a line naming the option that was refused. Quietly dropping the field for a known-refusing model would hide the one fact worth acting on — that this model cannot serve a structured workload without being billed for reasoning — behind an invoice nobody reads. Nothing routes to GLM-5.3 today; the record is there for whoever points an alias at it next.
+**A model that refuses EVERY spelling fails loud.** `refusedBy` records a model with no working control at all, and the field is still sent: the request surfaces as a **400** carrying the vendor's own words plus a line naming the option that was refused. Quietly dropping it would hide the one fact worth acting on — that this model cannot serve a structured workload without being billed for reasoning — behind an invoice nobody reads.
+
+`refusedBy` is **empty today**, and that is the point of `perModel`. GLM-5.3 sat in it until 2026-08-31, when the right field name turned out to exist; the fix was to learn the spelling rather than to keep failing loudly at a model that works. A unit test walks every declared alias and fails the build if one resolves to a model listed here — an alias sent a field its model refuses is exactly the 2026-08-25 regression, where every structured call 400'd.
 
 **Vendors with no such control** declare `reasoning: {kind: "none", reason}` and are documented as unaffected — nothing is added to their request body. All three current vendors have a control; a fourth states its own after probing the live API, and `tests/unit/openai-compatible.test.ts` fails until it does.
 
@@ -436,14 +449,22 @@ Every vendor here caps requests **in flight**, and that cap is recorded next to 
 | Vendor | Scope | Published limits | Source |
 |---|---|---|---|
 | DeepSeek | per model | `deepseek-v4-pro` 500, `deepseek-v4-flash` 2500 (free expansion on request) | [rate limit](https://api-docs.deepseek.com/quick_start/rate_limit) |
-| Z.ai | per model | GLM-5.1 **10**, GLM-5.2 **10**, GLM-5.3 **1**, GLM-4.7 2, GLM-4.6V-FlashX 3 | account console (`https://z.ai/manage-apikey/rate-limits`) |
+| Z.ai | per model | GLM-5.3-Flash **50**, GLM-5.3 **15**, GLM-5.1 **10**, GLM-5.2 **10**, GLM-4.6 3, GLM-4.6V-FlashX 3, GLM-4.7 2, GLM-5-Turbo 1, GLM-5V-Turbo 1 (read 2026-08-31) | account console (`https://z.ai/manage-apikey/rate-limits`) |
 | Moonshot | per **account** tier | Tier 0 ($1) 1 · Tier 1 ($10) 50 · Tier 2 ($20) 100 · Tier 3 200 · Tier 4 400 · Tier 5 1000 | [limits](https://platform.kimi.ai/docs/pricing/limits) |
 
 **This Moonshot account is on Tier 0 — one in-flight request**, observed against the live API on 2026-08-25: a second concurrent completion came back `429 rate_limit_reached_error`, "request reached max organization concurrency: 1". Both Kimi aliases are therefore in exactly the position GLM-5.3 was in, and no code change here can move them — the tier is set by cumulative recharge (a top-up to $10 buys 50 slots), not by the model. Nothing routes to Kimi by default today; anything that starts to should top the account up first.
 
 **Why this is documented at all.** On 2026-08-20 `glm-pro` was repointed from GLM-5.2 to GLM-5.3 on the reasoning that the list price is identical, therefore the swap is drop-in, therefore callers see no contract change. The price was identical; the concurrency was not — GLM-5.3 serves **one** in-flight request against GLM-5.2's ten, so the swap kept the price and divided our throughput by ten. Three cold-email workflows contending for that single slot produced 127 rate-limit refusals in five hours and killed about half their runs; because a run reaches the LLM only after paying for its lead enrichment, roughly two thirds of what those workflows spent bought no email. Reproduced directly against the live API on 2026-08-25: six parallel completions returned **6/6 200 on `glm-5.2`** and **2/6 on `glm-5.3`**, the other four `429 code 1302 "Rate limit reached for requests"`.
 
-`glm-pro` therefore resolves to **GLM-5.2**, and GLM-5.3 is deliberately not reachable under any alias — exposing it would leave the one-slot trap available to the next caller. `publishedConcurrency(vendor, modelId)` returns `null` where a vendor publishes nothing (e.g. `glm-4.7-flashx`); that is an honest "not published", never a number inferred from a sibling model. A unit test walks every declared alias and fails the build if one resolves to a model published at a single slot.
+**What changed on 2026-08-31.** Z.ai raised the published limits: GLM-5.3 now serves **15** in-flight requests and a new GLM-5.3-Flash serves **50**. Re-measured against the live API the same day, twelve parallel completions returned **12/12 200** on both, against 2/6 on GLM-5.3 six days earlier. `glm-pro` therefore resolves to **GLM-5.3** again — this time checked on all three axes that the first swap collapsed into one:
+
+| Axis | 2026-08-20 swap | 2026-08-31 swap |
+|---|---|---|
+| Price | identical ($1.4 / $0.26 / $4.4 per 1M) — the only axis compared | identical, unchanged |
+| Published concurrency | **not checked** — 10 → 1 | 10 → **15**, confirmed 12/12 live |
+| Reasoning control | **not checked** — the model refuses `thinking` | works under `reasoning_effort`, 514 output tokens against GLM-5.2's 531 |
+
+The lesson is not "GLM-5.3 was bad", it is that a swap justified on one axis is unjustified. `publishedConcurrency(vendor, modelId)` returns `null` where a vendor publishes nothing (e.g. `glm-4.7-flashx`); that is an honest "not published", never a number inferred from a sibling model. A unit test walks every declared alias and fails the build if one resolves to a model published at a single slot, and a second one fails if an alias resolves to a model recorded as refusing the reasoning field it is sent.
 
 ### Retry behaviour
 
