@@ -191,30 +191,37 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       costPrefix: "zai-glm-4.7-flashx",
       provider: "zai",
     },
-    // GLM-5.2. Z.ai's flagship tier at the concurrency we actually use it at.
+    // GLM-5.3. Z.ai's flagship tier, at the concurrency we can actually run it
+    // at — which is a different sentence today than it was a week ago.
     //
-    // This alias was moved to GLM-5.3 on 2026-08-20 and moved back on
-    // 2026-08-25. The 5.3 swap was justified on price — identical list price
-    // ($1.4 / $0.26 cached / $4.4 per 1M), therefore "drop-in", therefore "no
-    // contract change" — and price was the only axis compared. Z.ai's published
-    // rate limits cap requests IN FLIGHT per model, and there the two models are
-    // not interchangeable at all: GLM-5.2 serves 10 concurrent requests, GLM-5.3
-    // serves ONE. So the swap held the price and divided our throughput by ten.
+    // This alias went 5.2 → 5.3 on 2026-08-20, back to 5.2 on 2026-08-25, and
+    // to 5.3 again on 2026-08-31. Worth reading the whole arc before moving it
+    // a fourth time, because the two moves failed for opposite reasons:
     //
-    // What that cost, measured: three cold-email workflows sharing that single
-    // slot produced 127 rate-limit refusals in five hours and killed about half
-    // their runs — and a run that dies at the LLM has already paid for its lead
-    // enrichment, so roughly two thirds of what those workflows spent bought no
-    // email. Reproduced directly against the live API on 2026-08-25: six
-    // parallel completions returned 6/6 200 on glm-5.2 and 2/6 on glm-5.3.
+    //   The 2026-08-20 swap was justified on PRICE ALONE — identical list price
+    //   ($1.4 / $0.26 cached / $4.4 per 1M), therefore "drop-in". Z.ai caps
+    //   requests IN FLIGHT per model, and on that axis the models were not
+    //   interchangeable at all: 5.2 served ten, 5.3 served ONE. Three cold-email
+    //   workflows sharing that slot produced 127 rate-limit refusals in five
+    //   hours and killed about half their runs — and a run that dies at the LLM
+    //   has already paid for its lead enrichment, so roughly two thirds of what
+    //   those workflows spent bought no email.
     //
-    // GLM-5.3 is deliberately NOT reachable under another alias. Nothing needs
-    // it (it is the same price and the same tier), and leaving it exposed leaves
-    // the one-slot trap available to the next caller. Adding it back would mean
-    // pairing it with a real serialisation story, not just an enum entry.
+    //   The 2026-08-31 move is justified on the two axes that failed before,
+    //   both re-measured against the live API rather than inferred: Z.ai raised
+    //   5.3 to FIFTEEN in-flight requests (12/12 parallel completions returned
+    //   200, against 2/6 six days earlier), and the reasoning control that 5.3
+    //   refuses under `thinking` works under `reasoning_effort` — see the
+    //   `perModel` entry in openai-compatible.ts. Structured output costs 514
+    //   output tokens against 5.2's 531, at the same price.
+    //
+    // What did NOT change is the rule the first swap broke: price is one axis
+    // of three. A model is reachable here when its price, its published
+    // concurrency AND its reasoning control have each been checked, and a
+    // regression test fails the build if an alias lands on a one-slot model.
     "glm-pro": {
-      apiModelId: "glm-5.2",
-      costPrefix: "zai-glm-5.2",
+      apiModelId: "glm-5.3",
+      costPrefix: "zai-glm-5.3",
       provider: "zai",
     },
   },
