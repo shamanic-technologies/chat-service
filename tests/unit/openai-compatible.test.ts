@@ -14,6 +14,7 @@ import {
   parseRetryAfterMs,
   publishedConcurrency,
   shouldDisableVendorReasoning,
+  vendorReasoningFields,
   VENDORS,
   VENDOR_IDS,
   type VendorId,
@@ -32,7 +33,7 @@ const ALIASES = [
   { provider: "deepseek", alias: "deepseek-flash", modelId: "deepseek-v4-flash", prefix: "deepseek-v4-flash" },
   { provider: "deepseek", alias: "deepseek-pro", modelId: "deepseek-v4-pro", prefix: "deepseek-v4-pro" },
   { provider: "zai", alias: "glm-flash", modelId: "glm-4.7-flashx", prefix: "zai-glm-4.7-flashx" },
-  { provider: "zai", alias: "glm-pro", modelId: "glm-5.2", prefix: "zai-glm-5.2" },
+  { provider: "zai", alias: "glm-pro", modelId: "glm-5.3", prefix: "zai-glm-5.3" },
   { provider: "moonshot", alias: "kimi-flash", modelId: "kimi-k2.6", prefix: "moonshot-kimi-k2.6" },
   { provider: "moonshot", alias: "kimi-pro", modelId: "kimi-k3", prefix: "moonshot-kimi-k3" },
 ] as const;
@@ -879,7 +880,8 @@ describe("published vendor concurrency", () => {
 
   it("reads a per-model limit and refuses to invent one it was never given", () => {
     expect(publishedConcurrency("zai", "glm-5.2")).toBe(10);
-    expect(publishedConcurrency("zai", "glm-5.3")).toBe(1);
+    expect(publishedConcurrency("zai", "glm-5.3")).toBe(15);
+    expect(publishedConcurrency("zai", "glm-5.3-flash")).toBe(50);
     expect(publishedConcurrency("deepseek", "deepseek-v4-pro")).toBe(500);
     // glm-4.7-flashx has no published row. Null is the honest answer — reading
     // it off the sibling glm-4.7 would be a number the vendor never gave us.
@@ -904,9 +906,13 @@ describe("published vendor concurrency", () => {
   });
 
   it("keeps glm-pro on the flagship that serves our parallelism", () => {
+    // The number this pins moved twice: 5.3 served ONE slot on 2026-08-25
+    // (which is why the alias sat on 5.2) and fifteen on 2026-08-31. The
+    // assertion is on the CONCURRENCY, not on the model id, because the id is
+    // whichever flagship currently clears the bar.
     const resolved = resolveModel("zai", "glm-pro");
-    expect(resolved.apiModelId).toBe("glm-5.2");
-    expect(publishedConcurrency("zai", resolved.apiModelId)).toBe(10);
+    expect(resolved.apiModelId).toBe("glm-5.3");
+    expect(publishedConcurrency("zai", resolved.apiModelId)).toBe(15);
   });
 });
 
@@ -1037,20 +1043,65 @@ describe("buildVendorRequestBody — reasoning", () => {
     expect(body.thinking).toEqual({ type: "disabled" });
   });
 
-  it("still sends the field to a model recorded as REFUSING it — a refusal is information", () => {
-    // GLM-5.3 answers 400. Dropping the field for it would hide the one fact
-    // worth knowing (this model cannot serve a structured workload without
-    // being billed for reasoning) behind an invoice nobody reads.
+  it("sends the GLM-5.3 family its OWN field name, not the vendor default", () => {
+    // The vendor changed the spelling mid-generation: 5.2 takes `thinking`,
+    // the 5.3 family hard-400s it (code 1210) and takes `reasoning_effort`.
+    // Sending the default here is not a degraded request, it is zero
+    // completions — which is exactly how the DeepSeek json_schema incident
+    // looked for five hours.
+    for (const model of ["glm-5.3", "glm-5.3-flash"]) {
+      const body = buildVendorRequestBody({
+        vendor: "zai",
+        apiKey: "k",
+        model,
+        message: "m",
+        responseSchema: schema,
+      });
+      expect(body.reasoning_effort).toBe("low");
+      // Both together would hand the model the field it refuses alongside the
+      // one it accepts, and the refusal is a 400 for the whole request.
+      expect(body.thinking).toBeUndefined();
+    }
+  });
+
+  it("leaves the models that take the vendor default untouched by perModel", () => {
+    const body = buildVendorRequestBody({
+      vendor: "zai",
+      apiKey: "k",
+      model: "glm-4.7-flashx",
+      message: "m",
+      responseSchema: schema,
+    });
+    expect(body.thinking).toEqual({ type: "disabled" });
+    expect(body.reasoning_effort).toBeUndefined();
+  });
+
+  it("adds nothing to a free-text request on a perModel model", () => {
     const body = buildVendorRequestBody({
       vendor: "zai",
       apiKey: "k",
       model: "glm-5.3",
       message: "m",
-      responseSchema: schema,
     });
-    expect(body.thinking).toEqual({ type: "disabled" });
-    const zai = VENDORS.zai.reasoning;
-    expect(zai.kind === "disablable" && zai.refusedBy["glm-5.3"]).toBeTruthy();
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.thinking).toBeUndefined();
+  });
+
+  it("never sends a production alias a reasoning field its model is recorded as refusing", () => {
+    // The 2026-08-25 regression in one assertion: glm-pro pointed at a model
+    // that refused the field it was being sent, so every structured call 400'd.
+    // An alias whose model refuses its own field is a broken alias, and the
+    // refusal must be visible here rather than in prod.
+    for (const { provider, alias, modelId } of ALIASES) {
+      const { reasoning } = VENDORS[provider as VendorId];
+      if (reasoning.kind !== "disablable") continue;
+      const fields = vendorReasoningFields(reasoning, modelId);
+      expect(Object.keys(fields).length).toBeGreaterThan(0);
+      expect(
+        reasoning.refusedBy[modelId],
+        `alias ${alias} resolves to ${modelId}, which REFUSES the field it is sent`,
+      ).toBeUndefined();
+    }
   });
 
   it("does not carry a routing or fallback knob alongside it", () => {
@@ -1078,7 +1129,7 @@ describe("a vendor refusing to disable reasoning", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("fails loud with the vendor's own words and names the refused option", async () => {
+  it("fails loud with the vendor's own words on a refused request shape", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 400,
@@ -1096,10 +1147,40 @@ describe("a vendor refusing to disable reasoning", () => {
 
     await expect(call).rejects.toThrow(VendorUnsupportedOptionError);
     await expect(call).rejects.toThrow(/thinking is not supported for this model/);
-    await expect(call).rejects.toThrow(/asked Z\.ai to disable reasoning/);
-    // Permanent: refused on the FIRST call, never replayed (the three
-    // assertions above await the one promise, so one fetch).
+    // Permanent: refused on the FIRST call, never replayed (the assertions
+    // above await the one promise, so one fetch).
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the refused option when the model is recorded as refusing EVERY spelling", async () => {
+    // `refusedBy` is empty today and that is the point of `perModel`: GLM-5.3
+    // used to sit in it, and the fix was to learn the field name it DOES take
+    // rather than to keep failing loudly. What stays behind it is the case
+    // perModel cannot answer — a model with no working spelling at all — so the
+    // note is exercised against an injected entry rather than deleted with the
+    // last real one.
+    const zai = VENDORS.zai.reasoning;
+    if (zai.kind !== "disablable") throw new Error("zai must be disablable");
+    zai.refusedBy["glm-fictional-always-thinks"] = "Z.ai 400 code 1210 — always engages in thinking.";
+    try {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        text: async () => "always engages in thinking",
+      }) as unknown as typeof fetch;
+
+      await expect(
+        completeWithVendor({
+          vendor: "zai",
+          apiKey: "k",
+          model: "glm-fictional-always-thinks",
+          message: "m",
+          responseSchema: { type: "object" },
+        }),
+      ).rejects.toThrow(/asked Z\.ai to disable reasoning/);
+    } finally {
+      delete zai.refusedBy["glm-fictional-always-thinks"];
+    }
   });
 
   it("does not blame the reasoning option for an unrelated 400", async () => {

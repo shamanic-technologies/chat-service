@@ -449,7 +449,7 @@ export const CompleteRequestSchema = z
         "**google:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.7 Flash), `pro` (most powerful).\n" +
         "**deepseek:** `deepseek-flash` → DeepSeek V4 Flash (cheapest per unit of intelligence; 1M context), " +
         "`deepseek-pro` → DeepSeek V4 Pro (reasoning-heavy sibling).\n" +
-        "**zai:** `glm-flash` → `glm-4.7-flashx` (fast, very cheap), `glm-pro` → `glm-5.2` (flagship, 10 concurrent requests).\n" +
+        "**zai:** `glm-flash` → `glm-4.7-flashx` (fast, very cheap), `glm-pro` → `glm-5.3` (flagship, 15 concurrent requests).\n" +
         "**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n\n" +
         "The three direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\n" +
         "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, " +
@@ -797,7 +797,7 @@ export const InternalPlatformCompleteRequestSchema = z
       description:
         "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus, " +
         "google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro " +
-        "(DeepSeek V4 Flash / V4 Pro), zai → glm-flash|glm-pro (`glm-4.7-flashx` / `glm-5.2`), " +
+        "(DeepSeek V4 Flash / V4 Pro), zai → glm-flash|glm-pro (`glm-4.7-flashx` / `glm-5.3`), " +
         "moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`). The direct-vendor models are " +
         "text-only: `webSearch` is rejected with 400.",
       example: "sonnet",
