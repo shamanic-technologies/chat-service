@@ -201,7 +201,7 @@ Request body:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
   - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.7 Flash), `pro` (most powerful, Gemini 3.1 Pro). All require a Google API key in key-service.
   - **deepseek**: `deepseek-flash` (DeepSeek V4 Flash — cheapest per unit of intelligence, 1M context), `deepseek-pro` (DeepSeek V4 Pro — the reasoning-heavy sibling)
-  - **zai**: `glm-flash` (`glm-4.7-flashx` — fast and very cheap), `glm-pro` (`glm-5.3` — Z.ai's flagship, 15 concurrent requests)
+  - **zai**: `glm-flash` (`glm-5.3-flash` — fast and cheap, 50 concurrent requests), `glm-pro` (`glm-5.3` — Z.ai's flagship, 15 concurrent requests)
   - **moonshot**: `kimi-flash` (`kimi-k2.6` — value tier), `kimi-pro` (`kimi-k3` — flagship, 1M context)
 
   The three direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400 on every one of their models. Each needs its OWN key in key-service, stored under its provider slug.
@@ -284,7 +284,7 @@ The vendors differ in exactly six things, and all six are *data* in the `VENDORS
 |---|---|---|---|---|---|
 | `deepseek` | `deepseek-flash` | `deepseek-v4-flash` | `deepseek-v4-flash` | cache + regime | `https://api.deepseek.com/v1` |
 | `deepseek` | `deepseek-pro` | `deepseek-v4-pro` | `deepseek-v4-pro` | cache + regime | `https://api.deepseek.com/v1` |
-| `zai` | `glm-flash` | `glm-4.7-flashx` | `zai-glm-4.7-flashx` | cache | `https://api.z.ai/api/paas/v4` |
+| `zai` | `glm-flash` | `glm-5.3-flash` | `zai-glm-5.3-flash` | cache | `https://api.z.ai/api/paas/v4` |
 | `zai` | `glm-pro` | `glm-5.3` | `zai-glm-5.3` | cache | `https://api.z.ai/api/paas/v4` |
 | `moonshot` | `kimi-flash` | `kimi-k2.6` | `moonshot-kimi-k2.6` | cache | `https://api.moonshot.ai/v1` |
 | `moonshot` | `kimi-pro` | `kimi-k3` | `moonshot-kimi-k3` | cache | `https://api.moonshot.ai/v1` |
@@ -455,6 +455,8 @@ Every vendor here caps requests **in flight**, and that cap is recorded next to 
 **This Moonshot account is on Tier 0 — one in-flight request**, observed against the live API on 2026-08-25: a second concurrent completion came back `429 rate_limit_reached_error`, "request reached max organization concurrency: 1". Both Kimi aliases are therefore in exactly the position GLM-5.3 was in, and no code change here can move them — the tier is set by cumulative recharge (a top-up to $10 buys 50 slots), not by the model. Nothing routes to Kimi by default today; anything that starts to should top the account up first.
 
 **Why this is documented at all.** On 2026-08-20 `glm-pro` was repointed from GLM-5.2 to GLM-5.3 on the reasoning that the list price is identical, therefore the swap is drop-in, therefore callers see no contract change. The price was identical; the concurrency was not — GLM-5.3 serves **one** in-flight request against GLM-5.2's ten, so the swap kept the price and divided our throughput by ten. Three cold-email workflows contending for that single slot produced 127 rate-limit refusals in five hours and killed about half their runs; because a run reaches the LLM only after paying for its lead enrichment, roughly two thirds of what those workflows spent bought no email. Reproduced directly against the live API on 2026-08-25: six parallel completions returned **6/6 200 on `glm-5.2`** and **2/6 on `glm-5.3`**, the other four `429 code 1302 "Rate limit reached for requests"`.
+
+**`glm-flash` moved too, and it is a deliberate price increase.** GLM-5.3-Flash lists at $0.15 / $0.03 cached / $0.50 per 1M against `glm-4.7-flashx`'s $0.07 / $0.01 / $0.40 — roughly 2x on input, 1.25x on output, on a tier where the absolute numbers are noise next to `glm-pro`'s $1.4 / $4.4. What it buys: **50** published in-flight requests, the most of any model here, against *no published limit at all* for `glm-4.7-flashx` (`publishedConcurrency` returns `null` there — an honest "not published", not a high number), plus two generations of model. It also gets us off a model Z.ai has **dropped from its own `/models` listing**; `glm-4.7-flashx` still serves normally (probed 2026-08-31, a full answer at 1,508 output tokens), so nothing was broken — but a model the vendor no longer lists is one to leave before it stops answering.
 
 **What changed on 2026-08-31.** Z.ai raised the published limits: GLM-5.3 now serves **15** in-flight requests and a new GLM-5.3-Flash serves **50**. Re-measured against the live API the same day, twelve parallel completions returned **12/12 200** on both, against 2/6 on GLM-5.3 six days earlier. `glm-pro` therefore resolves to **GLM-5.3** again — this time checked on all three axes that the first swap collapsed into one:
 

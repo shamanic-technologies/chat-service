@@ -186,9 +186,31 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   },
   zai: {
     // https://docs.z.ai/guides/overview/pricing — read 2026-08-15.
+    // GLM-5.3-Flash. Repointed from glm-4.7-flashx on 2026-08-31.
+    //
+    // This one is a deliberate PRICE INCREASE, which is worth stating plainly
+    // because every other alias move here has been neutral or cheaper:
+    // glm-4.7-flashx lists at $0.07 / $0.01 cached / $0.40 per 1M against
+    // GLM-5.3-Flash's $0.15 / $0.03 / $0.50. Roughly 2x on input, 1.25x on
+    // output, on a tier where the absolute numbers are small enough that the
+    // difference is noise next to `glm-pro`'s $1.4 / $4.4.
+    //
+    // Bought against three things: FIFTY published in-flight requests (the most
+    // of any model we reach, against NO published limit at all for
+    // glm-4.7-flashx — `publishedConcurrency` returns null there, which is an
+    // honest "not published", not a high number), two generations of model, and
+    // an exit from a model Z.ai has dropped from its own `/models` listing.
+    //
+    // That listing absence is the part worth watching: glm-4.7-flashx still
+    // serves normally (probed 2026-08-31, a full answer at 1,508 output
+    // tokens), so nothing is broken today — but a model the vendor no longer
+    // lists is a model to be off before it stops answering, not after.
+    //
+    // Takes `reasoning_effort` like the rest of the 5.3 family, NOT `thinking`
+    // — see the `perModel` entry in openai-compatible.ts.
     "glm-flash": {
-      apiModelId: "glm-4.7-flashx",
-      costPrefix: "zai-glm-4.7-flashx",
+      apiModelId: "glm-5.3-flash",
+      costPrefix: "zai-glm-5.3-flash",
       provider: "zai",
     },
     // GLM-5.3. Z.ai's flagship tier, at the concurrency we can actually run it
@@ -297,6 +319,7 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "deepseek-v4-flash": "deepseek-v4-flash",
   "deepseek-v4-pro": "deepseek-v4-pro",
   "glm-4.7-flashx": "zai-glm-4.7-flashx",
+  "glm-5.3-flash": "zai-glm-5.3-flash",
   "glm-5.2": "zai-glm-5.2",
   "glm-5.3": "zai-glm-5.3",
   "kimi-k2.6": "moonshot-kimi-k2.6",

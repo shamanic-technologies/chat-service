@@ -6,7 +6,8 @@ import {
   AmbiguousPricingRegimeError,
   UnpricedModelError,
 } from "../../src/lib/cost-names.js";
-import { VENDORS } from "../../src/lib/openai-compatible.js";
+import { VENDORS, isVendorProvider } from "../../src/lib/openai-compatible.js";
+import { PROVIDER_MODELS, resolveModel } from "../../src/lib/anthropic.js";
 
 // Which catalog row a call bills against. A name that matches no row is
 // rejected at declaration and fails loud; a name that matches the WRONG row
@@ -229,16 +230,20 @@ describe("buildLlmCostNames — per-vendor dimensions", () => {
 
   it("every reachable model now resolves a name — nothing is left unpriced", () => {
     // The guard that mattered while Moonshot was unseeded: no vendor may be
-    // reachable without a catalog row behind it. Kept pointing at the real
-    // model set so a future alias added ahead of its rows fails HERE.
-    const models: Array<[string, string]> = [
-      ["deepseek", "deepseek-v4-flash"],
-      ["deepseek", "deepseek-v4-pro"],
-      ["zai", "zai-glm-4.7-flashx"],
-      ["zai", "zai-glm-5.2"],
-      ["moonshot", "moonshot-kimi-k2.6"],
-      ["moonshot", "moonshot-kimi-k3"],
-    ];
+    // reachable without a catalog row behind it.
+    //
+    // DERIVED from MODEL_MAP, not hand-listed. The hand-written version claimed
+    // to be "kept pointing at the real model set" and had already drifted — it
+    // still named zai-glm-5.2 after glm-pro moved to 5.3, so the alias it was
+    // meant to guard was the one alias it no longer covered. A list that must
+    // be kept in sync by hand cannot be the thing that catches an alias added
+    // ahead of its rows.
+    const models: Array<[string, string]> = Object.entries(PROVIDER_MODELS)
+      .filter(([provider]) => isVendorProvider(provider))
+      .flatMap(([provider, aliases]) =>
+        aliases.map((alias) => [provider, resolveModel(provider, alias).costPrefix] as [string, string]),
+      );
+    expect(models.length).toBeGreaterThan(0);
     for (const [provider, costPrefix] of models) {
       const names = buildLlmCostNames({ provider, costPrefix, at: at("2026-08-20T02:00:00Z") });
       expect(names.input.startsWith(costPrefix), costPrefix).toBe(true);
