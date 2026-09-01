@@ -120,6 +120,32 @@ describe("self-seeded platform configs", () => {
     expect(audienceTools.some((t) => /delete|destroy|remove/.test(t))).toBe(false);
   });
 
+  it("audience-editor prompt passes the user's wording through and never auto-activates", () => {
+    const prompt = AUDIENCE_EDITOR_CONFIG.systemPrompt;
+    // 1. Verbatim pass-through, in the user's own language, with the reason stated.
+    expect(prompt).toContain("VERBATIM");
+    expect(prompt).toContain("USER'S OWN LANGUAGE");
+    expect(prompt).toContain("Never translate");
+    expect(prompt).toContain("Drogerie");
+    // 2. No invented categories.
+    expect(prompt).toContain(
+      "NEVER add a category, industry, or business type the user did not name",
+    );
+    // 3. Confirmation gate before spending.
+    expect(prompt).toContain(
+      "never call suggest_audiences before the user has agreed to the wording",
+    );
+    // 4. The auto-activate instruction is GONE — activation is user-requested only.
+    expect(prompt).not.toContain("Do not stop at suggest_audiences");
+    expect(prompt).not.toContain("when the user clearly wants the audience created");
+    expect(prompt).toContain("Do NOT activate anything on your own");
+    expect(prompt).toContain(
+      "Activate ONLY when the user explicitly asks for it",
+    );
+    // 5. No redundant duplicate tool invocation.
+    expect(prompt).toContain("Never call the same tool twice with the same input");
+  });
+
   it("brand-profile-editor exposes the website refresh tool and prompt guard", () => {
     expect(BRAND_PROFILE_EDITOR_CONFIG.allowedTools).toContain(
       "refresh_brand_profile_from_website",

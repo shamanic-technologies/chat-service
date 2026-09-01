@@ -961,6 +961,8 @@ Read-only and supporting workflow tools:
 | `refresh_audience_count` | Re-snapshots apollo + apify match counts via the free live dry-run. `POST /v1/orgs/audiences/:id/refresh-count` |
 | `generate_audience_avatar` | (Re)generates the audience's avatar image. Optional `prompt` steers the image; omit to derive it from the audience's descriptors. ORG-BILLED (forwards `x-user-id` like `refresh_audience_count`). Returns the updated audience with its new `avatarUrl`. `POST /v1/orgs/audiences/:id/avatar` |
 
+**Audience-editor prompt contract (self-seeded, `src/lib/seed-platform-configs.ts`):** the assistant sends the user's description to `suggest_audiences` **verbatim, in the user's own language** — no translation, no paraphrase, no added categories. The downstream audience builder reads plain natural language in any language and searches best in the market's own words (German `Drogerie` reaches Swiss drugstores that `drugstore` does not), so every rewrite is a lossy hop. It must confirm the exact search wording with the user before calling `suggest_audiences` (real spend, real audience row), and it never activates a candidate on its own — `set_audience_status` is called only when the user explicitly asks.
+
 **Funnel tools** (full end-to-end platform operation — take the brand/campaign id explicitly, so they work in a brand-less onboarding session; all route through api-service with the forwarded identity, so the underlying op is org-billed by the owning service — chat-service adds no cost of its own):
 
 | Tool | Description |
