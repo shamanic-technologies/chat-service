@@ -2019,6 +2019,13 @@ app.post("/chat", requireAuth, async (req, res) => {
       : typeof context?.brandId === "string" && context.brandId
         ? [context.brandId]
         : [];
+    // Offer scope for this turn. The dashboard puts `offerId` in the chat
+    // context ONLY on an offer-scoped page; absent everywhere else. Never
+    // derived from anything else — absent ⟹ brand-wide (today's behaviour).
+    const offerId: string | undefined =
+      typeof context?.offerId === "string" && context.offerId
+        ? context.offerId
+        : undefined;
     if (!currentSessionId) {
       const [session] = await db
         .insert(sessions)
@@ -2739,6 +2746,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           brandId,
           String(args.nlPrompt ?? ""),
           featureCallParams,
+          offerId,
         );
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
