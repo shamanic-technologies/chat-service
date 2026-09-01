@@ -93,17 +93,24 @@ export async function listAudiences(
  * POST /v1/orgs/audiences/suggest — natural-language prompt -> candidate
  * audiences. Each candidate is PERSISTED at status `suggested`; the caller
  * activates a chosen one via setAudienceStatus(..., "active").
+ *
+ * `offerId` scopes the persisted candidates to one offer of the brand, so an
+ * offer-scoped page (which lists only its own offer's audiences) can see them.
+ * Omitted ⟹ brand-wide, byte-identical to the pre-offer body. Never guessed:
+ * it comes only from the chat request `context.offerId` the dashboard sends
+ * when the customer is on an offer-scoped page.
  */
 export async function suggestAudiences(
   brandId: string,
   nlPrompt: string,
   params: AudienceCallParams,
+  offerId?: string,
 ): Promise<{ candidates: AudienceCandidate[] }> {
   const res = await apiServiceFetch(
     `/v1/orgs/audiences/suggest`,
     "POST",
     params,
-    { brandId, nlPrompt },
+    offerId ? { brandId, nlPrompt, offerId } : { brandId, nlPrompt },
   );
   if (!res.ok) return failLoud(res, "suggest audiences");
   return res.json() as Promise<{ candidates: AudienceCandidate[] }>;
