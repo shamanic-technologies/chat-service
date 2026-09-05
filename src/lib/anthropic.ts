@@ -137,10 +137,14 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     "flash-lite": { apiModelId: "gemini-3.1-flash-lite", costPrefix: "google-flash-lite-3.1", provider: "google" },
     // "flash" alias → Gemini 3.5 Flash-Lite (GA, cheaper than the retired Flash-3 preview). 2026-07-24.
     "flash": { apiModelId: "gemini-3.5-flash-lite", costPrefix: "google-flash-lite-3.5", provider: "google" },
-    // "flash-pro" alias → Gemini 3.7 Flash (GA mid-tier). Same list price as the 3.6 Flash it
+    // "flash-pro" alias → Gemini 3.8 Flash (GA mid-tier). Same list price as the 3.7 Flash it
     // replaces ($1.50/$7.50 per MTok from 2027-01-01, both on the same promo until then), with
-    // upgraded coding/agentic quality. DIS-130, upgraded 3.5→3.6 2026-07-24, 3.6→3.7 2026-08-14.
-    "flash-pro": { apiModelId: "gemini-3.7-flash", costPrefix: "google-flash-3.7", provider: "google" },
+    // upgraded long-horizon / agentic quality. Verified before the swap on all three axes the
+    // 3.6→3.7 upgrade collapsed into one: price (identical, per Google's pricing page read
+    // 2026-09-05), thinking floor (both reject "minimal", so `disableThinking` still resolves —
+    // the 3.7 swap shipped a guessed floor and 400'd every disableThinking call for 10 days),
+    // and a live-API probe. DIS-130; 3.5→3.6 2026-07-24, 3.6→3.7 2026-08-14, 3.7→3.8 2026-09-05.
+    "flash-pro": { apiModelId: "gemini-3.8-flash", costPrefix: "google-flash-3.8", provider: "google" },
     "pro": { apiModelId: "gemini-3.1-pro-preview", costPrefix: "google-pro-3.1", provider: "google" },
   },
   // ---------------------------------------------------------------------
@@ -312,6 +316,7 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "gemini-3.5-flash": "google-flash-3.5",
   "gemini-3.6-flash": "google-flash-3.6",
   "gemini-3.7-flash": "google-flash-3.7",
+  "gemini-3.8-flash": "google-flash-3.8",
   "gemini-3.1-pro-preview": "google-pro-3.1",
   "gemini-2.5-pro": "google-pro-2.5",
   "gemini-2.5-flash": "google-flash-2.5",

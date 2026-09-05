@@ -23,6 +23,7 @@ const GEMINI_CHAT_MAX_OUTPUT_TOKENS = 64_000;
 /** Model-specific API timeouts in milliseconds. */
 const GEMINI_TIMEOUT_MS: Record<string, number> = {
   "gemini-3.1-pro-preview": 15 * 60_000,
+  "gemini-3.8-flash": 10 * 60_000,
   "gemini-3.7-flash": 10 * 60_000,
   "gemini-3.6-flash": 10 * 60_000,
   "gemini-3-flash-preview": 10 * 60_000,

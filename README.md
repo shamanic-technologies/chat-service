@@ -199,7 +199,7 @@ Request body:
 - `provider` (required) — LLM provider: `"anthropic"`, `"google"`, `"deepseek"`, `"zai"`, or `"moonshot"` (see [Direct vendor models](#direct-vendor-models))
 - `model` (required) — version-free model alias. The service resolves the current versioned model internally. Valid combinations:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality)
-  - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.7 Flash), `pro` (most powerful, Gemini 3.1 Pro). All require a Google API key in key-service.
+  - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.8 Flash), `pro` (most powerful, Gemini 3.1 Pro). All require a Google API key in key-service.
   - **deepseek**: `deepseek-flash` (DeepSeek V4 Flash — cheapest per unit of intelligence, 1M context), `deepseek-pro` (DeepSeek V4 Pro — the reasoning-heavy sibling)
   - **zai**: `glm-flash` (`glm-5.3-flash` — fast and cheap, 50 concurrent requests), `glm-pro` (`glm-5.3` — Z.ai's flagship, 15 concurrent requests)
   - **moonshot**: `kimi-flash` (`kimi-k2.6` — value tier), `kimi-pro` (`kimi-k3` — flagship, 1M context)
@@ -224,7 +224,7 @@ Request body:
     |---|---|---|---|
     | `flash-lite` | `gemini-3.1-flash-lite` | minimal, low, medium, high | `minimal` |
     | `flash` | `gemini-3.5-flash-lite` | minimal, low, medium, high | `minimal` |
-    | `flash-pro` | `gemini-3.7-flash` | **low**, medium, high | `low` |
+    | `flash-pro` | `gemini-3.8-flash` | **low**, medium, high | `low` |
     | `pro` | `gemini-3.1-pro-preview` | **low**, medium, high | `low` |
 
     A model with no recorded floor **throws** rather than resolving to a guessed one — so upgrading an alias to a model whose floor was never checked fails a unit test, not production. (Sending `minimal` to a model that rejects it returns `400 INVALID_ARGUMENT: Thinking level MINIMAL is not supported for this model` — that is exactly what a generation-plus-substring floor did to `flash-pro` between 2026-08-14 and 2026-08-24.)
@@ -861,7 +861,7 @@ After a tool result, more `token` events follow with the AI's continuation.
 
 **Tool-then-empty never surfaces as silence.** If one or more tools run but the model's follow-up "summarize" turn produces no text, the service emits a fallback `token` event built from the real tool results (so the user always sees what was retrieved) and logs the empty turn loudly — never a frozen tool card with a blank reply. This guards both the Gemini and Anthropic agentic loops. The `/chat` Gemini path also sets an explicit **64k** `maxOutputTokens` (Gemini-3 thinking tokens count against the output budget; without an explicit cap a post-tool summary turn can exhaust the lower default cap on thinking and emit zero answer text).
 
-**Thinking config is generation-specific.** Gemini 3.x models (`gemini-3*`, incl. `gemini-3.7-flash` = the `flash-pro` alias) use `thinkingConfig.thinkingLevel` (`"low"` here); the Gemini-2.5-era `thinkingBudget` integer is only "accepted for backwards compatibility" on Gemini 3 and produces degenerate **thinking-only / empty** replies — which is what broke every flash-pro `/chat` once Google flipped `gemini-3.5-flash` to stable. Gemini 2.5 models keep `thinkingBudget`. Selected per-model by `buildThinkingConfig(model, disableThinking, level)`. On `/chat` a config's stored `thinkingLevel` is threaded in as `level` to raise a Gemini-3 chat mode above the `"low"` default (e.g. the self-seeded editor configs run at `"medium"`); `/complete` passes no `level`, so it always stays `"low"`.
+**Thinking config is generation-specific.** Gemini 3.x models (`gemini-3*`, incl. `gemini-3.8-flash` = the `flash-pro` alias) use `thinkingConfig.thinkingLevel` (`"low"` here); the Gemini-2.5-era `thinkingBudget` integer is only "accepted for backwards compatibility" on Gemini 3 and produces degenerate **thinking-only / empty** replies — which is what broke every flash-pro `/chat` once Google flipped `gemini-3.5-flash` to stable. Gemini 2.5 models keep `thinkingBudget`. Selected per-model by `buildThinkingConfig(model, disableThinking, level)`. On `/chat` a config's stored `thinkingLevel` is threaded in as `level` to raise a Gemini-3 chat mode above the `"low"` default (e.g. the self-seeded editor configs run at `"medium"`); `/complete` passes no `level`, so it always stays `"low"`.
 
 #### Tool memory across turns
 
