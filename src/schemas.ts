@@ -446,7 +446,7 @@ export const CompleteRequestSchema = z
       description:
         "Model alias (version-free). The service resolves the current versioned model internally.\n\n" +
         "**anthropic:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n" +
-        "**google:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.7 Flash), `pro` (most powerful).\n" +
+        "**google:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.8 Flash), `pro` (most powerful).\n" +
         "**deepseek:** `deepseek-flash` → DeepSeek V4 Flash (cheapest per unit of intelligence; 1M context), " +
         "`deepseek-pro` → DeepSeek V4 Pro (reasoning-heavy sibling).\n" +
         "**zai:** `glm-flash` → `glm-5.3-flash` (fast, cheap, 50 concurrent requests), `glm-pro` → `glm-5.3` (flagship, 15 concurrent requests).\n" +
@@ -472,8 +472,9 @@ export const CompleteRequestSchema = z
         "the answer. Use for extraction / structured-JSON / scoring tasks that don't need " +
         "chain-of-thought. Effect is provider-floored, NOT a guaranteed full-off (like `maxSearches`): " +
         "Gemini 2.5 → thinking fully OFF; Anthropic → no-op (`/complete` never enables thinking); " +
-        "Gemini 3 has NO full-off, so it drops to the lowest level the gen allows — `minimal` for " +
-        "Flash (incl. the `flash-pro` default = Gemini 3.5 Flash), `low` for Pro. On the direct " +
+        "Gemini 3 has NO full-off, so it drops to the lowest level THAT MODEL allows — `minimal` " +
+        "on the Flash-Lite models, `low` on Pro and on the `flash-pro` default (Gemini 3.8 Flash, " +
+        "which rejects `minimal`). On the direct " +
         "vendors (`deepseek`, `zai`, `moonshot`) reasoning goes fully OFF, and that is ALREADY the " +
         "default for any request asking for structured output (a `responseSchema` or " +
         "`responseFormat: \"json\"`) — those callers parse the object and never see the reasoning, " +
