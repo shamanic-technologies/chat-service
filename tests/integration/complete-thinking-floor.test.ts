@@ -7,7 +7,8 @@ import request from "supertest";
 // { provider: "google", model: "flash-pro", disableThinking: true } sent
 // `thinkingConfig: { thinkingLevel: "minimal" }`, because the floor was picked
 // from the model GENERATION plus a substring test for "pro". The `flash-pro`
-// alias moved to gemini-3.7-flash, whose id contains no "pro" and which REJECTS
+// alias moved to gemini-3.7-flash (and since 2026-09-05 to gemini-3.8-flash),
+// whose ids contain no "pro" and which REJECT
 // minimal:
 //
 //   400 INVALID_ARGUMENT
@@ -65,7 +66,11 @@ function installFetchMock() {
  * whose thinkingLevel the model does not accept answers with the provider's own
  * 400, exactly as production did.
  */
-const MODELS_REJECTING_MINIMAL = ["gemini-3.7-flash", "gemini-3.1-pro-preview"];
+const MODELS_REJECTING_MINIMAL = [
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
+  "gemini-3.1-pro-preview",
+];
 
 function mockGemini() {
   return {
@@ -208,7 +213,7 @@ function thinkingConfigOf(body: Record<string, unknown>): Record<string, unknown
 const ALIAS_FLOOR: Array<[string, string]> = [
   ["flash-lite", "minimal"], // gemini-3.1-flash-lite
   ["flash", "minimal"], // gemini-3.5-flash-lite
-  ["flash-pro", "low"], // gemini-3.7-flash — rejects minimal
+  ["flash-pro", "low"], // gemini-3.8-flash — rejects minimal
   ["pro", "low"], // gemini-3.1-pro-preview — rejects minimal
 ];
 

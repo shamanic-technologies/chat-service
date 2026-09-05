@@ -156,9 +156,18 @@ describe("completeWithGemini", () => {
   // gemini-3.7-flash, which REJECTS "minimal"
   // (400 INVALID_ARGUMENT "Thinking level MINIMAL is not supported for this
   // model"). The floor is per MODEL, not per generation + a "pro" substring.
-  it("disableThinking → gemini-3.7-flash (flash-pro alias) floors at low, never minimal", async () => {
+  it("disableThinking → gemini-3.7-flash floors at low, never minimal", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     await runWithTimers({ ...baseOptions, model: "gemini-3.7-flash", disableThinking: true });
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
+  });
+
+  // Same shape one model later: gemini-3.8-flash is the current flash-pro alias
+  // and also rejects "minimal" — checked BEFORE the swap this time.
+  it("disableThinking → gemini-3.8-flash (flash-pro alias) floors at low, never minimal", async () => {
+    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
+    await runWithTimers({ ...baseOptions, model: "gemini-3.8-flash", disableThinking: true });
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low" });
   });

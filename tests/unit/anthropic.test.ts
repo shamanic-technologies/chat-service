@@ -90,11 +90,11 @@ describe("costPrefixForModel", () => {
   });
 });
 
-describe("flash-pro alias (Gemini 3.7 Flash, DIS-130 upgraded 2026-08-14)", () => {
-  it("resolveModel google/flash-pro → gemini-3.7-flash + google-flash-3.7 cost prefix", () => {
+describe("flash-pro alias (Gemini 3.8 Flash, DIS-130 upgraded 2026-09-05)", () => {
+  it("resolveModel google/flash-pro → gemini-3.8-flash + google-flash-3.8 cost prefix", () => {
     expect(resolveModel("google", "flash-pro")).toEqual({
-      apiModelId: "gemini-3.7-flash",
-      costPrefix: "google-flash-3.7",
+      apiModelId: "gemini-3.8-flash",
+      costPrefix: "google-flash-3.8",
       provider: "google",
     });
   });
@@ -102,12 +102,16 @@ describe("flash-pro alias (Gemini 3.7 Flash, DIS-130 upgraded 2026-08-14)", () =
   it("declared cost names are byte-equal to the costs-service catalog rows", () => {
     const { costPrefix } = resolveModel("google", "flash-pro");
     // Must match costs-service catalog exactly or runs-service 422-rejects.
-    expect(`${costPrefix}-tokens-input`).toBe("google-flash-3.7-tokens-input");
-    expect(`${costPrefix}-tokens-output`).toBe("google-flash-3.7-tokens-output");
+    expect(`${costPrefix}-tokens-input`).toBe("google-flash-3.8-tokens-input");
+    expect(`${costPrefix}-tokens-output`).toBe("google-flash-3.8-tokens-output");
   });
 
   it("flash-pro is a valid google alias and SUPPORTED_MODELS maps the real model ID", () => {
     expect(PROVIDER_MODELS.google).toContain("flash-pro");
+    expect(SUPPORTED_MODELS["gemini-3.8-flash"]).toBe("google-flash-3.8");
+  });
+
+  it("keeps the superseded 3.7 Flash model ID resolvable for callers passing it raw", () => {
     expect(SUPPORTED_MODELS["gemini-3.7-flash"]).toBe("google-flash-3.7");
   });
 

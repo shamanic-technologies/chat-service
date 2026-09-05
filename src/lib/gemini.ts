@@ -38,6 +38,7 @@ export const GEMINI_MODELS: Record<string, string> = {
   "gemini-3.5-flash-lite": "google-flash-lite-3.5",
   "gemini-3.6-flash": "google-flash-3.6",
   "gemini-3.7-flash": "google-flash-3.7",
+  "gemini-3.8-flash": "google-flash-3.8",
   "gemini-3-flash-preview": "google-flash-3",
   "gemini-3.1-pro-preview": "google-pro-3.1",
   "gemini-2.5-pro": "google-pro-2.5",
@@ -47,8 +48,9 @@ export const GEMINI_MODELS: Record<string, string> = {
 /** Model-specific API timeouts in milliseconds. */
 const GEMINI_TIMEOUT_MS: Record<string, number> = {
   "gemini-3.1-pro-preview": 15 * 60_000,       // 15 min — Pro
-  "gemini-3.7-flash": 10 * 60_000,              // 10 min — Flash (flash-pro alias)
-  "gemini-3.6-flash": 10 * 60_000,              // 10 min — Flash 3.6 (previous flash-pro)
+  "gemini-3.8-flash": 10 * 60_000,              // 10 min — Flash (flash-pro alias)
+  "gemini-3.7-flash": 10 * 60_000,              // 10 min — Flash 3.7 (previous flash-pro)
+  "gemini-3.6-flash": 10 * 60_000,              // 10 min — Flash 3.6
   "gemini-3-flash-preview": 10 * 60_000,        // 10 min — Flash 3 (legacy)
   "gemini-3.5-flash-lite": 5 * 60_000,          //  5 min — Flash-Lite 3.5 (flash alias)
   "gemini-3.1-flash-lite": 5 * 60_000,          //  5 min — Flash Lite 3.1
@@ -60,6 +62,7 @@ const DEFAULT_GEMINI_TIMEOUT_MS = 10 * 60_000;  // 10 min fallback
 /** Fallback from 3.x models to stable 2.5 models. */
 const GEMINI_FALLBACK_MODEL: Record<string, string> = {
   "gemini-3.1-pro-preview": "gemini-2.5-pro",
+  "gemini-3.8-flash": "gemini-2.5-flash",
   "gemini-3.7-flash": "gemini-2.5-flash",
   "gemini-3.6-flash": "gemini-2.5-flash",
   "gemini-3-flash-preview": "gemini-2.5-flash",
@@ -115,7 +118,8 @@ const GEMINI_25_THINKING_BUDGET = 8192;
 // a hard knob on one provider, best-effort on the other).
 //
 // Values below are transcribed from Google's live "Controlling thinking" table
-// (https://ai.google.dev/gemini-api/docs/thinking, read 2026-08-24) and each
+// (https://ai.google.dev/gemini-api/docs/thinking, read 2026-08-24; re-read
+// 2026-09-05 when the flash-pro alias moved to gemini-3.8-flash) and each
 // one was additionally confirmed against the real API on the same day
 // (`thinking_level: "minimal"` accepted vs 400). Do NOT derive a floor from the
 // model id — the generation + a substring test for "pro" is exactly what
@@ -124,6 +128,7 @@ const GEMINI_25_THINKING_BUDGET = 8192;
 // for it, so every `disableThinking: true` call 400'd for 10 days.
 //
 // Doc table, verbatim (the "Levels Supported" column):
+//   gemini-3.8-flash            | On (medium)  | low, medium, high
 //   gemini-3.7-flash            | On (medium)  | low, medium, high
 //   gemini-3.6-flash            | On (medium)  | minimal, low, medium, high
 //   gemini-3.5-flash            | On (medium)  | minimal, low, medium, high
@@ -143,6 +148,7 @@ const GEMINI_3_THINKING_FLOOR: Record<string, GeminiThinkingLevel> = {
   "gemini-3.5-flash": "minimal",
   "gemini-3.6-flash": "minimal",
   "gemini-3-flash-preview": "minimal",
+  "gemini-3.8-flash": "low",
   "gemini-3.7-flash": "low",
   "gemini-3.1-pro-preview": "low",
   "gemini-3-pro-preview": "low",

@@ -8,7 +8,9 @@ import { PROVIDER_MODELS, resolveModel } from "../../src/lib/anthropic.js";
 
 // Google publishes the accepted thinking levels PER MODEL, and they differ
 // inside one generation:
-// https://ai.google.dev/gemini-api/docs/thinking (read 2026-08-24)
+// https://ai.google.dev/gemini-api/docs/thinking (read 2026-08-24, re-read
+// 2026-09-05 for gemini-3.8-flash)
+//   gemini-3.8-flash        low, medium, high        (minimal → 400)
 //   gemini-3.7-flash        low, medium, high        (minimal → 400)
 //   gemini-3.1-pro-preview  low, medium, high        (minimal → 400)
 //   gemini-3.5-flash-lite   minimal, low, medium, high
@@ -28,6 +30,7 @@ const EXPECTED_FLOOR: Record<string, string> = {
   "gemini-3.5-flash": "minimal",
   "gemini-3.6-flash": "minimal",
   "gemini-3-flash-preview": "minimal",
+  "gemini-3.8-flash": "low",
   "gemini-3.7-flash": "low",
   "gemini-3.1-pro-preview": "low",
   "gemini-3-pro-preview": "low",
@@ -46,6 +49,9 @@ describe("per-model Gemini 3 thinking floor", () => {
     // 400 INVALID_ARGUMENT "Thinking level MINIMAL is not supported for this model."
     expect(buildThinkingConfig("gemini-3.7-flash", true)).toEqual({ thinkingLevel: "low" });
     expect(buildThinkingConfig("gemini-3.1-pro-preview", true)).toEqual({ thinkingLevel: "low" });
+    // gemini-3.8-flash is the current flash-pro alias and rejects minimal too —
+    // the same shape that caused the outage, checked before the swap this time.
+    expect(buildThinkingConfig("gemini-3.8-flash", true)).toEqual({ thinkingLevel: "low" });
   });
 
   it("throws for a Gemini 3 model with no recorded floor instead of guessing", () => {
