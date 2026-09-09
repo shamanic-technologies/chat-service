@@ -413,7 +413,9 @@ export const CompleteRequestSchema = z
       },
     }),
     temperature: z.number().min(0).max(2).optional().openapi({
-      description: "Sampling temperature (0–2). Lower = more deterministic.",
+      description:
+        "Sampling temperature (0–2). Lower = more deterministic. Rejected with a 400 by models " +
+        "that removed the sampling parameters — today that is `anthropic`/`fable` (Claude Fable 5.1).",
       example: 0.3,
     }),
     maxTokens: z.number().int().min(1).max(64_000).optional().openapi({
@@ -427,33 +429,41 @@ export const CompleteRequestSchema = z
         "prevents a burst of concurrent calls from over-reserving against your org balance.",
       example: 4096,
     }),
-    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot"]).openapi({
+    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot", "openai"]).openapi({
       description:
         "LLM provider to use. `anthropic` and `google` are native clients with the full feature " +
-        "set (vision, web search, thinking controls). `deepseek`, `zai` (Z.ai / GLM) and " +
-        "`moonshot` (Kimi) are called directly over their OpenAI-compatible APIs by one shared " +
-        "adapter — text in / text out only, opt-in per call, no existing caller reaches them " +
-        "implicitly. Each vendor resolves its OWN API key from key-service under this exact slug.",
+        "set (vision, web search, thinking controls). `deepseek`, `zai` (Z.ai / GLM), " +
+        "`moonshot` (Kimi) and `openai` (GPT) are called directly over their OpenAI-compatible " +
+        "APIs by one shared adapter — text in / text out only, opt-in per call, no existing " +
+        "caller reaches them implicitly. Each vendor resolves its OWN API key from key-service " +
+        "under this exact slug.",
       example: "anthropic",
     }),
     model: z.enum([
-      "haiku", "sonnet", "opus",
+      "haiku", "sonnet", "opus", "fable",
       "flash-lite", "flash", "flash-pro", "pro",
       "deepseek-flash", "deepseek-pro",
       "glm-flash", "glm-pro",
       "kimi-flash", "kimi-pro",
+      "gpt-pro",
     ]).openapi({
       description:
         "Model alias (version-free). The service resolves the current versioned model internally.\n\n" +
-        "**anthropic:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (highest quality).\n" +
+        "**anthropic:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (high quality), " +
+        "`fable` \u2192 Claude Fable 5.1, the tier above Opus (1M context, always-on reasoning). " +
+        "`fable` rejects `temperature` with a 400 \u2014 Anthropic removed the sampling " +
+        "parameters on its always-thinking models.\n" +
         "**google:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.8 Flash), `pro` (most powerful).\n" +
         "**deepseek:** `deepseek-flash` → DeepSeek V4 Flash (cheapest per unit of intelligence; 1M context), " +
         "`deepseek-pro` → DeepSeek V4 Pro (reasoning-heavy sibling).\n" +
         "**zai:** `glm-flash` → `glm-5.3-flash` (fast, cheap, 50 concurrent requests), `glm-pro` → `glm-5.3` (flagship, 15 concurrent requests).\n" +
-        "**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n\n" +
-        "The three direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\n" +
-        "The model must match the provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, " +
-        "deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro.",
+        "**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n" +
+        "**openai:** `gpt-pro` → GPT-6 Astra (flagship; 1.05M context, 128k output, always-on " +
+        "reasoning floored at `low`).\n\n" +
+        "The four direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\n" +
+        "The model must match the provider: anthropic → haiku|sonnet|opus|fable, google → flash-lite|flash|flash-pro|pro, " +
+        "deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro, " +
+        "openai → gpt-pro.",
       example: "sonnet",
     }),
     webSearch: z.boolean().optional().openapi({
@@ -475,7 +485,9 @@ export const CompleteRequestSchema = z
         "Gemini 3 has NO full-off, so it drops to the lowest level THAT MODEL allows — `minimal` " +
         "on the Flash-Lite models, `low` on Pro and on the `flash-pro` default (Gemini 3.8 Flash, " +
         "which rejects `minimal`). On the direct " +
-        "vendors (`deepseek`, `zai`, `moonshot`) reasoning goes fully OFF, and that is ALREADY the " +
+        "vendors (`deepseek`, `zai`, `moonshot`) reasoning goes fully OFF — on `openai` it goes to " +
+        "the lowest effort GPT-6 Astra accepts (`low`), since that model has no full-off — and " +
+        "that is ALREADY the " +
         "default for any request asking for structured output (a `responseSchema` or " +
         "`responseFormat: \"json\"`) — those callers parse the object and never see the reasoning, " +
         "which is billed as output tokens (measured 2026-08-25: GLM-5.2 703 → 389 output tokens, " +
@@ -521,11 +533,12 @@ export const CompleteRequestSchema = z
   })
   .superRefine((data, ctx) => {
     const validModels: Record<string, string[]> = {
-      anthropic: ["haiku", "sonnet", "opus"],
+      anthropic: ["haiku", "sonnet", "opus", "fable"],
       google: ["flash-lite", "flash", "flash-pro", "pro"],
       deepseek: ["deepseek-flash", "deepseek-pro"],
       zai: ["glm-flash", "glm-pro"],
       moonshot: ["kimi-flash", "kimi-pro"],
+      openai: ["gpt-pro"],
     };
     const allowed = validModels[data.provider];
     if (allowed && !allowed.includes(data.model)) {
@@ -777,30 +790,34 @@ export const InternalPlatformCompleteRequestSchema = z
         "Implies `responseFormat: \"json\"`. Same shape and constraints as POST /complete.",
     }),
     temperature: z.number().min(0).max(2).optional().openapi({
-      description: "Sampling temperature (0–2). Lower = more deterministic.",
+      description:
+        "Sampling temperature (0–2). Lower = more deterministic. Rejected with a 400 by models " +
+        "that removed the sampling parameters — today that is `anthropic`/`fable` (Claude Fable 5.1).",
       example: 0.3,
     }),
-    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot"]).openapi({
+    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot", "openai"]).openapi({
       description:
         "LLM provider to use. `anthropic` and `google` are native clients; `deepseek`, `zai` " +
-        "(Z.ai / GLM) and `moonshot` (Kimi) are called directly over their OpenAI-compatible " +
-        "APIs, text-only. Each vendor resolves its own platform key from key-service under this " +
-        "exact slug.",
+        "(Z.ai / GLM), `moonshot` (Kimi) and `openai` (GPT) are called directly over their " +
+        "OpenAI-compatible APIs, text-only. Each vendor resolves its own platform key from " +
+        "key-service under this exact slug.",
       example: "anthropic",
     }),
     model: z.enum([
-      "haiku", "sonnet", "opus",
+      "haiku", "sonnet", "opus", "fable",
       "flash-lite", "flash", "flash-pro", "pro",
       "deepseek-flash", "deepseek-pro",
       "glm-flash", "glm-pro",
       "kimi-flash", "kimi-pro",
+      "gpt-pro",
     ]).openapi({
       description:
-        "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus, " +
+        "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus|fable " +
+        "(`fable` = Claude Fable 5.1, which rejects `temperature` with a 400), " +
         "google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro " +
         "(DeepSeek V4 Flash / V4 Pro), zai → glm-flash|glm-pro (`glm-5.3-flash` / `glm-5.3`), " +
-        "moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`). The direct-vendor models are " +
-        "text-only: `webSearch` is rejected with 400.",
+        "moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`), openai → gpt-pro " +
+        "(`gpt-6-astra`). The direct-vendor models are text-only: `webSearch` is rejected with 400.",
       example: "sonnet",
     }),
     webSearch: z.boolean().optional().openapi({
@@ -817,7 +834,8 @@ export const InternalPlatformCompleteRequestSchema = z
         "Minimize the model's internal reasoning so the whole output budget goes to the answer. " +
         "Provider-floored, NOT a guaranteed full-off: Gemini 2.5 → fully OFF; Anthropic → no-op; " +
         "Gemini 3 → lowest level the gen allows (`minimal` Flash, `low` Pro — no full-off exists); " +
-        "the direct vendors (`deepseek`, `zai`, `moonshot`) → fully OFF, and already off by default " +
+        "the direct vendors (`deepseek`, `zai`, `moonshot`) → fully OFF, `openai` → floored at " +
+        "`low` (GPT-6 Astra has no full-off), and already off by default " +
         "for structured-output requests. Same semantics as POST /complete. Omitted = the service " +
         "default; pass `false` to keep vendor reasoning on for a structured request.",
       example: true,
@@ -835,11 +853,12 @@ export const InternalPlatformCompleteRequestSchema = z
     // invalid pair reaches resolveModel and surfaces as a 500 instead of a 400
     // naming the accepted set.
     const validModels: Record<string, string[]> = {
-      anthropic: ["haiku", "sonnet", "opus"],
+      anthropic: ["haiku", "sonnet", "opus", "fable"],
       google: ["flash-lite", "flash", "flash-pro", "pro"],
       deepseek: ["deepseek-flash", "deepseek-pro"],
       zai: ["glm-flash", "glm-pro"],
       moonshot: ["kimi-flash", "kimi-pro"],
+      openai: ["gpt-pro"],
     };
     const allowed = validModels[data.provider];
     if (allowed && !allowed.includes(data.model)) {

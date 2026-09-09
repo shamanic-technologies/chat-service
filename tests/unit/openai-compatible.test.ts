@@ -36,6 +36,7 @@ const ALIASES = [
   { provider: "zai", alias: "glm-pro", modelId: "glm-5.3", prefix: "zai-glm-5.3" },
   { provider: "moonshot", alias: "kimi-flash", modelId: "kimi-k2.6", prefix: "moonshot-kimi-k2.6" },
   { provider: "moonshot", alias: "kimi-pro", modelId: "kimi-k3", prefix: "moonshot-kimi-k3" },
+  { provider: "openai", alias: "gpt-pro", modelId: "gpt-6-astra", prefix: "openai-gpt-6-astra" },
 ] as const;
 
 function okBody(overrides: Record<string, unknown> = {}) {
