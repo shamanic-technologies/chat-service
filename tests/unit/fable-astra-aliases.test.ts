@@ -12,7 +12,11 @@
 //            request body against it must be refused for free, not after a
 //            cost hold and an opaque provider 400.
 //   gpt-pro  refuses `max_tokens` (OpenAI made it incompatible with its
-//            reasoning models) and has no reasoning-off, only a `low` floor.
+//            reasoning models), has no reasoning-off (only a `low` floor), and
+//            rejects `temperature` for the same reason Fable does — OpenAI
+//            removed sampling on its reasoning models. That last one shipped
+//            unguarded on 2026-09-09 and was caught by probing the live API
+//            once the account had credit; both vendors are covered now.
 //
 // Everything else this file asserts is the same standard the other aliases are
 // held to: the cost prefix is byte-equal to the catalog row, no existing alias
@@ -37,6 +41,7 @@ import {
   publishedConcurrency,
   isOutOfCreditRefusal,
   vendorConfig,
+  vendorRejectsSampling,
 } from "../../src/lib/openai-compatible.js";
 import { buildLlmCostNames } from "../../src/lib/cost-names.js";
 import { CompleteRequestSchema, InternalPlatformCompleteRequestSchema } from "../../src/schemas.js";
@@ -195,6 +200,36 @@ describe("OpenAI vendor entry", () => {
     });
     expect(isOutOfCreditRefusal("openai", 429, outOfCredit)).toBe(true);
     expect(isOutOfCreditRefusal("openai", 429, rateLimit)).toBe(false);
+  });
+});
+
+describe("sampling support — the reasoning-first models that removed it", () => {
+  it("records OpenAI as refusing sampling and the three incumbents as accepting it", () => {
+    // Probed live 2026-09-09: gpt-6-astra answers `400 unsupported_value` to
+    // temperature ("Only the default (1) value is supported") and
+    // `400 unsupported_parameter` to top_p. The other three have had
+    // temperature forwarded to them in production since 2026-08-15.
+    expect(vendorRejectsSampling("openai")).toBe(true);
+    for (const vendor of ["deepseek", "zai", "moonshot"] as const) {
+      expect(vendorRejectsSampling(vendor)).toBe(false);
+    }
+  });
+
+  it("every vendor states its sampling support with a note, not a bare boolean", () => {
+    for (const id of VENDOR_IDS) {
+      const { sampling } = VENDORS[id];
+      expect(typeof sampling.accepted).toBe("boolean");
+      expect(sampling.note.length).toBeGreaterThan(20);
+    }
+  });
+
+  it("covers both vendors that removed sampling — they are independent facts", () => {
+    // Anthropic did it per MODEL on its always-thinking family, OpenAI per
+    // VENDOR on its reasoning models. Neither is evidence about the other, so
+    // they are recorded separately and only read together at the route.
+    expect(anthropicRejectsSampling("claude-fable-5-1")).toBe(true);
+    expect(vendorRejectsSampling("openai")).toBe(true);
+    expect(anthropicRejectsSampling("claude-sonnet-4-6")).toBe(false);
   });
 });
 

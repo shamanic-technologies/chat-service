@@ -58,10 +58,38 @@ for (const { path, headers } of ROUTES) {
       expect(res.body.retryable).toBe(false);
     });
 
-    // The complement — that the guard is scoped to this ONE model and lets a
-    // `fable` call without temperature (and a `sonnet` call with one) through —
-    // is asserted in tests/unit/fable-astra-aliases.test.ts against the same
-    // `anthropicRejectsSampling` data the route reads. Doing it here would need
-    // the request to reach key-service, which this suite deliberately does not.
+    it("refuses the same pair on GPT-6 Astra, which removed sampling too", async () => {
+      // The bug this case exists for: the first cut of this guard covered only
+      // Anthropic, and Astra shipped able to 400 on a caller's temperature with
+      // a message naming neither the alias nor the field. Probed live
+      // 2026-09-09 — `400 unsupported_value: 'temperature' does not support 0.3
+      // with this model. Only the default (1) value is supported.`
+      const { default: app } = await import("../../src/index.js");
+      const res = await request(app)
+        .post(path)
+        .set(headers)
+        .send({
+          message: "Write three cold emails.",
+          systemPrompt: "You are a cold-email writer.",
+          provider: "openai",
+          model: "gpt-pro",
+          temperature: 0.3,
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("gpt-6-astra");
+      expect(res.body.error).toContain("temperature");
+      expect(res.body.retryable).toBe(false);
+      // Sampling is a per-VENDOR fact on the direct vendors, so there is no
+      // sibling alias to suggest — the message must not invent one.
+      expect(res.body.detail).not.toMatch(/use an alias/);
+    });
+
+    // The complement — that the guard is scoped to the models that actually
+    // removed sampling, and lets a `fable` call without temperature (and a
+    // `sonnet` call with one) through — is asserted in
+    // tests/unit/fable-astra-aliases.test.ts against the same data the route
+    // reads. Doing it here would need the request to reach key-service, which
+    // this suite deliberately does not.
   });
 }

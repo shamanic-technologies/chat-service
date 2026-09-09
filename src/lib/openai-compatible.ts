@@ -396,6 +396,15 @@ export type VendorReasoning =
       reason: string;
     };
 
+/**
+ * Whether a vendor accepts `temperature` / `top_p`, and what it says when it
+ * does not. `note` carries the vendor's own refusal wording so the guard can
+ * quote it rather than paraphrase.
+ */
+export type VendorSampling =
+  | { accepted: true; note: string }
+  | { accepted: false; note: string };
+
 export interface VendorConfig {
   id: VendorId;
   /** Human-readable name, used in caller-facing error messages. */
@@ -428,6 +437,27 @@ export interface VendorConfig {
    * ten-fold throughput cut ship as a drop-in swap.
    */
   concurrency: VendorConcurrency;
+  /**
+   * Whether THIS vendor's models accept the SAMPLING parameters.
+   *
+   * The fourth request-shape fact that is not uniform, and the one that bites a
+   * caller rather than us: `temperature` is a live field on both completion
+   * routes that six aliases honour, so the natural way to A/B a new model is to
+   * take a working request body and change two strings. On a model that removed
+   * sampling that body is a 400, and the vendor's own message names neither the
+   * alias nor which of our fields caused it.
+   *
+   * Reasoning-first models are where this shows up: the same removal Anthropic
+   * made on its always-thinking family (see `anthropicRejectsSampling`) OpenAI
+   * made on its reasoning models. So it is per-vendor DATA here for the same
+   * reason it is per-model data there — the two vendors did it independently
+   * and neither is evidence about the other, let alone about a fifth.
+   *
+   * The parameter is never silently dropped when a vendor refuses it. Answering
+   * 200 from a model sampling differently from what the caller asked for is the
+   * same quiet wrongness as serving a fallback model.
+   */
+  sampling: VendorSampling;
   /**
    * What THIS vendor calls the output-token cap on chat completions.
    *
@@ -567,6 +597,10 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // deepseek-pro completion fail for five hours the night before: the alias
     // had never been called in production, so no request had ever carried a
     // responseSchema to this vendor.
+    sampling: {
+      accepted: true,
+      note: "DeepSeek's chat models take temperature; it has been forwarded on this path since 2026-08-15.",
+    },
     maxOutputTokensField: "max_tokens",
     structuredOutput: "json_object",
     // Reasoning is disablable, and it is the SAME field on all three vendors —
@@ -649,6 +683,10 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // against glm-4.7-flashx. Kept at the stronger form because that is what
     // the vendor actually serves, and downgrading it would silently drop
     // enforcement a caller asked for.
+    sampling: {
+      accepted: true,
+      note: "GLM takes temperature; it has been forwarded on this path since 2026-08-15.",
+    },
     maxOutputTokensField: "max_tokens",
     structuredOutput: "json_schema",
     // Z.ai is the vendor this was measured on and the one it saves most on.
@@ -744,6 +782,10 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
       observedOn: "2026-08-25",
     },
     // json_schema accepted — probed 2026-08-25 against kimi-k2.6 (200).
+    sampling: {
+      accepted: true,
+      note: "GLM takes temperature; it has been forwarded on this path since 2026-08-15.",
+    },
     maxOutputTokensField: "max_tokens",
     structuredOutput: "json_schema",
     // Moonshot reasons the hardest of the three and answers the shortest while
@@ -785,9 +827,11 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     baseUrl: "https://api.openai.com/v1",
     docsUrl: "https://developers.openai.com/api/docs",
     // The OpenAI convention, which is where it comes from: chat completions
-    // report it at usage.prompt_tokens_details.cached_tokens. (The Responses
-    // API uses input_tokens_details instead — a different endpoint this adapter
-    // never calls, and not a fallback to reach for.)
+    // report it at usage.prompt_tokens_details.cached_tokens — confirmed on a
+    // live response 2026-09-09, which carries `{cached_tokens, cache_write_tokens,
+    // audio_tokens}` there. (The Responses API uses input_tokens_details
+    // instead — a different endpoint this adapter never calls, and not a
+    // fallback to reach for.)
     readCachedTokens: (usage) => usage.prompt_tokens_details?.cached_tokens ?? 0,
     // Cached input is its own catalog row — OpenAI prices it at $1 per 1M
     // against $10 fresh, a 10x discount on the dimension our workload sits on
@@ -801,12 +845,11 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // than converted into a concurrency number nobody published.
     //
     // Which tier this account sits on is a console fact the API does not
-    // report, and today it is moot: the balance is empty (probed 2026-09-09,
-    // every request 429s with credit_balance_exhausted), and Tier 1's 500 RPM
-    // is already three orders of magnitude above anything a cold-email
-    // workflow asks for. So unlike the GLM-5.3 case this axis is not a
-    // throughput risk at our volume — it is a rate ceiling, not a single slot
-    // three campaigns have to queue behind.
+    // report, and it does not need asserting here: even Tier 1's 500 requests
+    // per minute is orders of magnitude above anything a cold-email workflow
+    // asks for. So unlike the GLM-5.3 case this axis is not a throughput risk
+    // at our volume — it is a rate ceiling, not a single slot three campaigns
+    // have to queue behind.
     concurrency: {
       scope: "per-account-rate",
       tierLimits: {
@@ -821,8 +864,9 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
         "in-flight request cap at all — so `publishedConcurrency` answers null for this vendor by " +
         "construction, and that null must not be filled in from the RPM column. Tier is set by " +
         "cumulative spend ($5 / $50 / $100 / $250 / $1,000); which tier THIS account is on is a " +
-        "console fact the API does not report. The account had ZERO credit when this shipped " +
-        "(probed 2026-09-09), so no tier is asserted here.",
+        "console fact the API does not report, so no tier is asserted here. Even Tier 1's 500 RPM " +
+        "is far above our volume, so this vendor is not throughput-bound for us the way a " +
+        "one-slot model would be.",
       source: "https://developers.openai.com/api/docs/models/gpt-6-astra",
       observedOn: "2026-09-09",
     },
@@ -831,10 +875,27 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // goes under `max_completion_tokens`, which bounds reasoning tokens and
     // visible output together (the same accounting the reasoning-off default
     // below exists to protect).
+    // gpt-6-astra REMOVED the sampling parameters, exactly as Anthropic did on
+    // its always-thinking family — and it says so in two different wordings
+    // depending on the field. Probed live 2026-09-09:
+    //   temperature: 0.3 → 400 unsupported_value "Unsupported value:
+    //     'temperature' does not support 0.3 with this model. Only the default
+    //     (1) value is supported."
+    //   top_p: 0.9 → 400 unsupported_parameter "Unsupported parameter: 'top_p'
+    //     is not supported with this model."
+    // The adapter only ever sends `temperature`, and only when the caller did.
+    sampling: {
+      accepted: false,
+      note:
+        "GPT-6 Astra is a reasoning model and OpenAI removed the sampling parameters on that " +
+        "family: temperature answers 400 unsupported_value (\"Only the default (1) value is " +
+        "supported\") and top_p answers 400 unsupported_parameter. Probed live 2026-09-09.",
+    },
     maxOutputTokensField: "max_completion_tokens",
-    // Structured Outputs is a first-class OpenAI feature and the model page
-    // lists it as supported, so the caller's responseSchema is sent in the
-    // schema form. We do NOT send `strict: true`: strict mode additionally
+    // Structured Outputs is a first-class OpenAI feature, and the non-strict
+    // schema form we send is confirmed live (200, valid object, probed
+    // 2026-09-09) rather than taken from the model page alone. We do NOT send
+    // `strict: true`: strict mode additionally
     // requires `additionalProperties: false` on every object node and every
     // property in `required`, which is the Anthropic dialect, not what a
     // caller's schema arrives as here (see prepareAnthropicSchema — the
@@ -858,25 +919,33 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // expensive output rate of any model we reach — so minimizing it is worth
     // more here than on any of the incumbents.
     //
-    // UNVERIFIED against the live API, and it has to be said plainly: the
-    // account has no credit, so every probe returned 429 before OpenAI
-    // validated a single parameter (confirmed 2026-09-09 — a request carrying a
-    // deliberately invalid `reasoning_effort: "none"` came back 429, not 400,
-    // so the quota gate sits in FRONT of parameter validation and no capability
-    // can be probed from this account today). The value is the vendor's own
-    // documented one; the moment there is credit, re-probe it and this comment.
+    // Verified against the live API on 2026-09-09, after the account was topped
+    // up (the first attempt that day returned 429 on every probe, including one
+    // carrying a deliberately invalid effort — OpenAI's quota gate sits in
+    // FRONT of parameter validation, so an empty balance makes every capability
+    // unprobeable rather than merely making completions fail).
+    //
+    // The live API is STRICTER than the model page, which is why probing beat
+    // reading: it lists low | medium | high | xhigh | max, and the API refuses
+    // `max` along with `none` and `minimal` — `400 unsupported_value
+    // "Unsupported value: 'reasoning_effort' does not support 'none' with this
+    // model. Supported values are: 'low', 'medium', 'high', and 'xhigh'."`
+    //
+    // The saving is real and measured on one prompt: left alone the model spent
+    // 52 reasoning tokens of a 73-token completion, and `reasoning_effort:
+    // "low"` took that to 0 reasoning of 16 — the answer intact, and the
+    // reasoning was the majority of what we were billed for.
     reasoning: {
       kind: "disablable",
       requestFields: { reasoning_effort: "low" },
       refusedBy: {},
       source: "https://developers.openai.com/api/docs/guides/reasoning",
       evidence:
-        "NOT measured — the account had zero credit on 2026-09-09 and OpenAI answers 429 " +
-        "credit_balance_exhausted before validating any parameter, so no capability probe was " +
-        "possible. Taken from the vendor's docs: gpt-6-astra accepts reasoning_effort low | " +
-        "medium | high | xhigh | max, and 'GPT-6 Astra does not support `none` reasoning effort. " +
-        "Setting reasoning.effort to `none` returns HTTP 400.' `low` is therefore the floor, as " +
-        "on the GLM-5.3 family. Re-probe once the balance is topped up.",
+        "Probed live 2026-09-09 on gpt-6-astra: baseline 73 completion tokens of which 52 were " +
+        "reasoning; reasoning_effort:'low' → 16 completion tokens, 0 reasoning, answer intact. " +
+        "'none', 'minimal' AND 'max' are each refused with 400 unsupported_value naming the " +
+        "accepted set ('low', 'medium', 'high', 'xhigh') — note the live API is stricter than " +
+        "the model page, which also lists 'max'. `low` is therefore the floor, as on GLM-5.3.",
     },
     // Probed live 2026-09-09 against gpt-6-astra: HTTP 429 with
     // `{"type":"insufficient_quota","code":"credit_balance_exhausted",
@@ -973,6 +1042,18 @@ export function publishedConcurrency(vendor: VendorId, apiModelId: string): numb
   const { concurrency } = vendorConfig(vendor);
   if (concurrency.scope !== "per-model") return null;
   return concurrency.limits[apiModelId] ?? null;
+}
+
+/**
+ * True when THIS vendor's models refuse `temperature` / `top_p`.
+ *
+ * Read at the route, ahead of the cost hold, so a caller pairing a sampling
+ * parameter with a model that removed it is refused for free and told which
+ * field to drop — rather than paying for a hold and then reading the vendor's
+ * own 400, which names neither our alias nor which of our fields caused it.
+ */
+export function vendorRejectsSampling(vendor: VendorId): boolean {
+  return !vendorConfig(vendor).sampling.accepted;
 }
 
 /**

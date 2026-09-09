@@ -17,6 +17,7 @@ import {
   COST_PREFIX,
   anthropicRejectsSampling,
   AnthropicUnsupportedOptionError,
+  PROVIDER_MODELS,
   costPrefixForModel,
   resolveModel,
   isRetryableAnthropicError,
@@ -39,6 +40,7 @@ import {
 import {
   completeWithVendor,
   isVendorProvider,
+  vendorRejectsSampling,
   vendorConfig,
   keyResolutionErrorMessage,
   VendorUnsupportedOptionError,
@@ -163,6 +165,68 @@ import { buildContextUsageEvent } from "./lib/context-usage.js";
  * Classify an error for the SSE error event sent to the client.
  * Returns a user-facing message and an error code the frontend can act on.
  */
+/**
+ * The 400 body for a caller pairing `temperature` with a model that removed the
+ * sampling parameters, or null when the pair is fine.
+ *
+ * Two vendors have done this independently — Anthropic on its always-thinking
+ * family, OpenAI on its reasoning models — and neither is evidence about the
+ * other, so each states it as its own data (`anthropicRejectsSampling`,
+ * `VENDORS[...].sampling`). This is only the place the two are read together,
+ * so both completion routes answer identically.
+ *
+ * It runs BEFORE the cost hold on purpose. The natural way to A/B a new model
+ * is to take a request body that works and change two strings, which means the
+ * caller most likely to hit this is the one the alias was added for. Letting it
+ * through would spend a hold and return the vendor's own 400, which names
+ * neither our alias nor which of our fields caused it.
+ *
+ * The parameter is never silently dropped: answering 200 from a model sampling
+ * differently from what the caller asked for is the same quiet wrongness as
+ * serving a fallback model.
+ */
+function samplingRefusalFor(
+  provider: string,
+  effectiveModel: string,
+  requestedAlias: string,
+  temperature: number | null | undefined,
+): { error: string; detail: string; retryable: false } | null {
+  if (temperature == null) return null;
+
+  const refuses = isVendorProvider(provider)
+    ? vendorRejectsSampling(provider)
+    : provider === "anthropic" && anthropicRejectsSampling(effectiveModel);
+  if (!refuses) return null;
+
+  // Name the aliases on this provider that DO accept sampling, so the caller
+  // has somewhere to go rather than only something to remove. Computed from the
+  // same data the guard reads, so it cannot drift out of date.
+  //
+  // Empty for a direct vendor: sampling support is a per-VENDOR fact there
+  // (`VENDORS[...].sampling`), so if the vendor refuses, every alias on it
+  // refuses and there is no sibling to suggest. On Anthropic it is per-MODEL,
+  // so the accepting aliases are worth naming.
+  const alternatives = isVendorProvider(provider)
+    ? []
+    : (PROVIDER_MODELS[provider as Provider] ?? []).filter(
+        (alias) =>
+          alias !== requestedAlias &&
+          !anthropicRejectsSampling(resolveModel(provider as Provider, alias).apiModelId),
+      );
+  const vendorNote = isVendorProvider(provider) ? ` ${vendorConfig(provider).sampling.note}` : "";
+
+  return {
+    error: `Model "${effectiveModel}" does not accept "temperature".`,
+    detail:
+      `Reasoning-first models drop the sampling parameters (temperature, top_p, top_k) and ` +
+      `answer 400 when one is sent.${vendorNote} Re-send without "temperature"` +
+      (alternatives.length > 0
+        ? `, or use an alias on this provider whose model accepts it (${alternatives.join(", ")}).`
+        : `.`),
+    retryable: false,
+  };
+}
+
 function classifyErrorForClient(err: unknown): { message: string; code: string } {
   if (err instanceof ChatCostGateError) {
     return {
@@ -385,20 +449,15 @@ app.post("/complete", requireAuth, async (req, res) => {
     });
   }
 
-  // Sampling parameters are removed on Anthropic's always-thinking models
-  // (Fable 5.1 answers 400 to temperature / top_p / top_k). Checked here, ahead
-  // of the cost hold, so a caller A/B-ing an existing request body against a
-  // new alias is refused for free and told exactly which field to drop.
-  if (provider === "anthropic" && anthropicRejectsSampling(effectiveModel) && temperature != null) {
-    return res.status(400).json({
-      error: `Model "${effectiveModel}" does not accept "temperature".`,
-      detail:
-        `Anthropic removed the sampling parameters (temperature, top_p, top_k) on its ` +
-        `always-thinking models and answers 400 when one is sent. Re-send without "temperature", ` +
-        `or use an alias whose model accepts it (haiku, sonnet, opus).`,
-      retryable: false,
-    });
-  }
+  // Some models REMOVED the sampling parameters — Anthropic on its
+  // always-thinking family (Fable 5.1), OpenAI on its reasoning models
+  // (GPT-6 Astra) — and answer 400 to `temperature`. Checked here, ahead of the
+  // cost hold, so a caller A/B-ing an existing request body against a new alias
+  // is refused for free and told exactly which field to drop, instead of paying
+  // for a hold and then reading a vendor 400 that names neither our alias nor
+  // which of our fields caused it.
+  const samplingRefusal = samplingRefusalFor(provider, effectiveModel, requestedModel, temperature);
+  if (samplingRefusal) return res.status(400).json(samplingRefusal);
 
   // Catalog names for this call. Resolved BEFORE anything is fetched or spent:
   // a model costs-service cannot price must fail while the request is still
@@ -1639,20 +1698,15 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
     });
   }
 
-  // Sampling parameters are removed on Anthropic's always-thinking models
-  // (Fable 5.1 answers 400 to temperature / top_p / top_k). Checked here, ahead
-  // of the cost hold, so a caller A/B-ing an existing request body against a
-  // new alias is refused for free and told exactly which field to drop.
-  if (provider === "anthropic" && anthropicRejectsSampling(effectiveModel) && temperature != null) {
-    return res.status(400).json({
-      error: `Model "${effectiveModel}" does not accept "temperature".`,
-      detail:
-        `Anthropic removed the sampling parameters (temperature, top_p, top_k) on its ` +
-        `always-thinking models and answers 400 when one is sent. Re-send without "temperature", ` +
-        `or use an alias whose model accepts it (haiku, sonnet, opus).`,
-      retryable: false,
-    });
-  }
+  // Some models REMOVED the sampling parameters — Anthropic on its
+  // always-thinking family (Fable 5.1), OpenAI on its reasoning models
+  // (GPT-6 Astra) — and answer 400 to `temperature`. Checked here, ahead of the
+  // cost hold, so a caller A/B-ing an existing request body against a new alias
+  // is refused for free and told exactly which field to drop, instead of paying
+  // for a hold and then reading a vendor 400 that names neither our alias nor
+  // which of our fields caused it.
+  const samplingRefusal = samplingRefusalFor(provider, effectiveModel, requestedModel, temperature);
+  if (samplingRefusal) return res.status(400).json(samplingRefusal);
 
   // Catalog names, resolved before any fetch — same one-timestamp rule as
   // /complete: the regime is picked once, from the UTC clock at declaration.
