@@ -7,6 +7,10 @@ const MAX_TOKENS = 64_000;
 
 /** Model-specific API timeouts in milliseconds. */
 const ANTHROPIC_TIMEOUT_MS: Record<string, number> = {
+  // Fable 5.1 reasons on every request and Anthropic's own guidance is that a
+  // single request on a hard task can run many minutes — so it gets the longest
+  // budget of the four, not the 10-minute fallback.
+  "claude-fable-5-1": 20 * 60_000,   // 20 min — Fable
   "claude-opus-4-6": 15 * 60_000,    // 15 min — Opus
   "claude-sonnet-4-6": 10 * 60_000,  // 10 min — Sonnet
   "claude-haiku-4-5": 5 * 60_000,    //  5 min — Haiku
@@ -102,11 +106,12 @@ export function prepareAnthropicSchema<T>(schema: T): T {
 // the latest versioned model ID internally.
 // ---------------------------------------------------------------------------
 
-export type Provider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot";
+export type Provider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai";
 export type ModelAlias =
   | "haiku"
   | "sonnet"
   | "opus"
+  | "fable"
   | "flash-lite"
   | "flash"
   | "flash-pro"
@@ -116,7 +121,8 @@ export type ModelAlias =
   | "glm-flash"
   | "glm-pro"
   | "kimi-flash"
-  | "kimi-pro";
+  | "kimi-pro"
+  | "gpt-pro";
 
 interface ResolvedModel {
   /** Versioned model ID sent to the provider's API */
@@ -132,6 +138,22 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     haiku: { apiModelId: "claude-haiku-4-5", costPrefix: "anthropic-haiku-4.5", provider: "anthropic" },
     sonnet: { apiModelId: "claude-sonnet-4-6", costPrefix: "anthropic-sonnet-4.6", provider: "anthropic" },
     opus: { apiModelId: "claude-opus-4-6", costPrefix: "anthropic-opus-4.6", provider: "anthropic" },
+    // Claude Fable 5.1 — Anthropic's most capable widely released model, a tier
+    // ABOVE Opus and priced there ($10 / $50 per 1M against Opus 4.6's rates).
+    // Added 2026-09-09 for a cold-email template A/B; no existing alias moves.
+    //
+    // Three API facts about this model that the other three Anthropic aliases
+    // do not share, all of them 400s rather than degradations:
+    //   • Thinking is ALWAYS ON and cannot be configured. `/complete` never
+    //     sends a `thinking` block, so this path is already correct — but it
+    //     means `disableThinking` stays the documented no-op it is on every
+    //     Anthropic model, and cannot become anything else here.
+    //   • Sampling parameters are REMOVED — temperature / top_p / top_k each
+    //     return 400. See `anthropicRejectsSampling` below; a caller sending
+    //     `temperature` is refused before any spend rather than after.
+    //   • Forced tool use and assistant prefill are removed. Neither is on the
+    //     `/complete` path, which sends no tools and no prefill.
+    fable: { apiModelId: "claude-fable-5-1", costPrefix: "anthropic-fable-5.1", provider: "anthropic" },
   },
   google: {
     "flash-lite": { apiModelId: "gemini-3.1-flash-lite", costPrefix: "google-flash-lite-3.1", provider: "google" },
@@ -264,15 +286,34 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       provider: "moonshot",
     },
   },
+  openai: {
+    // https://developers.openai.com/api/docs/models/gpt-6-astra — read
+    // 2026-09-09. GPT-6 Astra, OpenAI's flagship: 1,050,000-token context,
+    // 128k max output, $10 / $1 cached / $50 per 1M. The most expensive output
+    // rate of any model this service reaches, which is why the reasoning floor
+    // in openai-compatible.ts matters more here than anywhere else.
+    //
+    // `gpt-pro` follows the naming every direct-vendor alias uses — the family,
+    // then the tier — so a caller reads it the same way as `glm-pro` and
+    // `kimi-pro`. There is deliberately no `gpt-flash`: an alias costs three
+    // catalog rows and exists only when someone wants it, so the vendor's
+    // catalog never becomes ours by default.
+    "gpt-pro": {
+      apiModelId: "gpt-6-astra",
+      costPrefix: "openai-gpt-6-astra",
+      provider: "openai",
+    },
+  },
 };
 
 /** Valid model aliases per provider — used for Zod validation. */
 export const PROVIDER_MODELS: Record<Provider, readonly ModelAlias[]> = {
-  anthropic: ["haiku", "sonnet", "opus"],
+  anthropic: ["haiku", "sonnet", "opus", "fable"],
   google: ["flash-lite", "flash", "flash-pro", "pro"],
   deepseek: ["deepseek-flash", "deepseek-pro"],
   zai: ["glm-flash", "glm-pro"],
   moonshot: ["kimi-flash", "kimi-pro"],
+  openai: ["gpt-pro"],
 };
 
 /**
@@ -303,6 +344,78 @@ export function resolveModel(provider: Provider, modelAlias: ModelAlias): Resolv
   return resolved;
 }
 
+// ---------------------------------------------------------------------------
+// Anthropic sampling support — per MODEL data, never inferred from the family
+// ---------------------------------------------------------------------------
+
+/**
+ * Anthropic model ids that REJECT the sampling parameters.
+ *
+ * `temperature`, `top_p` and `top_k` were removed on the always-thinking
+ * models: Fable 5 / 5.1, Opus 5 / 4.8 / 4.7 and Sonnet 5 each answer 400 when
+ * one is sent. Only `claude-fable-5-1` is reachable from this service today, so
+ * only it is listed — the set records what we actually serve, exactly like
+ * `GEMINI_3_THINKING_FLOOR`, and a model is added here when its alias is.
+ *
+ * Recorded rather than worked around, and it is a real behaviour change to be
+ * aware of when reading a caller's request: `temperature` is a live field on
+ * POST /complete that six existing aliases honour, so the first caller to
+ * A/B a template against Fable with its existing body would otherwise get an
+ * Anthropic 400 whose text says nothing about which alias caused it.
+ *
+ * Note the failure this does NOT hide: the parameter is not silently dropped.
+ * Dropping it would answer 200 from a model sampling differently from what the
+ * caller asked for, which is the same class of quiet wrongness as serving a
+ * fallback model — see the `refusedBy` note in openai-compatible.ts.
+ *
+ * Source: Anthropic's model-migration guidance for the 4.7+ family, read
+ * 2026-09-09, and confirmed against the live API the same day — the identical
+ * request that returns 200 without it answers
+ * `400 invalid_request_error: "\`temperature\` is deprecated for this model."`
+ * with it.
+ */
+const ANTHROPIC_SAMPLING_UNSUPPORTED = new Set(["claude-fable-5-1"]);
+
+/**
+ * A caller sent a sampling parameter to a model that refuses it.
+ *
+ * Its own class so the completion routes can answer 400 (a request-shape error
+ * that will be refused identically forever) rather than 502 ("please try
+ * again"), which is the same distinction `VendorUnsupportedOptionError` draws
+ * on the direct-vendor paths.
+ */
+export class AnthropicUnsupportedOptionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AnthropicUnsupportedOptionError";
+  }
+}
+
+/** True when this Anthropic model rejects `temperature` / `top_p` / `top_k`. */
+export function anthropicRejectsSampling(apiModelId: string): boolean {
+  return ANTHROPIC_SAMPLING_UNSUPPORTED.has(apiModelId);
+}
+
+/**
+ * Fail loud when a caller pairs a sampling parameter with a model that refuses
+ * it — before anything is fetched, held or spent.
+ *
+ * A no-op for every model that accepts sampling, and for a request that sends
+ * none.
+ */
+export function assertAnthropicSamplingSupported(
+  apiModelId: string,
+  temperature: number | null | undefined,
+): void {
+  if (temperature == null || !anthropicRejectsSampling(apiModelId)) return;
+  throw new AnthropicUnsupportedOptionError(
+    `Model "${apiModelId}" does not accept the sampling parameters (temperature, top_p, top_k) — ` +
+      `Anthropic removed them on its always-thinking models and answers 400 when one is sent. ` +
+      `Re-send this request without "temperature", or use an alias whose model accepts it ` +
+      `(haiku, sonnet, opus). Retrying as sent will not help.`,
+  );
+}
+
 /**
  * @deprecated — kept for backward compat during migration. Use resolveModel instead.
  */
@@ -310,6 +423,7 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "claude-sonnet-4-6": "anthropic-sonnet-4.6",
   "claude-haiku-4-5": "anthropic-haiku-4.5",
   "claude-opus-4-6": "anthropic-opus-4.6",
+  "claude-fable-5-1": "anthropic-fable-5.1",
   "gemini-3.1-flash-lite": "google-flash-lite-3.1",
   "gemini-3.5-flash-lite": "google-flash-lite-3.5",
   "gemini-3-flash-preview": "google-flash-3",
@@ -329,6 +443,7 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "glm-5.3": "zai-glm-5.3",
   "kimi-k2.6": "moonshot-kimi-k2.6",
   "kimi-k3": "moonshot-kimi-k3",
+  "gpt-6-astra": "openai-gpt-6-astra",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */
@@ -1930,6 +2045,11 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       sources: Array<{ url: string; title?: string }>;
     }> {
       const effectiveModel = options?.model ?? MODEL;
+
+      // Last line of defence on a request shape this model refuses. The
+      // completion routes check the same thing earlier so the caller gets a 400
+      // before a cost is held; this makes it unreachable from any other caller.
+      assertAnthropicSamplingSupported(effectiveModel, options?.temperature);
 
       // Build user content — multimodal when imageUrl is provided
       let userContent: Anthropic.MessageCreateParamsNonStreaming["messages"][0]["content"];
