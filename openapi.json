@@ -728,7 +728,7 @@
             "type": "number",
             "minimum": 0,
             "maximum": 2,
-            "description": "Sampling temperature (0–2). Lower = more deterministic. Rejected with a 400 by models that removed the sampling parameters — today that is `anthropic`/`fable` (Claude Fable 5.1).",
+            "description": "Sampling temperature (0–2). Lower = more deterministic. Rejected with a 400 by the reasoning-first models that removed the sampling parameters — today `anthropic`/`fable` (Claude Fable 5.1) and `openai`/`gpt-pro` (GPT-6 Astra). The request is refused before any cost is held; the parameter is never silently dropped.",
             "example": 0.3
           },
           "maxTokens": {
@@ -770,7 +770,7 @@
               "kimi-pro",
               "gpt-pro"
             ],
-            "description": "Model alias (version-free). The service resolves the current versioned model internally.\n\n**anthropic:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (high quality), `fable` → Claude Fable 5.1, the tier above Opus (1M context, always-on reasoning). `fable` rejects `temperature` with a 400 — Anthropic removed the sampling parameters on its always-thinking models.\n**google:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.8 Flash), `pro` (most powerful).\n**deepseek:** `deepseek-flash` → DeepSeek V4 Flash (cheapest per unit of intelligence; 1M context), `deepseek-pro` → DeepSeek V4 Pro (reasoning-heavy sibling).\n**zai:** `glm-flash` → `glm-5.3-flash` (fast, cheap, 50 concurrent requests), `glm-pro` → `glm-5.3` (flagship, 15 concurrent requests).\n**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n**openai:** `gpt-pro` → GPT-6 Astra (flagship; 1.05M context, 128k output, always-on reasoning floored at `low`).\n\nThe four direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\nThe model must match the provider: anthropic → haiku|sonnet|opus|fable, google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro, openai → gpt-pro.",
+            "description": "Model alias (version-free). The service resolves the current versioned model internally.\n\n**anthropic:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (high quality), `fable` → Claude Fable 5.1, the tier above Opus (1M context, always-on reasoning). `fable` rejects `temperature` with a 400 — Anthropic removed the sampling parameters on its always-thinking models, as OpenAI did on `gpt-pro`.\n**google:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.8 Flash), `pro` (most powerful).\n**deepseek:** `deepseek-flash` → DeepSeek V4 Flash (cheapest per unit of intelligence; 1M context), `deepseek-pro` → DeepSeek V4 Pro (reasoning-heavy sibling).\n**zai:** `glm-flash` → `glm-5.3-flash` (fast, cheap, 50 concurrent requests), `glm-pro` → `glm-5.3` (flagship, 15 concurrent requests).\n**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n**openai:** `gpt-pro` → GPT-6 Astra (flagship; 1.05M context, 128k output, always-on reasoning floored at `low`; rejects `temperature`).\n\nThe four direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\nThe model must match the provider: anthropic → haiku|sonnet|opus|fable, google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro, openai → gpt-pro.",
             "example": "sonnet"
           },
           "webSearch": {
@@ -930,7 +930,7 @@
             "type": "number",
             "minimum": 0,
             "maximum": 2,
-            "description": "Sampling temperature (0–2). Lower = more deterministic. Rejected with a 400 by models that removed the sampling parameters — today that is `anthropic`/`fable` (Claude Fable 5.1).",
+            "description": "Sampling temperature (0–2). Lower = more deterministic. Rejected with a 400 by the reasoning-first models that removed the sampling parameters — today `anthropic`/`fable` (Claude Fable 5.1) and `openai`/`gpt-pro` (GPT-6 Astra). The request is refused before any cost is held; the parameter is never silently dropped.",
             "example": 0.3
           },
           "provider": {
@@ -965,7 +965,7 @@
               "kimi-pro",
               "gpt-pro"
             ],
-            "description": "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus|fable (`fable` = Claude Fable 5.1, which rejects `temperature` with a 400), google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro (DeepSeek V4 Flash / V4 Pro), zai → glm-flash|glm-pro (`glm-5.3-flash` / `glm-5.3`), moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`), openai → gpt-pro (`gpt-6-astra`). The direct-vendor models are text-only: `webSearch` is rejected with 400.",
+            "description": "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus|fable (`fable` = Claude Fable 5.1, which rejects `temperature` with a 400), google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro (DeepSeek V4 Flash / V4 Pro), zai → glm-flash|glm-pro (`glm-5.3-flash` / `glm-5.3`), moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`), openai → gpt-pro (`gpt-6-astra`, which rejects `temperature`). The direct-vendor models are text-only: `webSearch` is rejected with 400.",
             "example": "sonnet"
           },
           "webSearch": {
