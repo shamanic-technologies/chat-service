@@ -160,7 +160,7 @@ export class VendorRateLimitError extends VendorProviderError {
  * Vendors reachable through this adapter. The id doubles as the API `provider`
  * value AND the key-service provider slug — one vendor, one key, one name.
  */
-export type VendorId = "deepseek" | "zai" | "moonshot";
+export type VendorId = "deepseek" | "zai" | "moonshot" | "openai";
 
 /** Raw `usage` object as returned by an OpenAI-compatible chat completion. */
 export interface VendorUsage {
@@ -172,7 +172,12 @@ export interface VendorUsage {
   prompt_cache_miss_tokens?: number;
   /** Moonshot / Kimi: prompt tokens served from cache, flat on `usage`. */
   cached_tokens?: number;
-  /** Z.ai and the OpenAI convention: nested under `prompt_tokens_details`. */
+  /**
+   * Z.ai, OpenAI and the OpenAI convention generally: nested under
+   * `prompt_tokens_details`. Note OpenAI reports it here on CHAT COMPLETIONS —
+   * its Responses API uses `input_tokens_details` instead, which this adapter
+   * never calls.
+   */
   prompt_tokens_details?: { cached_tokens?: number };
 }
 
@@ -275,6 +280,27 @@ export type VendorConcurrency =
       /** Tier label → published in-flight request limit for that tier. */
       tierLimits: Record<string, number>;
       /** What decides which tier applies, and what is NOT known here. */
+      note: string;
+      source: string;
+      observedOn: string;
+    }
+  | {
+      /**
+       * The vendor publishes a REQUEST/TOKEN RATE per account tier and no
+       * in-flight cap at all.
+       *
+       * This is a different quantity from the other two scopes, not a softer
+       * version of them, and collapsing it into a single number would be
+       * exactly the invention the null in `publishedConcurrency` exists to
+       * prevent: a request-per-minute ceiling says nothing about how many
+       * requests may be open at one instant. Recorded verbatim so the rate we
+       * are actually bounded by is on the page next to the price, and so
+       * `publishedConcurrency` can keep answering null honestly.
+       */
+      scope: "per-account-rate";
+      /** Tier label → the rate limits published for THIS model at that tier. */
+      tierLimits: Record<string, { rpm: number; tpm: number }>;
+      /** What decides which tier applies, and what is NOT published. */
       note: string;
       source: string;
       observedOn: string;
@@ -403,6 +429,23 @@ export interface VendorConfig {
    */
   concurrency: VendorConcurrency;
   /**
+   * What THIS vendor calls the output-token cap on chat completions.
+   *
+   * "OpenAI-compatible" describes the request shape, and this is one of the
+   * places the shape itself diverges rather than a value inside it. The three
+   * original vendors take `max_tokens`. OpenAI deprecated that field and made
+   * it INCOMPATIBLE with its reasoning models — "This value is now deprecated
+   * in favor of `max_completion_tokens`, and is not compatible with o-series
+   * models" — so `gpt-6-astra` needs `max_completion_tokens`, which also counts
+   * the reasoning tokens the model spends before answering.
+   *
+   * Sending the wrong one is not a degraded request, it is a refused one: the
+   * cap the caller declared would never be applied, and on OpenAI the call
+   * 400s outright. Data rather than a branch, like every other per-vendor
+   * difference here.
+   */
+  maxOutputTokensField: "max_tokens" | "max_completion_tokens";
+  /**
    * The strongest `response_format` THIS vendor accepts.
    *
    * "OpenAI-compatible" is a description of the request SHAPE, not a promise
@@ -524,6 +567,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // deepseek-pro completion fail for five hours the night before: the alias
     // had never been called in production, so no request had ever carried a
     // responseSchema to this vendor.
+    maxOutputTokensField: "max_tokens",
     structuredOutput: "json_object",
     // Reasoning is disablable, and it is the SAME field on all three vendors —
     // which is a fact about these three, not a rule: it is recorded per vendor
@@ -605,6 +649,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // against glm-4.7-flashx. Kept at the stronger form because that is what
     // the vendor actually serves, and downgrading it would silently drop
     // enforcement a caller asked for.
+    maxOutputTokensField: "max_tokens",
     structuredOutput: "json_schema",
     // Z.ai is the vendor this was measured on and the one it saves most on.
     // `thinking: {type:"disabled"}` on glm-5.2 took a probe from 703 to 389
@@ -699,6 +744,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
       observedOn: "2026-08-25",
     },
     // json_schema accepted — probed 2026-08-25 against kimi-k2.6 (200).
+    maxOutputTokensField: "max_tokens",
     structuredOutput: "json_schema",
     // Moonshot reasons the hardest of the three and answers the shortest while
     // doing it: kimi-k2.6 spent 1,173 output tokens on 3,808 chars of reasoning
@@ -724,6 +770,126 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // rate-limit 429 carries `rate_limit_reached_error` instead.
     isOutOfCreditRefusal: (s) =>
       s.type === "exceeded_current_quota_error" || EMPTY_BALANCE_PROSE.test(s.text),
+  },
+  // https://developers.openai.com/api/docs/models/gpt-6-astra — read 2026-09-09.
+  // Cached input $1 vs $10 per 1M on gpt-6-astra; output $50.
+  //
+  // The fourth vendor, and the one whose dialect the other three imitate — this
+  // adapter reaches api.openai.com's own /chat/completions, so "OpenAI-
+  // compatible" is not an approximation here. It is still not a free ride: two
+  // of the four per-vendor facts below differ from all three incumbents, which
+  // is the argument for the registry rather than against it.
+  openai: {
+    id: "openai",
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    docsUrl: "https://developers.openai.com/api/docs",
+    // The OpenAI convention, which is where it comes from: chat completions
+    // report it at usage.prompt_tokens_details.cached_tokens. (The Responses
+    // API uses input_tokens_details instead — a different endpoint this adapter
+    // never calls, and not a fallback to reach for.)
+    readCachedTokens: (usage) => usage.prompt_tokens_details?.cached_tokens ?? 0,
+    // Cached input is its own catalog row — OpenAI prices it at $1 per 1M
+    // against $10 fresh, a 10x discount on the dimension our workload sits on
+    // (a large stable prompt with a small per-lead block). No time-of-day
+    // schedule, so the names carry no regime segment, same shape as Z.ai and
+    // Moonshot.
+    pricing: { kind: "priced", cachedInput: true, regime: null },
+    // OpenAI publishes NO in-flight concurrency limit for this or any model —
+    // what it publishes is a REQUEST and TOKEN RATE per account tier, per
+    // model. That is a different quantity, so it is recorded as one rather
+    // than converted into a concurrency number nobody published.
+    //
+    // Which tier this account sits on is a console fact the API does not
+    // report, and today it is moot: the balance is empty (probed 2026-09-09,
+    // every request 429s with credit_balance_exhausted), and Tier 1's 500 RPM
+    // is already three orders of magnitude above anything a cold-email
+    // workflow asks for. So unlike the GLM-5.3 case this axis is not a
+    // throughput risk at our volume — it is a rate ceiling, not a single slot
+    // three campaigns have to queue behind.
+    concurrency: {
+      scope: "per-account-rate",
+      tierLimits: {
+        "tier-1": { rpm: 500, tpm: 500_000 },
+        "tier-2": { rpm: 5_000, tpm: 1_000_000 },
+        "tier-3": { rpm: 5_000, tpm: 2_000_000 },
+        "tier-4": { rpm: 10_000, tpm: 4_000_000 },
+        "tier-5": { rpm: 15_000, tpm: 40_000_000 },
+      },
+      note:
+        "OpenAI publishes requests-per-minute and tokens-per-minute per account tier, and no " +
+        "in-flight request cap at all — so `publishedConcurrency` answers null for this vendor by " +
+        "construction, and that null must not be filled in from the RPM column. Tier is set by " +
+        "cumulative spend ($5 / $50 / $100 / $250 / $1,000); which tier THIS account is on is a " +
+        "console fact the API does not report. The account had ZERO credit when this shipped " +
+        "(probed 2026-09-09), so no tier is asserted here.",
+      source: "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      observedOn: "2026-09-09",
+    },
+    // gpt-6-astra is a REASONING model, and OpenAI made `max_tokens`
+    // incompatible with that family — the docs say so in as many words. The cap
+    // goes under `max_completion_tokens`, which bounds reasoning tokens and
+    // visible output together (the same accounting the reasoning-off default
+    // below exists to protect).
+    maxOutputTokensField: "max_completion_tokens",
+    // Structured Outputs is a first-class OpenAI feature and the model page
+    // lists it as supported, so the caller's responseSchema is sent in the
+    // schema form. We do NOT send `strict: true`: strict mode additionally
+    // requires `additionalProperties: false` on every object node and every
+    // property in `required`, which is the Anthropic dialect, not what a
+    // caller's schema arrives as here (see prepareAnthropicSchema — the
+    // mirror-image normalizer, deliberately not shared). Non-strict json_schema
+    // is what the vendor serves without a schema rewrite; parseModelJsonOutput
+    // still fails loud on output it cannot read.
+    structuredOutput: "json_schema",
+    // Reasoning is BOUNDED here, never off — and that is a fact about the
+    // model, stated by the vendor rather than inferred: `reasoning_effort`
+    // accepts low | medium | high | xhigh | max on gpt-6-astra, and the
+    // reasoning guide is explicit that "GPT-6 Astra does not support `none`
+    // reasoning effort. Setting reasoning.effort to `none` returns HTTP 400."
+    // `minimal` is in OpenAI's general set but absent from this model's, so it
+    // is not sent either.
+    //
+    // So `low` is the floor, exactly as it is on the GLM-5.3 family, and the
+    // knob keeps the same meaning it has everywhere else in this service:
+    // MINIMIZE, not zero (the same wording `disableThinking` already carries
+    // for Gemini 3). A structured caller parses an object and never sees the
+    // reasoning it is billed for at $50 per 1M output tokens — the most
+    // expensive output rate of any model we reach — so minimizing it is worth
+    // more here than on any of the incumbents.
+    //
+    // UNVERIFIED against the live API, and it has to be said plainly: the
+    // account has no credit, so every probe returned 429 before OpenAI
+    // validated a single parameter (confirmed 2026-09-09 — a request carrying a
+    // deliberately invalid `reasoning_effort: "none"` came back 429, not 400,
+    // so the quota gate sits in FRONT of parameter validation and no capability
+    // can be probed from this account today). The value is the vendor's own
+    // documented one; the moment there is credit, re-probe it and this comment.
+    reasoning: {
+      kind: "disablable",
+      requestFields: { reasoning_effort: "low" },
+      refusedBy: {},
+      source: "https://developers.openai.com/api/docs/guides/reasoning",
+      evidence:
+        "NOT measured — the account had zero credit on 2026-09-09 and OpenAI answers 429 " +
+        "credit_balance_exhausted before validating any parameter, so no capability probe was " +
+        "possible. Taken from the vendor's docs: gpt-6-astra accepts reasoning_effort low | " +
+        "medium | high | xhigh | max, and 'GPT-6 Astra does not support `none` reasoning effort. " +
+        "Setting reasoning.effort to `none` returns HTTP 400.' `low` is therefore the floor, as " +
+        "on the GLM-5.3 family. Re-probe once the balance is topped up.",
+    },
+    // Probed live 2026-09-09 against gpt-6-astra: HTTP 429 with
+    // `{"type":"insufficient_quota","code":"credit_balance_exhausted",
+    // "message":"You have no credits remaining. Add credits to continue using
+    // the API..."}`. OpenAI overloads 429 for this exactly as Z.ai and Moonshot
+    // do, and separates the two in the body — a plain rate limit carries
+    // `code: "rate_limit_exceeded"` instead. Both the observed code and the
+    // documented type are matched, because either one alone is a single string
+    // between us and silently retrying an empty balance forever. The prose
+    // regex the other three share does NOT fire on OpenAI's wording ("no
+    // credits remaining"), which is why the predicate is structural here.
+    isOutOfCreditRefusal: (s) =>
+      s.code === "credit_balance_exhausted" || s.type === "insufficient_quota",
   },
 };
 
@@ -1012,7 +1178,10 @@ export function buildVendorRequestBody(options: VendorCompleteOptions): Record<s
   const body: Record<string, unknown> = { model, messages, stream: false };
 
   if (temperature != null) body.temperature = temperature;
-  if (maxOutputTokens != null) body.max_tokens = maxOutputTokens;
+  // The output cap under THIS vendor's own field name. OpenAI's reasoning
+  // models refuse `max_tokens` outright, so the name is per-vendor data
+  // (`maxOutputTokensField`) rather than a constant.
+  if (maxOutputTokens != null) body[vendorConfig(options.vendor).maxOutputTokensField] = maxOutputTokens;
 
   // JSON mode via native provider metadata only, in the strongest form THIS
   // vendor implements (`structuredOutput`). Enforcement strength varies by

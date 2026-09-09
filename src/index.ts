@@ -15,6 +15,8 @@ import {
   AVAILABLE_TOOL_NAMES,
   MODEL,
   COST_PREFIX,
+  anthropicRejectsSampling,
+  AnthropicUnsupportedOptionError,
   costPrefixForModel,
   resolveModel,
   isRetryableAnthropicError,
@@ -383,6 +385,21 @@ app.post("/complete", requireAuth, async (req, res) => {
     });
   }
 
+  // Sampling parameters are removed on Anthropic's always-thinking models
+  // (Fable 5.1 answers 400 to temperature / top_p / top_k). Checked here, ahead
+  // of the cost hold, so a caller A/B-ing an existing request body against a
+  // new alias is refused for free and told exactly which field to drop.
+  if (provider === "anthropic" && anthropicRejectsSampling(effectiveModel) && temperature != null) {
+    return res.status(400).json({
+      error: `Model "${effectiveModel}" does not accept "temperature".`,
+      detail:
+        `Anthropic removed the sampling parameters (temperature, top_p, top_k) on its ` +
+        `always-thinking models and answers 400 when one is sent. Re-send without "temperature", ` +
+        `or use an alias whose model accepts it (haiku, sonnet, opus).`,
+      retryable: false,
+    });
+  }
+
   // Catalog names for this call. Resolved BEFORE anything is fetched or spent:
   // a model costs-service cannot price must fail while the request is still
   // free. ONE timestamp for the whole request — a DeepSeek call that straddles
@@ -583,7 +600,7 @@ app.post("/complete", requireAuth, async (req, res) => {
     // forever, so it must not be dressed as a transient failure — "please try
     // again" is false advice that turns a configuration bug into hours of
     // silent spend. 400 with the provider's own words instead.
-    if (err instanceof VendorUnsupportedOptionError) {
+    if (err instanceof VendorUnsupportedOptionError || err instanceof AnthropicUnsupportedOptionError) {
       res.status(400).json({
         error: "Provider rejected a request option.",
         detail: err.message,
@@ -1622,6 +1639,21 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
     });
   }
 
+  // Sampling parameters are removed on Anthropic's always-thinking models
+  // (Fable 5.1 answers 400 to temperature / top_p / top_k). Checked here, ahead
+  // of the cost hold, so a caller A/B-ing an existing request body against a
+  // new alias is refused for free and told exactly which field to drop.
+  if (provider === "anthropic" && anthropicRejectsSampling(effectiveModel) && temperature != null) {
+    return res.status(400).json({
+      error: `Model "${effectiveModel}" does not accept "temperature".`,
+      detail:
+        `Anthropic removed the sampling parameters (temperature, top_p, top_k) on its ` +
+        `always-thinking models and answers 400 when one is sent. Re-send without "temperature", ` +
+        `or use an alias whose model accepts it (haiku, sonnet, opus).`,
+      retryable: false,
+    });
+  }
+
   // Catalog names, resolved before any fetch — same one-timestamp rule as
   // /complete: the regime is picked once, from the UTC clock at declaration.
   let costNames: LlmCostNames;
@@ -1746,7 +1778,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
     platformFailed = true;
     console.error(`[internal/platform-complete] LLM call failed:`, err);
     // Same split as /complete: a refused request option is a 400, not a 502.
-    if (err instanceof VendorUnsupportedOptionError) {
+    if (err instanceof VendorUnsupportedOptionError || err instanceof AnthropicUnsupportedOptionError) {
       res.status(400).json({
         error: "Provider rejected a request option.",
         detail: err.message,

@@ -113,6 +113,59 @@ const REFUSALS: Array<{
       },
     ],
   },
+  {
+    vendor: "openai",
+    // Captured VERBATIM from api.openai.com on 2026-09-09, probing gpt-6-astra
+    // with the platform key on an account with no credit. Pinned because the
+    // adapter classifies on `code`/`type` rather than the shared prose regex —
+    // OpenAI's wording ("no credits remaining") matches none of the other
+    // three, so a body change here is a change to the only signal we have.
+    outOfCredit: {
+      status: 429,
+      body: JSON.stringify({
+        error: {
+          message:
+            "You have no credits remaining. Add credits to continue using the API at " +
+            "https://platform.openai.com/settings/organization/billing/.",
+          type: "insufficient_quota",
+          param: null,
+          code: "credit_balance_exhausted",
+        },
+      }),
+    },
+    quiet: [
+      {
+        label: "rate limit",
+        status: 429,
+        body: JSON.stringify({
+          error: {
+            message: "Rate limit reached for gpt-6-astra in organization org-xxxx on requests per min (RPM).",
+            type: "requests",
+            code: "rate_limit_exceeded",
+          },
+        }),
+      },
+      {
+        label: "unsupported reasoning effort",
+        status: 400,
+        body: JSON.stringify({
+          error: {
+            message: "Unsupported value: 'reasoning_effort' does not support 'none' with this model.",
+            type: "invalid_request_error",
+            param: "reasoning_effort",
+            code: "unsupported_value",
+          },
+        }),
+      },
+      {
+        label: "auth failure",
+        status: 401,
+        body: JSON.stringify({
+          error: { message: "Incorrect API key provided.", type: "invalid_request_error", code: "invalid_api_key" },
+        }),
+      },
+    ],
+  },
 ];
 
 describe("out-of-credit classification", () => {
