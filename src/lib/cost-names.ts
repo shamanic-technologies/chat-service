@@ -7,7 +7,7 @@
 // dimensions differ per vendor:
 //
 //   DeepSeek  cache-hit input priced apart from a miss, AND a peak/off-peak
-//             schedule → 6 names, `deepseek-flash-{peak,off-peak}-tokens-
+//             schedule → 6 names, `deepseek-v4.1-flash-{peak,off-peak}-tokens-
 //             {input,cached-input,output}`. The schedule is hours AND days:
 //             peak applies 01:00-04:00 / 06:00-10:00 UTC on weekdays only, the
 //             vendor having exempted weekends from 2026-08-22T16:00Z. (The

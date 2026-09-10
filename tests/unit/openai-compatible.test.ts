@@ -30,8 +30,8 @@ const MODEL = "deepseek-flash";
  * declared under. One table so a wrong id is visible rather than buried.
  */
 const ALIASES = [
-  { provider: "deepseek", alias: "deepseek-flash", modelId: "deepseek-flash", prefix: "deepseek-flash" },
-  { provider: "deepseek", alias: "deepseek-pro", modelId: "deepseek-flash", prefix: "deepseek-flash" },
+  { provider: "deepseek", alias: "deepseek-flash", modelId: "deepseek-flash", prefix: "deepseek-v4.1-flash" },
+  { provider: "deepseek", alias: "deepseek-pro", modelId: "deepseek-flash", prefix: "deepseek-v4.1-flash" },
   { provider: "zai", alias: "glm-flash", modelId: "glm-5.3-flash", prefix: "zai-glm-5.3-flash" },
   { provider: "zai", alias: "glm-pro", modelId: "glm-5.3", prefix: "zai-glm-5.3" },
   { provider: "moonshot", alias: "kimi-flash", modelId: "kimi-k2.6", prefix: "moonshot-kimi-k2.6" },
@@ -79,8 +79,11 @@ describe("direct-vendor model resolution", () => {
     // spend under the ONE prefix that names the model actually answering.
     expect(resolveModel("deepseek", "deepseek-flash").apiModelId).toBe("deepseek-flash");
     expect(resolveModel("deepseek", "deepseek-pro").apiModelId).toBe("deepseek-flash");
-    expect(resolveModel("deepseek", "deepseek-flash").costPrefix).toBe("deepseek-flash");
-    expect(resolveModel("deepseek", "deepseek-pro").costPrefix).toBe("deepseek-flash");
+    // The wire id and the catalog prefix differ on purpose: DeepSeek dropped
+    // the version from the model id, costs-service kept it in the row name so
+    // the generation stays legible beside the frozen V4 rows.
+    expect(resolveModel("deepseek", "deepseek-flash").costPrefix).toBe("deepseek-v4.1-flash");
+    expect(resolveModel("deepseek", "deepseek-pro").costPrefix).toBe("deepseek-v4.1-flash");
   });
 
   it("declares no spend under a retired DeepSeek model's prefix", () => {

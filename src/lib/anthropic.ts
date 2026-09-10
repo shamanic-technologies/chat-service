@@ -188,10 +188,20 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   //
   // costPrefix follows the costs-service catalog's own shape (verified against
   // its seed, v0.44.0): the vendor's model id, prefixed with the vendor slug
-  // UNLESS the id already names the vendor. So `deepseek-flash` stays bare
-  // while `glm-5.2` becomes `zai-glm-5.2`. These strings are byte-equal to the
+  // UNLESS the id already names the vendor. So `glm-5.2` becomes `zai-glm-5.2`
+  // while `deepseek-v4.1-flash` stays bare. These strings are byte-equal to the
   // catalog rows — a prefix the catalog does not carry is 422-rejected at
   // declaration and fails the request.
+  //
+  // The convention describes the SHAPE, not a derivation: costs-service owns
+  // these names and this map conforms to what it actually seeded. DeepSeek's
+  // V4.1 Flash is the case that proves it — the wire id is `deepseek-flash`
+  // (the vendor dropped the version from the id) while the catalog row is
+  // `deepseek-v4.1-flash`, which keeps the generation legible next to the
+  // frozen `deepseek-v4-flash` and `deepseek-v4-pro` rows beside it. So
+  // apiModelId and costPrefix DIFFER here on purpose; do not "fix" one to
+  // match the other. Read the catalog before changing either:
+  //   git -C ~/conductor/repos/costs-service grep 'name: "' origin/main -- src/db/seed.ts
   // ---------------------------------------------------------------------
   // Both DeepSeek aliases resolve to V4.1 Flash as of 2026-09-10, because the
   // vendor collapsed its catalog to one model and renamed the id underneath us.
@@ -238,12 +248,12 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     // vendor descriptor below is unchanged — but it was CHECKED, not assumed.
     "deepseek-flash": {
       apiModelId: "deepseek-flash",
-      costPrefix: "deepseek-flash",
+      costPrefix: "deepseek-v4.1-flash",
       provider: "deepseek",
     },
     "deepseek-pro": {
       apiModelId: "deepseek-flash",
-      costPrefix: "deepseek-flash",
+      costPrefix: "deepseek-v4.1-flash",
       provider: "deepseek",
     },
   },
@@ -472,7 +482,7 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "gemini-2.5-pro": "google-pro-2.5",
   "gemini-2.5-flash": "google-flash-2.5",
   // Direct-vendor models: the cost prefix IS the vendor model id.
-  "deepseek-flash": "deepseek-flash",
+  "deepseek-flash": "deepseek-v4.1-flash",
   // The two retired DeepSeek ids stay mapped. Nothing SENDS them any more, but
   // this table is a reverse lookup from a model id to the prefix its spend was
   // declared under, and the fallback for an unknown id is the Anthropic default

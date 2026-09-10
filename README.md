@@ -297,15 +297,15 @@ OpenAI joined on 2026-09-09 and is the interesting case, because it is the vendo
 
 | Provider | Alias | Vendor model id | Cost prefix | Priced dimensions | Base URL |
 |---|---|---|---|---|---|
-| `deepseek` | `deepseek-flash` | `deepseek-flash` | `deepseek-flash` | cache + regime | `https://api.deepseek.com/v1` |
-| `deepseek` | `deepseek-pro` *(deprecated synonym)* | `deepseek-flash` | `deepseek-flash` | cache + regime | `https://api.deepseek.com/v1` |
+| `deepseek` | `deepseek-flash` | `deepseek-flash` | `deepseek-v4.1-flash` | cache + regime | `https://api.deepseek.com/v1` |
+| `deepseek` | `deepseek-pro` *(deprecated synonym)* | `deepseek-flash` | `deepseek-v4.1-flash` | cache + regime | `https://api.deepseek.com/v1` |
 | `zai` | `glm-flash` | `glm-5.3-flash` | `zai-glm-5.3-flash` | cache | `https://api.z.ai/api/paas/v4` |
 | `zai` | `glm-pro` | `glm-5.3` | `zai-glm-5.3` | cache | `https://api.z.ai/api/paas/v4` |
 | `moonshot` | `kimi-flash` | `kimi-k2.6` | `moonshot-kimi-k2.6` | cache | `https://api.moonshot.ai/v1` |
 | `moonshot` | `kimi-pro` | `kimi-k3` | `moonshot-kimi-k3` | cache | `https://api.moonshot.ai/v1` |
 | `openai` | `gpt-pro` | `gpt-6-astra` | `openai-gpt-6-astra` | cache | `https://api.openai.com/v1` |
 
-Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`deepseek-flash` stays bare; `glm-5.3` becomes `zai-glm-5.3`). These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-flash-0910` is accepted; a different model is not — which is exactly how the 2026-09-10 rename was caught). `glm-pro` went to `glm-5.3` on 2026-08-20, back to `glm-5.2` on 2026-08-25, and to `glm-5.3` again on 2026-08-31 — see [Concurrency is part of the model choice](#concurrency-is-part-of-the-model-choice).
+Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`glm-5.3` becomes `zai-glm-5.3`; `deepseek-v4.1-flash` stays bare). The convention describes the shape, not a derivation — costs-service owns these names and this table conforms to what it seeded, which is why DeepSeek V4.1 Flash goes on the wire as `deepseek-flash` and bills under `deepseek-v4.1-flash`. These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-flash-0910` is accepted; a different model is not — which is exactly how the 2026-09-10 rename was caught). `glm-pro` went to `glm-5.3` on 2026-08-20, back to `glm-5.2` on 2026-08-25, and to `glm-5.3` again on 2026-08-31 — see [Concurrency is part of the model choice](#concurrency-is-part-of-the-model-choice).
 
 **Scope.** `/complete` and `/internal/platform-complete` only, non-streaming, text in / text out. Not wired: `/chat` (agentic tool-calling is unproven on these models and must be measured first), web search, image input, image generation, embeddings. `webSearch` or `imageUrl` on any of these providers returns **400** naming the vendor, rather than silently answering ungrounded or blind.
 
@@ -351,7 +351,7 @@ A cached count larger than the prompt total is clamped: a negative fresh-token q
 DeepSeek charges **peak** rates during 01:00–04:00 and 06:00–10:00 UTC **Monday through Friday**, and **off-peak** rates at every other hour and all weekend, so costs-service carries one row per regime and the regime is part of the cost name:
 
 ```
-deepseek-flash-{peak,off-peak}-tokens-{input,cached-input,output}
+deepseek-v4.1-flash-{peak,off-peak}-tokens-{input,cached-input,output}
 ```
 
 `buildLlmCostNames` (`src/lib/cost-names.ts`) selects the regime from the **UTC clock at declaration**, never from the date: costs-service gave both regimes an identical price point before the schedule takes effect (2026-08-16T16:00Z) and effective-dated the new rates, so the catalog resolves the right price for when the cost was written. Each window is half-open `[start, end)` — 01:00:00 is the first peak minute, 04:00:00 the first off-peak minute again — so at every instant exactly one name matches and no regime-free fallback is needed.
@@ -575,7 +575,7 @@ Both DeepSeek aliases now resolve to **V4.1 Flash** (`deepseek-flash`). The vend
 
 `deepseek-pro` is kept as a **deprecated synonym** rather than deleted: removing an alias is a breaking request-contract change and apollo-service and content-generation-service both still send it. Retiring the name is its own deliberate ship.
 
-**V4.1 Flash is a new model, not a re-price** — peak cache-miss input is $0.3/1M against V4 Flash's $0.44/1M — so it carries its own catalog rows and its own cost prefix. The four retired `deepseek-v4-*` prefixes stay priced in costs-service so spend already declared against them keeps resolving; nothing declares them again.
+**V4.1 Flash is a new model, not a re-price** — peak cache-miss input is $0.3/1M against V4 Flash's $0.44/1M — so it carries its own catalog rows and its own cost prefix, `deepseek-v4.1-flash`. Note the wire id and the prefix differ: DeepSeek dropped the version from the model id, costs-service kept it in the row name so the generation stays legible beside the frozen V4 rows. They are not derived from each other and neither should be "fixed" to match. The four retired `deepseek-v4-*` prefixes stay priced in costs-service so spend already declared against them keeps resolving; nothing declares them again.
 
 All three capability axes were re-probed against the live API rather than inherited, because a new model is a new answer: the `json_schema` response format is still refused while `json_object` answers 200, `thinking: {"type":"disabled"}` still silences reasoning (311 → 0 reasoning chars, 87 → 32 output tokens) while `reasoning_effort: "minimal"` is still ignored, and the cache split still arrives under `prompt_cache_hit_tokens`. Published concurrency is 2500, the same number V4 Flash carried, so the repoint costs no throughput — the axis that broke the first GLM swap.
 
