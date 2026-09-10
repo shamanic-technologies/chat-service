@@ -22,7 +22,7 @@ import {
 import { resolveModel, PROVIDER_MODELS, costPrefixForModel } from "../../src/lib/anthropic.js";
 import { CompleteRequestSchema, InternalPlatformCompleteRequestSchema } from "../../src/schemas.js";
 
-const MODEL = "deepseek-v4-flash";
+const MODEL = "deepseek-flash";
 
 /**
  * The six declared aliases and everything each one pins: which vendor serves
@@ -30,8 +30,8 @@ const MODEL = "deepseek-v4-flash";
  * declared under. One table so a wrong id is visible rather than buried.
  */
 const ALIASES = [
-  { provider: "deepseek", alias: "deepseek-flash", modelId: "deepseek-v4-flash", prefix: "deepseek-v4-flash" },
-  { provider: "deepseek", alias: "deepseek-pro", modelId: "deepseek-v4-pro", prefix: "deepseek-v4-pro" },
+  { provider: "deepseek", alias: "deepseek-flash", modelId: "deepseek-flash", prefix: "deepseek-v4.1-flash" },
+  { provider: "deepseek", alias: "deepseek-pro", modelId: "deepseek-flash", prefix: "deepseek-v4.1-flash" },
   { provider: "zai", alias: "glm-flash", modelId: "glm-5.3-flash", prefix: "zai-glm-5.3-flash" },
   { provider: "zai", alias: "glm-pro", modelId: "glm-5.3", prefix: "zai-glm-5.3" },
   { provider: "moonshot", alias: "kimi-flash", modelId: "kimi-k2.6", prefix: "moonshot-kimi-k2.6" },
@@ -70,15 +70,34 @@ describe("direct-vendor model resolution", () => {
     });
   }
 
-  it("keeps the two live DeepSeek aliases on their existing cost prefixes", () => {
-    // Existing production callers use these two. The transport moved off the
-    // gateway; the catalog names they bill under must NOT move with it.
-    expect(resolveModel("deepseek", "deepseek-flash").costPrefix).toBe("deepseek-v4-flash");
-    expect(resolveModel("deepseek", "deepseek-pro").costPrefix).toBe("deepseek-v4-pro");
+  it("points BOTH DeepSeek aliases at V4.1 Flash, on one cost prefix", () => {
+    // DeepSeek collapsed its catalog on 2026-09-10: `deepseek-v4-flash` left the
+    // model listing and V4 Pro was discontinued four days later, both resolving
+    // to V4.1 Flash. `deepseek-pro` survives as a deprecated synonym because
+    // apollo-service and content-generation-service still send it — deleting an
+    // alias is a breaking request-contract change. Both must therefore declare
+    // spend under the ONE prefix that names the model actually answering.
+    expect(resolveModel("deepseek", "deepseek-flash").apiModelId).toBe("deepseek-flash");
+    expect(resolveModel("deepseek", "deepseek-pro").apiModelId).toBe("deepseek-flash");
+    // The wire id and the catalog prefix differ on purpose: DeepSeek dropped
+    // the version from the model id, costs-service kept it in the row name so
+    // the generation stays legible beside the frozen V4 rows.
+    expect(resolveModel("deepseek", "deepseek-flash").costPrefix).toBe("deepseek-v4.1-flash");
+    expect(resolveModel("deepseek", "deepseek-pro").costPrefix).toBe("deepseek-v4.1-flash");
+  });
+
+  it("declares no spend under a retired DeepSeek model's prefix", () => {
+    // Those catalog rows stay priced so past spend keeps resolving — but a live
+    // call must never name them again, or we bill V4 Pro rates ($1.32/1M peak
+    // input) for a V4.1 Flash answer ($0.3/1M).
+    for (const alias of ["deepseek-flash", "deepseek-pro"] as const) {
+      expect(resolveModel("deepseek", alias).costPrefix).not.toBe("deepseek-v4-flash");
+      expect(resolveModel("deepseek", alias).costPrefix).not.toBe("deepseek-v4-pro");
+    }
   });
 
   it("sends the UNDATED vendor model id, letting the vendor pick the build", () => {
-    expect(resolveModel("deepseek", "deepseek-pro").apiModelId).toBe("deepseek-v4-pro");
+    expect(resolveModel("deepseek", "deepseek-pro").apiModelId).toBe("deepseek-flash");
     expect(resolveModel("deepseek", "deepseek-pro").apiModelId).not.toMatch(/-\d{4}$/);
   });
 
@@ -292,7 +311,7 @@ describe("buildVendorRequestBody", () => {
 
   it("sends DeepSeek its own json_object mode when a responseSchema is supplied", () => {
     const schema = { type: "object", properties: { a: { type: "string" } } };
-    for (const model of ["deepseek-v4-flash", "deepseek-v4-pro"]) {
+    for (const model of ["deepseek-flash"]) {
       const body = buildVendorRequestBody({
         vendor: "deepseek",
         apiKey: "k",
@@ -387,6 +406,29 @@ describe("assertModelMatches", () => {
 
   it("tolerates a missing model echo rather than inventing a mismatch", () => {
     expect(() => assertModelMatches(MODEL, undefined)).not.toThrow();
+  });
+
+  // The 2026-09-10 outage, both halves. DeepSeek renamed its Flash id and kept
+  // serving the OLD one, so a request for `deepseek-v4-flash` came back echoing
+  // `deepseek-flash` — a different model name at a different price. The guard
+  // refused it, correctly, and every `deepseek-flash` call 502'd until the alias
+  // was repointed. The pair below pins both directions so a future rename is a
+  // failing test rather than a live outage.
+  it("still refuses DeepSeek's silent Flash substitution under the retired id", () => {
+    expect(() => assertModelMatches("deepseek-v4-flash", "deepseek-flash")).toThrow(
+      /Model mismatch/,
+    );
+    // Same shape for the V4 Pro discontinuation on 2026-09-14: requests to the
+    // retired id are routed to V4.1 Flash and billed at the Flash price.
+    expect(() => assertModelMatches("deepseek-v4-pro", "deepseek-flash")).toThrow(
+      /Model mismatch/,
+    );
+  });
+
+  it("accepts what V4.1 Flash echoes for the id we now send", () => {
+    expect(() => assertModelMatches("deepseek-flash", "deepseek-flash")).not.toThrow();
+    // And a dated build of it, per the version-free alias convention.
+    expect(() => assertModelMatches("deepseek-flash", "deepseek-flash-0910")).not.toThrow();
   });
 });
 
@@ -487,7 +529,7 @@ describe("completeWithVendor", () => {
   });
 
   const endpoints: Array<[VendorId, string, string]> = [
-    ["deepseek", "deepseek-v4-flash", "https://api.deepseek.com/v1/chat/completions"],
+    ["deepseek", "deepseek-flash", "https://api.deepseek.com/v1/chat/completions"],
     ["zai", "glm-5.2", "https://api.z.ai/api/paas/v4/chat/completions"],
     ["moonshot", "kimi-k3", "https://api.moonshot.ai/v1/chat/completions"],
   ];
@@ -599,7 +641,7 @@ describe("completeWithVendor", () => {
     const err = await completeWithVendor({
       vendor: "deepseek",
       apiKey: "k",
-      model: "deepseek-v4-pro",
+      model: "deepseek-flash",
       message: "m",
     }).catch((e: unknown) => e);
 
@@ -794,7 +836,7 @@ describe("rate-limit retry", () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const err = await drive(
-      completeWithVendor({ vendor: "deepseek", apiKey: "k", model: "deepseek-v4-pro", message: "m" }),
+      completeWithVendor({ vendor: "deepseek", apiKey: "k", model: "deepseek-flash", message: "m" }),
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -883,7 +925,11 @@ describe("published vendor concurrency", () => {
     expect(publishedConcurrency("zai", "glm-5.2")).toBe(10);
     expect(publishedConcurrency("zai", "glm-5.3")).toBe(15);
     expect(publishedConcurrency("zai", "glm-5.3-flash")).toBe(50);
-    expect(publishedConcurrency("deepseek", "deepseek-v4-pro")).toBe(500);
+    expect(publishedConcurrency("deepseek", "deepseek-flash")).toBe(2500);
+    // The retired DeepSeek ids no longer carry a row: no alias resolves to them,
+    // so a published limit for either would be a number nobody can act on.
+    expect(publishedConcurrency("deepseek", "deepseek-v4-pro")).toBeNull();
+    expect(publishedConcurrency("deepseek", "deepseek-v4-flash")).toBeNull();
     // glm-4.7-flashx has no published row. Null is the honest answer — reading
     // it off the sibling glm-4.7 would be a number the vendor never gave us.
     expect(publishedConcurrency("zai", "glm-4.7-flashx")).toBeNull();

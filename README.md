@@ -200,7 +200,7 @@ Request body:
 - `model` (required) — version-free model alias. The service resolves the current versioned model internally. Valid combinations:
   - **anthropic**: `haiku` (fast/cheap), `sonnet` (balanced), `opus` (high quality), `fable` (Claude Fable 5.1 — the tier above Opus; 1M context, always-on reasoning). **`fable` rejects `temperature` with a 400** — see below.
   - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.8 Flash), `pro` (most powerful, Gemini 3.1 Pro). All require a Google API key in key-service.
-  - **deepseek**: `deepseek-flash` (DeepSeek V4 Flash — cheapest per unit of intelligence, 1M context), `deepseek-pro` (DeepSeek V4 Pro — the reasoning-heavy sibling)
+  - **deepseek**: `deepseek-flash` (DeepSeek V4.1 Flash — 1M context, 2500 concurrent requests). `deepseek-pro` is a **deprecated synonym** for the same model: DeepSeek discontinued V4 Pro on 2026-09-14 and routes it to V4.1 Flash at the Flash price (see [The 2026-09-10 DeepSeek collapse](#the-2026-09-10-deepseek-collapse))
   - **zai**: `glm-flash` (`glm-5.3-flash` — fast and cheap, 50 concurrent requests), `glm-pro` (`glm-5.3` — Z.ai's flagship, 15 concurrent requests)
   - **moonshot**: `kimi-flash` (`kimi-k2.6` — value tier), `kimi-pro` (`kimi-k3` — flagship, 1M context)
   - **openai**: `gpt-pro` (`gpt-6-astra` — OpenAI's flagship; 1.05M context, 128k output, always-on reasoning floored at `low`)
@@ -297,15 +297,15 @@ OpenAI joined on 2026-09-09 and is the interesting case, because it is the vendo
 
 | Provider | Alias | Vendor model id | Cost prefix | Priced dimensions | Base URL |
 |---|---|---|---|---|---|
-| `deepseek` | `deepseek-flash` | `deepseek-v4-flash` | `deepseek-v4-flash` | cache + regime | `https://api.deepseek.com/v1` |
-| `deepseek` | `deepseek-pro` | `deepseek-v4-pro` | `deepseek-v4-pro` | cache + regime | `https://api.deepseek.com/v1` |
+| `deepseek` | `deepseek-flash` | `deepseek-flash` | `deepseek-v4.1-flash` | cache + regime | `https://api.deepseek.com/v1` |
+| `deepseek` | `deepseek-pro` *(deprecated synonym)* | `deepseek-flash` | `deepseek-v4.1-flash` | cache + regime | `https://api.deepseek.com/v1` |
 | `zai` | `glm-flash` | `glm-5.3-flash` | `zai-glm-5.3-flash` | cache | `https://api.z.ai/api/paas/v4` |
 | `zai` | `glm-pro` | `glm-5.3` | `zai-glm-5.3` | cache | `https://api.z.ai/api/paas/v4` |
 | `moonshot` | `kimi-flash` | `kimi-k2.6` | `moonshot-kimi-k2.6` | cache | `https://api.moonshot.ai/v1` |
 | `moonshot` | `kimi-pro` | `kimi-k3` | `moonshot-kimi-k3` | cache | `https://api.moonshot.ai/v1` |
 | `openai` | `gpt-pro` | `gpt-6-astra` | `openai-gpt-6-astra` | cache | `https://api.openai.com/v1` |
 
-Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`deepseek-v4-flash` stays bare; `glm-5.3` becomes `zai-glm-5.3`). These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-v4-pro-0813` is accepted; a different model is not). `glm-pro` went to `glm-5.3` on 2026-08-20, back to `glm-5.2` on 2026-08-25, and to `glm-5.3` again on 2026-08-31 — see [Concurrency is part of the model choice](#concurrency-is-part-of-the-model-choice).
+Aliases follow one pattern: `<family>-flash` is the cheap tier, `<family>-pro` the strong one. The cost prefix follows the costs-service catalog's own shape: the vendor's model id, prefixed with the vendor slug unless the id already names the vendor (`glm-5.3` becomes `zai-glm-5.3`; `deepseek-v4.1-flash` stays bare). The convention describes the shape, not a derivation — costs-service owns these names and this table conforms to what it seeded, which is why DeepSeek V4.1 Flash goes on the wire as `deepseek-flash` and bills under `deepseek-v4.1-flash`. These strings are byte-equal to the catalog rows — a prefix the catalog does not carry is 422-rejected at declaration. Aliases are version-free — we send the undated id and let the vendor resolve the current build (a dated echo like `deepseek-flash-0910` is accepted; a different model is not — which is exactly how the 2026-09-10 rename was caught). `glm-pro` went to `glm-5.3` on 2026-08-20, back to `glm-5.2` on 2026-08-25, and to `glm-5.3` again on 2026-08-31 — see [Concurrency is part of the model choice](#concurrency-is-part-of-the-model-choice).
 
 **Scope.** `/complete` and `/internal/platform-complete` only, non-streaming, text in / text out. Not wired: `/chat` (agentic tool-calling is unproven on these models and must be measured first), web search, image input, image generation, embeddings. `webSearch` or `imageUrl` on any of these providers returns **400** naming the vendor, rather than silently answering ungrounded or blind.
 
@@ -351,7 +351,7 @@ A cached count larger than the prompt total is clamped: a negative fresh-token q
 DeepSeek charges **peak** rates during 01:00–04:00 and 06:00–10:00 UTC **Monday through Friday**, and **off-peak** rates at every other hour and all weekend, so costs-service carries one row per regime and the regime is part of the cost name:
 
 ```
-deepseek-v4-{flash,pro}-{peak,off-peak}-tokens-{input,cached-input,output}
+deepseek-v4.1-flash-{peak,off-peak}-tokens-{input,cached-input,output}
 ```
 
 `buildLlmCostNames` (`src/lib/cost-names.ts`) selects the regime from the **UTC clock at declaration**, never from the date: costs-service gave both regimes an identical price point before the schedule takes effect (2026-08-16T16:00Z) and effective-dated the new rates, so the catalog resolves the right price for when the cost was written. Each window is half-open `[start, end)` — 01:00:00 is the first peak minute, 04:00:00 the first off-peak minute again — so at every instant exactly one name matches and no regime-free fallback is needed.
@@ -364,7 +364,7 @@ The vendor states its weekend in Beijing days while the selector reads the UTC w
 
 **One timestamp per request.** The pre-call hold and the post-call actual are built from the same `Date`, so a call that straddles a boundary cannot hold against peak and bill against off-peak.
 
-The four regime-free names (`deepseek-v4-{flash,pro}-tokens-{input,output}`) are **superseded and frozen** in the catalog: they still resolve, which is exactly why they must not be declared — they carry the pre-schedule flat rate and would silently under-bill peak traffic. Z.ai publishes no schedule, so its names carry no regime segment; inventing one would name a row that does not exist.
+The four regime-free names (`deepseek-v4-{flash,pro}-tokens-{input,output}`) are **superseded and frozen** in the catalog: they still resolve, which is exactly why they must not be declared — they carry the pre-schedule flat rate and would silently under-bill peak traffic. The V4 Flash and V4 Pro *regime* names are frozen for the same reason since 2026-09-10: still priced so spend already declared against them keeps resolving, never declared again. Z.ai publishes no schedule, so its names carry no regime segment; inventing one would name a row that does not exist.
 
 ### No routing knobs, no fallback, and the model is asserted
 
@@ -378,7 +378,7 @@ There is likewise **no cross-vendor fallback**. A vendor being down fails loud: 
 
 | Vendor | `response_format` accepted | Evidence |
 |---|---|---|
-| `deepseek` | `{ type: "json_object" }` only | [JSON-output guide](https://api-docs.deepseek.com/guides/json_mode) documents no other value; the API answers the `json_schema` form `400 "This response_format type is unavailable now"` on both v4 models (probed 2026-08-25) |
+| `deepseek` | `{ type: "json_object" }` only | [JSON-output guide](https://api-docs.deepseek.com/guides/json_mode) documents no other value; the API answers the `json_schema` form `400 "This response_format type is unavailable now"` (probed 2026-08-25 on both v4 models, re-probed 2026-09-10 on V4.1 Flash — unchanged) |
 | `zai` | `{ type: "json_schema", ... }` | live API returns 200 for the schema form (probed 2026-08-25) |
 | `moonshot` | `{ type: "json_schema", ... }` | live API returns 200 for the schema form (probed 2026-08-25) |
 | `openai` | `{ type: "json_schema", ... }` | live API returns 200 and a valid object for the non-strict schema form (probed 2026-09-09) |
@@ -412,6 +412,7 @@ Thirty times the output for the same three emails. So a request that asks for st
 | `moonshot` / `kimi-k3` | 543 → **360** | 639 → 0 | 1,652 → 1,406 |
 | `deepseek` / `deepseek-v4-flash` | 205 → 450 | 144 → 0 | 761 → 1,959 |
 | `deepseek` / `deepseek-v4-pro` | 369 → **293** | 375 → 0 | 1,165 → 1,131 |
+| `deepseek` / `deepseek-flash` (V4.1, 2026-09-10) | 87 → **32** | 311 → 0 | — |
 
 The answers survive. On Kimi the answer got *longer* once the reasoning stopped — it was replacing the answer, not feeding it. DeepSeek barely reasons to begin with (144 chars on Flash), so it is the one vendor where the change is close to a wash and Flash spends slightly more, on a longer answer.
 
@@ -478,7 +479,7 @@ Every vendor here caps requests **in flight**, and that cap is recorded next to 
 
 | Vendor | Scope | Published limits | Source |
 |---|---|---|---|
-| DeepSeek | per model | `deepseek-v4-pro` 500, `deepseek-v4-flash` 2500 (free expansion on request) | [rate limit](https://api-docs.deepseek.com/quick_start/rate_limit) |
+| DeepSeek | per model | `deepseek-flash` 2500 (free expansion on request) | [rate limit](https://api-docs.deepseek.com/quick_start/rate_limit) |
 | Z.ai | per model | GLM-5.3-Flash **50**, GLM-5.3 **15**, GLM-5.1 **10**, GLM-5.2 **10**, GLM-4.6 3, GLM-4.6V-FlashX 3, GLM-4.7 2, GLM-5-Turbo 1, GLM-5V-Turbo 1 (read 2026-08-31) | account console (`https://z.ai/manage-apikey/rate-limits`) |
 | Moonshot | per **account** tier | Tier 0 ($1) 1 · Tier 1 ($10) 50 · Tier 2 ($20) 100 · Tier 3 200 · Tier 4 400 · Tier 5 1000 | [limits](https://platform.kimi.ai/docs/pricing/limits) |
 | OpenAI | per **account** tier, as a **rate** | Tier 1 500 RPM / 500k TPM · Tier 2 5,000 / 1M · Tier 3 5,000 / 2M · Tier 4 10,000 / 4M · Tier 5 15,000 / 40M | [model page](https://developers.openai.com/api/docs/models/gpt-6-astra) |
@@ -563,6 +564,20 @@ The alert is the fleet's existing staff event **`provider_credits_exhausted`**, 
 These six models replaced a single gateway path (removed 2026-08-15). The gateway resold the same DeepSeek models above their vendor list price (1.4x on V4 Flash, 4x on V4 Pro), charged a payment-processing fee on every top-up, and gated recent models behind a paid tier. It is removed, not deprecated: there is no fallback to it, and `provider: "vercel"` is rejected with the accepted provider set.
 
 `deepseek-flash` and `deepseek-pro` are **unchanged for callers** — same alias, same request shape (the cost prefix now carries a regime segment, which is internal to the declaration). What moved is the transport underneath, so one externally visible detail changed with it: the response's `model` field now echoes the vendor's own id (`deepseek-v4-flash`) rather than the gateway's namespaced form (`deepseek/deepseek-v4-flash`).
+
+### The 2026-09-10 DeepSeek collapse
+
+Both DeepSeek aliases now resolve to **V4.1 Flash** (`deepseek-flash`). The vendor collapsed its catalog to one model, in two moves four days apart, and the first of them took the service down.
+
+**The rename.** DeepSeek released V4.1 Flash on 2026-09-10 and renamed the Flash model id in the same release: `GET /v1/models` that day listed exactly `deepseek-flash` and `deepseek-v4-pro`, with `deepseek-v4-flash` gone from the listing. It still *accepted* a request — and answered `model: "deepseek-flash"`. That is a different model name at a different price, so `assertModelMatches` refused it and every `deepseek-flash` call returned 502 from 04:00 UTC until the alias was repointed. The guard behaved exactly as designed: it will not declare spend under the name of a model that did not answer. instantly-service's reply classification and warmup message generation were the live callers.
+
+**The discontinuation.** DeepSeek is retiring V4 Pro at 12:00 Beijing on 2026-09-14 (04:00 UTC), after which requests to `deepseek-v4-pro` are routed to V4.1 Flash and billed at the Flash price — the same silent substitution, and it would have failed the same way. Pointing `deepseek-pro` at the surviving model now makes it explicit and correctly priced rather than waiting to break.
+
+`deepseek-pro` is kept as a **deprecated synonym** rather than deleted: removing an alias is a breaking request-contract change and apollo-service and content-generation-service both still send it. Retiring the name is its own deliberate ship.
+
+**V4.1 Flash is a new model, not a re-price** — peak cache-miss input is $0.3/1M against V4 Flash's $0.44/1M — so it carries its own catalog rows and its own cost prefix, `deepseek-v4.1-flash`. Note the wire id and the prefix differ: DeepSeek dropped the version from the model id, costs-service kept it in the row name so the generation stays legible beside the frozen V4 rows. They are not derived from each other and neither should be "fixed" to match. The four retired `deepseek-v4-*` prefixes stay priced in costs-service so spend already declared against them keeps resolving; nothing declares them again.
+
+All three capability axes were re-probed against the live API rather than inherited, because a new model is a new answer: the `json_schema` response format is still refused while `json_object` answers 200, `thinking: {"type":"disabled"}` still silences reasoning (311 → 0 reasoning chars, 87 → 32 output tokens) while `reasoning_effort: "minimal"` is still ignored, and the cache split still arrives under `prompt_cache_hit_tokens`. Published concurrency is 2500, the same number V4 Flash carried, so the repoint costs no throughput — the axis that broke the first GLM swap.
 
 ## Internal Platform Completion
 
