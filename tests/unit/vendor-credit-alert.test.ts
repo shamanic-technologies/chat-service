@@ -527,7 +527,7 @@ describe("completeWithVendor wiring", () => {
         : new Response(
             JSON.stringify({
               id: "x",
-              model: "deepseek-v4-flash",
+              model: "deepseek-flash",
               choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
               usage: { prompt_tokens: 10, completion_tokens: 2 },
             }),
@@ -535,16 +535,16 @@ describe("completeWithVendor wiring", () => {
           ),
     );
 
-    await expect(completeWithVendor(options("deepseek", "deepseek-v4-flash"))).rejects.toThrow();
+    await expect(completeWithVendor(options("deepseek", "deepseek-flash"))).rejects.toThrow();
     await vi.waitFor(() => expect(emailCalls).toHaveLength(1));
     expect(isVendorCreditAlertLatched("deepseek")).toBe(true);
 
     outOfCredit = false;
-    await completeWithVendor(options("deepseek", "deepseek-v4-flash"));
+    await completeWithVendor(options("deepseek", "deepseek-flash"));
     expect(isVendorCreditAlertLatched("deepseek")).toBe(false);
 
     outOfCredit = true;
-    await expect(completeWithVendor(options("deepseek", "deepseek-v4-flash"))).rejects.toThrow();
+    await expect(completeWithVendor(options("deepseek", "deepseek-flash"))).rejects.toThrow();
     await vi.waitFor(() => expect(emailCalls).toHaveLength(2));
   });
 });

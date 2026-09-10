@@ -7,10 +7,12 @@
 // dimensions differ per vendor:
 //
 //   DeepSeek  cache-hit input priced apart from a miss, AND a peak/off-peak
-//             schedule → 12 names, `deepseek-v4-{flash,pro}-{peak,off-peak}-
-//             tokens-{input,cached-input,output}`. The schedule is hours AND
-//             days: peak applies 01:00-04:00 / 06:00-10:00 UTC on weekdays
-//             only, the vendor having exempted weekends from 2026-08-22T16:00Z.
+//             schedule → 6 names, `deepseek-flash-{peak,off-peak}-tokens-
+//             {input,cached-input,output}`. The schedule is hours AND days:
+//             peak applies 01:00-04:00 / 06:00-10:00 UTC on weekdays only, the
+//             vendor having exempted weekends from 2026-08-22T16:00Z. (The
+//             retired `deepseek-v4-{flash,pro}-*` names stay priced in the
+//             catalog so past spend keeps resolving; nothing declares them.)
 //   Z.ai      cache-hit input priced apart from a miss, no schedule → 3 names
 //             per model, `zai-glm-5.2-tokens-{input,cached-input,output}`.
 //   Moonshot  cache-hit input priced apart from a miss, no schedule → 3 names
