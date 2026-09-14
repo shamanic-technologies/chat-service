@@ -24,6 +24,7 @@ import {
   getRetryAfterMs,
   ANTHROPIC_STREAM_MAX_RETRIES,
   ANTHROPIC_STREAM_RETRY_BASE_MS,
+  modelCatalogue,
 } from "./lib/anthropic.js";
 import type { Provider, ModelAlias } from "./lib/anthropic.js";
 import { resolveChatProviderModel, buildConfigConflictSet } from "./lib/config-defaults.js";
@@ -284,6 +285,22 @@ app.get("/openapi.json", (_req, res) => {
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
+});
+
+// --- Model catalogue (internal, read-only) ---
+
+/**
+ * The alias → capability-tier catalogue, for services that decide WHICH model
+ * a piece of work should run on before they call `/complete`.
+ *
+ * Read-only and derived entirely from `MODEL_MAP`, so it cannot drift from what
+ * `/complete` actually resolves. It deliberately serves the alias and its tier
+ * and nothing else: `apiModelId` and `costPrefix` are this service's business
+ * with the vendor and the cost catalogue, and a consumer that read either would
+ * be coupled to a string that moves whenever a vendor renames a model.
+ */
+app.get("/internal/models", requireInternalAuth, (_req, res) => {
+  res.json({ models: modelCatalogue() });
 });
 
 // --- App Config Registration ---
