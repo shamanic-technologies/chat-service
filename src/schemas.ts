@@ -976,6 +976,76 @@ Callers pass a text prompt plus optional size and receive a hosted image URL plu
   },
 });
 
+// --- Model catalogue ---
+
+export const CapabilityTierSchema = z
+  .enum(["cheap", "strong", "frontier"])
+  .openapi("CapabilityTier", {
+    description:
+      "How capable the model behind an alias is. `cheap` = the small/fast tier a vendor sells " +
+      "for volume; `strong` = the vendor's main workhorse flagship; `frontier` = the premium " +
+      "tier above that flagship. Recorded per alias in chat-service, never derived from the " +
+      "alias name \u2014 `flash-pro` is `cheap` (it resolves to a Flash model) and `deepseek-pro` " +
+      "is `cheap` (a deprecated synonym pointing at V4.1 Flash), so a substring rule on \"pro\" " +
+      "gets both wrong.",
+    example: "strong",
+  });
+
+export const ModelCatalogueEntrySchema = z
+  .object({
+    provider: z.string().openapi({
+      description: "Provider this alias belongs to, as sent to /complete.",
+      example: "google",
+    }),
+    model: z.string().openapi({
+      description: "Model alias, as sent to /complete.",
+      example: "flash-pro",
+    }),
+    capabilityTier: CapabilityTierSchema,
+  })
+  .openapi("ModelCatalogueEntry");
+
+export const ModelCatalogueResponseSchema = z
+  .object({
+    models: z.array(ModelCatalogueEntrySchema),
+  })
+  .openapi("ModelCatalogueResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/models",
+  tags: ["Internal"],
+  summary: "Model alias \u2192 capability tier catalogue",
+  description: `Every (provider, model) pair \`POST /complete\` can resolve, with the capability tier recorded for it.
+
+**Auth:** Requires only \`x-api-key\` (no \`x-org-id\`, \`x-user-id\`, or \`x-run-id\`).
+
+For a caller that must decide WHICH model a piece of work should run on before it has a model in hand \u2014 features-service ranks the workflows a campaign can run, and the tier of the model writing the email decides the outcome.
+
+The tier is a decision recorded per alias in chat-service, not a rule applied to the alias name: \`flash-pro\` is \`cheap\` despite the suffix, and \`gpt-pro\` (\`frontier\`) and \`glm-pro\` (\`strong\`) share one. Do not re-derive it from the string.
+
+Derived from the same map \`/complete\` resolves through, so it cannot drift from what the service will actually run. \`apiModelId\` and \`costPrefix\` are deliberately NOT served \u2014 both move whenever a vendor renames a model.`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({
+        description: "Service-to-service API key",
+      }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "The full alias-to-tier catalogue",
+      content: {
+        "application/json": { schema: ModelCatalogueResponseSchema },
+      },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // --- Chat ---
 
 export const ChatRequestSchema = z

@@ -124,6 +124,30 @@ export type ModelAlias =
   | "kimi-pro"
   | "gpt-pro";
 
+/**
+ * How capable the model behind an alias is, in three levels.
+ *
+ * This is a DECISION recorded per alias, never a rule applied to its name. The
+ * naming pattern this file uses elsewhere (`<family>-flash` cheap, `<family>-pro`
+ * strong) describes most of the map and is wrong about the rest, so a consumer
+ * that split on the string would get those wrong silently:
+ *
+ *   • `flash-pro` contains "pro" and resolves to a Flash model — cheap.
+ *   • `deepseek-pro` is a deprecated synonym pointing at V4.1 Flash — cheap.
+ *   • `gpt-pro` and `glm-pro` share a suffix at 7x the output price apart —
+ *     frontier and strong respectively.
+ *
+ * The levels:
+ *   • `cheap`    — the small/fast tier a vendor sells for volume.
+ *   • `strong`   — the vendor's main workhorse flagship.
+ *   • `frontier` — the premium tier ABOVE that flagship, priced there.
+ *
+ * Read by features-service to rank the workflows a campaign can run: the tier
+ * of the model writing the email decides the outcome, so a campaign selling a
+ * reply and one selling a click want different tiers.
+ */
+export type CapabilityTier = "cheap" | "strong" | "frontier";
+
 interface ResolvedModel {
   /** Versioned model ID sent to the provider's API */
   apiModelId: string;
@@ -131,13 +155,19 @@ interface ResolvedModel {
   costPrefix: string;
   /** Provider key used for key-service resolution */
   provider: Provider;
+  /**
+   * Capability tier of the model this alias resolves to. REQUIRED — a new
+   * alias does not compile until someone decides its tier, which is the point:
+   * there is no default to fall back to and no string rule to infer it from.
+   */
+  capabilityTier: CapabilityTier;
 }
 
 const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   anthropic: {
-    haiku: { apiModelId: "claude-haiku-4-5", costPrefix: "anthropic-haiku-4.5", provider: "anthropic" },
-    sonnet: { apiModelId: "claude-sonnet-4-6", costPrefix: "anthropic-sonnet-4.6", provider: "anthropic" },
-    opus: { apiModelId: "claude-opus-4-6", costPrefix: "anthropic-opus-4.6", provider: "anthropic" },
+    haiku: { apiModelId: "claude-haiku-4-5", costPrefix: "anthropic-haiku-4.5", provider: "anthropic", capabilityTier: "cheap" },
+    sonnet: { apiModelId: "claude-sonnet-4-6", costPrefix: "anthropic-sonnet-4.6", provider: "anthropic", capabilityTier: "strong" },
+    opus: { apiModelId: "claude-opus-4-6", costPrefix: "anthropic-opus-4.6", provider: "anthropic", capabilityTier: "frontier" },
     // Claude Fable 5.1 — Anthropic's most capable widely released model, a tier
     // ABOVE Opus and priced there ($10 / $50 per 1M against Opus 4.6's rates).
     // Added 2026-09-09 for a cold-email template A/B; no existing alias moves.
@@ -153,12 +183,12 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     //     `temperature` is refused before any spend rather than after.
     //   • Forced tool use and assistant prefill are removed. Neither is on the
     //     `/complete` path, which sends no tools and no prefill.
-    fable: { apiModelId: "claude-fable-5-1", costPrefix: "anthropic-fable-5.1", provider: "anthropic" },
+    fable: { apiModelId: "claude-fable-5-1", costPrefix: "anthropic-fable-5.1", provider: "anthropic", capabilityTier: "frontier" },
   },
   google: {
-    "flash-lite": { apiModelId: "gemini-3.1-flash-lite", costPrefix: "google-flash-lite-3.1", provider: "google" },
+    "flash-lite": { apiModelId: "gemini-3.1-flash-lite", costPrefix: "google-flash-lite-3.1", provider: "google", capabilityTier: "cheap" },
     // "flash" alias → Gemini 3.5 Flash-Lite (GA, cheaper than the retired Flash-3 preview). 2026-07-24.
-    "flash": { apiModelId: "gemini-3.5-flash-lite", costPrefix: "google-flash-lite-3.5", provider: "google" },
+    "flash": { apiModelId: "gemini-3.5-flash-lite", costPrefix: "google-flash-lite-3.5", provider: "google", capabilityTier: "cheap" },
     // "flash-pro" alias → Gemini 3.8 Flash (GA mid-tier). Same list price as the 3.7 Flash it
     // replaces ($1.50/$7.50 per MTok from 2027-01-01, both on the same promo until then), with
     // upgraded long-horizon / agentic quality. Verified before the swap on all three axes the
@@ -166,8 +196,13 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     // 2026-09-05), thinking floor (both reject "minimal", so `disableThinking` still resolves —
     // the 3.7 swap shipped a guessed floor and 400'd every disableThinking call for 10 days),
     // and a live-API probe. DIS-130; 3.5→3.6 2026-07-24, 3.6→3.7 2026-08-14, 3.7→3.8 2026-09-05.
-    "flash-pro": { apiModelId: "gemini-3.8-flash", costPrefix: "google-flash-3.8", provider: "google" },
-    "pro": { apiModelId: "gemini-3.1-pro-preview", costPrefix: "google-pro-3.1", provider: "google" },
+    //
+    // capabilityTier is "cheap" and the alias name says "pro": the alias is named
+    // for where it sits among the Gemini aliases (above `flash`), while the tier
+    // describes the MODEL, which is a Flash. Do not "correct" this to "strong",
+    // and do not derive any tier from an alias string.
+    "flash-pro": { apiModelId: "gemini-3.8-flash", costPrefix: "google-flash-3.8", provider: "google", capabilityTier: "cheap" },
+    "pro": { apiModelId: "gemini-3.1-pro-preview", costPrefix: "google-pro-3.1", provider: "google", capabilityTier: "strong" },
   },
   // ---------------------------------------------------------------------
   // Direct-vendor models — one OpenAI-compatible adapter, three vendors.
@@ -250,11 +285,13 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       apiModelId: "deepseek-flash",
       costPrefix: "deepseek-v4.1-flash",
       provider: "deepseek",
+      capabilityTier: "cheap",
     },
     "deepseek-pro": {
       apiModelId: "deepseek-flash",
       costPrefix: "deepseek-v4.1-flash",
       provider: "deepseek",
+      capabilityTier: "cheap",
     },
   },
   zai: {
@@ -285,6 +322,7 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       apiModelId: "glm-5.3-flash",
       costPrefix: "zai-glm-5.3-flash",
       provider: "zai",
+      capabilityTier: "cheap",
     },
     // GLM-5.3. Z.ai's flagship tier, at the concurrency we can actually run it
     // at — which is a different sentence today than it was a week ago.
@@ -318,6 +356,7 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       apiModelId: "glm-5.3",
       costPrefix: "zai-glm-5.3",
       provider: "zai",
+      capabilityTier: "strong",
     },
   },
   moonshot: {
@@ -326,11 +365,13 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       apiModelId: "kimi-k2.6",
       costPrefix: "moonshot-kimi-k2.6",
       provider: "moonshot",
+      capabilityTier: "cheap",
     },
     "kimi-pro": {
       apiModelId: "kimi-k3",
       costPrefix: "moonshot-kimi-k3",
       provider: "moonshot",
+      capabilityTier: "strong",
     },
   },
   openai: {
@@ -349,6 +390,7 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       apiModelId: "gpt-6-astra",
       costPrefix: "openai-gpt-6-astra",
       provider: "openai",
+      capabilityTier: "frontier",
     },
   },
 };
@@ -389,6 +431,41 @@ export function resolveModel(provider: Provider, modelAlias: ModelAlias): Resolv
     );
   }
   return resolved;
+}
+
+/**
+ * The capability tier recorded for an alias.
+ *
+ * Throws through `resolveModel` on an alias this service cannot resolve — an
+ * unknown alias has no tier and must not be given one. There is no default.
+ */
+export function capabilityTierFor(provider: Provider, modelAlias: ModelAlias): CapabilityTier {
+  return resolveModel(provider, modelAlias).capabilityTier;
+}
+
+export interface ModelCatalogueEntry {
+  provider: Provider;
+  model: ModelAlias;
+  capabilityTier: CapabilityTier;
+}
+
+/**
+ * Every alias this service can resolve, with its tier — the whole catalogue in
+ * one value, for a consumer that needs to know the tiers before it has a model
+ * in hand (features-service ranking workflows by the model each one names).
+ *
+ * Built by walking `PROVIDER_MODELS` through `resolveModel`, so an alias the
+ * validation list advertises but `MODEL_MAP` does not carry throws here rather
+ * than being quietly skipped.
+ */
+export function modelCatalogue(): ModelCatalogueEntry[] {
+  return (Object.keys(PROVIDER_MODELS) as Provider[]).flatMap((provider) =>
+    PROVIDER_MODELS[provider].map((model) => ({
+      provider,
+      model,
+      capabilityTier: capabilityTierFor(provider, model),
+    })),
+  );
 }
 
 // ---------------------------------------------------------------------------

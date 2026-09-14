@@ -51,7 +51,10 @@ const AT = new Date("2026-09-09T12:00:00Z");
 describe("alias resolution", () => {
   it("resolves `fable` to Claude Fable 5.1 on the native Anthropic path", () => {
     const resolved = resolveModel("anthropic", "fable");
-    expect(resolved).toEqual({
+    // toMatchObject, not toEqual: ResolvedModel also carries `capabilityTier`,
+    // which has its own test (tests/unit/capability-tier.test.ts). This test is
+    // about WHERE the alias resolves, and stays about that.
+    expect(resolved).toMatchObject({
       apiModelId: "claude-fable-5-1",
       costPrefix: "anthropic-fable-5.1",
       provider: "anthropic",
@@ -60,7 +63,7 @@ describe("alias resolution", () => {
 
   it("resolves `gpt-pro` to GPT-6 Astra on the OpenAI vendor path", () => {
     const resolved = resolveModel("openai", "gpt-pro");
-    expect(resolved).toEqual({
+    expect(resolved).toMatchObject({
       apiModelId: "gpt-6-astra",
       costPrefix: "openai-gpt-6-astra",
       provider: "openai",
@@ -88,7 +91,7 @@ describe("alias resolution", () => {
       ["moonshot", "kimi-pro", "kimi-k3", "moonshot-kimi-k3"],
     ];
     for (const [provider, alias, apiModelId, costPrefix] of before) {
-      expect(resolveModel(provider, alias)).toEqual({ apiModelId, costPrefix, provider });
+      expect(resolveModel(provider, alias)).toMatchObject({ apiModelId, costPrefix, provider });
     }
   });
 

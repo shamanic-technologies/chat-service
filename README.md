@@ -579,6 +579,67 @@ Both DeepSeek aliases now resolve to **V4.1 Flash** (`deepseek-flash`). The vend
 
 All three capability axes were re-probed against the live API rather than inherited, because a new model is a new answer: the `json_schema` response format is still refused while `json_object` answers 200, `thinking: {"type":"disabled"}` still silences reasoning (311 → 0 reasoning chars, 87 → 32 output tokens) while `reasoning_effort: "minimal"` is still ignored, and the cache split still arrives under `prompt_cache_hit_tokens`. Published concurrency is 2500, the same number V4 Flash carried, so the repoint costs no throughput — the axis that broke the first GLM swap.
 
+## Model catalogue (`GET /internal/models`)
+
+`GET /internal/models` — every `(provider, model)` pair `POST /complete` can resolve, with the **capability tier** recorded for it.
+
+**Auth:** `X-API-Key` only — no `x-org-id`, `x-user-id`, or `x-run-id`.
+
+```json
+{
+  "models": [
+    { "provider": "anthropic", "model": "haiku", "capabilityTier": "cheap" },
+    { "provider": "anthropic", "model": "sonnet", "capabilityTier": "strong" },
+    { "provider": "google", "model": "flash-pro", "capabilityTier": "cheap" },
+    { "provider": "openai", "model": "gpt-pro", "capabilityTier": "frontier" }
+  ]
+}
+```
+
+Three tiers:
+
+| Tier | What it means |
+|---|---|
+| `cheap` | the small/fast tier a vendor sells for volume |
+| `strong` | the vendor's main workhorse flagship |
+| `frontier` | the premium tier **above** that flagship, priced there |
+
+Who reads it: features-service ranks the workflows a campaign can run, and the capability tier of the model writing the email decides the outcome — a campaign selling a reply and one selling a click want different tiers. That caller needs the tier *before* it has a model in hand, which is what a catalogue read gives it.
+
+**The tier is a decision recorded per alias, never derived from the alias string.** The naming pattern this service uses (`<family>-flash` cheap, `<family>-pro` strong) describes most of the map and is wrong about the rest, in both directions:
+
+| Alias | Resolves to | Tier | Why a substring rule gets it wrong |
+|---|---|---|---|
+| `google` / `flash-pro` | `gemini-3.8-flash` | `cheap` | contains "pro", **is a Flash model**. The alias is named for where it sits among the Gemini aliases; the tier describes the model. |
+| `deepseek` / `deepseek-pro` | `deepseek-flash` | `cheap` | a deprecated synonym kept for callers, pointing at V4.1 Flash since 2026-09-10 |
+| `openai` / `gpt-pro` vs `zai` / `glm-pro` | `gpt-6-astra` vs `glm-5.3` | `frontier` vs `strong` | same suffix, 7x apart on output price |
+
+Current catalogue:
+
+| Provider | Alias | Tier |
+|---|---|---|
+| `anthropic` | `haiku` | `cheap` |
+| `anthropic` | `sonnet` | `strong` |
+| `anthropic` | `opus` | `frontier` |
+| `anthropic` | `fable` | `frontier` |
+| `google` | `flash-lite` | `cheap` |
+| `google` | `flash` | `cheap` |
+| `google` | `flash-pro` | `cheap` |
+| `google` | `pro` | `strong` |
+| `deepseek` | `deepseek-flash` | `cheap` |
+| `deepseek` | `deepseek-pro` | `cheap` |
+| `zai` | `glm-flash` | `cheap` |
+| `zai` | `glm-pro` | `strong` |
+| `moonshot` | `kimi-flash` | `cheap` |
+| `moonshot` | `kimi-pro` | `strong` |
+| `openai` | `gpt-pro` | `frontier` |
+
+`capabilityTier` is a **required** field on `ResolvedModel`, so a new alias does not compile until someone decides its tier — there is no default and nothing to fall back to. `capabilityTierFor(provider, alias)` throws through `resolveModel` on an alias this service cannot resolve, and the route is derived from the same map `/complete` resolves through, so the catalogue cannot drift from what the service will actually run.
+
+`apiModelId` and `costPrefix` are deliberately **not** served here. Both move whenever a vendor renames a model (DeepSeek did exactly that on 2026-09-10), and a consumer coupled to either would break on a change that is none of its business.
+
+Error responses: 401 (auth).
+
 ## Internal Platform Completion
 
 `POST /internal/platform-complete` — platform-level LLM completion for internal service-to-service calls.

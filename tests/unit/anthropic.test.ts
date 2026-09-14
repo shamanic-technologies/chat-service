@@ -92,7 +92,10 @@ describe("costPrefixForModel", () => {
 
 describe("flash-pro alias (Gemini 3.8 Flash, DIS-130 upgraded 2026-09-05)", () => {
   it("resolveModel google/flash-pro → gemini-3.8-flash + google-flash-3.8 cost prefix", () => {
-    expect(resolveModel("google", "flash-pro")).toEqual({
+    // toMatchObject, not toEqual: ResolvedModel also carries `capabilityTier`
+    // (covered by tests/unit/capability-tier.test.ts, which pins flash-pro to
+    // the cheap tier). This test is about where the alias resolves.
+    expect(resolveModel("google", "flash-pro")).toMatchObject({
       apiModelId: "gemini-3.8-flash",
       costPrefix: "google-flash-3.8",
       provider: "google",
@@ -129,7 +132,7 @@ describe("flash-pro alias (Gemini 3.8 Flash, DIS-130 upgraded 2026-09-05)", () =
 
 describe("flash alias (Gemini 3.5 Flash-Lite, 2026-07-24)", () => {
   it("resolveModel google/flash → gemini-3.5-flash-lite + google-flash-lite-3.5 cost prefix", () => {
-    expect(resolveModel("google", "flash")).toEqual({
+    expect(resolveModel("google", "flash")).toMatchObject({
       apiModelId: "gemini-3.5-flash-lite",
       costPrefix: "google-flash-lite-3.5",
       provider: "google",
