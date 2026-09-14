@@ -109,6 +109,14 @@ The schema is built with **`drizzle-kit migrate`** (journal replay), NOT `drizzl
 
 **Removing or renaming a `provider`/`model` enum value is a BREAKING request-contract change — grep the sibling repos BEFORE shipping, not after.** These enums are a request contract other services code against; dropping a value 400s every caller still sending it, and the failure lands the moment prod deploys. `git -C ~/conductor/repos/<svc> grep -l '"<value>"' origin/main -- src` across the fleet is the check. v0.51.0 removed `provider: "vercel"` and broke content-generation-service, which mapped both DeepSeek aliases to that slug (fixed in ITS v0.30.1, after the fact). Adding a value is additive and safe; removing one is not.
 
+## Capability tier is DATA per alias — never derived from the alias string
+
+Every entry in `MODEL_MAP` (`src/lib/anthropic.ts`) carries a required `capabilityTier: "cheap" | "strong" | "frontier"`, served to other services by `GET /internal/models` (`requireInternalAuth`, alias + tier only). features-service reads it to rank the workflows a campaign can run — the tier of the model writing the email decides the outcome, so a campaign selling a reply and one selling a click want different tiers.
+
+**Do NOT replace the recorded values with a rule over the alias name.** The `<family>-flash` / `<family>-pro` naming describes most of the map and is wrong about the rest, in both directions: `flash-pro` resolves to `gemini-3.8-flash` and is `cheap`; `deepseek-pro` is a deprecated synonym for V4.1 Flash and is `cheap`; `gpt-pro` (`frontier`) and `glm-pro` (`strong`) share a suffix at 7x apart on output price. `tests/unit/capability-tier.test.ts` pins those cases with the reason, so a re-derivation fails the build rather than silently mis-tiering a consumer's ranking.
+
+The field is REQUIRED, so a new alias does not compile until someone decides its tier — there is no default to fall back to, and `capabilityTierFor` throws through `resolveModel` on an alias this service cannot resolve. `modelCatalogue()` walks `PROVIDER_MODELS` through `resolveModel`, so an alias the validation list advertises but the map does not carry throws rather than being skipped. The route serves the alias and tier ONLY — `apiModelId` and `costPrefix` move whenever a vendor renames a model (DeepSeek, 2026-09-10) and are none of a consumer's business.
+
 ## Chat provider/model default — Gemini, in code (not the DB)
 
 The default LLM for `/chat` is **Gemini `google`/`flash-pro`** (Gemini 3.8 Flash, mid-tier), resolved in code by `resolveChatProviderModel` (`src/lib/config-defaults.ts`). A config row (`app_configs` / `platform_configs`) with `provider`/`model` NULL resolves to `google`/`flash-pro` — **NOT** `anthropic`/`sonnet`. The Anthropic platform key has no credit balance; defaulting to it 400s every chat that uses a default config.
