@@ -165,41 +165,41 @@ describe("selectPricingRegime — day scope must be resolvable from the UTC week
 });
 
 describe("buildLlmCostNames — per-vendor dimensions", () => {
-  it("DeepSeek: regime segment + cache split, both models", () => {
+  it("DeepSeek: regime segment + cache split", () => {
     expect(
-      buildLlmCostNames({ provider: "deepseek", costPrefix: "deepseek-v4-flash", at: at("2026-08-20T02:00:00Z") }),
+      buildLlmCostNames({ provider: "deepseek", costPrefix: "deepseek-v4.1-flash", at: at("2026-08-20T02:00:00Z") }),
     ).toEqual({
-      input: "deepseek-v4-flash-peak-tokens-input",
-      cachedInput: "deepseek-v4-flash-peak-tokens-cached-input",
-      output: "deepseek-v4-flash-peak-tokens-output",
+      input: "deepseek-v4.1-flash-peak-tokens-input",
+      cachedInput: "deepseek-v4.1-flash-peak-tokens-cached-input",
+      output: "deepseek-v4.1-flash-peak-tokens-output",
     });
     expect(
-      buildLlmCostNames({ provider: "deepseek", costPrefix: "deepseek-v4-pro", at: at("2026-08-20T12:00:00Z") }),
+      buildLlmCostNames({ provider: "deepseek", costPrefix: "deepseek-v4.1-flash", at: at("2026-08-20T12:00:00Z") }),
     ).toEqual({
-      input: "deepseek-v4-pro-off-peak-tokens-input",
-      cachedInput: "deepseek-v4-pro-off-peak-tokens-cached-input",
-      output: "deepseek-v4-pro-off-peak-tokens-output",
+      input: "deepseek-v4.1-flash-off-peak-tokens-input",
+      cachedInput: "deepseek-v4.1-flash-off-peak-tokens-cached-input",
+      output: "deepseek-v4.1-flash-off-peak-tokens-output",
     });
   });
 
   it("DeepSeek: a former peak hour on a Saturday declares off-peak names", () => {
     expect(
-      buildLlmCostNames({ provider: "deepseek", costPrefix: "deepseek-v4-pro", at: at("2026-08-29T02:00:00Z") }),
+      buildLlmCostNames({ provider: "deepseek", costPrefix: "deepseek-v4.1-flash", at: at("2026-08-29T02:00:00Z") }),
     ).toEqual({
-      input: "deepseek-v4-pro-off-peak-tokens-input",
-      cachedInput: "deepseek-v4-pro-off-peak-tokens-cached-input",
-      output: "deepseek-v4-pro-off-peak-tokens-output",
+      input: "deepseek-v4.1-flash-off-peak-tokens-input",
+      cachedInput: "deepseek-v4.1-flash-off-peak-tokens-cached-input",
+      output: "deepseek-v4.1-flash-off-peak-tokens-output",
     });
   });
 
   it("DeepSeek: never declares the superseded regime-free names", () => {
     for (const iso of ["2026-08-20T02:00:00Z", "2026-08-20T12:00:00Z"]) {
-      const names = buildLlmCostNames({ provider: "deepseek", costPrefix: "deepseek-v4-flash", at: at(iso) });
+      const names = buildLlmCostNames({ provider: "deepseek", costPrefix: "deepseek-v4.1-flash", at: at(iso) });
       for (const name of [names.input, names.cachedInput!, names.output]) {
         expect(name).toMatch(/-(peak|off-peak)-tokens-/);
       }
-      expect(names.input).not.toBe("deepseek-v4-flash-tokens-input");
-      expect(names.output).not.toBe("deepseek-v4-flash-tokens-output");
+      expect(names.input).not.toBe("deepseek-v4.1-flash-tokens-input");
+      expect(names.output).not.toBe("deepseek-v4.1-flash-tokens-output");
     }
   });
 

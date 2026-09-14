@@ -232,8 +232,8 @@ describe("POST /complete — direct vendor routing", () => {
   // Moonshot is absent: it has no rows at all and is covered by its own
   // fail-loud tests below.
   const CASES = [
-    { provider: "deepseek", model: "deepseek-flash", host: DEEPSEEK_URL, wire: "deepseek-v4-flash", prefix: "deepseek-v4-flash-peak" },
-    { provider: "deepseek", model: "deepseek-pro", host: DEEPSEEK_URL, wire: "deepseek-v4-pro", prefix: "deepseek-v4-pro-peak" },
+    { provider: "deepseek", model: "deepseek-flash", host: DEEPSEEK_URL, wire: "deepseek-flash", prefix: "deepseek-v4.1-flash-peak" },
+    { provider: "deepseek", model: "deepseek-pro", host: DEEPSEEK_URL, wire: "deepseek-flash", prefix: "deepseek-v4.1-flash-peak" },
     { provider: "zai", model: "glm-flash", host: ZAI_URL, wire: "glm-5.3-flash", prefix: "zai-glm-5.3-flash" },
     { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.3", prefix: "zai-glm-5.3" },
   ] as const;
@@ -315,7 +315,7 @@ describe("POST /complete — direct vendor routing", () => {
       mockBilling(),
       mockVendor(vendor, {
         host: DEEPSEEK_URL,
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         // DeepSeek's own dialect: prompt_tokens = hit + miss.
         usage: { prompt_tokens: 1000, completion_tokens: 20, prompt_cache_hit_tokens: 960, prompt_cache_miss_tokens: 40 },
       }),
@@ -333,18 +333,18 @@ describe("POST /complete — direct vendor routing", () => {
     const actual = actualItems(cap.postedItems);
     // 40 fresh tokens at the miss rate, 960 at the (50x cheaper) cache rate —
     // both under the peak names, because the pinned clock is 02:00 UTC.
-    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-input")).toBe(40);
-    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-cached-input")).toBe(960);
-    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-output")).toBe(20);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-peak-tokens-input")).toBe(40);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-peak-tokens-cached-input")).toBe(960);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-peak-tokens-output")).toBe(20);
     // The split is exhaustive: nothing is billed twice, nothing is dropped.
     expect(
-      quantityOf(actual, "deepseek-v4-flash-peak-tokens-input")! +
-        quantityOf(actual, "deepseek-v4-flash-peak-tokens-cached-input")!,
+      quantityOf(actual, "deepseek-v4.1-flash-peak-tokens-input")! +
+        quantityOf(actual, "deepseek-v4.1-flash-peak-tokens-cached-input")!,
     ).toBe(1000);
     // The superseded flat names are frozen in the catalog and never declared.
-    expect(actual.some((i) => i.costName === "deepseek-v4-flash-tokens-input")).toBe(false);
-    expect(actual.some((i) => i.costName === "deepseek-v4-flash-tokens-cached-input")).toBe(false);
-    expect(actual.some((i) => i.costName === "deepseek-v4-flash-tokens-output")).toBe(false);
+    expect(actual.some((i) => i.costName === "deepseek-v4.1-flash-tokens-input")).toBe(false);
+    expect(actual.some((i) => i.costName === "deepseek-v4.1-flash-tokens-cached-input")).toBe(false);
+    expect(actual.some((i) => i.costName === "deepseek-v4.1-flash-tokens-output")).toBe(false);
 
     // The caller still sees the TOTAL prompt count; only billing is split.
     expect(res.body.tokensInput).toBe(1000);
@@ -391,7 +391,7 @@ describe("POST /complete — direct vendor routing", () => {
       mockBilling(),
       mockVendor(vendor, {
         host: DEEPSEEK_URL,
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         usage: { prompt_tokens: 1000, completion_tokens: 20, prompt_cache_hit_tokens: 960, prompt_cache_miss_tokens: 40 },
       }),
       ...mockRunsCostRoutes(cap),
@@ -408,13 +408,13 @@ describe("POST /complete — direct vendor routing", () => {
     // The pre-call HOLD and the post-call ACTUAL agree on the regime — one
     // timestamp per request, so a call cannot hold peak and bill off-peak.
     expect(cap.postedItems[0].map((i) => i.costName).sort()).toEqual([
-      "deepseek-v4-flash-off-peak-tokens-input",
-      "deepseek-v4-flash-off-peak-tokens-output",
+      "deepseek-v4.1-flash-off-peak-tokens-input",
+      "deepseek-v4.1-flash-off-peak-tokens-output",
     ]);
     const actual = actualItems(cap.postedItems);
-    expect(quantityOf(actual, "deepseek-v4-flash-off-peak-tokens-input")).toBe(40);
-    expect(quantityOf(actual, "deepseek-v4-flash-off-peak-tokens-cached-input")).toBe(960);
-    expect(quantityOf(actual, "deepseek-v4-flash-off-peak-tokens-output")).toBe(20);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-off-peak-tokens-input")).toBe(40);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-off-peak-tokens-cached-input")).toBe(960);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-off-peak-tokens-output")).toBe(20);
     expect(actual.some((i) => i.costName.includes("-peak-tokens") && !i.costName.includes("off-peak"))).toBe(false);
   });
 
@@ -430,7 +430,7 @@ describe("POST /complete — direct vendor routing", () => {
       mockBilling(),
       mockVendor(vendor, {
         host: DEEPSEEK_URL,
-        model: "deepseek-v4-pro",
+        model: "deepseek-flash",
         usage: { prompt_tokens: 500, completion_tokens: 12, prompt_cache_hit_tokens: 400 },
       }),
       ...mockRunsCostRoutes(cap),
@@ -444,9 +444,9 @@ describe("POST /complete — direct vendor routing", () => {
 
     expect(res.status).toBe(200);
     const actual = actualItems(cap.postedItems);
-    expect(quantityOf(actual, "deepseek-v4-pro-peak-tokens-input")).toBe(100);
-    expect(quantityOf(actual, "deepseek-v4-pro-peak-tokens-cached-input")).toBe(400);
-    expect(quantityOf(actual, "deepseek-v4-pro-peak-tokens-output")).toBe(12);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-peak-tokens-input")).toBe(100);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-peak-tokens-cached-input")).toBe(400);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-peak-tokens-output")).toBe(12);
   });
 
   it("bills Moonshot against the flat cache-split names, at any hour", async () => {
@@ -524,7 +524,7 @@ describe("POST /complete — direct vendor routing", () => {
       mockBilling(),
       mockVendor(vendor, {
         host: DEEPSEEK_URL,
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         usage: { prompt_tokens: 100, completion_tokens: 10, prompt_cache_hit_tokens: 0, prompt_cache_miss_tokens: 100 },
       }),
       ...mockRunsCostRoutes(cap),
@@ -538,7 +538,7 @@ describe("POST /complete — direct vendor routing", () => {
 
     const actual = actualItems(cap.postedItems);
     expect(actual.some((i) => i.costName.endsWith("-tokens-cached-input"))).toBe(false);
-    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-input")).toBe(100);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-peak-tokens-input")).toBe(100);
   });
 
   it("leaves the Gemini declaration untouched — no cached row on a native path", async () => {
@@ -657,7 +657,7 @@ describe("POST /complete — direct vendor routing", () => {
         mockBilling(),
         mockVendor(vendor, {
           host: DEEPSEEK_URL,
-          model: model === "deepseek-flash" ? "deepseek-v4-flash" : "deepseek-v4-pro",
+          model: "deepseek-flash",
           usage: { prompt_tokens: 30, completion_tokens: 9 },
           content: '{"subject":"s","body":"b"}',
         }),
@@ -950,7 +950,7 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
       mockPlatformRunStatus(),
       mockVendor(vendor, {
         host: DEEPSEEK_URL,
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         usage: { prompt_tokens: 400, completion_tokens: 25, prompt_cache_hit_tokens: 360, prompt_cache_miss_tokens: 40 },
       }),
     );
@@ -962,14 +962,14 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
 
     expect(res.status).toBe(200);
     expect(vendor.calls).toBe(1);
-    expect(vendor.bodies[0].model).toBe("deepseek-v4-flash");
+    expect(vendor.bodies[0].model).toBe("deepseek-flash");
 
     // Clock pinned to 02:00 UTC → peak.
     const actual = costCap.postedItems[0];
-    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-input")).toBe(40);
-    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-cached-input")).toBe(360);
-    expect(quantityOf(actual, "deepseek-v4-flash-peak-tokens-output")).toBe(25);
-    expect(actual.some((i) => i.costName === "deepseek-v4-flash-tokens-input")).toBe(false);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-peak-tokens-input")).toBe(40);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-peak-tokens-cached-input")).toBe(360);
+    expect(quantityOf(actual, "deepseek-v4.1-flash-peak-tokens-output")).toBe(25);
+    expect(actual.some((i) => i.costName === "deepseek-v4.1-flash-tokens-input")).toBe(false);
     // Platform runs post actuals only — no provision, no hold.
     expect(actual.every((i) => i.status === undefined)).toBe(true);
     expect(actual.every((i) => i.costSource === "platform")).toBe(true);

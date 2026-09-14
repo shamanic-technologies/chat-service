@@ -188,25 +188,72 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   //
   // costPrefix follows the costs-service catalog's own shape (verified against
   // its seed, v0.44.0): the vendor's model id, prefixed with the vendor slug
-  // UNLESS the id already names the vendor. So `deepseek-v4-flash` stays bare
-  // while `glm-5.2` becomes `zai-glm-5.2`. These strings are byte-equal to the
+  // UNLESS the id already names the vendor. So `glm-5.2` becomes `zai-glm-5.2`
+  // while `deepseek-v4.1-flash` stays bare. These strings are byte-equal to the
   // catalog rows — a prefix the catalog does not carry is 422-rejected at
   // declaration and fails the request.
+  //
+  // The convention describes the SHAPE, not a derivation: costs-service owns
+  // these names and this map conforms to what it actually seeded. DeepSeek's
+  // V4.1 Flash is the case that proves it — the wire id is `deepseek-flash`
+  // (the vendor dropped the version from the id) while the catalog row is
+  // `deepseek-v4.1-flash`, which keeps the generation legible next to the
+  // frozen `deepseek-v4-flash` and `deepseek-v4-pro` rows beside it. So
+  // apiModelId and costPrefix DIFFER here on purpose; do not "fix" one to
+  // match the other. Read the catalog before changing either:
+  //   git -C ~/conductor/repos/costs-service grep 'name: "' origin/main -- src/db/seed.ts
   // ---------------------------------------------------------------------
+  // Both DeepSeek aliases resolve to V4.1 Flash as of 2026-09-10, because the
+  // vendor collapsed its catalog to one model and renamed the id underneath us.
+  //
+  // https://api-docs.deepseek.com/quick_start/pricing — re-read 2026-09-10.
+  // `GET /v1/models` that day listed exactly two ids, `deepseek-flash` and
+  // `deepseek-v4-pro`; `deepseek-v4-flash` was gone from the listing. It still
+  // ACCEPTED a request and answered `model: "deepseek-flash"`, which is the
+  // shape assertModelMatches is built to refuse — so the `deepseek-flash` alias
+  // was 502-ing every call from the moment V4.1 Flash shipped (04:00 UTC that
+  // day), with instantly-service's reply classification and warmup messages as
+  // the live casualties. The guard did its job: it will not declare spend under
+  // the name of a model that did not answer.
+  //
+  // The V4 Pro half is dated rather than broken. DeepSeek is discontinuing that
+  // service at 12:00 Beijing on 2026-09-14 (04:00 UTC), after which requests to
+  // `deepseek-v4-pro` are routed to V4.1 Flash and billed at the Flash price —
+  // i.e. exactly the same silent substitution, four days later, and it would
+  // fail exactly the same way. Pointing the alias at the surviving model now
+  // makes that explicit and correctly priced instead of waiting to break.
+  //
+  // `deepseek-pro` is therefore a DEPRECATED SYNONYM, kept rather than deleted:
+  // removing an alias is a breaking request-contract change and apollo-service
+  // and content-generation-service both still send it. Retiring the name is its
+  // own deliberate ship, coordinated with those two.
   deepseek: {
-    // https://api-docs.deepseek.com/quick_start/pricing — read 2026-08-15.
+    // DeepSeek V4.1 Flash, released 2026-09-10. The vendor's announcement:
+    // "V4.1 Flash has comprehensively surpassed V4 Pro across all key metrics,
+    // including performance, cost, speed, and task completion time."
+    //
+    // It is a NEW model, not a re-price of V4 Flash — peak cache-miss input is
+    // $0.3/1M against V4 Flash's $0.44/1M — so it carries its own catalog rows
+    // and its own cost prefix. Reaching it was gated on those rows being live
+    // in production; the four V4 Flash / V4 Pro prefixes stay priced in the
+    // catalog so spend already declared against them keeps resolving.
+    //
+    // All three capability axes were re-probed against the live API on
+    // 2026-09-10 rather than inherited: `response_format: {type:"json_schema"}`
+    // is still refused (`400 "This response_format type is unavailable now"`)
+    // while `json_object` answers 200; `thinking: {"type":"disabled"}` still
+    // silences reasoning (311 → 0 reasoning chars, 87 → 32 output tokens) while
+    // `reasoning_effort: "minimal"` is still ignored; and the usage payload
+    // still reports the cache split under `prompt_cache_hit_tokens`. So the
+    // vendor descriptor below is unchanged — but it was CHECKED, not assumed.
     "deepseek-flash": {
-      apiModelId: "deepseek-v4-flash",
-      costPrefix: "deepseek-v4-flash",
+      apiModelId: "deepseek-flash",
+      costPrefix: "deepseek-v4.1-flash",
       provider: "deepseek",
     },
-    // DeepSeek V4 Pro — the reasoning-heavy sibling of V4 Flash. DeepSeek also
-    // publishes dated builds (`deepseek-v4-pro-0813`); our aliases are
-    // version-free, so we send the undated id and let the vendor resolve the
-    // current build (assertModelMatches accepts a dated echo of it).
     "deepseek-pro": {
-      apiModelId: "deepseek-v4-pro",
-      costPrefix: "deepseek-v4-pro",
+      apiModelId: "deepseek-flash",
+      costPrefix: "deepseek-v4.1-flash",
       provider: "deepseek",
     },
   },
@@ -435,6 +482,12 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "gemini-2.5-pro": "google-pro-2.5",
   "gemini-2.5-flash": "google-flash-2.5",
   // Direct-vendor models: the cost prefix IS the vendor model id.
+  "deepseek-flash": "deepseek-v4.1-flash",
+  // The two retired DeepSeek ids stay mapped. Nothing SENDS them any more, but
+  // this table is a reverse lookup from a model id to the prefix its spend was
+  // declared under, and the fallback for an unknown id is the Anthropic default
+  // — so deleting a row here would silently re-attribute a historical DeepSeek
+  // model to `anthropic-sonnet-4.6` rather than fail.
   "deepseek-v4-flash": "deepseek-v4-flash",
   "deepseek-v4-pro": "deepseek-v4-pro",
   "glm-4.7-flashx": "zai-glm-4.7-flashx",

@@ -456,8 +456,9 @@ export const CompleteRequestSchema = z
         "`fable` rejects `temperature` with a 400 \u2014 Anthropic removed the sampling " +
         "parameters on its always-thinking models, as OpenAI did on `gpt-pro`.\n" +
         "**google:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.8 Flash), `pro` (most powerful).\n" +
-        "**deepseek:** `deepseek-flash` → DeepSeek V4 Flash (cheapest per unit of intelligence; 1M context), " +
-        "`deepseek-pro` → DeepSeek V4 Pro (reasoning-heavy sibling).\n" +
+        "**deepseek:** `deepseek-flash` → DeepSeek V4.1 Flash (1M context, 2500 concurrent requests). " +
+        "`deepseek-pro` is a **deprecated synonym** resolving to the same model: DeepSeek discontinued " +
+        "V4 Pro on 2026-09-14 and routes it to V4.1 Flash at the Flash price. Prefer `deepseek-flash`.\n" +
         "**zai:** `glm-flash` → `glm-5.3-flash` (fast, cheap, 50 concurrent requests), `glm-pro` → `glm-5.3` (flagship, 15 concurrent requests).\n" +
         "**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n" +
         "**openai:** `gpt-pro` → GPT-6 Astra (flagship; 1.05M context, 128k output, always-on " +
@@ -819,7 +820,7 @@ export const InternalPlatformCompleteRequestSchema = z
         "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus|fable " +
         "(`fable` = Claude Fable 5.1, which rejects `temperature` with a 400), " +
         "google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro " +
-        "(DeepSeek V4 Flash / V4 Pro), zai → glm-flash|glm-pro (`glm-5.3-flash` / `glm-5.3`), " +
+        "(both DeepSeek V4.1 Flash; `deepseek-pro` is a deprecated synonym), zai → glm-flash|glm-pro (`glm-5.3-flash` / `glm-5.3`), " +
         "moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`), openai → gpt-pro " +
         "(`gpt-6-astra`, which rejects `temperature`). The direct-vendor models are text-only: `webSearch` is rejected with 400.",
       example: "sonnet",

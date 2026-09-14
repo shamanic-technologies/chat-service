@@ -531,8 +531,8 @@ export interface VendorConfig {
 const EMPTY_BALANCE_PROSE = /insufficient balance|run out of balance|no resource package/;
 
 export const VENDORS: Record<VendorId, VendorConfig> = {
-  // https://api-docs.deepseek.com/quick_start/pricing — read 2026-08-15.
-  // Cache hit $0.014 vs cache miss $0.44 per 1M input tokens (peak): 31x.
+  // https://api-docs.deepseek.com/quick_start/pricing — re-read 2026-09-10.
+  // V4.1 Flash, peak: cache hit $0.006 vs cache miss $0.3 per 1M input: 50x.
   deepseek: {
     id: "deepseek",
     label: "DeepSeek",
@@ -580,11 +580,19 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // complete", and "when the concurrency limit is exceeded, you will receive
     // an HTTP 429 error code". Expansion is free on request. Neither DeepSeek
     // alias is anywhere near these, so no alias choice here is throughput-bound.
+    //
+    // Re-read 2026-09-10 when both aliases moved to V4.1 Flash: `deepseek-flash`
+    // publishes 2500, the same number V4 Flash carried, so this repoint costs no
+    // throughput — the axis that broke the first GLM swap. The retired
+    // `deepseek-v4-flash` and `deepseek-v4-pro` entries are gone because no
+    // alias resolves to them any more, and a limit for a model we cannot reach
+    // is a number nobody can check. `publishedConcurrency` answering null for
+    // them is the honest result, not a regression.
     concurrency: {
       scope: "per-model",
-      limits: { "deepseek-v4-pro": 500, "deepseek-v4-flash": 2500 },
+      limits: { "deepseek-flash": 2500 },
       source: "https://api-docs.deepseek.com/quick_start/rate_limit",
-      observedOn: "2026-08-25",
+      observedOn: "2026-09-10",
     },
     // json_object ONLY. DeepSeek's JSON-output guide documents
     // `{"type":"json_object"}` and nothing else
@@ -597,6 +605,10 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // deepseek-pro completion fail for five hours the night before: the alias
     // had never been called in production, so no request had ever carried a
     // responseSchema to this vendor.
+    //
+    // Re-probed 2026-09-10 against V4.1 Flash (`deepseek-flash`), because a new
+    // model is a new answer and not an inherited one: the json_schema form drew
+    // the identical 400, json_object returned `{"c":"Paris"}`. Unchanged.
     sampling: {
       accepted: true,
       note: "DeepSeek's chat models take temperature; it has been forwarded on this path since 2026-08-15.",
@@ -621,7 +633,10 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
       evidence:
         "Probed 2026-08-25. flash 205→450 out tok (answer 761→1,959 chars), pro 369→293 out tok " +
         "(answer 1,165→1,131 chars); reasoning_content empty in both. enable_thinking / " +
-        "reasoning_effort are ignored by this vendor, like an unknown key.",
+        "reasoning_effort are ignored by this vendor, like an unknown key. " +
+        "Re-probed 2026-09-10 on V4.1 Flash (deepseek-flash): thinking disabled takes it from " +
+        "87 to 32 output tokens and 311 to 0 reasoning chars, while reasoning_effort:'minimal' " +
+        "still reasons at full volume (260 chars) — same field, same silence, on the new model.",
     },
     // DeepSeek is the one vendor that does NOT overload 429 for this: its
     // documented codes give an empty balance its own status, 402 "Insufficient
