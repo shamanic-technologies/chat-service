@@ -1513,6 +1513,379 @@
           "text"
         ],
         "additionalProperties": false
+      },
+      "JudgmentsResponse": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "The model that served the judgment.",
+            "example": "jev-latest"
+          },
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JudgmentAnswer"
+            },
+            "description": "One answer per question, under the caller's own key, with its distribution intact."
+          },
+          "usage": {
+            "$ref": "#/components/schemas/JudgmentsUsage"
+          }
+        },
+        "required": [
+          "model",
+          "answers",
+          "usage"
+        ]
+      },
+      "JudgmentAnswer": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/NoulAnswer"
+          },
+          {
+            "$ref": "#/components/schemas/ChoiceAnswer"
+          },
+          {
+            "$ref": "#/components/schemas/ScoreAnswer"
+          }
+        ]
+      },
+      "NoulAnswer": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "noul"
+            ]
+          },
+          "noul": {
+            "type": "number",
+            "description": "Probability that the answer is yes. Near 1 a strong yes, near 0 a strong no, near 0.5 genuinely uncertain — a Noul has no separate confidence because this value IS it.",
+            "example": 0.92
+          }
+        },
+        "required": [
+          "type",
+          "noul"
+        ]
+      },
+      "ChoiceAnswer": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "choice"
+            ]
+          },
+          "choice": {
+            "type": "string",
+            "description": "The highest-probability option."
+          },
+          "confidence": {
+            "type": "number",
+            "description": "0..1, derived from how concentrated the distribution is. Low means the model was hesitating between options — decline to act on it rather than taking `choice` at face value.",
+            "example": 1
+          },
+          "probabilities": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Probability per option. Sums to 1."
+          }
+        },
+        "required": [
+          "type",
+          "choice",
+          "confidence",
+          "probabilities"
+        ]
+      },
+      "ScoreAnswer": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "score"
+            ]
+          },
+          "score": {
+            "type": "number",
+            "description": "Probability-weighted position across the levels. Fractional on purpose — it can land between two levels.",
+            "example": 1.3
+          },
+          "confidence": {
+            "type": "number",
+            "description": "0..1, derived from how concentrated the distribution is.",
+            "example": 0.54
+          },
+          "probabilities": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Probability per level number. Sums to 1."
+          },
+          "legend": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Level number to the description supplied in the request."
+          }
+        },
+        "required": [
+          "type",
+          "score",
+          "confidence",
+          "probabilities",
+          "legend"
+        ]
+      },
+      "JudgmentsUsage": {
+        "type": "object",
+        "properties": {
+          "inputTokens": {
+            "type": "number",
+            "description": "Input tokens the vendor counted. The only billable quantity."
+          },
+          "outputTokens": {
+            "type": "number",
+            "description": "Output tokens the vendor counted. Free at this vendor, never billed."
+          }
+        },
+        "required": [
+          "inputTokens",
+          "outputTokens"
+        ]
+      },
+      "JudgmentsRequest": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "nullable": true
+                }
+              },
+              {
+                "type": "array",
+                "items": {
+                  "nullable": true
+                }
+              }
+            ],
+            "description": "The content to judge: text, a JSON object, or an array. Read once and evaluated against every question in parallel.",
+            "example": "Help! My payouts have been failing for 3 days."
+          },
+          "questions": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JudgmentQuestion"
+            },
+            "description": "Caller-chosen key to question. Every key comes back in `answers` under the same name."
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "jev-latest",
+              "jev-preview",
+              "jev-1.13.0"
+            ],
+            "description": "Judgment model. Defaults to `jev-latest`.",
+            "example": "jev-latest"
+          }
+        },
+        "required": [
+          "state",
+          "questions"
+        ],
+        "additionalProperties": false
+      },
+      "JudgmentQuestion": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/NoulQuestion"
+          },
+          {
+            "$ref": "#/components/schemas/ChoiceQuestion"
+          },
+          {
+            "$ref": "#/components/schemas/ScoreQuestion"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "noul": "#/components/schemas/NoulQuestion",
+            "choice": "#/components/schemas/ChoiceQuestion",
+            "score": "#/components/schemas/ScoreQuestion"
+          }
+        }
+      },
+      "NoulQuestion": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "noul"
+            ]
+          },
+          "instructions": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The yes/no question to evaluate against the state.",
+            "example": "Does this convey urgency?"
+          },
+          "criteria": {
+            "type": "object",
+            "properties": {
+              "true": {
+                "type": "string",
+                "minLength": 1
+              },
+              "false": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "true",
+              "false"
+            ],
+            "additionalProperties": false,
+            "description": "Optional descriptions of what yes and no mean, for boundaries the question alone leaves open."
+          }
+        },
+        "required": [
+          "type",
+          "instructions"
+        ],
+        "additionalProperties": false
+      },
+      "ChoiceQuestion": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "choice"
+            ]
+          },
+          "instructions": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The selection question to evaluate against the state.",
+            "example": "Which team should handle this?"
+          },
+          "criteria": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "what": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "examples": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "what"
+                  ],
+                  "additionalProperties": false
+                }
+              ],
+              "description": "A plain description of the option/level, or the structured form ({ what, examples }) for inputs the plain form reads ambiguously on."
+            },
+            "description": "Option name to description. 2 to 255 options. Include an \"other\" option when the list may not cover every input."
+          }
+        },
+        "required": [
+          "type",
+          "instructions",
+          "criteria"
+        ],
+        "additionalProperties": false
+      },
+      "ScoreQuestion": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "score"
+            ]
+          },
+          "instructions": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The rating question to evaluate against the state.",
+            "example": "How severe is the reported issue?"
+          },
+          "criteria": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "what": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "examples": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "what"
+                  ],
+                  "additionalProperties": false
+                }
+              ],
+              "description": "A plain description of the option/level, or the structured form ({ what, examples }) for inputs the plain form reads ambiguously on."
+            },
+            "minItems": 2,
+            "maxItems": 10,
+            "description": "Ordered levels, low end first. 2 to 10 of them."
+          }
+        },
+        "required": [
+          "type",
+          "instructions",
+          "criteria"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -2985,6 +3358,180 @@
           },
           "502": {
             "description": "Upstream service unavailable (key-service, runs-service, or Gemini)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/judgments": {
+      "post": {
+        "tags": [
+          "Judgments"
+        ],
+        "summary": "Ask typed questions about a piece of text and get calibrated answers",
+        "description": "Answers one or more TYPED questions about a piece of state, each with the model's own probability distribution: a yes-probability for a `noul`, a picked option plus a full distribution and a `confidence` for a `choice`, a weighted position on ordered levels for a `score`.\n\nBacked by TypeSafe (`jev`), which is built for exactly this and does not generate text.\n\n**Why this is not `/complete`:** that route returns prose the caller parses, and tells it nothing about how sure the model was. A consumer that FREEZES a classification at write time needs the certainty to decide whether to freeze at all — so nothing here reduces an answer to its winning value. Read `confidence` (or the `noul` probability itself) and route a hesitant answer to your own \"unknown\" state.\n\n**Pipeline:**\n1. Resolve the org's TypeSafe key via key-service.\n2. Provision + authorize the input-token spend, then call the vendor.\n3. Reconcile the hold to the EXACT input-token count the vendor reports.\n\n**Billing:** input tokens only. The vendor charges nothing for output, so nothing here declares an output cost.\n\n**Limits:** 64k tokens per request overall, 32k for the state plus the longest single question; at most 255 options per Choice; 2-10 levels per Score. A request over the token budget is refused by the vendor and surfaces as a 400 carrying its words.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal org UUID from client-service",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal user UUID from client-service",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Caller's run ID — used as parentRunId when creating this service's own run in runs-service"
+            },
+            "required": true,
+            "description": "Caller's run ID — used as parentRunId when creating this service's own run in runs-service",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Campaign ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Campaign ID — injected automatically by workflow-service",
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+              "example": "550e8400-e29b-41d4-a716-446655440000,660f9500-f30c-52e5-b827-557766551111"
+            },
+            "required": false,
+            "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Workflow slug — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Workflow slug — injected automatically by workflow-service",
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Feature slug — propagated through the entire service chain"
+            },
+            "required": false,
+            "description": "Feature slug — propagated through the entire service chain",
+            "name": "x-feature-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow."
+            },
+            "required": false,
+            "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow.",
+            "name": "x-audience-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JudgmentsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One typed answer per question, distributions intact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JudgmentsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request fields, or the vendor refused the request shape (its own message is carried through; `retryable` is false)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits for the platform-key spend",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "TypeSafe rate-limited the request for the whole retry budget. `retryable` is true — nothing ran and nothing was billed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream service unavailable (key-service, runs-service, or TypeSafe)",
             "content": {
               "application/json": {
                 "schema": {
