@@ -885,7 +885,7 @@ No vector storage, no similarity, no caching — callers persist and compare vec
 
 Determinism: Gemini `gemini-embedding-001` is deterministic for identical input texts under stable model versions, but Google does not contractually guarantee bit-exact output across server-side updates. Callers that depend on stable vectors over time should re-embed after a model version change.
 
-## Typed judgments (`/orgs/judgments`)
+## Typed judgments (`/orgs/judgments`, `/internal/platform-judgments`)
 
 `POST /orgs/judgments` — ask one or more **typed** questions about a piece of text and get the answers back **with the model's own probability distribution**. Backed by [TypeSafe](https://docs.typesafe.ai) (`jev`), a vendor built for exactly this, which does not generate text at all.
 
@@ -958,6 +958,20 @@ Question criteria: a `choice` takes 2–255 options (include an `other` option w
 - `502` — key-service, runs-service or TypeSafe failed, or the vendor answered with a model this service does not price.
 
 **Retry behaviour:** connect-phase failures (3 retries, 250/500/1000ms) and the two statuses the vendor itself says to back off on — `429` and `529` — with a jittered 500/1500/3500/7500ms schedule honouring `Retry-After` up to 10s. Nothing else. A completed `4xx` is a permanent refusal; a completed `5xx` is a real answer.
+
+### Platform-billed twin — `POST /internal/platform-judgments`
+
+The org-less half of the same capability, for a caller that has no org, no user and no run: a cron, an IMAP poller, a backfill. Same request body, same typed answers with their distributions intact, same vendor and same pinned release.
+
+**Auth:** `x-api-key` only. No `x-org-id`, no `x-user-id`, no `x-run-id` — a cron has none of them, and a fabricated run id is rejected by runs-service as a non-existent parent. That is why this is a second route rather than relaxed identity on the org-scoped one: weakening that route's requirements would put the org-billed path at risk to serve an org-less caller.
+
+**Key:** the **platform** TypeSafe key (`GET /keys/platform/typesafe/decrypt`). When it is absent, the request fails `502` with a body that NAMES the credential — `Failed to resolve the platform typesafe API key. Register a platform key for provider "typesafe" in key-service.` plus `provider` and `retryable: false` — never a generic internal error. No run is created and the vendor is never called, so a missing key costs nothing.
+
+**Cost handling:** a **platform run** (`serviceName: chat-service`, `taskName: platform-judgments`), `costSource: "platform"`. There is no org balance to gate on, so there is no affordability authorize; platform runs carry no cost-status PATCH, so there is no provisioned hold and no cancel. The only quantity ever declared is the exact `usage.input_tokens` the vendor reports, posted as `actual` under the same `typesafe-jev-1.13-tokens-input` name. Output is free at this vendor, so no output row is ever declared. A cost that cannot be declared fails the request (`502`) — spend is never left untracked.
+
+**Errors:** `400` (validation, or a vendor refusal of the request shape, `retryable: false`), `401` (missing/invalid service key), `429` (rate limit for the whole retry budget, `retryable: true`, carrying `attempts` + `waitedMs`), `502` (platform key unresolvable — the body names the provider — runs-service unavailable, or TypeSafe failed). No `402`: there is no org balance.
+
+Everything else — the pinned release on the wire, the refusal to flatten an answer or serve one whose certainty went missing, the retry schedule — is identical to the org-scoped route.
 
 **Model pinning:** whichever of the three values a caller asks for, the id sent on the wire is always the pinned release `jev-1.13.0`, and an answer served by anything else is refused rather than billed. The cost name is keyed on the release for the same reason: an alias moves to a new model without notice, and since the vendor echoes the id it was asked for, forwarding `jev-latest` would bill a new model under the old release's name with nothing to show for it. A loud outage on a rename is the cheap failure, exactly as with DeepSeek's 2026-09-10 rename (see above). A new Jev release is a deliberate edit here, after its own catalog row exists.
 
