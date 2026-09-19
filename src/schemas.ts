@@ -2170,3 +2170,50 @@ Backed by TypeSafe (\`jev\`), which is built for exactly this and does not gener
     },
   },
 });
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/platform-judgments",
+  tags: ["Judgments"],
+  summary: "Ask typed questions with the spend billed to the platform (no org)",
+  description: `The org-less twin of \`POST /orgs/judgments\`: same body, same typed answers with their probability distributions intact. Use it from a caller that has no org, no user and no run — a cron, a poller, a backfill.
+
+**Identity:** service auth only (\`x-api-key\`). No \`x-org-id\`, no \`x-user-id\`, no \`x-run-id\` — a cron has none of them, and a fabricated run id is rejected by runs-service as a non-existent parent.
+
+**Billing:** the TypeSafe PLATFORM key, declared on a platform run under the same input-token cost name. There is no org balance to gate on, so there is no affordability check and no provisioned hold — the only quantity ever declared is the exact input-token count the vendor reports. Output is free at this vendor, so nothing declares an output cost.
+
+Everything else — the pinned release on the wire, the refusal to flatten an answer to its winning value, the retry schedule — is identical to the org-scoped route.`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+    }),
+    body: {
+      content: { "application/json": { schema: JudgmentsRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "One typed answer per question, distributions intact",
+      content: { "application/json": { schema: JudgmentsResponseSchema } },
+    },
+    400: {
+      description:
+        "Invalid request fields, or the vendor refused the request shape (its own message is carried through; `retryable` is false)",
+      content: { "application/json": { schema: ValidationErrorResponseSchema } },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    429: {
+      description:
+        "TypeSafe rate-limited the request for the whole retry budget. `retryable` is true — nothing ran and nothing was billed.",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description:
+        "The platform TypeSafe key could not be resolved (the response names the provider), runs-service was unavailable, or TypeSafe failed",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
