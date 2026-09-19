@@ -1889,6 +1889,129 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
   }
 });
 
+// --- Typed judgments, platform-billed (TypeSafe) — the org-less twin --------
+//
+// Same vendor, same typed questions, same answers with their distributions
+// intact. The only difference is WHO PAYS: an org-less caller (a cron, an IMAP
+// poller, a backfill) has no org, no user and no parent run, so there is no
+// balance to gate on and nothing to bill an org for. Spend is declared on a
+// PLATFORM run instead — create → execute → POST the real cost as `actual` →
+// PATCH the status. Platform runs carry no cost-status PATCH, so there is no
+// provision/cancel here and therefore no estimate: the only quantity ever
+// declared is the exact input-token count the vendor reports.
+//
+// The org-scoped route above is untouched. Relaxing ITS identity requirements
+// to serve this caller would have put the org-billed path at risk to save a
+// handler.
+
+app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) => {
+  const parsed = JudgmentsRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const { state, questions } = parsed.data;
+  const model = parsed.data.model ?? TYPESAFE_DEFAULT_MODEL;
+
+  let apiKey: string;
+  try {
+    const platformKey = await resolvePlatformKey(TYPESAFE_PROVIDER, {
+      method: "POST",
+      path: "/internal/platform-judgments",
+    });
+    apiKey = platformKey.key;
+  } catch (err) {
+    // Name the credential. A caller reading this must be able to act on it
+    // without opening a log: the platform TypeSafe key is either absent from
+    // key-service or undecryptable, and no generic "internal error" says that.
+    console.error(
+      `[internal/platform-judgments] Failed to resolve platform ${TYPESAFE_PROVIDER} key:`,
+      err,
+    );
+    return res.status(502).json({
+      error: `Failed to resolve the platform ${TYPESAFE_PROVIDER} API key. Register a platform key for provider "${TYPESAFE_PROVIDER}" in key-service.`,
+      detail: err instanceof Error ? err.message : String(err),
+      provider: TYPESAFE_PROVIDER,
+      retryable: false,
+    });
+  }
+
+  // Fail loud — spend that cannot be declared must block the call, not happen
+  // untracked.
+  let runId: string;
+  try {
+    const run = await createPlatformRun({
+      serviceName: "chat-service",
+      taskName: "platform-judgments",
+    });
+    runId = run.id;
+  } catch (runErr) {
+    console.error(`[internal/platform-judgments] platform-run creation failed:`, runErr);
+    return res.status(502).json({
+      error: "Service temporarily unavailable (run tracking). Please try again.",
+    });
+  }
+
+  let platformFailed = false;
+  try {
+    const result = await judgeWithTypeSafe({
+      apiKey,
+      model,
+      state,
+      questions: questions as Record<string, TypeSafeQuestion>,
+    });
+
+    // Input tokens are the whole bill at this vendor — output is free, so
+    // nothing declares an output cost. Throws (→ 502) if undeclarable.
+    await addPlatformRunCosts(runId, "chat-service", [
+      {
+        costName: TYPESAFE_INPUT_TOKENS_COST_NAME,
+        quantity: result.inputTokens,
+        costSource: "platform" as const,
+      },
+    ]);
+
+    res.json({
+      model: result.model,
+      answers: result.answers,
+      usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+    });
+  } catch (err) {
+    platformFailed = true;
+    console.error(`[internal/platform-judgments] judgment failed runId="${runId}":`, err);
+
+    // Same classification as the org route: a refused SHAPE is refused forever,
+    // a rate limit clears and billed nothing.
+    if (err instanceof TypeSafeInvalidRequestError) {
+      return res.status(400).json({
+        error: "TypeSafe refused the request",
+        detail: err.vendorMessage,
+        retryable: false,
+      });
+    }
+    if (err instanceof TypeSafeRateLimitError) {
+      return res.status(429).json({
+        error: "TypeSafe rate limit",
+        detail: err.vendorMessage,
+        attempts: err.attempts,
+        waitedMs: err.waitedMs,
+        retryable: true,
+      });
+    }
+    res.status(502).json({ error: "Judgment failed. Please try again." });
+  } finally {
+    try {
+      await updatePlatformRunStatus(runId, "chat-service", platformFailed ? "failed" : "completed");
+    } catch (statusErr) {
+      console.error(
+        `[internal/platform-judgments] failed to finalize platform run runId="${runId}":`,
+        statusErr,
+      );
+    }
+  }
+});
+
 // --- Internal Platform Complete (platform run tracking + cost, no org billing) ---
 
 app.post("/internal/platform-complete", requireInternalAuth, async (req, res) => {
