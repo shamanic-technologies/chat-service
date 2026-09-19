@@ -1173,7 +1173,7 @@ interface VendorResponseBody {
 }
 
 /** Walk an error (and any `cause` / AggregateError chain) for a transient connect code. */
-function isTransientConnectError(err: unknown, depth = 0): boolean {
+export function isTransientConnectError(err: unknown, depth = 0): boolean {
   if (!err || depth > 5) return false;
   const e = err as { code?: string; cause?: unknown; errors?: unknown[] };
   if (typeof e.code === "string" && TRANSIENT_CONNECT_CODES.has(e.code)) return true;
@@ -1194,7 +1194,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * what makes the second attempt land in a free slot rather than the same
  * contended one.
  */
-function jittered(ms: number): number {
+export function jittered(ms: number): number {
   return ms * (0.75 + Math.random() * 0.5);
 }
 
