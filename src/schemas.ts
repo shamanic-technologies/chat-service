@@ -3,6 +3,7 @@ import {
   OpenAPIRegistry,
   extendZodWithOpenApi,
 } from "@asteasolutions/zod-to-openapi";
+import { TYPESAFE_DEFAULT_MODEL, TYPESAFE_MODELS } from "./lib/typesafe.js";
 
 extendZodWithOpenApi(z);
 
@@ -1900,6 +1901,271 @@ Backed by the same Gemini \`gemini-embedding-001\` model as \`/orgs/rag/score\` 
     502: {
       description:
         "Upstream service unavailable (key-service, runs-service, or Gemini)",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Typed judgments (TypeSafe) — POST /orgs/judgments
+//
+// A judgment is not a completion: the answer is a TYPE plus the model's own
+// probability distribution over it, and the caller is expected to read the
+// distribution, not only the winning value. The schemas below therefore
+// REQUIRE `confidence` / `probabilities` on the way out — a consumer that
+// decides whether to freeze a classification cannot be handed an answer whose
+// certainty silently went missing.
+// ---------------------------------------------------------------------------
+
+/** Vendor limit: at most 255 options in one Choice question. */
+export const JUDGMENT_CHOICE_OPTIONS_MAX = 255;
+/** Vendor limits: a Score needs at least 2 ordered levels and at most 10. */
+export const JUDGMENT_SCORE_LEVELS_MIN = 2;
+export const JUDGMENT_SCORE_LEVELS_MAX = 10;
+
+const JudgmentCriterionSchema = z
+  .union([
+    z.string().min(1),
+    z
+      .object({
+        what: z.string().min(1),
+        examples: z.array(z.string()).optional(),
+      })
+      .strict(),
+  ])
+  .openapi({
+    description:
+      "A plain description of the option/level, or the structured form ({ what, examples }) for inputs the plain form reads ambiguously on.",
+  });
+
+export const NoulQuestionSchema = z
+  .object({
+    type: z.literal("noul"),
+    instructions: z.string().min(1).openapi({
+      description: "The yes/no question to evaluate against the state.",
+      example: "Does this convey urgency?",
+    }),
+    criteria: z
+      .object({ true: z.string().min(1), false: z.string().min(1) })
+      .strict()
+      .optional()
+      .openapi({
+        description:
+          "Optional descriptions of what yes and no mean, for boundaries the question alone leaves open.",
+      }),
+  })
+  .strict()
+  .openapi("NoulQuestion");
+
+export const ChoiceQuestionSchema = z
+  .object({
+    type: z.literal("choice"),
+    instructions: z.string().min(1).openapi({
+      description: "The selection question to evaluate against the state.",
+      example: "Which team should handle this?",
+    }),
+    criteria: z
+      .record(z.string(), JudgmentCriterionSchema)
+      .refine((c) => Object.keys(c).length >= 2, {
+        message: "criteria must offer at least 2 options",
+      })
+      .refine((c) => Object.keys(c).length <= JUDGMENT_CHOICE_OPTIONS_MAX, {
+        message: `criteria may offer at most ${JUDGMENT_CHOICE_OPTIONS_MAX} options`,
+      })
+      .openapi({
+        description: `Option name to description. 2 to ${JUDGMENT_CHOICE_OPTIONS_MAX} options. Include an "other" option when the list may not cover every input.`,
+      }),
+  })
+  .strict()
+  .openapi("ChoiceQuestion");
+
+export const ScoreQuestionSchema = z
+  .object({
+    type: z.literal("score"),
+    instructions: z.string().min(1).openapi({
+      description: "The rating question to evaluate against the state.",
+      example: "How severe is the reported issue?",
+    }),
+    criteria: z
+      .array(JudgmentCriterionSchema)
+      .min(JUDGMENT_SCORE_LEVELS_MIN, `criteria must list at least ${JUDGMENT_SCORE_LEVELS_MIN} levels`)
+      .max(JUDGMENT_SCORE_LEVELS_MAX, `criteria may list at most ${JUDGMENT_SCORE_LEVELS_MAX} levels`)
+      .openapi({
+        description: `Ordered levels, low end first. ${JUDGMENT_SCORE_LEVELS_MIN} to ${JUDGMENT_SCORE_LEVELS_MAX} of them.`,
+      }),
+  })
+  .strict()
+  .openapi("ScoreQuestion");
+
+export const JudgmentQuestionSchema = z
+  .discriminatedUnion("type", [NoulQuestionSchema, ChoiceQuestionSchema, ScoreQuestionSchema])
+  .openapi("JudgmentQuestion");
+
+export const JudgmentsRequestSchema = z
+  .object({
+    state: z
+      .union([z.string().min(1), z.record(z.string(), z.unknown()), z.array(z.unknown())])
+      .openapi({
+        description:
+          "The content to judge: text, a JSON object, or an array. Read once and evaluated against every question in parallel.",
+        example: "Help! My payouts have been failing for 3 days.",
+      }),
+    questions: z
+      .record(z.string(), JudgmentQuestionSchema)
+      .refine((q) => Object.keys(q).length >= 1, {
+        message: "questions must contain at least one question",
+      })
+      .openapi({
+        description:
+          "Caller-chosen key to question. Every key comes back in `answers` under the same name.",
+      }),
+    model: z
+      .enum(TYPESAFE_MODELS)
+      .optional()
+      .openapi({
+        description: `Judgment model. Defaults to \`${TYPESAFE_DEFAULT_MODEL}\`.`,
+        example: TYPESAFE_DEFAULT_MODEL,
+      }),
+  })
+  .strict()
+  .openapi("JudgmentsRequest");
+
+export const NoulAnswerSchema = z
+  .object({
+    type: z.literal("noul"),
+    noul: z.number().openapi({
+      description:
+        "Probability that the answer is yes. Near 1 a strong yes, near 0 a strong no, near 0.5 genuinely uncertain — a Noul has no separate confidence because this value IS it.",
+      example: 0.92,
+    }),
+  })
+  .openapi("NoulAnswer");
+
+export const ChoiceAnswerSchema = z
+  .object({
+    type: z.literal("choice"),
+    choice: z.string().openapi({ description: "The highest-probability option." }),
+    confidence: z.number().openapi({
+      description:
+        "0..1, derived from how concentrated the distribution is. Low means the model was hesitating between options — decline to act on it rather than taking `choice` at face value.",
+      example: 1,
+    }),
+    probabilities: z.record(z.string(), z.number()).openapi({
+      description: "Probability per option. Sums to 1.",
+    }),
+  })
+  .openapi("ChoiceAnswer");
+
+export const ScoreAnswerSchema = z
+  .object({
+    type: z.literal("score"),
+    score: z.number().openapi({
+      description:
+        "Probability-weighted position across the levels. Fractional on purpose — it can land between two levels.",
+      example: 1.3,
+    }),
+    confidence: z.number().openapi({
+      description: "0..1, derived from how concentrated the distribution is.",
+      example: 0.54,
+    }),
+    probabilities: z.record(z.string(), z.number()).openapi({
+      description: "Probability per level number. Sums to 1.",
+    }),
+    legend: z.record(z.string(), z.string()).openapi({
+      description: "Level number to the description supplied in the request.",
+    }),
+  })
+  .openapi("ScoreAnswer");
+
+export const JudgmentAnswerSchema = z
+  .union([NoulAnswerSchema, ChoiceAnswerSchema, ScoreAnswerSchema])
+  .openapi("JudgmentAnswer");
+
+export const JudgmentsResponseSchema = z
+  .object({
+    model: z.string().openapi({
+      description: "The model that served the judgment.",
+      example: "jev-latest",
+    }),
+    answers: z.record(z.string(), JudgmentAnswerSchema).openapi({
+      description:
+        "One answer per question, under the caller's own key, with its distribution intact.",
+    }),
+    usage: z
+      .object({
+        inputTokens: z.number().openapi({
+          description: "Input tokens the vendor counted. The only billable quantity.",
+        }),
+        outputTokens: z.number().openapi({
+          description: "Output tokens the vendor counted. Free at this vendor, never billed.",
+        }),
+      })
+      .openapi("JudgmentsUsage"),
+  })
+  .openapi("JudgmentsResponse");
+
+export type JudgmentsRequest = z.infer<typeof JudgmentsRequestSchema>;
+export type JudgmentsResponse = z.infer<typeof JudgmentsResponseSchema>;
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/judgments",
+  tags: ["Judgments"],
+  summary: "Ask typed questions about a piece of text and get calibrated answers",
+  description: `Answers one or more TYPED questions about a piece of state, each with the model's own probability distribution: a yes-probability for a \`noul\`, a picked option plus a full distribution and a \`confidence\` for a \`choice\`, a weighted position on ordered levels for a \`score\`.
+
+Backed by TypeSafe (\`jev\`), which is built for exactly this and does not generate text.
+
+**Why this is not \`/complete\`:** that route returns prose the caller parses, and tells it nothing about how sure the model was. A consumer that FREEZES a classification at write time needs the certainty to decide whether to freeze at all — so nothing here reduces an answer to its winning value. Read \`confidence\` (or the \`noul\` probability itself) and route a hesitant answer to your own "unknown" state.
+
+**Pipeline:**
+1. Resolve the org's TypeSafe key via key-service.
+2. Provision + authorize the input-token spend, then call the vendor.
+3. Reconcile the hold to the EXACT input-token count the vendor reports.
+
+**Billing:** input tokens only. The vendor charges nothing for output, so nothing here declares an output cost.
+
+**Limits:** 64k tokens per request overall, 32k for the state plus the longest single question; at most ${JUDGMENT_CHOICE_OPTIONS_MAX} options per Choice; ${JUDGMENT_SCORE_LEVELS_MIN}-${JUDGMENT_SCORE_LEVELS_MAX} levels per Score. A request over the token budget is refused by the vendor and surfaces as a 400 carrying its words.`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+      "x-org-id": z.string().openapi({ description: "Internal org UUID from client-service" }),
+      "x-user-id": z.string().openapi({ description: "Internal user UUID from client-service" }),
+      "x-run-id": z.string().uuid().openapi({
+        description:
+          "Caller's run ID — used as parentRunId when creating this service's own run in runs-service",
+      }),
+      ...workflowTrackingHeaders,
+    }),
+    body: {
+      content: { "application/json": { schema: JudgmentsRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "One typed answer per question, distributions intact",
+      content: { "application/json": { schema: JudgmentsResponseSchema } },
+    },
+    400: {
+      description:
+        "Invalid request fields, or the vendor refused the request shape (its own message is carried through; `retryable` is false)",
+      content: { "application/json": { schema: ValidationErrorResponseSchema } },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    402: {
+      description: "Insufficient credits for the platform-key spend",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    429: {
+      description:
+        "TypeSafe rate-limited the request for the whole retry budget. `retryable` is true — nothing ran and nothing was billed.",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: "Upstream service unavailable (key-service, runs-service, or TypeSafe)",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },

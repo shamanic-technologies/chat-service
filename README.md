@@ -885,6 +885,82 @@ No vector storage, no similarity, no caching — callers persist and compare vec
 
 Determinism: Gemini `gemini-embedding-001` is deterministic for identical input texts under stable model versions, but Google does not contractually guarantee bit-exact output across server-side updates. Callers that depend on stable vectors over time should re-embed after a model version change.
 
+## Typed judgments (`/orgs/judgments`)
+
+`POST /orgs/judgments` — ask one or more **typed** questions about a piece of text and get the answers back **with the model's own probability distribution**. Backed by [TypeSafe](https://docs.typesafe.ai) (`jev`), a vendor built for exactly this, which does not generate text at all.
+
+**Why this is not a model alias behind `/complete`.** That route's contract is prose out plus a two-sided token bill. Serving a judgment through it would force the answer to be flattened to its winning value — throwing away the confidence that is the entire reason to use this vendor — and would declare an output-token cost the vendor's invoice does not carry. So it gets its own route, its own client, and one cost name.
+
+**Auth:** `x-api-key` + `x-org-id` + `x-user-id` + `x-run-id` (standard). The vendor key is resolved from key-service under the provider slug `typesafe`; no consumer service ever holds it.
+
+**The three question types:**
+
+| Type | Asks | Answer carries |
+|---|---|---|
+| `noul` | "Is this true?" | `noul` — the probability the answer is yes. No separate confidence: the value *is* the confidence (0.5 means genuinely uncertain). |
+| `choice` | "Which of these options?" | `choice` (the winner), `probabilities` (every option, summing to 1) and `confidence` 0..1 derived from how concentrated the distribution is. |
+| `score` | "Which level?" | `score` (a probability-weighted position along the levels, fractional on purpose), `probabilities`, `confidence`, and `legend` echoing the levels. |
+
+**Request:**
+```json
+{
+  "state": "Help! My payouts have been failing for 3 days.",
+  "questions": {
+    "is_urgent": { "type": "noul", "instructions": "Does this convey urgency?" },
+    "department": {
+      "type": "choice",
+      "instructions": "Which team should handle this?",
+      "criteria": {
+        "returns": "Exchanges, refunds, wrong or damaged items",
+        "shipping": "Delivery status, delays, lost packages",
+        "billing": "Charges, invoices, payment problems"
+      }
+    }
+  }
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `state` | yes | The content to judge: text, a JSON object, or an array. Read once and evaluated against every question in parallel, so ask several questions per call rather than one call per question. |
+| `questions` | yes | Caller-chosen key to question. Every key comes back in `answers` under the same name. |
+| `model` | no | `jev-latest` (default), `jev-preview`, or `jev-1.13.0`. |
+
+Question criteria: a `choice` takes 2–255 options (include an `other` option when the list may not cover every input), a `score` takes 2–10 ordered levels low end first, a `noul` may optionally describe what yes and no mean. A criterion is a plain description, or the vendor's structured form `{ "what": "...", "examples": ["..."] }` for inputs the plain form reads ambiguously on.
+
+**Response:**
+```json
+{
+  "model": "jev-latest",
+  "answers": {
+    "is_urgent": { "type": "noul", "noul": 0.92 },
+    "department": {
+      "type": "choice",
+      "choice": "billing",
+      "confidence": 0.41,
+      "probabilities": { "shipping": 0.26, "returns": 0.33, "billing": 0.41 }
+    }
+  },
+  "usage": { "inputTokens": 312, "outputTokens": 48 }
+}
+```
+
+**Read the distribution, not only the winner.** A `confidence` of 0.41 across three near-equal options is the model saying it cannot tell — a consumer that FREEZES a classification at write time should decline to freeze on that and route to its own "unknown" state instead. Nothing in this service reduces an answer to its winning value, and an answer that arrives without its `confidence` / `probabilities` is an error (502), never a degraded object served onward.
+
+**Cost handling:** **provision → authorize → execute → reconcile**, billed to the calling org like every other model call here. Input tokens are the *entire* bill at this vendor (`typesafe-jev-1.13-tokens-input`) — output tokens are free, so no output row is ever declared. The reservation before the call is a size estimate; the vendor reports the exact input-token count it charged, so the recorded spend is that real figure (posted as `actual`, with the estimate-sized hold released). A cost that cannot be declared fails the request (`502`, or `402` on insufficient credits) — the spend is never made.
+
+**Limits (vendor):** 64k tokens per request overall, 32k for `state` plus the longest single question. A request over budget is refused by TypeSafe and surfaces as a `400` carrying its own words.
+
+**Errors:**
+- `400` — validation, or TypeSafe refused the request *shape*. `retryable: false`: the identical request will be refused forever, so retrying burns a hold for a certainty.
+- `402` — insufficient credits for a platform-key spend.
+- `429` — TypeSafe rate-limited the request for the whole retry budget. `retryable: true`, and the body carries `attempts` + `waitedMs` so saturation stays visible rather than being smoothed away as flakiness. Nothing ran and nothing was billed.
+- `502` — key-service, runs-service or TypeSafe failed, or the vendor answered with a model this service does not price.
+
+**Retry behaviour:** connect-phase failures (3 retries, 250/500/1000ms) and the two statuses the vendor itself says to back off on — `429` and `529` — with a jittered 500/1500/3500/7500ms schedule honouring `Retry-After` up to 10s. Nothing else. A completed `4xx` is a permanent refusal; a completed `5xx` is a real answer.
+
+**Model pinning:** whichever of the three values a caller asks for, the id sent on the wire is always the pinned release `jev-1.13.0`, and an answer served by anything else is refused rather than billed. The cost name is keyed on the release for the same reason: an alias moves to a new model without notice, and since the vendor echoes the id it was asked for, forwarding `jev-latest` would bill a new model under the old release's name with nothing to show for it. A loud outage on a rename is the cheap failure, exactly as with DeepSeek's 2026-09-10 rename (see above). A new Jev release is a deliberate edit here, after its own catalog row exists.
+
 ## Campaign Context Enrichment
 
 **Applies to `/chat` only.** When the `x-campaign-id` header is present on a `/chat` request, the service fetches the campaign's `featureInputs` from campaign-service and injects them into the system prompt as a `## Campaign Context` block.

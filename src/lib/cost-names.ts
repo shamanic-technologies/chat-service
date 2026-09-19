@@ -200,3 +200,22 @@ export function buildLlmCostNames(args: {
     output: `${costPrefix}${segment}-tokens-output`,
   };
 }
+
+// ---------------------------------------------------------------------------
+// TypeSafe — ONE name, because the vendor prices ONE dimension
+//
+// Input tokens are the entire bill at this vendor: output tokens are free, and
+// there is no cache dimension and no peak/off-peak schedule. So the vendor-
+// driven resolver above does not apply — there is nothing to resolve. Declaring
+// an output row "for symmetry" with the LLM vendors would bill customers for
+// something no invoice carries, which is the mirror image of the cache-miss
+// overbill that resolver exists to prevent.
+//
+// The string is COPIED BYTE-EQUAL from costs-service `SEED_PROVIDERS_COSTS`, not
+// derived from the model id — runs-service 422s a name the catalog does not
+// carry, and the catalog's convention is a shape, not a formula. Note the
+// segment is the RELEASE (`jev-1.13`), not an alias: an alias moves to a new
+// model without notice, and a name keyed on one would silently reprice. That is
+// also why the client always sends the pinned release id on the wire.
+// ---------------------------------------------------------------------------
+export const TYPESAFE_INPUT_TOKENS_COST_NAME = "typesafe-jev-1.13-tokens-input";
