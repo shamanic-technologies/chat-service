@@ -133,7 +133,16 @@ import {
   setBrandPauseState,
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, GetSessionParamsSchema } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema } from "./schemas.js";
+import {
+  judgeWithTypeSafe,
+  TypeSafeInvalidRequestError,
+  TypeSafeRateLimitError,
+  TYPESAFE_DEFAULT_MODEL,
+  TYPESAFE_PROVIDER,
+  type TypeSafeQuestion,
+} from "./lib/typesafe.js";
+import { TYPESAFE_INPUT_TOKENS_COST_NAME } from "./lib/cost-names.js";
 import { requireAuth, requireInternalAuth, buildTrackingHeaders, type AuthLocals } from "./middleware/auth.js";
 import { resolveOutputBudget, estimateInputTokens, estimateOutputTokens } from "./lib/provision-estimate.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
@@ -1667,6 +1676,214 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
           `[rag-embed] failed to finalize run runId="${runId}" orgId="${orgId}":`,
           runErr,
         );
+      }
+    }
+  }
+});
+
+// --- Typed judgments (TypeSafe) — org-billed, input tokens only -------------
+
+app.post("/orgs/judgments", requireAuth, async (req, res) => {
+  const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
+  const trackingHeaders = buildTrackingHeaders(workflowTracking);
+
+  const parsed = JudgmentsRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const { state, questions } = parsed.data;
+  const model = parsed.data.model ?? TYPESAFE_DEFAULT_MODEL;
+
+  let runId: string | null = null;
+  try {
+    const run = await createRun(
+      { serviceName: "chat-service", taskName: "judgments" },
+      { orgId, userId, runId: parentRunId },
+      trackingHeaders,
+    );
+    runId = run.id;
+    traceEvent(runId, "run-created", { orgId, userId }, workflowTracking, {
+      data: { taskName: "judgments", parentRunId, model, questionCount: Object.keys(questions).length },
+    });
+  } catch (runErr) {
+    console.error(`[judgments] org="${orgId}" run creation failed:`, runErr);
+    return res.status(502).json({
+      error: "Service temporarily unavailable (run tracking). Please try again.",
+    });
+  }
+
+  const identity: RunIdentityHeaders = { orgId, userId, runId };
+  let judgmentFailed = false;
+  // The hold: this vendor reports the EXACT billable count in its response, so
+  // the estimate below only ever sizes the pre-call reservation. It is replaced
+  // by the real figure afterwards — never used as the charge.
+  let provisionedCostId: string | null = null;
+
+  try {
+    let resolvedKey;
+    try {
+      resolvedKey = await resolveKey({
+        provider: TYPESAFE_PROVIDER,
+        orgId,
+        userId,
+        runId,
+        caller: { method: "POST", path: "/orgs/judgments" },
+        trackingHeaders,
+      });
+    } catch (err) {
+      judgmentFailed = true;
+      console.error(`[judgments] Failed to resolve ${TYPESAFE_PROVIDER} key for org="${orgId}":`, err);
+      return res.status(502).json({
+        error: `Failed to resolve ${TYPESAFE_PROVIDER} API key. Ensure the key is configured in key-service.`,
+      });
+    }
+
+    const estimatedInputTokens = estimateRequestTokens({ state, questions });
+
+    // PROVISION → AUTHORIZE before the vendor call. Output tokens are free at
+    // this vendor, so there is exactly one row to reserve.
+    try {
+      const costs = await addRunCosts(
+        runId,
+        [
+          {
+            costName: TYPESAFE_INPUT_TOKENS_COST_NAME,
+            quantity: estimatedInputTokens,
+            costSource: resolvedKey.keySource,
+            status: "provisioned",
+          },
+        ],
+        identity,
+        trackingHeaders,
+      );
+      provisionedCostId = costs[0]?.id ?? null;
+      if (!provisionedCostId) {
+        throw new Error("[judgments] provision returned no cost id");
+      }
+      if (resolvedKey.keySource === "platform") {
+        const auth = await authorizeCredits({
+          items: [
+            { costName: TYPESAFE_INPUT_TOKENS_COST_NAME, quantity: estimatedInputTokens },
+          ],
+          description: `judgments — ${model}`,
+          orgId,
+          userId,
+          runId,
+          trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders : undefined,
+        });
+        if (!auth.sufficient) {
+          await cancelProvisionedCosts(runId, [provisionedCostId], identity, trackingHeaders);
+          provisionedCostId = null;
+          throw new InsufficientCreditsError(auth.balance_cents, auth.required_cents);
+        }
+      }
+    } catch (costErr) {
+      judgmentFailed = true;
+      if (provisionedCostId) {
+        await cancelProvisionedCosts(runId, [provisionedCostId], identity, trackingHeaders);
+        provisionedCostId = null;
+      }
+      const r = costErrorResponse(costErr, "judgments", orgId);
+      return res.status(r.status).json(r.body);
+    }
+
+    // EXECUTE
+    const result = await judgeWithTypeSafe({
+      apiKey: resolvedKey.key,
+      model,
+      state,
+      questions: questions as Record<string, TypeSafeQuestion>,
+    });
+
+    // RECONCILE to the vendor's own count: post the real quantity as `actual`,
+    // then release the estimate-sized hold. Two steps because a runs-service
+    // cost PATCH is status-only — there is no in-place quantity edit.
+    try {
+      await addRunCosts(
+        runId,
+        [
+          {
+            costName: TYPESAFE_INPUT_TOKENS_COST_NAME,
+            quantity: result.inputTokens,
+            costSource: resolvedKey.keySource,
+            status: "actual",
+          },
+        ],
+        identity,
+        trackingHeaders,
+      );
+    } catch (actErr) {
+      judgmentFailed = true;
+      console.error(`[judgments] cost actualize failed runId="${runId}" orgId="${orgId}":`, actErr);
+      return res.status(502).json({ error: "Cost finalization failed. Please try again." });
+    }
+    await cancelProvisionedCosts(runId, [provisionedCostId], identity, trackingHeaders);
+    provisionedCostId = null;
+
+    traceEvent(runId, "judgments-done", { orgId, userId }, workflowTracking, {
+      data: {
+        model: result.model,
+        questionCount: Object.keys(questions).length,
+        inputTokens: result.inputTokens,
+      },
+    });
+
+    res.json({
+      model: result.model,
+      answers: result.answers,
+      usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+    });
+  } catch (err) {
+    judgmentFailed = true;
+    // The vendor call threw after provisioning → release the hold. Nothing was
+    // billed: TypeSafe charges for a served answer, and we did not get one.
+    if (runId && provisionedCostId) {
+      await cancelProvisionedCosts(runId, [provisionedCostId], identity, trackingHeaders);
+      provisionedCostId = null;
+    }
+    console.error(`[judgments] org="${orgId}" error:`, err);
+    if (runId) {
+      traceEvent(runId, "judgments-failed", { orgId, userId }, workflowTracking, {
+        level: "error",
+        detail: err instanceof Error ? err.message : String(err),
+        data: { model },
+      });
+    }
+
+    // A refused request SHAPE will be refused forever — say so, and say it in
+    // the vendor's own words, rather than advising a retry that cannot work.
+    if (err instanceof TypeSafeInvalidRequestError) {
+      return res.status(400).json({
+        error: "TypeSafe refused the request",
+        detail: err.vendorMessage,
+        retryable: false,
+      });
+    }
+    // A rate limit is not an outage: no model ran, nothing was billed, and it
+    // clears. Surfacing it as a 502 would hide saturation as flakiness.
+    if (err instanceof TypeSafeRateLimitError) {
+      return res.status(429).json({
+        error: "TypeSafe rate limit",
+        detail: err.vendorMessage,
+        attempts: err.attempts,
+        waitedMs: err.waitedMs,
+        retryable: true,
+      });
+    }
+    res.status(502).json({ error: "Judgment failed. Please try again." });
+  } finally {
+    if (runId) {
+      try {
+        await updateRunStatus(
+          runId,
+          judgmentFailed ? "failed" : "completed",
+          identity,
+          trackingHeaders,
+        );
+      } catch (runErr) {
+        console.error(`[judgments] failed to finalize run runId="${runId}" orgId="${orgId}":`, runErr);
       }
     }
   }
