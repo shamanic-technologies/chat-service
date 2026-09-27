@@ -711,7 +711,7 @@ Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
 
 ## Internal: Transfer Brand
 
-`POST /internal/transfer-brand` — re-assigns solo-brand sessions from one org to another.
+`POST /internal/transfer-brand` — moves everything chat-service holds for one brand from one org to another (brand-service orchestrates it across the fleet).
 
 **Auth:** `X-API-Key` only — no org context needed (org IDs come from the body).
 
@@ -724,16 +724,28 @@ Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
 }
 ```
 
-Updates all sessions where `org_id = sourceOrgId` AND `brand_ids` contains exactly one element matching `sourceBrandId`. When `targetBrandId` is provided (conflict case — target org already has a brand for this domain), brand references are rewritten to `targetBrandId`. Sessions with multiple brand IDs (co-branding) are skipped.
+Runs in one transaction (`src/lib/transfer-brand.ts`). What moves:
+
+| Table | Tied to the brand by | What happens |
+|-------|----------------------|--------------|
+| `sessions` | `org_id` + `brand_ids = [sourceBrandId]` | `org_id` → target; `brand_ids` → `[targetBrandId]` when given |
+| `messages` | their session (no org column) | move with the session; counted, never rewritten |
+| `brand_profile_embeddings` | `org_id` + `brand_id = sourceBrandId` | `org_id` → target, `brand_id` → `targetBrandId` when given; a source row the target already holds for the same `content_hash` is dropped (it is a cache) |
+
+Not moved: `app_configs` (per-org chat configs, no brand) and `platform_configs` (no org). Co-branded sessions (`brand_ids` of 2+) and multi-brand cache keys (`"a,b"`) also belong to a brand that stays, so they are left in place.
 
 Response:
 ```json
 {
-  "updatedTables": [{ "tableName": "sessions", "count": 5 }]
+  "updatedTables": [
+    { "tableName": "sessions", "count": 5 },
+    { "tableName": "messages", "count": 42 },
+    { "tableName": "brand_profile_embeddings", "count": 2 }
+  ]
 }
 ```
 
-Idempotent — running it twice with the same params is a no-op (all rows already updated).
+Idempotent — rows are matched in either org under the source brand id, so a re-run reports zero everywhere, and a run interrupted after the org move but before the brand rewrite is completed.
 
 ## RAG Score (`/orgs/rag/score`)
 
