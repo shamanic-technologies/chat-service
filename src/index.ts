@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { db } from "./db/index.js";
 import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings } from "./db/schema.js";
+import { transferBrand } from "./lib/transfer-brand.js";
 import { eq, and, sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import {
@@ -3842,32 +3843,13 @@ app.post("/internal/transfer-brand", requireInternalAuth, async (req, res) => {
 
   const { sourceBrandId, sourceOrgId, targetOrgId, targetBrandId } = parsed.data;
 
-  // Step 1: Move solo-brand sessions to target org
-  const moveResult = await db.execute(sql`
-    UPDATE sessions
-    SET org_id = ${targetOrgId}, updated_at = NOW()
-    WHERE org_id = ${sourceOrgId}
-      AND brand_ids = ARRAY[${sourceBrandId}]::text[]
-  `) as unknown as { rowCount: number };
-
-  const updatedCount = moveResult.rowCount ?? 0;
-
-  // Step 2: Rewrite brand reference (no org_id filter — catches all remaining references)
-  if (targetBrandId) {
-    await db.execute(sql`
-      UPDATE sessions
-      SET brand_ids = ARRAY[${targetBrandId}]::text[], updated_at = NOW()
-      WHERE brand_ids = ARRAY[${sourceBrandId}]::text[]
-    `);
-  }
+  const result = await transferBrand(db, { sourceBrandId, sourceOrgId, targetOrgId, targetBrandId });
 
   console.log(
-    `[chat-service] transfer-brand: sourceBrandId="${sourceBrandId}" targetBrandId="${targetBrandId ?? "same"}" from="${sourceOrgId}" to="${targetOrgId}" sessions=${updatedCount}`,
+    `[chat-service] transfer-brand: sourceBrandId="${sourceBrandId}" targetBrandId="${targetBrandId ?? "same"}" from="${sourceOrgId}" to="${targetOrgId}" ${result.updatedTables.map((t) => `${t.tableName}=${t.count}`).join(" ")}`,
   );
 
-  res.json({
-    updatedTables: [{ tableName: "sessions", count: updatedCount }],
-  });
+  res.json(result);
 });
 
 // Only start server if not in test environment

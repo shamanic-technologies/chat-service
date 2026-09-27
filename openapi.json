@@ -2995,7 +2995,7 @@
           "Internal"
         ],
         "summary": "Transfer brand ownership between orgs",
-        "description": "Re-assigns all solo-brand sessions from sourceOrgId to targetOrgId. Solo-brand = sessions where brand_ids contains exactly one element matching sourceBrandId. When targetBrandId is provided (conflict case), brand references are rewritten to targetBrandId. Sessions with multiple brand IDs (co-branding) are skipped. Idempotent.",
+        "description": "Moves everything chat-service holds for the brand from sourceOrgId to targetOrgId, in one transaction: solo-brand sessions (brand_ids = [sourceBrandId]) with their messages, and the brand's brand_profile_embeddings cache rows (a source row the target already holds for the same content hash is dropped). When targetBrandId is provided, brand references are rewritten to targetBrandId. Co-branded sessions and multi-brand cache keys are left in place. Org-level app_configs are not brand data and are not moved. Idempotent: a re-run reports zero rows.",
         "parameters": [
           {
             "schema": {
