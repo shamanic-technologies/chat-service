@@ -953,6 +953,16 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     reasoning: {
       kind: "disablable",
       requestFields: { reasoning_effort: "low" },
+      // GPT-6 Sol and GPT-5.6 Terra DO have a full-off, unlike Astra. Probed
+      // live 2026-09-29 on both: accepted set is 'none' | 'low' | 'medium' |
+      // 'high' | 'xhigh' (the 400 for 'minimal' / 'max' names it verbatim), and
+      // `reasoning_effort: "none"` answers 200 with 0 reasoning tokens. So the
+      // knob means OFF on these two, as on the other three vendors — sending
+      // Astra's `low` floor would leave reasoning on for no reason.
+      perModel: {
+        "gpt-6-sol": { reasoning_effort: "none" },
+        "gpt-5.6-terra": { reasoning_effort: "none" },
+      },
       refusedBy: {},
       source: "https://developers.openai.com/api/docs/guides/reasoning",
       evidence:
