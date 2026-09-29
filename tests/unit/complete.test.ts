@@ -549,17 +549,17 @@ describe("resolveModel", () => {
     expect(resolved.provider).toBe("anthropic");
   });
 
-  it("resolves anthropic + sonnet to claude-sonnet-4-6", () => {
+  it("resolves anthropic + sonnet to claude-sonnet-5-5", () => {
     const resolved = resolveModel("anthropic", "sonnet");
-    expect(resolved.apiModelId).toBe("claude-sonnet-4-6");
-    expect(resolved.costPrefix).toBe("anthropic-sonnet-4.6");
+    expect(resolved.apiModelId).toBe("claude-sonnet-5-5");
+    expect(resolved.costPrefix).toBe("anthropic-sonnet-5.5");
     expect(resolved.provider).toBe("anthropic");
   });
 
-  it("resolves anthropic + opus to claude-opus-4-6", () => {
+  it("resolves anthropic + opus to claude-opus-5-5", () => {
     const resolved = resolveModel("anthropic", "opus");
-    expect(resolved.apiModelId).toBe("claude-opus-4-6");
-    expect(resolved.costPrefix).toBe("anthropic-opus-4.6");
+    expect(resolved.apiModelId).toBe("claude-opus-5-5");
+    expect(resolved.costPrefix).toBe("anthropic-opus-5.5");
     expect(resolved.provider).toBe("anthropic");
   });
 

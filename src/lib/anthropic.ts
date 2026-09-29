@@ -11,6 +11,8 @@ const ANTHROPIC_TIMEOUT_MS: Record<string, number> = {
   // single request on a hard task can run many minutes — so it gets the longest
   // budget of the four, not the 10-minute fallback.
   "claude-fable-5-1": 20 * 60_000,   // 20 min — Fable
+  "claude-opus-5-5": 15 * 60_000,    // 15 min — Opus
+  "claude-sonnet-5-5": 10 * 60_000,  // 10 min — Sonnet
   "claude-opus-4-6": 15 * 60_000,    // 15 min — Opus
   "claude-sonnet-4-6": 10 * 60_000,  // 10 min — Sonnet
   "claude-haiku-4-5": 5 * 60_000,    //  5 min — Haiku
@@ -122,7 +124,9 @@ export type ModelAlias =
   | "glm-pro"
   | "kimi-flash"
   | "kimi-pro"
-  | "gpt-pro";
+  | "gpt-pro"
+  | "gpt-sol"
+  | "gpt-terra";
 
 /**
  * How capable the model behind an alias is, in three levels.
@@ -166,8 +170,27 @@ interface ResolvedModel {
 const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   anthropic: {
     haiku: { apiModelId: "claude-haiku-4-5", costPrefix: "anthropic-haiku-4.5", provider: "anthropic", capabilityTier: "cheap" },
-    sonnet: { apiModelId: "claude-sonnet-4-6", costPrefix: "anthropic-sonnet-4.6", provider: "anthropic", capabilityTier: "strong" },
-    opus: { apiModelId: "claude-opus-4-6", costPrefix: "anthropic-opus-4.6", provider: "anthropic", capabilityTier: "frontier" },
+    // `sonnet` / `opus` are version-free aliases, so they follow the current
+    // generation: repointed 2026-09-29 from Sonnet 4.6 / Opus 4.6 to Claude
+    // Sonnet 5.5 ($2 / $10 per 1M, cache hit $0.20) and Claude Opus 5.5
+    // ($4 / $20 per 1M, cache hit $0.20) — both CHEAPER than the 4.6 models
+    // they replace. The public onboarding moves onto `sonnet`.
+    //
+    // Probed live against api.anthropic.com with the platform key the same day,
+    // using the exact request shape `/complete` builds:
+    //   • plain, `output_config.format` json_schema, and web_search_20250305
+    //     each → 200 (structured output returns valid JSON).
+    //   • `temperature: 0.3` → 400 "`temperature` is deprecated for this model"
+    //     on BOTH — hence ANTHROPIC_SAMPLING_UNSUPPORTED below.
+    //   • thinking cannot be disabled on either (`{type:"disabled"}` is a 400),
+    //     so `disableThinking` lowers `output_config.effort` to `low` instead —
+    //     see ANTHROPIC_EFFORT_FLOOR. Opus 5.5 defaults to effort `medium`,
+    //     Sonnet 5.5 to `high`.
+    // Before the move, `opus` served 11 runs in 30 days and `sonnet` none; no
+    // chat config row names either. The 4.6 cost prefixes stay priced so past
+    // spend keeps resolving (SUPPORTED_MODELS keeps mapping them).
+    sonnet: { apiModelId: "claude-sonnet-5-5", costPrefix: "anthropic-sonnet-5.5", provider: "anthropic", capabilityTier: "strong" },
+    opus: { apiModelId: "claude-opus-5-5", costPrefix: "anthropic-opus-5.5", provider: "anthropic", capabilityTier: "frontier" },
     // Claude Fable 5.1 — Anthropic's most capable widely released model, a tier
     // ABOVE Opus and priced there ($10 / $50 per 1M against Opus 4.6's rates).
     // Added 2026-09-09 for a cold-email template A/B; no existing alias moves.
@@ -392,6 +415,31 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       provider: "openai",
       capabilityTier: "frontier",
     },
+    // Added 2026-09-29 so the onboarding's Sonnet 5.5 can be compared against
+    // OpenAI's same-price models. Both ids read off OpenAI's live /v1/models
+    // the same day, which lists gpt-6-astra, gpt-6-sol and gpt-6-luna for GPT-6
+    // and has NO gpt-6-terra — the newest Terra is gpt-5.6-terra. So
+    // `gpt-terra` is "the latest Terra", exactly the version-free meaning every
+    // other alias has, and it moves when OpenAI ships a GPT-6 Terra.
+    //
+    //   gpt-6-sol     $2 / $0.20 cached / $10 per 1M  — Sonnet 5.5's price
+    //   gpt-5.6-terra $2 / $0.20 cached / $12 per 1M
+    //
+    // Both "strong": same price band as Sonnet 5.5, well below Astra's $10/$50.
+    // Capabilities were probed live, not inherited from Astra — they differ on
+    // reasoning (see the `perModel` entry in openai-compatible.ts).
+    "gpt-sol": {
+      apiModelId: "gpt-6-sol",
+      costPrefix: "openai-gpt-6-sol",
+      provider: "openai",
+      capabilityTier: "strong",
+    },
+    "gpt-terra": {
+      apiModelId: "gpt-5.6-terra",
+      costPrefix: "openai-gpt-5.6-terra",
+      provider: "openai",
+      capabilityTier: "strong",
+    },
   },
 };
 
@@ -402,7 +450,7 @@ export const PROVIDER_MODELS: Record<Provider, readonly ModelAlias[]> = {
   deepseek: ["deepseek-flash", "deepseek-pro"],
   zai: ["glm-flash", "glm-pro"],
   moonshot: ["kimi-flash", "kimi-pro"],
-  openai: ["gpt-pro"],
+  openai: ["gpt-pro", "gpt-sol", "gpt-terra"],
 };
 
 /**
@@ -476,9 +524,9 @@ export function modelCatalogue(): ModelCatalogueEntry[] {
  * Anthropic model ids that REJECT the sampling parameters.
  *
  * `temperature`, `top_p` and `top_k` were removed on the always-thinking
- * models: Fable 5 / 5.1, Opus 5 / 4.8 / 4.7 and Sonnet 5 each answer 400 when
- * one is sent. Only `claude-fable-5-1` is reachable from this service today, so
- * only it is listed — the set records what we actually serve, exactly like
+ * models: Fable 5 / 5.1, Opus 5.5 / 5 / 4.8 / 4.7 and Sonnet 5.5 / 5 each answer
+ * 400 when one is sent. Only the models reachable from this service are listed
+ * (Fable 5.1, Sonnet 5.5, Opus 5.5) — the set records what we actually serve, exactly like
  * `GEMINI_3_THINKING_FLOOR`, and a model is added here when its alias is.
  *
  * Recorded rather than worked around, and it is a real behaviour change to be
@@ -498,7 +546,38 @@ export function modelCatalogue(): ModelCatalogueEntry[] {
  * `400 invalid_request_error: "\`temperature\` is deprecated for this model."`
  * with it.
  */
-const ANTHROPIC_SAMPLING_UNSUPPORTED = new Set(["claude-fable-5-1"]);
+const ANTHROPIC_SAMPLING_UNSUPPORTED = new Set([
+  "claude-fable-5-1",
+  // Probed live 2026-09-29: temperature 0.3 → 400 on both; only the default (1) passes.
+  "claude-sonnet-5-5",
+  "claude-opus-5-5",
+]);
+
+/**
+ * The effort `disableThinking: true` lowers an Anthropic model to — per MODEL,
+ * never inferred from the family.
+ *
+ * Sonnet 5.5 and Opus 5.5 cannot turn thinking off (`{type: "disabled"}` is a
+ * 400), and `/complete` never sends a `thinking` block, so they run adaptive
+ * thinking at their default effort (`high` on Sonnet 5.5, `medium` on Opus
+ * 5.5). Thinking is billed as output tokens nobody reads on a structured call,
+ * so the knob keeps the meaning it has on Gemini 3 and GPT-6 Astra: MINIMIZE,
+ * not zero — `output_config.effort: "low"`, accepted by both alongside
+ * `output_config.format` (probed live 2026-09-29, 200 with valid JSON).
+ *
+ * A model absent from this table keeps `disableThinking` as the no-op it has
+ * always been on Anthropic: Haiku 4.5 never thinks on this path, and Fable 5.1
+ * is deliberately left unchanged so its existing callers see no difference.
+ */
+const ANTHROPIC_EFFORT_FLOOR: Record<string, "low"> = {
+  "claude-sonnet-5-5": "low",
+  "claude-opus-5-5": "low",
+};
+
+/** The effort `disableThinking` lowers this model to, or null when it is a no-op. */
+export function anthropicEffortFloor(apiModelId: string): "low" | null {
+  return ANTHROPIC_EFFORT_FLOOR[apiModelId] ?? null;
+}
 
 /**
  * A caller sent a sampling parameter to a model that refuses it.
@@ -536,7 +615,7 @@ export function assertAnthropicSamplingSupported(
     `Model "${apiModelId}" does not accept the sampling parameters (temperature, top_p, top_k) — ` +
       `Anthropic removed them on its always-thinking models and answers 400 when one is sent. ` +
       `Re-send this request without "temperature", or use an alias whose model accepts it ` +
-      `(haiku, sonnet, opus). Retrying as sent will not help.`,
+      `(haiku). Retrying as sent will not help.`,
   );
 }
 
@@ -548,6 +627,8 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "claude-haiku-4-5": "anthropic-haiku-4.5",
   "claude-opus-4-6": "anthropic-opus-4.6",
   "claude-fable-5-1": "anthropic-fable-5.1",
+  "claude-sonnet-5-5": "anthropic-sonnet-5.5",
+  "claude-opus-5-5": "anthropic-opus-5.5",
   "gemini-3.1-flash-lite": "google-flash-lite-3.1",
   "gemini-3.5-flash-lite": "google-flash-lite-3.5",
   "gemini-3-flash-preview": "google-flash-3",
@@ -574,6 +655,8 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "kimi-k2.6": "moonshot-kimi-k2.6",
   "kimi-k3": "moonshot-kimi-k3",
   "gpt-6-astra": "openai-gpt-6-astra",
+  "gpt-6-sol": "openai-gpt-6-sol",
+  "gpt-5.6-terra": "openai-gpt-5.6-terra",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */
@@ -2163,6 +2246,11 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
          * See POST /complete `webSearch`.
          */
         webSearch?: boolean;
+        /**
+         * Minimize thinking. On a model listed in ANTHROPIC_EFFORT_FLOOR this
+         * sends `output_config.effort` at that floor; elsewhere a no-op.
+         */
+        disableThinking?: boolean;
       },
     ): Promise<{
       content: string;
@@ -2201,25 +2289,28 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       // rejects permissive schemas with 400). Callers requiring JSON mode on
       // Anthropic must supply `responseSchema`; the route handlers reject
       // `responseFormat:"json"` without a schema upfront.
+      const effort = options?.disableThinking === true ? anthropicEffortFloor(effectiveModel) : null;
+      const outputConfig = {
+        ...(options?.responseSchema != null
+          ? {
+              format: {
+                type: "json_schema",
+                // Anthropic strict mode requires `additionalProperties: false`
+                // on every object node — stamp it on before sending (mirror of
+                // the Gemini sanitizer, which strips it). See prepareAnthropicSchema.
+                schema: prepareAnthropicSchema(options.responseSchema),
+              },
+            }
+          : {}),
+        ...(effort != null ? { effort } : {}),
+      };
       const params = {
         model: effectiveModel,
         max_tokens: Math.min(options?.maxTokens ?? MAX_TOKENS, MAX_TOKENS),
         system: systemPrompt,
         messages: [{ role: "user", content: userContent }],
         ...(options?.temperature != null ? { temperature: options.temperature } : {}),
-        ...(options?.responseSchema != null
-          ? {
-              output_config: {
-                format: {
-                  type: "json_schema",
-                  // Anthropic strict mode requires `additionalProperties: false`
-                  // on every object node — stamp it on before sending (mirror of
-                  // the Gemini sanitizer, which strips it). See prepareAnthropicSchema.
-                  schema: prepareAnthropicSchema(options.responseSchema),
-                },
-              },
-            }
-          : {}),
+        ...(Object.keys(outputConfig).length > 0 ? { output_config: outputConfig } : {}),
         // Native server-side web search. Attached only when requested, keeping
         // non-grounded calls byte-identical. max_uses caps billable searches.
         // Capped to 1 by default for cost control (each search = 1 billable

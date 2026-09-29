@@ -635,6 +635,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         imageUrl,
         maxTokens: providerMaxOutputTokens,
         webSearch,
+        disableThinking,
       });
     }
 
@@ -2145,6 +2146,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
         temperature,
         model: effectiveModel,
         webSearch,
+        disableThinking,
       });
     }
 

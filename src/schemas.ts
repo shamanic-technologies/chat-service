@@ -448,14 +448,16 @@ export const CompleteRequestSchema = z
       "deepseek-flash", "deepseek-pro",
       "glm-flash", "glm-pro",
       "kimi-flash", "kimi-pro",
-      "gpt-pro",
+      "gpt-pro", "gpt-sol", "gpt-terra",
     ]).openapi({
       description:
         "Model alias (version-free). The service resolves the current versioned model internally.\n\n" +
-        "**anthropic:** `haiku` (fast/cheap), `sonnet` (balanced), `opus` (high quality), " +
+        "**anthropic:** `haiku` (fast/cheap, Claude Haiku 4.5), `sonnet` \u2192 Claude Sonnet 5.5 (balanced), " +
+        "`opus` \u2192 Claude Opus 5.5 (high quality), " +
         "`fable` \u2192 Claude Fable 5.1, the tier above Opus (1M context, always-on reasoning). " +
-        "`fable` rejects `temperature` with a 400 \u2014 Anthropic removed the sampling " +
-        "parameters on its always-thinking models, as OpenAI did on `gpt-pro`.\n" +
+        "`sonnet`, `opus` and `fable` reject `temperature` with a 400 \u2014 Anthropic removed the sampling " +
+        "parameters on its always-thinking models, as OpenAI did on its GPT models. On `sonnet` and `opus`, " +
+        "`disableThinking: true` minimizes reasoning (effort `low`); thinking cannot be fully disabled there.\n" +
         "**google:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.8 Flash), `pro` (most powerful).\n" +
         "**deepseek:** `deepseek-flash` → DeepSeek V4.1 Flash (1M context, 2500 concurrent requests). " +
         "`deepseek-pro` is a **deprecated synonym** resolving to the same model: DeepSeek discontinued " +
@@ -463,11 +465,13 @@ export const CompleteRequestSchema = z
         "**zai:** `glm-flash` → `glm-5.3-flash` (fast, cheap, 50 concurrent requests), `glm-pro` → `glm-5.3` (flagship, 15 concurrent requests).\n" +
         "**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n" +
         "**openai:** `gpt-pro` → GPT-6 Astra (flagship; 1.05M context, 128k output, always-on " +
-        "reasoning floored at `low`; rejects `temperature`).\n\n" +
+        "reasoning floored at `low`), `gpt-sol` → GPT-6 Sol, `gpt-terra` → GPT-5.6 Terra (the latest " +
+        "Terra; there is no GPT-6 Terra). On `gpt-sol` / `gpt-terra`, `disableThinking: true` turns " +
+        "reasoning fully off. All three reject `temperature`.\n\n" +
         "The four direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\n" +
         "The model must match the provider: anthropic → haiku|sonnet|opus|fable, google → flash-lite|flash|flash-pro|pro, " +
         "deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro, " +
-        "openai → gpt-pro.",
+        "openai → gpt-pro|gpt-sol|gpt-terra.",
       example: "sonnet",
     }),
     webSearch: z.boolean().optional().openapi({
@@ -485,12 +489,14 @@ export const CompleteRequestSchema = z
         "Minimize the model's internal reasoning (\"thinking\") so the whole output budget goes to " +
         "the answer. Use for extraction / structured-JSON / scoring tasks that don't need " +
         "chain-of-thought. Effect is provider-floored, NOT a guaranteed full-off (like `maxSearches`): " +
-        "Gemini 2.5 → thinking fully OFF; Anthropic → no-op (`/complete` never enables thinking); " +
+        "Gemini 2.5 → thinking fully OFF; Anthropic: `sonnet` / `opus` (Claude Sonnet 5.5 / Opus 5.5, " +
+        "whose thinking cannot be disabled) → effort `low`, `haiku` / `fable` → no-op; " +
         "Gemini 3 has NO full-off, so it drops to the lowest level THAT MODEL allows — `minimal` " +
         "on the Flash-Lite models, `low` on Pro and on the `flash-pro` default (Gemini 3.8 Flash, " +
         "which rejects `minimal`). On the direct " +
-        "vendors (`deepseek`, `zai`, `moonshot`) reasoning goes fully OFF — on `openai` it goes to " +
-        "the lowest effort GPT-6 Astra accepts (`low`), since that model has no full-off — and " +
+        "vendors (`deepseek`, `zai`, `moonshot`) reasoning goes fully OFF — on `openai` it goes fully " +
+        "OFF for `gpt-sol` / `gpt-terra` and to the lowest effort GPT-6 Astra accepts (`low`) for " +
+        "`gpt-pro`, since that model has no full-off — and " +
         "that is ALREADY the " +
         "default for any request asking for structured output (a `responseSchema` or " +
         "`responseFormat: \"json\"`) — those callers parse the object and never see the reasoning, " +
@@ -542,7 +548,7 @@ export const CompleteRequestSchema = z
       deepseek: ["deepseek-flash", "deepseek-pro"],
       zai: ["glm-flash", "glm-pro"],
       moonshot: ["kimi-flash", "kimi-pro"],
-      openai: ["gpt-pro"],
+      openai: ["gpt-pro", "gpt-sol", "gpt-terra"],
     };
     const allowed = validModels[data.provider];
     if (allowed && !allowed.includes(data.model)) {
@@ -815,15 +821,15 @@ export const InternalPlatformCompleteRequestSchema = z
       "deepseek-flash", "deepseek-pro",
       "glm-flash", "glm-pro",
       "kimi-flash", "kimi-pro",
-      "gpt-pro",
+      "gpt-pro", "gpt-sol", "gpt-terra",
     ]).openapi({
       description:
         "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus|fable " +
-        "(`fable` = Claude Fable 5.1, which rejects `temperature` with a 400), " +
+        "(`sonnet` = Claude Sonnet 5.5, `opus` = Claude Opus 5.5, `fable` = Claude Fable 5.1; all three reject `temperature` with a 400), " +
         "google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro " +
         "(both DeepSeek V4.1 Flash; `deepseek-pro` is a deprecated synonym), zai → glm-flash|glm-pro (`glm-5.3-flash` / `glm-5.3`), " +
-        "moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`), openai → gpt-pro " +
-        "(`gpt-6-astra`, which rejects `temperature`). The direct-vendor models are text-only: `webSearch` is rejected with 400.",
+        "moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`), openai → gpt-pro|gpt-sol|gpt-terra " +
+        "(`gpt-6-astra` / `gpt-6-sol` / `gpt-5.6-terra`, all rejecting `temperature`). The direct-vendor models are text-only: `webSearch` is rejected with 400.",
       example: "sonnet",
     }),
     webSearch: z.boolean().optional().openapi({
@@ -838,10 +844,11 @@ export const InternalPlatformCompleteRequestSchema = z
     disableThinking: z.boolean().optional().openapi({
       description:
         "Minimize the model's internal reasoning so the whole output budget goes to the answer. " +
-        "Provider-floored, NOT a guaranteed full-off: Gemini 2.5 → fully OFF; Anthropic → no-op; " +
+        "Provider-floored, NOT a guaranteed full-off: Gemini 2.5 → fully OFF; Anthropic `sonnet` / `opus` → " +
+        "effort `low`, `haiku` / `fable` → no-op; " +
         "Gemini 3 → lowest level the gen allows (`minimal` Flash, `low` Pro — no full-off exists); " +
-        "the direct vendors (`deepseek`, `zai`, `moonshot`) → fully OFF, `openai` → floored at " +
-        "`low` (GPT-6 Astra has no full-off), and already off by default " +
+        "the direct vendors (`deepseek`, `zai`, `moonshot`) and `gpt-sol` / `gpt-terra` → fully OFF, " +
+        "`gpt-pro` → floored at `low` (GPT-6 Astra has no full-off), and already off by default " +
         "for structured-output requests. Same semantics as POST /complete. Omitted = the service " +
         "default; pass `false` to keep vendor reasoning on for a structured request.",
       example: true,
@@ -864,7 +871,7 @@ export const InternalPlatformCompleteRequestSchema = z
       deepseek: ["deepseek-flash", "deepseek-pro"],
       zai: ["glm-flash", "glm-pro"],
       moonshot: ["kimi-flash", "kimi-pro"],
-      openai: ["gpt-pro"],
+      openai: ["gpt-pro", "gpt-sol", "gpt-terra"],
     };
     const allowed = validModels[data.provider];
     if (allowed && !allowed.includes(data.model)) {
