@@ -74,11 +74,12 @@ describe("alias resolution", () => {
     // The no-go this file exists to protect: adding two aliases must not move
     // any of the twelve that shipped before them. Written out literally rather
     // than derived from the map, so a change to the map cannot quietly change
-    // the expectation with it.
+    // the expectation with it. `sonnet` / `opus` moved deliberately on
+    // 2026-09-29 (Sonnet 5.5 / Opus 5.5 — see sonnet55-opus55-sol-terra.test.ts).
     const before: Array<[Provider, ModelAlias, string, string]> = [
       ["anthropic", "haiku", "claude-haiku-4-5", "anthropic-haiku-4.5"],
-      ["anthropic", "sonnet", "claude-sonnet-4-6", "anthropic-sonnet-4.6"],
-      ["anthropic", "opus", "claude-opus-4-6", "anthropic-opus-4.6"],
+      ["anthropic", "sonnet", "claude-sonnet-5-5", "anthropic-sonnet-5.5"],
+      ["anthropic", "opus", "claude-opus-5-5", "anthropic-opus-5.5"],
       ["google", "flash-lite", "gemini-3.1-flash-lite", "google-flash-lite-3.1"],
       ["google", "flash", "gemini-3.5-flash-lite", "google-flash-lite-3.5"],
       ["google", "flash-pro", "gemini-3.8-flash", "google-flash-3.8"],
@@ -138,11 +139,12 @@ describe("cost names", () => {
 });
 
 describe("Anthropic sampling support — Fable rejects temperature", () => {
-  it("records Fable as sampling-less and every other Anthropic alias as not", () => {
+  it("records Fable, Sonnet 5.5 and Opus 5.5 as sampling-less and Haiku as not", () => {
     expect(anthropicRejectsSampling("claude-fable-5-1")).toBe(true);
-    for (const alias of ["haiku", "sonnet", "opus"] as const) {
-      expect(anthropicRejectsSampling(resolveModel("anthropic", alias).apiModelId)).toBe(false);
+    for (const alias of ["sonnet", "opus"] as const) {
+      expect(anthropicRejectsSampling(resolveModel("anthropic", alias).apiModelId)).toBe(true);
     }
+    expect(anthropicRejectsSampling(resolveModel("anthropic", "haiku").apiModelId)).toBe(false);
   });
 
   it("throws before any spend when temperature is paired with Fable", () => {
@@ -152,7 +154,7 @@ describe("Anthropic sampling support — Fable rejects temperature", () => {
     // The message has to be actionable: it names the field to drop and the
     // aliases that accept it, and says retrying will not help.
     expect(() => assertAnthropicSamplingSupported("claude-fable-5-1", 0)).toThrow(
-      /temperature.*haiku, sonnet, opus.*will not help/s,
+      /temperature.*\(haiku\).*will not help/s,
     );
   });
 
