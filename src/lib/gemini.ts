@@ -3,7 +3,7 @@
 // Used by POST /complete for vision tasks (gemini-3.1-flash-lite)
 // ---------------------------------------------------------------------------
 
-import { readGeminiBilledTokens, type GeminiUsageMetadata } from "./gemini-usage.js";
+import { readGeminiBilledTokens, type GeminiCostLine, type GeminiUsageMetadata } from "./gemini-usage.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -250,9 +250,26 @@ export function isGeminiModel(model: string): boolean {
   return model in GEMINI_MODELS;
 }
 
-/** Get cost-name prefix for a Gemini model. */
+/** Models reachable only as a fallback or direct id, not as a routed alias. */
+const GEMINI_EXTRA_COST_PREFIXES: Record<string, string> = {
+  "gemini-2.5-flash-lite": "google-flash-lite-2.5",
+  "gemini-3.5-flash": "google-flash-3.5",
+};
+
+/**
+ * Cost-name prefix of the model Google ACTUALLY served (a retry-exhausted call
+ * falls back to a 2.5 model, billed at that model's rate). Throws on a model
+ * with no catalog prefix rather than pricing it as some other model.
+ */
 export function geminiCostPrefix(model: string): string {
-  return GEMINI_MODELS[model] ?? "google-flash-lite-3.1";
+  const prefix =
+    GEMINI_MODELS[model] ??
+    (model === GEMINI_IMAGE_MODEL ? GEMINI_IMAGE_COST_PREFIX : undefined) ??
+    GEMINI_EXTRA_COST_PREFIXES[model];
+  if (!prefix) {
+    throw new Error(`[gemini] no cost-name prefix for model "${model}": add it to GEMINI_MODELS before routing to it`);
+  }
+  return prefix;
 }
 
 export interface ImageContext {
@@ -316,6 +333,8 @@ interface GeminiCompleteResult {
   content: string;
   tokensInput: number;
   tokensOutput: number;
+  /** Catalog lines Google bills this request under (model served, tier, cache). */
+  costLines: GeminiCostLine[];
   model: string;
   /** Number of Google Search queries the model ran (0 when grounding is off). */
   searchCount: number;
@@ -336,6 +355,8 @@ interface GeminiImageGenerationResult {
   text: string;
   tokensInput: number;
   tokensOutput: number;
+  /** Catalog lines Google bills this request under (image vs text output). */
+  costLines: GeminiCostLine[];
   model: string;
 }
 
@@ -438,7 +459,11 @@ async function callGeminiOnce(
   };
 
   const finishReason = data.candidates?.[0]?.finishReason;
-  const { tokensInput: tokensIn, tokensOutput: tokensOut } = readGeminiBilledTokens(data.usageMetadata, model);
+  const { tokensInput: tokensIn, tokensOutput: tokensOut, costLines } = readGeminiBilledTokens(
+    data.usageMetadata,
+    model,
+    geminiCostPrefix(model),
+  );
   if (finishReason === "MAX_TOKENS") {
     const diag =
       `[gemini] MAX_TOKENS hit | model=${model}` +
@@ -478,6 +503,7 @@ async function callGeminiOnce(
     content,
     tokensInput: tokensIn,
     tokensOutput: tokensOut,
+    costLines,
     model,
     searchCount,
     sources,
@@ -542,7 +568,7 @@ export async function generateImageWithGemini(
     usageMetadata?: GeminiUsageMetadata;
   };
 
-  const billed = readGeminiBilledTokens(data.usageMetadata, model);
+  const billed = readGeminiBilledTokens(data.usageMetadata, model, geminiCostPrefix(model));
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   const imagePart = parts.find((part) => part.inlineData?.data || part.inline_data?.data);
   const inlineData = imagePart?.inlineData;
@@ -564,6 +590,7 @@ export async function generateImageWithGemini(
     text: parts.map((part) => part.text ?? "").join("").trim(),
     tokensInput: billed.tokensInput,
     tokensOutput: billed.tokensOutput,
+    costLines: billed.costLines,
     model,
   };
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readGeminiBilledTokens } from "../../src/lib/gemini-usage.js";
-import { completeWithGemini, generateImageWithGemini } from "../../src/lib/gemini.js";
+import { completeWithGemini, generateImageWithGemini, geminiCostPrefix } from "../../src/lib/gemini.js";
 import { streamGeminiChat, type ToolDefinition } from "../../src/lib/gemini-chat.js";
 
 // Raw usageMetadata captured from live Gemini calls on 2026-10-01 (project
@@ -28,23 +28,36 @@ afterEach(() => {
 
 describe("readGeminiBilledTokens", () => {
   it("bills thinking tokens as output (gemini-3.1-pro live payload)", () => {
-    expect(readGeminiBilledTokens(LIVE_PRO_THINKING, "gemini-3.1-pro-preview")).toEqual({
+    expect(readGeminiBilledTokens(LIVE_PRO_THINKING, "gemini-3.1-pro-preview", "google-pro-3.1")).toEqual({
       tokensInput: 39,
       tokensOutput: 354,
+      costLines: [
+        { costName: "google-pro-3.1-tokens-input", quantity: 39 },
+        { costName: "google-pro-3.1-tokens-output", quantity: 354 },
+      ],
     });
   });
 
-  it("keeps cachedContentTokenCount inside the prompt count, never adds it", () => {
-    expect(readGeminiBilledTokens(LIVE_FLASH_CACHED, "gemini-3.8-flash")).toEqual({
+  it("declares an implicit cache hit under the cached-input name, the rest as fresh input", () => {
+    expect(readGeminiBilledTokens(LIVE_FLASH_CACHED, "gemini-3.8-flash", "google-flash-3.8")).toEqual({
       tokensInput: 9009,
       tokensOutput: 277,
+      costLines: [
+        { costName: "google-flash-3.8-tokens-input", quantity: 9009 - 4081 },
+        { costName: "google-flash-3.8-tokens-cached-input", quantity: 4081 },
+        { costName: "google-flash-3.8-tokens-output", quantity: 277 },
+      ],
     });
   });
 
   it("is unchanged for a model that does not think", () => {
-    expect(readGeminiBilledTokens(LIVE_FLASH_LITE_NO_THINKING, "gemini-3.5-flash-lite")).toEqual({
+    expect(readGeminiBilledTokens(LIVE_FLASH_LITE_NO_THINKING, "gemini-3.5-flash-lite", "google-flash-lite-3.5")).toEqual({
       tokensInput: 12,
       tokensOutput: 45,
+      costLines: [
+        { costName: "google-flash-lite-3.5-tokens-input", quantity: 12 },
+        { costName: "google-flash-lite-3.5-tokens-output", quantity: 45 },
+      ],
     });
   });
 
@@ -53,26 +66,93 @@ describe("readGeminiBilledTokens", () => {
       readGeminiBilledTokens(
         { promptTokenCount: 100, toolUsePromptTokenCount: 50, candidatesTokenCount: 10, thoughtsTokenCount: 20, totalTokenCount: 180 },
         "gemini-3.1-pro-preview",
+        "google-pro-3.1",
+      ).tokensInput,
+    ).toBe(150);
+  });
+
+  it("bills EVERY token of a Pro request whose prompt exceeds 200k at the long-context names", () => {
+    const usage = {
+      promptTokenCount: 250_000,
+      cachedContentTokenCount: 50_000,
+      candidatesTokenCount: 100,
+      thoughtsTokenCount: 900,
+      totalTokenCount: 251_000,
+    };
+    expect(readGeminiBilledTokens(usage, "gemini-3.1-pro-preview", "google-pro-3.1").costLines).toEqual([
+      { costName: "google-pro-3.1-long-context-tokens-input", quantity: 200_000 },
+      { costName: "google-pro-3.1-long-context-tokens-cached-input", quantity: 50_000 },
+      { costName: "google-pro-3.1-long-context-tokens-output", quantity: 1_000 },
+    ]);
+  });
+
+  it("keeps a prompt of exactly 200k on the standard names", () => {
+    const usage = { promptTokenCount: 200_000, candidatesTokenCount: 10, totalTokenCount: 200_010 };
+    expect(readGeminiBilledTokens(usage, "gemini-3.1-pro-preview", "google-pro-3.1").costLines[0].costName).toBe(
+      "google-pro-3.1-tokens-input",
+    );
+  });
+
+  it("has no long-context tier on Flash (Google prices none)", () => {
+    const usage = { promptTokenCount: 300_000, candidatesTokenCount: 10, totalTokenCount: 300_010 };
+    expect(readGeminiBilledTokens(usage, "gemini-3.8-flash", "google-flash-3.8").costLines[0].costName).toBe(
+      "google-flash-3.8-tokens-input",
+    );
+  });
+
+  it("splits Flash Image output into image tokens and text/thinking tokens (live payload)", () => {
+    const usage = {
+      promptTokenCount: 5,
+      candidatesTokenCount: 1441,
+      totalTokenCount: 1446,
+      candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 1120 }],
+    };
+    expect(readGeminiBilledTokens(usage, "gemini-3.1-flash-image", "google-flash-image-3.1").costLines).toEqual([
+      { costName: "google-flash-image-3.1-tokens-input", quantity: 5 },
+      { costName: "google-flash-image-3.1-tokens-output", quantity: 1120 },
+      { costName: "google-flash-image-3.1-tokens-text-output", quantity: 321 },
+    ]);
+  });
+
+  it("fails loud on a cache hit for an image model Google publishes no cache rate for", () => {
+    expect(() =>
+      readGeminiBilledTokens(
+        { promptTokenCount: 5000, cachedContentTokenCount: 4096, candidatesTokenCount: 10, totalTokenCount: 5010 },
+        "gemini-3.1-flash-image",
+        "google-flash-image-3.1",
       ),
-    ).toEqual({ tokensInput: 150, tokensOutput: 30 });
+    ).toThrow(/no cache rate/);
   });
 
   it("fails loud when the total holds tokens no known class accounts for", () => {
     expect(() =>
-      readGeminiBilledTokens({ promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 99 }, "gemini-x"),
+      readGeminiBilledTokens({ promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 99 }, "gemini-x", "google-x"),
     ).toThrow(/no known class accounts for.*totalTokenCount=99/);
   });
 
-  it("logs the raw usageMetadata beside the declared tokens", () => {
+  it("logs the raw usageMetadata beside the declared lines", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    readGeminiBilledTokens(LIVE_PRO_THINKING, "gemini-3.1-pro-preview");
+    readGeminiBilledTokens(LIVE_PRO_THINKING, "gemini-3.1-pro-preview", "google-pro-3.1");
     expect(log).toHaveBeenCalledWith(
-      `[gemini] billed usage | model=gemini-3.1-pro-preview | in=39 | out=354 | usageMetadata=${JSON.stringify(LIVE_PRO_THINKING)}`,
+      `[gemini] billed usage | model=gemini-3.1-pro-preview | in=39 | out=354` +
+        ` | lines=google-pro-3.1-tokens-input:39,google-pro-3.1-tokens-output:354` +
+        ` | usageMetadata=${JSON.stringify(LIVE_PRO_THINKING)}`,
     );
   });
 
   it("returns zero when the response carries no usageMetadata", () => {
-    expect(readGeminiBilledTokens(undefined, "gemini-x")).toEqual({ tokensInput: 0, tokensOutput: 0 });
+    expect(readGeminiBilledTokens(undefined, "gemini-x", "google-x")).toEqual({ tokensInput: 0, tokensOutput: 0, costLines: [] });
+  });
+});
+
+describe("geminiCostPrefix", () => {
+  it("prices a retry-exhausted fallback at the model Google actually served", () => {
+    expect(geminiCostPrefix("gemini-2.5-pro")).toBe("google-pro-2.5");
+    expect(geminiCostPrefix("gemini-2.5-flash-lite")).toBe("google-flash-lite-2.5");
+  });
+
+  it("throws on a model with no catalog prefix instead of pricing it as another model", () => {
+    expect(() => geminiCostPrefix("gemini-99-turbo")).toThrow(/no cost-name prefix/);
   });
 });
 
@@ -96,6 +176,33 @@ describe("completeWithGemini (POST /complete, /internal/platform-complete)", () 
     });
     expect(result.tokensInput).toBe(39);
     expect(result.tokensOutput).toBe(354);
+  });
+});
+
+describe("completeWithGemini fallback", () => {
+  it("declares the fallback model's names when Google served gemini-2.5-pro", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn();
+    for (let i = 0; i < 4; i++) fetchSpy.mockResolvedValueOnce({ ok: false, status: 503, text: async () => "overloaded" });
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 2, thoughtsTokenCount: 8, totalTokenCount: 20 },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const promise = completeWithGemini({ apiKey: "k", model: "gemini-3.1-pro-preview", message: "hi", systemPrompt: "" });
+    promise.catch(() => {});
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    vi.useRealTimers();
+    expect(result.model).toBe("gemini-2.5-pro");
+    expect(result.costLines).toEqual([
+      { costName: "google-pro-2.5-tokens-input", quantity: 10 },
+      { costName: "google-pro-2.5-tokens-output", quantity: 10 },
+    ]);
   });
 });
 
@@ -182,6 +289,11 @@ describe("streamGeminiChat (POST /chat, streaming + tool loop)", () => {
     const result = await streamGeminiChat(chatOptions());
     expect(result.tokensInput).toBe(50 + 39);
     expect(result.tokensOutput).toBe(16 + 1098 + 9 + 345);
+    // One request per turn, summed by catalog name.
+    expect(result.costLines).toEqual([
+      { costName: "google-pro-3.1-tokens-input", quantity: 50 + 39 },
+      { costName: "google-pro-3.1-tokens-output", quantity: 16 + 1098 + 9 + 345 },
+    ]);
   });
 
   it("fails loud on a usage total it cannot price", async () => {

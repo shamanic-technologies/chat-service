@@ -121,7 +121,7 @@ function mockGeminiImage(cap: { calls: number; bodies: Record<string, unknown>[]
               finishReason: "STOP",
             },
           ],
-          ...(cap.omitUsage ? {} : { usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 1290 } }),
+          ...(cap.omitUsage ? {} : { usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 1290, totalTokenCount: 1302, candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 1120 }] } }),
         },
       };
     },
@@ -226,7 +226,10 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
     // byte-equal to the org route's catalog rows.
     const actual = costCap.postedItems[0];
     expect(actual.find((i) => i.costName === "google-flash-image-3.1-tokens-input")!.quantity).toBe(12);
-    expect(actual.find((i) => i.costName === "google-flash-image-3.1-tokens-output")!.quantity).toBe(1290);
+    // Google bills image output (1120, candidatesTokensDetails IMAGE) at the image
+    // rate and the remaining text/thinking output (170) at the text rate.
+    expect(actual.find((i) => i.costName === "google-flash-image-3.1-tokens-output")!.quantity).toBe(1120);
+    expect(actual.find((i) => i.costName === "google-flash-image-3.1-tokens-text-output")!.quantity).toBe(170);
     expect(actual.every((i) => i.status === undefined)).toBe(true);
     expect(actual.every((i) => i.costSource === "platform")).toBe(true);
 

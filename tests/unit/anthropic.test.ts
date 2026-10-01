@@ -188,7 +188,6 @@ describe("createAnthropicClient", () => {
       {
         type: "text",
         text: "Custom prompt.",
-        cache_control: { type: "ephemeral" },
       },
     ]);
   });
@@ -881,7 +880,9 @@ describe("resolveToolSet", () => {
 });
 
 describe("prompt caching", () => {
-  it("sets cache_control on system prompt", () => {
+  // Cache reads/writes bill outside input_tokens and the catalog prices
+  // neither for Anthropic, so /chat must not start a cache.
+  it("sends no cache_control on the system prompt", () => {
     const client = createAnthropicClient({
       apiKey: "test-key",
       systemPrompt: "Cached system prompt.",
@@ -889,6 +890,6 @@ describe("prompt caching", () => {
     client.createStream([{ role: "user", content: "hello" }]);
 
     const callArgs = mockStream.mock.calls.at(-1)?.[0];
-    expect(callArgs.system[0].cache_control).toEqual({ type: "ephemeral" });
+    expect(callArgs.system[0].cache_control).toBeUndefined();
   });
 });

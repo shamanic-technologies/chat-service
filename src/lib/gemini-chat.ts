@@ -6,9 +6,9 @@
 import type { Response as ExpressResponse } from "express";
 import type { ToolCallRecord } from "../db/schema.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
-import { sanitizeGeminiSchema, buildThinkingConfig, type GeminiThinkingLevel } from "./gemini.js";
+import { sanitizeGeminiSchema, buildThinkingConfig, geminiCostPrefix, type GeminiThinkingLevel } from "./gemini.js";
 import { buildToolResultFallback } from "./tool-fallback.js";
-import { readGeminiBilledTokens, type GeminiUsageMetadata } from "./gemini-usage.js";
+import { mergeGeminiCostLines, readGeminiBilledTokens, type GeminiCostLine, type GeminiUsageMetadata } from "./gemini-usage.js";
 import { formatToolError } from "./tool-errors.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -149,6 +149,8 @@ export interface StreamGeminiChatOptions {
 export interface StreamGeminiChatResult {
   tokensInput: number;
   tokensOutput: number;
+  /** Catalog lines summed over every turn of the tool loop (one request per turn). */
+  costLines: GeminiCostLine[];
   fullResponse: string;
   toolCalls: ToolCallRecord[];
   emittedInputRequest: boolean;
@@ -389,6 +391,7 @@ export async function streamGeminiChat(
 
   let totalTokensInput = 0;
   let totalTokensOutput = 0;
+  let totalCostLines: GeminiCostLine[] = [];
   let fullResponse = "";
   const allToolCalls: ToolCallRecord[] = [];
   let emittedInputRequest = false;
@@ -543,9 +546,10 @@ export async function streamGeminiChat(
       sse(res, { type: "thinking_stop" });
     }
 
-    const turnBilled = readGeminiBilledTokens(turnUsage, model);
+    const turnBilled = readGeminiBilledTokens(turnUsage, model, geminiCostPrefix(model));
     totalTokensInput += turnBilled.tokensInput;
     totalTokensOutput += turnBilled.tokensOutput;
+    totalCostLines = mergeGeminiCostLines(totalCostLines, turnBilled.costLines);
 
     // No function calls — we're done
     if (functionCalls.length === 0) break;
@@ -583,6 +587,7 @@ export async function streamGeminiChat(
           return {
             tokensInput: totalTokensInput,
             tokensOutput: totalTokensOutput,
+            costLines: totalCostLines,
             fullResponse,
             toolCalls: allToolCalls,
             emittedInputRequest,
@@ -676,6 +681,7 @@ export async function streamGeminiChat(
   return {
     tokensInput: totalTokensInput,
     tokensOutput: totalTokensOutput,
+    costLines: totalCostLines,
     fullResponse,
     toolCalls: allToolCalls,
     emittedInputRequest,
