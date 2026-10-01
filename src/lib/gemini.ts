@@ -61,16 +61,10 @@ const GEMINI_TIMEOUT_MS: Record<string, number> = {
 };
 const DEFAULT_GEMINI_TIMEOUT_MS = 10 * 60_000;  // 10 min fallback
 
-/** Fallback from 3.x models to stable 2.5 models. */
-const GEMINI_FALLBACK_MODEL: Record<string, string> = {
-  "gemini-3.1-pro-preview": "gemini-2.5-pro",
-  "gemini-3.8-flash": "gemini-2.5-flash",
-  "gemini-3.7-flash": "gemini-2.5-flash",
-  "gemini-3.6-flash": "gemini-2.5-flash",
-  "gemini-3-flash-preview": "gemini-2.5-flash",
-  "gemini-3.5-flash-lite": "gemini-2.5-flash-lite",
-  "gemini-3.1-flash-lite": "gemini-2.5-flash",
-};
+// No fallback model. The 2.5 models the 3.x ids used to fall back to answer
+// 404 "no longer available to new users" (2026-10-01), and serving another
+// model than the alias asked for is what the repo forbids anyway (CLAUDE.md,
+// "No routing knobs, no fallback"). Retry-exhausted calls fail loud.
 
 /** HTTP status codes that warrant a retry. */
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 503, 504]);
@@ -250,15 +244,13 @@ export function isGeminiModel(model: string): boolean {
   return model in GEMINI_MODELS;
 }
 
-/** Models reachable only as a fallback or direct id, not as a routed alias. */
+/** Models reachable only as a direct id, not as a routed alias. */
 const GEMINI_EXTRA_COST_PREFIXES: Record<string, string> = {
-  "gemini-2.5-flash-lite": "google-flash-lite-2.5",
   "gemini-3.5-flash": "google-flash-3.5",
 };
 
 /**
- * Cost-name prefix of the model Google ACTUALLY served (a retry-exhausted call
- * falls back to a 2.5 model, billed at that model's rate). Throws on a model
+ * Cost-name prefix of the model Google served. Throws on a model
  * with no catalog prefix rather than pricing it as some other model.
  */
 export function geminiCostPrefix(model: string): string {
@@ -772,15 +764,6 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     }
   }
 
-  // --- All retries exhausted — try fallback model ---
-  const fallbackModel = GEMINI_FALLBACK_MODEL[model];
-  if (fallbackModel) {
-    console.warn(
-      `[chat-service] All ${MAX_RETRIES} retries failed for ${model}, falling back to ${fallbackModel} | lastError=${lastError?.message}`,
-    );
-    return await callGeminiOnce(fallbackModel, apiKey, body, jsonMode);
-  }
-
-  // No fallback available — re-throw the last error
+  // All retries exhausted: fail loud with the provider's last error.
   throw lastError;
 }

@@ -525,94 +525,34 @@ describe("completeWithGemini", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
-  // --- Fallback behavior ---
+  // --- No fallback model: retry-exhausted calls fail loud ---
 
-  it("falls back to gemini-2.5-flash after all retries fail for flash-preview", async () => {
-    // 1 initial + 3 retries = 4 calls on primary model, all 503
+  it("throws after all retries fail, never calling a different model", async () => {
     fetchSpy
       .mockResolvedValueOnce(errorResponse(503))
       .mockResolvedValueOnce(errorResponse(503))
       .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503))
-      // fallback call succeeds
-      .mockResolvedValueOnce(okResponse("fallback-ok"));
+      .mockResolvedValueOnce(errorResponse(503, "high demand"));
 
-    const result = await runWithTimers(baseOptions);
-    expect(result.content).toBe("fallback-ok");
-    expect(result.model).toBe("gemini-2.5-flash");
-    expect(fetchSpy).toHaveBeenCalledTimes(5);
-    const fallbackUrl = fetchSpy.mock.calls[4][0] as string;
-    expect(fallbackUrl).toContain("gemini-2.5-flash");
-  });
-
-  it("falls back to gemini-2.5-pro after all retries fail for pro-preview", async () => {
-    fetchSpy
-      .mockResolvedValueOnce(errorResponse(504))
-      .mockResolvedValueOnce(errorResponse(504))
-      .mockResolvedValueOnce(errorResponse(504))
-      .mockResolvedValueOnce(errorResponse(504))
-      .mockResolvedValueOnce(okResponse("pro-fallback"));
-
-    const result = await runWithTimers({ ...baseOptions, model: "gemini-3.1-pro-preview" });
-    expect(result.content).toBe("pro-fallback");
-    expect(result.model).toBe("gemini-2.5-pro");
-    const fallbackUrl = fetchSpy.mock.calls[4][0] as string;
-    expect(fallbackUrl).toContain("gemini-2.5-pro");
-  });
-
-  it("falls back to gemini-2.5-flash after all retries fail for flash-lite", async () => {
-    fetchSpy
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(okResponse("lite-fallback"));
-
-    const result = await runWithTimers({ ...baseOptions, model: "gemini-3.1-flash-lite" });
-    expect(result.content).toBe("lite-fallback");
-    expect(result.model).toBe("gemini-2.5-flash");
-  });
-
-  it("throws when fallback also fails", async () => {
-    fetchSpy
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503, "fallback also down"));
-
-    await expect(runWithTimers(baseOptions)).rejects.toThrow(
-      "[gemini] API error 503: fallback also down",
+    await expect(runWithTimers({ ...baseOptions, model: "gemini-3.1-pro-preview" })).rejects.toThrow(
+      "[gemini] API error 503: high demand",
     );
-  });
-
-  it("throws when all retries fail and there is no fallback model", async () => {
-    const unknownModel = "gemini-99-turbo-preview";
-    fetchSpy
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503));
-
-    await expect(
-      runWithTimers({ ...baseOptions, model: unknownModel }),
-    ).rejects.toThrow("[gemini] API error 503");
     expect(fetchSpy).toHaveBeenCalledTimes(4);
+    for (const call of fetchSpy.mock.calls) {
+      expect(call[0] as string).toContain("/models/gemini-3.1-pro-preview:");
+    }
   });
 
-  it("retries on timeout then falls back after all retries exhausted", async () => {
+  it("throws after retries exhausted on timeout too", async () => {
     const timeoutError = new DOMException("The operation was aborted due to timeout", "TimeoutError");
     fetchSpy
       .mockRejectedValueOnce(timeoutError)
       .mockRejectedValueOnce(timeoutError)
       .mockRejectedValueOnce(timeoutError)
-      .mockRejectedValueOnce(timeoutError)
-      .mockResolvedValueOnce(okResponse("timeout-fallback"));
+      .mockRejectedValueOnce(timeoutError);
 
-    const result = await runWithTimers(baseOptions);
-    expect(result.content).toBe("timeout-fallback");
-    expect(result.model).toBe("gemini-2.5-flash");
-    expect(fetchSpy).toHaveBeenCalledTimes(5);
+    await expect(runWithTimers(baseOptions)).rejects.toThrow(/timed out/);
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
   });
 
   it("logs a warning for each retry attempt", async () => {
@@ -629,22 +569,5 @@ describe("completeWithGemini", () => {
     expect(warnCalls).toHaveLength(2);
     expect(warnCalls[0]).toMatch(/retry 1\/3/);
     expect(warnCalls[1]).toMatch(/retry 2\/3/);
-  });
-
-  it("logs a warning when falling back to stable model", async () => {
-    fetchSpy
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(errorResponse(503))
-      .mockResolvedValueOnce(okResponse("fallback"));
-
-    await runWithTimers(baseOptions);
-
-    const warnCalls = (console.warn as ReturnType<typeof vi.fn>).mock.calls
-      .map((c) => c[0] as string);
-    const fallbackWarn = warnCalls.find((msg) => msg.includes("falling back to"));
-    expect(fallbackWarn).toBeDefined();
-    expect(fallbackWarn).toContain("gemini-2.5-flash");
   });
 });
