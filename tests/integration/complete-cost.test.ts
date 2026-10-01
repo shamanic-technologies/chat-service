@@ -124,7 +124,7 @@ function mockGeminiComplete(cap: { calls: number }) {
         ok: true,
         body: {
           candidates: [{ content: { parts: [{ text: "hello world" }] }, finishReason: "STOP" }],
-          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, thoughtsTokenCount: 95, totalTokenCount: 110 },
         },
       };
     },
@@ -233,11 +233,12 @@ describe("POST /complete — cost provision → authorize → execute → reconc
     expect(provisionIdx).toBeGreaterThanOrEqual(0);
     expect(llmIdx).toBeGreaterThan(provisionIdx);
 
-    // ACTUAL: a later POST /costs records the REAL tokens (10 in / 5 out), no provisioned status.
+    // ACTUAL: a later POST /costs records the BILLED tokens, no provisioned status:
+    // 10 in / 100 out = 5 visible + 95 thinking (Google bills thoughtsTokenCount as output).
     const actual = cap.postedItems.find((items) => items.some((i) => i.status === undefined));
     expect(actual).toBeDefined();
     expect(actual!.find((i) => i.costName.endsWith("input"))!.quantity).toBe(10);
-    expect(actual!.find((i) => i.costName.endsWith("output"))!.quantity).toBe(5);
+    expect(actual!.find((i) => i.costName.endsWith("output"))!.quantity).toBe(100);
 
     // RECONCILE: the 2 provisioned holds are cancelled.
     expect(cap.patchedStatuses.filter((s) => s === "cancelled")).toHaveLength(2);
