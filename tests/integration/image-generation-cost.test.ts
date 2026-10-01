@@ -140,7 +140,7 @@ function mockGeminiImage(cap: { calls: number; bodies: Record<string, unknown>[]
               finishReason: "STOP",
             },
           ],
-          usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 1290 },
+          usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 1290, totalTokenCount: 1302, candidatesTokensDetails: [{ modality: "IMAGE", tokenCount: 1120 }] },
         },
       };
     },
@@ -264,7 +264,9 @@ describe("POST /orgs/images/generate — cost gate and Gemini image request", ()
     const actual = costCap.postedItems.find((items) => items.some((i) => i.status === undefined));
     expect(actual).toBeDefined();
     expect(actual!.find((i) => i.costName.endsWith("input"))!.quantity).toBe(12);
-    expect(actual!.find((i) => i.costName.endsWith("output"))!.quantity).toBe(1290);
+    // Image output at the image rate, the rest (text/thinking) at the text rate.
+    expect(actual!.find((i) => i.costName === "google-flash-image-3.1-tokens-output")!.quantity).toBe(1120);
+    expect(actual!.find((i) => i.costName === "google-flash-image-3.1-tokens-text-output")!.quantity).toBe(170);
     expect(costCap.patchedStatuses.filter((s) => s === "cancelled")).toHaveLength(2);
   });
 

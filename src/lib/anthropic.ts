@@ -2170,11 +2170,12 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       const params = {
         model: MODEL,
         max_tokens: MAX_TOKENS,
+        // No cache_control: cache writes/reads bill outside input_tokens and
+        // the catalog prices neither (see anthropic-usage.ts).
         system: [
           {
             type: "text" as const,
             text: systemPrompt,
-            cache_control: { type: "ephemeral" as const },
           },
         ],
         messages,

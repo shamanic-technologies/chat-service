@@ -160,6 +160,8 @@ import {
   type RebuildableMessage,
 } from "./lib/merge-messages.js";
 import { streamGeminiChat, type ToolDefinition } from "./lib/gemini-chat.js";
+import type { GeminiCostLine } from "./lib/gemini-usage.js";
+import { readAnthropicBilledTokens } from "./lib/anthropic-usage.js";
 import { buildToolResultFallback } from "./lib/tool-fallback.js";
 import { SESSION_NOT_FOUND_EVENT, SESSION_NOT_FOUND_MESSAGE } from "./lib/session-errors.js";
 import { serializeSessionHistory } from "./lib/session-history.js";
@@ -559,6 +561,10 @@ app.post("/complete", requireAuth, async (req, res) => {
   // totalPromptTokens, declared under a separate (far cheaper) catalog name —
   // see the reconcile block below. Stays 0 on the Anthropic/Google paths.
   let totalCachedInputTokens = 0;
+  // Gemini: the exact catalog lines Google bills this request under (model
+  // served, >200k tier, cache hits). When set, they replace the input/cached/
+  // output split below, which only knows the pre-call cost names.
+  let geminiCostLines: GeminiCostLine[] | null = null;
   let provisionedCostIds: string[] = [];
   try {
     // PROVISION worst case → AUTHORIZE (platform) before the LLM call. Fail loud — never
@@ -582,7 +588,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       return res.status(r.status).json(r.body);
     }
 
-    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }>; cachedInputTokens?: number };
+    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }>; cachedInputTokens?: number; costLines?: GeminiCostLine[] };
 
     if (runId) {
       traceEvent(runId, "llm-call-start", { orgId, userId }, workflowTracking, {
@@ -643,6 +649,7 @@ app.post("/complete", requireAuth, async (req, res) => {
     totalOutputTokens = result.tokensOutput;
     totalSearchCount = result.searchCount;
     totalCachedInputTokens = result.cachedInputTokens ?? 0;
+    geminiCostLines = result.costLines ?? null;
 
     if (runId) {
       traceEvent(runId, "llm-call-done", { orgId, userId }, workflowTracking, {
@@ -730,16 +737,21 @@ app.post("/complete", requireAuth, async (req, res) => {
         ? Math.min(totalCachedInputTokens, totalPromptTokens)
         : 0;
       const freshInputTokens = totalPromptTokens - cachedInputTokens;
+      const tokenItems = geminiCostLines
+        ? geminiCostLines.map((l) => ({ ...l, costSource }))
+        : [
+            ...(freshInputTokens > 0
+              ? [{ costName: costNames.input, quantity: freshInputTokens, costSource }]
+              : []),
+            ...(costNames.cachedInput && cachedInputTokens > 0
+              ? [{ costName: costNames.cachedInput, quantity: cachedInputTokens, costSource }]
+              : []),
+            ...(totalOutputTokens > 0
+              ? [{ costName: costNames.output, quantity: totalOutputTokens, costSource }]
+              : []),
+          ];
       const actualItems = [
-        ...(freshInputTokens > 0
-          ? [{ costName: costNames.input, quantity: freshInputTokens, costSource }]
-          : []),
-        ...(costNames.cachedInput && cachedInputTokens > 0
-          ? [{ costName: costNames.cachedInput, quantity: cachedInputTokens, costSource }]
-          : []),
-        ...(totalOutputTokens > 0
-          ? [{ costName: costNames.output, quantity: totalOutputTokens, costSource }]
-          : []),
+        ...tokenItems,
         ...(searchCostName && totalSearchCount > 0
           ? [{ costName: searchCostName, quantity: totalSearchCount, costSource }]
           : []),
@@ -824,6 +836,7 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
   let imageFailed = false;
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
+  let imageCostLines: GeminiCostLine[] = [];
   let provisionedCostIds: string[] = [];
   try {
     try {
@@ -859,6 +872,7 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
     // holds after a provider call that already spent.
     totalPromptTokens = result.tokensInput > 0 ? result.tokensInput : estimatedInputTokens;
     totalOutputTokens = result.tokensOutput > 0 ? result.tokensOutput : estimatedOutputTokens;
+    imageCostLines = result.costLines;
 
     traceEvent(runId, "llm-call-done", { orgId, userId }, workflowTracking, {
       data: {
@@ -913,14 +927,18 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
   } finally {
     if (runId) {
       const runIdentity = { orgId, userId, runId };
-      const actualItems = [
-        ...(totalPromptTokens > 0
-          ? [{ costName: `${GEMINI_IMAGE_COST_PREFIX}-tokens-input`, quantity: totalPromptTokens, costSource }]
-          : []),
-        ...(totalOutputTokens > 0
-          ? [{ costName: `${GEMINI_IMAGE_COST_PREFIX}-tokens-output`, quantity: totalOutputTokens, costSource }]
-          : []),
-      ];
+      // Google's usage → its exact lines (image vs text output). Without usage,
+      // the size estimates stand in, all under the image rate.
+      const actualItems = imageCostLines.length > 0
+        ? imageCostLines.map((l) => ({ ...l, costSource }))
+        : [
+            ...(totalPromptTokens > 0
+              ? [{ costName: `${GEMINI_IMAGE_COST_PREFIX}-tokens-input`, quantity: totalPromptTokens, costSource }]
+              : []),
+            ...(totalOutputTokens > 0
+              ? [{ costName: `${GEMINI_IMAGE_COST_PREFIX}-tokens-output`, quantity: totalOutputTokens, costSource }]
+              : []),
+          ];
       try {
         await updateRunStatus(runId, imageFailed ? "failed" : "completed", runIdentity, trackingHeaders);
       } catch (runErr) {
@@ -2110,7 +2128,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
 
   let platformFailed = false;
   try {
-    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }>; cachedInputTokens?: number };
+    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }>; cachedInputTokens?: number; costLines?: GeminiCostLine[] };
 
     if (isVendor) {
       result = await completeWithVendor({
@@ -2159,16 +2177,22 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       ? Math.min(result.cachedInputTokens ?? 0, result.tokensInput)
       : 0;
     const freshInputTokens = result.tokensInput - cachedInputTokens;
+    // Gemini: the exact lines Google bills this request under (see /complete).
+    const tokenItems: CostItem[] = result.costLines
+      ? result.costLines.map((l) => ({ ...l, costSource: "platform" as const }))
+      : [
+          ...(freshInputTokens > 0
+            ? [{ costName: costNames.input, quantity: freshInputTokens, costSource: "platform" as const }]
+            : []),
+          ...(costNames.cachedInput && cachedInputTokens > 0
+            ? [{ costName: costNames.cachedInput, quantity: cachedInputTokens, costSource: "platform" as const }]
+            : []),
+          ...(result.tokensOutput > 0
+            ? [{ costName: costNames.output, quantity: result.tokensOutput, costSource: "platform" as const }]
+            : []),
+        ];
     const costItems: CostItem[] = [
-      ...(freshInputTokens > 0
-        ? [{ costName: costNames.input, quantity: freshInputTokens, costSource: "platform" as const }]
-        : []),
-      ...(costNames.cachedInput && cachedInputTokens > 0
-        ? [{ costName: costNames.cachedInput, quantity: cachedInputTokens, costSource: "platform" as const }]
-        : []),
-      ...(result.tokensOutput > 0
-        ? [{ costName: costNames.output, quantity: result.tokensOutput, costSource: "platform" as const }]
-        : []),
+      ...tokenItems,
       ...(searchCostName && result.searchCount > 0
         ? [{ costName: searchCostName, quantity: result.searchCount, costSource: "platform" as const }]
         : []),
@@ -2284,14 +2308,16 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
     // Declare ACTUAL costs on the platform run BEFORE responding. Platform runs
     // have no cost-status PATCH, so there is no provision/cancel — costs are
     // posted as `actual` post-call. Throws (fail loud → 502) if undeclarable.
-    const costItems: CostItem[] = [
-      ...(totalPromptTokens > 0
-        ? [{ costName: `${GEMINI_IMAGE_COST_PREFIX}-tokens-input`, quantity: totalPromptTokens, costSource: "platform" as const }]
-        : []),
-      ...(totalOutputTokens > 0
-        ? [{ costName: `${GEMINI_IMAGE_COST_PREFIX}-tokens-output`, quantity: totalOutputTokens, costSource: "platform" as const }]
-        : []),
-    ];
+    const costItems: CostItem[] = result.costLines.length > 0
+      ? result.costLines.map((l) => ({ ...l, costSource: "platform" as const }))
+      : [
+          ...(totalPromptTokens > 0
+            ? [{ costName: `${GEMINI_IMAGE_COST_PREFIX}-tokens-input`, quantity: totalPromptTokens, costSource: "platform" as const }]
+            : []),
+          ...(totalOutputTokens > 0
+            ? [{ costName: `${GEMINI_IMAGE_COST_PREFIX}-tokens-output`, quantity: totalOutputTokens, costSource: "platform" as const }]
+            : []),
+        ];
     await addPlatformRunCosts(runId, "chat-service", costItems);
 
     const uploadedImage = await uploadGeneratedImageToCloudflare({
@@ -2454,6 +2480,8 @@ app.post("/chat", requireAuth, async (req, res) => {
   let chatFailed = false;
   let totalPromptTokens = 0;
   let totalOutputTokens = 0;
+  // Gemini: exact billed lines, summed over the tool loop (null on Anthropic).
+  let geminiChatCostLines: GeminiCostLine[] | null = null;
   let provisionedCostIds: string[] = [];
 
   try {
@@ -3448,6 +3476,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       toolCalls.push(...geminiResult.toolCalls);
       totalPromptTokens = geminiResult.tokensInput;
       totalOutputTokens = geminiResult.tokensOutput;
+      geminiChatCostLines = geminiResult.costLines;
 
       // Shared post-processing: buttons, empty response check, save message
       // (no line buffering for Gemini — tokens are streamed directly)
@@ -3552,8 +3581,9 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
 
       const finalMessage = await stream!.finalMessage();
-      totalPromptTokens += finalMessage.usage.input_tokens;
-      totalOutputTokens += finalMessage.usage.output_tokens;
+      const billed = readAnthropicBilledTokens(finalMessage.usage);
+      totalPromptTokens += billed.tokensInput;
+      totalOutputTokens += billed.tokensOutput;
       lastContentBlocks = finalMessage.content;
 
       // If no tool calls, we're done
@@ -3774,14 +3804,17 @@ app.post("/chat", requireAuth, async (req, res) => {
       const costSource: "platform" | "org" =
         resolvedKey.keySource === "org" ? "org" : "platform";
       const chatCostPrefix = resolvedModelInfo.costPrefix;
-      const actualItems = [
-        ...(totalPromptTokens > 0
-          ? [{ costName: `${chatCostPrefix}-tokens-input`, quantity: totalPromptTokens, costSource }]
-          : []),
-        ...(totalOutputTokens > 0
-          ? [{ costName: `${chatCostPrefix}-tokens-output`, quantity: totalOutputTokens, costSource }]
-          : []),
-      ];
+      // Gemini: the exact lines Google billed, summed over every turn.
+      const actualItems = geminiChatCostLines
+        ? geminiChatCostLines.map((l) => ({ ...l, costSource }))
+        : [
+            ...(totalPromptTokens > 0
+              ? [{ costName: `${chatCostPrefix}-tokens-input`, quantity: totalPromptTokens, costSource }]
+              : []),
+            ...(totalOutputTokens > 0
+              ? [{ costName: `${chatCostPrefix}-tokens-output`, quantity: totalOutputTokens, costSource }]
+              : []),
+          ];
       const runIdentity = { orgId, userId, runId };
       try {
         await updateRunStatus(runId, chatFailed ? "failed" : "completed", runIdentity, trackingHeaders);
