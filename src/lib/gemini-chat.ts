@@ -8,6 +8,7 @@ import type { ToolCallRecord } from "../db/schema.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
 import { sanitizeGeminiSchema, buildThinkingConfig, type GeminiThinkingLevel } from "./gemini.js";
 import { buildToolResultFallback } from "./tool-fallback.js";
+import { readGeminiBilledTokens, type GeminiUsageMetadata } from "./gemini-usage.js";
 import { formatToolError } from "./tool-errors.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -294,10 +295,7 @@ interface GeminiStreamChunk {
     };
     finishReason?: string;
   }>;
-  usageMetadata?: {
-    promptTokenCount?: number;
-    candidatesTokenCount?: number;
-  };
+  usageMetadata?: GeminiUsageMetadata;
 }
 
 /**
@@ -470,8 +468,9 @@ export async function streamGeminiChat(
     let sseBuffer = "";
     let inThinking = false;
     const functionCalls: Array<{ name: string; args: Record<string, unknown>; id?: string; thoughtSignature?: string }> = [];
-    let chunkTokensInput = 0;
-    let chunkTokensOutput = 0;
+    // Each streamed chunk carries the turn's usage so far; the last one is the
+    // turn's total. Kept raw and read once the stream ends.
+    let turnUsage: GeminiUsageMetadata | undefined;
 
     try {
       while (true) {
@@ -493,8 +492,7 @@ export async function streamGeminiChat(
         for (const chunk of parsedSSE.chunks) {
           // Track usage
           if (chunk.usageMetadata) {
-            chunkTokensInput = chunk.usageMetadata.promptTokenCount ?? chunkTokensInput;
-            chunkTokensOutput = chunk.usageMetadata.candidatesTokenCount ?? chunkTokensOutput;
+            turnUsage = chunk.usageMetadata;
           }
 
           const parts = chunk.candidates?.[0]?.content?.parts;
@@ -545,8 +543,9 @@ export async function streamGeminiChat(
       sse(res, { type: "thinking_stop" });
     }
 
-    totalTokensInput += chunkTokensInput;
-    totalTokensOutput += chunkTokensOutput;
+    const turnBilled = readGeminiBilledTokens(turnUsage, model);
+    totalTokensInput += turnBilled.tokensInput;
+    totalTokensOutput += turnBilled.tokensOutput;
 
     // No function calls — we're done
     if (functionCalls.length === 0) break;

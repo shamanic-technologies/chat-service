@@ -113,7 +113,7 @@ function mockGemini(cap: { calls: number }, grounded = false) {
       }
       return {
         ok: true,
-        body: { candidates: [candidate], usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 7 } },
+        body: { candidates: [candidate], usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 7, thoughtsTokenCount: 30, totalTokenCount: 49 } },
       };
     },
   } satisfies MockRoute;
@@ -165,7 +165,8 @@ describe("POST /internal/platform-complete — platform run tracking + cost", ()
     // ACTUAL token costs posted (no provisioned status), costSource platform.
     const actual = costCap.postedItems[0];
     expect(actual.find((i) => i.costName === "google-flash-lite-3.5-tokens-input")!.quantity).toBe(12);
-    expect(actual.find((i) => i.costName === "google-flash-lite-3.5-tokens-output")!.quantity).toBe(7);
+    // Output = visible (7) + thinking (30): Google bills thoughtsTokenCount as output.
+    expect(actual.find((i) => i.costName === "google-flash-lite-3.5-tokens-output")!.quantity).toBe(37);
     expect(actual.every((i) => i.status === undefined)).toBe(true);
     expect(actual.every((i) => i.costSource === "platform")).toBe(true);
 

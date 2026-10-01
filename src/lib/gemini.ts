@@ -3,6 +3,8 @@
 // Used by POST /complete for vision tasks (gemini-3.1-flash-lite)
 // ---------------------------------------------------------------------------
 
+import { readGeminiBilledTokens, type GeminiUsageMetadata } from "./gemini-usage.js";
+
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 export const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
@@ -432,15 +434,11 @@ async function callGeminiOnce(
         groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
       };
     }>;
-    usageMetadata?: {
-      promptTokenCount?: number;
-      candidatesTokenCount?: number;
-    };
+    usageMetadata?: GeminiUsageMetadata;
   };
 
   const finishReason = data.candidates?.[0]?.finishReason;
-  const tokensIn = data.usageMetadata?.promptTokenCount ?? 0;
-  const tokensOut = data.usageMetadata?.candidatesTokenCount ?? 0;
+  const { tokensInput: tokensIn, tokensOutput: tokensOut } = readGeminiBilledTokens(data.usageMetadata, model);
   if (finishReason === "MAX_TOKENS") {
     const diag =
       `[gemini] MAX_TOKENS hit | model=${model}` +
@@ -478,8 +476,8 @@ async function callGeminiOnce(
 
   return {
     content,
-    tokensInput: data.usageMetadata?.promptTokenCount ?? 0,
-    tokensOutput: data.usageMetadata?.candidatesTokenCount ?? 0,
+    tokensInput: tokensIn,
+    tokensOutput: tokensOut,
     model,
     searchCount,
     sources,
@@ -541,12 +539,10 @@ export async function generateImageWithGemini(
       };
       finishReason?: string;
     }>;
-    usageMetadata?: {
-      promptTokenCount?: number;
-      candidatesTokenCount?: number;
-    };
+    usageMetadata?: GeminiUsageMetadata;
   };
 
+  const billed = readGeminiBilledTokens(data.usageMetadata, model);
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   const imagePart = parts.find((part) => part.inlineData?.data || part.inline_data?.data);
   const inlineData = imagePart?.inlineData;
@@ -566,8 +562,8 @@ export async function generateImageWithGemini(
     imageBase64,
     mimeType: inlineData?.mimeType ?? inlineDataSnake?.mime_type ?? "image/png",
     text: parts.map((part) => part.text ?? "").join("").trim(),
-    tokensInput: data.usageMetadata?.promptTokenCount ?? 0,
-    tokensOutput: data.usageMetadata?.candidatesTokenCount ?? 0,
+    tokensInput: billed.tokensInput,
+    tokensOutput: billed.tokensOutput,
     model,
   };
 }
