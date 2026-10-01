@@ -146,9 +146,9 @@ describe("readGeminiBilledTokens", () => {
 });
 
 describe("geminiCostPrefix", () => {
-  it("prices a retry-exhausted fallback at the model Google actually served", () => {
-    expect(geminiCostPrefix("gemini-2.5-pro")).toBe("google-pro-2.5");
-    expect(geminiCostPrefix("gemini-2.5-flash-lite")).toBe("google-flash-lite-2.5");
+  it("prices the model Google served", () => {
+    expect(geminiCostPrefix("gemini-3.1-pro-preview")).toBe("google-pro-3.1");
+    expect(geminiCostPrefix("gemini-3.5-flash")).toBe("google-flash-3.5");
   });
 
   it("throws on a model with no catalog prefix instead of pricing it as another model", () => {
@@ -176,33 +176,6 @@ describe("completeWithGemini (POST /complete, /internal/platform-complete)", () 
     });
     expect(result.tokensInput).toBe(39);
     expect(result.tokensOutput).toBe(354);
-  });
-});
-
-describe("completeWithGemini fallback", () => {
-  it("declares the fallback model's names when Google served gemini-2.5-pro", async () => {
-    vi.useFakeTimers();
-    const fetchSpy = vi.fn();
-    for (let i = 0; i < 4; i++) fetchSpy.mockResolvedValueOnce({ ok: false, status: 503, text: async () => "overloaded" });
-    fetchSpy.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }],
-        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 2, thoughtsTokenCount: 8, totalTokenCount: 20 },
-      }),
-    });
-    vi.stubGlobal("fetch", fetchSpy);
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    const promise = completeWithGemini({ apiKey: "k", model: "gemini-3.1-pro-preview", message: "hi", systemPrompt: "" });
-    promise.catch(() => {});
-    await vi.runAllTimersAsync();
-    const result = await promise;
-    vi.useRealTimers();
-    expect(result.model).toBe("gemini-2.5-pro");
-    expect(result.costLines).toEqual([
-      { costName: "google-pro-2.5-tokens-input", quantity: 10 },
-      { costName: "google-pro-2.5-tokens-output", quantity: 10 },
-    ]);
   });
 });
 
