@@ -52,5 +52,11 @@ export function readGeminiBilledTokens(
     );
   }
 
+  // One line per Gemini call (per turn on /chat): the raw usageMetadata beside
+  // what we declare, so a cost row can be audited against Google's billing.
+  console.log(
+    `[gemini] billed usage | model=${model} | in=${tokensInput} | out=${tokensOutput}` +
+      ` | usageMetadata=${JSON.stringify(usage)}`,
+  );
   return { tokensInput, tokensOutput };
 }
