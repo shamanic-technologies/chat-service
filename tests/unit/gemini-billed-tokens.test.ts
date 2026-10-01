@@ -63,6 +63,14 @@ describe("readGeminiBilledTokens", () => {
     ).toThrow(/no known class accounts for.*totalTokenCount=99/);
   });
 
+  it("logs the raw usageMetadata beside the declared tokens", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    readGeminiBilledTokens(LIVE_PRO_THINKING, "gemini-3.1-pro-preview");
+    expect(log).toHaveBeenCalledWith(
+      `[gemini] billed usage | model=gemini-3.1-pro-preview | in=39 | out=354 | usageMetadata=${JSON.stringify(LIVE_PRO_THINKING)}`,
+    );
+  });
+
   it("returns zero when the response carries no usageMetadata", () => {
     expect(readGeminiBilledTokens(undefined, "gemini-x")).toEqual({ tokensInput: 0, tokensOutput: 0 });
   });
