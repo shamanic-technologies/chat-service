@@ -192,7 +192,7 @@ function mockGeminiToolThenText(capture: { calls: number }) {
           body: sseResponse([
             {
               candidates: [{ content: { parts: [{ functionCall: { name: "list_workflows", args: {} } }] } }],
-              usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 3 },
+              usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 3, thoughtsTokenCount: 40, totalTokenCount: 53 },
             },
           ]),
         };
@@ -202,7 +202,7 @@ function mockGeminiToolThenText(capture: { calls: number }) {
         body: sseResponse([
           {
             candidates: [{ content: { parts: [{ text: "Done." }] } }],
-            usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 5 },
+            usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 5, thoughtsTokenCount: 60, totalTokenCount: 85 },
           },
         ]),
       };
@@ -260,6 +260,9 @@ describe("POST /chat — provider-call credit gates", () => {
     expect(costs.provisionCalls).toBe(2);
     expect(billing.calls).toBe(2);
     expect(costs.actualItems?.find((item) => item.costName.endsWith("-tokens-input"))?.quantity).toBe(30);
+    // Output = visible + thinking on every turn of the loop: (3 + 40) + (5 + 60).
+    // Google bills thoughtsTokenCount at the output rate.
+    expect(costs.actualItems?.find((item) => item.costName.endsWith("-tokens-output"))?.quantity).toBe(108);
 
     const providerCallIndexes = fetchCalls
       .map((call, index) => ({ call, index }))
