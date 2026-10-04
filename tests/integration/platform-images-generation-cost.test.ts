@@ -213,7 +213,7 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
     expect(gemini.bodies[0]).toMatchObject({
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],
-        imageConfig: { imageSize: "512" },
+        imageConfig: { imageSize: "512", aspectRatio: "1:1" },
       },
     });
     expect(JSON.stringify(gemini.bodies[0])).not.toContain("maxOutputTokens");
