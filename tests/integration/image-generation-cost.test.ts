@@ -256,7 +256,7 @@ describe("POST /orgs/images/generate — cost gate and Gemini image request", ()
       contents: [{ parts: [{ text: "Generate a square avatar, no text." }] }],
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],
-        imageConfig: { imageSize: "512" },
+        imageConfig: { imageSize: "512", aspectRatio: "1:1" },
       },
     });
     expect(JSON.stringify(gemini.bodies[0])).not.toContain("maxOutputTokens");

@@ -27,6 +27,24 @@ const GEMINI_IMAGE_OUTPUT_TOKEN_ESTIMATE: Record<GeminiImageSize, number> = {
   xlarge: 2000,
 };
 
+// Aspect ratios Gemini image models accept in imageConfig.aspectRatio. Without
+// one the model picks a shape from the prompt (observed 1408x768, 576x1024), so
+// the default is pinned to square: avatar callers pass only a prompt (#308).
+export const GEMINI_IMAGE_ASPECT_RATIOS = [
+  "1:1",
+  "2:3",
+  "3:2",
+  "3:4",
+  "4:3",
+  "4:5",
+  "5:4",
+  "9:16",
+  "16:9",
+  "21:9",
+] as const;
+export type GeminiImageAspectRatio = (typeof GEMINI_IMAGE_ASPECT_RATIOS)[number];
+export const DEFAULT_GEMINI_IMAGE_ASPECT_RATIO: GeminiImageAspectRatio = "1:1";
+
 export function geminiImageProviderSize(size: GeminiImageSize): string {
   return GEMINI_IMAGE_PROVIDER_SIZE[size];
 }
@@ -339,6 +357,7 @@ interface GeminiImageGenerationOptions {
   prompt: string;
   model?: string;
   size?: GeminiImageSize;
+  aspectRatio?: GeminiImageAspectRatio;
 }
 
 interface GeminiImageGenerationResult {
@@ -507,6 +526,7 @@ export async function generateImageWithGemini(
 ): Promise<GeminiImageGenerationResult> {
   const model = options.model ?? GEMINI_IMAGE_MODEL;
   const size = options.size ?? DEFAULT_GEMINI_IMAGE_SIZE;
+  const aspectRatio = options.aspectRatio ?? DEFAULT_GEMINI_IMAGE_ASPECT_RATIO;
   const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(options.apiKey)}`;
   const timeoutMs = GEMINI_TIMEOUT_MS[model] ?? DEFAULT_GEMINI_TIMEOUT_MS;
   const body = {
@@ -515,6 +535,7 @@ export async function generateImageWithGemini(
       responseModalities: ["TEXT", "IMAGE"],
       imageConfig: {
         imageSize: geminiImageProviderSize(size),
+        aspectRatio,
       },
     },
   };

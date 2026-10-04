@@ -877,6 +877,7 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
       model: effectiveModel,
       prompt,
       size: imageSize,
+      aspectRatio: parsed.data.aspectRatio,
     });
 
     // Gemini should return usageMetadata for image models. If it does not, keep
@@ -2311,6 +2312,7 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
       model: effectiveModel,
       prompt,
       size: imageSize,
+      aspectRatio: parsed.data.aspectRatio,
     });
 
     // Gemini should return usageMetadata for image models. If it does not, keep
