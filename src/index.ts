@@ -161,7 +161,15 @@ import {
 } from "./lib/merge-messages.js";
 import { streamGeminiChat, type ToolDefinition } from "./lib/gemini-chat.js";
 import type { GeminiCostLine } from "./lib/gemini-usage.js";
-import { readAnthropicBilledTokens } from "./lib/anthropic-usage.js";
+import {
+  anthropicCachePriced,
+  anthropicCostLines,
+  anthropicPromptTokens,
+  readAnthropicBilledTokens,
+  sumAnthropicBilledTokens,
+  EMPTY_ANTHROPIC_BILLED_TOKENS,
+  type AnthropicBilledTokens,
+} from "./lib/anthropic-usage.js";
 import { buildToolResultFallback } from "./lib/tool-fallback.js";
 import { SESSION_NOT_FOUND_EVENT, SESSION_NOT_FOUND_MESSAGE } from "./lib/session-errors.js";
 import { serializeSessionHistory } from "./lib/session-history.js";
@@ -633,7 +641,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       });
     } else {
       const claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
-      result = await claude.complete(message, {
+      const anthropicResult = await claude.complete(message, {
         responseFormat,
         responseSchema,
         temperature,
@@ -642,7 +650,11 @@ app.post("/complete", requireAuth, async (req, res) => {
         maxTokens: providerMaxOutputTokens,
         webSearch,
         disableThinking,
+        cache: anthropicCachePriced(resolved.costPrefix),
       });
+      // The four billed dimensions (input / cache read / cache write / output),
+      // declared verbatim like Gemini's costLines.
+      result = { ...anthropicResult, costLines: anthropicCostLines(resolved.costPrefix, anthropicResult.billed) };
     }
 
     totalPromptTokens = result.tokensInput;
@@ -2158,14 +2170,16 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       });
     } else {
       const claude = createAnthropicClient({ apiKey, systemPrompt });
-      result = await claude.complete(message, {
+      const anthropicResult = await claude.complete(message, {
         responseFormat,
         responseSchema,
         temperature,
         model: effectiveModel,
         webSearch,
         disableThinking,
+        cache: anthropicCachePriced(resolved.costPrefix),
       });
+      result = { ...anthropicResult, costLines: anthropicCostLines(resolved.costPrefix, anthropicResult.billed) };
     }
 
     // Declare ACTUAL costs on the platform run BEFORE responding. Platform runs
@@ -2482,6 +2496,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   let totalOutputTokens = 0;
   // Gemini: exact billed lines, summed over the tool loop (null on Anthropic).
   let geminiChatCostLines: GeminiCostLine[] | null = null;
+  let anthropicChatBilled: AnthropicBilledTokens = EMPTY_ANTHROPIC_BILLED_TOKENS;
   let provisionedCostIds: string[] = [];
 
   try {
@@ -3528,7 +3543,10 @@ app.post("/chat", requireAuth, async (req, res) => {
             tools: allTools,
           }),
         );
-        stream = claude!.createStream(turnMessages, allTools, abortController.signal);
+        stream = claude!.createStream(turnMessages, allTools, abortController.signal, {
+          model: resolvedModelInfo.apiModelId,
+          cache: anthropicCachePriced(resolvedModelInfo.costPrefix),
+        });
 
         try {
           for await (const event of stream) {
@@ -3582,7 +3600,8 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       const finalMessage = await stream!.finalMessage();
       const billed = readAnthropicBilledTokens(finalMessage.usage);
-      totalPromptTokens += billed.tokensInput;
+      anthropicChatBilled = sumAnthropicBilledTokens(anthropicChatBilled, billed);
+      totalPromptTokens += anthropicPromptTokens(billed);
       totalOutputTokens += billed.tokensOutput;
       lastContentBlocks = finalMessage.content;
 
@@ -3805,16 +3824,11 @@ app.post("/chat", requireAuth, async (req, res) => {
         resolvedKey.keySource === "org" ? "org" : "platform";
       const chatCostPrefix = resolvedModelInfo.costPrefix;
       // Gemini: the exact lines Google billed, summed over every turn.
-      const actualItems = geminiChatCostLines
-        ? geminiChatCostLines.map((l) => ({ ...l, costSource }))
-        : [
-            ...(totalPromptTokens > 0
-              ? [{ costName: `${chatCostPrefix}-tokens-input`, quantity: totalPromptTokens, costSource }]
-              : []),
-            ...(totalOutputTokens > 0
-              ? [{ costName: `${chatCostPrefix}-tokens-output`, quantity: totalOutputTokens, costSource }]
-              : []),
-          ];
+      // Anthropic: the four billed dimensions summed over every turn and every
+      // compaction iteration (input / cache read / cache write / output).
+      const actualItems = (
+        geminiChatCostLines ?? anthropicCostLines(chatCostPrefix, anthropicChatBilled)
+      ).map((l) => ({ ...l, costSource }));
       const runIdentity = { orgId, userId, runId };
       try {
         await updateRunStatus(runId, chatFailed ? "failed" : "completed", runIdentity, trackingHeaders);
