@@ -683,6 +683,14 @@ export const GenerateImageRequestSchema = z
         "Generated image size. Omit for `small` (512px). `medium` maps to 1K, `large` maps to 2K, and `xlarge` maps to 4K.",
       example: "small",
     }),
+    aspectRatio: z
+      .enum(["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"])
+      .optional()
+      .openapi({
+        description:
+          "Width:height of the generated image, enforced by the provider (not the prompt). Omit for `1:1` (square).",
+        example: "1:1",
+      }),
   })
   .strict()
   .openapi("GenerateImageRequest");

@@ -709,6 +709,7 @@ Error responses: 400 (validation, or a provider refusing a request option — se
 
 - `prompt` — image-generation prompt.
 - `size` (optional) — `small` (default, 512px), `medium` (1K), `large` (2K), or `xlarge` (4K). Chat-service maps this to Gemini `generationConfig.imageConfig.imageSize`.
+- `aspectRatio` (optional) — `1:1` (default, square), `2:3`, `3:2`, `3:4`, `4:3`, `4:5`, `5:4`, `9:16`, `16:9`, or `21:9`. Sent as Gemini `generationConfig.imageConfig.aspectRatio`, so the shape no longer depends on prompt wording. Same field on `POST /orgs/images/generate`.
 - Output-token cost is provisioned/declared from Gemini's documented image budget by size: `small` 747, `medium` 1120, `large` 1120, `xlarge` 2000. If Gemini returns usage metadata, the actual provider value is used.
 
 Response:
