@@ -1,4 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
+import {
+  anthropicPromptTokens,
+  readAnthropicBilledTokens,
+  type AnthropicBilledTokens,
+} from "./anthropic-usage.js";
 
 export const MODEL = "claude-sonnet-4-6";
 /** Cost-name prefix used by costs-service: {provider}-{model} */
@@ -2165,19 +2170,37 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       messages: Anthropic.MessageParam[],
       tools?: Anthropic.Tool[],
       signal?: AbortSignal,
+      opts?: {
+        /** Versioned model id (the chat config's resolved alias). Defaults to MODEL. */
+        model?: string;
+        /**
+         * Turn on prompt caching (5-minute TTL). Pass true ONLY for a model whose
+         * cache rows are priced (`anthropicCachePriced`); the usage reader throws
+         * on cache tokens for any other model.
+         */
+        cache?: boolean;
+      },
     ) {
+      const cache = opts?.cache === true;
       // Build params with beta context management for compaction
       const params = {
-        model: MODEL,
+        model: opts?.model ?? MODEL,
         max_tokens: MAX_TOKENS,
-        // No cache_control: cache writes/reads bill outside input_tokens and
-        // the catalog prices neither (see anthropic-usage.ts).
+        // Caching, when on, uses two of the four breakpoints: an explicit one on
+        // the system block (tools render before system, so this caches tools +
+        // system — the prefix every turn of every chat on this config shares),
+        // and top-level automatic caching for the growing conversation tail, so
+        // turn N+1 reads turn N's whole prefix. Context editing (clear_tool_uses
+        // above 50k, compaction above 100k) rewrites history and misses the tail
+        // cache once when it fires; the system breakpoint survives it.
         system: [
           {
             type: "text" as const,
             text: systemPrompt,
+            ...(cache ? { cache_control: { type: "ephemeral" as const } } : {}),
           },
         ],
+        ...(cache ? { cache_control: { type: "ephemeral" as const } } : {}),
         messages,
         tools: tools && tools.length > 0 ? tools : undefined,
         thinking: { type: "adaptive" as const },
@@ -2252,11 +2275,21 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
          * sends `output_config.effort` at that floor; elsewhere a no-op.
          */
         disableThinking?: boolean;
+        /**
+         * Cache the system prompt (+ tools) with a 5-minute breakpoint. Pass
+         * true ONLY for a model whose cache rows are priced
+         * (`anthropicCachePriced`). The user message is never cached: it is the
+         * per-call part, so a breakpoint after it would be a write nobody reads.
+         */
+        cache?: boolean;
       },
     ): Promise<{
       content: string;
+      /** Every prompt token, cached or not (input + cache read + cache write). */
       tokensInput: number;
       tokensOutput: number;
+      /** The four billed dimensions — declare costs from this, never from tokensInput. */
+      billed: AnthropicBilledTokens;
       model: string;
       /** Number of server-side web searches Claude ran (0 when off). */
       searchCount: number;
@@ -2308,7 +2341,10 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       const params = {
         model: effectiveModel,
         max_tokens: Math.min(options?.maxTokens ?? MAX_TOKENS, MAX_TOKENS),
-        system: systemPrompt,
+        // Forwarded byte-equal either way; the cache marker is request metadata.
+        system: options?.cache === true
+          ? [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }]
+          : systemPrompt,
         messages: [{ role: "user", content: userContent }],
         ...(options?.temperature != null ? { temperature: options.temperature } : {}),
         ...(Object.keys(outputConfig).length > 0 ? { output_config: outputConfig } : {}),
@@ -2406,10 +2442,12 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         }
       }
 
+      const billed = readAnthropicBilledTokens(response.usage);
       return {
         content,
-        tokensInput: response.usage.input_tokens,
-        tokensOutput: response.usage.output_tokens,
+        tokensInput: anthropicPromptTokens(billed),
+        tokensOutput: billed.tokensOutput,
+        billed,
         model: effectiveModel,
         searchCount,
         sources,

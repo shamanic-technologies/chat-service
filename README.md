@@ -295,7 +295,16 @@ Probed live the same day with the exact `/complete` request shape: plain text, `
 | Thinking | always on, not configurable (`{type: "disabled"}` and `budget_tokens` are both 400s) | Nothing changes: `/complete` never sends a `thinking` block on the Anthropic path, so `disableThinking` stays the documented no-op it already is on every Anthropic model — and here it *cannot* become anything else. |
 | Forced tool use / prefill | removed | Neither is on the `/complete` path (no tools, no prefill). |
 
-The sampling parameter is **not silently dropped**. Answering 200 from a model sampling differently from what the caller asked for is the same quiet wrongness as serving a fallback model — the failure the direct-vendor `refusedBy` note guards against, in a different costume. The catalog rows (`anthropic-fable-5.1-tokens-{input,cached-input,output}`) went live in production on 2026-09-09; the Anthropic path reports no cached count, so only input and output are ever declared.
+The sampling parameter is **not silently dropped**. Answering 200 from a model sampling differently from what the caller asked for is the same quiet wrongness as serving a fallback model — the failure the direct-vendor `refusedBy` note guards against, in a different costume. The catalog rows (`anthropic-fable-5.1-tokens-{input,cached-input,output}`) went live in production on 2026-09-09. Cache rows are declared since prompt caching turned on — see below.
+
+### Anthropic prompt caching
+
+On since 2026-10-04 for `fable`, `sonnet` and `opus` — the three models whose cache-read (`-tokens-cached-input`) AND 5-minute cache-write (`-tokens-cache-write-5m`) rows are live in production (`ANTHROPIC_CACHE_PRICED_PREFIXES`). `haiku` never caches: its catalog has no cache-write price.
+
+- **`/complete` + `/internal/platform-complete`**: one 5-minute `cache_control` breakpoint on the system block (tools render first, so web search is cached with it). The user message is never cached — it is the per-call part. A system prompt under the model's minimum (512 tokens on these three) silently doesn't cache, and costs nothing extra.
+- **`/chat`**: the same system breakpoint plus top-level automatic caching for the conversation tail, so turn N+1 reads turn N's prefix. Compaction / tool-use clearing rewrites history when it fires and misses the tail cache once. `/chat` on Anthropic now calls the config's resolved model (it previously always called `claude-sonnet-4-6` while billing the alias's prefix).
+
+Every Anthropic call declares four lines from `usage` (summed over `usage.iterations` when compaction ran, and over every `/chat` tool-loop turn): `-tokens-input` ← `input_tokens` (uncached only), `-tokens-cached-input` ← `cache_read_input_tokens`, `-tokens-cache-write-5m` ← `cache_creation_input_tokens`, `-tokens-output` ← `output_tokens`. Zero lines are omitted. A cache count on a model without cache prices, or any 1-hour cache write (never requested), throws rather than drop billed tokens. The response's `tokensInput` reports every prompt token, cached or not.
 
 ## Direct vendor models
 
