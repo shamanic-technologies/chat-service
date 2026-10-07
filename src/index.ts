@@ -98,6 +98,7 @@ import {
   createCheck,
   updateCheck,
   archiveCheck,
+  qualificationMutationKey,
   type CheckRole,
   type CheckSource,
 } from "./lib/qualification-client.js";
@@ -2735,7 +2736,29 @@ app.post("/chat", requireAuth, async (req, res) => {
      * Execute a server-side tool (built-in) and return the result.
      * Returns null if the tool is client-side (request_user_input) or unhandled.
      */
+    // An identical qualification mutation runs at most once per turn: Gemini was
+    // measured emitting the same create/archive twice in one reply (see
+    // qualificationMutationKey). The repeat gets the first call's result.
+    const qualificationTurnResults = new Map<string, { name: string; result: unknown }>();
     async function executeTool(
+      call: { name: string; args: Record<string, unknown> },
+    ): Promise<{ name: string; result: unknown } | "input_request" | null> {
+      const dedupeKey = qualificationMutationKey(call.name, call.args);
+      if (dedupeKey) {
+        const previous = qualificationTurnResults.get(dedupeKey);
+        if (previous) {
+          console.warn(`[chat] session="${currentSessionId}" skipped repeated ${call.name} in one turn`);
+          return previous;
+        }
+      }
+      const outcome = await executeToolOnce(call);
+      if (dedupeKey && outcome && outcome !== "input_request") {
+        qualificationTurnResults.set(dedupeKey, outcome);
+      }
+      return outcome;
+    }
+
+    async function executeToolOnce(
       call: { name: string; args: Record<string, unknown> },
     ): Promise<{ name: string; result: unknown } | "input_request" | null> {
       // Tool guard: reject tools not in the config's allowedTools

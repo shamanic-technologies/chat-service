@@ -237,3 +237,42 @@ export async function archiveCheck(
   if (!res.ok) return failLoud(res, "archive qualification check");
   return { archived: true, checkId };
 }
+
+// ---------------------------------------------------------------------------
+// Per-turn dedupe key for the qualification MUTATIONS.
+//
+// Measured in prod (v0.63.11, session f7d05287): asked to reword one check,
+// Gemini put archive + create TWICE in the same reply (same args, different key
+// order) and the duplicate create wrote a second identical check. A prompt rule
+// did not stop it, so /chat runs an identical mutation at most once per turn and
+// hands the repeat the first call's result. Reads are free and never deduped.
+// Scope: these four tools only (other editors were not measured here).
+// ---------------------------------------------------------------------------
+
+const QUALIFICATION_MUTATIONS = new Set([
+  "suggest_qualification_checks",
+  "create_qualification_check",
+  "update_qualification_check",
+  "archive_qualification_check",
+]);
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value as Record<string, unknown>)
+        .sort()
+        .map((k) => [k, canonical((value as Record<string, unknown>)[k])]),
+    );
+  }
+  return value;
+}
+
+/** Key identifying a qualification mutation by tool + args (key order ignored); null for any other tool. */
+export function qualificationMutationKey(
+  name: string,
+  args: Record<string, unknown> | undefined,
+): string | null {
+  if (!QUALIFICATION_MUTATIONS.has(name)) return null;
+  return `${name}:${JSON.stringify(canonical(args ?? {}))}`;
+}
