@@ -422,3 +422,60 @@ describe("streamGeminiChat tool-then-empty guard", () => {
     expect(toolResult!.result.suggestion).toBeTruthy();
   });
 });
+
+describe("streamGeminiChat holdTextBesideToolCalls", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Prod (qualification-editor, v0.63.13): the model wrote "The B2B check is now
+  // turned on." beside its function call, before the tool ran, then again after
+  // the result — the user read every confirmation twice.
+  function prodSequence() {
+    return vi
+      .fn()
+      .mockResolvedValueOnce(
+        sseResponse({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { text: "The check is now on." },
+                  { functionCall: { name: "list_audiences", args: {} }, thoughtSignature: "sig-1" },
+                ],
+              },
+            },
+          ],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        sseResponse({
+          candidates: [{ content: { parts: [{ text: "The check is now on." }] }, finishReason: "STOP" }],
+          usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 5 },
+        }),
+      );
+  }
+
+  const tokens = (events: unknown[]) =>
+    events
+      .filter((e): e is { type: string; content: string } => (e as { type?: string }).type === "token")
+      .map((e) => e.content)
+      .join("");
+
+  it("drops text written beside a tool call, so the confirmation is said once", async () => {
+    vi.stubGlobal("fetch", prodSequence());
+    const { opts, events } = baseOptions({ holdTextBesideToolCalls: true });
+    const result = await streamGeminiChat(opts);
+    expect(tokens(events)).toBe("The check is now on.");
+    expect(result.fullResponse).toBe("The check is now on.");
+  });
+
+  it("streams as before when the option is off (default)", async () => {
+    vi.stubGlobal("fetch", prodSequence());
+    const { opts, events } = baseOptions();
+    const result = await streamGeminiChat(opts);
+    expect(tokens(events)).toBe("The check is now on.The check is now on.");
+    expect(result.fullResponse).toBe("The check is now on.The check is now on.");
+  });
+});

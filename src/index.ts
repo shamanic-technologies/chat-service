@@ -110,7 +110,7 @@ import {
   isBrandProfileWebsiteRefreshIntent,
   refreshBrandProfileFromWebsite,
 } from "./lib/brand-profile-refresh.js";
-import { seedPlatformConfigs } from "./lib/seed-platform-configs.js";
+import { seedPlatformConfigs, holdTextBesideToolCallsFor } from "./lib/seed-platform-configs.js";
 import {
   embedText,
   embedTexts,
@@ -3600,6 +3600,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         // Per-config Gemini-3 thinking level (NULL → code default "low"). Only
         // the /chat path reads this; /complete never raises thinking.
         thinkingLevel: appConfig.thinkingLevel ?? undefined,
+        holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey),
         beforeProviderCall: async ({ requestBody }) => {
           await authorizeChatProviderCall(estimateRequestTokens(requestBody));
         },

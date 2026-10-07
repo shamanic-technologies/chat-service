@@ -144,6 +144,14 @@ export interface StreamGeminiChatOptions {
    * 3 and only when thinking is not disabled. See buildThinkingConfig.
    */
   thinkingLevel?: GeminiThinkingLevel;
+  /**
+   * Hold each model reply's text until the reply ends, and drop it (stream and
+   * history) when that reply also calls a tool. Gemini was measured writing a
+   * confirmation beside the call, before the tool ran, then again after it, so
+   * the user read every confirmation twice. Opt-in per config; default streams
+   * text as it arrives.
+   */
+  holdTextBesideToolCalls?: boolean;
 }
 
 export interface StreamGeminiChatResult {
@@ -387,6 +395,7 @@ export async function streamGeminiChat(
     signal,
     beforeProviderCall,
     thinkingLevel,
+    holdTextBesideToolCalls = false,
   } = options;
 
   let totalTokensInput = 0;
@@ -470,6 +479,7 @@ export async function streamGeminiChat(
     const decoder = new TextDecoder();
     let sseBuffer = "";
     let inThinking = false;
+    let heldText = "";
     const functionCalls: Array<{ name: string; args: Record<string, unknown>; id?: string; thoughtSignature?: string }> = [];
     // Each streamed chunk carries the turn's usage so far; the last one is the
     // turn's total. Kept raw and read once the stream ends.
@@ -520,8 +530,12 @@ export async function streamGeminiChat(
 
             // Text content
             if (part.text && !part.thought) {
-              fullResponse += part.text;
-              sse(res, { type: "token", content: part.text });
+              if (holdTextBesideToolCalls) {
+                heldText += part.text;
+              } else {
+                fullResponse += part.text;
+                sse(res, { type: "token", content: part.text });
+              }
             }
 
             // Function call — capture the part's thoughtSignature so it can be
@@ -550,6 +564,17 @@ export async function streamGeminiChat(
     totalTokensInput += turnBilled.tokensInput;
     totalTokensOutput += turnBilled.tokensOutput;
     totalCostLines = mergeGeminiCostLines(totalCostLines, turnBilled.costLines);
+
+    if (heldText) {
+      if (functionCalls.length === 0) {
+        fullResponse += heldText;
+        sse(res, { type: "token", content: heldText });
+      } else {
+        console.warn(
+          `[gemini-chat] dropped ${heldText.length} chars written beside ${functionCalls.length} tool call(s)`,
+        );
+      }
+    }
 
     // No function calls — we're done
     if (functionCalls.length === 0) break;

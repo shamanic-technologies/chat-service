@@ -137,9 +137,9 @@ Your tools:
 
 Rewording a check (HARD RULE, never violate even if the user asks): a check's question can never be edited, because it may already have run on real companies. When the user wants different wording, archive the old check and create a new one with the new wording, keeping its role and on/off state unless the user says otherwise. Tell the user in one plain line that this is how a change of wording works.
 
-Say it, then do it. Before an action that changes who we reach or that spends, say so in ONE plain line, then do it in the same turn:
-- Suggestions use credit: "Getting suggestions uses a little credit." then call it.
-- Turning on a Hard filter, or switching a check that is on to Hard filter: "This will skip every company that fails it." then do it.
+Say it with the change. When an action changes who we reach or spends, your reply says so in ONE plain line, in the same message that confirms it:
+- Suggestions use credit: "Getting suggestions used a little credit."
+- Turning on a Hard filter, or switching a check that is on to Hard filter: "It now skips every company that fails it."
 Do not wait for a second confirmation for these unless the user's request was unclear. Everything else (turning a check off, Bonus changes, archiving, creating a check that stays off) needs no warning.
 
 After suggestions: list them briefly (question, Hard filter or Bonus, cost per lead), then help the user choose which to turn on. Never turn a suggestion on by yourself.
@@ -153,9 +153,8 @@ Copy rules (HARD RULES):
 - Never say "model", "AI model" or "workflow".
 - Money in dollars with cents (for example "$0.02 per lead"). Pass rate as a percent, or "not checked yet".
 
-Turn shape (HARD RULES, measured in production: breaking them shows the user the same sentence twice and a result before it happened):
-- In a reply where you call a tool, write NOTHING except, when required, the one warning line above. Never describe the outcome in that reply: the tool has not run yet.
-- After the tool returns, write the confirmation exactly once. Never repeat a sentence you already wrote earlier in this turn.
+Turn shape (HARD RULES):
+- Text you write in the same reply as a tool call is never shown to the user. Call the tool first, with no text. Write to the user only after the tool returns, exactly once.
 - Once a tool has returned success, never call it again for the same check in this turn. A tool result is final. Re-read it instead of calling again.
 
 Be concise. When asked only to read or summarize, never change anything.
@@ -239,6 +238,10 @@ export const QUALIFICATION_EDITOR_CONFIG = {
   provider: "google" as const,
   model: "flash-pro",
   thinkingLevel: EDITOR_THINKING_LEVEL,
+  // Gemini writes the confirmation in the same reply as the tool call, before the
+  // tool ran, then again after it (prod, v0.63.10 to v0.63.13; prompt rules did
+  // not hold). Hold each reply's text and drop it when the reply calls a tool.
+  holdTextBesideToolCalls: true,
 };
 
 export const PERSONA_EDITOR_CONFIG = {
@@ -358,5 +361,16 @@ export async function seedPlatformConfigs(database: typeof db): Promise<void> {
   }
   console.log(
     `[chat-service] Seeded ${SELF_SEEDED_CONFIGS.length} platform chat configs: ${SELF_SEEDED_CONFIGS.map((c) => c.key).join(", ")}`,
+  );
+}
+
+/**
+ * Whether /chat on this config key holds Gemini reply text and drops the text
+ * written beside a tool call (see QUALIFICATION_EDITOR_CONFIG). Code-owned, not a
+ * DB column: only chat-service's own seeded configs opt in.
+ */
+export function holdTextBesideToolCallsFor(configKey: string): boolean {
+  return SELF_SEEDED_CONFIGS.some(
+    (c) => c.key === configKey && "holdTextBesideToolCalls" in c && c.holdTextBesideToolCalls === true,
   );
 }
