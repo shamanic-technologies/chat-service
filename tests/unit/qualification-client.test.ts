@@ -170,3 +170,33 @@ describe("qualification-client", () => {
     expect(err.message).toMatch(/404.*offer not found/);
   });
 });
+
+describe("qualificationMutationKey", () => {
+  it("matches the same mutation regardless of arg key order (the prod duplicate)", async () => {
+    const { qualificationMutationKey } = await loadModule();
+    const a = qualificationMutationKey("create_qualification_check", {
+      source: "homepage_text", on: false, question: "Does the homepage show prices?", role: "bonus",
+    });
+    const b = qualificationMutationKey("create_qualification_check", {
+      source: "homepage_text", on: false, role: "bonus", question: "Does the homepage show prices?",
+    });
+    expect(a).not.toBeNull();
+    expect(a).toBe(b);
+  });
+
+  it("separates different args and different tools", async () => {
+    const { qualificationMutationKey } = await loadModule();
+    expect(qualificationMutationKey("update_qualification_check", { checkId: "c-1", on: true })).not.toBe(
+      qualificationMutationKey("update_qualification_check", { checkId: "c-1", on: false }),
+    );
+    expect(qualificationMutationKey("archive_qualification_check", { checkId: "c-1" })).not.toBe(
+      qualificationMutationKey("update_qualification_check", { checkId: "c-1" }),
+    );
+  });
+
+  it("never dedupes reads or other editors' tools", async () => {
+    const { qualificationMutationKey } = await loadModule();
+    expect(qualificationMutationKey("list_qualification_checks", {})).toBeNull();
+    expect(qualificationMutationKey("set_audience_status", { audienceId: "a", status: "active" })).toBeNull();
+  });
+});
