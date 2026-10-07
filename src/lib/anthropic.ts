@@ -1819,6 +1819,109 @@ export const GENERATE_AUDIENCE_AVATAR_TOOL: Anthropic.Tool = {
 };
 
 // ---------------------------------------------------------------------------
+// Qualification-editor tools (qualification-editor config) — act on ONE offer
+// (context.brandId + context.offerId), scoped to the caller's org by the
+// forwarded identity. lead-service owns the checks. A check's question is
+// immutable: there is deliberately NO edit-question tool — a reword is
+// archive_qualification_check + create_qualification_check.
+// ---------------------------------------------------------------------------
+
+export const LIST_QUALIFICATION_CHECKS_TOOL: Anthropic.Tool = {
+  name: "list_qualification_checks",
+  description:
+    "List every check of the current offer (the offer from context.offerId, no parameter needed), on or off, with its role (Hard filter or Bonus), whether it is on, its cost per lead in USD and its pass rate so far (null when no company was checked yet). Read-only, free. Use it to summarize, and to look up a check's checkId before turning it on/off, changing its role, or archiving it.",
+  input_schema: { type: "object" as const, properties: {} },
+};
+
+export const LIST_QUALIFICATION_SOURCES_TOOL: Anthropic.Tool = {
+  name: "list_qualification_sources",
+  description:
+    "List the sources a new check can read to answer its question (company data we already hold, the homepage text, a homepage screenshot, job postings, recent LinkedIn company posts), each with its cost per lead in USD. Read-only, free. Use it to pick the source for create_qualification_check and to tell the user what a new check will cost per lead.",
+  input_schema: { type: "object" as const, properties: {} },
+};
+
+export const SUGGEST_QUALIFICATION_CHECKS_TOOL: Anthropic.Tool = {
+  name: "suggest_qualification_checks",
+  description:
+    "Ask for AI-suggested checks for the current offer: up to 8 yes/no signals that a company needs the offer. SPENDS the customer's credit. Every suggestion is saved turned OFF, so nothing changes in who is reached until the user turns one on. Suggestions from an earlier run that nobody touched are replaced; ones that repeat a kept check are skipped (listed in `skipped`). HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: before calling it, say in one plain line that it uses credit, then call it. Never call it twice in a row for the same request.",
+  input_schema: { type: "object" as const, properties: {} },
+};
+
+export const CREATE_QUALIFICATION_CHECK_TOOL: Anthropic.Tool = {
+  name: "create_qualification_check",
+  description:
+    "Create a new check on the current offer from what the user describes. The question must be ONE yes/no question about the prospect's company, kept close to the user's own words. Pick the source that can answer it (see list_qualification_sources). role: 'hard_filter' = a company that fails is skipped; 'bonus' = a plus handed to the email writer, never required. on: true only if the user wants it applied now; otherwise false. A check's wording can never be changed after creation.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      question: {
+        type: "string",
+        description: "One yes/no question about the prospect's company.",
+      },
+      source: {
+        type: "string",
+        enum: [
+          "company_data",
+          "homepage_text",
+          "homepage_screenshot",
+          "job_postings",
+          "linkedin_company_posts",
+        ],
+        description: "What the check reads to answer the question.",
+      },
+      role: {
+        type: "string",
+        enum: ["hard_filter", "bonus"],
+        description: "'hard_filter' (Hard filter: failing companies are skipped) or 'bonus' (Bonus: a plus, never required).",
+      },
+      on: {
+        type: "boolean",
+        description: "Whether the check applies right away.",
+      },
+    },
+    required: ["question", "source", "role", "on"],
+  },
+};
+
+export const UPDATE_QUALIFICATION_CHECK_TOOL: Anthropic.Tool = {
+  name: "update_qualification_check",
+  description:
+    "Turn a check of the current offer on or off, and/or switch its role between Hard filter ('hard_filter') and Bonus ('bonus'). It can NOT change the question: to reword a check, archive it with archive_qualification_check and create a new one. Pass at least one of `on` / `role`. Look up the checkId with list_qualification_checks.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      checkId: {
+        type: "string",
+        description: "The checkId from list_qualification_checks (or a just-created/suggested check).",
+      },
+      on: { type: "boolean", description: "Turn the check on (true) or off (false)." },
+      role: {
+        type: "string",
+        enum: ["hard_filter", "bonus"],
+        description: "New role.",
+      },
+    },
+    required: ["checkId"],
+  },
+};
+
+export const ARCHIVE_QUALIFICATION_CHECK_TOOL: Anthropic.Tool = {
+  name: "archive_qualification_check",
+  description:
+    "Archive a check of the current offer: it disappears from the list and stops applying; answers it already gave are kept. Use it when the user wants a check gone, and as the first half of a reword (archive, then create_qualification_check with the new wording). Look up the checkId with list_qualification_checks.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      checkId: {
+        type: "string",
+        description: "The checkId from list_qualification_checks.",
+      },
+    },
+    required: ["checkId"],
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Funnel tools — the end-to-end "operate the platform" surface a dashboard user
 // drives: create a brand from a URL (onboarding-equivalent), launch a campaign,
 // set the daily budget, and pause/resume a brand. These let a chat agent (e.g.
@@ -2072,6 +2175,12 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   rename_audience: RENAME_AUDIENCE_TOOL,
   refresh_audience_count: REFRESH_AUDIENCE_COUNT_TOOL,
   generate_audience_avatar: GENERATE_AUDIENCE_AVATAR_TOOL,
+  list_qualification_checks: LIST_QUALIFICATION_CHECKS_TOOL,
+  list_qualification_sources: LIST_QUALIFICATION_SOURCES_TOOL,
+  suggest_qualification_checks: SUGGEST_QUALIFICATION_CHECKS_TOOL,
+  create_qualification_check: CREATE_QUALIFICATION_CHECK_TOOL,
+  update_qualification_check: UPDATE_QUALIFICATION_CHECK_TOOL,
+  archive_qualification_check: ARCHIVE_QUALIFICATION_CHECK_TOOL,
   create_brand_from_url: CREATE_BRAND_FROM_URL_TOOL,
   list_brands: LIST_BRANDS_TOOL,
   launch_campaign: LAUNCH_CAMPAIGN_TOOL,
