@@ -29,8 +29,8 @@ describe("qualification-editor config", () => {
     const prompt = QUALIFICATION_EDITOR_CONFIG.systemPrompt;
     expect(prompt).toContain("Hard filter");
     expect(prompt).toContain("Bonus");
-    expect(prompt).toMatch(/uses a little credit/);
-    expect(prompt).toMatch(/skip every company that fails it/);
+    expect(prompt).toMatch(/used a little credit/);
+    expect(prompt).toMatch(/skips every company that fails it/);
   });
 
   it("customer-facing examples in the prompt carry no long dash", () => {
@@ -41,8 +41,17 @@ describe("qualification-editor config", () => {
 
   it("pins the turn shape: no outcome text beside a tool call, no repeat, no re-call", () => {
     const prompt = QUALIFICATION_EDITOR_CONFIG.systemPrompt;
-    expect(prompt).toMatch(/In a reply where you call a tool, write NOTHING except/);
-    expect(prompt).toMatch(/Never repeat a sentence you already wrote/);
+    expect(prompt).toMatch(/never shown to the user/);
+    expect(QUALIFICATION_EDITOR_CONFIG.holdTextBesideToolCalls).toBe(true);
     expect(prompt).toMatch(/never call it again for the same check/);
+  });
+});
+
+describe("holdTextBesideToolCallsFor", () => {
+  it("is on for qualification-editor only", async () => {
+    const { holdTextBesideToolCallsFor } = await import("../../src/lib/seed-platform-configs.js");
+    expect(holdTextBesideToolCallsFor("qualification-editor")).toBe(true);
+    expect(holdTextBesideToolCallsFor("audience-editor")).toBe(false);
+    expect(holdTextBesideToolCallsFor("workflow")).toBe(false);
   });
 });
