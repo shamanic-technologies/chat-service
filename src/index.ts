@@ -91,6 +91,16 @@ import {
   generateAudienceAvatar,
   type AudienceStatus,
 } from "./lib/audience-client.js";
+import {
+  listChecks,
+  listCheckSources,
+  suggestChecks,
+  createCheck,
+  updateCheck,
+  archiveCheck,
+  type CheckRole,
+  type CheckSource,
+} from "./lib/qualification-client.js";
 import { uploadGeneratedImageToCloudflare } from "./lib/cloudflare-client.js";
 import {
   formatBrandProfileWebsiteRefreshErrorMessage,
@@ -2700,6 +2710,18 @@ app.post("/chat", requireAuth, async (req, res) => {
       return brandIds[0];
     };
 
+    // Qualification-editor tools act on ONE offer: the brand from
+    // requireSingleBrandId + context.offerId. Never guessed — absent fails loud.
+    const requireOffer = (toolName: string): { brandId: string; offerId: string } => {
+      const brandId = requireSingleBrandId(toolName);
+      if (!offerId) {
+        throw new Error(
+          `[chat] ${toolName} requires an offer — provide context.offerId`,
+        );
+      }
+      return { brandId, offerId };
+    };
+
     // Detect client disconnect to abort in-flight streams
     const abortController = new AbortController();
     res.on("close", () => {
@@ -3285,6 +3307,75 @@ app.post("/chat", requireAuth, async (req, res) => {
         const result = await generateAudienceAvatar(
           String(args.audienceId ?? ""),
           prompt,
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "list_qualification_checks") {
+        const { brandId, offerId: oid } = requireOffer(call.name);
+        const result = await listChecks(brandId, oid, featureCallParams);
+        toolCalls.push({ name: call.name, args: {}, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "list_qualification_sources") {
+        requireOffer(call.name);
+        const result = await listCheckSources(featureCallParams);
+        toolCalls.push({ name: call.name, args: {}, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "suggest_qualification_checks") {
+        const { brandId, offerId: oid } = requireOffer(call.name);
+        const result = await suggestChecks(brandId, oid, featureCallParams);
+        toolCalls.push({ name: call.name, args: {}, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "create_qualification_check") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const { brandId, offerId: oid } = requireOffer(call.name);
+        const result = await createCheck(
+          brandId,
+          oid,
+          {
+            question: String(args.question ?? ""),
+            source: args.source as CheckSource,
+            role: args.role as CheckRole,
+            on: args.on === true,
+          },
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "update_qualification_check") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const { brandId, offerId: oid } = requireOffer(call.name);
+        const result = await updateCheck(
+          brandId,
+          oid,
+          String(args.checkId ?? ""),
+          {
+            on: typeof args.on === "boolean" ? args.on : undefined,
+            role: args.role as CheckRole | undefined,
+          },
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "archive_qualification_check") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const { brandId, offerId: oid } = requireOffer(call.name);
+        const result = await archiveCheck(
+          brandId,
+          oid,
+          String(args.checkId ?? ""),
           featureCallParams,
         );
         toolCalls.push({ name: call.name, args, result });
