@@ -38,4 +38,11 @@ describe("qualification-editor config", () => {
     const quoted = own.match(/"[^"]*"/g) ?? [];
     for (const q of quoted) expect(q).not.toMatch(/[–—]/);
   });
+
+  it("pins the turn shape: no outcome text beside a tool call, no repeat, no re-call", () => {
+    const prompt = QUALIFICATION_EDITOR_CONFIG.systemPrompt;
+    expect(prompt).toMatch(/In a reply where you call a tool, write NOTHING except/);
+    expect(prompt).toMatch(/Never repeat a sentence you already wrote/);
+    expect(prompt).toMatch(/never call it again for the same check/);
+  });
 });
