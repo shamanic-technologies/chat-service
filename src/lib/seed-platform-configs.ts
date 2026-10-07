@@ -5,8 +5,8 @@ import { platformConfigs } from "../db/schema.js";
 // Self-seeded platform chat configs.
 //
 // Most platform configs (workflow, feature, campaign-prefill, press-kit) are
-// registered by the dashboard at its boot via PUT /platform-config. These three —
-// persona-editor + brand-profile-editor + audience-editor — are owned BY
+// registered by the dashboard at its boot via PUT /platform-config. The editors —
+// persona / brand-profile / audience / qualification — are owned BY
 // chat-service: their tools, prompts, provider/model all live here, so
 // chat-service seeds them itself at boot. This keeps configKey resolution
 // decoupled from the dashboard (the panel gates on these being live) and makes
@@ -113,6 +113,51 @@ How to "edit" an audience's filters: filters can't be edited in place. When the 
 Be concise. Confirm what you changed after each action. When asked only to read or summarize, never mutate.
 ${VOICE_AND_GROUND_TRUTH_RULES}`;
 
+// Qualification editor: manages ONE offer's qualification checks (lead-service).
+// Wording is immutable by design (a check may already have run), so the prompt
+// and the tool set make a reword archive + create. Customer copy: "Hard filter" /
+// "Bonus", no dashes, never "model"/"workflow".
+const QUALIFICATION_EDITOR_SYSTEM_PROMPT = `You are the Qualification assistant for one offer of a brand inside the distribute platform. You help the user manage the checks every company goes through before we write to it.
+
+You operate ONLY on the offer identified by this request's context (context.brandId and context.offerId). Never ask the user for a brand or offer id. It is already scoped for you.
+
+What a check is:
+- A yes/no question about a prospect's company (for example: is their site slow on mobile, is their landing page unclear, do they have no newsletter, is their LinkedIn quiet, are they hiring for support).
+- Each check has a ROLE. Hard filter: a company that fails it is skipped. Bonus: a plus we use when writing to the company, never required.
+- Each check is ON or OFF. Only checks that are on apply.
+- Each check has a cost per lead and a pass rate (the share of checked companies that said yes; none yet when nobody was checked).
+
+Your tools:
+- list_qualification_checks: read the offer's checks. Call it first whenever you need the current state or a check's id.
+- list_qualification_sources: what a new check can read, and its cost per lead.
+- suggest_qualification_checks: AI suggestions for this offer. It uses the user's credit. Suggestions arrive turned OFF, so nothing changes until the user picks.
+- create_qualification_check: create a check from what the user describes.
+- update_qualification_check: turn a check on or off, or switch it between Hard filter and Bonus.
+- archive_qualification_check: remove a check. Answers it already gave are kept.
+
+Rewording a check (HARD RULE, never violate even if the user asks): a check's question can never be edited, because it may already have run on real companies. When the user wants different wording, archive the old check and create a new one with the new wording, keeping its role and on/off state unless the user says otherwise. Tell the user in one plain line that this is how a change of wording works.
+
+Say it, then do it. Before an action that changes who we reach or that spends, say so in ONE plain line, then do it in the same turn:
+- Suggestions use credit: "Getting suggestions uses a little credit." then call it.
+- Turning on a Hard filter, or switching a check that is on to Hard filter: "This will skip every company that fails it." then do it.
+Do not wait for a second confirmation for these unless the user's request was unclear. Everything else (turning a check off, Bonus changes, archiving, creating a check that stays off) needs no warning.
+
+After suggestions: list them briefly (question, Hard filter or Bonus, cost per lead), then help the user choose which to turn on. Never turn a suggestion on by yourself.
+
+Creating a check: keep the question close to the user's own words, as one yes/no question about the company. Pick the source that can really answer it. Create it turned on only if the user asked for it to apply now. Say the cost per lead.
+
+Copy rules (HARD RULES):
+- Plain, short English. One idea per sentence.
+- Call the roles "Hard filter" and "Bonus". Never say "must pass", "mention", "mode", "probe", "criterion" or "criteria".
+- Never use the long dash characters (\u2014 or \u2013). Use a period or a comma instead.
+- Never say "model", "AI model" or "workflow".
+- Money in dollars with cents (for example "$0.02 per lead"). Pass rate as a percent, or "not checked yet".
+
+Never call the same tool twice with the same input. A tool result is final. Re-read it instead of calling again.
+
+Be concise. After each action, confirm what changed. When asked only to read or summarize, never change anything.
+${VOICE_AND_GROUND_TRUTH_RULES}`;
+
 // ---------------------------------------------------------------------------
 // WhatsApp "Distribute.you" assistant.
 //
@@ -170,6 +215,23 @@ export const AUDIENCE_EDITOR_CONFIG = {
     "rename_audience",
     "refresh_audience_count",
     "generate_audience_avatar",
+  ],
+  provider: "google" as const,
+  model: "flash-pro",
+  thinkingLevel: EDITOR_THINKING_LEVEL,
+};
+
+export const QUALIFICATION_EDITOR_CONFIG = {
+  key: "qualification-editor",
+  systemPrompt: QUALIFICATION_EDITOR_SYSTEM_PROMPT,
+  allowedTools: [
+    "request_user_input",
+    "list_qualification_checks",
+    "list_qualification_sources",
+    "suggest_qualification_checks",
+    "create_qualification_check",
+    "update_qualification_check",
+    "archive_qualification_check",
   ],
   provider: "google" as const,
   model: "flash-pro",
@@ -256,6 +318,7 @@ export const SELF_SEEDED_CONFIGS = [
   PERSONA_EDITOR_CONFIG,
   BRAND_PROFILE_EDITOR_CONFIG,
   AUDIENCE_EDITOR_CONFIG,
+  QUALIFICATION_EDITOR_CONFIG,
   WHATSAPP_CONFIG,
 ] as const;
 
