@@ -200,3 +200,12 @@ describe("qualificationMutationKey", () => {
     expect(qualificationMutationKey("set_audience_status", { audienceId: "a", status: "active" })).toBeNull();
   });
 });
+
+describe("REPEATED_QUALIFICATION_MUTATION_RESULT", () => {
+  it("tells the model the change already ran and not to confirm it again", async () => {
+    const { REPEATED_QUALIFICATION_MUTATION_RESULT } = await loadModule();
+    expect(REPEATED_QUALIFICATION_MUTATION_RESULT.skipped).toBe(true);
+    expect(REPEATED_QUALIFICATION_MUTATION_RESULT.note).toMatch(/already succeeded/);
+    expect(REPEATED_QUALIFICATION_MUTATION_RESULT.note).toMatch(/write nothing more/);
+  });
+});
