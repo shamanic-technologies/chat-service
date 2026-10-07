@@ -99,6 +99,7 @@ import {
   updateCheck,
   archiveCheck,
   qualificationMutationKey,
+  REPEATED_QUALIFICATION_MUTATION_RESULT,
   type CheckRole,
   type CheckSource,
 } from "./lib/qualification-client.js";
@@ -2748,7 +2749,9 @@ app.post("/chat", requireAuth, async (req, res) => {
         const previous = qualificationTurnResults.get(dedupeKey);
         if (previous) {
           console.warn(`[chat] session="${currentSessionId}" skipped repeated ${call.name} in one turn`);
-          return previous;
+          // Handing back the first result verbatim made the model confirm the
+          // change a second time (prod, session 702d52b6). Say it already ran.
+          return { name: call.name, result: REPEATED_QUALIFICATION_MUTATION_RESULT };
         }
       }
       const outcome = await executeToolOnce(call);

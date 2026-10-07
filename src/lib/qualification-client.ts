@@ -244,10 +244,16 @@ export async function archiveCheck(
 // Measured in prod (v0.63.11, session f7d05287): asked to reword one check,
 // Gemini put archive + create TWICE in the same reply (same args, different key
 // order) and the duplicate create wrote a second identical check. A prompt rule
-// did not stop it, so /chat runs an identical mutation at most once per turn and
-// hands the repeat the first call's result. Reads are free and never deduped.
+// did not stop it, so /chat runs an identical mutation at most once per turn. The
+// repeat gets REPEATED_QUALIFICATION_MUTATION_RESULT, not the first result: given
+// the first result again, the model confirmed the same change twice. Reads are free and never deduped.
 // Scope: these four tools only (other editors were not measured here).
 // ---------------------------------------------------------------------------
+
+export const REPEATED_QUALIFICATION_MUTATION_RESULT = {
+  skipped: true,
+  note: "Duplicate call skipped: this exact change already succeeded earlier in this turn. Do not call it again. If you already confirmed it to the user, write nothing more about it.",
+} as const;
 
 const QUALIFICATION_MUTATIONS = new Set([
   "suggest_qualification_checks",
