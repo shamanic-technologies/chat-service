@@ -4,6 +4,7 @@ import {
   readAnthropicBilledTokens,
   type AnthropicBilledTokens,
 } from "./anthropic-usage.js";
+import { OPEN_PAGE_TOOL, PRESENT_CHOICES_TOOL } from "./ui-tools.js";
 
 export const MODEL = "claude-sonnet-4-6";
 /** Cost-name prefix used by costs-service: {provider}-{model} */
@@ -20,6 +21,7 @@ const ANTHROPIC_TIMEOUT_MS: Record<string, number> = {
   "claude-sonnet-5-5": 10 * 60_000,  // 10 min — Sonnet
   "claude-opus-4-6": 15 * 60_000,    // 15 min — Opus
   "claude-sonnet-4-6": 10 * 60_000,  // 10 min — Sonnet
+  "claude-haiku-5-5": 5 * 60_000,    //  5 min — Haiku
   "claude-haiku-4-5": 5 * 60_000,    //  5 min — Haiku
 };
 const DEFAULT_ANTHROPIC_TIMEOUT_MS = 10 * 60_000; // 10 min fallback
@@ -174,7 +176,16 @@ interface ResolvedModel {
 
 const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   anthropic: {
-    haiku: { apiModelId: "claude-haiku-4-5", costPrefix: "anthropic-haiku-4.5", provider: "anthropic", capabilityTier: "cheap" },
+    // `haiku` → Claude Haiku 5.5 since 2026-10-09 (was Haiku 4.5, which nothing
+    // may route to any more — owner rule). $0.10 / $0.50 per 1M under a 100k
+    // prompt, $0.50 / $2.50 over it: the first Anthropic model priced by prompt
+    // length, see ANTHROPIC_LONG_CONTEXT_THRESHOLDS in anthropic-usage.ts.
+    // Probed live with the platform key the same day: plain, json_schema
+    // output_config, tools, prompt caching (5m write then read) and the full
+    // /chat stream shape (adaptive thinking + compaction + context edits) each
+    // → 200; `temperature` → 400 like the other 5.5 models. Before the move the
+    // alias served 2 calls in 30 days.
+    haiku: { apiModelId: "claude-haiku-5-5", costPrefix: "anthropic-haiku-5.5", provider: "anthropic", capabilityTier: "cheap" },
     // `sonnet` / `opus` are version-free aliases, so they follow the current
     // generation: repointed 2026-09-29 from Sonnet 4.6 / Opus 4.6 to Claude
     // Sonnet 5.5 ($2 / $10 per 1M, cache hit $0.20) and Claude Opus 5.5
@@ -556,6 +567,8 @@ const ANTHROPIC_SAMPLING_UNSUPPORTED = new Set([
   // Probed live 2026-09-29: temperature 0.3 → 400 on both; only the default (1) passes.
   "claude-sonnet-5-5",
   "claude-opus-5-5",
+  // Probed live 2026-10-09: temperature 0.3 → 400 "`temperature` is deprecated for this model."
+  "claude-haiku-5-5",
 ]);
 
 /**
@@ -620,7 +633,7 @@ export function assertAnthropicSamplingSupported(
     `Model "${apiModelId}" does not accept the sampling parameters (temperature, top_p, top_k) — ` +
       `Anthropic removed them on its always-thinking models and answers 400 when one is sent. ` +
       `Re-send this request without "temperature", or use an alias whose model accepts it ` +
-      `(haiku). Retrying as sent will not help.`,
+      `(a Gemini alias — every Anthropic alias is now a 5.x model that refuses it). Retrying as sent will not help.`,
   );
 }
 
@@ -630,6 +643,7 @@ export function assertAnthropicSamplingSupported(
 export const SUPPORTED_MODELS: Record<string, string> = {
   "claude-sonnet-4-6": "anthropic-sonnet-4.6",
   "claude-haiku-4-5": "anthropic-haiku-4.5",
+  "claude-haiku-5-5": "anthropic-haiku-5.5",
   "claude-opus-4-6": "anthropic-opus-4.6",
   "claude-fable-5-1": "anthropic-fable-5.1",
   "claude-sonnet-5-5": "anthropic-sonnet-5.5",
@@ -2131,6 +2145,102 @@ export const SET_BRAND_PAUSE_TOOL: Anthropic.Tool = {
 };
 
 // ---------------------------------------------------------------------------
+// Account-awareness READ tools (src/lib/account-client.ts). Read-only, served
+// figures only: the model quotes what these return and never computes a stat.
+// ---------------------------------------------------------------------------
+
+const BRAND_ID_PROP = {
+  type: "string",
+  description: "The brand id (from list_brands).",
+};
+const OFFER_ID_PROP = {
+  type: "string",
+  description: "The offer id (from list_offers).",
+};
+const WINDOW_PROP = {
+  type: "string",
+  enum: ["today", "last_7_days", "last_30_days"],
+  description: "Time window, counted in UTC days ending now.",
+};
+
+export const LIST_OFFERS_TOOL: Anthropic.Tool = {
+  name: "list_offers",
+  description:
+    "List a brand's offers (what it sells, each run by its own campaigns), with each offer's id, name and status. Read-only. Use the offer id with get_offer_performance and list_replies_to_handle.",
+  input_schema: { type: "object" as const, properties: { brandId: BRAND_ID_PROP }, required: ["brandId"] },
+};
+
+export const GET_BILLING_ACCOUNT_TOOL: Anthropic.Tool = {
+  name: "get_billing_account",
+  description:
+    "Read the org's billing account: current balance, credits added, usage so far and payment mode. Read-only. Quote the figures exactly as returned (amounts are in cents where the field name says so).",
+  input_schema: { type: "object" as const, properties: {} },
+};
+
+export const GET_ORG_USAGE_TOOL: Anthropic.Tool = {
+  name: "get_org_usage",
+  description:
+    "Read everything the org has been billed to date, in total and by kind of work (setting up brands, finding contacts, writing, replies). Read-only.",
+  input_schema: { type: "object" as const, properties: {} },
+};
+
+export const GET_SPEND_BY_CAMPAIGN_TOOL: Anthropic.Tool = {
+  name: "get_spend_by_campaign",
+  description:
+    "Read what a brand spent per campaign over a window (today, last 7 days or last 30 days): run count and cost per campaign. Read-only. Use list_campaigns to name the campaigns.",
+  input_schema: {
+    type: "object" as const,
+    properties: { brandId: BRAND_ID_PROP, window: WINDOW_PROP },
+    required: ["brandId", "window"],
+  },
+};
+
+export const GET_OFFER_PERFORMANCE_TOOL: Anthropic.Tool = {
+  name: "get_offer_performance",
+  description:
+    "Read an offer's results the way the dashboard shows them: spend, emails sent, replies and the return on spend. Without windowDays it covers the offer since it started; with windowDays (1-365) it adds a block for the last N days. Read-only.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      offerId: OFFER_ID_PROP,
+      windowDays: { type: "integer", description: "Optional: also return the last N days (1-365)." },
+    },
+    required: ["brandId", "offerId"],
+  },
+};
+
+export const LIST_REPLIES_TO_HANDLE_TOOL: Anthropic.Tool = {
+  name: "list_replies_to_handle",
+  description:
+    "List the people who replied with interest to an offer and that nobody has handled yet, most recent first, with the total count. These are the conversations waiting for the user. Read-only.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      offerId: OFFER_ID_PROP,
+      limit: { type: "integer", description: "How many people to return (1-20, default 5). The total is always returned." },
+    },
+    required: ["brandId", "offerId"],
+  },
+};
+
+export const LIST_RECENT_RUNS_TOOL: Anthropic.Tool = {
+  name: "list_recent_runs",
+  description:
+    "List a brand's most recent runs (the work the platform did: each run's task, status, campaign, start time and cost), newest first. Optionally only within a window. Read-only.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      window: WINDOW_PROP,
+      limit: { type: "integer", description: "How many runs (1-50, default 20)." },
+    },
+    required: ["brandId"],
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Tool registry — every tool the service knows how to execute.
 // Clients choose which subset to enable via allowedTools in their config.
 // ---------------------------------------------------------------------------
@@ -2190,6 +2300,15 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   set_daily_budget: SET_DAILY_BUDGET_TOOL,
   get_brand_pause: GET_BRAND_PAUSE_TOOL,
   set_brand_pause: SET_BRAND_PAUSE_TOOL,
+  list_offers: LIST_OFFERS_TOOL,
+  get_billing_account: GET_BILLING_ACCOUNT_TOOL,
+  get_org_usage: GET_ORG_USAGE_TOOL,
+  get_spend_by_campaign: GET_SPEND_BY_CAMPAIGN_TOOL,
+  get_offer_performance: GET_OFFER_PERFORMANCE_TOOL,
+  list_replies_to_handle: LIST_REPLIES_TO_HANDLE_TOOL,
+  list_recent_runs: LIST_RECENT_RUNS_TOOL,
+  present_choices: PRESENT_CHOICES_TOOL,
+  open_page: OPEN_PAGE_TOOL,
 };
 
 /** All tool names available for use in allowedTools config. */
@@ -2329,7 +2448,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
               type: "clear_tool_uses_20250919",
               trigger: { type: "input_tokens", value: 50_000 },
               keep: { type: "tool_uses", value: 5 },
-              exclude_tools: ["request_user_input"],
+              exclude_tools: ["request_user_input", "present_choices", "open_page"],
               clear_tool_inputs: false,
             },
           ],

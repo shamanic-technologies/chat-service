@@ -314,6 +314,277 @@
           "percent"
         ]
       },
+      "SSEChoicesEvent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ChoicesRecord"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "choices"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        ],
+        "description": "Rich clickable cards from the `present_choices` tool. Terminates the AI's turn (like input_request): send the clicked card's `value` as the next /chat message. Also stored on the assistant message (`choices`) so GET /sessions/* re-renders it."
+      },
+      "Choice": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "The card's main line.",
+            "example": "Answer 3 interested leads"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 160,
+            "description": "Optional one-line sub-text.",
+            "example": "They replied yesterday and are waiting."
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "What the client sends back as the next user message when the card is clicked. Equals `label` when the model gave none.",
+            "example": "Show me the 3 interested leads"
+          },
+          "visual": {
+            "$ref": "#/components/schemas/ChoiceVisual"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ]
+      },
+      "ChoiceVisual": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "icon"
+                ]
+              },
+              "icon": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "Icon name the client maps to its icon set (e.g. 'mail', 'rocket', 'users').",
+                "example": "rocket"
+              }
+            },
+            "required": [
+              "type",
+              "icon"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "image"
+                ]
+              },
+              "imageUrl": {
+                "type": "string",
+                "maxLength": 2048,
+                "format": "uri",
+                "description": "Logo or image URL (https).",
+                "example": "https://logo.clearbit.com/acme.com"
+              }
+            },
+            "required": [
+              "type",
+              "imageUrl"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "number"
+                ]
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  }
+                ],
+                "description": "The big figure, exactly as a tool served it (the model never computes a stat).",
+                "example": 12
+              },
+              "unit": {
+                "type": "string",
+                "maxLength": 24,
+                "description": "Unit shown beside the figure (e.g. 'replies', '$/day', '%').",
+                "example": "replies"
+              }
+            },
+            "required": [
+              "type",
+              "value"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "chart"
+                ]
+              },
+              "series": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 60,
+                "description": "Tiny sparkline series, oldest first, values as a tool served them.",
+                "example": [
+                  3,
+                  5,
+                  4,
+                  8,
+                  12
+                ]
+              },
+              "unit": {
+                "type": "string",
+                "maxLength": 24,
+                "description": "Unit of the series values."
+              }
+            },
+            "required": [
+              "type",
+              "series"
+            ]
+          }
+        ],
+        "description": "Optional visual on a choice card: an icon, a logo/image, a big number with unit, or a tiny chart."
+      },
+      "ChoicesRecord": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Optional heading above the cards.",
+            "example": "What do you want to do first?"
+          },
+          "choices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Choice"
+            },
+            "minItems": 2,
+            "maxItems": 6,
+            "description": "2 to 6 clickable cards, in order."
+          },
+          "allowFreeText": {
+            "type": "boolean",
+            "description": "Whether the client keeps the free-text box as an escape hatch (true unless the model said false)."
+          }
+        },
+        "required": [
+          "choices",
+          "allowFreeText"
+        ]
+      },
+      "SSEOpenPageEvent": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OpenPageRecord"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "open_page"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        ],
+        "description": "The `open_page` tool asks the client to open a dashboard page in its side panel. The client resolves `page` (+ ids) to a URL. Does not end the turn. Stored on the assistant message (`openPages`)."
+      },
+      "OpenPageRecord": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9][a-z0-9._/-]*$/i",
+            "description": "Page identifier the CLIENT resolves to a URL (its list is given to the model in the config's system prompt). Never a URL.",
+            "example": "offer-today"
+          },
+          "brandId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "offerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "campaignId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "audienceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "leadId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "Optional short caption for the panel (why it opened).",
+            "example": "Your spend this week"
+          }
+        },
+        "required": [
+          "page"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -1140,6 +1411,11 @@
             "type": "string",
             "nullable": true
           },
+          "configKey": {
+            "type": "string",
+            "nullable": true,
+            "description": "Chat config key the session was started under. Null on sessions created before 2026-10-09."
+          },
           "createdAt": {
             "type": "string",
             "description": "ISO 8601 session creation timestamp."
@@ -1164,6 +1440,7 @@
           "workflowSlug",
           "featureSlug",
           "audienceId",
+          "configKey",
           "createdAt",
           "updatedAt",
           "messages"
@@ -1225,6 +1502,25 @@
             },
             "description": "Quick-reply buttons extracted from the turn. Null when none."
           },
+          "choices": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChoicesRecord"
+              },
+              {
+                "nullable": true,
+                "description": "Rich choice cards the assistant presented on this turn (present_choices). Null when none."
+              }
+            ]
+          },
+          "openPages": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/OpenPageRecord"
+            },
+            "description": "Pages the assistant opened in the side panel on this turn, in order (open_page). Null when none."
+          },
           "tokenCount": {
             "type": "integer",
             "nullable": true,
@@ -1242,6 +1538,8 @@
           "contentBlocks",
           "toolCalls",
           "buttons",
+          "choices",
+          "openPages",
           "tokenCount",
           "createdAt"
         ]
@@ -2695,7 +2993,7 @@
           "Chat"
         ],
         "summary": "Stream AI chat response",
-        "description": "Send a message and receive a streamed AI response via Server-Sent Events (SSE).\n\n**Config resolution:**\nThe `configKey` field selects which chat config to use. Resolution order:\n1. Per-org config: `(orgId, configKey)` from PUT /config\n2. Platform config: `(configKey)` from PUT /platform-config\n3. If neither exists → 404\n\nThe selected config determines both the system prompt and which tools the LLM can use.\n\n**Session lifecycle:**\n- To start a new conversation, omit `sessionId` (or pass `null`). The first SSE event will be `{\"sessionId\":\"<uuid>\"}` — store this ID.\n- To continue a conversation, pass that `sessionId` in subsequent requests.\n- To reset a conversation (e.g. after a fork), omit `sessionId` and send a new `context`.\n\n**Context:**\nThe `context` field is a free-form JSON object provided by the frontend on **every** message. It is injected into the system prompt but not stored. Re-send it on every request — the service does not cache it. After a fork (e.g. workflow updated → new workflow created), the frontend should update its context with the new IDs and either continue the session or start a new one.\n\n**SSE event order:**\nEach `data:` line contains a JSON object. Events arrive in this order:\n\n1. **Session** — `{\"sessionId\":\"<uuid>\"}` (always first)\n2. **Thinking** _(optional)_ — `thinking_start` → one or more `thinking_delta` → `thinking_stop`.\n3. **Tokens** — `{\"type\":\"token\",\"content\":\"...\"}` streamed incrementally.\n4. **Tool calls** _(optional, repeatable)_ — `tool_call` followed by `tool_result`, then more thinking/tokens.\n5. **Input request** _(optional)_ — `input_request` when the AI needs structured user input (terminates the response).\n6. **Buttons** _(optional)_ — `{\"type\":\"buttons\",\"buttons\":[...]}` with quick-reply options, sent after all tokens.\n7. **Error** _(optional)_ — `{\"type\":\"error\",\"message\":\"...\"}` if something goes wrong. Sent before `[DONE]`.\n8. **Done** — `\"[DONE]\"` (always last).\n\n**Available tools** depend on the config's `allowedTools`. The LLM only sees and can call the tools listed there. See PUT /config documentation for the full list of available tool names.",
+        "description": "Send a message and receive a streamed AI response via Server-Sent Events (SSE).\n\n**Config resolution:**\nThe `configKey` field selects which chat config to use. Resolution order:\n1. Per-org config: `(orgId, configKey)` from PUT /config\n2. Platform config: `(configKey)` from PUT /platform-config\n3. If neither exists → 404\n\nThe selected config determines both the system prompt and which tools the LLM can use.\n\n**Session lifecycle:**\n- To start a new conversation, omit `sessionId` (or pass `null`). The first SSE event will be `{\"sessionId\":\"<uuid>\"}` — store this ID.\n- To continue a conversation, pass that `sessionId` in subsequent requests.\n- To reset a conversation (e.g. after a fork), omit `sessionId` and send a new `context`.\n\n**Context:**\nThe `context` field is a free-form JSON object provided by the frontend on **every** message. It is injected into the system prompt but not stored. Re-send it on every request — the service does not cache it. After a fork (e.g. workflow updated → new workflow created), the frontend should update its context with the new IDs and either continue the session or start a new one.\n\n**SSE event order:**\nEach `data:` line contains a JSON object. Events arrive in this order:\n\n1. **Session** — `{\"sessionId\":\"<uuid>\"}` (always first)\n2. **Thinking** _(optional)_ — `thinking_start` → one or more `thinking_delta` → `thinking_stop`.\n3. **Tokens** — `{\"type\":\"token\",\"content\":\"...\"}` streamed incrementally.\n4. **Tool calls** _(optional, repeatable)_ — `tool_call` followed by `tool_result`, then more thinking/tokens.\n5. **Open page** _(optional, repeatable)_ — `{\"type\":\"open_page\",\"page\":\"...\",brandId?,offerId?,campaignId?,audienceId?,leadId?,title?}` when the AI wants the client to open a dashboard page in its side panel (config allows `open_page`). Does not end the turn. No `tool_call`/`tool_result` pair is streamed for it.\n6. **Input request** _(optional)_ — `input_request` when the AI needs structured user input (terminates the response).\n7. **Choices** _(optional)_ — `{\"type\":\"choices\",\"question\"?,\"choices\":[{label,description?,value,visual?}],\"allowFreeText\"}` rich clickable cards (config allows `present_choices`). Terminates the response; send the clicked card's `value` as the next message. No `tool_call`/`tool_result` pair is streamed for it. `visual` is one of `{type:\"icon\",icon}`, `{type:\"image\",imageUrl}`, `{type:\"number\",value,unit?}`, `{type:\"chart\",series,unit?}`.\n8. **Buttons** _(optional)_ — `{\"type\":\"buttons\",\"buttons\":[...]}` with quick-reply options, sent after all tokens.\n9. **Context usage** — `context_usage` token totals for the turn.\n10. **Error** _(optional)_ — `{\"type\":\"error\",\"message\":\"...\"}` if something goes wrong. Sent before `[DONE]`.\n11. **Done** — `\"[DONE]\"` (always last).\n\nChoices and opened pages are persisted on the assistant message and returned by GET /sessions/{sessionId} and GET /sessions/latest (`choices`, `openPages`).\n\n**Available tools** depend on the config's `allowedTools`. The LLM only sees and can call the tools listed there. See PUT /config documentation for the full list of available tool names.",
         "parameters": [
           {
             "schema": {
@@ -2801,7 +3099,7 @@
         },
         "responses": {
           "200": {
-            "description": "SSE stream of chat events. Each `data:` line is a JSON object matching one of the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent, SSEErrorEvent), except the final `data: \"[DONE]\"` which is a plain string.",
+            "description": "SSE stream of chat events. Each `data:` line is a JSON object matching one of the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEChoicesEvent, SSEOpenPageEvent, SSEButtonsEvent, SSEContextUsageEvent, SSEErrorEvent), except the final `data: \"[DONE]\"` which is a plain string.",
             "content": {
               "text/event-stream": {
                 "schema": {
@@ -2999,6 +3297,163 @@
           },
           "404": {
             "description": "Session does not exist or belongs to a different org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/latest": {
+      "get": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Read the caller's latest session for a config key",
+        "description": "Returns the most recently active session of the caller (`x-org-id` + `x-user-id`) for one `configKey`, with its full history, in the same shape as GET /sessions/{sessionId}. Lets a client show the same conversation on any device without holding a sessionId. \"Most recently active\" = the session whose last /chat turn is newest.\n\n404 when the user has no session for that key in this org. Only sessions created from 2026-10-09 on record their config key, so an older conversation is not found here (it stays readable by id). Read-only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Chat config key the session was started under (the same `configKey` POST /chat takes).",
+              "example": "copilot"
+            },
+            "required": true,
+            "description": "Chat config key the session was started under (the same `configKey` POST /chat takes).",
+            "name": "configKey",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal org UUID from client-service",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal user UUID from client-service",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Caller's run ID"
+            },
+            "required": true,
+            "description": "Caller's run ID",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Campaign ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Campaign ID — injected automatically by workflow-service",
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+              "example": "550e8400-e29b-41d4-a716-446655440000,660f9500-f30c-52e5-b827-557766551111"
+            },
+            "required": false,
+            "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Workflow slug — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Workflow slug — injected automatically by workflow-service",
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Feature slug — propagated through the entire service chain"
+            },
+            "required": false,
+            "description": "Feature slug — propagated through the entire service chain",
+            "name": "x-feature-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow."
+            },
+            "required": false,
+            "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow.",
+            "name": "x-audience-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The latest session and its ordered history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionHistoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "configKey missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No session for this (org, user, configKey)",
             "content": {
               "application/json": {
                 "schema": {

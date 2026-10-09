@@ -542,10 +542,10 @@ describe("GenerateImageRequestSchema", () => {
 // --- resolveModel tests ---
 
 describe("resolveModel", () => {
-  it("resolves anthropic + haiku to claude-haiku-4-5", () => {
+  it("resolves anthropic + haiku to claude-haiku-5-5 (never Haiku 4.5)", () => {
     const resolved = resolveModel("anthropic", "haiku");
-    expect(resolved.apiModelId).toBe("claude-haiku-4-5");
-    expect(resolved.costPrefix).toBe("anthropic-haiku-4.5");
+    expect(resolved.apiModelId).toBe("claude-haiku-5-5");
+    expect(resolved.costPrefix).toBe("anthropic-haiku-5.5");
     expect(resolved.provider).toBe("anthropic");
   });
 

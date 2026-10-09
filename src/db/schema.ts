@@ -1,4 +1,5 @@
 import { pgTable, uuid, text, timestamp, jsonb, integer, unique, index } from "drizzle-orm/pg-core";
+import type { ChoicesRecord, OpenPageRecord } from "../schemas.js";
 
 export const sessions = pgTable(
   "sessions",
@@ -13,13 +14,19 @@ export const sessions = pgTable(
     workflowSlug: text("workflow_slug"),
     featureSlug: text("feature_slug"),
     audienceId: text("audience_id"),
+    // The chat config key the session was started under (migration 0017).
+    // NULL on sessions created before 2026-10-09. Read by GET /sessions/latest.
+    configKey: text("config_key"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   // Created by migration 0012 for transfer-brand queries and live in production
   // since. Declared here so schema.ts describes the real schema — without it,
   // `drizzle-kit push` reads the index as drift and drops it.
-  (table) => [index("sessions_org_brand_idx").on(table.orgId, table.brandIds)],
+  (table) => [
+    index("sessions_org_brand_idx").on(table.orgId, table.brandIds),
+    index("sessions_org_user_config_updated_idx").on(table.orgId, table.userId, table.configKey, table.updatedAt),
+  ],
 );
 
 export const messages = pgTable("messages", {
@@ -32,6 +39,10 @@ export const messages = pgTable("messages", {
   contentBlocks: jsonb("content_blocks").$type<unknown[]>(),
   toolCalls: jsonb("tool_calls").$type<ToolCallRecord[]>(),
   buttons: jsonb("buttons").$type<ButtonRecord[]>(),
+  // Rich choice cards (present_choices) and side-panel pages (open_page) the
+  // assistant emitted on this turn, so a reload re-renders them (migration 0017).
+  choices: jsonb("choices").$type<ChoicesRecord>(),
+  openPages: jsonb("open_pages").$type<OpenPageRecord[]>(),
   tokenCount: integer("token_count"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

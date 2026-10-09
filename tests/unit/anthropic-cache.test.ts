@@ -57,7 +57,7 @@ describe("complete() prompt caching", () => {
     usage = { input_tokens: 30, output_tokens: 7, cache_read_input_tokens: 4_000, cache_creation_input_tokens: 900 };
     const claude = createAnthropicClient({ apiKey: "k", systemPrompt: "p" });
     const r = await claude.complete("Hi", { model: "claude-sonnet-5-5", cache: true });
-    expect(r.billed).toEqual({ tokensInput: 30, cacheReadTokens: 4_000, cacheWriteTokens: 900, tokensOutput: 7 });
+    expect(r.billed).toEqual({ requestPromptTokens: 4_930, tokensInput: 30, cacheReadTokens: 4_000, cacheWriteTokens: 900, tokensOutput: 7 });
     expect(r.tokensInput).toBe(4_930);
     expect(r.tokensOutput).toBe(7);
   });
