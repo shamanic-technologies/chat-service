@@ -127,6 +127,13 @@
       "when": 1791504000000,
       "tag": "0017_add_rich_ui_and_config_key",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791590400000,
+      "tag": "0018_add_skills_and_staff_requests",
+      "breakpoints": true
     }
   ]
 }

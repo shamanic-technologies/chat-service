@@ -2205,6 +2205,339 @@
           "criteria"
         ],
         "additionalProperties": false
+      },
+      "SkillListResponse": {
+        "type": "object",
+        "properties": {
+          "skills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillSummary"
+            }
+          }
+        },
+        "required": [
+          "skills"
+        ]
+      },
+      "SkillSummary": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "parentSlug": {
+            "type": "string",
+            "nullable": true,
+            "description": "Parent skill slug; null only for `index`."
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "One line: when the model should load this skill."
+          },
+          "position": {
+            "type": "integer",
+            "description": "Sort order among siblings."
+          },
+          "version": {
+            "type": "integer"
+          },
+          "updatedBy": {
+            "type": "string",
+            "description": "Who wrote the current content. `seed` = never edited by a human."
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "parentSlug",
+          "title",
+          "description",
+          "position",
+          "version",
+          "updatedBy",
+          "updatedAt"
+        ]
+      },
+      "Skill": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SkillSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "content": {
+                "type": "string",
+                "description": "Markdown body."
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content",
+              "createdAt"
+            ]
+          }
+        ]
+      },
+      "SkillWriteResponse": {
+        "type": "object",
+        "properties": {
+          "skill": {
+            "$ref": "#/components/schemas/Skill"
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "versionAdded": {
+            "type": "boolean",
+            "description": "false when the save was folded into the current version (same editor within 10 minutes) or nothing changed."
+          }
+        },
+        "required": [
+          "skill",
+          "created",
+          "versionAdded"
+        ]
+      },
+      "SkillWriteRequest": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100000,
+            "description": "Full markdown body (replaces the current one)."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Required when creating."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Required when creating."
+          },
+          "parentSlug": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Required when creating (except `index`).",
+            "example": "campaigns"
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000
+          },
+          "editedBy": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Who is editing (staff email or user id). `seed` is reserved.",
+            "example": "kevin@distribute.you"
+          }
+        },
+        "required": [
+          "content",
+          "editedBy"
+        ]
+      },
+      "SkillVersionListResponse": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillVersion"
+            }
+          }
+        },
+        "required": [
+          "slug",
+          "versions"
+        ]
+      },
+      "SkillVersion": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "editedBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When this version was first written."
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Last autosave folded into this version."
+          }
+        },
+        "required": [
+          "version",
+          "title",
+          "description",
+          "content",
+          "editedBy",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "StaffRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "brandId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sessionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "bug",
+              "feature"
+            ]
+          },
+          "repo": {
+            "type": "string"
+          },
+          "pieceKey": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "userRequest": {
+            "type": "string"
+          },
+          "decomposition": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "piece": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "exists",
+                    "create",
+                    "needs_code"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "piece",
+                "outcome"
+              ]
+            }
+          },
+          "missingPiece": {
+            "type": "string"
+          },
+          "requesterIsStaff": {
+            "type": "boolean"
+          },
+          "issueUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "issueNumber": {
+            "type": "integer",
+            "nullable": true
+          },
+          "issueError": {
+            "type": "string",
+            "nullable": true
+          },
+          "telegramSentAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "telegramSkippedReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "telegramError": {
+            "type": "string",
+            "nullable": true
+          },
+          "requestCount": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "userId",
+          "brandId",
+          "sessionId",
+          "kind",
+          "repo",
+          "pieceKey",
+          "title",
+          "userRequest",
+          "decomposition",
+          "missingPiece",
+          "requesterIsStaff",
+          "issueUrl",
+          "issueNumber",
+          "issueError",
+          "telegramSentAt",
+          "telegramSkippedReason",
+          "telegramError",
+          "requestCount",
+          "createdAt",
+          "updatedAt"
+        ]
       }
     },
     "parameters": {}
@@ -4090,6 +4423,400 @@
           },
           "502": {
             "description": "The platform TypeSafe key could not be resolved (the response names the provider), runs-service was unavailable, or TypeSafe failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/skills": {
+      "get": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "List the Copilot skill tree",
+        "description": "Every skill (no content), sorted by position then slug. Build the tree from `parentSlug` (root = `index`). Staff surface, read through the api-service gateway. Read-only.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The skill tree",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/skills/{slug}": {
+      "get": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "Read one skill",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "description": "Skill slug (stable id). The root is `index`.",
+              "example": "campaigns"
+            },
+            "required": true,
+            "description": "Skill slug (stable id). The root is `index`.",
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The skill with its content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Skill"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown slug",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "Create or update one skill (autosave-safe)",
+        "description": "Replaces the skill's content (and optionally title, description, parent, position). Built for autosave: a save by the SAME `editedBy` within 10 minutes of the latest version rewrites that version instead of adding one, so a typing burst is one recoverable snapshot. Identical content is a no-op. Creating a new slug needs `title`, `description` and an existing `parentSlug`. Once a human saves a skill, the boot seed never overwrites it again.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "description": "Skill slug (stable id). The root is `index`.",
+              "example": "campaigns"
+            },
+            "required": true,
+            "description": "Skill slug (stable id). The root is `index`.",
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillWriteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, unknown parent, or missing fields on create",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/skills/{slug}/versions": {
+      "get": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "List a skill's previous versions (newest first, with content)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "description": "Skill slug (stable id). The root is `index`.",
+              "example": "campaigns"
+            },
+            "required": true,
+            "description": "Skill slug (stable id). The root is `index`.",
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown slug",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/skills/{slug}/versions/{version}": {
+      "get": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "Read one previous version of a skill",
+        "description": "To restore it, PUT its content back to /internal/skills/{slug}.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "description": "Skill slug (stable id). The root is `index`.",
+              "example": "campaigns"
+            },
+            "required": true,
+            "description": "Skill slug (stable id). The root is `index`.",
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Version number (1 = first)."
+            },
+            "required": true,
+            "description": "Version number (1 = first).",
+            "name": "version",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillVersion"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown slug or version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/staff-requests": {
+      "get": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "List requests the Copilot escalated to staff (newest first)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Only this org's requests."
+            },
+            "required": false,
+            "description": "Only this org's requests.",
+            "name": "orgId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "description": "Default 50."
+            },
+            "required": false,
+            "description": "Default 50.",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Staff requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/StaffRequest"
+                      }
+                    }
+                  },
+                  "required": [
+                    "requests"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
             "content": {
               "application/json": {
                 "schema": {

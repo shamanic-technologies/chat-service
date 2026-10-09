@@ -1239,6 +1239,32 @@ Read-only and supporting workflow tools:
 | `list_replies_to_handle` | People who replied with interest and nobody handled yet, with `total` (the dashboard's "needs your call"). `GET /v1/leads?bucket=positive_reply&standing=sales_interest` |
 | `list_recent_runs` | The brand's latest runs (work done), optional `window`. `GET /v1/runs` |
 
+**Copilot tools** (`src/lib/copilot-client.ts`, `skills.ts`, `staff-requests.ts`). One read per platform entity, the data writes whose owner routes exist, a two-step switch-on gate, and the staff escalation. Owner bodies are returned verbatim.
+
+| Tool | Description |
+|---|---|
+| `read_skill` | Loads one skill of the Copilot skill tree by slug (markdown + sub-skills). A config allowing it also gets the INDEX skill appended to its system prompt (see Copilot skill tree). |
+| `get_channel_catalogue` | Channels, the legs each performs (proactive / reactive + `triggerId`), trigger types, minimum budgets. `GET /v1/public/channels` |
+| `get_offer_channels` | Channels an offer accepts. `GET /v1/brands/:id/offers/:offerId/channels` |
+| `get_offer_legs` | The offer's steps and legs. `GET /v1/brands/:id/offers/:offerId/sales-path` |
+| `get_leg_rates` | Conversion rate per leg. `GET /v1/brands/:id/leg-rates` |
+| `list_sales_paths` | Sales paths ranked by return. `GET /v1/offers/:offerId/sales-paths?brandId=` |
+| `get_selected_sales_paths` | The ticked paths. `GET /v1/brands/:id/offers/:offerId/selected-sales-paths` |
+| `get_trigger_events` | Per trigger type: fired / ran / skipped and why. `GET /v1/offers/:offerId/trigger-events/summary?brandId=` |
+| `list_sourcing_origins` | Where leads can come from. `GET /v1/public/sourcing-origins` |
+| `get_offer_sourcing` | Leads, cost and return per source. `GET /v1/offers/:offerId/sourcing?brandId=` |
+| `get_campaign_budgets` | Daily cap per (channel x leg). `GET /v1/brands/:brandId/offers/:offerId/campaign-budgets` |
+| `get_campaign` | One campaign. `GET /v1/campaigns/:id` |
+| `list_connected_accounts` | Google mailboxes, messaging links, GoHighLevel, PostHog, Stripe (one block per provider; a failing provider carries its error in place). |
+| `create_offer` | New offer by name (data). `POST /v1/brands/:id/offers` |
+| `set_offer_channels` | Replaces the offer's channel list (data). `PUT .../channels` |
+| `set_selected_sales_paths` | Replaces the ticked paths (data; turns nothing on). `PUT .../selected-sales-paths` |
+| `set_campaign_budget` | Daily cap of one (offer x leg x channel); creates no campaign. `PUT /v1/brands/:brandId/campaign-budget` |
+| `propose_switch_on` | Step 1: records what would switch on (`start_campaign` with a MANDATORY `dailyBudgetCents`, set now as the cap; `activate_campaign`; `switch_on_reactive_legs`) and returns a `confirmationToken`. Switches nothing on. |
+| `confirm_switch_on` | Step 2: executes a proposal (`POST /v1/campaigns/start-funded-pair`, `PATCH /v1/campaigns/:id {status:"activate"}`, `POST /v1/offers/:offerId/reactive-defaults`). Only accepts a token found in the session history recorded BEFORE this turn, so a user message always sits between proposal and switch-on; a used token is refused. |
+| `request_staff` | Escalates one missing piece (feature) or a bug: records it (deduped per org on repo + kind + `pieceKey`), opens a GitHub issue in the owning repo, pings staff on Telegram unless the requester is staff. |
+| `list_staff_requests` | This org's escalations. |
+
 **UI tools:**
 
 | Tool | Description |
@@ -1412,17 +1438,38 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `GEMINI_EMBEDDING_MODEL` | No | Gemini embedding model used by `/orgs/rag/score` and `/orgs/rag/embed` (default: `gemini-embedding-001`) |
 | `TRANSACTIONAL_EMAIL_SERVICE_URL` | No | Transactional-email-service endpoint (default: `https://transactional-email.distribute.you`) |
 | `TRANSACTIONAL_EMAIL_SERVICE_API_KEY` | No | API key for transactional-email-service. Unset → the out-of-credit staff alert does not send (logged, never fatal) |
+| `CLIENT_SERVICE_URL` / `CLIENT_SERVICE_API_KEY` | For `request_staff` | Reads the requester's email (`GET /internal/users/:userId`) to decide the staff Telegram ping. Unset → lookup fails, logged, the ping still goes out |
+| `GITHUB_ISSUES_TOKEN` | For `request_staff` | GitHub token with issues:write on the `shamanic-technologies` repos. Unset → the request is recorded without an issue (`issueError`), and a repeat retries |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_OWNER_CHAT_ID` | For `request_staff` | Same bot + chat as billing-service and the dashboard. Unset → no ping (`telegramError` recorded) |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
 
-Uses PostgreSQL via Drizzle ORM. Five tables:
+Uses PostgreSQL via Drizzle ORM. Eight tables:
 
 - **sessions** — conversation sessions scoped by `orgId` and `userId`. Stores all identity/tracking context: `runId` (this service's run), `parentRunId` (caller's run from `x-run-id` header), `campaignId`, `brandIds` (text array for multi-brand support), `workflowSlug`, `featureSlug`, `audienceId`, `configKey` (the chat config the session started under; indexed with org/user/updatedAt for `GET /sessions/latest`)
 - **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `choices`, `openPages`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management)
 - **app_configs** — per-org configuration keyed by `(orgId, key)`. Each entry defines a system prompt and `allowedTools` for a specific chat mode.
 - **platform_configs** — platform-wide configuration keyed by `key`. Fallback when no per-org config exists for the same key.
 - **brand_profile_embeddings** — cached Gemini embeddings of the brand-profile query, keyed by `(orgId, brandId, contentHash)`. Used by `/orgs/rag/score` so identical brand contexts skip the brand-profile embedding call. Document embeddings are not cached.
+
+- **skills** / **skill_versions** — the Copilot skill tree (see below) and every content each skill has held.
+- **staff_requests** — Copilot escalations, unique on `(org_id, repo, kind, piece_key)`.
+
+## Copilot skill tree (`/internal/skills`)
+
+The Copilot's platform knowledge is a tree of markdown skills: an `index` skill (method + map, appended to the system prompt of any config allowing `read_skill`) and one sub-skill per topic (offers, client-profiles, qualification, sources, channels, legs, triggers, sales-paths, campaigns, workflows-and-templates, connected-accounts, budget-and-billing, costs-roi-stats, staff-requests), loaded on demand with `read_skill`. Staff edit them live from the dashboard.
+
+| Route | Description |
+|---|---|
+| `GET /internal/skills` | `{ skills: SkillSummary[] }` (no content), sorted by position. Tree from `parentSlug`. |
+| `GET /internal/skills/:slug` | `Skill` (summary + `content`, `createdAt`). 404 on unknown slug. |
+| `PUT /internal/skills/:slug` | Body `{ content, editedBy, title?, description?, parentSlug?, position? }`. Creates (needs title, description, existing parent) or updates. Autosave-safe: a save by the same `editedBy` within 10 minutes rewrites the latest version; identical content is a no-op. Returns `{ skill, created, versionAdded }`. |
+| `GET /internal/skills/:slug/versions` | `{ slug, versions: SkillVersion[] }`, newest first, with content. |
+| `GET /internal/skills/:slug/versions/:version` | One version. Restore = PUT its content back. |
+| `GET /internal/staff-requests?orgId=&limit=` | Copilot escalations, newest first. |
+
+**Seed rule:** at boot, `seedSkills` inserts a seed skill absent from the table and refreshes a row ONLY while `updated_by = "seed"`. A skill any human saved is never overwritten by a deploy (`editedBy: "seed"` is refused on PUT).
 
 Migrations run automatically on server start. To generate new migrations after schema changes:
 

@@ -53,6 +53,7 @@ CI will warn if source files change without corresponding test changes. Do not s
 - `src/lib/key-client.ts` — Key-service client for app-key and org-key decryption
 - `src/lib/runs-client.ts` — RunsService HTTP client for run tracking and cost reporting
 - `src/lib/config-defaults.ts` — Chat provider/model default resolution + registration merge semantics
+- `src/lib/skills.ts` / `skill-seed.ts` — Copilot skill tree store + seed; `copilot-client.ts` — per-entity reads/writes + switch-on gate; `staff-requests.ts` — escalations (record, GitHub issue, Telegram)
 - `scripts/generate-openapi.ts` — Generates openapi.json from Zod schemas
 - `tests/` — Test files (`*.test.ts`)
 - `openapi.json` — Auto-generated, do NOT edit manually
@@ -272,6 +273,12 @@ A tool-call failure must reach the model as a **parsed, structured** `{error, to
 ## Rich-UI tools (`present_choices`, `open_page`) + account reads
 
 `src/lib/ui-tools.ts`: `present_choices` streams an SSE `choices` event and ENDS the turn (returns the `"input_request"` sentinel, like `request_user_input`); `open_page` streams `open_page` and continues. Both validate with the Zod schemas in `schemas.ts` (single source for args, SSE and history), are stored on the message (`messages.choices` / `messages.open_pages`), and stream NO `tool_call`/`tool_result` pair (`CLIENT_UI_TOOL_NAMES`, both loops). The client owns page ids (in its system prompt); never accept a URL as `page`. Account reads (`src/lib/account-client.ts`) copy the dashboard v2's own query per figure, return the body verbatim, and stay GET-only. **Gemini tool-call persistence:** `streamGeminiChat` returns the signed copy of every call it fed back; the `/chat` handler REPLACES its unsigned `executeTool` records with it (appending stored every call twice and replayed "called X twice", fixed 2026-10-09).
+
+## Copilot skill tree, switch-on gate, staff requests
+
+- **Skills are DB rows staff edit live (`skills` + `skill_versions`), the code only SEEDS them** (`src/lib/skill-seed.ts`). `seedSkills` inserts absent slugs and refreshes a row only while `updated_by = "seed"`. **Never turn it into an upsert-by-slug** — that clobbers the owner's dashboard edits on every deploy. Editing a seed string reaches only skills nobody has touched.
+- **Nothing that starts work switches on in one turn.** `propose_switch_on` records the proposal (and, for `start_campaign`, sets the mandatory daily cap: a cap starts nothing); `confirm_switch_on` only accepts a token found in the history read BEFORE this turn's user message. Do not give the Copilot `launch_campaign` (creates AND starts) or any direct start/activate tool.
+- **`request_staff`: record first, then issue, then Telegram.** A failed issue/ping is stored on the row and returned, never loses the request; a repeat (same org, repo, kind, pieceKey) bumps `request_count`, retries a missing issue, never re-pings. Staff requesters (`isStaffEmail`, same rule as billing-service, email read from client-service) get no Telegram ping.
 
 ## Multi-turn tool history — never strip globally
 

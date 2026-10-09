@@ -112,6 +112,69 @@ import {
 } from "./lib/brand-profile-refresh.js";
 import { seedPlatformConfigs, holdTextBesideToolCallsFor } from "./lib/seed-platform-configs.js";
 import {
+  SkillNotFoundError,
+  SkillValidationError,
+  buildSkillIndexBlock,
+  getSkill,
+  listSkillVersions,
+  listSkills,
+  readSkillForModel,
+  seedSkills,
+  toSkillBody,
+  toSkillSummary,
+  toSkillVersionBody,
+  writeSkill,
+} from "./lib/skills.js";
+import {
+  listStaffRequests,
+  listStaffRequestsForModel,
+  parseStaffRequestArgs,
+  submitStaffRequest,
+  toStaffRequestBody,
+} from "./lib/staff-requests.js";
+import {
+  createOffer,
+  executeSwitchOn,
+  getCampaign,
+  getCampaignBudgets,
+  getChannelCatalogue,
+  getLegRates,
+  getOfferChannels,
+  getOfferLegs,
+  getOfferSourcing,
+  getSelectedSalesPaths,
+  getTriggerEvents,
+  listConnectedAccounts,
+  listSalesPaths,
+  listSourcingOrigins,
+  proposeSwitchOn,
+  resolveSwitchOnProposal,
+  setCampaignBudget,
+  setOfferChannels,
+  setSelectedSalesPaths,
+} from "./lib/copilot-client.js";
+import type { ApiCallParams } from "./lib/api-client.js";
+
+// Copilot entity tools that are a straight owner-route call: name → handler.
+const COPILOT_ENTITY_TOOLS: Record<string, (args: Record<string, unknown>, p: ApiCallParams) => Promise<unknown>> = {
+  get_channel_catalogue: (_a, p) => getChannelCatalogue(p),
+  get_offer_channels: getOfferChannels,
+  get_offer_legs: getOfferLegs,
+  get_leg_rates: getLegRates,
+  list_sales_paths: listSalesPaths,
+  get_selected_sales_paths: getSelectedSalesPaths,
+  get_trigger_events: getTriggerEvents,
+  list_sourcing_origins: (_a, p) => listSourcingOrigins(p),
+  get_offer_sourcing: getOfferSourcing,
+  get_campaign_budgets: getCampaignBudgets,
+  get_campaign: getCampaign,
+  list_connected_accounts: listConnectedAccounts,
+  create_offer: createOffer,
+  set_offer_channels: setOfferChannels,
+  set_selected_sales_paths: setSelectedSalesPaths,
+  set_campaign_budget: setCampaignBudget,
+};
+import {
   embedText,
   embedTexts,
   cosineSimilarity,
@@ -146,7 +209,7 @@ import {
   setBrandPauseState,
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -2555,7 +2618,25 @@ app.post("/chat", requireAuth, async (req, res) => {
   res.flushHeaders();
 
   // Build system prompt with optional context and campaign feature inputs
-  const systemPrompt = buildSystemPrompt(appConfig.systemPrompt, context, campaignFeatureInputs);
+  // A config that allows read_skill gets the skill INDEX (method + map of
+  // sub-skills) appended; sub-skills are loaded on demand with read_skill.
+  let skillIndexBlock = "";
+  if (allowedToolNames.includes("read_skill")) {
+    try {
+      skillIndexBlock = await buildSkillIndexBlock(db);
+    } catch (err) {
+      console.error(`[chat] skill index unavailable for configKey="${configKey}":`, err);
+      sendSSE(res, {
+        type: "error",
+        code: "internal_error",
+        message: "Service temporarily unavailable (skills). Please try again.",
+      });
+      sendSSE(res, "[DONE]");
+      res.end();
+      return;
+    }
+  }
+  const systemPrompt = buildSystemPrompt(appConfig.systemPrompt + skillIndexBlock, context, campaignFeatureInputs);
   const isGeminiChat = chatProvider === "google";
   const claude = isGeminiChat ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
 
@@ -2929,6 +3010,60 @@ app.post("/chat", requireAuth, async (req, res) => {
           featureCallParams,
         );
         toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Copilot: skill tree ---------------------------------------------
+      if (call.name === "read_skill") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await readSkillForModel(db, args.slug);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Copilot: one read per entity, data writes (owner routes, verbatim) ---
+      const copilotArgsTool = COPILOT_ENTITY_TOOLS[call.name];
+      if (copilotArgsTool) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await copilotArgsTool(args, featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Copilot: switch ON = propose (this turn) → confirm (a later turn) ---
+      if (call.name === "propose_switch_on") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await proposeSwitchOn(args, featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "confirm_switch_on") {
+        const args = (call.args as Record<string, unknown>) || {};
+        // `history` was read BEFORE this turn's user message was saved, so a
+        // proposal made in this same turn is not in it and is refused.
+        const proposal = resolveSwitchOnProposal(args.confirmationToken, history);
+        const result = await executeSwitchOn(proposal, featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Copilot: staff escalation ------------------------------------------
+      if (call.name === "request_staff") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const input = parseStaffRequestArgs(args);
+        const result = await submitStaffRequest(
+          db,
+          { orgId, userId, brandId: brandIds.length === 1 ? brandIds[0] : null, sessionId: currentSessionId ?? null },
+          input,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "list_staff_requests") {
+        const result = await listStaffRequestsForModel(db, orgId);
+        toolCalls.push({ name: call.name, args: {}, result });
         return { name: call.name, result };
       }
 
@@ -4180,6 +4315,94 @@ app.post("/internal/transfer-brand", requireInternalAuth, async (req, res) => {
   res.json(result);
 });
 
+// ---------------------------------------------------------------------------
+// Copilot skill tree — staff routes (read by the dashboard through the gateway)
+// ---------------------------------------------------------------------------
+
+// Express 4 does not catch a rejected async handler, so every error is answered
+// here: a named 4xx for the caller's mistake, a 500 carrying the cause otherwise.
+function skillErrorStatus(err: unknown): { status: number; error: string } {
+  if (err instanceof SkillNotFoundError) return { status: 404, error: err.message };
+  if (err instanceof SkillValidationError) return { status: 400, error: err.message };
+  console.error("[skills] unexpected error:", err);
+  return { status: 500, error: err instanceof Error ? err.message : String(err) };
+}
+
+app.get("/internal/skills", requireInternalAuth, async (_req, res) => {
+  try {
+    const rows = await listSkills(db);
+    return res.json({ skills: rows.map(toSkillSummary) });
+  } catch (err) {
+    const mapped = skillErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+app.get("/internal/skills/:slug", requireInternalAuth, async (req, res) => {
+  const parsed = SkillSlugParamsSchema.safeParse(req.params);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  try {
+    return res.json(toSkillBody(await getSkill(db, parsed.data.slug)));
+  } catch (err) {
+    const mapped = skillErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+app.put("/internal/skills/:slug", requireInternalAuth, async (req, res) => {
+  const params = SkillSlugParamsSchema.safeParse(req.params);
+  if (!params.success) return res.status(400).json({ error: "Invalid request", details: params.error.flatten() });
+  const body = SkillWriteRequestSchema.safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "Invalid request", details: body.error.flatten() });
+  try {
+    const result = await writeSkill(db, params.data.slug, body.data);
+    return res.json({ skill: toSkillBody(result.skill), created: result.created, versionAdded: result.versionAdded });
+  } catch (err) {
+    const mapped = skillErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+app.get("/internal/skills/:slug/versions", requireInternalAuth, async (req, res) => {
+  const parsed = SkillSlugParamsSchema.safeParse(req.params);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  try {
+    const versions = await listSkillVersions(db, parsed.data.slug);
+    return res.json({ slug: parsed.data.slug, versions: versions.map(toSkillVersionBody) });
+  } catch (err) {
+    const mapped = skillErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+app.get("/internal/skills/:slug/versions/:version", requireInternalAuth, async (req, res) => {
+  const parsed = SkillVersionParamsSchema.safeParse(req.params);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  try {
+    const versions = await listSkillVersions(db, parsed.data.slug);
+    const found = versions.find((v) => v.version === parsed.data.version);
+    if (!found) {
+      return res.status(404).json({ error: `Skill "${parsed.data.slug}" has no version ${parsed.data.version}.` });
+    }
+    return res.json(toSkillVersionBody(found));
+  } catch (err) {
+    const mapped = skillErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+app.get("/internal/staff-requests", requireInternalAuth, async (req, res) => {
+  const parsed = StaffRequestListQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  try {
+    const rows = await listStaffRequests(db, { orgId: parsed.data.orgId, limit: parsed.data.limit ?? 50 });
+    return res.json({ requests: rows.map(toStaffRequestBody) });
+  } catch (err) {
+    const mapped = skillErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
 // Only start server if not in test environment
 if (process.env.NODE_ENV !== "test") {
   migrate(db, { migrationsFolder: "./drizzle" })
@@ -4189,6 +4412,12 @@ if (process.env.NODE_ENV !== "test") {
       // brand-profile-editor). O(1) — two upserts — safe to await before
       // listen(); fails loud so the configs are guaranteed live.
       await seedPlatformConfigs(db);
+      // Copilot skill tree: insert absent skills, refresh rows still holding
+      // seed content, NEVER touch a human-edited one. ~16 rows, safe to await.
+      const skillSeed = await seedSkills(db);
+      console.log(
+        `[chat-service] Skill seed: inserted=[${skillSeed.inserted.join(",")}] refreshed=[${skillSeed.refreshed.join(",")}] keptHumanEdit=[${skillSeed.keptHumanEdit.join(",")}]`,
+      );
       const server = app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });

@@ -2426,3 +2426,218 @@ Everything else — the pinned release on the wire, the refusal to flatten an an
     },
   },
 });
+
+// ---------------------------------------------------------------------------
+// Copilot skill tree (staff) — /internal/skills
+// ---------------------------------------------------------------------------
+
+const internalKeyHeader = z.object({
+  "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+});
+
+const SkillSlugSchema = z
+  .string()
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "slug: lowercase letters, digits and single hyphens")
+  .openapi({ description: "Skill slug (stable id). The root is `index`.", example: "campaigns" });
+
+export const SkillSlugParamsSchema = z.object({ slug: SkillSlugSchema }).openapi("SkillSlugParams");
+
+export const SkillVersionParamsSchema = z
+  .object({
+    slug: SkillSlugSchema,
+    version: z.coerce.number().int().min(1).openapi({ description: "Version number (1 = first)." }),
+  })
+  .openapi("SkillVersionParams");
+
+export const SkillSummarySchema = z
+  .object({
+    slug: z.string(),
+    parentSlug: z.string().nullable().openapi({ description: "Parent skill slug; null only for `index`." }),
+    title: z.string(),
+    description: z.string().openapi({ description: "One line: when the model should load this skill." }),
+    position: z.number().int().openapi({ description: "Sort order among siblings." }),
+    version: z.number().int(),
+    updatedBy: z.string().openapi({ description: "Who wrote the current content. `seed` = never edited by a human." }),
+    updatedAt: z.string(),
+  })
+  .openapi("SkillSummary");
+
+export const SkillSchema = SkillSummarySchema.extend({
+  content: z.string().openapi({ description: "Markdown body." }),
+  createdAt: z.string(),
+}).openapi("Skill");
+
+export const SkillListResponseSchema = z.object({ skills: z.array(SkillSummarySchema) }).openapi("SkillListResponse");
+
+export const SkillVersionSchema = z
+  .object({
+    version: z.number().int(),
+    title: z.string(),
+    description: z.string(),
+    content: z.string(),
+    editedBy: z.string(),
+    createdAt: z.string().openapi({ description: "When this version was first written." }),
+    updatedAt: z.string().openapi({ description: "Last autosave folded into this version." }),
+  })
+  .openapi("SkillVersion");
+
+export const SkillVersionListResponseSchema = z
+  .object({ slug: z.string(), versions: z.array(SkillVersionSchema) })
+  .openapi("SkillVersionListResponse");
+
+export const SkillWriteRequestSchema = z
+  .object({
+    content: z.string().min(1).max(100_000).openapi({ description: "Full markdown body (replaces the current one)." }),
+    title: z.string().min(1).max(200).optional().openapi({ description: "Required when creating." }),
+    description: z.string().min(1).max(500).optional().openapi({ description: "Required when creating." }),
+    parentSlug: SkillSlugSchema.nullable().optional().openapi({ description: "Required when creating (except `index`)." }),
+    position: z.number().int().min(0).max(10_000).optional(),
+    editedBy: z
+      .string()
+      .min(1)
+      .max(200)
+      .openapi({ description: "Who is editing (staff email or user id). `seed` is reserved.", example: "kevin@distribute.you" }),
+  })
+  .openapi("SkillWriteRequest");
+
+export const SkillWriteResponseSchema = z
+  .object({
+    skill: SkillSchema,
+    created: z.boolean(),
+    versionAdded: z.boolean().openapi({
+      description: "false when the save was folded into the current version (same editor within 10 minutes) or nothing changed.",
+    }),
+  })
+  .openapi("SkillWriteResponse");
+
+const skillErrors = {
+  401: { description: "Missing x-api-key", content: { "application/json": { schema: ErrorResponseSchema } } },
+};
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/skills",
+  tags: ["Skills"],
+  summary: "List the Copilot skill tree",
+  description:
+    "Every skill (no content), sorted by position then slug. Build the tree from `parentSlug` (root = `index`). Staff surface, read through the api-service gateway. Read-only.",
+  request: { headers: internalKeyHeader },
+  responses: {
+    200: { description: "The skill tree", content: { "application/json": { schema: SkillListResponseSchema } } },
+    ...skillErrors,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/skills/{slug}",
+  tags: ["Skills"],
+  summary: "Read one skill",
+  request: { headers: internalKeyHeader, params: SkillSlugParamsSchema },
+  responses: {
+    200: { description: "The skill with its content", content: { "application/json": { schema: SkillSchema } } },
+    404: { description: "Unknown slug", content: { "application/json": { schema: ErrorResponseSchema } } },
+    ...skillErrors,
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/internal/skills/{slug}",
+  tags: ["Skills"],
+  summary: "Create or update one skill (autosave-safe)",
+  description:
+    "Replaces the skill's content (and optionally title, description, parent, position). Built for autosave: a save by the SAME `editedBy` within 10 minutes of the latest version rewrites that version instead of adding one, so a typing burst is one recoverable snapshot. Identical content is a no-op. Creating a new slug needs `title`, `description` and an existing `parentSlug`. Once a human saves a skill, the boot seed never overwrites it again.",
+  request: {
+    headers: internalKeyHeader,
+    params: SkillSlugParamsSchema,
+    body: { content: { "application/json": { schema: SkillWriteRequestSchema } } },
+  },
+  responses: {
+    200: { description: "Saved", content: { "application/json": { schema: SkillWriteResponseSchema } } },
+    400: { description: "Invalid body, unknown parent, or missing fields on create", content: { "application/json": { schema: ErrorResponseSchema } } },
+    ...skillErrors,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/skills/{slug}/versions",
+  tags: ["Skills"],
+  summary: "List a skill's previous versions (newest first, with content)",
+  request: { headers: internalKeyHeader, params: SkillSlugParamsSchema },
+  responses: {
+    200: { description: "Every version", content: { "application/json": { schema: SkillVersionListResponseSchema } } },
+    404: { description: "Unknown slug", content: { "application/json": { schema: ErrorResponseSchema } } },
+    ...skillErrors,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/skills/{slug}/versions/{version}",
+  tags: ["Skills"],
+  summary: "Read one previous version of a skill",
+  description: "To restore it, PUT its content back to /internal/skills/{slug}.",
+  request: { headers: internalKeyHeader, params: SkillVersionParamsSchema },
+  responses: {
+    200: { description: "The version", content: { "application/json": { schema: SkillVersionSchema } } },
+    404: { description: "Unknown slug or version", content: { "application/json": { schema: ErrorResponseSchema } } },
+    ...skillErrors,
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Staff requests (Copilot escalations) — /internal/staff-requests
+// ---------------------------------------------------------------------------
+
+export const StaffRequestSchema = z
+  .object({
+    id: z.string().uuid(),
+    orgId: z.string(),
+    userId: z.string(),
+    brandId: z.string().nullable(),
+    sessionId: z.string().nullable(),
+    kind: z.enum(["bug", "feature"]),
+    repo: z.string(),
+    pieceKey: z.string(),
+    title: z.string(),
+    userRequest: z.string(),
+    decomposition: z.array(
+      z.object({ piece: z.string(), outcome: z.enum(["exists", "create", "needs_code"]), detail: z.string().optional() }),
+    ),
+    missingPiece: z.string(),
+    requesterIsStaff: z.boolean(),
+    issueUrl: z.string().nullable(),
+    issueNumber: z.number().int().nullable(),
+    issueError: z.string().nullable(),
+    telegramSentAt: z.string().nullable(),
+    telegramSkippedReason: z.string().nullable(),
+    telegramError: z.string().nullable(),
+    requestCount: z.number().int(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })
+  .openapi("StaffRequest");
+
+export const StaffRequestListQuerySchema = z
+  .object({
+    orgId: z.string().optional().openapi({ description: "Only this org's requests." }),
+    limit: z.coerce.number().int().min(1).max(200).optional().openapi({ description: "Default 50." }),
+  })
+  .openapi("StaffRequestListQuery");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/staff-requests",
+  tags: ["Skills"],
+  summary: "List requests the Copilot escalated to staff (newest first)",
+  request: { headers: internalKeyHeader, query: StaffRequestListQuerySchema },
+  responses: {
+    200: {
+      description: "Staff requests",
+      content: { "application/json": { schema: z.object({ requests: z.array(StaffRequestSchema) }) } },
+    },
+    ...skillErrors,
+  },
+});
