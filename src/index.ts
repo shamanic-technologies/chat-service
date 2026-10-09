@@ -154,6 +154,37 @@ import {
   setSelectedSalesPaths,
 } from "./lib/copilot-client.js";
 import type { ApiCallParams } from "./lib/api-client.js";
+import {
+  declareChannel,
+  declareLeg,
+  declareSalesPath,
+  declareTriggerType,
+  listDeclaredChannels,
+  listDeclaredLegs,
+  listDeclaredSalesPaths,
+  listTriggerTypes,
+  type DeclarationContext,
+  type FileStaffRequest,
+} from "./lib/declarations-client.js";
+
+// Copilot declaration reads (features-service, service key): name → handler.
+const DECLARATION_READ_TOOLS: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
+  list_declared_channels: listDeclaredChannels,
+  list_declared_legs: listDeclaredLegs,
+  list_trigger_types: listTriggerTypes,
+  list_declared_sales_paths: listDeclaredSalesPaths,
+};
+
+// Copilot declaration writes: each files its own staff request for what it cannot do itself.
+const DECLARATION_WRITE_TOOLS: Record<
+  string,
+  (args: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest) => Promise<unknown>
+> = {
+  declare_channel: declareChannel,
+  declare_leg: declareLeg,
+  declare_trigger_type: declareTriggerType,
+  declare_sales_path: declareSalesPath,
+};
 
 // Copilot entity tools that are a straight owner-route call: name → handler.
 const COPILOT_ENTITY_TOOLS: Record<string, (args: Record<string, unknown>, p: ApiCallParams) => Promise<unknown>> = {
@@ -3044,6 +3075,29 @@ app.post("/chat", requireAuth, async (req, res) => {
         // proposal made in this same turn is not in it and is refused.
         const proposal = resolveSwitchOnProposal(args.confirmationToken, history);
         const result = await executeSwitchOn(proposal, featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Copilot: declarations (channels, legs, trigger types, sales paths) ---
+      const declarationRead = DECLARATION_READ_TOOLS[call.name];
+      if (declarationRead) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await declarationRead(args);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      const declarationWrite = DECLARATION_WRITE_TOOLS[call.name];
+      if (declarationWrite) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await declarationWrite(args, { orgId, userId }, (input) =>
+          submitStaffRequest(
+            db,
+            { orgId, userId, brandId: brandIds.length === 1 ? brandIds[0] : null, sessionId: currentSessionId ?? null },
+            input,
+          ),
+        );
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
