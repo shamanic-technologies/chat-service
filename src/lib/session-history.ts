@@ -6,6 +6,7 @@
 // it introduces no new storage.
 
 import type { Session, Message } from "../db/schema.js";
+import type { ChoicesRecord, OpenPageRecord } from "../schemas.js";
 
 /**
  * A single tool invocation as surfaced to a history reader: the tool name, the
@@ -35,6 +36,10 @@ export interface SessionHistoryMessage {
   toolCalls: SessionHistoryToolCall[] | null;
   /** Quick-reply buttons extracted from the assistant turn. Null when none. */
   buttons: { label: string; value: string }[] | null;
+  /** Rich choice cards presented on this turn (present_choices). Null when none. */
+  choices: ChoicesRecord | null;
+  /** Pages opened in the side panel on this turn, in order (open_page). Null when none. */
+  openPages: OpenPageRecord[] | null;
   tokenCount: number | null;
   createdAt: string;
 }
@@ -47,6 +52,8 @@ export interface SessionHistoryResponse {
   workflowSlug: string | null;
   featureSlug: string | null;
   audienceId: string | null;
+  /** Config key the session was started under; null before 2026-10-09. */
+  configKey: string | null;
   createdAt: string;
   updatedAt: string;
   /** Full ordered conversation, oldest turn first. */
@@ -69,6 +76,7 @@ export function serializeSessionHistory(
     workflowSlug: session.workflowSlug ?? null,
     featureSlug: session.featureSlug ?? null,
     audienceId: session.audienceId ?? null,
+    configKey: session.configKey ?? null,
     createdAt: session.createdAt.toISOString(),
     updatedAt: session.updatedAt.toISOString(),
     messages: messages.map((m) => ({
@@ -84,6 +92,8 @@ export function serializeSessionHistory(
           }))
         : null,
       buttons: m.buttons ?? null,
+      choices: m.choices ?? null,
+      openPages: m.openPages ?? null,
       tokenCount: m.tokenCount ?? null,
       createdAt: m.createdAt.toISOString(),
     })),

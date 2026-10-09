@@ -89,13 +89,12 @@ describe("request contract", () => {
 });
 
 describe("Anthropic 5.5 — sampling", () => {
-  it("refuses temperature before any spend on sonnet and opus, keeps haiku open", () => {
-    for (const alias of ["sonnet", "opus"] as const) {
+  it("refuses temperature before any spend on sonnet, opus and haiku (all 5.5)", () => {
+    for (const alias of ["sonnet", "opus", "haiku"] as const) {
       const id = resolveModel("anthropic", alias).apiModelId;
       expect(anthropicRejectsSampling(id)).toBe(true);
       expect(() => assertAnthropicSamplingSupported(id, 0.3)).toThrow(AnthropicUnsupportedOptionError);
     }
-    expect(anthropicRejectsSampling(resolveModel("anthropic", "haiku").apiModelId)).toBe(false);
   });
 });
 
@@ -110,7 +109,7 @@ describe("Anthropic 5.5 — disableThinking lowers effort, never disables thinki
     expect(anthropicEffortFloor("claude-opus-5-5")).toBe("low");
     // Fable and Haiku keep the no-op they always had.
     expect(anthropicEffortFloor("claude-fable-5-1")).toBeNull();
-    expect(anthropicEffortFloor("claude-haiku-4-5")).toBeNull();
+    expect(anthropicEffortFloor("claude-haiku-5-5")).toBeNull();
   });
 
   it("sends effort beside the schema format when disableThinking is true", async () => {

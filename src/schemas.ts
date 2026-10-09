@@ -1113,6 +1113,113 @@ export const ChatRequestSchema = z
 
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 
+// --- Rich UI: choices + open page (emitted by the present_choices / open_page tools) ---
+//
+// These two schemas are the SINGLE source of truth for the shape: they validate
+// the model's tool arguments (src/lib/ui-tools.ts), describe the SSE events, and
+// describe what GET /sessions/* returns on reload. Zod, no .default().
+
+export const ChoiceVisualSchema = z
+  .discriminatedUnion("type", [
+    z.object({
+      type: z.literal("icon"),
+      icon: z.string().min(1).max(64).openapi({
+        description: "Icon name the client maps to its icon set (e.g. 'mail', 'rocket', 'users').",
+        example: "rocket",
+      }),
+    }),
+    z.object({
+      type: z.literal("image"),
+      imageUrl: z.string().url().max(2048).openapi({
+        description: "Logo or image URL (https).",
+        example: "https://logo.clearbit.com/acme.com",
+      }),
+    }),
+    z.object({
+      type: z.literal("number"),
+      value: z.union([z.number(), z.string().min(1).max(32)]).openapi({
+        description: "The big figure, exactly as a tool served it (the model never computes a stat).",
+        example: 12,
+      }),
+      unit: z.string().max(24).optional().openapi({
+        description: "Unit shown beside the figure (e.g. 'replies', '$/day', '%').",
+        example: "replies",
+      }),
+    }),
+    z.object({
+      type: z.literal("chart"),
+      series: z.array(z.number()).min(2).max(60).openapi({
+        description: "Tiny sparkline series, oldest first, values as a tool served them.",
+        example: [3, 5, 4, 8, 12],
+      }),
+      unit: z.string().max(24).optional().openapi({ description: "Unit of the series values." }),
+    }),
+  ])
+  .openapi("ChoiceVisual", {
+    description: "Optional visual on a choice card: an icon, a logo/image, a big number with unit, or a tiny chart.",
+  });
+
+export const ChoiceSchema = z
+  .object({
+    label: z.string().min(1).max(80).openapi({
+      description: "The card's main line.",
+      example: "Answer 3 interested leads",
+    }),
+    description: z.string().max(160).optional().openapi({
+      description: "Optional one-line sub-text.",
+      example: "They replied yesterday and are waiting.",
+    }),
+    value: z.string().min(1).max(500).openapi({
+      description:
+        "What the client sends back as the next user message when the card is clicked. Equals `label` when the model gave none.",
+      example: "Show me the 3 interested leads",
+    }),
+    visual: ChoiceVisualSchema.optional(),
+  })
+  .openapi("Choice");
+
+export const ChoicesRecordSchema = z
+  .object({
+    question: z.string().max(200).optional().openapi({
+      description: "Optional heading above the cards.",
+      example: "What do you want to do first?",
+    }),
+    choices: z.array(ChoiceSchema).min(2).max(6).openapi({ description: "2 to 6 clickable cards, in order." }),
+    allowFreeText: z.boolean().openapi({
+      description: "Whether the client keeps the free-text box as an escape hatch (true unless the model said false).",
+    }),
+  })
+  .openapi("ChoicesRecord");
+
+export const OpenPageRecordSchema = z
+  .object({
+    page: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z0-9][a-z0-9._/-]*$/i, "page must be a page identifier, not a URL")
+      .openapi({
+        description:
+          "Page identifier the CLIENT resolves to a URL (its list is given to the model in the config's system prompt). Never a URL.",
+        example: "offer-today",
+      }),
+    brandId: z.string().min(1).max(64).optional(),
+    offerId: z.string().min(1).max(64).optional(),
+    campaignId: z.string().min(1).max(64).optional(),
+    audienceId: z.string().min(1).max(64).optional(),
+    leadId: z.string().min(1).max(64).optional(),
+    title: z.string().max(80).optional().openapi({
+      description: "Optional short caption for the panel (why it opened).",
+      example: "Your spend this week",
+    }),
+  })
+  .openapi("OpenPageRecord");
+
+export type ChoiceVisual = z.infer<typeof ChoiceVisualSchema>;
+export type ChoiceItem = z.infer<typeof ChoiceSchema>;
+export type ChoicesRecord = z.infer<typeof ChoicesRecordSchema>;
+export type OpenPageRecord = z.infer<typeof OpenPageRecordSchema>;
+
 // --- SSE Event Schemas (documentation only — these describe the `data:` payloads in the SSE stream) ---
 
 const SSESessionEventSchema = z
@@ -1234,6 +1341,25 @@ const SSEButtonsEventSchema = z
   })
   .openapi("SSEButtonsEvent");
 
+const SSEChoicesEventSchema = ChoicesRecordSchema.extend({
+  type: z.literal("choices"),
+})
+  .openapi("SSEChoicesEvent", {
+    description:
+      "Rich clickable cards from the `present_choices` tool. Terminates the AI's turn (like input_request): " +
+      "send the clicked card's `value` as the next /chat message. Also stored on the assistant message " +
+      "(`choices`) so GET /sessions/* re-renders it.",
+  });
+
+const SSEOpenPageEventSchema = OpenPageRecordSchema.extend({
+  type: z.literal("open_page"),
+})
+  .openapi("SSEOpenPageEvent", {
+    description:
+      "The `open_page` tool asks the client to open a dashboard page in its side panel. The client resolves " +
+      "`page` (+ ids) to a URL. Does not end the turn. Stored on the assistant message (`openPages`).",
+  });
+
 const SSEErrorEventSchema = z
   .object({
     type: z.literal("error"),
@@ -1297,6 +1423,8 @@ registry.register("SSEInputRequestEvent", SSEInputRequestEventSchema);
 registry.register("SSEButtonsEvent", SSEButtonsEventSchema);
 registry.register("SSEErrorEvent", SSEErrorEventSchema);
 registry.register("SSEContextUsageEvent", SSEContextUsageEventSchema);
+registry.register("SSEChoicesEvent", SSEChoicesEventSchema);
+registry.register("SSEOpenPageEvent", SSEOpenPageEventSchema);
 
 registry.registerPath({
   method: "post",
@@ -1328,10 +1456,15 @@ Each \`data:\` line contains a JSON object. Events arrive in this order:
 2. **Thinking** _(optional)_ — \`thinking_start\` → one or more \`thinking_delta\` → \`thinking_stop\`.
 3. **Tokens** — \`{"type":"token","content":"..."}\` streamed incrementally.
 4. **Tool calls** _(optional, repeatable)_ — \`tool_call\` followed by \`tool_result\`, then more thinking/tokens.
-5. **Input request** _(optional)_ — \`input_request\` when the AI needs structured user input (terminates the response).
-6. **Buttons** _(optional)_ — \`{"type":"buttons","buttons":[...]}\` with quick-reply options, sent after all tokens.
-7. **Error** _(optional)_ — \`{"type":"error","message":"..."}\` if something goes wrong. Sent before \`[DONE]\`.
-8. **Done** — \`"[DONE]"\` (always last).
+5. **Open page** _(optional, repeatable)_ — \`{"type":"open_page","page":"...",brandId?,offerId?,campaignId?,audienceId?,leadId?,title?}\` when the AI wants the client to open a dashboard page in its side panel (config allows \`open_page\`). Does not end the turn. No \`tool_call\`/\`tool_result\` pair is streamed for it.
+6. **Input request** _(optional)_ — \`input_request\` when the AI needs structured user input (terminates the response).
+7. **Choices** _(optional)_ — \`{"type":"choices","question"?,"choices":[{label,description?,value,visual?}],"allowFreeText"}\` rich clickable cards (config allows \`present_choices\`). Terminates the response; send the clicked card's \`value\` as the next message. No \`tool_call\`/\`tool_result\` pair is streamed for it. \`visual\` is one of \`{type:"icon",icon}\`, \`{type:"image",imageUrl}\`, \`{type:"number",value,unit?}\`, \`{type:"chart",series,unit?}\`.
+8. **Buttons** _(optional)_ — \`{"type":"buttons","buttons":[...]}\` with quick-reply options, sent after all tokens.
+9. **Context usage** — \`context_usage\` token totals for the turn.
+10. **Error** _(optional)_ — \`{"type":"error","message":"..."}\` if something goes wrong. Sent before \`[DONE]\`.
+11. **Done** — \`"[DONE]"\` (always last).
+
+Choices and opened pages are persisted on the assistant message and returned by GET /sessions/{sessionId} and GET /sessions/latest (\`choices\`, \`openPages\`).
 
 **Available tools** depend on the config's \`allowedTools\`. The LLM only sees and can call the tools listed there. See PUT /config documentation for the full list of available tool names.`,
   request: {
@@ -1360,7 +1493,7 @@ Each \`data:\` line contains a JSON object. Events arrive in this order:
       description:
         "SSE stream of chat events. Each `data:` line is a JSON object matching one of the SSE event schemas " +
         "(SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, " +
-        'SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEButtonsEvent, SSEErrorEvent), except the final `data: "[DONE]"` which is a plain string.',
+        'SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEChoicesEvent, SSEOpenPageEvent, SSEButtonsEvent, SSEContextUsageEvent, SSEErrorEvent), except the final `data: "[DONE]"` which is a plain string.',
       content: {
         "text/event-stream": {
           schema: z.string(),
@@ -1439,6 +1572,12 @@ export const SessionHistoryMessageSchema = z
       .array(z.object({ label: z.string(), value: z.string() }))
       .nullable()
       .openapi({ description: "Quick-reply buttons extracted from the turn. Null when none." }),
+    choices: ChoicesRecordSchema.nullable().openapi({
+      description: "Rich choice cards the assistant presented on this turn (present_choices). Null when none.",
+    }),
+    openPages: z.array(OpenPageRecordSchema).nullable().openapi({
+      description: "Pages the assistant opened in the side panel on this turn, in order (open_page). Null when none.",
+    }),
     tokenCount: z.number().int().nullable().openapi({
       description: "Token count recorded for the turn, when available.",
     }),
@@ -1455,6 +1594,9 @@ export const SessionHistoryResponseSchema = z
     workflowSlug: z.string().nullable(),
     featureSlug: z.string().nullable(),
     audienceId: z.string().nullable(),
+    configKey: z.string().nullable().openapi({
+      description: "Chat config key the session was started under. Null on sessions created before 2026-10-09.",
+    }),
     createdAt: z.string().openapi({ description: "ISO 8601 session creation timestamp." }),
     updatedAt: z.string().openapi({ description: "ISO 8601 session last-update timestamp." }),
     messages: z.array(SessionHistoryMessageSchema).openapi({
@@ -1503,6 +1645,56 @@ registry.registerPath({
     },
     404: {
       description: "Session does not exist or belongs to a different org",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+export const LatestSessionQuerySchema = z
+  .object({
+    configKey: z.string().min(1, "configKey is required").openapi({
+      description: "Chat config key the session was started under (the same `configKey` POST /chat takes).",
+      example: "copilot",
+    }),
+  })
+  .openapi("LatestSessionQuery");
+
+registry.registerPath({
+  method: "get",
+  path: "/sessions/latest",
+  tags: ["Chat"],
+  summary: "Read the caller's latest session for a config key",
+  description:
+    "Returns the most recently active session of the caller (`x-org-id` + `x-user-id`) for one `configKey`, with " +
+    "its full history, in the same shape as GET /sessions/{sessionId}. Lets a client show the same conversation on " +
+    "any device without holding a sessionId. \"Most recently active\" = the session whose last /chat turn is newest.\n\n" +
+    "404 when the user has no session for that key in this org. Only sessions created from 2026-10-09 on record " +
+    "their config key, so an older conversation is not found here (it stays readable by id). Read-only.",
+  request: {
+    query: LatestSessionQuerySchema,
+    headers: z.object({
+      "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+      "x-org-id": z.string().openapi({ description: "Internal org UUID from client-service" }),
+      "x-user-id": z.string().openapi({ description: "Internal user UUID from client-service" }),
+      "x-run-id": z.string().uuid().openapi({ description: "Caller's run ID" }),
+      ...workflowTrackingHeaders,
+    }),
+  },
+  responses: {
+    200: {
+      description: "The latest session and its ordered history",
+      content: { "application/json": { schema: SessionHistoryResponseSchema } },
+    },
+    400: {
+      description: "configKey missing",
+      content: { "application/json": { schema: ValidationErrorResponseSchema } },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: "No session for this (org, user, configKey)",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },

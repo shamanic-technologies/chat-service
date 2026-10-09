@@ -75,9 +75,10 @@ describe("alias resolution", () => {
     // any of the twelve that shipped before them. Written out literally rather
     // than derived from the map, so a change to the map cannot quietly change
     // the expectation with it. `sonnet` / `opus` moved deliberately on
-    // 2026-09-29 (Sonnet 5.5 / Opus 5.5 — see sonnet55-opus55-sol-terra.test.ts).
+    // 2026-09-29 (Sonnet 5.5 / Opus 5.5 — see sonnet55-opus55-sol-terra.test.ts);
+    // `haiku` moved deliberately on 2026-10-09 (Haiku 4.5 → Haiku 5.5).
     const before: Array<[Provider, ModelAlias, string, string]> = [
-      ["anthropic", "haiku", "claude-haiku-4-5", "anthropic-haiku-4.5"],
+      ["anthropic", "haiku", "claude-haiku-5-5", "anthropic-haiku-5.5"],
       ["anthropic", "sonnet", "claude-sonnet-5-5", "anthropic-sonnet-5.5"],
       ["anthropic", "opus", "claude-opus-5-5", "anthropic-opus-5.5"],
       ["google", "flash-lite", "gemini-3.1-flash-lite", "google-flash-lite-3.1"],
@@ -139,12 +140,11 @@ describe("cost names", () => {
 });
 
 describe("Anthropic sampling support — Fable rejects temperature", () => {
-  it("records Fable, Sonnet 5.5 and Opus 5.5 as sampling-less and Haiku as not", () => {
+  it("records Fable and every 5.5 alias (Sonnet, Opus, Haiku) as sampling-less", () => {
     expect(anthropicRejectsSampling("claude-fable-5-1")).toBe(true);
-    for (const alias of ["sonnet", "opus"] as const) {
+    for (const alias of ["sonnet", "opus", "haiku"] as const) {
       expect(anthropicRejectsSampling(resolveModel("anthropic", alias).apiModelId)).toBe(true);
     }
-    expect(anthropicRejectsSampling(resolveModel("anthropic", "haiku").apiModelId)).toBe(false);
   });
 
   it("throws before any spend when temperature is paired with Fable", () => {
@@ -154,7 +154,7 @@ describe("Anthropic sampling support — Fable rejects temperature", () => {
     // The message has to be actionable: it names the field to drop and the
     // aliases that accept it, and says retrying will not help.
     expect(() => assertAnthropicSamplingSupported("claude-fable-5-1", 0)).toThrow(
-      /temperature.*\(haiku\).*will not help/s,
+      /temperature.*\(a Gemini alias.*will not help/s,
     );
   });
 

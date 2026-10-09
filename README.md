@@ -277,13 +277,24 @@ Unlike POST /chat, this endpoint is **stateless** (no sessions), accepts an **in
 
 Error responses: 400 (validation, or a provider refusing a request option — see [Direct vendor models](#direct-vendor-models)), 401 (auth), 402 (insufficient credits), 429 (a direct vendor still at capacity after the bounded rate-limit retry — `retryable: true`), 502 (upstream failure).
 
+### Claude Haiku 5.5 (`haiku`)
+
+`haiku` → `claude-haiku-5-5` (cost prefix `anthropic-haiku-5.5`) since 2026-10-09; it was Haiku 4.5, which nothing may route to any more. Selectable by `/complete` and by a `/chat` config (`provider: "anthropic"`, `model: "haiku"`). Haiku 5.5 is the first Anthropic model **priced by prompt length**: a request whose prompt (uncached input + cache reads + cache writes) is over **100,000 tokens** pays the higher rate on every dimension, each request on its own:
+
+| per 1M tokens | input | 5m cache write | cache hit | output |
+|---|---|---|---|---|
+| prompt ≤ 100k (`anthropic-haiku-5.5-tokens-*`) | $0.10 | $0.125 | $0.01 | $0.50 |
+| prompt > 100k (`anthropic-haiku-5.5-long-context-tokens-*`) | $0.50 | $0.625 | $0.05 | $2.50 |
+
+The tier is picked per request from that request's own prompt (`ANTHROPIC_LONG_CONTEXT_THRESHOLDS`); a `/chat` tool loop merges per-request lines, so one long turn never re-prices the short ones. With compaction, the largest single sampling's prompt picks the tier (can over-state, never under-state). Probed live with the platform key on 2026-10-09: plain, json_schema, tools, prompt caching and the full `/chat` stream shape all 200; `temperature` → 400, so it joins `ANTHROPIC_SAMPLING_UNSUPPORTED`. Prompt caching is on (its cache rows are seeded at both tiers).
+
 ### Claude Sonnet 5.5 / Opus 5.5 (`sonnet` / `opus`)
 
 `sonnet` → `claude-sonnet-5-5` (cost prefix `anthropic-sonnet-5.5`, $2 / $10 per 1M, cache hit $0.20) and `opus` → `claude-opus-5-5` (`anthropic-opus-5.5`, $4 / $20, cache hit $0.20) since 2026-09-29. The aliases are version-free, so they follow the current generation; both new models are cheaper than the 4.6 models they replace. Before the move `opus` had served 11 runs in 30 days and `sonnet` none, and no `/chat` config names either. The 4.6 prefixes stay mapped so past spend keeps resolving.
 
 Probed live the same day with the exact `/complete` request shape: plain text, `output_config.format` json_schema and `web_search_20250305` all return 200. Two differences from the 4.6 models, both handled per **model**:
 
-- **Sampling removed** — `temperature: 0.3` answers `400 "\`temperature\` is deprecated for this model."` on both, so they join Fable in `ANTHROPIC_SAMPLING_UNSUPPORTED` and the pair is refused at the route before any cost is held. `haiku` is now the only Anthropic alias accepting `temperature`.
+- **Sampling removed** — `temperature: 0.3` answers `400 "\`temperature\` is deprecated for this model."` on both, so they join Fable in `ANTHROPIC_SAMPLING_UNSUPPORTED` and the pair is refused at the route before any cost is held. Since `haiku` moved to Haiku 5.5 (2026-10-09) no Anthropic alias accepts `temperature`.
 - **Thinking always on** — `disableThinking: true` sends `output_config.effort: "low"` (`ANTHROPIC_EFFORT_FLOOR`) rather than a `thinking` block, which would 400.
 
 ### Claude Fable 5.1 (`fable`)
@@ -300,12 +311,12 @@ The sampling parameter is **not silently dropped**. Answering 200 from a model s
 
 ### Anthropic prompt caching
 
-On since 2026-10-04 for `fable`, `sonnet` and `opus` — the three models whose cache-read (`-tokens-cached-input`) AND 5-minute cache-write (`-tokens-cache-write-5m`) rows are live in production (`ANTHROPIC_CACHE_PRICED_PREFIXES`). `haiku` never caches: its catalog has no cache-write price.
+On since 2026-10-04 for `fable`, `sonnet` and `opus`, and since 2026-10-09 for `haiku` (Haiku 5.5) — the models whose cache-read (`-tokens-cached-input`) AND 5-minute cache-write (`-tokens-cache-write-5m`) rows are live in production (`ANTHROPIC_CACHE_PRICED_PREFIXES`). The legacy 4.x prefixes never cache.
 
 - **`/complete` + `/internal/platform-complete`**: one 5-minute `cache_control` breakpoint on the system block (tools render first, so web search is cached with it). The user message is never cached — it is the per-call part. A system prompt under the model's minimum (512 tokens on these three) silently doesn't cache, and costs nothing extra.
 - **`/chat`**: the same system breakpoint plus top-level automatic caching for the conversation tail, so turn N+1 reads turn N's prefix. Compaction / tool-use clearing rewrites history when it fires and misses the tail cache once. `/chat` on Anthropic now calls the config's resolved model (it previously always called `claude-sonnet-4-6` while billing the alias's prefix).
 
-Every Anthropic call declares four lines from `usage` (summed over `usage.iterations` when compaction ran, and over every `/chat` tool-loop turn): `-tokens-input` ← `input_tokens` (uncached only), `-tokens-cached-input` ← `cache_read_input_tokens`, `-tokens-cache-write-5m` ← `cache_creation_input_tokens`, `-tokens-output` ← `output_tokens`. Zero lines are omitted. A cache count on a model without cache prices, or any 1-hour cache write (never requested), throws rather than drop billed tokens. The response's `tokensInput` reports every prompt token, cached or not.
+Every Anthropic request declares four lines from `usage` (summed over `usage.iterations` when compaction ran; a `/chat` tool loop merges each request's lines by name), under `<prefix>-long-context-…` instead when the model is priced by prompt length and the request crossed the line (Haiku 5.5, above): `-tokens-input` ← `input_tokens` (uncached only), `-tokens-cached-input` ← `cache_read_input_tokens`, `-tokens-cache-write-5m` ← `cache_creation_input_tokens`, `-tokens-output` ← `output_tokens`. Zero lines are omitted. A cache count on a model without cache prices, or any 1-hour cache write (never requested), throws rather than drop billed tokens. The response's `tokensInput` reports every prompt token, cached or not.
 
 ## Direct vendor models
 
@@ -1216,11 +1227,27 @@ Read-only and supporting workflow tools:
 | `get_brand_pause` | Reads whether a brand is paused. Read-only. `GET /v1/brands/:brandId/pause` |
 | `set_brand_pause` | Pauses (`paused: true`) or resumes (`paused: false`) a brand's activity. `PATCH /v1/brands/:brandId/pause` |
 
+**Account-awareness reads** (read-only; each returns the producer's response verbatim, read with the SAME query the dashboard v2 uses for that figure, so the chat never states a different number than the page; the model quotes served figures and never computes one):
+
+| Tool | Description |
+|---|---|
+| `list_offers` | A brand's offers. `GET /v1/brands/:brandId/offers` |
+| `get_billing_account` | The org's balance, credits and usage. `GET /v1/billing/accounts` |
+| `get_org_usage` | Everything the org was billed, by kind of work. `GET /v1/features/orgs/usage` |
+| `get_spend_by_campaign` | Spend + run count per campaign since `window` (`today` / `last_7_days` / `last_30_days`, UTC days). `GET /v1/runs/stats/costs?groupBy=campaignId&startedAfter=` |
+| `get_offer_performance` | The offer's spend, emails, replies and return, optional `windowDays`. `GET /v1/offers/:offerId/revenue?pricing=net` |
+| `list_replies_to_handle` | People who replied with interest and nobody handled yet, with `total` (the dashboard's "needs your call"). `GET /v1/leads?bucket=positive_reply&standing=sales_interest` |
+| `list_recent_runs` | The brand's latest runs (work done), optional `window`. `GET /v1/runs` |
+
 **UI tools:**
 
 | Tool | Description |
 |---|---|
 | `request_user_input` | Asks the user for structured input (see Input Request below) |
+| `present_choices` | Shows 2-6 large clickable cards (see Choices below). Ends the turn. |
+| `open_page` | Opens a dashboard page in the client's side panel (see Open page below). The client owns the page ids, listed in the config's system prompt. |
+
+No `tool_call` / `tool_result` pair is streamed for these three: each has its own event.
 
 ### 5. Input Request (optional)
 When the AI genuinely needs information it does not have, it emits an input request:
@@ -1236,6 +1263,19 @@ data: {"type":"input_request","input_type":"text","label":"New description","pla
 If `value` is present, the frontend should render the input pre-filled so the user can confirm with a single click. If absent, the field starts empty.
 
 **Note:** The AI is instructed to only use `input_request` when it genuinely lacks information. Values already present in the `context` parameter or conversation history are used directly — the AI will not re-ask for them.
+
+### 5b. Choices (optional, `present_choices`)
+Rich clickable cards, like the onboarding funnel's steps. Ends the AI's turn: send the clicked card's `value` as the next `/chat` message (free text stays available unless `allowFreeText` is false).
+```
+data: {"type":"choices","question":"What next?","choices":[{"label":"Answer 3 replies","description":"They wrote back yesterday","value":"Show me the 3 interested leads","visual":{"type":"number","value":"3","unit":"replies"}},{"label":"Raise budget","value":"Raise my daily budget","visual":{"type":"icon","icon":"wallet"}}],"allowFreeText":true}
+```
+`visual` (optional) is one of `{"type":"icon","icon"}`, `{"type":"image","imageUrl"}`, `{"type":"number","value","unit"?}`, `{"type":"chart","series":[…],"unit"?}`. Malformed arguments never reach the client: the model gets a tool error and retries. Stored on the assistant message (`choices`).
+
+### 5c. Open page (optional, `open_page`)
+```
+data: {"type":"open_page","page":"offer-today","brandId":"…","offerId":"…","title":"Your week"}
+```
+Optional ids: `brandId`, `offerId`, `campaignId`, `audienceId`, `leadId`, plus a short `title`. `page` is an identifier the client maps to a URL (never a URL). Does not end the turn. Stored on the assistant message (`openPages`).
 
 ### 6. Buttons (optional)
 AI-generated quick-reply buttons, sent after all tokens are done:
@@ -1309,6 +1349,8 @@ Headers: `x-api-key`, `x-org-id`, `x-user-id`, `x-run-id` (same auth as `POST /c
 - **404** — an unknown `sessionId`, or one owned by a different org, returns `{"error":"Session not found. …"}` (the same message the `POST /chat` stream emits for `session_not_found`; existence is not leaked across orgs).
 - **400** — `sessionId` is not a valid UUID.
 
+`GET /sessions/latest?configKey=<key>` returns the caller's (`x-org-id` + `x-user-id`) most recently active session for that config key, same body — so a client shows the same conversation on any device without storing a sessionId. 404 when the user has none (sessions record their `configKey` since 2026-10-09; older ones stay readable by id only).
+
 Response `200`:
 ```json
 {
@@ -1319,6 +1361,7 @@ Response `200`:
   "workflowSlug": null,
   "featureSlug": null,
   "audienceId": null,
+  "configKey": "workflow",
   "createdAt": "2026-07-16T10:00:00.000Z",
   "updatedAt": "2026-07-16T10:05:00.000Z",
   "messages": [
@@ -1330,6 +1373,8 @@ Response `200`:
       "contentBlocks": [{ "type": "thinking", "thinking": "…" }, { "type": "text", "text": "hello" }],
       "toolCalls": [{ "name": "list_workflows", "args": { "limit": 5 }, "result": { "workflows": [] } }],
       "buttons": [{ "label": "More", "value": "more" }],
+      "choices": null,
+      "openPages": null,
       "tokenCount": 12,
       "createdAt": "2026-07-16T10:00:02.000Z"
     }
@@ -1373,8 +1418,8 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 Uses PostgreSQL via Drizzle ORM. Five tables:
 
-- **sessions** — conversation sessions scoped by `orgId` and `userId`. Stores all identity/tracking context: `runId` (this service's run), `parentRunId` (caller's run from `x-run-id` header), `campaignId`, `brandIds` (text array for multi-brand support), `workflowSlug`, `featureSlug`
-- **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management)
+- **sessions** — conversation sessions scoped by `orgId` and `userId`. Stores all identity/tracking context: `runId` (this service's run), `parentRunId` (caller's run from `x-run-id` header), `campaignId`, `brandIds` (text array for multi-brand support), `workflowSlug`, `featureSlug`, `audienceId`, `configKey` (the chat config the session started under; indexed with org/user/updatedAt for `GET /sessions/latest`)
+- **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `choices`, `openPages`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management)
 - **app_configs** — per-org configuration keyed by `(orgId, key)`. Each entry defines a system prompt and `allowedTools` for a specific chat mode.
 - **platform_configs** — platform-wide configuration keyed by `key`. Fallback when no per-org config exists for the same key.
 - **brand_profile_embeddings** — cached Gemini embeddings of the brand-profile query, keyed by `(orgId, brandId, contentHash)`. Used by `/orgs/rag/score` so identical brand contexts skip the brand-profile embedding call. Document embeddings are not cached.
