@@ -1265,6 +1265,24 @@ Read-only and supporting workflow tools:
 | `request_staff` | Escalates one missing piece (feature) or a bug: records it (deduped per org on repo + kind + `pieceKey`), opens a GitHub issue in the owning repo, pings staff on Telegram unless the requester is staff. |
 | `list_staff_requests` | This org's escalations. |
 
+**Copilot declarations** (`src/lib/declarations-client.ts`). Channels, legs, trigger types and sales paths are created LIVE as data, never through a PR. Owner: features-service `/internal/declarations/*`, called directly with chat-service's features-service key (staff-only routes; a channel is shared by every client). Every write sends `requestedByOrgId` = the chat's org and `createdBy` = the requester's user id. The Copilot never publishes.
+
+| Tool | Description |
+|---|---|
+| `list_declared_channels` | Every channel, coded and declared, with `published` / `visibleToClients` and its legs; `slug` for one. `GET /internal/declarations/channels[/:slug]` |
+| `declare_channel` | New channel (unpublished, no leg). `POST /internal/declarations/channels` |
+| `list_declared_legs` | Every leg; `channelSlug` to filter. `GET /internal/declarations/legs` |
+| `declare_leg` | New leg on a channel. `POST /internal/declarations/channels/:slug/legs` |
+| `list_trigger_types` | Every trigger type with `kind` (event / delay / poll), `params`, `coded`; `triggerId` for one. `GET /internal/declarations/trigger-types[/:id]` |
+| `declare_trigger_type` | New trigger type (never coded on its own). `POST /internal/declarations/trigger-types` |
+| `list_declared_sales_paths` | Paths declared live; `combinationKey` for one. `GET /internal/declarations/sales-paths[/:key]` |
+| `declare_sales_path` | New path, 1-12 chained legs ending at paid. `POST /internal/declarations/sales-paths` |
+
+Every `declare_*` takes the user's words (`userRequest`) and files its own staff request (same record / issue / Telegram path as `request_staff`) for what it cannot do itself, returning `onHold[]`:
+- a channel or leg that lands unpublished (a path: each leg not visible to clients) → "publish it", repo `features-service`, piece `publish-channel-<slug>` / `publish-leg-<slug>-<legKey>`;
+- a reactive leg refused with 409 `trigger_not_fired` (nothing stored), or a declared trigger type that is not coded → "build the detector": `delay` / `poll` → campaign-service, piece `<kind>-trigger-detector` (one generic detector per kind); `event` → the fleet repo in `firedBy`, else campaign-service, piece `fire-<trigger>-trigger`. `declare_leg` then returns `status: "on_hold"`, not an error.
+Any other refusal (`leg_exists`, `path_not_chained`, ...) is an error carrying features-service's named `reason`.
+
 **UI tools:**
 
 | Tool | Description |
@@ -1441,6 +1459,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `CLIENT_SERVICE_URL` / `CLIENT_SERVICE_API_KEY` | For `request_staff` | Reads the requester's email (`GET /internal/users/:userId`) to decide the staff Telegram ping. Unset → lookup fails, logged, the ping still goes out |
 | `GITHUB_ISSUES_TOKEN` | For `request_staff` | GitHub token with issues:write on the `shamanic-technologies` repos. Unset → the request is recorded without an issue (`issueError`), and a repeat retries |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_OWNER_CHAT_ID` | For `request_staff` | Same bot + chat as billing-service and the dashboard. Unset → no ping (`telegramError` recorded) |
+| `FEATURES_SERVICE_URL` / `FEATURES_SERVICE_API_KEY` | For the `declare_*` / `list_declared_*` / `list_trigger_types` tools | features-service base URL and its service key (`/internal/declarations/*`). Unset → those tools fail loud (`not configured`) |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
