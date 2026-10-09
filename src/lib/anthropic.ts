@@ -2469,6 +2469,159 @@ export const LIST_STAFF_REQUESTS_TOOL: Anthropic.Tool = {
   input_schema: { type: "object" as const, properties: {} },
 };
 
+// --- Copilot declarations: channels, legs, trigger types, sales paths (features-service) ---
+
+const USER_REQUEST_PROP = {
+  type: "string",
+  description: "The user's request, in their words (carried into any staff request this declaration files).",
+};
+
+const DECLARATION_HOLD_RULE =
+  "A declaration lands UNPUBLISHED (invisible to clients) until staff publishes it: the tool files the staff request itself and returns status declared_on_hold with onHold[]. Tell the user that piece is on hold with the team, then carry on. Never call request_staff again for a piece listed in onHold.";
+
+export const LIST_DECLARED_CHANNELS_TOOL: Anthropic.Tool = {
+  name: "list_declared_channels",
+  description:
+    "Every channel of the platform, coded AND declared, each with published / visibleToClients and its legs (mode, trigger, price source). Pass slug for one channel. Read this before declaring a channel or a leg: never declare what exists. Read-only.",
+  input_schema: {
+    type: "object" as const,
+    properties: { slug: { type: "string", description: "Optional: one channel's slug." } },
+  },
+};
+
+export const DECLARE_CHANNEL_TOOL: Anthropic.Tool = {
+  name: "declare_channel",
+  description:
+    "Create a NEW channel as data (a way to reach leads the catalogue does not have). Creates no leg: declare its legs next with declare_leg. Starts nothing, spends nothing. Confirm the name and what it does with the user first. " +
+    DECLARATION_HOLD_RULE,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      slug: { type: "string", description: "kebab-case id, unique (e.g. \"linkedin-voice-note\")." },
+      name: { type: "string", description: "Plain name shown to clients." },
+      description: { type: "string" },
+      shortDescription: { type: "string", description: "One line." },
+      icon: { type: "string", description: "Icon name (e.g. \"mic\")." },
+      channelType: { type: "string", enum: ["sourcing", "outbound", "conversion", "paid", "earned", "pr"] },
+      operatedBy: { type: "string", enum: ["platform", "customer"], description: "Who runs it. A customer-operated channel must be performedBy person." },
+      performedBy: { type: "string", enum: ["software", "person"] },
+      dailyOperatingCostCents: { type: "integer", description: "What one day of running it costs, in cents (0 if none)." },
+      minimumCommitmentDays: { type: "integer" },
+      maxDaysToFirstProduction: { type: "integer", description: "Days before it produces a first result." },
+      userRequest: USER_REQUEST_PROP,
+    },
+    required: [
+      "slug",
+      "name",
+      "description",
+      "shortDescription",
+      "icon",
+      "channelType",
+      "operatedBy",
+      "performedBy",
+      "dailyOperatingCostCents",
+      "minimumCommitmentDays",
+      "maxDaysToFirstProduction",
+      "userRequest",
+    ],
+  },
+};
+
+export const LIST_DECLARED_LEGS_TOOL: Anthropic.Tool = {
+  name: "list_declared_legs",
+  description: "Every leg of every channel (coded and declared), with published / visibleToClients, mode and trigger. Pass channelSlug for one channel. Read-only.",
+  input_schema: {
+    type: "object" as const,
+    properties: { channelSlug: { type: "string", description: "Optional: one channel's slug." } },
+  },
+};
+
+export const DECLARE_LEG_TOOL: Anthropic.Tool = {
+  name: "declare_leg",
+  description:
+    "Add a leg (one move of a lead from one sales step to the next) to a channel, declared or coded. Proactive legs name no trigger; a reactive leg names exactly one trigger (list_trigger_types). Starts nothing. " +
+    "If nothing fires that trigger today, the leg is NOT created: the tool files a staff request to build the detector and returns status on_hold (not an error) — tell the user that piece waits on the team and carry on. " +
+    DECLARATION_HOLD_RULE,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      channelSlug: { type: "string", description: "The channel that performs the leg." },
+      fromStep: { type: "string", description: "Step the lead is at (e.g. \"lead_found\", \"positive_reply\"). Omit for the entry leg." },
+      toStep: { type: "string", description: "Step the leg moves the lead to (e.g. \"positive_reply\", \"meeting_booked\", \"paid\")." },
+      mode: { type: "string", enum: ["proactive", "reactive"] },
+      triggerId: { type: "string", description: "Reactive only: the trigger type id that runs it." },
+      userRequest: USER_REQUEST_PROP,
+    },
+    required: ["channelSlug", "toStep", "mode", "userRequest"],
+  },
+};
+
+export const LIST_TRIGGER_TYPES_TOOL: Anthropic.Tool = {
+  name: "list_trigger_types",
+  description:
+    "Every trigger type (coded and declared): kind (event | delay | poll), params, and coded = something fires it today. Only a coded trigger can run a reactive leg. Pass triggerId for one. Read-only.",
+  input_schema: {
+    type: "object" as const,
+    properties: { triggerId: { type: "string", description: "Optional: one trigger type id." } },
+  },
+};
+
+export const DECLARE_TRIGGER_TYPE_TOOL: Anthropic.Tool = {
+  name: "declare_trigger_type",
+  description:
+    "Declare a NEW trigger type (an event that should run a reactive leg). kind event = a service detects something on a lead; delay = N days after a step if nothing happened (params {afterStep, days}); poll = a new item appeared at a source (params {source, everyMinutes >= 5}). " +
+    "A declared trigger is NOT coded until a detector for it runs: the tool files the staff request for that detector itself and returns status declared_on_hold. Check list_trigger_types first: never declare one that exists.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      id: { type: "string", description: "snake_case id (e.g. \"no_reply_after_3_days\")." },
+      label: { type: "string" },
+      description: { type: "string" },
+      icon: { type: "string" },
+      kind: { type: "string", enum: ["event", "delay", "poll"] },
+      fromStep: { type: "string", description: "event: the step the lead is at when it fires." },
+      firedBy: { type: "string", description: "event: the service that detects it, if known." },
+      params: { type: "object", description: "delay: {afterStep, days}. poll: {source, everyMinutes}." },
+      userRequest: USER_REQUEST_PROP,
+    },
+    required: ["id", "label", "description", "icon", "kind", "userRequest"],
+  },
+};
+
+export const LIST_DECLARED_SALES_PATHS_TOOL: Anthropic.Tool = {
+  name: "list_declared_sales_paths",
+  description:
+    "The sales paths declared at run time (chains of channel legs), each with its name and visibleToClients. Pass combinationKey for one. For an offer's ranked paths use list_sales_paths. Read-only.",
+  input_schema: {
+    type: "object" as const,
+    properties: { combinationKey: { type: "string", description: "Optional: one path's combinationKey." } },
+  },
+};
+
+export const DECLARE_SALES_PATH_TOOL: Anthropic.Tool = {
+  name: "declare_sales_path",
+  description:
+    "Declare a NEW sales path: 1 to 12 channel legs in order, starting at the entry step, each leg starting where the previous ended, ending at paid, no loop. Every leg must exist (declare it first). Ticks nothing and starts nothing. " +
+    "A path is visible to clients once all its legs and channels are published; the tool files the publish requests for the ones that are not. " +
+    DECLARATION_HOLD_RULE,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      legs: {
+        type: "array",
+        description: "The legs in order.",
+        items: {
+          type: "object",
+          properties: { channelSlug: { type: "string" }, legKey: { type: "string" } },
+          required: ["channelSlug", "legKey"],
+        },
+      },
+      userRequest: USER_REQUEST_PROP,
+    },
+    required: ["legs", "userRequest"],
+  },
+};
+
 // ---------------------------------------------------------------------------
 // Tool registry — every tool the service knows how to execute.
 // Clients choose which subset to enable via allowedTools in their config.
@@ -2559,6 +2712,14 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   confirm_switch_on: CONFIRM_SWITCH_ON_TOOL,
   request_staff: REQUEST_STAFF_TOOL,
   list_staff_requests: LIST_STAFF_REQUESTS_TOOL,
+  list_declared_channels: LIST_DECLARED_CHANNELS_TOOL,
+  declare_channel: DECLARE_CHANNEL_TOOL,
+  list_declared_legs: LIST_DECLARED_LEGS_TOOL,
+  declare_leg: DECLARE_LEG_TOOL,
+  list_trigger_types: LIST_TRIGGER_TYPES_TOOL,
+  declare_trigger_type: DECLARE_TRIGGER_TYPE_TOOL,
+  list_declared_sales_paths: LIST_DECLARED_SALES_PATHS_TOOL,
+  declare_sales_path: DECLARE_SALES_PATH_TOOL,
 };
 
 /** All tool names available for use in allowedTools config. */

@@ -46,7 +46,7 @@ describe("seeded skill tree", () => {
       "list_personas", "create_persona", "get_brand_profile", "lead_requested", "positive_reply_received",
       "website_visited", "meeting_booked", "meeting_attended", "signed_up", "form_submitted",
       "start_to_lead_found", "lead_found_to_positive_reply", "start_campaign", "activate_campaign",
-      "switch_on_reactive_legs", "needs_code",
+      "switch_on_reactive_legs", "needs_code", "declared_on_hold", "on_hold", "trigger_not_fired",
     ]);
     const named = new Set(all.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []);
     const unknown = [...named].filter((n) => !notTools.has(n) && !TOOL_REGISTRY[n] && !n.startsWith("lead_found_to") && !n.startsWith("start_to"));
