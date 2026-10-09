@@ -10,6 +10,7 @@ import { sanitizeGeminiSchema, buildThinkingConfig, geminiCostPrefix, type Gemin
 import { buildToolResultFallback } from "./tool-fallback.js";
 import { mergeGeminiCostLines, readGeminiBilledTokens, type GeminiCostLine, type GeminiUsageMetadata } from "./gemini-usage.js";
 import { formatToolError } from "./tool-errors.js";
+import { CLIENT_UI_TOOL_NAMES } from "./ui-tools.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -594,7 +595,10 @@ export async function streamGeminiChat(
       });
 
       const toolCallId = `tc_${crypto.randomUUID()}`;
-      if (fc.name !== "request_user_input") {
+      // Client-UI tools stream their own event (input_request / choices /
+      // open_page) — no generic tool card on top of it.
+      const isClientUiTool = CLIENT_UI_TOOL_NAMES.has(fc.name);
+      if (!isClientUiTool) {
         sse(res, {
           type: "tool_call",
           id: toolCallId,
@@ -636,7 +640,9 @@ export async function streamGeminiChat(
           result: toolResult.result,
           ...(fc.thoughtSignature ? { thoughtSignature: fc.thoughtSignature } : {}),
         });
-        sse(res, { type: "tool_result", id: toolCallId, name: fc.name, result: toolResult.result });
+        if (!isClientUiTool) {
+          sse(res, { type: "tool_result", id: toolCallId, name: fc.name, result: toolResult.result });
+        }
         responseParts.push({
           functionResponse: {
             name: fc.name,

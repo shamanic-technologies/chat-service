@@ -7,7 +7,7 @@ import { dirname, join } from "path";
 import { db } from "./db/index.js";
 import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings } from "./db/schema.js";
 import { transferBrand } from "./lib/transfer-brand.js";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   createAnthropicClient,
@@ -146,7 +146,24 @@ import {
   setBrandPauseState,
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import {
+  CHOICES_PRESENTED_RESULT,
+  CLIENT_UI_TOOL_NAMES,
+  OPEN_PAGE_TOOL_NAME,
+  PRESENT_CHOICES_TOOL_NAME,
+  parseChoicesArgs,
+  parseOpenPageArgs,
+} from "./lib/ui-tools.js";
+import {
+  getBillingAccount,
+  getOfferPerformance,
+  getOrgUsage,
+  getSpendByCampaign,
+  listOffers,
+  listRecentRuns,
+  listRepliesToHandle,
+} from "./lib/account-client.js";
 import {
   judgeWithTypeSafe,
   TypeSafeInvalidRequestError,
@@ -178,9 +195,8 @@ import {
   anthropicCostLines,
   anthropicPromptTokens,
   readAnthropicBilledTokens,
-  sumAnthropicBilledTokens,
-  EMPTY_ANTHROPIC_BILLED_TOKENS,
-  type AnthropicBilledTokens,
+  mergeCostLines,
+  type AnthropicCostLine,
 } from "./lib/anthropic-usage.js";
 import { buildToolResultFallback } from "./lib/tool-fallback.js";
 import { SESSION_NOT_FOUND_EVENT, SESSION_NOT_FOUND_MESSAGE } from "./lib/session-errors.js";
@@ -2391,6 +2407,45 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
 // holds a valid sessionId (e.g. the dashboard "Edit with AI" panel after a page
 // refresh) rebuild the visible history it lost. Org-scoped exactly like the
 // POST /chat session-continue check; no run tracking, no cost, no writes.
+// The caller's most recently active session for one config key (org + user
+// scoped), with its history — so a client shows the same conversation on any
+// device. Registered BEFORE /sessions/:sessionId so "latest" is not read as an id.
+app.get("/sessions/latest", requireAuth, async (req, res) => {
+  const { orgId, userId } = res.locals as AuthLocals;
+
+  const parsed = LatestSessionQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const { configKey } = parsed.data;
+
+  const [session] = await db
+    .select()
+    .from(sessions)
+    .where(
+      and(
+        eq(sessions.orgId, orgId),
+        eq(sessions.userId, userId),
+        eq(sessions.configKey, configKey),
+      ),
+    )
+    .orderBy(desc(sessions.updatedAt))
+    .limit(1);
+
+  if (!session) {
+    return res.status(404).json({ error: `No session for configKey="${configKey}" for this user.` });
+  }
+
+  const history = await db.query.messages.findMany({
+    where: eq(messages.sessionId, session.id),
+    orderBy: (m, { asc }) => [asc(m.createdAt)],
+  });
+
+  return res.json(serializeSessionHistory(session, history));
+});
+
 app.get("/sessions/:sessionId", requireAuth, async (req, res) => {
   const { orgId } = res.locals as AuthLocals;
 
@@ -2510,7 +2565,9 @@ app.post("/chat", requireAuth, async (req, res) => {
   let totalOutputTokens = 0;
   // Gemini: exact billed lines, summed over the tool loop (null on Anthropic).
   let geminiChatCostLines: GeminiCostLine[] | null = null;
-  let anthropicChatBilled: AnthropicBilledTokens = EMPTY_ANTHROPIC_BILLED_TOKENS;
+  // Anthropic: billed lines merged per request (each request picks its own
+  // prompt-length tier, so a summed token total cannot be priced).
+  let anthropicChatCostLines: AnthropicCostLine[] = [];
   let provisionedCostIds: string[] = [];
 
   try {
@@ -2541,6 +2598,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           workflowSlug: workflowTracking.workflowSlug ?? null,
           featureSlug: workflowTracking.featureSlug ?? null,
           audienceId: workflowTracking.audienceId ?? null,
+          configKey,
         })
         .returning();
       currentSessionId = session.id;
@@ -2636,6 +2694,12 @@ app.post("/chat", requireAuth, async (req, res) => {
     let fullResponse = "";
     let emittedInputRequest = false;
     const toolCalls: ToolCallRecord[] = [];
+    // Rich UI emitted this turn (present_choices / open_page), persisted on the
+    // assistant message so GET /sessions/* re-renders them.
+    // (A holder, not a `let`: it is set inside executeTool, a closure TS
+    // cannot see into, so a bare `let` would narrow to `null` here.)
+    const turnUi: { choices: ChoicesRecord | null } = { choices: null };
+    const openedPages: OpenPageRecord[] = [];
     let lastContentBlocks: Anthropic.ContentBlock[] = [];
     // Track workflows forked during this turn (used by executeTool)
     const forkedWorkflowMap = new Map<string, string>();
@@ -2786,6 +2850,86 @@ app.post("/chat", requireAuth, async (req, res) => {
         });
         emittedInputRequest = true;
         return "input_request";
+      }
+
+      // Rich UI: choice cards end the turn, like request_user_input. Arguments
+      // are validated first, so a malformed call reaches the model as a tool
+      // error (it retries) and nothing half-formed reaches the client.
+      if (call.name === PRESENT_CHOICES_TOOL_NAME) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const record = parseChoicesArgs(args);
+        sendSSE(res, { type: "choices", ...record });
+        turnUi.choices = record;
+        emittedInputRequest = true;
+        toolCalls.push({ name: call.name, args, result: CHOICES_PRESENTED_RESULT });
+        return "input_request";
+      }
+
+      if (call.name === OPEN_PAGE_TOOL_NAME) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const record = parseOpenPageArgs(args);
+        sendSSE(res, { type: "open_page", ...record });
+        openedPages.push(record);
+        const result = { opened: true, page: record.page };
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // Account-awareness reads (served figures, verbatim).
+      if (call.name === "list_offers") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await listOffers(args.brandId, featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "get_billing_account") {
+        const result = await getBillingAccount(featureCallParams);
+        toolCalls.push({ name: call.name, args: {}, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "get_org_usage") {
+        const result = await getOrgUsage(featureCallParams);
+        toolCalls.push({ name: call.name, args: {}, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "get_spend_by_campaign") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await getSpendByCampaign({ brandId: args.brandId, window: args.window }, featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "get_offer_performance") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await getOfferPerformance(
+          { brandId: args.brandId, offerId: args.offerId, windowDays: args.windowDays },
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "list_replies_to_handle") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await listRepliesToHandle(
+          { brandId: args.brandId, offerId: args.offerId, limit: args.limit },
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "list_recent_runs") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await listRecentRuns(
+          { brandId: args.brandId, window: args.window, limit: args.limit },
+          featureCallParams,
+        );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
       }
 
       // Built-in workflow read tool
@@ -3608,7 +3752,15 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       fullResponse = geminiResult.fullResponse;
       emittedInputRequest = geminiResult.emittedInputRequest;
-      toolCalls.push(...geminiResult.toolCalls);
+      // streamGeminiChat records every call it fed back to the model, WITH the
+      // thought signature replay needs. executeTool recorded the same calls
+      // unsigned, so appending stored each one twice and the next turn replayed
+      // "I called X twice" (prod: update_qualification_check x2 per message).
+      // Keep the loop's signed copy, plus the turn-ending present_choices call
+      // the loop never feeds back to the model.
+      const turnEnding = toolCalls.filter((tc) => tc.name === PRESENT_CHOICES_TOOL_NAME);
+      toolCalls.length = 0;
+      toolCalls.push(...geminiResult.toolCalls, ...turnEnding);
       totalPromptTokens = geminiResult.tokensInput;
       totalOutputTokens = geminiResult.tokensOutput;
       geminiChatCostLines = geminiResult.costLines;
@@ -3720,7 +3872,10 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       const finalMessage = await stream!.finalMessage();
       const billed = readAnthropicBilledTokens(finalMessage.usage);
-      anthropicChatBilled = sumAnthropicBilledTokens(anthropicChatBilled, billed);
+      anthropicChatCostLines = mergeCostLines(
+        anthropicChatCostLines,
+        anthropicCostLines(resolvedModelInfo.costPrefix, billed),
+      );
       totalPromptTokens += anthropicPromptTokens(billed);
       totalOutputTokens += billed.tokensOutput;
       lastContentBlocks = finalMessage.content;
@@ -3742,7 +3897,8 @@ app.post("/chat", requireAuth, async (req, res) => {
       for (const toolUse of toolUseBlocks) {
         const toolCallId = `tc_${crypto.randomUUID()}`;
 
-        if (toolUse.name !== "request_user_input") {
+        const isClientUiTool = CLIENT_UI_TOOL_NAMES.has(toolUse.name);
+        if (!isClientUiTool) {
           sendSSE(res, {
             type: "tool_call",
             id: toolCallId,
@@ -3771,7 +3927,9 @@ app.post("/chat", requireAuth, async (req, res) => {
             continue;
           }
 
-          sendSSE(res, { type: "tool_result", id: toolCallId, name: toolUse.name, result: toolResult.result });
+          if (!isClientUiTool) {
+            sendSSE(res, { type: "tool_result", id: toolCallId, name: toolUse.name, result: toolResult.result });
+          }
           toolResultBlocks.push({
             type: "tool_result",
             tool_use_id: toolUse.id,
@@ -3889,6 +4047,8 @@ app.post("/chat", requireAuth, async (req, res) => {
       contentBlocks: persistBlocks.length > 0 ? persistBlocks : null,
       toolCalls: toolCalls.length > 0 ? toolCalls : null,
       buttons: buttons.length > 0 ? buttons : null,
+      choices: turnUi.choices,
+      openPages: openedPages.length > 0 ? openedPages : null,
       tokenCount: totalPromptTokens + totalOutputTokens || null,
     });
 
@@ -3906,6 +4066,8 @@ app.post("/chat", requireAuth, async (req, res) => {
           tokensOutput: totalOutputTokens,
           toolCallCount: toolCalls.length,
           buttonCount: buttons.length,
+          choiceCount: turnUi.choices?.choices.length ?? 0,
+          openPageCount: openedPages.length,
         },
       });
     }
@@ -3942,13 +4104,10 @@ app.post("/chat", requireAuth, async (req, res) => {
     if (runId) {
       const costSource: "platform" | "org" =
         resolvedKey.keySource === "org" ? "org" : "platform";
-      const chatCostPrefix = resolvedModelInfo.costPrefix;
       // Gemini: the exact lines Google billed, summed over every turn.
-      // Anthropic: the four billed dimensions summed over every turn and every
-      // compaction iteration (input / cache read / cache write / output).
-      const actualItems = (
-        geminiChatCostLines ?? anthropicCostLines(chatCostPrefix, anthropicChatBilled)
-      ).map((l) => ({ ...l, costSource }));
+      // Anthropic: the four billed dimensions per request (input / cache read /
+      // cache write / output, at that request's prompt-length tier), merged.
+      const actualItems = (geminiChatCostLines ?? anthropicChatCostLines).map((l) => ({ ...l, costSource }));
       const runIdentity = { orgId, userId, runId };
       try {
         await updateRunStatus(runId, chatFailed ? "failed" : "completed", runIdentity, trackingHeaders);

@@ -54,9 +54,9 @@ for (const { path, headers } of ROUTES) {
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("claude-fable-5-1");
       expect(res.body.error).toContain("temperature");
-      // Sonnet 5.5 and Opus 5.5 refuse sampling too since 2026-09-29, so Haiku
-      // is the only Anthropic alias left to suggest.
-      expect(res.body.detail).toContain("(haiku).");
+      // Every Anthropic alias is a 5.x model that refuses sampling since Haiku
+      // moved to 5.5 (2026-10-09), so there is no Anthropic alias to suggest.
+      expect(res.body.detail).toMatch(/Re-send without "temperature"\.$/);
       expect(res.body.retryable).toBe(false);
     });
 
