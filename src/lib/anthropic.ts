@@ -5,6 +5,7 @@ import {
   type AnthropicBilledTokens,
 } from "./anthropic-usage.js";
 import { OPEN_PAGE_TOOL, PRESENT_CHOICES_TOOL } from "./ui-tools.js";
+import { STAFF_REQUEST_REPOS } from "./staff-requests.js";
 
 export const MODEL = "claude-sonnet-4-6";
 /** Cost-name prefix used by costs-service: {provider}-{model} */
@@ -2241,6 +2242,234 @@ export const LIST_RECENT_RUNS_TOOL: Anthropic.Tool = {
 };
 
 // ---------------------------------------------------------------------------
+// Copilot tools (src/lib/copilot-client.ts, skills.ts, staff-requests.ts):
+// the skill tree, one read per platform entity, the data writes, the
+// propose → confirm switch-on gate, and the staff escalation.
+// ---------------------------------------------------------------------------
+
+const BRAND_OFFER_PROPS = { brandId: BRAND_ID_PROP, offerId: OFFER_ID_PROP };
+const BRAND_OFFER_REQUIRED = ["brandId", "offerId"];
+
+export const READ_SKILL_TOOL: Anthropic.Tool = {
+  name: "read_skill",
+  description:
+    "Load one skill (a page of platform knowledge) by slug, as listed in the Skills section of your instructions. Returns its markdown and its sub-skills. Load the skill of a topic BEFORE acting on it (campaigns, channels, legs, triggers, sales paths, sources, budget, staff requests…). Free, read-only.",
+  input_schema: {
+    type: "object" as const,
+    properties: { slug: { type: "string", description: "Skill slug, e.g. \"campaigns\"." } },
+    required: ["slug"],
+  },
+};
+
+export const GET_CHANNEL_CATALOGUE_TOOL: Anthropic.Tool = {
+  name: "get_channel_catalogue",
+  description:
+    "Read the platform catalogue: every acquisition channel (cold email, LinkedIn, WhatsApp, calls…), the legs each one can perform (proactive = own budget, reactive = runs when a trigger fires, with its triggerId), the trigger types, and minimum monthly budgets. This is THE list of what exists. Read-only.",
+  input_schema: { type: "object" as const, properties: {} },
+};
+
+export const GET_OFFER_CHANNELS_TOOL: Anthropic.Tool = {
+  name: "get_offer_channels",
+  description: "Read the channels an offer accepts (channel slugs from the catalogue). Read-only.",
+  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
+};
+
+export const GET_OFFER_LEGS_TOOL: Anthropic.Tool = {
+  name: "get_offer_legs",
+  description:
+    "Read an offer's sales steps and the legs it sells through (a leg = the move of a lead from one step to the next, e.g. lead_found_to_positive_reply). Read-only.",
+  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
+};
+
+export const GET_LEG_RATES_TOOL: Anthropic.Tool = {
+  name: "get_leg_rates",
+  description: "Read a brand's conversion rate per leg. Read-only.",
+  input_schema: { type: "object" as const, properties: { brandId: BRAND_ID_PROP }, required: ["brandId"] },
+};
+
+export const LIST_SALES_PATHS_TOOL: Anthropic.Tool = {
+  name: "list_sales_paths",
+  description:
+    "List every sales path of an offer (a chain of legs from first contact to paid client), ranked by return on spend, with each leg's channel, rate and the cost per paying client. Read-only.",
+  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
+};
+
+export const GET_SELECTED_SALES_PATHS_TOOL: Anthropic.Tool = {
+  name: "get_selected_sales_paths",
+  description: "Read the sales paths the user ticked for an offer (their combinationKeys). Read-only.",
+  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
+};
+
+export const GET_TRIGGER_EVENTS_TOOL: Anthropic.Tool = {
+  name: "get_trigger_events",
+  description:
+    "Read an offer's trigger activity per trigger type: how many fired, ran, or were skipped and why (campaign off, unfunded…). Read-only.",
+  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
+};
+
+export const LIST_SOURCING_ORIGINS_TOOL: Anthropic.Tool = {
+  name: "list_sourcing_origins",
+  description:
+    "List where leads can come from (e.g. Apollo cold filters, Apollo buying signals, LinkedIn engagement signals, CRM contacts). Read-only.",
+  input_schema: { type: "object" as const, properties: {} },
+};
+
+export const GET_OFFER_SOURCING_TOOL: Anthropic.Tool = {
+  name: "get_offer_sourcing",
+  description: "Read an offer's lead sources with leads found, cost and return per source. Read-only.",
+  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
+};
+
+export const GET_CAMPAIGN_BUDGETS_TOOL: Anthropic.Tool = {
+  name: "get_campaign_budgets",
+  description: "Read the daily budget cap set for each (channel x leg) campaign of an offer. Read-only.",
+  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
+};
+
+export const GET_CAMPAIGN_TOOL: Anthropic.Tool = {
+  name: "get_campaign",
+  description: "Read one campaign: its offer, leg, channel, status and caps. Read-only.",
+  input_schema: {
+    type: "object" as const,
+    properties: { campaignId: { type: "string", description: "Campaign id (from list_campaigns)." } },
+    required: ["campaignId"],
+  },
+};
+
+export const LIST_CONNECTED_ACCOUNTS_TOOL: Anthropic.Tool = {
+  name: "list_connected_accounts",
+  description:
+    "List the org's connected accounts: Google mailboxes, WhatsApp/Telegram/Discord links, GoHighLevel, PostHog, Stripe. Pass brandId to include that brand's messaging links. Read-only.",
+  input_schema: { type: "object" as const, properties: { brandId: BRAND_ID_PROP } },
+};
+
+export const CREATE_OFFER_TOOL: Anthropic.Tool = {
+  name: "create_offer",
+  description:
+    "Create a new offer (something the brand sells) by name. Data only: starts nothing, spends nothing. Confirm the name with the user first.",
+  input_schema: {
+    type: "object" as const,
+    properties: { brandId: BRAND_ID_PROP, name: { type: "string", description: "Offer name." } },
+    required: ["brandId", "name"],
+  },
+};
+
+export const SET_OFFER_CHANNELS_TOOL: Anthropic.Tool = {
+  name: "set_offer_channels",
+  description:
+    "Replace the list of channels an offer accepts. Send the FULL list (read get_offer_channels first, add or remove, send back). Data only: starts nothing.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      ...BRAND_OFFER_PROPS,
+      channelSlugs: { type: "array", items: { type: "string" }, description: "Channel slugs from get_channel_catalogue." },
+    },
+    required: ["brandId", "offerId", "channelSlugs"],
+  },
+};
+
+export const SET_SELECTED_SALES_PATHS_TOOL: Anthropic.Tool = {
+  name: "set_selected_sales_paths",
+  description:
+    "Replace the sales paths ticked for an offer (FULL list of combinationKeys from list_sales_paths). Data only: switching the paths' reactive legs on is a separate, confirmed step (propose_switch_on action switch_on_reactive_legs).",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      ...BRAND_OFFER_PROPS,
+      combinationKeys: { type: "array", items: { type: "string" }, description: "combinationKeys from list_sales_paths." },
+    },
+    required: ["brandId", "offerId", "combinationKeys"],
+  },
+};
+
+export const SET_CAMPAIGN_BUDGET_TOOL: Anthropic.Tool = {
+  name: "set_campaign_budget",
+  description:
+    "Set the daily budget CAP of one (offer x leg x channel) campaign, in cents. Creates no campaign and starts nothing: a cap is a ceiling, not a start. Confirm the amount with the user first.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      ...BRAND_OFFER_PROPS,
+      legKey: { type: "string", description: "Leg key from get_channel_catalogue (legs[].legKey)." },
+      featureSlug: { type: "string", description: "The channel's feature slug from get_channel_catalogue." },
+      dailyBudgetCents: { type: "integer", description: "Daily cap in cents (e.g. 2000 = $20/day). Must be > 0." },
+    },
+    required: ["brandId", "offerId", "legKey", "featureSlug", "dailyBudgetCents"],
+  },
+};
+
+export const PROPOSE_SWITCH_ON_TOOL: Anthropic.Tool = {
+  name: "propose_switch_on",
+  description:
+    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: nothing that starts work or spends money is switched on without the user's explicit yes in the chat. This tool is step 1 of 2: it records WHAT would be switched on and returns a confirmationToken; it switches NOTHING on. " +
+    "Actions: start_campaign (one offer x leg x channel; dailyBudgetCents is MANDATORY and is set now as the cap, the campaign itself is not created), activate_campaign (turn a stopped campaign back on), switch_on_reactive_legs (turn on the reactive legs of the offer's ticked sales paths). " +
+    "After calling it, show the user exactly what will start and its daily cap, then ask them to confirm with present_choices. Call confirm_switch_on only after they answer yes, in their next message.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      action: { type: "string", enum: ["start_campaign", "activate_campaign", "switch_on_reactive_legs"] },
+      summary: { type: "string", description: "One plain sentence the user will confirm, with the daily cap (e.g. \"Start cold email to first reply for Offer X at $20/day\")." },
+      brandId: BRAND_ID_PROP,
+      offerId: OFFER_ID_PROP,
+      legKey: { type: "string", description: "start_campaign: the leg key." },
+      featureSlug: { type: "string", description: "start_campaign: the channel's feature slug." },
+      dailyBudgetCents: { type: "integer", description: "start_campaign: the daily cap in cents (mandatory, > 0)." },
+      campaignId: { type: "string", description: "activate_campaign: the campaign id." },
+    },
+    required: ["action", "summary"],
+  },
+};
+
+export const CONFIRM_SWITCH_ON_TOOL: Anthropic.Tool = {
+  name: "confirm_switch_on",
+  description:
+    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: call this ONLY after the user explicitly said yes to the exact proposal, in a message AFTER the one where you proposed it. Step 2 of 2: switches on what propose_switch_on recorded. A token proposed in the current turn is refused; a token already used is refused.",
+  input_schema: {
+    type: "object" as const,
+    properties: { confirmationToken: { type: "string", description: "The token propose_switch_on returned." } },
+    required: ["confirmationToken"],
+  },
+};
+
+export const REQUEST_STAFF_TOOL: Anthropic.Tool = {
+  name: "request_staff",
+  description:
+    "Escalate ONE missing piece of the user's request to the distribute.you team when it needs CODE (no tool, route or setting can do it), or report a bug. Records the request, opens an issue in the repo of the service that owns the piece, and alerts the team. Deduplicated per org on (repo, kind, pieceKey): call list_staff_requests first and reuse an existing pieceKey for the same need. " +
+    "Call it once per missing piece, then tell the user that piece is on hold and will be switched on once it is built, and carry on with the rest of their request. Read the staff-requests skill for which repo owns what.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      kind: { type: "string", enum: ["feature", "bug"] },
+      repo: { type: "string", enum: [...STAFF_REQUEST_REPOS], description: "GitHub repo of the service that owns the missing piece." },
+      pieceKey: { type: "string", description: "Stable kebab-case id of the missing piece, e.g. \"linkedin-post-reaction-trigger\"." },
+      title: { type: "string", description: "Issue title, plain English, under 80 characters." },
+      userRequest: { type: "string", description: "The user's request, in their words." },
+      missingPiece: { type: "string", description: "What exactly is missing and what it must do, in plain English." },
+      decomposition: {
+        type: "array",
+        description: "Every piece of the user's request and its outcome.",
+        items: {
+          type: "object",
+          properties: {
+            piece: { type: "string" },
+            outcome: { type: "string", enum: ["exists", "create", "needs_code"] },
+            detail: { type: "string" },
+          },
+          required: ["piece", "outcome"],
+        },
+      },
+    },
+    required: ["kind", "repo", "pieceKey", "title", "userRequest", "missingPiece", "decomposition"],
+  },
+};
+
+export const LIST_STAFF_REQUESTS_TOOL: Anthropic.Tool = {
+  name: "list_staff_requests",
+  description: "List the requests this org already escalated to the team (piece, repo, issue link, how many times asked). Read-only.",
+  input_schema: { type: "object" as const, properties: {} },
+};
+
+// ---------------------------------------------------------------------------
 // Tool registry — every tool the service knows how to execute.
 // Clients choose which subset to enable via allowedTools in their config.
 // ---------------------------------------------------------------------------
@@ -2309,6 +2538,27 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   list_recent_runs: LIST_RECENT_RUNS_TOOL,
   present_choices: PRESENT_CHOICES_TOOL,
   open_page: OPEN_PAGE_TOOL,
+  read_skill: READ_SKILL_TOOL,
+  get_channel_catalogue: GET_CHANNEL_CATALOGUE_TOOL,
+  get_offer_channels: GET_OFFER_CHANNELS_TOOL,
+  get_offer_legs: GET_OFFER_LEGS_TOOL,
+  get_leg_rates: GET_LEG_RATES_TOOL,
+  list_sales_paths: LIST_SALES_PATHS_TOOL,
+  get_selected_sales_paths: GET_SELECTED_SALES_PATHS_TOOL,
+  get_trigger_events: GET_TRIGGER_EVENTS_TOOL,
+  list_sourcing_origins: LIST_SOURCING_ORIGINS_TOOL,
+  get_offer_sourcing: GET_OFFER_SOURCING_TOOL,
+  get_campaign_budgets: GET_CAMPAIGN_BUDGETS_TOOL,
+  get_campaign: GET_CAMPAIGN_TOOL,
+  list_connected_accounts: LIST_CONNECTED_ACCOUNTS_TOOL,
+  create_offer: CREATE_OFFER_TOOL,
+  set_offer_channels: SET_OFFER_CHANNELS_TOOL,
+  set_selected_sales_paths: SET_SELECTED_SALES_PATHS_TOOL,
+  set_campaign_budget: SET_CAMPAIGN_BUDGET_TOOL,
+  propose_switch_on: PROPOSE_SWITCH_ON_TOOL,
+  confirm_switch_on: CONFIRM_SWITCH_ON_TOOL,
+  request_staff: REQUEST_STAFF_TOOL,
+  list_staff_requests: LIST_STAFF_REQUESTS_TOOL,
 };
 
 /** All tool names available for use in allowedTools config. */

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, unique, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, unique, index, boolean } from "drizzle-orm/pg-core";
 import type { ChoicesRecord, OpenPageRecord } from "../schemas.js";
 
 export const sessions = pgTable(
@@ -110,6 +110,88 @@ export const platformConfigs = pgTable("platform_configs", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Copilot SKILL TREE (migration 0018). One row per skill: the INDEX (slug
+// "index", parent NULL) plus one sub-skill per topic (parent "index", or a
+// deeper parent). Staff edit content live from the dashboard (autosave), so
+// `updated_by` records who wrote the current content: "seed" = never touched by
+// a human, and ONLY such rows may be refreshed from code at boot. A
+// human-edited row is never overwritten by a deploy.
+export const skills = pgTable("skills", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  slug: text("slug").notNull().unique(),
+  parentSlug: text("parent_slug"),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  content: text("content").notNull(),
+  position: integer("position").notNull().default(0),
+  version: integer("version").notNull().default(1),
+  updatedBy: text("updated_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Every content a skill has held, newest version last. Autosave writes are
+// coalesced: a save by the SAME editor within SKILL_VERSION_COALESCE_MS of the
+// previous version rewrites that version instead of adding one, so a typing
+// burst is one recoverable snapshot, not one row per keystroke.
+export const skillVersions = pgTable(
+  "skill_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    skillId: uuid("skill_id")
+      .notNull()
+      .references(() => skills.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    content: text("content").notNull(),
+    editedBy: text("edited_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique("skill_versions_skill_version_unique").on(table.skillId, table.version)],
+);
+
+// Requests the Copilot escalated to staff because a piece of the user's ask
+// needs code (migration 0018). Deduped per org on (org, repo, kind, piece_key):
+// a repeat bumps request_count instead of opening a second issue.
+export const staffRequests = pgTable(
+  "staff_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    brandId: text("brand_id"),
+    sessionId: uuid("session_id"),
+    kind: text("kind").notNull().$type<"bug" | "feature">(),
+    repo: text("repo").notNull(),
+    pieceKey: text("piece_key").notNull(),
+    title: text("title").notNull(),
+    userRequest: text("user_request").notNull(),
+    decomposition: jsonb("decomposition").notNull().$type<StaffRequestPiece[]>(),
+    missingPiece: text("missing_piece").notNull(),
+    requesterIsStaff: boolean("requester_is_staff").notNull(),
+    issueUrl: text("issue_url"),
+    issueNumber: integer("issue_number"),
+    issueError: text("issue_error"),
+    telegramSentAt: timestamp("telegram_sent_at", { withTimezone: true }),
+    telegramSkippedReason: text("telegram_skipped_reason"),
+    telegramError: text("telegram_error"),
+    requestCount: integer("request_count").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("staff_requests_org_repo_kind_piece_unique").on(table.orgId, table.repo, table.kind, table.pieceKey),
+  ],
+);
+
+export interface StaffRequestPiece {
+  piece: string;
+  outcome: "exists" | "create" | "needs_code";
+  detail?: string;
+}
+
 export interface ToolCallRecord {
   name: string;
   args: Record<string, unknown>;
@@ -136,3 +218,6 @@ export type AppConfig = typeof appConfigs.$inferSelect;
 export type NewAppConfig = typeof appConfigs.$inferInsert;
 export type PlatformConfig = typeof platformConfigs.$inferSelect;
 export type NewPlatformConfig = typeof platformConfigs.$inferInsert;
+export type Skill = typeof skills.$inferSelect;
+export type SkillVersion = typeof skillVersions.$inferSelect;
+export type StaffRequest = typeof staffRequests.$inferSelect;
