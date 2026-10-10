@@ -15,9 +15,9 @@ const CATALOGUE_LEVELS = [
 ];
 
 const COPILOT_TOOLS = [
-  "get_offer_channels", "get_offer_legs", "get_leg_rates", "list_sales_paths",
+  "get_leg_rates", "list_sales_paths",
   "get_trigger_events", "list_sourcing_origins", "get_offer_sourcing",
-  "get_campaign_budgets", "get_campaign", "list_connected_accounts", "create_offer", "set_offer_channels",
+  "get_campaign_budgets", "get_campaign", "list_connected_accounts", "create_offer",
   "set_campaign_budget", "propose_switch_on", "confirm_switch_on",
   "request_staff", "list_staff_requests", "request_skill_upgrade", "contact_human",
   "find_steps", "find_sales_paths", "find_channels", "find_pipes", "find_sales_funnels", "find_workflows",
@@ -170,11 +170,16 @@ describe("estimates and reactive funnels (owner 2026-10-10)", () => {
   });
 });
 
-describe("the offer's ticked list is retired (owner 2026-10-10)", () => {
-  it("no skill tells the agent to write it or switch on through it", () => {
+describe("the offer's ticked list, legs and accepted channels are retired (owner 2026-10-10)", () => {
+  const RETIRED = ["set_selected_sales_paths", "get_selected_sales_paths", "switch_on_reactive_legs", "get_offer_legs", "get_offer_channels", "set_offer_channels"];
+
+  it("no skill names a retired tool or action", () => {
     for (const sk of SEED_SKILLS) {
-      const c = sk.content.replace(/Never write the offer's old ticked list \(set_selected_sales_paths\) and never switch on through it \(switch_on_reactive_legs\)/, "");
-      expect(c, sk.slug).not.toMatch(/set_selected_sales_paths|switch_on_reactive_legs/);
+      for (const t of RETIRED) expect(sk.content, `${sk.slug}: ${t}`).not.toContain(t);
     }
+  });
+
+  it("no retired tool is in the registry", () => {
+    for (const t of RETIRED) expect(TOOL_REGISTRY[t], t).toBeUndefined();
   });
 });

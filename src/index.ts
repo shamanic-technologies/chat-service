@@ -145,10 +145,7 @@ import {
   getCampaign,
   getCampaignBudgets,
   getLegRates,
-  getOfferChannels,
-  getOfferLegs,
   getOfferSourcing,
-  getSelectedSalesPaths,
   getTriggerEvents,
   listConnectedAccounts,
   listSalesPaths,
@@ -156,8 +153,6 @@ import {
   proposeSwitchOn,
   resolveSwitchOnProposal,
   setCampaignBudget,
-  setOfferChannels,
-  setSelectedSalesPaths,
 } from "./lib/copilot-client.js";
 import type { ApiCallParams } from "./lib/api-client.js";
 import {
@@ -194,11 +189,8 @@ const DECLARATION_WRITE_TOOLS: Record<
 
 // Copilot entity tools that are a straight owner-route call: name → handler.
 const COPILOT_ENTITY_TOOLS: Record<string, (args: Record<string, unknown>, p: ApiCallParams) => Promise<unknown>> = {
-  get_offer_channels: getOfferChannels,
-  get_offer_legs: getOfferLegs,
   get_leg_rates: getLegRates,
   list_sales_paths: listSalesPaths,
-  get_selected_sales_paths: getSelectedSalesPaths,
   get_trigger_events: getTriggerEvents,
   list_sourcing_origins: (_a, p) => listSourcingOrigins(p),
   get_offer_sourcing: getOfferSourcing,
@@ -206,8 +198,6 @@ const COPILOT_ENTITY_TOOLS: Record<string, (args: Record<string, unknown>, p: Ap
   get_campaign: getCampaign,
   list_connected_accounts: listConnectedAccounts,
   create_offer: createOffer,
-  set_offer_channels: setOfferChannels,
-  set_selected_sales_paths: setSelectedSalesPaths,
   set_campaign_budget: setCampaignBudget,
 };
 import {

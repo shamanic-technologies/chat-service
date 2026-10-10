@@ -166,16 +166,13 @@ A source is where leads come from. Live origins: Apollo cold filters, Apollo buy
     content: t(`
 # Channels
 
-A channel is a way to reach a lead: cold email, LinkedIn outreach, WhatsApp, AI call. A channel is identified by its feature slug. Each channel performs some legs, each one proactive or reactive, with a minimum monthly budget. Catalogue owner: features-service; the offer's accepted channels: brand-service.
+A channel is a way to reach a lead: cold email, LinkedIn outreach, WhatsApp, AI call. A channel is identified by its feature slug. Each channel performs some legs, each one proactive or reactive, with a minimum monthly budget. Catalogue owner: features-service. Which channels an offer uses comes from the funnels it runs (funnel campaigns, see campaigns).
 
 ## Read
 - find_channels: the catalogue's channels with cost and return, small pages (see \`catalogue-channels\`).
-- get_offer_channels(brandId, offerId): channels the offer accepts.
-
 - list_declared_channels(slug?): every channel, coded and declared, with published / visibleToClients and its legs. Check it before declaring.
 
 ## Write
-- set_offer_channels(brandId, offerId, channelSlugs): REPLACES the list. Read first, send the full list.
 - STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_channel: a NEW channel, created live as data (never a PR). It has no leg yet: declare its legs next (see legs). Confirm its name and what it does with the user first.
 
 ## Publish rule
@@ -203,7 +200,6 @@ A leg is the move of a lead from one sales step to the next, e.g. lead found to 
 ## Read
 - find_pipes(channels): legs per channel (a pipe = one channel on one leg) with mode.
 - list_declared_legs(channelSlug?): every leg, coded and declared, with published / visibleToClients.
-- get_offer_legs(brandId, offerId): the offer's steps and the legs it sells through.
 - get_leg_rates(brandId): conversion rate per leg.
 
 ## Write
@@ -269,7 +265,7 @@ Per offer, each row here is a chain of legs to paid client, each leg on a channe
 - list_sales_paths(brandId, offerId): every path with channels, rates, cost per paying client, return.
 
 ## Retired: the ticked list (owner 2026-10-10)
-A campaign IS a funnel campaign now (\`campaigns\`: create_funnel_campaign). Never write the offer's old ticked list (set_selected_sales_paths) and never switch on through it (switch_on_reactive_legs): it is being retired. To run a funnel, create its funnel campaign.
+A campaign IS a funnel campaign now (\`campaigns\`: create_funnel_campaign). The offer's old ticked list is retired: there is no tool to read or write it. To run a funnel, create its funnel campaign.
 
 ## Articulation
 Map the user's sequence onto the closest ranked funnel first. Show its return and cost per paying client before proposing it. Create a new one only when none matches (create_sales_funnel).
