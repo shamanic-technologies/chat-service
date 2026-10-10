@@ -200,7 +200,20 @@ describe("createAnthropicClient", () => {
     client.createStream([{ role: "user", content: "hello" }]);
 
     const callArgs = mockStream.mock.calls.at(-1)?.[0];
-    expect(callArgs.thinking).toEqual({ type: "adaptive" });
+    expect(callArgs.thinking).toEqual({
+      type: "adaptive",
+      block_binding: { prefix_mismatch_behavior: "drop_block" },
+    });
+  });
+
+  it("drops a thinking block whose prefix was rewritten (compaction / trimming) instead of 400ing the turn", () => {
+    // Prod 2026-10-10: after compaction rewrote messages.0, the next turn 400'd
+    // "Invalid `signature` in `thinking` block. The block is bound to a different conversation."
+    const client = createAnthropicClient({ apiKey: "test-key", systemPrompt: TEST_PROMPT });
+    client.createStream([{ role: "user", content: "hello" }]);
+    const [params, opts] = mockStream.mock.calls.at(-1) ?? [];
+    expect(params.thinking.block_binding).toEqual({ prefix_mismatch_behavior: "drop_block" });
+    expect(opts.headers["anthropic-beta"]).toContain("thinking-binding-controls-2026-08-01");
   });
 
   it("includes context management for compaction", () => {
