@@ -1,4 +1,5 @@
 import type { ApiCallParams } from "./api-client.js";
+import { assertFunnelNotMixed } from "./funnel-mix.js";
 
 // ---------------------------------------------------------------------------
 // Sales funnel CAMPAIGNS + their CAPS (owner 2026-10-10, "chat first").
@@ -136,6 +137,7 @@ export async function setFunnelCaps(a: Record<string, unknown>, p: ApiCallParams
 
 /** POST /sales-funnel-campaigns, always STOPPED from the chat (starting is the switch-on gate). */
 export async function createFunnelCampaign(a: Record<string, unknown>, p: ApiCallParams) {
+  await assertFunnelNotMixed(req("salesFunnelId", a.salesFunnelId));
   return call("campaign", "create_funnel_campaign", "POST", "/sales-funnel-campaigns", p, {
     brandId: req("brandId", a.brandId),
     offerId: req("offerId", a.offerId),
@@ -160,6 +162,8 @@ interface CapsRead {
 
 /** propose_switch_on guard: the funnel's caps as stated now; refuses while no max budget is stated. */
 export async function requireStatedMaxBudget(target: { brandId: string; offerId: string; salesFunnelId: string }, p: ApiCallParams) {
+  // A mixed funnel is never started either (its budget would starve the proactive part).
+  await assertFunnelNotMixed(target.salesFunnelId);
   const caps = (await getFunnelCaps(target, p)) as CapsRead;
   if (!caps.maxBudget) {
     throw new Error(
