@@ -136,14 +136,28 @@ export async function setFunnelCaps(a: Record<string, unknown>, p: ApiCallParams
 }
 
 /** POST /sales-funnel-campaigns, always STOPPED from the chat (starting is the switch-on gate). */
+/**
+ * How to ask the caps, by the funnel's served type (owner 2026-10-10): a
+ * proactive funnel is capped as "Max budget" / "Max volume" (first contacts);
+ * a reactive one only spends when its trigger fires, so it is asked as
+ * "Up to $X" / "Up to N prospects handled". Returned with the created campaign
+ * so the very next question uses the right words.
+ */
+export function capsAskFor(type: "proactive" | "reactive"): string {
+  return type === "reactive"
+    ? "Reactive funnel: ask with present_choices 'Up to $X' (per one-off, day, week or month) and 'Up to N prospects handled' (per period). Never say 'max budget' or 'first contacts' for it. Then set_funnel_caps."
+    : "Proactive funnel: ask with present_choices a 'Max budget' (per one-off, day, week or month) and a 'Max volume' in first contacts (per period). Then set_funnel_caps.";
+}
+
 export async function createFunnelCampaign(a: Record<string, unknown>, p: ApiCallParams) {
-  await assertFunnelNotMixed(req("salesFunnelId", a.salesFunnelId));
-  return call("campaign", "create_funnel_campaign", "POST", "/sales-funnel-campaigns", p, {
+  const type = await assertFunnelNotMixed(req("salesFunnelId", a.salesFunnelId));
+  const created = (await call("campaign", "create_funnel_campaign", "POST", "/sales-funnel-campaigns", p, {
     brandId: req("brandId", a.brandId),
     offerId: req("offerId", a.offerId),
     salesFunnelId: req("salesFunnelId", a.salesFunnelId),
     status: "stopped",
-  });
+  })) as Record<string, unknown>;
+  return { ...created, funnelType: type, askCapsAs: capsAskFor(type) };
 }
 
 /** PATCH stop: no new first touches (follow-ups of contacted leads still go out). Safe, no confirmation. */
