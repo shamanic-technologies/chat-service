@@ -2573,7 +2573,7 @@ const INCLUDE_NOT_RUNNABLE_PROP = {
 };
 
 const CATALOGUE_ROW_NOTE =
-  "Lists ONLY what we run today (a channel we do not run, like LinkedIn posting, is not listed; reading one by id answers weRunItToday: false). Each row: id, name, icon, one line, costUsd, roi, status (measured = fleet evidence; learning = not enough history, cost and roi null; customer_time = the customer's own team). Quote figures exactly. Read-only, free.";
+  "Lists ONLY what we run today (a channel we do not run, like LinkedIn posting, is not listed; reading one by id answers weRunItToday: false). Each row: id, name, icon, one line, cost (figure AND unit, e.g. '$2.73 per website visit': always quote both, never move a cost to another unit), costUsd, roi, status (measured = fleet evidence; learning = not enough history, cost and roi null; customer_time = the customer's own team). Quote figures exactly. Read-only, free.";
 
 const idList = (description: string) => ({ type: "array", items: { type: "string" }, description });
 

@@ -142,3 +142,11 @@ describe("only what we run today (owner 2026-10-10: the Copilot offered LinkedIn
     expect(cat).not.toMatch(/create_pipe \(proactive/);
   });
 });
+
+describe("costs keep their unit", () => {
+  it("the catalogue skill says a channel or pipe cost is never per paying client", () => {
+    const cat = SEED_SKILLS.find((s) => s.slug === "catalogue")!.content;
+    expect(cat).toMatch(/never per paying client/);
+    expect(SEED_SKILLS.find((s) => s.slug === "index")!.content).toMatch(/with the unit the tool gives/);
+  });
+});

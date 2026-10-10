@@ -237,3 +237,27 @@ describe("a customer is only offered what we run today (owner 2026-10-10)", () =
     await expect(assertStaffBuild("declare_channel", { staffBuild: true }, staff)).resolves.toBeUndefined();
   });
 });
+
+describe("every cost carries its unit (prod 2026-10-10: a per-reply cost quoted per paying client)", () => {
+  it("a list row and a nested detail get cost = figure + unit from the producer's costPer", async () => {
+    fetchMock().mockResolvedValueOnce(
+      res(200, { rows: [{ id: "sales-cold-email-outreach", costUsd: 137.43, costPer: "per positive reply" }, { id: "x", costUsd: null, costPer: null }] }),
+    );
+    const { CATALOGUE_READ_TOOLS } = await load();
+    const out = (await CATALOGUE_READ_TOOLS.find_channels({}, customer)) as { rows: Array<Record<string, unknown>> };
+    expect(out.rows[0].cost).toBe("$137.43 per positive reply");
+    expect(out.rows[1].cost).toBeUndefined();
+    fetchMock().mockResolvedValueOnce(
+      res(200, { id: "f", costUsd: 2748.69, costPer: "per paying client", runnable: true, legs: [{ pipe: { id: "p", costUsd: 137.43, costPer: "per positive reply" } }] }),
+    );
+    const detail = (await CATALOGUE_READ_TOOLS.find_sales_funnels({ id: "f" }, customer)) as Record<string, any>;
+    expect(detail.cost).toBe("$2748.69 per paying client");
+    expect(detail.legs[0].pipe.cost).toBe("$137.43 per positive reply");
+  });
+
+  it("a cost served without its unit fails loud (never a bare figure)", async () => {
+    fetchMock().mockResolvedValueOnce(res(200, { rows: [{ id: "c", costUsd: 12 }] }));
+    const { CATALOGUE_READ_TOOLS } = await load();
+    await expect(CATALOGUE_READ_TOOLS.find_channels({}, customer)).rejects.toThrow(/without its unit/);
+  });
+});
