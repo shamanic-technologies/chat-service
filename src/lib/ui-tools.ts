@@ -70,6 +70,27 @@ export function parseChoicesArgs(args: Record<string, unknown>): ChoicesRecord {
   return parsed.data;
 }
 
+/** Max length of the intro text written above the cards. */
+export const CHOICES_INTRO_MAX = 1200;
+
+/**
+ * The REQUIRED intro of a present_choices call: the 2-3 sentences shown above
+ * the cards. Some models (Sonnet 5.5, prod 2026-10-10) write no text at all
+ * before a tool call, so the answer arrived as bare cards; carrying the text
+ * IN the call makes every model write it. Throws when absent (the model gets
+ * a tool error and retries with it).
+ */
+export function parseChoicesIntro(args: Record<string, unknown>): string {
+  const text = args.text;
+  if (typeof text !== "string" || text.trim() === "") {
+    throw new Error("[present_choices] text is required: 2 or 3 short sentences shown above the cards (what you found, with the figures).");
+  }
+  if (text.length > CHOICES_INTRO_MAX) {
+    throw new Error(`[present_choices] text must be at most ${CHOICES_INTRO_MAX} characters`);
+  }
+  return text.trim();
+}
+
 /** Parse the model's open_page arguments. Throws on a malformed call. */
 export function parseOpenPageArgs(args: Record<string, unknown>): OpenPageRecord {
   const parsed = OpenPageRecordSchema.safeParse(args);
@@ -107,10 +128,14 @@ export const PRESENT_CHOICES_TOOL: Anthropic.Tool = {
     "(write it as the sentence the user would type, e.g. 'Show me the 3 interested leads'; defaults to the label). " +
     "Any figure on a card must come from a tool result in this conversation, quoted as served. " +
     "Call it LAST, once: it ENDS your turn and the user's pick arrives as their next message. " +
-    "Write at most one short sentence of text before it; never repeat the cards as text or as '- [Label]' lines.",
+    "`text` is REQUIRED: 2 or 3 short sentences shown ABOVE the cards (what you found, with the figures as served). Put your answer there; never repeat the cards as text or as '- [Label]' lines.",
   input_schema: {
     type: "object" as const,
     properties: {
+      text: {
+        type: "string",
+        description: "REQUIRED. Your answer, 2 or 3 short sentences shown above the cards: what you found, with the figures as served.",
+      },
       question: { type: "string", description: "Optional short heading above the cards." },
       choices: {
         type: "array",
@@ -132,7 +157,7 @@ export const PRESENT_CHOICES_TOOL: Anthropic.Tool = {
         description: "Keep the free-text box available beside the cards. Defaults to true.",
       },
     },
-    required: ["choices"],
+    required: ["text", "choices"],
   },
 };
 

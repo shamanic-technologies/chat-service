@@ -4,6 +4,7 @@ import {
   OPEN_PAGE_TOOL,
   PRESENT_CHOICES_TOOL,
   parseChoicesArgs,
+  parseChoicesIntro,
   parseOpenPageArgs,
 } from "../../src/lib/ui-tools.js";
 import { TOOL_REGISTRY } from "../../src/lib/anthropic.js";
@@ -54,6 +55,18 @@ describe("present_choices — parseChoicesArgs", () => {
     ["no choices at all", {}],
   ])("rejects %s (the model gets a tool error and retries)", (_name, args) => {
     expect(() => parseChoicesArgs(args as Record<string, unknown>)).toThrow(/present_choices/);
+  });
+});
+
+describe("present_choices — required intro text", () => {
+  it("returns the trimmed text", () => {
+    expect(parseChoicesIntro({ text: "  You have 3 replies.  " })).toBe("You have 3 replies.");
+  });
+  it.each([[{}], [{ text: "" }], [{ text: "   " }], [{ text: 42 }], [{ text: "x".repeat(1201) }]])("refuses %j", (args) => {
+    expect(() => parseChoicesIntro(args as Record<string, unknown>)).toThrow(/present_choices/);
+  });
+  it("the tool schema requires it", () => {
+    expect((PRESENT_CHOICES_TOOL.input_schema as { required: string[] }).required).toEqual(["text", "choices"]);
   });
 });
 
