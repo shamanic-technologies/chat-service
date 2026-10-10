@@ -352,9 +352,11 @@ describe("POST /chat — rich UI (open_page + present_choices)", () => {
     // Session row records its config key (GET /sessions/latest reads it).
     expect(insertedValues[0]).toEqual(expect.objectContaining({ configKey: "test-chat" }));
     const assistant = insertedValues.find((v) => v.role === "assistant")!;
-    expect(assistant.content).toBe("Here is your week.");
-    // The model already wrote text: the present_choices intro is not repeated.
-    expect(events.filter((e) => e.type === "token").map((e) => e.content).join("")).toBe("Here is your week.");
+    // Text written BESIDE a tool call is the model's working note, never shown
+    // (prod 2026-10-10: "Now find the step and funnel for..."): the answer is
+    // present_choices' own text.
+    expect(assistant.content).toBe("You have 3 replies waiting.");
+    expect(events.filter((e) => e.type === "token").map((e) => e.content).join("")).toBe("You have 3 replies waiting.");
     expect(assistant.openPages).toEqual([{ page: "offer-today", brandId: "b-1", offerId: "o-1" }]);
     expect((assistant.choices as { choices: unknown[] }).choices).toHaveLength(2);
     // Each tool call stored ONCE: open_page with its thought signature, then

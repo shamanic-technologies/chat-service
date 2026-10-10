@@ -128,13 +128,16 @@ export const PRESENT_CHOICES_TOOL: Anthropic.Tool = {
     "(write it as the sentence the user would type, e.g. 'Show me the 3 interested leads'; defaults to the label). " +
     "Any figure on a card must come from a tool result in this conversation, quoted as served. " +
     "Call it LAST, once: it ENDS your turn and the user's pick arrives as their next message. " +
-    "`text` is REQUIRED: 2 or 3 short sentences shown ABOVE the cards (what you found, with the figures as served). Put your answer there; never repeat the cards as text or as '- [Label]' lines.",
+    "`text` is REQUIRED: 2 or 3 short sentences shown ABOVE the cards, addressed to the user (what you found, with the figures as served), never your working note. It is the ONLY text the user sees this turn: anything you write beside a tool call is dropped. Never repeat the cards as text or as '- [Label]' lines.",
   input_schema: {
     type: "object" as const,
     properties: {
       text: {
         type: "string",
-        description: "REQUIRED. Your answer, 2 or 3 short sentences shown above the cards: what you found, with the figures as served.",
+        description:
+          "REQUIRED. Your ANSWER to the user, 2 or 3 short sentences shown above the cards: what you found about THEIR account, with the figures as served. " +
+          "Never your own plan or next step ('Now find the step and funnel...', 'Let me check...', 'Next I will...'). " +
+          "Good: 'You have 2 replies waiting. Cold email brings a website visit for $2.73, and the best funnel is still learning.'",
       },
       question: { type: "string", description: "Optional short heading above the cards." },
       choices: {
