@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
 import { FunnelError } from "./funnel-client.js";
+import { requireStatedMaxBudget, startFunnelCampaign } from "./funnel-campaign-client.js";
 import type { ToolCallRecord } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
@@ -161,13 +162,15 @@ export const setCampaignBudget = (a: Record<string, unknown>, p: ApiCallParams) 
 
 // --- Switch ON: propose (this turn) → confirm (a later turn) ------------------
 
-export const SWITCH_ON_ACTIONS = ["start_campaign", "activate_campaign", "switch_on_reactive_legs"] as const;
+export const SWITCH_ON_ACTIONS = ["start_funnel_campaign", "start_campaign", "activate_campaign", "switch_on_reactive_legs"] as const;
 export type SwitchOnAction = (typeof SWITCH_ON_ACTIONS)[number];
 
 export interface SwitchOnProposal {
   confirmationToken: string;
   action: SwitchOnAction;
   target: Record<string, string | number>;
+  /** start_funnel_campaign: the caps as stated when proposed (shown to the user). */
+  caps?: unknown;
   summary: string;
   status: "awaiting_user_confirmation";
   instruction: string;
@@ -203,6 +206,17 @@ export async function proposeSwitchOn(a: Record<string, unknown>, p: ApiCallPara
     };
     const budget = await setCampaignBudget(target, p);
     return { ...base, target, budget };
+  }
+  if (action === "start_funnel_campaign") {
+    // A funnel campaign's money is ONLY its caps: no max budget = held unfunded,
+    // so the proposal is refused until the user stated one (set_funnel_caps).
+    const target = {
+      brandId: rawId("brandId", a.brandId),
+      offerId: rawId("offerId", a.offerId),
+      salesFunnelId: rawId("salesFunnelId", a.salesFunnelId),
+    };
+    const caps = await requireStatedMaxBudget(target, p);
+    return { ...base, target, caps };
   }
   if (action === "activate_campaign") {
     return { ...base, target: { campaignId: rawId("campaignId", a.campaignId) } };
@@ -261,7 +275,12 @@ export function resolveSwitchOnProposal(token: unknown, priorHistory: readonly H
 export async function executeSwitchOn(proposal: SwitchOnProposal, p: ApiCallParams): Promise<unknown> {
   const t = proposal.target;
   let result: unknown;
-  if (proposal.action === "start_campaign") {
+  if (proposal.action === "start_funnel_campaign") {
+    result = await startFunnelCampaign(
+      { brandId: String(t.brandId), offerId: String(t.offerId), salesFunnelId: String(t.salesFunnelId) },
+      p,
+    );
+  } else if (proposal.action === "start_campaign") {
     result = await call("confirm_switch_on:start_campaign", "/v1/campaigns/start-funded-pair", "POST", p, {
       brandId: t.brandId,
       offerId: t.offerId,
