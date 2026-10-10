@@ -309,22 +309,22 @@ export async function seedSkills(
 
 /**
  * The block appended to a chat's system prompt when its config allows
- * `read_skill`: the INDEX skill's content plus the live list of sub-skills
- * (slug + one line each), so the model knows what it can load.
+ * `read_skill`: the INDEX skill's content plus its DIRECT sub-skills (slug +
+ * one line each). Deeper skills are listed by read_skill on their parent, so
+ * the prompt stays small however deep the tree grows (owner 2026-10-10).
  */
 export async function buildSkillIndexBlock(database: Database): Promise<string> {
   const all = await listSkills(database);
   const index = all.find((s) => s.slug === INDEX_SKILL_SLUG);
   if (!index) throw new SkillNotFoundError(INDEX_SKILL_SLUG);
-  const children = all.filter((s) => s.slug !== INDEX_SKILL_SLUG);
-  const lines = children.map(
-    (s) => `- \`${s.slug}\`${s.parentSlug && s.parentSlug !== INDEX_SKILL_SLUG ? ` (under \`${s.parentSlug}\`)` : ""}: ${s.title}. ${s.description}`,
-  );
+  const children = all.filter((s) => s.parentSlug === INDEX_SKILL_SLUG);
+  const lines = children.map((s) => `- \`${s.slug}\`: ${s.title}. ${s.description}`);
   return [
     `\n\n---\n## Skills (platform knowledge)`,
     index.content.trim(),
     ``,
     `### Sub-skills you can load with read_skill`,
+    `(A skill lists its own sub-skills when you load it.)`,
     ...lines,
   ].join("\n");
 }

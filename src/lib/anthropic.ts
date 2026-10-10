@@ -2434,7 +2434,7 @@ export const CONFIRM_SWITCH_ON_TOOL: Anthropic.Tool = {
 export const REQUEST_STAFF_TOOL: Anthropic.Tool = {
   name: "request_staff",
   description:
-    "Escalate ONE missing piece of the user's request to the distribute.you team when it needs CODE (no tool, route or setting can do it), or report a bug. Records the request, opens an issue in the repo of the service that owns the piece, and alerts the team. Deduplicated per org on (repo, kind, pieceKey): call list_staff_requests first and reuse an existing pieceKey for the same need. " +
+    "Report a BUG (something exists but fails) or request a FEATURE (one missing piece that needs CODE: no tool, route, setting or create does it). Records the request, opens a GitHub issue in the repo of the service that owns the piece, and pings the team on Telegram. Deduplicated per org on (repo, kind, pieceKey): call list_staff_requests first and reuse an existing pieceKey for the same need. pieceKey and decomposition are optional (pieceKey defaults to the title). " +
     "Call it once per missing piece, then tell the user that piece is on hold and will be switched on once it is built, and carry on with the rest of their request. Read the staff-requests skill for which repo owns what.",
   input_schema: {
     type: "object" as const,
@@ -2459,7 +2459,259 @@ export const REQUEST_STAFF_TOOL: Anthropic.Tool = {
         },
       },
     },
-    required: ["kind", "repo", "pieceKey", "title", "userRequest", "missingPiece", "decomposition"],
+    required: ["kind", "repo", "title", "userRequest", "missingPiece"],
+  },
+};
+
+export const REQUEST_SKILL_UPGRADE_TOOL: Anthropic.Tool = {
+  name: "request_skill_upgrade",
+  description:
+    "Ask the team to upgrade YOUR OWN knowledge: a skill that is wrong, stale or missing something you needed (skillSlug), or a service's documentation that misled you (repo). Opens a GitHub issue with your proposed text (chat-service for a skill, the service's repo for its docs) and pings the team. Use it whenever a skill or doc made you hesitate, guess or fail; then carry on. Never tell the user about it unless they ask.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      skillSlug: { type: "string", description: "The skill to upgrade (a slug from the skill index). Or send repo instead." },
+      repo: { type: "string", enum: [...STAFF_REQUEST_REPOS], description: "The service whose docs (openapi descriptions, README) are wrong. Or send skillSlug instead." },
+      title: { type: "string", description: "Short title, under 80 characters." },
+      problem: { type: "string", description: "What is wrong or missing, and what it made you do." },
+      proposedChange: { type: "string", description: "The text you propose, ready to paste (markdown)." },
+      userRequest: { type: "string", description: "Optional: the user's words that exposed the gap." },
+    },
+    required: ["title", "problem", "proposedChange"],
+  },
+};
+
+export const CONTACT_HUMAN_TOOL: Anthropic.Tool = {
+  name: "contact_human",
+  description:
+    "Put the user in touch with a person of the distribute.you team NOW: sends their message to the founder's phone (Telegram). Use it when the user asks for a human, is upset, or needs a decision you cannot make (pricing, refund, a deal). One ping per org every 10 minutes; a repeat inside that window is recorded, not re-sent. Then tell the user a person has their message and will reply.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      reason: { type: "string", description: "Why they need a person, under 80 characters." },
+      message: { type: "string", description: "What the user wants to say, in their words, with any detail the person needs to reply." },
+      urgency: { type: "string", enum: ["normal", "urgent"], description: "urgent only when money or a live client is at stake." },
+    },
+    required: ["reason", "message"],
+  },
+};
+
+// --- Agent catalogue (features-service /internal/catalogue): walk a request level by level ---
+
+const CATALOGUE_PAGE_PROPS = {
+  q: { type: "string", description: "Optional text search on name and line." },
+  limit: { type: "integer", description: "Rows per page, 1 to 25 (default 10). Keep it small." },
+  id: { type: "string", description: "Optional: read ONE object in detail instead of a list." },
+};
+
+const CATALOGUE_ROW_NOTE =
+  "Each row: id, name, icon, one line, costUsd, roi, status (measured = fleet evidence; learning = not enough history, cost and roi null; customer_time = the customer's own team). Quote figures exactly. Read-only, free.";
+
+const idList = (description: string) => ({ type: "array", items: { type: "string" }, description });
+
+export const FIND_STEPS_TOOL: Anthropic.Tool = {
+  name: "find_steps",
+  description:
+    "Level 1 of organizing a request: the STEPS a lead can reach (Lead found, Website visit, Positive reply, Meeting booked, Paid client…), each with its value in USD. Start here to find the step the user's ask produces. " +
+    CATALOGUE_ROW_NOTE,
+  input_schema: { type: "object" as const, properties: CATALOGUE_PAGE_PROPS },
+};
+
+export const FIND_SALES_PATHS_TOOL: Anthropic.Tool = {
+  name: "find_sales_paths",
+  description:
+    "Level 2: SALES PATHS, chains of steps from first contact to Paid client (no channel yet), ranked by return. Filter with containsSteps (step ids from find_steps). " +
+    CATALOGUE_ROW_NOTE,
+  input_schema: {
+    type: "object" as const,
+    properties: { containsSteps: idList("Step ids (or labels) the path must contain."), ...CATALOGUE_PAGE_PROPS },
+  },
+};
+
+export const FIND_CHANNELS_TOOL: Anthropic.Tool = {
+  name: "find_channels",
+  description:
+    "Level 3: CHANNELS (cold email, LinkedIn posting, WhatsApp…) that can work the legs of the chosen paths. Filter with forPaths (sales path ids) or legKeys. " +
+    CATALOGUE_ROW_NOTE,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      forPaths: idList("Sales path ids from find_sales_paths."),
+      legKeys: idList("Leg keys (e.g. lead_found_to_conversation)."),
+      ...CATALOGUE_PAGE_PROPS,
+    },
+  },
+};
+
+export const FIND_PIPES_TOOL: Anthropic.Tool = {
+  name: "find_pipes",
+  description:
+    "Level 4: PIPES, one channel working one leg (proactive = own budget, reactive = runs on a trigger), with cost per outcome. Filter with paths and/or channels. Internal word: never say \"pipe\" to the user unless they ask. " +
+    CATALOGUE_ROW_NOTE,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      paths: idList("Sales path ids."),
+      channels: idList("Channel ids (slugs) from find_channels."),
+      legKeys: idList("Leg keys."),
+      ...CATALOGUE_PAGE_PROPS,
+    },
+  },
+};
+
+export const FIND_SALES_FUNNELS_TOOL: Anthropic.Tool = {
+  name: "find_sales_funnels",
+  description:
+    "Level 5: SALES FUNNELS, a sales path with one pipe per leg: the thing you PROPOSE to the user (name, cost per paying client, ROI). Filter with paths and/or containsChannels. Read one with id for its legs, rates and pipes. " +
+    CATALOGUE_ROW_NOTE,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      paths: idList("Sales path ids."),
+      containsChannels: idList("Channel ids the funnel must use."),
+      ...CATALOGUE_PAGE_PROPS,
+    },
+  },
+};
+
+export const FIND_WORKFLOWS_TOOL: Anthropic.Tool = {
+  name: "find_workflows",
+  description:
+    "Level 6 (optional, the platform picks the best one by itself): the WORKFLOWS that run one pipe, ranked. Only when the user wants to choose how a step runs. " +
+    CATALOGUE_ROW_NOTE,
+  input_schema: {
+    type: "object" as const,
+    properties: { pipe: { type: "string", description: "The pipe id (`<channel slug>|<leg key>`)." }, ...CATALOGUE_PAGE_PROPS },
+    required: ["pipe"],
+  },
+};
+
+const CATALOGUE_USER_REQUEST_PROP = {
+  type: "string",
+  description: "The user's request, in their words (carried into any staff request this create files).",
+};
+
+const CATALOGUE_CREATE_RULE =
+  "Creates DATA only: starts nothing, spends nothing. Check with the find tool first: never create what exists. Confirm the name and what it does with the user first.";
+
+export const CREATE_STEP_TOOL: Anthropic.Tool = {
+  name: "create_step",
+  description: "Create a NEW step (a stage a lead can reach that the catalogue lacks, e.g. \"Followed on LinkedIn\"). " + CATALOGUE_CREATE_RULE,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      key: { type: "string", description: "snake_case id, e.g. linkedin_follow." },
+      label: { type: "string", description: "Short name, e.g. \"LinkedIn follow\"." },
+      description: { type: "string" },
+      shortDescription: { type: "string", description: "One line, under 80 characters." },
+      icon: { type: "string", description: "Phosphor icon name, kebab-case." },
+      towardStep: { type: "string", description: "The existing step it leads to (e.g. conversation)." },
+      towardRatePct: { type: "number", description: "Share of people at this step who reach towardStep, in (0, 100]." },
+      producedBy: { type: "string", description: "Optional: what produces this step." },
+    },
+    required: ["key", "label", "description", "shortDescription", "icon", "towardStep", "towardRatePct"],
+  },
+};
+
+export const CREATE_PIPE_TOOL: Anthropic.Tool = {
+  name: "create_pipe",
+  description:
+    "Create a NEW pipe: a channel working one leg (fromStep -> toStep). Proactive: no trigger. Reactive: exactly one triggerId (list_trigger_types). " +
+    CATALOGUE_CREATE_RULE +
+    " A new pipe is a DRAFT until staff publishes it: the tool files that request itself and returns created_on_hold. A reactive pipe on a trigger nothing fires is not created: the tool files the detector request and returns on_hold. Say it is on hold with the team, never call request_staff again for it.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      channelSlug: { type: "string" },
+      fromStep: { type: "string", description: "Step id, or omit for a pipe that starts from nothing." },
+      toStep: { type: "string" },
+      mode: { type: "string", enum: ["proactive", "reactive"] },
+      triggerId: { type: "string", description: "Reactive only." },
+      conversionRatePct: { type: "number", description: "Only when the tool says no rate is known for this leg." },
+      userRequest: CATALOGUE_USER_REQUEST_PROP,
+    },
+    required: ["channelSlug", "toStep", "mode", "userRequest"],
+  },
+};
+
+export const CREATE_SALES_PATH_TOOL: Anthropic.Tool = {
+  name: "create_sales_path",
+  description:
+    "Create a NEW sales path: leg keys in order, from an entry leg to Paid client, each performed by some pipe. Returns created:false when it already exists. " + CATALOGUE_CREATE_RULE,
+  input_schema: {
+    type: "object" as const,
+    properties: { legKeys: idList("Leg keys in order, e.g. [\"lead_found_to_conversation\", \"conversation_to_paid_client\"].") },
+    required: ["legKeys"],
+  },
+};
+
+export const CREATE_SALES_FUNNEL_TOOL: Anthropic.Tool = {
+  name: "create_sales_funnel",
+  description:
+    "Create a NEW sales funnel: one entry per leg of a sales path, in order: a pipe id, or the bare leg key of a leg no channel performs (the customer's team). Returns created:false when it exists. " +
+    CATALOGUE_CREATE_RULE +
+    " A funnel using a draft pipe is on hold until staff publishes it (filed for you).",
+  input_schema: {
+    type: "object" as const,
+    properties: { pipeIds: idList("One per leg, in order."), userRequest: CATALOGUE_USER_REQUEST_PROP },
+    required: ["pipeIds", "userRequest"],
+  },
+};
+
+// --- Infra discovery by depth (api-registry /discover, /call) ---
+
+export const DISCOVER_SERVICES_TOOL: Anthropic.Tool = {
+  name: "discover_services",
+  description:
+    "Infra level 1: every platform service, one line each, with its endpoint count. Start here to build or understand something new. Read-only, free.",
+  input_schema: {
+    type: "object" as const,
+    properties: { q: { type: "string", description: "Optional text search." }, limit: { type: "integer", description: "1 to 50." } },
+  },
+};
+
+export const DISCOVER_SERVICE_ENDPOINTS_TOOL: Anthropic.Tool = {
+  name: "discover_service_endpoints",
+  description:
+    "Infra level 2: one service's endpoints, one line each, with average cost, duration and success rate from real runs. Read-only, free.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      service: { type: "string", description: "Service name from discover_services (e.g. \"features\")." },
+      q: { type: "string", description: "Optional text search." },
+      method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+      limit: { type: "integer", description: "1 to 50." },
+    },
+    required: ["service"],
+  },
+};
+
+export const DISCOVER_ENDPOINT_TOOL: Anthropic.Tool = {
+  name: "discover_endpoint",
+  description: "Infra level 3: one endpoint's full doc (params, body, response), its run stats, and how to test-run it. Read-only, free.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      service: { type: "string" },
+      method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+      path: { type: "string", description: "The path exactly as discover_service_endpoints listed it." },
+    },
+    required: ["service", "method", "path"],
+  },
+};
+
+export const TEST_ENDPOINT_TOOL: Anthropic.Tool = {
+  name: "test_endpoint",
+  description:
+    "Infra level 4: test-run ONE read endpoint (GET) as this account, to see real data before building on it. Only /orgs/, /public/ and /v1/ routes; never internal, admin or staff ones. Any cost is billed to this account: say so if the endpoint shows a cost. Large bodies are cut to keep the chat small. A write the user needs is a feature request (request_staff), never a test run.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      service: { type: "string" },
+      path: { type: "string", description: "Concrete path with its ids filled in (no {placeholders})." },
+      query: { type: "string", description: "Optional query string without the \"?\", e.g. \"limit=5&status=active\"." },
+    },
+    required: ["service", "path"],
   },
 };
 
@@ -2711,7 +2963,23 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   propose_switch_on: PROPOSE_SWITCH_ON_TOOL,
   confirm_switch_on: CONFIRM_SWITCH_ON_TOOL,
   request_staff: REQUEST_STAFF_TOOL,
+  request_skill_upgrade: REQUEST_SKILL_UPGRADE_TOOL,
+  contact_human: CONTACT_HUMAN_TOOL,
   list_staff_requests: LIST_STAFF_REQUESTS_TOOL,
+  find_steps: FIND_STEPS_TOOL,
+  find_sales_paths: FIND_SALES_PATHS_TOOL,
+  find_channels: FIND_CHANNELS_TOOL,
+  find_pipes: FIND_PIPES_TOOL,
+  find_sales_funnels: FIND_SALES_FUNNELS_TOOL,
+  find_workflows: FIND_WORKFLOWS_TOOL,
+  create_step: CREATE_STEP_TOOL,
+  create_pipe: CREATE_PIPE_TOOL,
+  create_sales_path: CREATE_SALES_PATH_TOOL,
+  create_sales_funnel: CREATE_SALES_FUNNEL_TOOL,
+  discover_services: DISCOVER_SERVICES_TOOL,
+  discover_service_endpoints: DISCOVER_SERVICE_ENDPOINTS_TOOL,
+  discover_endpoint: DISCOVER_ENDPOINT_TOOL,
+  test_endpoint: TEST_ENDPOINT_TOOL,
   list_declared_channels: LIST_DECLARED_CHANNELS_TOOL,
   declare_channel: DECLARE_CHANNEL_TOOL,
   list_declared_legs: LIST_DECLARED_LEGS_TOOL,
