@@ -111,6 +111,10 @@ Response:
 }
 ```
 
+### Deleting an app config
+
+`DELETE /config/:key` (org headers) removes the calling org's `(orgId, key)` config. Idempotent: `{ orgId, key, deleted: true | false }`. Platform configs are never touched.
+
 ## Platform Config Registration
 
 Register a platform-wide config for a given key. Used as fallback when no per-org config exists for that key.
