@@ -2598,8 +2598,8 @@ export const StaffRequestSchema = z
     userId: z.string(),
     brandId: z.string().nullable(),
     sessionId: z.string().nullable(),
-    kind: z.enum(["bug", "feature"]),
-    repo: z.string(),
+    kind: z.enum(["bug", "feature", "skill_upgrade", "contact_human"]),
+    repo: z.string().nullable().openapi({ description: "GitHub repo the issue went to; null for contact_human (no issue)." }),
     pieceKey: z.string(),
     title: z.string(),
     userRequest: z.string(),
@@ -2626,6 +2626,67 @@ export const StaffRequestListQuerySchema = z
     limit: z.coerce.number().int().min(1).max(200).optional().openapi({ description: "Default 50." }),
   })
   .openapi("StaffRequestListQuery");
+
+export const AgentRequestBodySchema = z
+  .object({
+    kind: z.enum(["bug", "feature", "skill_upgrade", "contact_human"]),
+    repo: z.string().optional().openapi({ description: "bug / feature: the fleet repo that owns the piece. skill_upgrade: the repo whose docs are wrong (or send skillSlug)." }),
+    skillSlug: z.string().optional().openapi({ description: "skill_upgrade: the skill to upgrade." }),
+    pieceKey: z.string().optional().openapi({ description: "bug / feature: kebab-case dedupe key (default: from the title)." }),
+    title: z.string().optional().openapi({ description: "bug / feature / skill_upgrade: short title." }),
+    userRequest: z.string().optional().openapi({ description: "bug / feature: the user's words. skill_upgrade: optional." }),
+    missingPiece: z.string().optional().openapi({ description: "bug / feature: what is broken or missing." }),
+    decomposition: z
+      .array(z.object({ piece: z.string(), outcome: z.enum(["exists", "create", "needs_code"]), detail: z.string().optional() }))
+      .optional(),
+    problem: z.string().optional().openapi({ description: "skill_upgrade: what is wrong." }),
+    proposedChange: z.string().optional().openapi({ description: "skill_upgrade: the proposed text." }),
+    reason: z.string().optional().openapi({ description: "contact_human: why a person is needed." }),
+    message: z.string().optional().openapi({ description: "contact_human: the user's message." }),
+    urgency: z.enum(["normal", "urgent"]).optional(),
+    sessionId: z.string().uuid().optional(),
+  })
+  .openapi("AgentRequestBody");
+
+export const AgentRequestResultSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    kind: z.enum(["bug", "feature", "skill_upgrade", "contact_human"]),
+    destination: z.string(),
+    duplicate: z.boolean(),
+    requestCount: z.number().int(),
+    issueUrl: z.string().nullable(),
+    issueError: z.string().nullable(),
+    staffPinged: z.boolean(),
+    telegramSkippedReason: z.string().nullable(),
+    telegramError: z.string().nullable(),
+  })
+  .openapi("AgentRequestResult");
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/staff-requests",
+  tags: ["Skills"],
+  summary: "File a request from an agent: bug, feature, skill/doc upgrade, or contact a human",
+  description:
+    "The same paths the Copilot's tools take (request_staff, request_skill_upgrade, contact_human), for any agent acting for an org. Every kind reaches someone who acts: bug / feature / skill_upgrade open a GitHub issue in the owning repo (chat-service for a skill) and ping the team on Telegram; contact_human pings the owner on Telegram straight away (no issue, at most one ping per org every 10 minutes). Deduplicated per org on (repo, kind, pieceKey) for issue kinds: a repeat answers 200 with duplicate:true and bumps requestCount. Staff requesters are never pinged.",
+  request: {
+    headers: z.object({
+      "x-api-key": z.string(),
+      "x-org-id": z.string(),
+      "x-user-id": z.string(),
+      "x-run-id": z.string(),
+      "x-brand-id": z.string().optional(),
+    }),
+    body: { content: { "application/json": { schema: AgentRequestBodySchema } } },
+  },
+  responses: {
+    201: { description: "Filed", content: { "application/json": { schema: AgentRequestResultSchema } } },
+    200: { description: "Already filed by this org (requestCount bumped)", content: { "application/json": { schema: AgentRequestResultSchema } } },
+    400: { description: "Invalid request", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "Unknown skillSlug", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
 
 registry.registerPath({
   method: "get",

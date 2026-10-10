@@ -1262,8 +1262,38 @@ Read-only and supporting workflow tools:
 | `set_campaign_budget` | Daily cap of one (offer x leg x channel); creates no campaign. `PUT /v1/brands/:brandId/campaign-budget` |
 | `propose_switch_on` | Step 1: records what would switch on (`start_campaign` with a MANDATORY `dailyBudgetCents`, set now as the cap; `activate_campaign`; `switch_on_reactive_legs`) and returns a `confirmationToken`. Switches nothing on. |
 | `confirm_switch_on` | Step 2: executes a proposal (`POST /v1/campaigns/start-funded-pair`, `PATCH /v1/campaigns/:id {status:"activate"}`, `POST /v1/offers/:offerId/reactive-defaults`). Only accepts a token found in the session history recorded BEFORE this turn, so a user message always sits between proposal and switch-on; a used token is refused. |
-| `request_staff` | Escalates one missing piece (feature) or a bug: records it (deduped per org on repo + kind + `pieceKey`), opens a GitHub issue in the owning repo, pings staff on Telegram unless the requester is staff. |
-| `list_staff_requests` | This org's escalations. |
+| `request_staff` | Files a bug or a feature: records it (deduped per org on repo + kind + `pieceKey`), opens a GitHub issue in the owning repo, pings staff on Telegram unless the requester is staff. `pieceKey` (default: kebab of the title) and `decomposition` are optional. |
+| `request_skill_upgrade` | The agent asks to upgrade its own knowledge: `skillSlug` (issue in chat-service) or `repo` (a service doc; issue in that repo), with `problem` + `proposedChange`. Issue + Telegram. Unknown skill → 404-style error. |
+| `contact_human` | The user wants a person: Telegram to the owner straight away (no issue, `repo` null). At most one ping per org per 10 minutes; a repeat inside the window is recorded with `telegramSkippedReason: "recent_contact_already_pinged"`. |
+| `list_staff_requests` | This org's requests. |
+
+Every request result carries `kind` and `destination` (where it landed, in words). The same four kinds are filed by any agent over HTTP: `POST /orgs/staff-requests` (`x-api-key`, `x-org-id`, `x-user-id`, `x-run-id`; body `{ kind, ... }`, the tool's fields; 201 filed, 200 duplicate, 400 invalid).
+
+**Agent catalogue** (`src/lib/catalogue-client.ts`, owner 2026-10-10 "chat first"). The Copilot organizes a request level by level on small pages: Steps -> Sales Paths -> Channels -> Pipes -> Sales Funnels -> Workflows. Owner: features-service `/internal/catalogue/*`, called directly with chat-service's features-service key. Bodies are verbatim (rows: `id, name, icon, line, costUsd, roi, status`). `limit` is 1-25 (refused above, before any call); `id` reads one object in detail.
+
+| Tool | Route |
+|---|---|
+| `find_steps` | `GET /internal/catalogue/steps[/:id]` (`q`, `limit`) |
+| `find_sales_paths` | `GET /internal/catalogue/sales-paths[/:id]` (`containsSteps`) |
+| `find_channels` | `GET /internal/catalogue/channels[/:id]` (`forPaths`, `legKeys`) |
+| `find_pipes` | `GET /internal/catalogue/pipes[/:id]` (`paths`, `channels`, `legKeys`) |
+| `find_sales_funnels` | `GET /internal/catalogue/sales-funnels[/:id]` (`paths`, `containsChannels`) |
+| `find_workflows` | `GET /internal/catalogue/workflows[/:id]?pipe=` (`pipe` required) |
+| `create_step` | `POST /internal/catalogue/steps` |
+| `create_pipe` | `POST /internal/catalogue/pipes`. A draft pipe files "publish it" (features-service, piece `publish-leg-<slug>-<legKey>`) and returns `created_on_hold`; `trigger_not_fired` files the detector request and returns `on_hold` (same as `declare_leg`). |
+| `create_sales_path` | `POST /internal/catalogue/sales-paths` (`created:false` when it exists) |
+| `create_sales_funnel` | `POST /internal/catalogue/sales-funnels`. A draft funnel files "publish it" for each draft pipe. |
+
+Every create stamps `createdBy` = the requester and `requestedByOrgId` = the chat's org.
+
+**Infra discovery** (`src/lib/discovery-client.ts`). Explore the services by depth through api-registry-service, called directly with its key.
+
+| Tool | Route |
+|---|---|
+| `discover_services` | `GET /discover/services` (one line per service) |
+| `discover_service_endpoints` | `GET /discover/services/:service/endpoints` (avg cost, duration, success rate from real runs) |
+| `discover_endpoint` | `GET /discover/services/:service/endpoint?method=&path=` (full doc + stats) |
+| `test_endpoint` | `POST /call/:service` with the chat's `x-org-id` / `x-user-id` and `x-run-id` (so any cost lands on that org). GET only, `/orgs/`, `/public/` or `/v1/` paths, never an internal / admin / staff / platform route (the registry injects the target's SERVICE key). Bodies over 6,000 characters are cut (`truncated`, `dataPreview`). |
 
 **Copilot declarations** (`src/lib/declarations-client.ts`). Channels, legs, trigger types and sales paths are created LIVE as data, never through a PR. Owner: features-service `/internal/declarations/*`, called directly with chat-service's features-service key (staff-only routes; a channel is shared by every client). Every write sends `requestedByOrgId` = the chat's org and `createdBy` = the requester's user id. The Copilot never publishes.
 
@@ -1459,7 +1489,8 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `CLIENT_SERVICE_URL` / `CLIENT_SERVICE_API_KEY` | For `request_staff` | Reads the requester's email (`GET /internal/users/:userId`) to decide the staff Telegram ping. Unset → lookup fails, logged, the ping still goes out |
 | `GITHUB_ISSUES_TOKEN` | For `request_staff` | GitHub token with issues:write on the `shamanic-technologies` repos. Unset → the request is recorded without an issue (`issueError`), and a repeat retries |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_OWNER_CHAT_ID` | For `request_staff` | Same bot + chat as billing-service and the dashboard. Unset → no ping (`telegramError` recorded) |
-| `FEATURES_SERVICE_URL` / `FEATURES_SERVICE_API_KEY` | For the `declare_*` / `list_declared_*` / `list_trigger_types` tools | features-service base URL and its service key (`/internal/declarations/*`). Unset → those tools fail loud (`not configured`) |
+| `FEATURES_SERVICE_URL` / `FEATURES_SERVICE_API_KEY` | For the `declare_*` / `list_declared_*` / `list_trigger_types` / catalogue (`find_*`, `create_*`) tools | features-service base URL and its service key (`/internal/declarations/*`, `/internal/catalogue/*`). Unset → those tools fail loud (`not configured`) |
+| `API_REGISTRY_SERVICE_URL` / `API_REGISTRY_SERVICE_API_KEY` | For `discover_*` / `test_endpoint` | api-registry-service base URL and its key. Unset → those tools fail loud |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
@@ -1473,11 +1504,11 @@ Uses PostgreSQL via Drizzle ORM. Eight tables:
 - **brand_profile_embeddings** — cached Gemini embeddings of the brand-profile query, keyed by `(orgId, brandId, contentHash)`. Used by `/orgs/rag/score` so identical brand contexts skip the brand-profile embedding call. Document embeddings are not cached.
 
 - **skills** / **skill_versions** — the Copilot skill tree (see below) and every content each skill has held.
-- **staff_requests** — Copilot escalations, unique on `(org_id, repo, kind, piece_key)`.
+- **staff_requests** — agent requests (`kind`: bug, feature, skill_upgrade, contact_human), unique on `(org_id, repo, kind, piece_key)`; `repo` is NULL for contact_human (migration 0019), so those never dedupe.
 
 ## Copilot skill tree (`/internal/skills`)
 
-The Copilot's platform knowledge is a tree of markdown skills: an `index` skill (method + map, appended to the system prompt of any config allowing `read_skill`) and one sub-skill per topic (offers, client-profiles, qualification, sources, channels, legs, triggers, sales-paths, campaigns, workflows-and-templates, connected-accounts, budget-and-billing, costs-roi-stats, staff-requests), loaded on demand with `read_skill`. Staff edit them live from the dashboard.
+The Copilot's platform knowledge is a tree of markdown skills: an `index` skill (the walk + rules, appended to the system prompt of any config allowing `read_skill`, with its DIRECT sub-skills only) and one sub-skill per topic (catalogue, offers, client-profiles, qualification, sources, channels, legs, triggers, sales-paths, campaigns, workflows-and-templates, connected-accounts, budget-and-billing, costs-roi-stats, staff-requests, infra), loaded on demand with `read_skill`. Deeper levels are listed by `read_skill` on their parent: `catalogue` → `catalogue-steps`, `catalogue-sales-paths`, `catalogue-channels`, `catalogue-pipes`, `catalogue-sales-funnels`, `catalogue-workflows`; `infra` → `infra-build-workflow`. Every skill stays under ~800 tokens (guarded). Staff edit them live from the dashboard.
 
 | Route | Description |
 |---|---|

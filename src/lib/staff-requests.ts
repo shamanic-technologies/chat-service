@@ -1,6 +1,6 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
 import type { db as Db } from "../db/index.js";
-import { staffRequests, type StaffRequest, type StaffRequestPiece } from "../db/schema.js";
+import { staffRequests, type StaffRequest, type StaffRequestKind, type StaffRequestPiece } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
 // Staff requests — what the Copilot does when a piece of the user's ask needs
@@ -15,6 +15,15 @@ import { staffRequests, type StaffRequest, type StaffRequestPiece } from "../db/
 //      report staff's own actions. Pinged once per row, never on a repeat.
 // A failure in 2 or 3 is stored on the row, logged, and returned to the model:
 // the request is never lost because a side channel was down.
+//
+// Four kinds, each reaching someone who acts (an issue is never filed alone):
+//   bug, feature    -> issue in the owning repo + Telegram to staff
+//   skill_upgrade   -> issue in chat-service (skills are its rows; staff edit
+//                      them live) or in the service whose doc is wrong, with
+//                      the proposed text + Telegram
+//   contact_human   -> NO issue (a person, not a codebase): Telegram to the
+//                      owner straight away; one ping per org per
+//                      CONTACT_PING_WINDOW_MS so a looping model cannot spam.
 // ---------------------------------------------------------------------------
 
 type Database = typeof Db;
@@ -86,8 +95,9 @@ export class StaffRequestValidationError extends Error {
 }
 
 export interface StaffRequestInput {
-  kind: "bug" | "feature";
-  repo: string;
+  kind: StaffRequestKind;
+  /** null only for contact_human. */
+  repo: string | null;
   pieceKey: string;
   title: string;
   userRequest: string;
@@ -110,15 +120,18 @@ export function parseStaffRequestArgs(args: Record<string, unknown>): StaffReque
   if (!(STAFF_REQUEST_REPOS as readonly string[]).includes(repo)) {
     throw new StaffRequestValidationError(`repo "${repo}" is not a fleet repo. Use one of: ${STAFF_REQUEST_REPOS.join(", ")}`);
   }
-  const pieceKey = str("pieceKey", 80);
+  const title = str("title", 200);
+  // pieceKey is the dedupe key: optional, derived from the title when absent.
+  const pieceKey = args.pieceKey === undefined || args.pieceKey === null ? pieceKeyOf(title) : str("pieceKey", 80);
   if (!PIECE_KEY_RE.test(pieceKey)) {
     throw new StaffRequestValidationError(`pieceKey must be kebab-case (e.g. "linkedin-post-reaction-trigger")`);
   }
   const raw = args.decomposition;
-  if (!Array.isArray(raw) || raw.length === 0) {
-    throw new StaffRequestValidationError("decomposition must list every piece of the user's request with its outcome");
+  // Optional (no friction for a plain bug or feature); when sent, every piece needs an outcome.
+  if (raw !== undefined && raw !== null && (!Array.isArray(raw) || raw.length === 0)) {
+    throw new StaffRequestValidationError("decomposition, when sent, must list every piece of the user's request with its outcome");
   }
-  const decomposition: StaffRequestPiece[] = raw.map((p, i) => {
+  const decomposition: StaffRequestPiece[] = ((raw ?? []) as unknown[]).map((p, i) => {
     const o = (p ?? {}) as Record<string, unknown>;
     if (typeof o.piece !== "string" || o.piece.trim() === "") {
       throw new StaffRequestValidationError(`decomposition[${i}].piece is required`);
@@ -136,12 +149,86 @@ export function parseStaffRequestArgs(args: Record<string, unknown>): StaffReque
     kind,
     repo,
     pieceKey,
-    title: str("title", 200),
+    title,
     userRequest: str("userRequest", 4000),
     decomposition,
     missingPiece: str("missingPiece", 4000),
   };
 }
+
+/** A stable kebab-case dedupe key from free text (max 80 chars). */
+export function pieceKeyOf(text: string): string {
+  const k = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80)
+    .replace(/-+$/, "");
+  if (!k) throw new StaffRequestValidationError("title must contain letters or digits");
+  return k;
+}
+
+function text(args: Record<string, unknown>, name: string, max: number): string {
+  const v = args[name];
+  if (typeof v !== "string" || v.trim() === "") throw new StaffRequestValidationError(`${name} is required`);
+  if (v.length > max) throw new StaffRequestValidationError(`${name} must be at most ${max} characters`);
+  return v.trim();
+}
+
+/**
+ * request_skill_upgrade: a skill (chat-service row) or a service's own doc is
+ * wrong, stale or too thin. A skill goes to chat-service; a service doc to the
+ * repo of that service. `skillSlug` existence is checked by the caller (DB).
+ */
+export function parseSkillUpgradeArgs(args: Record<string, unknown>): StaffRequestInput & { skillSlug: string | null } {
+  const skillSlug = typeof args.skillSlug === "string" && args.skillSlug.trim() ? args.skillSlug.trim() : null;
+  const docRepo = typeof args.repo === "string" && args.repo.trim() ? args.repo.trim() : null;
+  if (!skillSlug && !docRepo) {
+    throw new StaffRequestValidationError("name what to upgrade: skillSlug (a skill) or repo (the service whose doc is wrong)");
+  }
+  if (skillSlug && docRepo) throw new StaffRequestValidationError("send skillSlug OR repo, not both");
+  if (docRepo && !(STAFF_REQUEST_REPOS as readonly string[]).includes(docRepo)) {
+    throw new StaffRequestValidationError(`repo "${docRepo}" is not a fleet repo. Use one of: ${STAFF_REQUEST_REPOS.join(", ")}`);
+  }
+  const title = text(args, "title", 200);
+  const problem = text(args, "problem", 4000);
+  const proposedChange = text(args, "proposedChange", 8000);
+  const target = skillSlug ? `skill \`${skillSlug}\`` : `the ${docRepo} docs (openapi descriptions, README)`;
+  return {
+    kind: "skill_upgrade",
+    repo: skillSlug ? "chat-service" : docRepo,
+    pieceKey: pieceKeyOf(`${skillSlug ? `skill-${skillSlug}` : "docs"}-${title}`),
+    title,
+    userRequest: typeof args.userRequest === "string" && args.userRequest.trim() ? args.userRequest.trim().slice(0, 4000) : "(raised by the agent itself)",
+    decomposition: [],
+    missingPiece: `Upgrade ${target}.\n\n**What is wrong:** ${problem}\n\n**Proposed change:**\n\n${proposedChange}`,
+    skillSlug,
+  };
+}
+
+export const CONTACT_URGENCIES = ["normal", "urgent"] as const;
+
+/** contact_human: the user wants a person. No repo, no issue: a Telegram ping to the owner. */
+export function parseContactHumanArgs(args: Record<string, unknown>): StaffRequestInput & { urgency: (typeof CONTACT_URGENCIES)[number] } {
+  const urgency = args.urgency === undefined || args.urgency === null ? "normal" : args.urgency;
+  if (!(CONTACT_URGENCIES as readonly unknown[]).includes(urgency)) {
+    throw new StaffRequestValidationError(`urgency must be one of ${CONTACT_URGENCIES.join(", ")}`);
+  }
+  const reason = text(args, "reason", 200);
+  return {
+    kind: "contact_human",
+    repo: null,
+    pieceKey: pieceKeyOf(reason),
+    title: reason,
+    userRequest: text(args, "message", 4000),
+    decomposition: [],
+    missingPiece: `The user asked to talk to a person${urgency === "urgent" ? " (URGENT)" : ""}.`,
+    urgency: urgency as (typeof CONTACT_URGENCIES)[number],
+  };
+}
+
+/** One contact_human ping per org inside this window; later ones are recorded, not re-pinged. */
+export const CONTACT_PING_WINDOW_MS = 10 * 60_000;
 
 // --- requester email (client-service) ---------------------------------------
 
@@ -169,18 +256,22 @@ export function buildIssueBody(row: StaffRequest): string {
     ``,
     `> ${row.userRequest.replace(/\n/g, "\n> ")}`,
     ``,
-    `## Missing piece (${row.kind})`,
+    row.kind === "skill_upgrade" ? `## Upgrade` : `## Missing piece (${row.kind})`,
     ``,
     row.missingPiece,
     ``,
-    `## The request, decomposed`,
-    ``,
-    `| Piece | Outcome | Detail |`,
-    `|---|---|---|`,
-    ...row.decomposition.map(
-      (p) => `| ${p.piece.replace(/\|/g, "\\|")} | ${p.outcome} | ${(p.detail ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ")} |`,
-    ),
-    ``,
+    ...(row.decomposition.length
+      ? [
+          `## The request, decomposed`,
+          ``,
+          `| Piece | Outcome | Detail |`,
+          `|---|---|---|`,
+          ...row.decomposition.map(
+            (p) => `| ${p.piece.replace(/\|/g, "\\|")} | ${p.outcome} | ${(p.detail ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ")} |`,
+          ),
+          ``,
+        ]
+      : []),
     `---`,
     `chat-service staff request \`${row.id}\` · piece \`${row.pieceKey}\`${row.sessionId ? ` · session \`${row.sessionId}\`` : ""}.`,
     `When this ships, the Copilot can switch the piece on for the user.`,
@@ -240,10 +331,26 @@ export async function sendStaffTelegram(html: string): Promise<{ ok: true } | { 
   }
 }
 
+const KIND_LABELS: Record<StaffRequestKind, string> = {
+  bug: "🛠 <b>Copilot bug report</b>",
+  feature: "🛠 <b>Copilot feature request</b>",
+  skill_upgrade: "📚 <b>Copilot skill/doc upgrade</b>",
+  contact_human: "🙋 <b>A user asks for a human</b>",
+};
+
 export function buildTelegramMessage(row: StaffRequest, requesterEmail: string | null): string {
   const e = escapeTelegramHtml;
+  if (row.kind === "contact_human") {
+    return [
+      `${KIND_LABELS.contact_human}${row.missingPiece.includes("URGENT") ? " · <b>URGENT</b>" : ""}`,
+      `<b>${e(row.title)}</b>`,
+      `Message: ${e(row.userRequest.slice(0, 1500))}`,
+      `From: ${e(requesterEmail ?? row.userId)} · org ${e(row.orgId)}${row.brandId ? ` · brand ${e(row.brandId)}` : ""}`,
+      row.sessionId ? `Chat session: ${e(row.sessionId)}` : `Chat session: none`,
+    ].join("\n");
+  }
   return [
-    `🛠 <b>Copilot ${row.kind === "bug" ? "bug report" : "feature request"}</b> · ${e(row.repo)}`,
+    `${KIND_LABELS[row.kind]} · ${e(row.repo ?? "no repo")}`,
     `<b>${e(row.title)}</b>`,
     `User asked: ${e(row.userRequest.slice(0, 500))}`,
     `Missing: ${e(row.missingPiece.slice(0, 500))}`,
@@ -271,6 +378,9 @@ const DEFAULT_DEPS: StaffRequestDeps = { fetchRequesterEmail, openGithubIssue, s
 
 export interface StaffRequestResult {
   requestId: string;
+  kind: StaffRequestKind;
+  /** Where it landed, in words the model can repeat ("GitHub issue + Telegram"). */
+  destination: string;
   duplicate: boolean;
   requestCount: number;
   issueUrl: string | null;
@@ -297,6 +407,8 @@ export async function submitStaffRequest(
     console.error(`[staff-request] requester lookup failed for user="${ctx.userId}": ${lookupError}`);
   }
   const requesterIsStaff = isStaffEmail(requesterEmail);
+  const isContact = input.kind === "contact_human";
+  if (!isContact && !input.repo) throw new StaffRequestValidationError(`${input.kind} needs a repo`);
 
   // 1. Record (dedupe per org on repo + kind + pieceKey).
   const inserted = await database
@@ -329,7 +441,7 @@ export async function submitStaffRequest(
       .where(
         and(
           eq(staffRequests.orgId, ctx.orgId),
-          eq(staffRequests.repo, input.repo),
+          eq(staffRequests.repo, input.repo as string),
           eq(staffRequests.kind, input.kind),
           eq(staffRequests.pieceKey, input.pieceKey),
         ),
@@ -340,11 +452,12 @@ export async function submitStaffRequest(
     row = inserted[0];
   }
 
-  // 2. Issue — once per row; a repeat retries only while none exists.
-  if (!row.issueUrl) {
+  // 2. Issue — once per row; a repeat retries only while none exists. A
+  //    contact_human reaches a person, not a codebase: no issue.
+  if (!isContact && !row.issueUrl) {
     try {
-      const prefix = input.kind === "bug" ? "[Copilot bug]" : "[Copilot feature]";
-      const issue = await deps.openGithubIssue(row.repo, `${prefix} ${row.title}`, buildIssueBody(row));
+      const prefix = ISSUE_PREFIXES[input.kind as Exclude<StaffRequestKind, "contact_human">];
+      const issue = await deps.openGithubIssue(row.repo as string, `${prefix} ${row.title}`, buildIssueBody(row));
       [row] = await database
         .update(staffRequests)
         .set({ issueUrl: issue.url, issueNumber: issue.number, issueError: null, updatedAt: new Date() })
@@ -363,8 +476,15 @@ export async function submitStaffRequest(
 
   // 3. Telegram — first time only, never for staff's own requests.
   let staffPinged = false;
+  const recentContactPing = isContact && !requesterIsStaff ? await hasRecentContactPing(database, ctx.orgId, row.id) : false;
   if (!duplicate) {
-    if (requesterIsStaff) {
+    if (recentContactPing) {
+      [row] = await database
+        .update(staffRequests)
+        .set({ telegramSkippedReason: "recent_contact_already_pinged", updatedAt: new Date() })
+        .where(eq(staffRequests.id, row.id))
+        .returning();
+    } else if (requesterIsStaff) {
       [row] = await database
         .update(staffRequests)
         .set({ telegramSkippedReason: "requester_is_staff", updatedAt: new Date() })
@@ -394,6 +514,10 @@ export async function submitStaffRequest(
 
   return {
     requestId: row.id,
+    kind: row.kind,
+    destination: isContact
+      ? "Telegram to the team (the owner reads it on his phone)"
+      : `GitHub issue in ${row.repo} + Telegram to the team`,
     duplicate,
     requestCount: row.requestCount,
     issueUrl: row.issueUrl,
@@ -402,6 +526,30 @@ export async function submitStaffRequest(
     telegramSkippedReason: row.telegramSkippedReason,
     telegramError: row.telegramError,
   };
+}
+
+const ISSUE_PREFIXES: Record<Exclude<StaffRequestKind, "contact_human">, string> = {
+  bug: "[Copilot bug]",
+  feature: "[Copilot feature]",
+  skill_upgrade: "[Copilot skill upgrade]",
+};
+
+/** Did this org already ping a human in the last CONTACT_PING_WINDOW_MS (another row)? */
+async function hasRecentContactPing(database: Database, orgId: string, exceptId: string): Promise<boolean> {
+  const since = new Date(Date.now() - CONTACT_PING_WINDOW_MS);
+  const rows = await database
+    .select({ id: staffRequests.id })
+    .from(staffRequests)
+    .where(
+      and(
+        eq(staffRequests.orgId, orgId),
+        eq(staffRequests.kind, "contact_human"),
+        gte(staffRequests.telegramSentAt, since),
+        ne(staffRequests.id, exceptId),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }
 
 export async function listStaffRequests(

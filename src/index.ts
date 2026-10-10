@@ -128,10 +128,13 @@ import {
 import {
   listStaffRequests,
   listStaffRequestsForModel,
-  parseStaffRequestArgs,
+  StaffRequestValidationError,
   submitStaffRequest,
   toStaffRequestBody,
 } from "./lib/staff-requests.js";
+import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
+import { CATALOGUE_READ_TOOLS, CATALOGUE_WRITE_TOOLS } from "./lib/catalogue-client.js";
+import { DISCOVERY_READ_TOOLS, testEndpoint } from "./lib/discovery-client.js";
 import {
   createOffer,
   executeSwitchOn,
@@ -3102,15 +3105,60 @@ app.post("/chat", requireAuth, async (req, res) => {
         return { name: call.name, result };
       }
 
-      // --- Copilot: staff escalation ------------------------------------------
-      if (call.name === "request_staff") {
+      // --- Copilot: agent catalogue (walk Steps -> ... -> Workflows; creates) ---
+      const catalogueRead = CATALOGUE_READ_TOOLS[call.name];
+      if (catalogueRead) {
         const args = (call.args as Record<string, unknown>) || {};
-        const input = parseStaffRequestArgs(args);
-        const result = await submitStaffRequest(
-          db,
-          { orgId, userId, brandId: brandIds.length === 1 ? brandIds[0] : null, sessionId: currentSessionId ?? null },
-          input,
+        const result = await catalogueRead(args);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      const catalogueWrite = CATALOGUE_WRITE_TOOLS[call.name];
+      if (catalogueWrite) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await catalogueWrite(args, { orgId, userId }, (input) =>
+          submitStaffRequest(
+            db,
+            { orgId, userId, brandId: brandIds.length === 1 ? brandIds[0] : null, sessionId: currentSessionId ?? null },
+            input,
+          ),
         );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Copilot: infra discovery by depth (api-registry) -------------------
+      const discoveryRead = DISCOVERY_READ_TOOLS[call.name];
+      if (discoveryRead) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await discoveryRead(args);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "test_endpoint") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await testEndpoint(args, {
+          orgId,
+          userId,
+          runId: runId!,
+          trackingHeaders: Object.keys(trackingHeaders).length > 0 ? (trackingHeaders as Record<string, string>) : undefined,
+        });
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Copilot: requests (bug, feature, skill/doc upgrade, contact a human) ---
+      if (call.name === "request_staff" || call.name === "request_skill_upgrade" || call.name === "contact_human") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const ctx = { orgId, userId, brandId: brandIds.length === 1 ? brandIds[0] : null, sessionId: currentSessionId ?? null };
+        const result =
+          call.name === "request_staff"
+            ? await fileStaffRequest(db, ctx, args)
+            : call.name === "request_skill_upgrade"
+              ? await fileSkillUpgrade(db, ctx, args)
+              : await fileContactHuman(db, ctx, args);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -4440,6 +4488,22 @@ app.get("/internal/skills/:slug/versions/:version", requireInternalAuth, async (
     }
     return res.json(toSkillVersionBody(found));
   } catch (err) {
+    const mapped = skillErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+// Requests from any agent, by API (bug, feature, skill_upgrade, contact_human):
+// the same paths the Copilot's tools take, for the calling org and user.
+app.post("/orgs/staff-requests", requireAuth, async (req, res) => {
+  const { orgId, userId, workflowTracking } = res.locals as AuthLocals;
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const sessionId = typeof body.sessionId === "string" && /^[0-9a-f-]{36}$/i.test(body.sessionId) ? body.sessionId : null;
+  try {
+    const result = await fileAgentRequest(db, { orgId, userId, brandId: workflowTracking.brandId ?? null, sessionId }, body);
+    return res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (err) {
+    if (err instanceof StaffRequestValidationError) return res.status(400).json({ error: err.message });
     const mapped = skillErrorStatus(err);
     return res.status(mapped.status).json({ error: mapped.error });
   }

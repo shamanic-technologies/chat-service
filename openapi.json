@@ -2408,6 +2408,158 @@
           "updatedAt"
         ]
       },
+      "AgentRequestResult": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "bug",
+              "feature",
+              "skill_upgrade",
+              "contact_human"
+            ]
+          },
+          "destination": {
+            "type": "string"
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "requestCount": {
+            "type": "integer"
+          },
+          "issueUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "issueError": {
+            "type": "string",
+            "nullable": true
+          },
+          "staffPinged": {
+            "type": "boolean"
+          },
+          "telegramSkippedReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "telegramError": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "requestId",
+          "kind",
+          "destination",
+          "duplicate",
+          "requestCount",
+          "issueUrl",
+          "issueError",
+          "staffPinged",
+          "telegramSkippedReason",
+          "telegramError"
+        ]
+      },
+      "AgentRequestBody": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "bug",
+              "feature",
+              "skill_upgrade",
+              "contact_human"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "bug / feature: the fleet repo that owns the piece. skill_upgrade: the repo whose docs are wrong (or send skillSlug)."
+          },
+          "skillSlug": {
+            "type": "string",
+            "description": "skill_upgrade: the skill to upgrade."
+          },
+          "pieceKey": {
+            "type": "string",
+            "description": "bug / feature: kebab-case dedupe key (default: from the title)."
+          },
+          "title": {
+            "type": "string",
+            "description": "bug / feature / skill_upgrade: short title."
+          },
+          "userRequest": {
+            "type": "string",
+            "description": "bug / feature: the user's words. skill_upgrade: optional."
+          },
+          "missingPiece": {
+            "type": "string",
+            "description": "bug / feature: what is broken or missing."
+          },
+          "decomposition": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "piece": {
+                  "type": "string"
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": [
+                    "exists",
+                    "create",
+                    "needs_code"
+                  ]
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "piece",
+                "outcome"
+              ]
+            }
+          },
+          "problem": {
+            "type": "string",
+            "description": "skill_upgrade: what is wrong."
+          },
+          "proposedChange": {
+            "type": "string",
+            "description": "skill_upgrade: the proposed text."
+          },
+          "reason": {
+            "type": "string",
+            "description": "contact_human: why a person is needed."
+          },
+          "message": {
+            "type": "string",
+            "description": "contact_human: the user's message."
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "urgent"
+            ]
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
       "StaffRequest": {
         "type": "object",
         "properties": {
@@ -2433,11 +2585,15 @@
             "type": "string",
             "enum": [
               "bug",
-              "feature"
+              "feature",
+              "skill_upgrade",
+              "contact_human"
             ]
           },
           "repo": {
-            "type": "string"
+            "type": "string",
+            "nullable": true,
+            "description": "GitHub repo the issue went to; null for contact_human (no issue)."
           },
           "pieceKey": {
             "type": "string"
@@ -4742,6 +4898,108 @@
           },
           "404": {
             "description": "Unknown slug or version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/staff-requests": {
+      "post": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "File a request from an agent: bug, feature, skill/doc upgrade, or contact a human",
+        "description": "The same paths the Copilot's tools take (request_staff, request_skill_upgrade, contact_human), for any agent acting for an org. Every kind reaches someone who acts: bug / feature / skill_upgrade open a GitHub issue in the owning repo (chat-service for a skill) and ping the team on Telegram; contact_human pings the owner on Telegram straight away (no issue, at most one ping per org every 10 minutes). Deduplicated per org on (repo, kind, pieceKey) for issue kinds: a repeat answers 200 with duplicate:true and bumps requestCount. Staff requesters are never pinged.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRequestBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Already filed by this org (requestCount bumped)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRequestResult"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Filed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRequestResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown skillSlug",
             "content": {
               "application/json": {
                 "schema": {
