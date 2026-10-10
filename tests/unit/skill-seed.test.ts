@@ -116,3 +116,11 @@ describe("retired huge reads (owner 2026-10-10)", () => {
     for (const s of SEED_SKILLS) expect(s.content, s.slug).not.toContain("get_channel_catalogue");
   });
 });
+
+describe("a funnel proposal shows its figures in text (prod 2026-10-10: cards only, no cost)", () => {
+  it("the sales-funnels skill makes the text mandatory before the cards", () => {
+    const c = SEED_SKILLS.find((s) => s.slug === "catalogue-sales-funnels")!.content;
+    expect(c).toMatch(/First WRITE the 1 to 3 funnels/);
+    expect(c.indexOf("WRITE")).toBeLessThan(c.indexOf("present_choices"));
+  });
+});
