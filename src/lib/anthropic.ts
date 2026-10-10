@@ -2443,7 +2443,7 @@ export const GET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
 export const SET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
   name: "set_funnel_caps",
   description:
-    "State a funnel's MAX BUDGET and MAX VOLUME, both ASKED from the user first (never invent them). Starts nothing. No max budget = the funnel is held unfunded, so maxBudget is required; maxVolume is required too (null only if the user wants no volume cap). Volume counts first contacts.",
+    "State a funnel's MAX BUDGET and MAX VOLUME, both ASKED from the user first (never invent them). Starts nothing. No max budget = the funnel is held unfunded, so maxBudget is required; maxVolume is required too (null only if the user wants no volume cap). A Proactive funnel: 'Max budget' / 'Max volume' (first contacts). A Reactive funnel: asked as 'Up to $X' / 'Up to N prospects handled' (billing counts what its reactive pipes handle).",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -2456,7 +2456,7 @@ export const SET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
       maxVolume: {
         type: "object",
         description: "Or null for no volume cap (only if the user said so).",
-        properties: { count: { type: "integer", description: "First contacts." }, period: CAP_PERIOD_PROP },
+        properties: { count: { type: "integer", description: "First contacts (proactive funnel) or prospects handled (reactive funnel)." }, period: CAP_PERIOD_PROP },
         required: ["count", "period"],
       },
     },
@@ -2573,7 +2573,7 @@ const INCLUDE_NOT_RUNNABLE_PROP = {
 };
 
 const CATALOGUE_ROW_NOTE =
-  "Lists ONLY what we run today (a channel we do not run, like LinkedIn posting, is not listed; reading one by id answers weRunItToday: false). Each row: id, name, icon, one line, cost (figure AND unit, e.g. '$2.73 per website visit': always quote both, never move a cost to another unit), costUsd, roi, status (measured = fleet evidence; learning = not enough history, cost and roi null; customer_time = the customer's own team). Quote figures exactly. Read-only, free.";
+  "Lists ONLY what we run today (a channel we do not run, like LinkedIn posting, is not listed; reading one by id answers weRunItToday: false). Each row: id, name, icon, one line, cost (figure AND unit, e.g. '$2.73 per website visit', '(estimated)' when it is one: quote it as written, never move a cost to another unit, never call an estimate measured), return (e.g. '0.91x (estimated)': quote the basis too), costUsd, roi, status, type (sales funnels: proactive reaches out, reactive answers a trigger) (measured = fleet evidence; learning = not enough history, cost and roi null; customer_time = the customer's own team). Quote figures exactly. Read-only, free.";
 
 const idList = (description: string) => ({ type: "array", items: { type: "string" }, description });
 

@@ -276,3 +276,28 @@ describe("every cost carries its unit (prod 2026-10-10: a per-reply cost quoted 
     await expect(CATALOGUE_READ_TOOLS.find_channels({}, customer)).rejects.toThrow(/without its unit/);
   });
 });
+
+describe("an estimate says so (owner 2026-10-10: never call an estimate measured)", () => {
+  it("cost and return carry their basis in the same field", async () => {
+    fetchMock().mockResolvedValueOnce(
+      res(200, {
+        rows: [
+          { id: "zenith", type: "proactive", costUsd: 2748.69, costPer: "per paying client", roi: 0.91, roiBasis: "estimated", status: "estimated" },
+          { id: "pipe", costUsd: 2.73, costPer: "per website visit", roi: 17.42, roiBasis: "estimated", status: "measured" },
+          { id: "motivate", type: "reactive", costUsd: null, costPer: null, roi: null, roiBasis: null, status: "learning" },
+        ],
+      }),
+    );
+    const { CATALOGUE_READ_TOOLS } = await load();
+    const out = (await CATALOGUE_READ_TOOLS.find_sales_funnels({}, customer)) as { rows: Array<Record<string, unknown>> };
+    expect(out.rows[0]).toMatchObject({ cost: "$2748.69 per paying client (estimated)", return: "0.91x (estimated)" });
+    expect(out.rows[1]).toMatchObject({ cost: "$2.73 per website visit", return: "17.42x (estimated)" });
+    expect(out.rows[2].return).toBeUndefined();
+  });
+
+  it("a return served without its basis fails loud", async () => {
+    fetchMock().mockResolvedValueOnce(res(200, { rows: [{ id: "x", costUsd: 1, costPer: "per paying client", roi: 2, status: "measured" }] }));
+    const { CATALOGUE_READ_TOOLS } = await load();
+    await expect(CATALOGUE_READ_TOOLS.find_sales_funnels({}, customer)).rejects.toThrow(/without its basis/);
+  });
+});

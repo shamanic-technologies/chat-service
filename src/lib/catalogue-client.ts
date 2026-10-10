@@ -138,7 +138,15 @@ export function withCostUnits(value: unknown): unknown {
     if (typeof o.costPer !== "string" || o.costPer.trim() === "") {
       throw new Error(`[catalogue] features-service served a cost without its unit (costPer) on ${String(o.id ?? "a row")}`);
     }
-    out.cost = `$${o.costUsd} ${o.costPer}`;
+    // An estimate says so in the same field (features-service `status: estimated`,
+    // owner 2026-10-10: never present an estimate as measured).
+    out.cost = `$${o.costUsd} ${o.costPer}${o.status === "estimated" ? " (estimated)" : ""}`;
+  }
+  if (typeof o.roi === "number") {
+    if (o.roiBasis !== "measured" && o.roiBasis !== "estimated") {
+      throw new Error(`[catalogue] features-service served a return without its basis (roiBasis) on ${String(o.id ?? "a row")}`);
+    }
+    out.return = `${o.roi}x (${o.roiBasis})`;
   }
   for (const [k, v] of Object.entries(o)) out[k] = withCostUnits(v);
   return out;
