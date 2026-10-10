@@ -1220,7 +1220,7 @@ Read-only and supporting workflow tools:
 | `create_brand_from_url` | Creates/upserts a brand from its website `url` (onboarding-equivalent) and returns the brandId. `POST /v1/brands` |
 | `list_brands` | Lists the org's brands (id, name, URL). Read-only. `GET /v1/brands` |
 | `launch_campaign` | Launches a campaign: `name` + `brandUrls` + `featureInputs` + a feature (`featureDynastySlug` preferred) + a workflow (`workflowDynastySlug` preferred); optional budget caps / `maxLeads` / `endDate`. `POST /v1/campaigns` |
-| `list_campaigns` | Lists the org's campaigns (id, name, status, brands, budgets); optional `brandId` / `status` filter. Read-only. `GET /v1/campaigns` |
+| `list_campaigns` | A small page of the org's campaigns, newest first (default 10, max 15): `id, name, status, stopReason, offerId, featureSlug, legKey, salesFunnelCampaignId, createdAt` only, plus `hasMore`. Filters `brandId`, `status` (ongoing / stopped), `offerId`, `featureSlug`, `legKey`, `salesFunnelCampaignId`. Calls campaign-service `GET /campaigns` directly (the gateway drops `limit`). A full row is ~40 fields; unfiltered, one read was 340k characters (2026-10-10). |
 | `stop_campaign` | Stops a running campaign by `campaignId`. `POST /v1/campaigns/:id/stop` |
 | `get_daily_budget` | Reads a brand's current daily budget (`dailyBudgetCents`, null = unset). Read-only. `GET /v1/brands/:brandId/daily-budget` |
 | `set_daily_budget` | Sets a brand's daily spend ceiling — `dailyBudgetCents` (IN CENTS; 0 = pause spend). `PATCH /v1/brands/:brandId/daily-budget` |
@@ -1244,7 +1244,6 @@ Read-only and supporting workflow tools:
 | Tool | Description |
 |---|---|
 | `read_skill` | Loads one skill of the Copilot skill tree by slug (markdown + sub-skills). A config allowing it also gets the INDEX skill appended to its system prompt (see Copilot skill tree). |
-| `get_channel_catalogue` | Channels, the legs each performs (proactive / reactive + `triggerId`), trigger types, minimum budgets. `GET /v1/public/channels` |
 | `get_offer_channels` | Channels an offer accepts. `GET /v1/brands/:id/offers/:offerId/channels` |
 | `get_offer_legs` | The offer's steps and legs. `GET /v1/brands/:id/offers/:offerId/sales-path` |
 | `get_leg_rates` | Conversion rate per leg. `GET /v1/brands/:id/leg-rates` |
@@ -1280,6 +1279,8 @@ Every request result carries `kind` and `destination` (where it landed, in words
 | `stop_funnel_campaign` | `PATCH /sales-funnel-campaigns/:id {status:"stop"}` |
 
 Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaign` (brandId, offerId, salesFunnelId) reads the caps and is REFUSED while no max budget is stated; `confirm_switch_on` then POSTs `status: "ongoing"` (creates and starts, or starts the existing stopped one).
+
+`get_channel_catalogue` is RETIRED (2026-10-10): one read was 128k characters; `find_channels` / `find_pipes` replace it.
 
 **Agent catalogue** (`src/lib/catalogue-client.ts`, owner 2026-10-10 "chat first"). The Copilot organizes a request level by level on small pages: Steps -> Sales Paths -> Channels -> Pipes -> Sales Funnels -> Workflows. Owner: features-service `/internal/catalogue/*`, called directly with chat-service's features-service key. Bodies are verbatim (rows: `id, name, icon, line, costUsd, roi, status`). `limit` is 1-25 (refused above, before any call); `id` reads one object in detail.
 

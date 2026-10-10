@@ -56,8 +56,6 @@ const offerPath = (brandId: unknown, offerId: unknown) => `/v1/brands/${id("bran
 
 // --- Reads (free) ------------------------------------------------------------
 
-/** GET /v1/public/channels — catalogue: channels, their legs (proactive/reactive), triggers, minimum budgets. */
-export const getChannelCatalogue = (p: ApiCallParams) => call("get_channel_catalogue", "/v1/public/channels", "GET", p);
 
 /** GET /v1/brands/{id}/offers/{offerId}/channels — the channels this offer accepts. */
 export const getOfferChannels = (a: Record<string, unknown>, p: ApiCallParams) =>
