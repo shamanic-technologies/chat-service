@@ -17,7 +17,7 @@ const CATALOGUE_LEVELS = [
 const COPILOT_TOOLS = [
   "get_leg_rates", "list_sales_paths",
   "get_trigger_events", "list_sourcing_origins", "get_offer_sourcing",
-  "get_campaign_budgets", "get_campaign", "list_connected_accounts", "create_offer",
+  "list_connected_accounts", "create_offer",
   "set_campaign_budget", "propose_switch_on", "confirm_switch_on",
   "request_staff", "list_staff_requests", "request_skill_upgrade", "contact_human",
   "find_steps", "find_sales_paths", "find_channels", "find_pipes", "find_sales_funnels", "find_workflows",
@@ -181,5 +181,15 @@ describe("the offer's ticked list, legs and accepted channels are retired (owner
 
   it("no retired tool is in the registry", () => {
     for (const t of RETIRED) expect(TOOL_REGISTRY[t], t).toBeUndefined();
+  });
+});
+
+describe("a campaign IS a funnel campaign in every skill (owner rule)", () => {
+  it("campaigns and budgets are answered from list_campaigns; steps are never campaigns", () => {
+    const c = SEED_SKILLS.find((s) => s.slug === "campaigns")!.content;
+    expect(c).toMatch(/Count and name only campaigns: a step .* is part of a campaign, never a campaign/);
+    const b = SEED_SKILLS.find((s) => s.slug === "budget-and-billing")!.content;
+    expect(b).toMatch(/Each campaign's budget: list_campaigns/);
+    expect(b).not.toMatch(/get_campaign_budgets/);
   });
 });

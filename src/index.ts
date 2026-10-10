@@ -3158,7 +3158,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       const funnelCampaignTool = FUNNEL_CAMPAIGN_TOOLS[call.name];
       if (funnelCampaignTool) {
         const args = (call.args as Record<string, unknown>) || {};
-        const result = await funnelCampaignTool(args, featureCallParams);
+        const result = await funnelCampaignTool(args, featureCallParams, catalogueReader);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
