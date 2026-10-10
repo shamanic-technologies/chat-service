@@ -1269,6 +1269,18 @@ Read-only and supporting workflow tools:
 
 Every request result carries `kind` and `destination` (where it landed, in words). The same four kinds are filed by any agent over HTTP: `POST /orgs/staff-requests` (`x-api-key`, `x-org-id`, `x-user-id`, `x-run-id`; body `{ kind, ... }`, the tool's fields; 201 filed, 200 duplicate, 400 invalid).
 
+**Sales funnel campaigns** (`src/lib/funnel-campaign-client.ts`, owner 2026-10-10). A campaign is brand x offer x sales funnel. campaign-service `/sales-funnel-campaigns` (v0.75.15) and billing-service funnel caps (v0.83.6) are not proxied by the gateway yet, so chat-service calls both directly with its service keys and the chat's `x-org-id` / `x-user-id` / `x-run-id`.
+
+| Tool | Route |
+|---|---|
+| `list_funnel_campaigns` | `GET /sales-funnel-campaigns?brandId&offerId&salesFunnelId&status` |
+| `get_funnel_caps` | `GET /v1/brands/:b/offers/:o/sales-funnels/:f/caps` (billing) |
+| `set_funnel_caps` | `PUT` same path `{maxBudget:{amountCents,period}, maxVolume:{count,period}\|null}`; maxBudget REQUIRED (no max budget = held unfunded), maxVolume must be sent (null only when the user wants none) |
+| `create_funnel_campaign` | `POST /sales-funnel-campaigns` with `status: "stopped"` ALWAYS (whatever the model sends) |
+| `stop_funnel_campaign` | `PATCH /sales-funnel-campaigns/:id {status:"stop"}` |
+
+Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaign` (brandId, offerId, salesFunnelId) reads the caps and is REFUSED while no max budget is stated; `confirm_switch_on` then POSTs `status: "ongoing"` (creates and starts, or starts the existing stopped one).
+
 **Agent catalogue** (`src/lib/catalogue-client.ts`, owner 2026-10-10 "chat first"). The Copilot organizes a request level by level on small pages: Steps -> Sales Paths -> Channels -> Pipes -> Sales Funnels -> Workflows. Owner: features-service `/internal/catalogue/*`, called directly with chat-service's features-service key. Bodies are verbatim (rows: `id, name, icon, line, costUsd, roi, status`). `limit` is 1-25 (refused above, before any call); `id` reads one object in detail.
 
 | Tool | Route |

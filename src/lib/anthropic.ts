@@ -2402,12 +2402,12 @@ export const PROPOSE_SWITCH_ON_TOOL: Anthropic.Tool = {
   name: "propose_switch_on",
   description:
     "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: nothing that starts work or spends money is switched on without the user's explicit yes in the chat. This tool is step 1 of 2: it records WHAT would be switched on and returns a confirmationToken; it switches NOTHING on. " +
-    "Actions: start_campaign (one offer x leg x channel; dailyBudgetCents is MANDATORY and is set now as the cap, the campaign itself is not created), activate_campaign (turn a stopped campaign back on), switch_on_reactive_legs (turn on the reactive legs of the offer's ticked sales paths). " +
+    "Actions: start_funnel_campaign (PREFERRED: run a whole sales funnel for an offer; refused until set_funnel_caps stated a max budget, which it shows back), start_campaign (older: one offer x leg x channel; dailyBudgetCents is MANDATORY and is set now as the cap, the campaign itself is not created), activate_campaign (turn a stopped campaign back on), switch_on_reactive_legs (turn on the reactive legs of the offer's ticked sales paths). " +
     "After calling it, show the user exactly what will start and its daily cap, then ask them to confirm with present_choices. Call confirm_switch_on only after they answer yes, in their next message.",
   input_schema: {
     type: "object" as const,
     properties: {
-      action: { type: "string", enum: ["start_campaign", "activate_campaign", "switch_on_reactive_legs"] },
+      action: { type: "string", enum: ["start_funnel_campaign", "start_campaign", "activate_campaign", "switch_on_reactive_legs"] },
       summary: { type: "string", description: "One plain sentence the user will confirm, with the daily cap (e.g. \"Start cold email to first reply for Offer X at $20/day\")." },
       brandId: BRAND_ID_PROP,
       offerId: OFFER_ID_PROP,
@@ -2415,8 +2415,77 @@ export const PROPOSE_SWITCH_ON_TOOL: Anthropic.Tool = {
       featureSlug: { type: "string", description: "start_campaign: the channel's feature slug." },
       dailyBudgetCents: { type: "integer", description: "start_campaign: the daily cap in cents (mandatory, > 0)." },
       campaignId: { type: "string", description: "activate_campaign: the campaign id." },
+      salesFunnelId: { type: "string", description: "start_funnel_campaign: the sales funnel id (find_sales_funnels)." },
     },
     required: ["action", "summary"],
+  },
+};
+
+const FUNNEL_TARGET_PROPS = {
+  brandId: BRAND_ID_PROP,
+  offerId: OFFER_ID_PROP,
+  salesFunnelId: { type: "string", description: "The sales funnel id (find_sales_funnels)." },
+};
+const CAP_PERIOD_PROP = { type: "string", enum: ["one_off", "daily", "weekly", "monthly"] };
+
+export const LIST_FUNNEL_CAMPAIGNS_TOOL: Anthropic.Tool = {
+  name: "list_funnel_campaigns",
+  description: "The account's funnel campaigns (brand x offer x sales funnel), each with status and its units. Filter by brandId, offerId, salesFunnelId, status (ongoing | stopped). Read-only.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      offerId: OFFER_ID_PROP,
+      salesFunnelId: { type: "string" },
+      status: { type: "string", enum: ["ongoing", "stopped"] },
+    },
+  },
+};
+
+export const GET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
+  name: "get_funnel_caps",
+  description: "A funnel's max budget and max volume, what this period consumed, and reached (true = it holds new first touches). Quote it as is. Read-only.",
+  input_schema: { type: "object" as const, properties: FUNNEL_TARGET_PROPS, required: ["brandId", "offerId", "salesFunnelId"] },
+};
+
+export const SET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
+  name: "set_funnel_caps",
+  description:
+    "State a funnel's MAX BUDGET and MAX VOLUME, both ASKED from the user first (never invent them). Starts nothing. No max budget = the funnel is held unfunded, so maxBudget is required; maxVolume is required too (null only if the user wants no volume cap). Volume counts first contacts.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      ...FUNNEL_TARGET_PROPS,
+      maxBudget: {
+        type: "object",
+        properties: { amountCents: { type: "integer", description: "In cents." }, period: CAP_PERIOD_PROP },
+        required: ["amountCents", "period"],
+      },
+      maxVolume: {
+        type: "object",
+        description: "Or null for no volume cap (only if the user said so).",
+        properties: { count: { type: "integer", description: "First contacts." }, period: CAP_PERIOD_PROP },
+        required: ["count", "period"],
+      },
+    },
+    required: ["brandId", "offerId", "salesFunnelId", "maxBudget", "maxVolume"],
+  },
+};
+
+export const CREATE_FUNNEL_CAMPAIGN_TOOL: Anthropic.Tool = {
+  name: "create_funnel_campaign",
+  description:
+    "Create the campaign of a sales funnel for an offer, STOPPED (data only, starts nothing; an existing one is returned as is). To run it: set_funnel_caps, then propose_switch_on start_funnel_campaign and the user's yes.",
+  input_schema: { type: "object" as const, properties: FUNNEL_TARGET_PROPS, required: ["brandId", "offerId", "salesFunnelId"] },
+};
+
+export const STOP_FUNNEL_CAMPAIGN_TOOL: Anthropic.Tool = {
+  name: "stop_funnel_campaign",
+  description: "Stop a funnel campaign now: no new first touches (follow-ups of people already contacted still go out). Safe; say what stopped.",
+  input_schema: {
+    type: "object" as const,
+    properties: { salesFunnelCampaignId: { type: "string", description: "Its id (list_funnel_campaigns)." } },
+    required: ["salesFunnelCampaignId"],
   },
 };
 
@@ -2962,6 +3031,11 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   set_campaign_budget: SET_CAMPAIGN_BUDGET_TOOL,
   propose_switch_on: PROPOSE_SWITCH_ON_TOOL,
   confirm_switch_on: CONFIRM_SWITCH_ON_TOOL,
+  list_funnel_campaigns: LIST_FUNNEL_CAMPAIGNS_TOOL,
+  get_funnel_caps: GET_FUNNEL_CAPS_TOOL,
+  set_funnel_caps: SET_FUNNEL_CAPS_TOOL,
+  create_funnel_campaign: CREATE_FUNNEL_CAMPAIGN_TOOL,
+  stop_funnel_campaign: STOP_FUNNEL_CAMPAIGN_TOOL,
   request_staff: REQUEST_STAFF_TOOL,
   request_skill_upgrade: REQUEST_SKILL_UPGRADE_TOOL,
   contact_human: CONTACT_HUMAN_TOOL,
