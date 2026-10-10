@@ -208,7 +208,7 @@ A leg is the move of a lead from one sales step to the next, e.g. lead found to 
 
 ## Write
 - STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_leg(channelSlug, fromStep, toStep, mode, triggerId?): a NEW leg on a channel (declared or coded), created live. Proactive: no trigger. Reactive: exactly one trigger (list_trigger_types).
-- The offer's legs come from its ticked sales paths (see sales-paths).
+- The offer's legs come from the funnels it runs (funnel campaigns, see campaigns).
 - set_campaign_budget: the daily cap of one (offer x leg x channel).
 
 ## Two hold cases (never a dead end)
@@ -244,7 +244,7 @@ A trigger is **coded** when something fires it today. Only a coded trigger can r
 
 ## Write
 - STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_trigger_type(id, label, description, icon, kind, params...): a NEW trigger type, created live. It is not coded: the tool files the staff request for its detector itself (status declared_on_hold).
-- A trigger turns on when its reactive leg's campaign turns on: propose_switch_on (switch_on_reactive_legs or activate_campaign), then confirm after the user's yes.
+- A trigger turns on when the Reactive funnel campaign that answers it turns on: propose_switch_on (start_funnel_campaign), then confirm after the user's yes.
 
 ## trigger_not_fired
 declare_leg on a trigger that is not coded is refused and nothing is stored. The tool files "build the detector" with the team and returns on_hold: tell the user that leg waits on the team, then carry on. Never call request_staff again for it.
@@ -257,30 +257,22 @@ declare_leg on a trigger that is not coded is refused and nothing is stored. The
   {
     slug: "sales-paths",
     parentSlug: "index",
-    title: "This offer's funnels (ticked paths)",
-    description: "The funnels an offer runs and the ones the user ticked. Load to tick or switch on an offer's funnels.",
+    title: "This offer's funnels (old ticked list, retired)",
+    description: "Reading an offer's per-offer funnel figures. The ticked list is retired: a campaign IS a funnel campaign.",
     position: 80,
     content: t(`
 # This offer's funnels
 
-Per offer, each row here is a chain of legs to paid client, each leg on a channel, ranked by return on spend. In the catalogue these rows are **Sales Funnels** (same id: the combinationKey). To organize a NEW request, walk the catalogue first (\`catalogue\`); come here to tick and switch on. Paths: features-service; the ticked selection: brand-service.
+Per offer, each row here is a chain of legs to paid client, each leg on a channel, ranked by return on spend. In the catalogue these rows are **Sales Funnels** (same id). To organize a request, walk the catalogue (\`catalogue\`).
 
 ## Read
 - list_sales_paths(brandId, offerId): every path with channels, rates, cost per paying client, return.
-- get_selected_sales_paths(brandId, offerId): what the user ticked.
 
-- list_declared_sales_paths(combinationKey?): paths declared live, with name and visibleToClients.
-
-## Write
-- set_selected_sales_paths(brandId, offerId, combinationKeys): REPLACES the ticked list. Turns nothing on.
-- propose_switch_on (switch_on_reactive_legs) then confirm_switch_on after the user's yes: switches on the reactive legs the ticked paths use (a stopped campaign stays stopped).
-- A NEW funnel: create_sales_funnel (see \`catalogue-sales-funnels\`). declare_sales_path is the older route for the same thing.
-
-## Publish rule
-A path reaches clients once every leg and channel in it is published. declare_sales_path files the publish requests for the ones that are not and returns declared_on_hold. Say it is on hold with the team and carry on.
+## Retired: the ticked list (owner 2026-10-10)
+A campaign IS a funnel campaign now (\`campaigns\`: create_funnel_campaign). Never write the offer's old ticked list (set_selected_sales_paths) and never switch on through it (switch_on_reactive_legs): it is being retired. To run a funnel, create its funnel campaign.
 
 ## Articulation
-Map the user's sequence onto the closest ranked funnel first. Show its return and cost per paying client before proposing it. Create a new one only when none matches.
+Map the user's sequence onto the closest ranked funnel first. Show its return and cost per paying client before proposing it. Create a new one only when none matches (create_sales_funnel).
 `),
   },
   {
@@ -437,7 +429,7 @@ Four kinds, each lands with someone who acts. Every tool records the request and
 ## Which repo owns what
 - Catalogue (steps, paths, channels, pipes, funnels; publishing): features-service
 - Trigger events, campaign start/stop: campaign-service
-- Offers, offer channels, ticked funnels, brand facts: brand-service
+- Offers, offer channels, brand facts: brand-service
 - Audiences, Apollo filters, buying signals: human-service
 - Qualification, leads, replies: sales-lead-service
 - Budgets, balance, payments: billing-service

@@ -2363,7 +2363,7 @@ export const SET_OFFER_CHANNELS_TOOL: Anthropic.Tool = {
 export const SET_SELECTED_SALES_PATHS_TOOL: Anthropic.Tool = {
   name: "set_selected_sales_paths",
   description:
-    "Replace the sales paths ticked for an offer (FULL list of combinationKeys from list_sales_paths). Data only: switching the paths' reactive legs on is a separate, confirmed step (propose_switch_on action switch_on_reactive_legs).",
+    "RETIRED (owner 2026-10-10): a campaign IS a funnel campaign now (create_funnel_campaign). Never call this from the Copilot. Replace the sales paths ticked for an offer (FULL list of combinationKeys from list_sales_paths). Data only: switching the paths' reactive legs on is a separate, confirmed step (propose_switch_on action switch_on_reactive_legs).",
   input_schema: {
     type: "object" as const,
     properties: {
