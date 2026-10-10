@@ -132,3 +132,13 @@ describe("voice (prod 2026-10-10: cards with no text, a card naming a pipe)", ()
     expect(index).toMatch(/never show a pipe's or a path's name/);
   });
 });
+
+describe("only what we run today (owner 2026-10-10: the Copilot offered LinkedIn posting)", () => {
+  it("the index and the catalogue teach saying we do not run it, offering what we run, and a feature request", () => {
+    const index = SEED_SKILLS.find((s) => s.slug === "index")!.content;
+    expect(index).toMatch(/We only offer what we run today/);
+    const cat = SEED_SKILLS.find((s) => s.slug === "catalogue")!.content;
+    expect(cat).toMatch(/We do not run LinkedIn posting today/);
+    expect(cat).not.toMatch(/create_pipe \(proactive/);
+  });
+});
