@@ -189,6 +189,34 @@ export const AppConfigResponseSchema = z
 
 export type AppConfigRequest = z.infer<typeof AppConfigRequestSchema>;
 
+export const AppConfigKeyParamsSchema = z
+  .object({ key: z.string().min(1).max(100) })
+  .openapi("AppConfigKeyParams");
+
+registry.registerPath({
+  method: "delete",
+  path: "/config/{key}",
+  tags: ["App Config"],
+  summary: "Delete one of the calling org's app configs",
+  description: "Removes the (orgId, key) app config. Idempotent: an absent key answers `deleted: false`. Platform configs are untouched.",
+  request: {
+    headers: z.object({
+      "x-api-key": z.string(),
+      "x-org-id": z.string(),
+      "x-user-id": z.string(),
+      "x-run-id": z.string(),
+    }),
+    params: AppConfigKeyParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Deleted (or already absent)",
+      content: { "application/json": { schema: z.object({ orgId: z.string(), key: z.string(), deleted: z.boolean() }) } },
+    },
+    400: { description: "Invalid key", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 registry.registerPath({
   method: "put",
   path: "/config",
