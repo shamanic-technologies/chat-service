@@ -28,6 +28,50 @@ import {
 
 export const CATALOGUE_MAX_LIMIT = 25;
 
+/**
+ * Who reads. The Copilot is a CUSTOMER surface: by default every list is
+ * `runnable=true` (what we run today, features-service) and a detail read of
+ * something we do not run answers NOT_RUN_TODAY instead of its body (owner
+ * rule 2026-10-10: never present a channel we do not run; prod: the Copilot
+ * offered LinkedIn posting, which campaign-service refuses with 409
+ * no_workflow). `includeNotRunnable: true` shows everything, staff only.
+ */
+export interface CatalogueReader {
+  isStaff: () => Promise<boolean>;
+}
+
+export const NOT_RUN_TODAY = {
+  runnable: false,
+  weRunItToday: false,
+  instruction:
+    "We do not run this today. Tell the user so in one plain sentence, offer what we do run (the find_* lists show only that), and if they want it anyway, file request_staff (kind feature). Never describe its terms, price or how it would work.",
+} as const;
+
+/**
+ * The declaration tools (list_declared_*, list_trigger_types, declare_*) build
+ * what we do not run yet: staff only, and only when the call says so
+ * (`staffBuild: true`, set when the person explicitly asked to build it).
+ */
+export async function assertStaffBuild(tool: string, a: Record<string, unknown>, reader: CatalogueReader): Promise<void> {
+  if (a.staffBuild !== true) {
+    throw new CatalogueArgError(
+      `${tool} builds what we do not run yet: only when a staff member explicitly asked to build it (staffBuild: true). For a customer, use the find_* tools (what we run today) and request_staff (kind feature) for the rest.`,
+    );
+  }
+  if (!(await reader.isStaff())) {
+    throw new CatalogueArgError(`${tool} is staff only: a customer sees only what we run today (find_* tools); file request_staff (kind feature) for the rest.`);
+  }
+}
+
+/** Lists filtered to what we run today unless a staff reader asked for everything. */
+async function wantsEverything(a: Record<string, unknown>, reader: CatalogueReader): Promise<boolean> {
+  if (a.includeNotRunnable !== true) return false;
+  if (!(await reader.isStaff())) {
+    throw new CatalogueArgError("includeNotRunnable is for staff only: a customer sees only what we run today");
+  }
+  return true;
+}
+
 export class CatalogueArgError extends Error {
   constructor(message: string) {
     super(`[catalogue] ${message}`);
@@ -77,18 +121,28 @@ function qs(params: Record<string, string | number | null>): string {
 
 type Level = "steps" | "sales-paths" | "channels" | "pipes" | "sales-funnels" | "workflows";
 
+/** Levels whose objects can be run or not (features-service `runnable`). */
+const RUNNABLE_LEVELS: ReadonlySet<Level> = new Set(["sales-paths", "channels", "pipes", "sales-funnels"]);
+
 /** One level: a page (filters) or one object (`id`). */
 function level(tool: string, path: Level, filters: Record<string, (v: unknown) => string | null>) {
-  return async (a: Record<string, unknown>): Promise<unknown> => {
+  return async (a: Record<string, unknown>, reader: CatalogueReader): Promise<unknown> => {
     const id = optStr("id", a.id);
     const extra: Record<string, string | number | null> = {};
     for (const [k, read] of Object.entries(filters)) extra[k] = read(a[k]);
+    const gated = RUNNABLE_LEVELS.has(path) && !(await wantsEverything(a, reader));
     if (id) {
       // A detail read keeps only the filters the owner reads there (`pipe` for workflows).
       const detailQs = path === "workflows" ? qs({ pipe: extra.pipe ?? null }) : "";
-      return features(tool, "GET", `/internal/catalogue/${path}/${enc(id)}${detailQs}`);
+      const body = (await features(tool, "GET", `/internal/catalogue/${path}/${enc(id)}${detailQs}`)) as { runnable?: unknown; name?: unknown };
+      if (gated && body.runnable === false) return { id, ...NOT_RUN_TODAY };
+      return body;
     }
-    return features(tool, "GET", `/internal/catalogue/${path}${qs({ ...extra, q: optStr("q", a.q), limit: optLimit(a.limit) })}`);
+    return features(
+      tool,
+      "GET",
+      `/internal/catalogue/${path}${qs({ ...extra, ...(gated ? { runnable: "true" } : {}), q: optStr("q", a.q), limit: optLimit(a.limit) })}`,
+    );
   };
 }
 
@@ -111,12 +165,12 @@ export const findSalesFunnels = level("find_sales_funnels", "sales-funnels", {
 });
 const findWorkflowsRaw = level("find_workflows", "workflows", { pipe: (v) => optStr("pipe", v) });
 /** Workflows are ranked per pipe: the owner refuses a read without one, so do we, before the call. */
-export const findWorkflows = async (a: Record<string, unknown>): Promise<unknown> => {
+export const findWorkflows = async (a: Record<string, unknown>, reader: CatalogueReader): Promise<unknown> => {
   reqStr("pipe", a.pipe);
-  return findWorkflowsRaw(a);
+  return findWorkflowsRaw(a, reader);
 };
 
-export const CATALOGUE_READ_TOOLS: Record<string, (a: Record<string, unknown>) => Promise<unknown>> = {
+export const CATALOGUE_READ_TOOLS: Record<string, (a: Record<string, unknown>, reader: CatalogueReader) => Promise<unknown>> = {
   find_steps: findSteps,
   find_sales_paths: findSalesPaths,
   find_channels: findChannels,
@@ -164,7 +218,12 @@ const PIPE_FIELDS = ["channelSlug", "fromStep", "toStep", "mode", "triggerId", "
  * nothing fires is refused by the owner (nothing stored) -> "build the
  * detector" filed, reported on hold.
  */
-export async function createPipe(a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest) {
+export async function createPipe(a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest, reader: CatalogueReader) {
+  if (!(await reader.isStaff())) {
+    throw new CatalogueArgError(
+      "a new pipe is a channel we would have to run: staff only. For a customer, say we do not run it today and file request_staff (kind feature) if they want it.",
+    );
+  }
   const userRequest = reqStr("userRequest", a.userRequest);
   const channelSlug = reqStr("channelSlug", a.channelSlug);
   let pipe: PipeDetail;
@@ -215,10 +274,20 @@ interface FunnelDetail {
  * A funnel is a draft while one of its pipes is: each draft pipe gets the SAME
  * publish request create_pipe files (deduped per org, so a repeat counts).
  */
-export async function createSalesFunnel(a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest) {
+export async function createSalesFunnel(a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest, reader: CatalogueReader) {
   const userRequest = reqStr("userRequest", a.userRequest);
+  const pipeIds = stringArray("pipeIds", a.pipeIds);
+  // A customer only gets funnels we can run: every pipe must be runnable (a bare leg key is the buyer or their team).
+  if (!(await reader.isStaff())) {
+    for (const id of pipeIds.filter((p) => p.includes("|"))) {
+      const pipe = (await features("create_sales_funnel:read_pipe", "GET", `/internal/catalogue/pipes/${enc(id)}`)) as { runnable?: unknown };
+      if (pipe.runnable === false) {
+        throw new CatalogueArgError(`pipe ${id} is not something we run today: a customer funnel uses only runnable pipes (find_pipes lists them).`);
+      }
+    }
+  }
   const funnel = (await features("create_sales_funnel", "POST", "/internal/catalogue/sales-funnels", {
-    pipeIds: stringArray("pipeIds", a.pipeIds),
+    pipeIds,
     ...provenance(ctx),
   })) as FunnelDetail;
   const onHold: HeldPiece[] = [];
@@ -234,7 +303,7 @@ export async function createSalesFunnel(a: Record<string, unknown>, ctx: Declara
 
 export const CATALOGUE_WRITE_TOOLS: Record<
   string,
-  (a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest) => Promise<unknown>
+  (a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest, reader: CatalogueReader) => Promise<unknown>
 > = {
   create_step: (a, ctx) => createStep(a, ctx),
   create_pipe: createPipe,

@@ -2565,8 +2565,15 @@ const CATALOGUE_PAGE_PROPS = {
   id: { type: "string", description: "Optional: read ONE object in detail instead of a list." },
 };
 
+const INCLUDE_NOT_RUNNABLE_PROP = {
+  includeNotRunnable: {
+    type: "boolean",
+    description: "STAFF ONLY: also list what we do not run today. Never for a customer request.",
+  },
+};
+
 const CATALOGUE_ROW_NOTE =
-  "Each row: id, name, icon, one line, costUsd, roi, status (measured = fleet evidence; learning = not enough history, cost and roi null; customer_time = the customer's own team). Quote figures exactly. Read-only, free.";
+  "Lists ONLY what we run today (a channel we do not run, like LinkedIn posting, is not listed; reading one by id answers weRunItToday: false). Each row: id, name, icon, one line, costUsd, roi, status (measured = fleet evidence; learning = not enough history, cost and roi null; customer_time = the customer's own team). Quote figures exactly. Read-only, free.";
 
 const idList = (description: string) => ({ type: "array", items: { type: "string" }, description });
 
@@ -2585,7 +2592,7 @@ export const FIND_SALES_PATHS_TOOL: Anthropic.Tool = {
     CATALOGUE_ROW_NOTE,
   input_schema: {
     type: "object" as const,
-    properties: { containsSteps: idList("Step ids (or labels) the path must contain."), ...CATALOGUE_PAGE_PROPS },
+    properties: { containsSteps: idList("Step ids (or labels) the path must contain."), ...CATALOGUE_PAGE_PROPS, ...INCLUDE_NOT_RUNNABLE_PROP },
   },
 };
 
@@ -2600,6 +2607,7 @@ export const FIND_CHANNELS_TOOL: Anthropic.Tool = {
       forPaths: idList("Sales path ids from find_sales_paths."),
       legKeys: idList("Leg keys (e.g. lead_found_to_conversation)."),
       ...CATALOGUE_PAGE_PROPS,
+      ...INCLUDE_NOT_RUNNABLE_PROP,
     },
   },
 };
@@ -2616,6 +2624,7 @@ export const FIND_PIPES_TOOL: Anthropic.Tool = {
       channels: idList("Channel ids (slugs) from find_channels."),
       legKeys: idList("Leg keys."),
       ...CATALOGUE_PAGE_PROPS,
+      ...INCLUDE_NOT_RUNNABLE_PROP,
     },
   },
 };
@@ -2631,6 +2640,7 @@ export const FIND_SALES_FUNNELS_TOOL: Anthropic.Tool = {
       paths: idList("Sales path ids."),
       containsChannels: idList("Channel ids the funnel must use."),
       ...CATALOGUE_PAGE_PROPS,
+      ...INCLUDE_NOT_RUNNABLE_PROP,
     },
   },
 };
@@ -2940,6 +2950,26 @@ export const DECLARE_SALES_PATH_TOOL: Anthropic.Tool = {
 // Clients choose which subset to enable via allowedTools in their config.
 // ---------------------------------------------------------------------------
 
+/**
+ * Declaration tools build what we do not run yet: staff only, on an explicit
+ * ask. The `staffBuild` flag is checked server-side (catalogue-client
+ * assertStaffBuild) together with the requester being staff.
+ */
+function withStaffBuild(tool: Anthropic.Tool): Anthropic.Tool {
+  const schema = tool.input_schema as { properties?: Record<string, unknown>; required?: string[] };
+  return {
+    ...tool,
+    description: `STAFF ONLY, on an explicit ask to build something we do not run yet (set staffBuild: true). Never for a customer request: we only offer what we run today. ${tool.description ?? ""}`,
+    input_schema: {
+      ...tool.input_schema,
+      properties: {
+        ...(schema.properties ?? {}),
+        staffBuild: { type: "boolean", description: "true only when a staff member explicitly asked to build this." },
+      },
+    } as Anthropic.Tool["input_schema"],
+  };
+}
+
 export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   request_user_input: REQUEST_USER_INPUT_TOOL,
   create_workflow: CREATE_WORKFLOW_TOOL,
@@ -3045,14 +3075,14 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   discover_service_endpoints: DISCOVER_SERVICE_ENDPOINTS_TOOL,
   discover_endpoint: DISCOVER_ENDPOINT_TOOL,
   test_endpoint: TEST_ENDPOINT_TOOL,
-  list_declared_channels: LIST_DECLARED_CHANNELS_TOOL,
-  declare_channel: DECLARE_CHANNEL_TOOL,
-  list_declared_legs: LIST_DECLARED_LEGS_TOOL,
-  declare_leg: DECLARE_LEG_TOOL,
-  list_trigger_types: LIST_TRIGGER_TYPES_TOOL,
-  declare_trigger_type: DECLARE_TRIGGER_TYPE_TOOL,
-  list_declared_sales_paths: LIST_DECLARED_SALES_PATHS_TOOL,
-  declare_sales_path: DECLARE_SALES_PATH_TOOL,
+  list_declared_channels: withStaffBuild(LIST_DECLARED_CHANNELS_TOOL),
+  declare_channel: withStaffBuild(DECLARE_CHANNEL_TOOL),
+  list_declared_legs: withStaffBuild(LIST_DECLARED_LEGS_TOOL),
+  declare_leg: withStaffBuild(DECLARE_LEG_TOOL),
+  list_trigger_types: withStaffBuild(LIST_TRIGGER_TYPES_TOOL),
+  declare_trigger_type: withStaffBuild(DECLARE_TRIGGER_TYPE_TOOL),
+  list_declared_sales_paths: withStaffBuild(LIST_DECLARED_SALES_PATHS_TOOL),
+  declare_sales_path: withStaffBuild(DECLARE_SALES_PATH_TOOL),
 };
 
 /** All tool names available for use in allowedTools config. */

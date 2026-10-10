@@ -20,6 +20,8 @@ async function load() {
 }
 
 const ctx = { orgId: "org-1", userId: "user-1" };
+const customer = { isStaff: async () => false };
+const staff = { isStaff: async () => true };
 const fetchMock = () => fetch as ReturnType<typeof vi.fn>;
 const res = (status: number, body: unknown) => ({
   ok: status >= 200 && status < 300,
@@ -50,36 +52,36 @@ describe("catalogue reads: one tool per level, features-service service key", ()
     ["find_steps", {}, "/internal/catalogue/steps"],
     ["find_steps", { q: "visit", limit: 5 }, "/internal/catalogue/steps?q=visit&limit=5"],
     ["find_steps", { id: "paid_client" }, "/internal/catalogue/steps/paid_client"],
-    ["find_sales_paths", { containsSteps: ["conversation", "meeting_booked"] }, "/internal/catalogue/sales-paths?containsSteps=conversation%2Cmeeting_booked"],
+    ["find_sales_paths", { containsSteps: ["conversation", "meeting_booked"] }, "/internal/catalogue/sales-paths?containsSteps=conversation%2Cmeeting_booked&runnable=true"],
     ["find_sales_paths", { id: "a+b" }, "/internal/catalogue/sales-paths/a%2Bb"],
-    ["find_channels", { forPaths: ["a+b"], q: "linkedin" }, "/internal/catalogue/channels?forPaths=a%2Bb&q=linkedin"],
-    ["find_pipes", { paths: ["a+b"], channels: ["organic-linkedin-publishing"] }, "/internal/catalogue/pipes?paths=a%2Bb&channels=organic-linkedin-publishing"],
+    ["find_channels", { forPaths: ["a+b"], q: "linkedin" }, "/internal/catalogue/channels?forPaths=a%2Bb&runnable=true&q=linkedin"],
+    ["find_pipes", { paths: ["a+b"], channels: ["organic-linkedin-publishing"] }, "/internal/catalogue/pipes?paths=a%2Bb&channels=organic-linkedin-publishing&runnable=true"],
     ["find_pipes", { id: "cold-email|lead_found_to_conversation" }, "/internal/catalogue/pipes/cold-email%7Clead_found_to_conversation"],
-    ["find_sales_funnels", { paths: "a+b", containsChannels: ["x"] }, "/internal/catalogue/sales-funnels?paths=a%2Bb&containsChannels=x"],
+    ["find_sales_funnels", { paths: "a+b", containsChannels: ["x"] }, "/internal/catalogue/sales-funnels?paths=a%2Bb&containsChannels=x&runnable=true"],
     ["find_workflows", { pipe: "c|l", limit: 3 }, "/internal/catalogue/workflows?pipe=c%7Cl&limit=3"],
     ["find_workflows", { pipe: "c|l", id: "wf-raven" }, "/internal/catalogue/workflows/wf-raven?pipe=c%7Cl"],
   ])("%s(%j) → GET %s", async (tool, args, path) => {
     fetchMock().mockResolvedValue(res(200, { rows: [] }));
     const { CATALOGUE_READ_TOOLS } = await load();
-    expect(await CATALOGUE_READ_TOOLS[tool](args)).toEqual({ rows: [] });
+    expect(await CATALOGUE_READ_TOOLS[tool](args, customer)).toEqual({ rows: [] });
     expect(call(0)).toMatchObject({ url: `http://features.test${path}`, method: "GET", key: "features-key" });
   });
 
   it("keeps pages small: a limit over 25 is refused before any call", async () => {
     const { CATALOGUE_READ_TOOLS } = await load();
-    await expect(CATALOGUE_READ_TOOLS.find_channels({ limit: 100 })).rejects.toThrow(/1 to 25/);
+    await expect(CATALOGUE_READ_TOOLS.find_channels({ limit: 100 }, customer)).rejects.toThrow(/1 to 25/);
     expect(fetchMock()).not.toHaveBeenCalled();
   });
 
   it("find_workflows needs a pipe (the owner ranks workflows per pipe)", async () => {
     const { CATALOGUE_READ_TOOLS } = await load();
-    await expect(CATALOGUE_READ_TOOLS.find_workflows({})).rejects.toThrow(/pipe is required/);
+    await expect(CATALOGUE_READ_TOOLS.find_workflows({}, customer)).rejects.toThrow(/pipe is required/);
   });
 
   it("a refusal carries the owner's reason to the model", async () => {
     fetchMock().mockResolvedValue(res(400, { error: "no step linkedin_post", reason: "step_not_found" }));
     const { CATALOGUE_READ_TOOLS } = await load();
-    await expect(CATALOGUE_READ_TOOLS.find_sales_paths({ containsSteps: ["linkedin_post"] })).rejects.toThrow(/step_not_found/);
+    await expect(CATALOGUE_READ_TOOLS.find_sales_paths({ containsSteps: ["linkedin_post"] }, customer)).rejects.toThrow(/step_not_found/);
   });
 });
 
@@ -92,6 +94,7 @@ describe("catalogue creates", () => {
       { key: "linkedin_follow", label: "LinkedIn follow", description: "d", shortDescription: "s", icon: "user-plus", towardStep: "conversation", towardRatePct: 5, published: true },
       ctx,
       file,
+      customer,
     );
     expect(call(0)).toMatchObject({ url: "http://features.test/internal/catalogue/steps", method: "POST" });
     expect(call(0).body).toEqual({
@@ -110,6 +113,7 @@ describe("catalogue creates", () => {
       { channelSlug: "organic-linkedin-publishing", toStep: "website_visit", mode: "proactive", userRequest: "post on LinkedIn every day" },
       ctx,
       file,
+      staff,
     )) as { status: string; onHold: unknown[] };
     expect(call(0).body).toMatchObject({ channelSlug: "organic-linkedin-publishing", fromStep: null, toStep: "website_visit", mode: "proactive", createdBy: "user-1", requestedByOrgId: "org-1" });
     expect(call(0).body.userRequest).toBeUndefined();
@@ -123,7 +127,7 @@ describe("catalogue creates", () => {
     fetchMock().mockResolvedValue(res(201, { id: "c|l", channelSlug: "c", legKey: "l", draft: false }));
     const { CATALOGUE_WRITE_TOOLS } = await load();
     const { file, filed } = fileMock();
-    const out = (await CATALOGUE_WRITE_TOOLS.create_pipe({ channelSlug: "c", toStep: "x", mode: "proactive", userRequest: "u" }, ctx, file)) as { status: string };
+    const out = (await CATALOGUE_WRITE_TOOLS.create_pipe({ channelSlug: "c", toStep: "x", mode: "proactive", userRequest: "u" }, ctx, file, staff)) as { status: string };
     expect(out.status).toBe("created");
     expect(filed).toHaveLength(0);
   });
@@ -138,6 +142,7 @@ describe("catalogue creates", () => {
       { channelSlug: "whatsapp", fromStep: "lead_found", toStep: "conversation", mode: "reactive", triggerId: "no_reply_3d", userRequest: "u" },
       ctx,
       file,
+      staff,
     )) as { status: string; reason: string };
     expect(out).toMatchObject({ status: "on_hold", reason: "trigger_not_fired" });
     expect(call(1).url).toBe("http://features.test/internal/declarations/trigger-types/no_reply_3d");
@@ -147,7 +152,7 @@ describe("catalogue creates", () => {
   it("create_sales_path posts the leg keys in order", async () => {
     fetchMock().mockResolvedValue(res(200, { created: false, id: "a+b" }));
     const { CATALOGUE_WRITE_TOOLS } = await load();
-    const out = await CATALOGUE_WRITE_TOOLS.create_sales_path({ legKeys: ["a", "b"] }, ctx, fileMock().file);
+    const out = await CATALOGUE_WRITE_TOOLS.create_sales_path({ legKeys: ["a", "b"] }, ctx, fileMock().file, customer);
     expect(out).toEqual({ created: false, id: "a+b" });
     expect(call(0).body).toEqual({ legKeys: ["a", "b"], createdBy: "user-1", requestedByOrgId: "org-1" });
   });
@@ -169,7 +174,7 @@ describe("catalogue creates", () => {
       .mockResolvedValueOnce(res(200, { id: "c2|l2", channelSlug: "c2", legKey: "l2", draft: true }));
     const { CATALOGUE_WRITE_TOOLS } = await load();
     const { file, filed } = fileMock();
-    const out = (await CATALOGUE_WRITE_TOOLS.create_sales_funnel({ pipeIds: ["c1|l1", "c2|l2", "l3"], userRequest: "u" }, ctx, file)) as { status: string };
+    const out = (await CATALOGUE_WRITE_TOOLS.create_sales_funnel({ pipeIds: ["c1|l1", "c2|l2", "l3"], userRequest: "u" }, ctx, file, staff)) as { status: string };
     expect(call(0).body).toEqual({ pipeIds: ["c1|l1", "c2|l2", "l3"], createdBy: "user-1", requestedByOrgId: "org-1" });
     expect(call(2).url).toBe("http://features.test/internal/catalogue/pipes/c2%7Cl2");
     expect(out.status).toBe("created_on_hold");
@@ -179,7 +184,56 @@ describe("catalogue creates", () => {
 
   it("refuses an empty pipe list before any call", async () => {
     const { CATALOGUE_WRITE_TOOLS } = await load();
-    await expect(CATALOGUE_WRITE_TOOLS.create_sales_funnel({ pipeIds: [], userRequest: "u" }, ctx, fileMock().file)).rejects.toThrow(/non-empty list/);
+    await expect(CATALOGUE_WRITE_TOOLS.create_sales_funnel({ pipeIds: [], userRequest: "u" }, ctx, fileMock().file, customer)).rejects.toThrow(/non-empty list/);
     expect(fetchMock()).not.toHaveBeenCalled();
+  });
+});
+
+describe("a customer is only offered what we run today (owner 2026-10-10)", () => {
+  it("a detail read of something we do not run answers weRunItToday: false, never its terms", async () => {
+    fetchMock().mockResolvedValue(res(200, { id: "organic-linkedin-publishing", name: "LinkedIn Posting", managed: false, runnable: false, terms: "$100/day" }));
+    const { CATALOGUE_READ_TOOLS } = await load();
+    const out = (await CATALOGUE_READ_TOOLS.find_channels({ id: "organic-linkedin-publishing" }, customer)) as Record<string, unknown>;
+    expect(out).toMatchObject({ id: "organic-linkedin-publishing", weRunItToday: false });
+    expect(JSON.stringify(out)).not.toContain("$100");
+  });
+
+  it("includeNotRunnable is refused for a customer, honoured for staff (no runnable filter)", async () => {
+    const { CATALOGUE_READ_TOOLS } = await load();
+    await expect(CATALOGUE_READ_TOOLS.find_channels({ includeNotRunnable: true }, customer)).rejects.toThrow(/staff only/);
+    fetchMock().mockResolvedValue(res(200, { rows: [] }));
+    await CATALOGUE_READ_TOOLS.find_channels({ includeNotRunnable: true, q: "linkedin" }, staff);
+    expect(call(0).url).toBe("http://features.test/internal/catalogue/channels?q=linkedin");
+  });
+
+  it("steps and workflows carry no runnable filter", async () => {
+    fetchMock().mockResolvedValue(res(200, { rows: [] }));
+    const { CATALOGUE_READ_TOOLS } = await load();
+    await CATALOGUE_READ_TOOLS.find_steps({}, customer);
+    expect(call(0).url).toBe("http://features.test/internal/catalogue/steps");
+  });
+
+  it("create_pipe is refused for a customer before any call", async () => {
+    const { CATALOGUE_WRITE_TOOLS } = await load();
+    await expect(
+      CATALOGUE_WRITE_TOOLS.create_pipe({ channelSlug: "organic-linkedin-publishing", toStep: "website_visit", mode: "proactive", userRequest: "u" }, ctx, fileMock().file, customer),
+    ).rejects.toThrow(/staff only/);
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("a customer funnel with a pipe we do not run is refused before it is created", async () => {
+    fetchMock().mockResolvedValueOnce(res(200, { id: "organic-linkedin-publishing|start_to_website_visit", runnable: false }));
+    const { CATALOGUE_WRITE_TOOLS } = await load();
+    await expect(
+      CATALOGUE_WRITE_TOOLS.create_sales_funnel({ pipeIds: ["organic-linkedin-publishing|start_to_website_visit", "website_visit_to_paid_client"], userRequest: "u" }, ctx, fileMock().file, customer),
+    ).rejects.toThrow(/not something we run today/);
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+  });
+
+  it("declaration tools need staffBuild AND a staff requester", async () => {
+    const { assertStaffBuild } = await load();
+    await expect(assertStaffBuild("list_declared_channels", {}, staff)).rejects.toThrow(/staffBuild: true/);
+    await expect(assertStaffBuild("declare_channel", { staffBuild: true }, customer)).rejects.toThrow(/staff only/);
+    await expect(assertStaffBuild("declare_channel", { staffBuild: true }, staff)).resolves.toBeUndefined();
   });
 });
