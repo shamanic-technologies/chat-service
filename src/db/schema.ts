@@ -163,8 +163,9 @@ export const staffRequests = pgTable(
     userId: text("user_id").notNull(),
     brandId: text("brand_id"),
     sessionId: uuid("session_id"),
-    kind: text("kind").notNull().$type<"bug" | "feature">(),
-    repo: text("repo").notNull(),
+    kind: text("kind").notNull().$type<StaffRequestKind>(),
+    // NULL for `contact_human` (no repo: it reaches a person, not a codebase; migration 0019).
+    repo: text("repo"),
     pieceKey: text("piece_key").notNull(),
     title: text("title").notNull(),
     userRequest: text("user_request").notNull(),
@@ -185,6 +186,9 @@ export const staffRequests = pgTable(
     unique("staff_requests_org_repo_kind_piece_unique").on(table.orgId, table.repo, table.kind, table.pieceKey),
   ],
 );
+
+/** bug / feature: code is broken or missing; skill_upgrade: a skill or a service doc is wrong or thin; contact_human: the user wants a person. */
+export type StaffRequestKind = "bug" | "feature" | "skill_upgrade" | "contact_human";
 
 export interface StaffRequestPiece {
   piece: string;

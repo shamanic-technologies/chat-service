@@ -39,7 +39,7 @@ export class DeclarationRefusedError extends Error {
   }
 }
 
-async function features(operation: string, method: string, path: string, body?: unknown): Promise<unknown> {
+export async function features(operation: string, method: string, path: string, body?: unknown): Promise<unknown> {
   const url = process.env.FEATURES_SERVICE_URL;
   const key = process.env.FEATURES_SERVICE_API_KEY;
   if (!url || !key) throw new Error("FEATURES_SERVICE_URL / FEATURES_SERVICE_API_KEY not configured");
@@ -73,7 +73,7 @@ function optStr(value: unknown): string | null {
 }
 
 const enc = encodeURIComponent;
-const kebab = (s: string) =>
+export const kebab = (s: string) =>
   s
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -128,7 +128,7 @@ export interface HeldPiece {
   staffRequest: StaffRequestResult;
 }
 
-const ON_HOLD_INSTRUCTION =
+export const ON_HOLD_INSTRUCTION =
   "Tell the user plainly: this piece is created and on hold with the team (it goes live for them once staff does the step named in waitingFor). It is NOT an error. Then carry on with the rest of their request.";
 
 function publishRequest(kindLabel: string, pieceKey: string, title: string, userRequest: string, what: string): StaffRequestInput {
@@ -153,7 +153,7 @@ async function fileChannelPublish(slug: string, userRequest: string, file: FileS
   return { piece: `channel ${slug}`, waitingFor: "staff_publish", staffRequest };
 }
 
-async function fileLegPublish(slug: string, legKey: string, userRequest: string, file: FileStaffRequest): Promise<HeldPiece> {
+export async function fileLegPublish(slug: string, legKey: string, userRequest: string, file: FileStaffRequest): Promise<HeldPiece> {
   const staffRequest = await file(
     publishRequest(
       "leg",
@@ -166,7 +166,7 @@ async function fileLegPublish(slug: string, legKey: string, userRequest: string,
   return { piece: `leg ${legKey} on ${slug}`, waitingFor: "staff_publish", staffRequest };
 }
 
-interface TriggerTypeLite {
+export interface TriggerTypeLite {
   id: string;
   kind?: string;
   firedBy?: string;
