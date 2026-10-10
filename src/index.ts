@@ -241,7 +241,7 @@ import {
   setBrandPauseState,
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -500,6 +500,21 @@ app.put("/config", requireAuth, async (req, res) => {
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString(),
   });
+});
+
+// Remove one of the calling org's chat configs (a retired chat mode, a probe).
+// Idempotent: an absent key answers deleted:false. Platform configs are not
+// reachable here (they belong to the app that registers them at boot).
+app.delete("/config/:key", requireAuth, async (req, res) => {
+  const { orgId } = res.locals as AuthLocals;
+  const parsed = AppConfigKeyParamsSchema.safeParse(req.params);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  const deleted = await db
+    .delete(appConfigs)
+    .where(and(eq(appConfigs.orgId, orgId), eq(appConfigs.key, parsed.data.key)))
+    .returning({ key: appConfigs.key });
+  console.log(`[chat-service] app config delete org="${orgId}" key="${parsed.data.key}" deleted=${deleted.length > 0}`);
+  return res.json({ orgId, key: parsed.data.key, deleted: deleted.length > 0 });
 });
 
 // --- Platform Config Registration ---
