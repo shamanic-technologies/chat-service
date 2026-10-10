@@ -129,11 +129,13 @@ import {
   listStaffRequests,
   listStaffRequestsForModel,
   StaffRequestValidationError,
+  fetchRequesterEmail,
+  isStaffEmail,
   submitStaffRequest,
   toStaffRequestBody,
 } from "./lib/staff-requests.js";
 import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
-import { CATALOGUE_READ_TOOLS, CATALOGUE_WRITE_TOOLS } from "./lib/catalogue-client.js";
+import { CATALOGUE_READ_TOOLS, CATALOGUE_WRITE_TOOLS, assertStaffBuild, type CatalogueReader } from "./lib/catalogue-client.js";
 import { FUNNEL_CAMPAIGN_TOOLS } from "./lib/funnel-campaign-client.js";
 import { DISCOVERY_READ_TOOLS, testEndpoint } from "./lib/discovery-client.js";
 import {
@@ -2883,6 +2885,20 @@ app.post("/chat", requireAuth, async (req, res) => {
     const downstreamTrackingHeaders = Object.keys(trackingHeaders).length > 0
       ? trackingHeaders as Record<string, string>
       : undefined;
+    // Who is chatting decides only what a STAFF-ONLY catalogue option may show
+    // (catalogue-client CatalogueReader). Looked up once per turn, on first
+    // need; a failed lookup is a customer (fail closed: they see what we run).
+    let staffLookup: Promise<boolean> | null = null;
+    const catalogueReader: CatalogueReader = {
+      isStaff: () =>
+        (staffLookup ??= fetchRequesterEmail(userId)
+          .then((email) => isStaffEmail(email))
+          .catch((err) => {
+            console.error(`[chat] staff lookup failed for user="${userId}", treating as a customer:`, err);
+            return false;
+          })),
+    };
+
     const featureCallParams = {
       orgId,
       userId,
@@ -3110,6 +3126,13 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
 
       // --- Copilot: declarations (channels, legs, trigger types, sales paths) ---
+      // Building what we do not run yet is STAFF work, asked for explicitly
+      // (`staffBuild: true`): a customer is never shown or sold a channel we
+      // do not run (owner 2026-10-10).
+      if (DECLARATION_READ_TOOLS[call.name] || DECLARATION_WRITE_TOOLS[call.name]) {
+        const args = (call.args as Record<string, unknown>) || {};
+        await assertStaffBuild(call.name, args, catalogueReader);
+      }
       const declarationRead = DECLARATION_READ_TOOLS[call.name];
       if (declarationRead) {
         const args = (call.args as Record<string, unknown>) || {};
@@ -3145,7 +3168,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       const catalogueRead = CATALOGUE_READ_TOOLS[call.name];
       if (catalogueRead) {
         const args = (call.args as Record<string, unknown>) || {};
-        const result = await catalogueRead(args);
+        const result = await catalogueRead(args, catalogueReader);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -3153,12 +3176,16 @@ app.post("/chat", requireAuth, async (req, res) => {
       const catalogueWrite = CATALOGUE_WRITE_TOOLS[call.name];
       if (catalogueWrite) {
         const args = (call.args as Record<string, unknown>) || {};
-        const result = await catalogueWrite(args, { orgId, userId }, (input) =>
-          submitStaffRequest(
-            db,
-            { orgId, userId, brandId: brandIds.length === 1 ? brandIds[0] : null, sessionId: currentSessionId ?? null },
-            input,
-          ),
+        const result = await catalogueWrite(
+          args,
+          { orgId, userId },
+          (input) =>
+            submitStaffRequest(
+              db,
+              { orgId, userId, brandId: brandIds.length === 1 ? brandIds[0] : null, sessionId: currentSessionId ?? null },
+              input,
+            ),
+          catalogueReader,
         );
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };

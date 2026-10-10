@@ -33,7 +33,8 @@ At each level, show a SHORT list (present_choices: name, one line, cost, return)
 If the user named a channel, find it first to learn what it produces, then walk from Steps.
 
 ## When something is missing
-- Nothing fits at a level: CREATE it as data (create_step, create_pipe, create_sales_path, create_sales_funnel). What needs the team (publishing, a detector) is filed by the tool itself: say it is on hold and carry on.
+- We only offer what we run today: the find_* tools list nothing else. The user asks for something we do not run (LinkedIn posting, ads): say so in one plain sentence, offer what we run that gets the same result, and if they still want it, request_staff (kind feature). Never describe its price, terms or how it would work.
+- A path or funnel shape is missing but every piece runs: create it as data (create_step, create_sales_path, create_sales_funnel).
 - It needs code, or something is broken: request_staff. A skill or doc misled you: request_skill_upgrade. The user wants a person: contact_human. Load \`staff-requests\`.
 - Building something new from our services: load \`infra\`.
 
@@ -175,7 +176,7 @@ A channel is a way to reach a lead: cold email, LinkedIn outreach, WhatsApp, AI 
 
 ## Write
 - set_offer_channels(brandId, offerId, channelSlugs): REPLACES the list. Read first, send the full list.
-- declare_channel: a NEW channel, created live as data (never a PR). It has no leg yet: declare its legs next (see legs). Confirm its name and what it does with the user first.
+- STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_channel: a NEW channel, created live as data (never a PR). It has no leg yet: declare its legs next (see legs). Confirm its name and what it does with the user first.
 
 ## Publish rule
 A declared channel is invisible to every client until staff publishes it. declare_channel files that staff request itself and returns declared_on_hold: tell the user the channel is on hold with the team, then carry on. Never call request_staff again for it, and never claim it is live.
@@ -206,7 +207,7 @@ A leg is the move of a lead from one sales step to the next, e.g. lead found to 
 - get_leg_rates(brandId): conversion rate per leg.
 
 ## Write
-- declare_leg(channelSlug, fromStep, toStep, mode, triggerId?): a NEW leg on a channel (declared or coded), created live. Proactive: no trigger. Reactive: exactly one trigger (list_trigger_types).
+- STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_leg(channelSlug, fromStep, toStep, mode, triggerId?): a NEW leg on a channel (declared or coded), created live. Proactive: no trigger. Reactive: exactly one trigger (list_trigger_types).
 - The offer's legs come from its ticked sales paths (see sales-paths).
 - set_campaign_budget: the daily cap of one (offer x leg x channel).
 
@@ -242,7 +243,7 @@ A trigger is **coded** when something fires it today. Only a coded trigger can r
 - get_trigger_events(brandId, offerId): per type, fired / ran / skipped and why (campaign off, unfunded).
 
 ## Write
-- declare_trigger_type(id, label, description, icon, kind, params...): a NEW trigger type, created live. It is not coded: the tool files the staff request for its detector itself (status declared_on_hold).
+- STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_trigger_type(id, label, description, icon, kind, params...): a NEW trigger type, created live. It is not coded: the tool files the staff request for its detector itself (status declared_on_hold).
 - A trigger turns on when its reactive leg's campaign turns on: propose_switch_on (switch_on_reactive_legs or activate_campaign), then confirm after the user's yes.
 
 ## trigger_not_fired
@@ -477,14 +478,12 @@ Pages are 10 rows by default, 25 at most. Narrow with filters or q, never page t
 step id → find_sales_paths(containsSteps) → path id → find_channels(forPaths) → channel id → find_pipes(paths, channels) → find_sales_funnels(paths, containsChannels) → funnel id → find_workflows(pipe) only if asked.
 
 ## Example: "post on LinkedIn every day"
-1. find_steps(q "linkedin"): no step for a LinkedIn post yet (a step_not_found refusal means the same). Search the closest result instead (find_steps with no q). If none fits, create_step "linkedin_post" toward the step a post leads to (e.g. website_visit) with a cautious towardRatePct, said as a guess.
-2. find_sales_paths(containsSteps [the step]) and find_channels(q "linkedin"): LinkedIn Posting.
-3. find_pipes(channels, paths): is there a posting pipe on those paths? If not, create_pipe (proactive: daily posting has its own budget), then create_sales_path if no path chains it to Paid client.
-4. find_sales_funnels(paths, containsChannels): pick the best; if none, create_sales_funnel.
-5. Propose the funnel: name, what it does in one line, cost per paying client, return. Then \`campaigns\` (max budget + max volume, the user's yes).
+1. find_channels(q "linkedin"): nothing listed. We do not run LinkedIn posting today.
+2. Say it plainly: "We don't run LinkedIn posting today." Then what we run that brings the same result (site visits, conversations): find_channels and find_sales_funnels, the best 1 to 3 with cost and return.
+3. Cards: the funnels we run, and "I want LinkedIn posting anyway" (then request_staff, kind feature, repo features-service, their words).
 
 ## Create
-create_step, create_pipe, create_sales_path, create_sales_funnel. Data only, starts nothing. Find first; never create what exists.
+create_step, create_sales_path, create_sales_funnel (runnable pipes only). Data only, starts nothing. Find first; never create what exists. create_pipe (a channel on a new step) is staff work.
 `),
   },
   {
@@ -544,8 +543,8 @@ A channel is a way to move a lead forward: cold email, LinkedIn posting, LinkedI
 - find_channels(forPaths: [path ids]): the channels able to work those paths, best return first.
 - find_channels(q "linkedin"): find a channel the user named. find_channels(id) for its legs.
 
-## Create
-A brand-new channel is declare_channel (load \`channels\`). It goes on hold until staff publishes it.
+## Not listed = not run
+A channel find_channels does not list is one we do not run today: say so, offer what we run, request_staff (kind feature) if they want it. Declaring a new channel is staff work only.
 
 ## Articulation
 A channel needs an account to send from: see \`connected-accounts\`.
@@ -566,8 +565,8 @@ A pipe is one channel working one leg (from one step to the next). Proactive pip
 - find_pipes(paths, channels): the pipes on the chosen paths and channels, cost per outcome and return.
 - find_pipes(id): one pipe, with its best workflow and conversion rate.
 
-## Create
-create_pipe(channelSlug, fromStep, toStep, mode, triggerId?): a draft until staff publishes it. The tool files that request itself and returns created_on_hold. A reactive pipe on a trigger nothing fires is not created: the tool asks for the detector and returns on_hold. Either way: say it is on hold with the team, carry on.
+## Create (staff only)
+create_pipe(channelSlug, fromStep, toStep, mode, triggerId?): refused for a customer. A draft until staff publishes it. The tool files that request itself and returns created_on_hold. A reactive pipe on a trigger nothing fires is not created: the tool asks for the detector and returns on_hold. Either way: say it is on hold with the team, carry on.
 `),
   },
   {
@@ -589,7 +588,7 @@ A sales funnel is a sales path with a pipe on every step: the complete plan that
 First WRITE the 1 to 3 funnels in the text (present_choices \`text\`), one line each: name, what it does, cost per paying client, return (learning: "not measured yet"). Then present_choices, one card per funnel, its cost as a number visual (cents). Cards alone hide the figures: never skip the text. The user picks; then \`campaigns\`: it becomes a campaign with a max budget and a max volume they state.
 
 ## Create
-create_sales_funnel(pipeIds in order: a pipe id, or a bare leg key for a step the customer's team works). On hold while one of its pipes is a draft (filed for you).
+create_sales_funnel(pipeIds in order: a pipe id, or a bare leg key for a step the customer's team works). For a customer every pipe must be one we run (refused otherwise).
 `),
   },
   {
