@@ -114,8 +114,12 @@ describe("funnel campaign tools (campaign-service / billing-service, direct, cha
       .mockResolvedValueOnce(res(200, { id: "r", type: "reactive", mixed: false, legs: [{ pipe: { id: "ai-meeting-booking|conversation_to_meeting_booked", mode: "reactive" } }, { pipe: null }] }))
       .mockResolvedValue(res(201, { created: true }));
     const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
-    await FUNNEL_CAMPAIGN_TOOLS.create_funnel_campaign({ brandId: "b", offerId: "o", salesFunnelId: "r" }, p);
+    const out = (await FUNNEL_CAMPAIGN_TOOLS.create_funnel_campaign({ brandId: "b", offerId: "o", salesFunnelId: "r" }, p)) as Record<string, string>;
     expect(call(1).body).toMatchObject({ salesFunnelId: "r", status: "stopped" });
+    // The next question uses the reactive words (owner 2026-10-10).
+    expect(out.funnelType).toBe("reactive");
+    expect(out.askCapsAs).toMatch(/'Up to \$X'.*'Up to N prospects handled'/);
+    expect(out.askCapsAs).toMatch(/Never say 'max budget'/);
   });
 
   it("a refusal carries the owner's reason", async () => {
