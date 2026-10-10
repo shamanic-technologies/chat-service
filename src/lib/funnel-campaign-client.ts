@@ -309,6 +309,44 @@ export function spentWords(maxBudget: CapsBody["maxBudget"]): string | null {
   return `${usd(maxBudget.consumedCents)} spent ${SPENT_WHEN[maxBudget.period] ?? "this period"}${maxBudget.reached ? " (cap reached: no new first touches until the next period)" : ""}`;
 }
 
+/** features-service's per funnel campaign results (owner 2026-10-11): one row per campaign, money since inception. */
+interface CampaignResults {
+  id: string;
+  description?: string | null;
+  investedUsd?: number | null;
+  roiMultiple?: number | null;
+  moneyUnavailableReason?: string | null;
+  maturity?: { isMature?: boolean } | null;
+}
+
+async function campaignResults(brandId: string, p: ApiCallParams): Promise<Map<string, CampaignResults>> {
+  const url = process.env.FEATURES_SERVICE_URL;
+  const key = process.env.FEATURES_SERVICE_API_KEY;
+  if (!url || !key) throw new Error("FEATURES_SERVICE_URL / FEATURES_SERVICE_API_KEY not configured");
+  const res = await fetch(`${url}/brands/${enc(brandId)}/sales-funnel-campaigns?pricing=net`, {
+    headers: { "x-api-key": key, "x-org-id": p.orgId, "x-user-id": p.userId, "x-run-id": p.runId },
+    signal: AbortSignal.timeout(60_000),
+  });
+  const raw = await res.text();
+  if (!res.ok) throw new FunnelCampaignError("list_campaigns:results", res.status, null, raw || "no body");
+  const body = JSON.parse(raw) as { salesFunnelCampaigns?: CampaignResults[] };
+  if (!Array.isArray(body.salesFunnelCampaigns)) throw new Error("[funnel-campaigns] features-service answered without salesFunnelCampaigns");
+  return new Map(body.salesFunnelCampaigns.map((r) => [r.id, r]));
+}
+
+/** "$67.46 invested since start" (net, what the customer pays), or why it is not known. */
+export function investedWords(r: CampaignResults | undefined): string {
+  if (!r) return "not known yet (no results served for this campaign)";
+  if (typeof r.investedUsd !== "number") return `not known (${r.moneyUnavailableReason ?? "unavailable"})`;
+  return `$${r.investedUsd} invested since start`;
+}
+
+/** The campaign's return as served, with its maturity: never presented as final while learning. */
+export function returnWords(r: CampaignResults | undefined): string {
+  if (!r || typeof r.roiMultiple !== "number") return "no return measured yet";
+  return r.maturity?.isMature === true ? `${r.roiMultiple}x` : `${r.roiMultiple}x so far (still learning, not mature)`;
+}
+
 export async function listAccountCampaigns(a: Record<string, unknown>, p: ApiCallParams) {
   const status = opt(a.status);
   if (status !== null && !(CAMPAIGN_STATUSES as readonly string[]).includes(status)) {
@@ -322,19 +360,25 @@ export async function listAccountCampaigns(a: Record<string, unknown>, p: ApiCal
     salesFunnelCampaigns?: FunnelCampaignRow[];
   };
   if (!Array.isArray(body.salesFunnelCampaigns)) throw new Error("[funnel-campaigns] campaign-service answered without salesFunnelCampaigns");
+  const brandIds = [...new Set(body.salesFunnelCampaigns.map((c) => opt(a.brandId) ?? (c as unknown as { brandId?: string }).brandId ?? ""))].filter(Boolean);
+  const resultsByBrand = new Map(await Promise.all(brandIds.map(async (b) => [b, await campaignResults(b, p)] as const)));
   const campaigns = await Promise.all(
     body.salesFunnelCampaigns.map(async (c) => {
       const brandId = opt(a.brandId) ?? (c as unknown as { brandId?: string }).brandId ?? "";
       const caps = (await getFunnelCaps({ brandId, offerId: c.offerId, salesFunnelId: c.salesFunnelId }, p)) as CapsBody;
+      const results = resultsByBrand.get(brandId)?.get(c.id);
       return {
         id: c.id,
         name: c.salesFunnelName ?? c.salesFunnelId,
+        description: results?.description ?? null,
         type: caps.salesFunnelType ?? null,
         status: c.status,
         stopReason: c.stopReason ?? null,
         budget: budgetWords(caps.salesFunnelType, caps.maxBudget ?? null),
         volume: volumeWords(caps.salesFunnelType, caps.maxVolume ?? null, caps.volumeUnit),
         spent: spentWords(caps.maxBudget ?? null),
+        invested: investedWords(results),
+        return: returnWords(results),
         offerId: c.offerId,
         salesFunnelId: c.salesFunnelId,
         // The funnel's steps: parts of THIS campaign, never campaigns of their own.

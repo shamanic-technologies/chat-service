@@ -2039,7 +2039,7 @@ export const LAUNCH_CAMPAIGN_TOOL: Anthropic.Tool = {
 export const LIST_CAMPAIGNS_TOOL: Anthropic.Tool = {
   name: "list_campaigns",
   description:
-    "THE account's campaigns, as the Campaigns page shows them. A campaign IS a sales funnel campaign: name, type (proactive | reactive), status, budget in words ('Max $10/day', 'Up to $1/day', 'Not funded (no max budget)'), volume, what it spent this period, and its steps (sources, cold email, AI booking...). " +
+    "THE account's campaigns, as the Campaigns page shows them. A campaign IS a sales funnel campaign: name, type (proactive | reactive), status, budget in words ('Max $10/day', 'Up to $1/day', 'Not funded (no max budget)'), volume, what it spent this period, its results since start (invested, return with its maturity: 'still learning' is never a final figure), its one-sentence description, and its steps (sources, cold email, AI booking...). " +
     "Use it for ANY question about campaigns, what runs, or each campaign's budget. Count and name only campaigns, never their steps (a step is part of a campaign, not a campaign). Quote budget and spent as written. Read-only.",
   input_schema: {
     type: "object" as const,
