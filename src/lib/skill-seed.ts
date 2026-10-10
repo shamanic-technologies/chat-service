@@ -143,15 +143,15 @@ Qualification checks run on each found lead BEFORE any paid step, so money is on
     content: t(`
 # Sources
 
-A source is where leads come from. Live origins: Apollo cold filters, Apollo buying signals, LinkedIn engagement signals (people who engage with posts), CRM contacts. A source IS a campaign on the "lead found" leg (legKey start_to_lead_found) whose channel is the origin's feature slug. Rules: campaign-service; origin list: features-service.
+A source is where leads come from. Live origins: Apollo cold filters, Apollo buying signals, LinkedIn engagement signals (people who engage with posts), CRM contacts. A source is a STEP of a proactive funnel campaign (it feeds the funnel's first contacts), never a campaign of its own. Rules: campaign-service; origin list: features-service.
 
 ## Read
 - list_sourcing_origins: the origins and their feature slugs.
 - get_offer_sourcing(brandId, offerId): leads found, cost and return per source.
 
-## Write (a source is a campaign)
-- set_campaign_budget with legKey start_to_lead_found and the origin's featureSlug: the daily cap.
-- propose_switch_on (action start_campaign) then confirm_switch_on after the user's yes: starts the source.
+## Budget and on/off (the funnel campaign's)
+- A source spends inside its funnel campaign's caps: change them with set_funnel_caps (see \`campaigns\`).
+- It runs and stops with its funnel campaign: propose_switch_on (start_funnel_campaign) then confirm_switch_on after the user's yes; stop_funnel_campaign to stop. A source has no on/off or budget of its own.
 
 ## Articulation
 "Each time someone reacts to my LinkedIn posts" is a SOURCE (LinkedIn engagement signals), not a trigger: it finds those people as leads; the following legs then reach them.
@@ -205,7 +205,6 @@ A leg is the move of a lead from one sales step to the next, e.g. lead found to 
 ## Write
 - STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_leg(channelSlug, fromStep, toStep, mode, triggerId?): a NEW leg on a channel (declared or coded), created live. Proactive: no trigger. Reactive: exactly one trigger (list_trigger_types).
 - The offer's legs come from the funnels it runs (funnel campaigns, see campaigns).
-- set_campaign_budget: the daily cap of one (offer x leg x channel).
 
 ## Two hold cases (never a dead end)
 - **Unpublished:** a declared leg is invisible to clients until staff publishes it (and its channel). declare_leg files that request itself: status declared_on_hold.

@@ -134,7 +134,10 @@ export const setCampaignBudget = (a: Record<string, unknown>, p: ApiCallParams) 
 
 // --- Switch ON: propose (this turn) → confirm (a later turn) ------------------
 
-export const SWITCH_ON_ACTIONS = ["start_funnel_campaign", "start_campaign", "activate_campaign"] as const;
+// A campaign is a sales funnel campaign (owner 2026-10-10): the only thing the
+// Copilot switches on. The per-step starts (start_campaign, activate_campaign)
+// are retired: campaign-service refuses per-step writes on converted units.
+export const SWITCH_ON_ACTIONS = ["start_funnel_campaign"] as const;
 export type SwitchOnAction = (typeof SWITCH_ON_ACTIONS)[number];
 
 export interface SwitchOnProposal {
@@ -149,9 +152,8 @@ export interface SwitchOnProposal {
 }
 
 /**
- * Validate and record what WOULD be switched on. For `start_campaign` the
- * daily budget cap is mandatory and is SET now (the cap is data; the campaign
- * is not created). Returns a token the model hands to confirm_switch_on in a
+ * Validate and record what WOULD be switched on: a sales funnel campaign,
+ * refused until its max budget is stated (the caps are data; nothing starts). Returns a token the model hands to confirm_switch_on in a
  * LATER turn, after the user said yes.
  */
 export async function proposeSwitchOn(a: Record<string, unknown>, p: ApiCallParams): Promise<SwitchOnProposal & { budget?: unknown }> {
@@ -168,17 +170,6 @@ export async function proposeSwitchOn(a: Record<string, unknown>, p: ApiCallPara
     instruction:
       "Nothing is on yet. Show the user exactly what will start and its daily cap, and ask them to confirm (present_choices). Only after they say yes, in a later message, call confirm_switch_on with this confirmationToken.",
   };
-  if (action === "start_campaign") {
-    const target = {
-      brandId: rawId("brandId", a.brandId),
-      offerId: rawId("offerId", a.offerId),
-      legKey: rawId("legKey", a.legKey),
-      featureSlug: rawId("featureSlug", a.featureSlug),
-      dailyBudgetCents: cents("dailyBudgetCents", a.dailyBudgetCents),
-    };
-    const budget = await setCampaignBudget(target, p);
-    return { ...base, target, budget };
-  }
   if (action === "start_funnel_campaign") {
     // A funnel campaign's money is ONLY its caps: no max budget = held unfunded,
     // so the proposal is refused until the user stated one (set_funnel_caps).
@@ -190,7 +181,7 @@ export async function proposeSwitchOn(a: Record<string, unknown>, p: ApiCallPara
     const caps = await requireStatedMaxBudget(target, p);
     return { ...base, target, caps };
   }
-  return { ...base, target: { campaignId: rawId("campaignId", a.campaignId) } };
+  throw new Error(`[copilot] action must be one of ${SWITCH_ON_ACTIONS.join(", ")}`);
 }
 
 export class SwitchOnConfirmationError extends Error {
@@ -249,19 +240,9 @@ export async function executeSwitchOn(proposal: SwitchOnProposal, p: ApiCallPara
       { brandId: String(t.brandId), offerId: String(t.offerId), salesFunnelId: String(t.salesFunnelId) },
       p,
     );
-  } else if (proposal.action === "start_campaign") {
-    result = await call("confirm_switch_on:start_campaign", "/v1/campaigns/start-funded-pair", "POST", p, {
-      brandId: t.brandId,
-      offerId: t.offerId,
-      legKey: t.legKey,
-      featureSlug: t.featureSlug,
-    });
-  } else if (proposal.action === "activate_campaign") {
-    result = await call("confirm_switch_on:activate_campaign", `/v1/campaigns/${encodeURIComponent(String(t.campaignId))}`, "PATCH", p, {
-      status: "activate",
-    });
   } else {
-    // A proposal recorded before an action was retired (switch_on_reactive_legs, 2026-10-10).
+    // A proposal recorded before an action was retired (switch_on_reactive_legs,
+    // start_campaign, activate_campaign: per-step starts, 2026-10-10).
     throw new SwitchOnConfirmationError(
       `The action "${String(proposal.action)}" is retired: a campaign is a funnel campaign now. Propose start_funnel_campaign instead.`,
     );

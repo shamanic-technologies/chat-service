@@ -58,25 +58,13 @@ describe("copilot entity reads hit the owner routes", () => {
 });
 
 describe("switch-on gate: propose in one turn, confirm in a later one", () => {
-  it("start_campaign needs a budget cap, sets it, and starts nothing", async () => {
-    fetchMock().mockResolvedValue(ok({ saved: true }));
-    const { proposeSwitchOn } = await load();
-    await expect(
-      proposeSwitchOn({ action: "start_campaign", summary: "s", brandId: "b", offerId: "o", legKey: "l", featureSlug: "f" }, params),
-    ).rejects.toThrow(/budget cap is mandatory/);
+  it("per-step starts are retired: only start_funnel_campaign is proposed (owner 2026-10-10)", async () => {
+    const { proposeSwitchOn, SWITCH_ON_ACTIONS } = await load();
+    expect(SWITCH_ON_ACTIONS).toEqual(["start_funnel_campaign"]);
+    for (const action of ["start_campaign", "activate_campaign"]) {
+      await expect(proposeSwitchOn({ action, summary: "s", brandId: "b", offerId: "o", legKey: "l", featureSlug: "f", dailyBudgetCents: 2000, campaignId: "c" }, params)).rejects.toThrow(/action must be one of/);
+    }
     expect(fetchMock()).not.toHaveBeenCalled();
-
-    const p = await proposeSwitchOn(
-      { action: "start_campaign", summary: "Start", brandId: "b", offerId: "o", legKey: "l", featureSlug: "f", dailyBudgetCents: 2000 },
-      params,
-    );
-    expect(p.status).toBe("awaiting_user_confirmation");
-    expect(fetchMock()).toHaveBeenCalledTimes(1);
-    expect(call(0)).toEqual({
-      url: "https://api.test.local/v1/brands/b/campaign-budget",
-      method: "PUT",
-      body: { offerId: "o", legKey: "l", featureSlug: "f", dailyBudgetCents: 2000 },
-    });
   });
 
   it("refuses a token absent from the prior history (e.g. proposed this turn)", async () => {
@@ -108,18 +96,14 @@ describe("switch-on gate: propose in one turn, confirm in a later one", () => {
     expect(() => resolveSwitchOnProposal("tok", used)).toThrow(/already used/);
   });
 
-  it("executes each action through its owner route", async () => {
-    fetchMock().mockResolvedValue(ok({ campaign: { id: "c" } }));
+  it("a per-step start recorded before its retirement is refused at confirm, nothing called", async () => {
     const { executeSwitchOn } = await load();
     const base = { confirmationToken: "t", summary: "", status: "awaiting_user_confirmation" as const, instruction: "" };
-    await executeSwitchOn({ ...base, action: "start_campaign", target: { brandId: "b", offerId: "o", legKey: "l", featureSlug: "f", dailyBudgetCents: 1 } }, params);
-    await executeSwitchOn({ ...base, action: "activate_campaign", target: { campaignId: "c-1" } }, params);
-    expect(call(0)).toEqual({
-      url: "https://api.test.local/v1/campaigns/start-funded-pair",
-      method: "POST",
-      body: { brandId: "b", offerId: "o", legKey: "l", featureSlug: "f" },
-    });
-    expect(call(1)).toEqual({ url: "https://api.test.local/v1/campaigns/c-1", method: "PATCH", body: { status: "activate" } });
+    for (const action of ["start_campaign", "activate_campaign"]) {
+      const old = { ...base, action, target: { campaignId: "c-1" } } as unknown as Parameters<typeof executeSwitchOn>[0];
+      await expect(executeSwitchOn(old, params)).rejects.toThrow(/retired/);
+    }
+    expect(fetchMock()).not.toHaveBeenCalled();
   });
 
   it("refuses a retired action recorded before its retirement, and calls nothing (2026-10-10)", async () => {
