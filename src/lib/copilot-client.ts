@@ -52,18 +52,8 @@ function stringList(name: string, value: unknown): string[] {
   return (value as string[]).map((v) => v.trim());
 }
 
-const offerPath = (brandId: unknown, offerId: unknown) => `/v1/brands/${id("brandId", brandId)}/offers/${id("offerId", offerId)}`;
 
 // --- Reads (free) ------------------------------------------------------------
-
-
-/** GET /v1/brands/{id}/offers/{offerId}/channels — the channels this offer accepts. */
-export const getOfferChannels = (a: Record<string, unknown>, p: ApiCallParams) =>
-  call("get_offer_channels", `${offerPath(a.brandId, a.offerId)}/channels`, "GET", p);
-
-/** GET /v1/brands/{id}/offers/{offerId}/sales-path — the offer's steps and the legs it sells through. */
-export const getOfferLegs = (a: Record<string, unknown>, p: ApiCallParams) =>
-  call("get_offer_legs", `${offerPath(a.brandId, a.offerId)}/sales-path`, "GET", p);
 
 /** GET /v1/brands/{id}/leg-rates — the brand's conversion rate per leg. */
 export const getLegRates = (a: Record<string, unknown>, p: ApiCallParams) =>
@@ -72,10 +62,6 @@ export const getLegRates = (a: Record<string, unknown>, p: ApiCallParams) =>
 /** GET /v1/offers/{offerId}/sales-paths?brandId — every sales path, ranked by ROI. */
 export const listSalesPaths = (a: Record<string, unknown>, p: ApiCallParams) =>
   call("list_sales_paths", `/v1/offers/${id("offerId", a.offerId)}/sales-paths?brandId=${id("brandId", a.brandId)}`, "GET", p);
-
-/** GET /v1/brands/{id}/offers/{offerId}/selected-sales-paths — the paths the user ticked. */
-export const getSelectedSalesPaths = (a: Record<string, unknown>, p: ApiCallParams) =>
-  call("get_selected_sales_paths", `${offerPath(a.brandId, a.offerId)}/selected-sales-paths`, "GET", p);
 
 /** GET /v1/offers/{offerId}/trigger-events/summary?brandId — per trigger type: fired / ran / skipped (with reasons). */
 export const getTriggerEvents = (a: Record<string, unknown>, p: ApiCallParams) =>
@@ -133,18 +119,6 @@ export async function listConnectedAccounts(a: Record<string, unknown>, p: ApiCa
 export const createOffer = (a: Record<string, unknown>, p: ApiCallParams) =>
   call("create_offer", `/v1/brands/${id("brandId", a.brandId)}/offers`, "POST", p, { name: rawId("name", a.name) });
 
-/** PUT /v1/brands/{id}/offers/{offerId}/channels { channelSlugs } — REPLACES the offer's channel list. */
-export const setOfferChannels = (a: Record<string, unknown>, p: ApiCallParams) =>
-  call("set_offer_channels", `${offerPath(a.brandId, a.offerId)}/channels`, "PUT", p, {
-    channelSlugs: stringList("channelSlugs", a.channelSlugs),
-  });
-
-/** PUT .../selected-sales-paths { combinationKeys } — REPLACES the ticked paths. Turns nothing on. */
-export const setSelectedSalesPaths = (a: Record<string, unknown>, p: ApiCallParams) =>
-  call("set_selected_sales_paths", `${offerPath(a.brandId, a.offerId)}/selected-sales-paths`, "PUT", p, {
-    combinationKeys: stringList("combinationKeys", a.combinationKeys),
-  });
-
 /**
  * PUT /v1/brands/{brandId}/campaign-budget { offerId, legKey, featureSlug, dailyBudgetCents }
  * — the daily CAP of one (offer x leg x channel) campaign. Creates no campaign
@@ -160,7 +134,7 @@ export const setCampaignBudget = (a: Record<string, unknown>, p: ApiCallParams) 
 
 // --- Switch ON: propose (this turn) → confirm (a later turn) ------------------
 
-export const SWITCH_ON_ACTIONS = ["start_funnel_campaign", "start_campaign", "activate_campaign", "switch_on_reactive_legs"] as const;
+export const SWITCH_ON_ACTIONS = ["start_funnel_campaign", "start_campaign", "activate_campaign"] as const;
 export type SwitchOnAction = (typeof SWITCH_ON_ACTIONS)[number];
 
 export interface SwitchOnProposal {
@@ -216,10 +190,7 @@ export async function proposeSwitchOn(a: Record<string, unknown>, p: ApiCallPara
     const caps = await requireStatedMaxBudget(target, p);
     return { ...base, target, caps };
   }
-  if (action === "activate_campaign") {
-    return { ...base, target: { campaignId: rawId("campaignId", a.campaignId) } };
-  }
-  return { ...base, target: { brandId: rawId("brandId", a.brandId), offerId: rawId("offerId", a.offerId) } };
+  return { ...base, target: { campaignId: rawId("campaignId", a.campaignId) } };
 }
 
 export class SwitchOnConfirmationError extends Error {
@@ -290,12 +261,9 @@ export async function executeSwitchOn(proposal: SwitchOnProposal, p: ApiCallPara
       status: "activate",
     });
   } else {
-    result = await call(
-      "confirm_switch_on:switch_on_reactive_legs",
-      `/v1/offers/${encodeURIComponent(String(t.offerId))}/reactive-defaults`,
-      "POST",
-      p,
-      { brandId: t.brandId },
+    // A proposal recorded before an action was retired (switch_on_reactive_legs, 2026-10-10).
+    throw new SwitchOnConfirmationError(
+      `The action "${String(proposal.action)}" is retired: a campaign is a funnel campaign now. Propose start_funnel_campaign instead.`,
     );
   }
   return { switchedOn: true, action: proposal.action, target: t, result };

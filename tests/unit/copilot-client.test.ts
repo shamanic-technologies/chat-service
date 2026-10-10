@@ -29,10 +29,7 @@ const call = (i: number) => ({
 
 describe("copilot entity reads hit the owner routes", () => {
   it.each([
-    ["getOfferChannels", "/v1/brands/b-1/offers/o-1/channels"],
-    ["getOfferLegs", "/v1/brands/b-1/offers/o-1/sales-path"],
     ["listSalesPaths", "/v1/offers/o-1/sales-paths?brandId=b-1"],
-    ["getSelectedSalesPaths", "/v1/brands/b-1/offers/o-1/selected-sales-paths"],
     ["getTriggerEvents", "/v1/offers/o-1/trigger-events/summary?brandId=b-1"],
     ["getOfferSourcing", "/v1/offers/o-1/sourcing?brandId=b-1"],
     ["getCampaignBudgets", "/v1/brands/b-1/offers/o-1/campaign-budgets"],
@@ -55,8 +52,8 @@ describe("copilot entity reads hit the owner routes", () => {
 
   it("fails loud on an owner error", async () => {
     fetchMock().mockResolvedValue({ ok: false, status: 404, text: () => Promise.resolve("no offer") });
-    const { getOfferChannels } = await load();
-    await expect(getOfferChannels({ brandId: "b-1", offerId: "o-1" }, params)).rejects.toThrow(/404/);
+    const { getOfferSourcing } = await load();
+    await expect(getOfferSourcing({ brandId: "b-1", offerId: "o-1" }, params)).rejects.toThrow(/404/);
   });
 });
 
@@ -117,13 +114,20 @@ describe("switch-on gate: propose in one turn, confirm in a later one", () => {
     const base = { confirmationToken: "t", summary: "", status: "awaiting_user_confirmation" as const, instruction: "" };
     await executeSwitchOn({ ...base, action: "start_campaign", target: { brandId: "b", offerId: "o", legKey: "l", featureSlug: "f", dailyBudgetCents: 1 } }, params);
     await executeSwitchOn({ ...base, action: "activate_campaign", target: { campaignId: "c-1" } }, params);
-    await executeSwitchOn({ ...base, action: "switch_on_reactive_legs", target: { brandId: "b", offerId: "o" } }, params);
     expect(call(0)).toEqual({
       url: "https://api.test.local/v1/campaigns/start-funded-pair",
       method: "POST",
       body: { brandId: "b", offerId: "o", legKey: "l", featureSlug: "f" },
     });
     expect(call(1)).toEqual({ url: "https://api.test.local/v1/campaigns/c-1", method: "PATCH", body: { status: "activate" } });
-    expect(call(2)).toEqual({ url: "https://api.test.local/v1/offers/o/reactive-defaults", method: "POST", body: { brandId: "b" } });
+  });
+
+  it("refuses a retired action recorded before its retirement, and calls nothing (2026-10-10)", async () => {
+    const { executeSwitchOn, proposeSwitchOn } = await load();
+    const base = { confirmationToken: "t", summary: "", status: "awaiting_user_confirmation" as const, instruction: "" };
+    const retired = { ...base, action: "switch_on_reactive_legs", target: { brandId: "b", offerId: "o" } } as unknown as Parameters<typeof executeSwitchOn>[0];
+    await expect(executeSwitchOn(retired, params)).rejects.toThrow(/retired/);
+    await expect(proposeSwitchOn({ action: "switch_on_reactive_legs", summary: "s", brandId: "b", offerId: "o" }, params)).rejects.toThrow(/action must be one of/);
+    expect(fetchMock()).not.toHaveBeenCalled();
   });
 });
