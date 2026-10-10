@@ -124,3 +124,11 @@ describe("a funnel proposal shows its figures in text (prod 2026-10-10: cards on
     expect(c.indexOf("WRITE")).toBeLessThan(c.indexOf("present_choices"));
   });
 });
+
+describe("voice (prod 2026-10-10: cards with no text, a card naming a pipe)", () => {
+  it("the index asks for text before the cards and hides pipe and path names", () => {
+    const index = SEED_SKILLS.find((s) => s.slug === "index")!.content;
+    expect(index).toMatch(/TEXT first/);
+    expect(index).toMatch(/never show a pipe's or a path's name/);
+  });
+});
