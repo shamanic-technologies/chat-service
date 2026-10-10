@@ -70,6 +70,15 @@ export interface SSEContextUsageEvent {
   percent: number;
 }
 
+/** Billing refused the turn for lack of credits: no model call, a fixed message and an "Add credits" action. */
+export interface SSECreditsRequiredEvent {
+  type: "credits_required";
+  message: string;
+  /** What the client's button does: open its credit top-up. */
+  action: "add_credits";
+  label: string;
+}
+
 export type SSEEvent =
   | SSETokenEvent
   | SSEThinkingStartEvent
@@ -81,4 +90,5 @@ export type SSEEvent =
   | SSEInputRequestEvent
   | SSEErrorEvent
   | SSESessionEvent
-  | SSEContextUsageEvent;
+  | SSEContextUsageEvent
+  | SSECreditsRequiredEvent;
