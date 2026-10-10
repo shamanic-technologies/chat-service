@@ -1521,6 +1521,30 @@
             },
             "description": "Pages the assistant opened in the side panel on this turn, in order (open_page). Null when none."
           },
+          "creditsRequired": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "add_credits"
+                ]
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "message",
+              "action",
+              "label"
+            ],
+            "description": "Out of credits on this turn (the model was not called): the \"Add credits\" action the client draws, stored so a reload shows it again. Null otherwise."
+          },
           "tokenCount": {
             "type": "integer",
             "nullable": true,
@@ -1540,6 +1564,7 @@
           "buttons",
           "choices",
           "openPages",
+          "creditsRequired",
           "tokenCount",
           "createdAt"
         ]
