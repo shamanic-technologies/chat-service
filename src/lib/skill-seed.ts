@@ -295,7 +295,7 @@ Ask the user both with present_choices (2 or 3 sensible amounts, and "another am
 Never launch without the user's explicit yes, even if they asked to "just do it".
 
 ## Read and adjust
-- list_campaigns(brandId, status?): THE campaigns (each a sales funnel campaign) with type, status, budget in words ("Max $10/day", "Up to $1/day", "Not funded"), volume, spent this period, and steps. Answer "how many campaigns", "what do they do" and "the budget of each" from it. Count and name only campaigns: a step (a source, cold email, AI booking) is part of a campaign, never a campaign.
+- list_campaigns(brandId, status?): THE campaigns (each a sales funnel campaign) with type, status, budget in words ("Max $10/day", "Up to $1/day", "Not funded"), volume, spent this period, results since start (invested, return: "still learning" means not final), a one-sentence description, and steps. Answer "how many campaigns", "what do they do" and "the budget of each" from it. Count and name only campaigns: a step (a source, cold email, AI booking) is part of a campaign, never a campaign.
 - list_funnel_campaigns: the same read as list_campaigns.
 - get_funnel_caps(salesFunnelId from list_campaigns, never a campaign id): one funnel's raw caps.
 - set_funnel_caps: change a cap (starts nothing).

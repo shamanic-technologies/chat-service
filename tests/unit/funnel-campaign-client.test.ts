@@ -244,6 +244,15 @@ describe("a campaign IS a sales funnel campaign (owner rule; prod 2026-10-10 NOV
 
   it("lists 3 campaigns with their budgets in the owner's words, steps nested and never counted", async () => {
     fetchMock().mockImplementation(async (url: string) => {
+      if (url.startsWith("http://features.test/brands/b/sales-funnel-campaigns")) {
+        return res(200, {
+          salesFunnelCampaigns: [
+            { id: "c1", description: "We reach buyers through cold email outreach...", investedUsd: 67.46, roiMultiple: 0, maturity: { isMature: false } },
+            { id: "c2", description: "When a buyer replies...", investedUsd: 0.07, roiMultiple: null, maturity: null },
+            { id: "c3", description: "Our AI calls them...", investedUsd: 0, roiMultiple: null, maturity: null },
+          ],
+        });
+      }
       if (url.includes("/sales-funnel-campaigns")) return res(200, { salesFunnelCampaigns: [camp("c1", "Bliss", "bliss", 4), camp("c2", "Motivate", "motivate", 1), camp("c3", "Moving", "moving", 1)] });
       const f = decodeURIComponent(url.split("/sales-funnels/")[1].split("/caps")[0]);
       return res(200, capsOf[f]);
@@ -258,6 +267,10 @@ describe("a campaign IS a sales funnel campaign (owner rule; prod 2026-10-10 NOV
     ]);
     expect(out.campaigns[0].spent).toBe("$10.06 spent today (cap reached: no new first touches until the next period)");
     expect(out.campaigns[0].steps).toHaveLength(4);
+    // Per campaign results from features-service (owner 2026-10-11), as served, maturity said.
+    expect(out.campaigns[0]).toMatchObject({ description: "We reach buyers through cold email outreach...", invested: "$67.46 invested since start", return: "0x so far (still learning, not mature)" });
+    expect(out.campaigns[1]).toMatchObject({ invested: "$0.07 invested since start", return: "no return measured yet" });
+    expect(fetchMock().mock.calls.some((c) => String(c[0]).includes("pricing=net"))).toBe(true);
     expect(JSON.stringify(out)).not.toContain("long unit name");
     expect(out.note).toMatch(/never campaigns/);
   });
