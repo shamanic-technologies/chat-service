@@ -141,6 +141,13 @@
       "when": 1791676800000,
       "tag": "0019_staff_requests_repo_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791763200000,
+      "tag": "0020_messages_credits_required",
+      "breakpoints": true
     }
   ]
 }

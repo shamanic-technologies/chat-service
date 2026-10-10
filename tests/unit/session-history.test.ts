@@ -121,6 +121,16 @@ describe("serializeSessionHistory", () => {
     expect(out.messages[0].buttons).toEqual([{ label: "Yes", value: "yes" }]);
   });
 
+  it("serves the stored out-of-credits action so a reload draws the button again (owner 2026-10-10)", () => {
+    const credits = { message: "You're out of credits. Add credits to keep going.", action: "add_credits" as const, label: "Add credits" };
+    const out = serializeSessionHistory(baseSession, [
+      msg({ id: "a1", role: "assistant", content: credits.message, creditsRequired: credits } as Partial<Message>),
+      msg({ id: "a2", role: "assistant", content: "hi" }),
+    ]);
+    expect(out.messages[0].creditsRequired).toEqual(credits);
+    expect(out.messages[1].creditsRequired).toBeNull();
+  });
+
   it("carries session tracking metadata when present", () => {
     const out = serializeSessionHistory(
       {

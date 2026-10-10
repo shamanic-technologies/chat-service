@@ -1606,6 +1606,10 @@ export const SessionHistoryMessageSchema = z
     openPages: z.array(OpenPageRecordSchema).nullable().openapi({
       description: "Pages the assistant opened in the side panel on this turn, in order (open_page). Null when none.",
     }),
+    creditsRequired: z
+      .object({ message: z.string(), action: z.literal("add_credits"), label: z.string() })
+      .nullable()
+      .openapi({ description: "Out of credits on this turn (the model was not called): the \"Add credits\" action the client draws, stored so a reload shows it again. Null otherwise." }),
     tokenCount: z.number().int().nullable().openapi({
       description: "Token count recorded for the turn, when available.",
     }),

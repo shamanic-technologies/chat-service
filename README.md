@@ -1375,7 +1375,7 @@ When billing refuses the turn for lack of credits (the affordability check runs 
 ```
 data: {"type":"credits_required","message":"You're out of credits. Add credits to keep going.","action":"add_credits","label":"Add credits"}
 ```
-The client draws a button that opens its credit top-up. The text is stored as the assistant turn; the run closes completed. A client that does not know the event still shows the text.
+The client draws a button that opens its credit top-up. The text is stored as the assistant turn with the action (`creditsRequired` in `GET /sessions/*` history, so a reload draws the button); the run closes completed. A client that does not know the event still shows the text.
 
 ### 5c. Open page (optional, `open_page`)
 ```

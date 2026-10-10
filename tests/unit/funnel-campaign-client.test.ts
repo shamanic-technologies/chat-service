@@ -29,8 +29,8 @@ const call = (i: number) => {
 };
 
 /** features-service's funnel detail: one proactive pipe (cold email), the next leg bare. */
-const proactiveFunnel = () => res(200, { id: FUNNEL, legs: [{ legKey: "lead_found_to_conversation", pipe: { id: "sales-cold-email-outreach|lead_found_to_conversation", mode: "proactive" } }, { legKey: "conversation_to_paid_client", pipe: null }] });
-const mixedFunnel = () => res(200, { id: FUNNEL, legs: [{ pipe: { id: "sales-cold-email-outreach|lead_found_to_conversation", mode: "proactive" } }, { pipe: { id: "ai-meeting-booking|conversation_to_meeting_booked", mode: "reactive" } }] });
+const proactiveFunnel = () => res(200, { id: FUNNEL, type: "proactive", legs: [{ legKey: "lead_found_to_conversation", pipe: { id: "sales-cold-email-outreach|lead_found_to_conversation", mode: "proactive" } }, { legKey: "conversation_to_paid_client", pipe: null }] });
+const mixedFunnel = () => res(200, { id: FUNNEL, type: "proactive", legs: [{ pipe: { id: "sales-cold-email-outreach|lead_found_to_conversation", mode: "proactive" } }, { pipe: { id: "ai-meeting-booking|conversation_to_meeting_booked", mode: "reactive" } }] });
 
 async function funnel() {
   vi.resetModules();
@@ -95,6 +95,21 @@ describe("funnel campaign tools (campaign-service / billing-service, direct, cha
     const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
     await expect(FUNNEL_CAMPAIGN_TOOLS.create_funnel_campaign({ brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p)).rejects.toThrow(/separate Reactive funnel/);
     expect(fetchMock()).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the funnel's SERVED type; a funnel served without it fails loud", async () => {
+    fetchMock().mockResolvedValueOnce(res(200, { id: FUNNEL, legs: [] }));
+    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
+    await expect(FUNNEL_CAMPAIGN_TOOLS.create_funnel_campaign({ brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p)).rejects.toThrow(/without its type/);
+  });
+
+  it("a reactive funnel (AI meeting booking from a positive reply) is one kind and passes", async () => {
+    fetchMock()
+      .mockResolvedValueOnce(res(200, { id: "r", type: "reactive", legs: [{ pipe: { id: "ai-meeting-booking|conversation_to_meeting_booked", mode: "reactive" } }, { pipe: null }] }))
+      .mockResolvedValue(res(201, { created: true }));
+    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
+    await FUNNEL_CAMPAIGN_TOOLS.create_funnel_campaign({ brandId: "b", offerId: "o", salesFunnelId: "r" }, p);
+    expect(call(1).body).toMatchObject({ salesFunnelId: "r", status: "stopped" });
   });
 
   it("a refusal carries the owner's reason", async () => {
