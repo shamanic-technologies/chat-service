@@ -2260,19 +2260,6 @@ export const READ_SKILL_TOOL: Anthropic.Tool = {
 };
 
 
-export const GET_OFFER_CHANNELS_TOOL: Anthropic.Tool = {
-  name: "get_offer_channels",
-  description: "Read the channels an offer accepts (channel slugs from the catalogue). Read-only.",
-  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
-};
-
-export const GET_OFFER_LEGS_TOOL: Anthropic.Tool = {
-  name: "get_offer_legs",
-  description:
-    "Read an offer's sales steps and the legs it sells through (a leg = the move of a lead from one step to the next, e.g. lead_found_to_positive_reply). Read-only.",
-  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
-};
-
 export const GET_LEG_RATES_TOOL: Anthropic.Tool = {
   name: "get_leg_rates",
   description: "Read a brand's conversion rate per leg. Read-only.",
@@ -2283,12 +2270,6 @@ export const LIST_SALES_PATHS_TOOL: Anthropic.Tool = {
   name: "list_sales_paths",
   description:
     "List every sales path of an offer (a chain of legs from first contact to paid client), ranked by return on spend, with each leg's channel, rate and the cost per paying client. Read-only.",
-  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
-};
-
-export const GET_SELECTED_SALES_PATHS_TOOL: Anthropic.Tool = {
-  name: "get_selected_sales_paths",
-  description: "Read the sales paths the user ticked for an offer (their combinationKeys). Read-only.",
   input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
 };
 
@@ -2346,34 +2327,6 @@ export const CREATE_OFFER_TOOL: Anthropic.Tool = {
   },
 };
 
-export const SET_OFFER_CHANNELS_TOOL: Anthropic.Tool = {
-  name: "set_offer_channels",
-  description:
-    "Replace the list of channels an offer accepts. Send the FULL list (read get_offer_channels first, add or remove, send back). Data only: starts nothing.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      ...BRAND_OFFER_PROPS,
-      channelSlugs: { type: "array", items: { type: "string" }, description: "Channel slugs from find_channels." },
-    },
-    required: ["brandId", "offerId", "channelSlugs"],
-  },
-};
-
-export const SET_SELECTED_SALES_PATHS_TOOL: Anthropic.Tool = {
-  name: "set_selected_sales_paths",
-  description:
-    "RETIRED (owner 2026-10-10): a campaign IS a funnel campaign now (create_funnel_campaign). Never call this from the Copilot. Replace the sales paths ticked for an offer (FULL list of combinationKeys from list_sales_paths). Data only: switching the paths' reactive legs on is a separate, confirmed step (propose_switch_on action switch_on_reactive_legs).",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      ...BRAND_OFFER_PROPS,
-      combinationKeys: { type: "array", items: { type: "string" }, description: "combinationKeys from list_sales_paths." },
-    },
-    required: ["brandId", "offerId", "combinationKeys"],
-  },
-};
-
 export const SET_CAMPAIGN_BUDGET_TOOL: Anthropic.Tool = {
   name: "set_campaign_budget",
   description:
@@ -2394,12 +2347,12 @@ export const PROPOSE_SWITCH_ON_TOOL: Anthropic.Tool = {
   name: "propose_switch_on",
   description:
     "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: nothing that starts work or spends money is switched on without the user's explicit yes in the chat. This tool is step 1 of 2: it records WHAT would be switched on and returns a confirmationToken; it switches NOTHING on. " +
-    "Actions: start_funnel_campaign (PREFERRED: run a whole sales funnel for an offer; refused until set_funnel_caps stated a max budget, which it shows back), start_campaign (older: one offer x leg x channel; dailyBudgetCents is MANDATORY and is set now as the cap, the campaign itself is not created), activate_campaign (turn a stopped campaign back on), switch_on_reactive_legs (turn on the reactive legs of the offer's ticked sales paths). " +
+    "Actions: start_funnel_campaign (PREFERRED: run a whole sales funnel for an offer; refused until set_funnel_caps stated a max budget, which it shows back), start_campaign (older: one offer x leg x channel; dailyBudgetCents is MANDATORY and is set now as the cap, the campaign itself is not created), activate_campaign (turn a stopped campaign back on). " +
     "After calling it, show the user exactly what will start and its daily cap, then ask them to confirm with present_choices. Call confirm_switch_on only after they answer yes, in their next message.",
   input_schema: {
     type: "object" as const,
     properties: {
-      action: { type: "string", enum: ["start_funnel_campaign", "start_campaign", "activate_campaign", "switch_on_reactive_legs"] },
+      action: { type: "string", enum: ["start_funnel_campaign", "start_campaign", "activate_campaign"] },
       summary: { type: "string", description: "One plain sentence the user will confirm, with the daily cap (e.g. \"Start cold email to first reply for Offer X at $20/day\")." },
       brandId: BRAND_ID_PROP,
       offerId: OFFER_ID_PROP,
@@ -3035,11 +2988,8 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   present_choices: PRESENT_CHOICES_TOOL,
   open_page: OPEN_PAGE_TOOL,
   read_skill: READ_SKILL_TOOL,
-  get_offer_channels: GET_OFFER_CHANNELS_TOOL,
-  get_offer_legs: GET_OFFER_LEGS_TOOL,
   get_leg_rates: GET_LEG_RATES_TOOL,
   list_sales_paths: LIST_SALES_PATHS_TOOL,
-  get_selected_sales_paths: GET_SELECTED_SALES_PATHS_TOOL,
   get_trigger_events: GET_TRIGGER_EVENTS_TOOL,
   list_sourcing_origins: LIST_SOURCING_ORIGINS_TOOL,
   get_offer_sourcing: GET_OFFER_SOURCING_TOOL,
@@ -3047,8 +2997,6 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   get_campaign: GET_CAMPAIGN_TOOL,
   list_connected_accounts: LIST_CONNECTED_ACCOUNTS_TOOL,
   create_offer: CREATE_OFFER_TOOL,
-  set_offer_channels: SET_OFFER_CHANNELS_TOOL,
-  set_selected_sales_paths: SET_SELECTED_SALES_PATHS_TOOL,
   set_campaign_budget: SET_CAMPAIGN_BUDGET_TOOL,
   propose_switch_on: PROPOSE_SWITCH_ON_TOOL,
   confirm_switch_on: CONFIRM_SWITCH_ON_TOOL,
