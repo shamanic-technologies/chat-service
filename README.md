@@ -1282,6 +1282,8 @@ Every request result carries `kind` and `destination` (where it landed, in words
 | `create_funnel_campaign` | `POST /sales-funnel-campaigns` with `status: "stopped"` ALWAYS (whatever the model sends) |
 | `stop_funnel_campaign` | `PATCH /sales-funnel-campaigns/:id {status:"stop"}` |
 
+**One kind per funnel** (owner 2026-10-10): a funnel whose pipes hold both `proactive` and `reactive` modes is refused by `create_sales_funnel` (before the POST), `create_funnel_campaign` and the `start_funnel_campaign` proposal: its budget would cap the reactive pipe with the proactive one. Make a Proactive funnel and a separate Reactive funnel starting at the trigger step.
+
 Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaign` (brandId, offerId, salesFunnelId) reads the caps and is REFUSED while no max budget is stated; `confirm_switch_on` then POSTs `status: "ongoing"` (creates and starts, or starts the existing stopped one).
 
 `get_channel_catalogue` is RETIRED (2026-10-10): one read was 128k characters; `find_channels` / `find_pipes` replace it.

@@ -295,9 +295,9 @@ Map the user's sequence onto the closest ranked funnel first. Show its return an
 A campaign is ONE sales funnel run for one offer of the brand (brand x offer x funnel). It runs every step of the funnel; it is started or stopped as a whole. Owner: campaign-service; its money: billing-service.
 
 ## Money: two caps, both from the user
-- **Max budget** (amount + period: one_off, daily, weekly, monthly). Without one, the campaign is held and starts nothing.
-- **Max volume** (first contacts + period). Ask for it too; null only if the user wants no volume cap.
-Ask the user both with present_choices (offer 2 or 3 sensible amounts, and "another amount"). Never invent them.
+- **Proactive funnel:** "Max budget" (amount + period: one_off, daily, weekly, monthly; without one it starts nothing) and "Max volume" (first contacts + period; null only if the user wants no volume cap).
+- **Reactive funnel:** the same two caps, asked as "Up to $X" and "Up to N" per period (it only spends when its trigger fires).
+Ask the user both with present_choices (2 or 3 sensible amounts, and "another amount"). Never invent them. A mixed funnel (proactive + reactive pipes) is refused: make two funnels.
 
 ## Launch (always this order)
 1. Know the offer (list_offers) and the funnel (find_sales_funnels).
@@ -579,6 +579,9 @@ create_pipe(channelSlug, fromStep, toStep, mode, triggerId?): refused for a cust
 # Sales funnels
 
 A sales funnel is a sales path with a pipe on every step: the complete plan that turns strangers into paying clients. It is what you PROPOSE. It has a name (uplifting words: Zenith, Bliss) and a face image.
+
+## One kind per funnel
+Its budget caps every pipe in it, so a funnel is either **Proactive** (it reaches out: cold email) or **Reactive** (it answers a trigger: AI meeting booking on a positive reply), never both: a reactive pipe inside a proactive funnel can starve it. A funnel's \`type\` says which. Propose one Proactive funnel; if the user wants replies handled by AI, a SEPARATE Reactive funnel starting at the trigger step. The tools refuse a mixed funnel (create, campaign, start).
 
 ## Read
 - find_sales_funnels(paths, containsChannels): best return first.
