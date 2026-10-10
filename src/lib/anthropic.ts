@@ -3110,7 +3110,15 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         ...(cache ? { cache_control: { type: "ephemeral" as const } } : {}),
         messages,
         tools: tools && tools.length > 0 ? tools : undefined,
-        thinking: { type: "adaptive" as const },
+        // A thinking block is signed against the conversation prefix it was
+        // made in. Compaction (above 100k) and history trimming REWRITE that
+        // prefix, after which the API 400s the whole turn ("The block is bound
+        // to a different conversation", prod 2026-10-10). drop_block makes the
+        // API drop such a stale block instead (thinking-binding-controls beta).
+        thinking: {
+          type: "adaptive" as const,
+          block_binding: { prefix_mismatch_behavior: "drop_block" as const },
+        },
         // Beta: context management for automatic compaction
         context_management: {
           edits: [
@@ -3139,7 +3147,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         {
           signal,
           headers: {
-            "anthropic-beta": "compact-2026-01-12,context-management-2025-06-27",
+            "anthropic-beta": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01",
           },
         },
       );
