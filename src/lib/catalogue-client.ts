@@ -1,3 +1,4 @@
+import { assertNotMixed } from "./funnel-mix.js";
 import {
   DeclarationRefusedError,
   ON_HOLD_INSTRUCTION,
@@ -301,12 +302,18 @@ interface FunnelDetail {
 export async function createSalesFunnel(a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest, reader: CatalogueReader) {
   const userRequest = reqStr("userRequest", a.userRequest);
   const pipeIds = stringArray("pipeIds", a.pipeIds);
+  // One kind per funnel (owner 2026-10-10): never compose proactive and reactive pipes together.
+  const pipes = await Promise.all(
+    pipeIds
+      .filter((p) => p.includes("|"))
+      .map(async (id) => ({ id, ...((await features("create_sales_funnel:read_pipe", "GET", `/internal/catalogue/pipes/${enc(id)}`)) as { mode?: unknown; runnable?: unknown }) })),
+  );
+  assertNotMixed(pipeIds.join("+"), pipes);
   // A customer only gets funnels we can run: every pipe must be runnable (a bare leg key is the buyer or their team).
   if (!(await reader.isStaff())) {
-    for (const id of pipeIds.filter((p) => p.includes("|"))) {
-      const pipe = (await features("create_sales_funnel:read_pipe", "GET", `/internal/catalogue/pipes/${enc(id)}`)) as { runnable?: unknown };
+    for (const pipe of pipes) {
       if (pipe.runnable === false) {
-        throw new CatalogueArgError(`pipe ${id} is not something we run today: a customer funnel uses only runnable pipes (find_pipes lists them).`);
+        throw new CatalogueArgError(`pipe ${pipe.id} is not something we run today: a customer funnel uses only runnable pipes (find_pipes lists them).`);
       }
     }
   }

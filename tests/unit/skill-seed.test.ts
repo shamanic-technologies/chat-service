@@ -150,3 +150,13 @@ describe("costs keep their unit", () => {
     expect(SEED_SKILLS.find((s) => s.slug === "index")!.content).toMatch(/with the unit the tool gives/);
   });
 });
+
+describe("one kind per funnel (owner 2026-10-10)", () => {
+  it("the funnel and campaign skills split Proactive and Reactive and ask Up to $X / Up to N", () => {
+    const f = SEED_SKILLS.find((s) => s.slug === "catalogue-sales-funnels")!.content;
+    expect(f).toMatch(/SEPARATE Reactive funnel starting at the trigger step/);
+    const c = SEED_SKILLS.find((s) => s.slug === "campaigns")!.content;
+    expect(c).toMatch(/"Up to \$X" and "Up to N"/);
+    expect(c).toMatch(/mixed funnel .* is refused/);
+  });
+});
