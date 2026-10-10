@@ -134,6 +134,7 @@ import {
 } from "./lib/staff-requests.js";
 import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
 import { CATALOGUE_READ_TOOLS, CATALOGUE_WRITE_TOOLS } from "./lib/catalogue-client.js";
+import { FUNNEL_CAMPAIGN_TOOLS } from "./lib/funnel-campaign-client.js";
 import { DISCOVERY_READ_TOOLS, testEndpoint } from "./lib/discovery-client.js";
 import {
   createOffer,
@@ -3101,6 +3102,15 @@ app.post("/chat", requireAuth, async (req, res) => {
             input,
           ),
         );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Copilot: sales funnel campaigns + caps (campaign / billing, direct) ---
+      const funnelCampaignTool = FUNNEL_CAMPAIGN_TOOLS[call.name];
+      if (funnelCampaignTool) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await funnelCampaignTool(args, featureCallParams);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }

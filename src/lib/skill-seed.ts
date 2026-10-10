@@ -29,7 +29,7 @@ At each level, show a SHORT list (present_choices: name, one line, cost, return)
 4. **Pipes**: one channel on one step. find_pipes
 5. **Sales funnels**: a path with one pipe per step. THIS is what you propose: its name, cost per paying client, return. find_sales_funnels
 6. **Workflows** (optional): how one pipe runs. The platform picks the best; show only if asked. find_workflows
-7. **Campaigns**: the funnel goes on with a daily cap, after the user's yes. Load \`campaigns\`.
+7. **Campaigns**: the chosen funnel becomes a campaign with a max budget and a max volume the user states, and runs only after their yes. Load \`campaigns\`.
 If the user named a channel, find it first to learn what it produces, then walk from Steps.
 
 ## When something is missing
@@ -286,32 +286,36 @@ Map the user's sequence onto the closest ranked funnel first. Show its return an
     slug: "campaigns",
     parentSlug: "index",
     title: "Campaigns",
-    description: "Starting, stopping and capping work. Load before anything goes on or off.",
+    description: "Turning a chosen funnel into a running campaign with caps. Load before anything goes on or off.",
     position: 90,
     content: t(`
 # Campaigns
 
-A campaign is one (offer x leg x channel) with a daily budget cap. Owner: campaign-service; caps: billing-service. Money never starts anything: setting a cap creates no campaign.
+A campaign is ONE sales funnel run for one offer of the brand (brand x offer x funnel). It runs every step of the funnel; it is started or stopped as a whole. Owner: campaign-service; its money: billing-service.
 
-## Read
-- list_campaigns(brandId, status): ALWAYS pass both (status "ongoing" for what runs); unfiltered it is huge. get_campaign(campaignId), get_campaign_budgets(brandId, offerId), get_brand_pause(brandId).
+## Money: two caps, both from the user
+- **Max budget** (amount + period: one_off, daily, weekly, monthly). Without one, the campaign is held and starts nothing.
+- **Max volume** (first contacts + period). Ask for it too; null only if the user wants no volume cap.
+Ask the user both with present_choices (offer 2 or 3 sensible amounts, and "another amount"). Never invent them.
 
-## Turn on (always two steps, the user's yes in between)
-1. propose_switch_on:
-   - start_campaign (brandId, offerId, legKey, featureSlug, dailyBudgetCents MANDATORY): sets the cap now, starts nothing.
-   - activate_campaign (campaignId): a stopped campaign.
-   - switch_on_reactive_legs (brandId, offerId): reactive legs of the ticked sales paths.
-2. Show what will start and the daily cap; ask with present_choices.
-3. confirm_switch_on(confirmationToken) only after the user's yes, in their next message.
+## Launch (always this order)
+1. Know the offer (list_offers) and the funnel (find_sales_funnels).
+2. create_funnel_campaign: created STOPPED, starts nothing.
+3. Ask max budget and max volume; set_funnel_caps.
+4. propose_switch_on(action start_funnel_campaign, brandId, offerId, salesFunnelId): refused while no max budget is stated. Show the funnel name and both caps; ask yes or no.
+5. confirm_switch_on only after their yes, in their next message. If it is refused (no workflow yet, payment), say why plainly; request_staff only if it needs code.
+Never launch without the user's explicit yes, even if they asked to "just do it".
 
-## Turn off and adjust
-- stop_campaign(campaignId): stops now. Safe, no confirmation needed, but say what stopped.
-- set_campaign_budget: change a cap. set_brand_pause / set_daily_budget: the whole brand.
+## Read and adjust
+- list_funnel_campaigns(brandId, status?): campaigns with status and units.
+- get_funnel_caps: caps, what this period consumed, reached (true = no new first touches until the next period).
+- set_funnel_caps: change a cap (starts nothing).
+- stop_funnel_campaign: stops new first touches now; follow-ups still go out. Safe; say what stopped.
 
-## Things to know
-- Starting an entry-leg campaign stops the offer's other entry-leg campaign (one proactive campaign on per offer).
+## Older campaigns
+Pre-funnel campaigns (one leg x channel) still run: list_campaigns(brandId, status) with BOTH filters (unfiltered it is huge), get_campaign, stop_campaign. Do not start new ones that way.
 - Every start is refused while the org's payment is on hold: say so and point to billing.
-- Never use launch_campaign: it creates AND starts in one go, with no confirmation.
+- Never use launch_campaign.
 `),
   },
   {
@@ -477,7 +481,7 @@ step id → find_sales_paths(containsSteps) → path id → find_channels(forPat
 2. find_sales_paths(containsSteps [the step]) and find_channels(q "linkedin"): LinkedIn Posting.
 3. find_pipes(channels, paths): is there a posting pipe on those paths? If not, create_pipe (proactive: daily posting has its own budget), then create_sales_path if no path chains it to Paid client.
 4. find_sales_funnels(paths, containsChannels): pick the best; if none, create_sales_funnel.
-5. Propose the funnel: name, what it does in one line, cost per paying client, return. Then \`campaigns\`.
+5. Propose the funnel: name, what it does in one line, cost per paying client, return. Then \`campaigns\` (max budget + max volume, the user's yes).
 
 ## Create
 create_step, create_pipe, create_sales_path, create_sales_funnel. Data only, starts nothing. Find first; never create what exists.
@@ -582,7 +586,7 @@ A sales funnel is a sales path with a pipe on every step: the complete plan that
 - find_sales_funnels(id): its legs, the rate at each, the pipe on each, cost per paying client, return.
 
 ## Propose
-Show 1 to 3 funnels with present_choices: name, one line of what it does, cost per paying client, return. Learning: say "not measured yet". The user picks; then \`campaigns\` to turn it on with a daily cap.
+Show 1 to 3 funnels with present_choices: name, one line of what it does, cost per paying client, return. Learning: say "not measured yet". The user picks; then \`campaigns\`: it becomes a campaign with a max budget and a max volume they state.
 
 ## Create
 create_sales_funnel(pipeIds in order: a pipe id, or a bare leg key for a step the customer's team works). On hold while one of its pipes is a draft (filed for you).
