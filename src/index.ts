@@ -4046,7 +4046,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         // Per-config Gemini-3 thinking level (NULL → code default "low"). Only
         // the /chat path reads this; /complete never raises thinking.
         thinkingLevel: appConfig.thinkingLevel ?? undefined,
-        holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey),
+        holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),
         beforeProviderCall: async ({ requestBody }) => {
           await authorizeChatProviderCall(estimateRequestTokens(requestBody));
         },
@@ -4092,6 +4092,13 @@ app.post("/chat", requireAuth, async (req, res) => {
     const MAX_TOOL_CHAIN_DEPTH = 10;
     let depth = 0;
 
+    // A config whose answers end on present_choices shows ONE text: the final
+    // answer, or present_choices' own `text`. Text the model writes beside a
+    // tool call is its working note ("Now find the step and funnel for..."),
+    // never shown (prod 2026-10-10). Held per iteration, dropped when the
+    // iteration calls a tool, flushed when it answers.
+    const holdTextBesideTools = holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices");
+
     agenticLoop:
     while (depth <= MAX_TOOL_CHAIN_DEPTH) {
       // Abort early if client already disconnected
@@ -4103,12 +4110,14 @@ app.post("/chat", requireAuth, async (req, res) => {
       let currentBlockType: string | null = null;
       let stream: ReturnType<NonNullable<typeof claude>["createStream"]> | undefined;
       let tokensEmitted = false;
+      let iterText = "";
 
       // Retry loop for transient Anthropic errors (overloaded, 429, 5xx).
       // Only retries when no tokens have been sent to the client yet.
       for (let attempt = 0; attempt <= ANTHROPIC_STREAM_MAX_RETRIES; attempt++) {
         tokensEmitted = false;
         currentBlockType = null;
+        iterText = "";
         await authorizeChatProviderCall(
           estimateRequestTokens({
             model: resolvedModelInfo.apiModelId,
@@ -4135,8 +4144,12 @@ app.post("/chat", requireAuth, async (req, res) => {
                 sendSSE(res, { type: "thinking_delta", thinking: event.delta.thinking });
                 tokensEmitted = true;
               } else if (event.delta.type === "text_delta") {
-                bufferToken(event.delta.text);
-                tokensEmitted = true;
+                if (holdTextBesideTools) {
+                  iterText += event.delta.text;
+                } else {
+                  bufferToken(event.delta.text);
+                  tokensEmitted = true;
+                }
               }
             } else if (event.type === "content_block_stop") {
               if (currentBlockType === "thinking") {
@@ -4181,6 +4194,13 @@ app.post("/chat", requireAuth, async (req, res) => {
       totalPromptTokens += anthropicPromptTokens(billed);
       totalOutputTokens += billed.tokensOutput;
       lastContentBlocks = finalMessage.content;
+
+      if (holdTextBesideTools) {
+        if (finalMessage.stop_reason !== "tool_use") bufferToken(iterText);
+        else if (iterText.trim()) {
+          console.log(`[chat] session="${currentSessionId}" dropped ${iterText.length} chars written beside a tool call (working note, not an answer)`);
+        }
+      }
 
       // If no tool calls, we're done
       if (finalMessage.stop_reason !== "tool_use") break;

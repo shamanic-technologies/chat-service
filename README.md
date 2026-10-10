@@ -1368,7 +1368,7 @@ data: {"type":"choices","question":"What next?","choices":[{"label":"Answer 3 re
 ```
 `visual` (optional) is one of `{"type":"icon","icon"}`, `{"type":"image","imageUrl"}`, `{"type":"number","value","unit"?}`, `{"type":"chart","series":[…],"unit"?}`. Malformed arguments never reach the client: the model gets a tool error and retries. Stored on the assistant message (`choices`).
 
-The tool REQUIRES `text`: 2-3 sentences, the answer above the cards (a call without it is a tool error). When the model streamed no text this turn (Sonnet 5.5 goes straight to the tool), `text` is streamed as a `token` event BEFORE the `choices` event and stored as the message content; when it already wrote text, `text` is not repeated. Clients need no change: the answer arrives as ordinary tokens.
+The tool REQUIRES `text`: 2-3 sentences, the answer to the user above the cards, never a working note (a call without it is a tool error). On a config allowing `present_choices`, text the model writes beside ANY tool call is held and dropped (both loops): the user sees only the final answer or this `text`. When the model streamed no text this turn (Sonnet 5.5 goes straight to the tool), `text` is streamed as a `token` event BEFORE the `choices` event and stored as the message content; when it already wrote text, `text` is not repeated. Clients need no change: the answer arrives as ordinary tokens.
 
 ### 5d. Out of credits (`credits_required`)
 When billing refuses the turn for lack of credits (the affordability check runs BEFORE every model call), the model is not called and the turn is not an error: the fixed text streams as a `token`, then

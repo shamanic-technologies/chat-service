@@ -107,3 +107,22 @@ describe("rich-UI tool registration", () => {
     ]);
   });
 });
+
+describe("the text above the cards is an ANSWER, never a working note (prod 2026-10-10)", () => {
+  it("the tool contract says so, with a good example", () => {
+    const text = (PRESENT_CHOICES_TOOL.input_schema as { properties: { text: { description: string } } }).properties.text.description;
+    expect(text).toMatch(/ANSWER to the user/);
+    expect(text).toMatch(/Never your own plan or next step/);
+    expect(text).toMatch(/Good: 'You have 2 replies waiting/);
+    expect(PRESENT_CHOICES_TOOL.description).toMatch(/anything you write beside a tool call is dropped/);
+  });
+
+  it("both loops hold text written beside a tool call for a present_choices config", async () => {
+    const { readFileSync } = await import("fs");
+    const { join } = await import("path");
+    const src = readFileSync(join(__dirname, "../../src/index.ts"), "utf-8");
+    expect(src).toContain('const holdTextBesideTools = holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices");');
+    expect(src).toContain('if (finalMessage.stop_reason !== "tool_use") bufferToken(iterText);');
+    expect(src).toContain('holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),');
+  });
+});
