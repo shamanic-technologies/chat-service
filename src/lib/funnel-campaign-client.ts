@@ -179,7 +179,63 @@ export async function startFunnelCampaign(t: { brandId: string; offerId: string;
   });
 }
 
+// --- Campaign rows (every campaign, pre-funnel and funnel units) ------------------
+
+/** Rows per page: 15 compact rows stay under ~2k tokens (owner rule: no tool result above it). */
+export const CAMPAIGN_PAGE_MAX = 15;
+const CAMPAIGN_PAGE_DEFAULT = 10;
+const CAMPAIGN_STATUSES = ["ongoing", "stopped"] as const;
+
+/** The fields the agent acts on; the full row (~1.5k chars, 40 fields) is what made one read 340k characters. */
+const CAMPAIGN_FIELDS = ["id", "name", "status", "stopReason", "offerId", "featureSlug", "legKey", "salesFunnelCampaignId", "createdAt"] as const;
+
+/**
+ * list_campaigns: GET campaign-service /campaigns with filters and a limit
+ * (newest first), each row cut to CAMPAIGN_FIELDS. `hasMore` says the page is
+ * not the whole list: narrow with a filter rather than page through.
+ */
+export async function listCampaignsCompact(a: Record<string, unknown>, p: ApiCallParams) {
+  const status = opt(a.status);
+  if (status !== null && !(CAMPAIGN_STATUSES as readonly string[]).includes(status)) {
+    throw new Error(`[funnel-campaigns] status must be one of ${CAMPAIGN_STATUSES.join(", ")} (omit it for both)`);
+  }
+  let limit = CAMPAIGN_PAGE_DEFAULT;
+  if (a.limit !== undefined && a.limit !== null) {
+    limit = Number(a.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > CAMPAIGN_PAGE_MAX) {
+      throw new Error(`[funnel-campaigns] limit must be a whole number from 1 to ${CAMPAIGN_PAGE_MAX}`);
+    }
+  }
+  const filters: Record<string, string | null> = {
+    brandId: opt(a.brandId),
+    status,
+    offerId: opt(a.offerId),
+    featureSlug: opt(a.featureSlug),
+    legKey: opt(a.legKey),
+    salesFunnelCampaignId: opt(a.salesFunnelCampaignId),
+  };
+  const q = [
+    ...Object.entries(filters)
+      .filter(([, v]) => v !== null)
+      .map(([k, v]) => `${k}=${enc(v as string)}`),
+    `limit=${limit}`,
+  ].join("&");
+  const body = (await call("campaign", "list_campaigns", "GET", `/campaigns?${q}`, p)) as {
+    campaigns?: Array<Record<string, unknown>>;
+    hasMore?: boolean;
+  };
+  if (!Array.isArray(body.campaigns)) throw new Error("[funnel-campaigns] list_campaigns: campaign-service answered without a campaigns array");
+  const campaigns = body.campaigns.map((c) => Object.fromEntries(CAMPAIGN_FIELDS.map((f) => [f, c[f] ?? null])));
+  return {
+    campaigns,
+    shown: campaigns.length,
+    hasMore: body.hasMore === true,
+    ...(body.hasMore ? { note: "More campaigns exist (newest shown first). Narrow with status, offerId, featureSlug or salesFunnelCampaignId." } : {}),
+  };
+}
+
 export const FUNNEL_CAMPAIGN_TOOLS: Record<string, (a: Record<string, unknown>, p: ApiCallParams) => Promise<unknown>> = {
+  list_campaigns: listCampaignsCompact,
   list_funnel_campaigns: listFunnelCampaigns,
   get_funnel_caps: getFunnelCaps,
   set_funnel_caps: setFunnelCaps,

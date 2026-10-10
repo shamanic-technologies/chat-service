@@ -129,3 +129,55 @@ describe("start_funnel_campaign goes through the switch-on gate", () => {
     expect(out.switchedOn).toBe(true);
   });
 });
+
+describe("list_campaigns: a small page, compact rows (owner rule: no result above ~2k tokens)", () => {
+  const fullRow = (i: number) => ({
+    id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    orgId: "f0420eb5-8f72-4f0a-a150-f473746df1e6",
+    createdByUserId: "cfe148ed-e3d8-40a2-8920-f8c040a81934",
+    parentRunId: "a62f01be-6e29-4548-bcee-7f0b98b2b8c0",
+    name: "Zenith 50600967 - sales-cold-email-outreach - f4d73dab-1f9d-49b2-b16e-63ecde76a5eb - lead_found_to_conversation - 832126f3-f3f1-4601",
+    workflowSlug: "sales-cold-email-outreach-azha",
+    brandIds: ["f4d73dab-1f9d-49b2-b16e-63ecde76a5eb"],
+    brandId: "f4d73dab-1f9d-49b2-b16e-63ecde76a5eb",
+    featureSlug: "sales-cold-email-outreach",
+    featureInputs: { long: "x".repeat(5000) },
+    offerId: "832126f3-f3f1-4601-885d-bc8e101e5680",
+    legKey: "lead_found_to_conversation",
+    salesFunnelId: "lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client",
+    salesFunnelCampaignId: "50600967-975e-46f2-9fbd-e91c2a0067d2",
+    status: "ongoing",
+    stopReason: null,
+    createdAt: "2026-10-10T10:47:27.584Z",
+  });
+
+  it("calls campaign-service with filters and a limit, and cuts each row", async () => {
+    fetchMock().mockResolvedValue(res(200, { campaigns: [fullRow(1)], hasMore: true }));
+    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
+    const out = (await FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ brandId: "b", status: "ongoing" }, p)) as {
+      campaigns: Record<string, unknown>[];
+      hasMore: boolean;
+      note?: string;
+    };
+    expect(call(0).url).toBe("http://campaign.test/campaigns?brandId=b&status=ongoing&limit=10");
+    expect(Object.keys(out.campaigns[0]).sort()).toEqual(
+      ["createdAt", "featureSlug", "id", "legKey", "name", "offerId", "salesFunnelCampaignId", "status", "stopReason"].sort(),
+    );
+    expect(out.hasMore).toBe(true);
+    expect(out.note).toMatch(/Narrow/);
+  });
+
+  it("a full page of the largest real rows stays under ~2k tokens", async () => {
+    fetchMock().mockResolvedValue(res(200, { campaigns: Array.from({ length: 15 }, (_, i) => fullRow(i)), hasMore: true }));
+    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
+    const out = await FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ brandId: "b", limit: 15 }, p);
+    expect(JSON.stringify(out).length).toBeLessThan(8000);
+  });
+
+  it("refuses a status the column does not store and a page over 15, before any call", async () => {
+    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
+    await expect(FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ status: "active" }, p)).rejects.toThrow(/ongoing, stopped/);
+    await expect(FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ limit: 50 }, p)).rejects.toThrow(/1 to 15/);
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+});

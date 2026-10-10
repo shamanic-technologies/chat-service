@@ -85,26 +85,6 @@ describe("funnel-client — end-to-end funnel operations", () => {
     expect(result).toEqual({ campaign: { id: "c-1", status: "active" } });
   });
 
-  it("list_campaigns builds the brandId + status query string", async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(okJson({ campaigns: [] }));
-    const { listCampaigns } = await loadModule();
-    await listCampaigns({ brandId: "b-1", status: "active" }, baseParams);
-    expect(fetch).toHaveBeenCalledWith(
-      "https://api.test.local/v1/campaigns?brandId=b-1&status=active",
-      expect.objectContaining({ method: "GET" }),
-    );
-  });
-
-  it("list_campaigns omits the query string when no filters", async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(okJson({ campaigns: [] }));
-    const { listCampaigns } = await loadModule();
-    await listCampaigns({}, baseParams);
-    expect(fetch).toHaveBeenCalledWith(
-      "https://api.test.local/v1/campaigns",
-      expect.objectContaining({ method: "GET" }),
-    );
-  });
-
   it("stop_campaign POSTs /v1/campaigns/{id}/stop with an encoded id", async () => {
     (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(okJson({ campaign: { id: "c-1", status: "stopped" } }));
     const { stopCampaign } = await loadModule();
