@@ -221,7 +221,9 @@ const AUTH = {
   "x-run-id": "parent-run-1",
 };
 
-function mockGeminiOpenPageThenChoices(capture: { calls: number }) {
+function mockGeminiOpenPageThenChoices(capture: { calls: number }, opts: { leadText?: string | null; intro?: string | null } = {}) {
+  const leadText = opts.leadText === undefined ? "Here is your week." : opts.leadText;
+  const intro = opts.intro === undefined ? "You have 3 replies waiting." : opts.intro;
   return {
     match: (url: string, init?: RequestInit) => url.includes(":streamGenerateContent") && (init?.method ?? "GET") === "POST",
     respond: () => {
@@ -256,11 +258,12 @@ function mockGeminiOpenPageThenChoices(capture: { calls: number }) {
               {
                 content: {
                   parts: [
-                    { text: "Here is your week." },
+                    ...(leadText ? [{ text: leadText }] : []),
                     {
                       functionCall: {
                         name: "present_choices",
                         args: {
+                          ...(intro ? { text: intro } : {}),
                           question: "What next?",
                           choices: [
                             { label: "Answer replies", visual: { type: "number", value: "3", unit: "replies" } },
@@ -350,6 +353,8 @@ describe("POST /chat — rich UI (open_page + present_choices)", () => {
     expect(insertedValues[0]).toEqual(expect.objectContaining({ configKey: "test-chat" }));
     const assistant = insertedValues.find((v) => v.role === "assistant")!;
     expect(assistant.content).toBe("Here is your week.");
+    // The model already wrote text: the present_choices intro is not repeated.
+    expect(events.filter((e) => e.type === "token").map((e) => e.content).join("")).toBe("Here is your week.");
     expect(assistant.openPages).toEqual([{ page: "offer-today", brandId: "b-1", offerId: "o-1" }]);
     expect((assistant.choices as { choices: unknown[] }).choices).toHaveLength(2);
     // Each tool call stored ONCE: open_page with its thought signature, then
@@ -357,5 +362,40 @@ describe("POST /chat — rich UI (open_page + present_choices)", () => {
     const stored = assistant.toolCalls as Array<{ name: string; thoughtSignature?: string }>;
     expect(stored.map((t) => t.name)).toEqual(["open_page", "present_choices"]);
     expect(stored[0].thoughtSignature).toBe("sig-1");
+  });
+
+  it("a model that writes NO text gets its present_choices intro streamed before the cards and stored (Sonnet 5.5, prod 2026-10-10)", async () => {
+    const app = (await import("../../src/index.js")).default;
+    const gemini = { calls: 0 };
+    routes.push(
+      mockKeyDecrypt(), mockRunCreate(), mockRunCosts({ provisionCalls: 0, actualCalls: 0 }), mockCostPatch(),
+      mockRunPatch(), mockTraceEvents(), mockBilling({ calls: 0 }),
+      mockGeminiOpenPageThenChoices(gemini, { leadText: null }),
+    );
+    const res = await request(app).post("/chat").set(AUTH).send({ configKey: "test-chat", message: "Where do I stand?" });
+    expect(res.status).toBe(200);
+    const events = sseEvents(res.text);
+    const tokenAt = events.findIndex((e) => e.type === "token");
+    const choicesAt = events.findIndex((e) => e.type === "choices");
+    expect(events[tokenAt]).toEqual({ type: "token", content: "You have 3 replies waiting." });
+    expect(tokenAt).toBeLessThan(choicesAt);
+    const assistant = insertedValues.find((v) => v.role === "assistant")!;
+    expect(assistant.content).toBe("You have 3 replies waiting.");
+  });
+
+  it("present_choices without text is a tool error the model retries, never bare cards", async () => {
+    const app = (await import("../../src/index.js")).default;
+    const gemini = { calls: 0 };
+    routes.push(
+      mockKeyDecrypt(), mockRunCreate(), mockRunCosts({ provisionCalls: 0, actualCalls: 0 }), mockCostPatch(),
+      mockRunPatch(), mockTraceEvents(), mockBilling({ calls: 0 }),
+      mockGeminiOpenPageThenChoices(gemini, { leadText: null, intro: null }),
+    );
+    const res = await request(app).post("/chat").set(AUTH).send({ configKey: "test-chat", message: "Where do I stand?" });
+    expect(res.status).toBe(200);
+    const events = sseEvents(res.text);
+    expect(events.find((e) => e.type === "choices")).toBeUndefined();
+    // The refusal went back to the model (a third provider call).
+    expect(gemini.calls).toBeGreaterThanOrEqual(3);
   });
 });

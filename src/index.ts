@@ -248,6 +248,7 @@ import {
   OPEN_PAGE_TOOL_NAME,
   PRESENT_CHOICES_TOOL_NAME,
   parseChoicesArgs,
+  parseChoicesIntro,
   parseOpenPageArgs,
 } from "./lib/ui-tools.js";
 import {
@@ -2812,6 +2813,9 @@ app.post("/chat", requireAuth, async (req, res) => {
     // (A holder, not a `let`: it is set inside executeTool, a closure TS
     // cannot see into, so a bare `let` would narrow to `null` here.)
     const turnUi: { choices: ChoicesRecord | null } = { choices: null };
+    // Whether any answer text reached the client this turn, and the
+    // present_choices intro streamed in its place when none did.
+    const turnText: { streamed: boolean; intro: string | null } = { streamed: false, intro: null };
     const openedPages: OpenPageRecord[] = [];
     let lastContentBlocks: Anthropic.ContentBlock[] = [];
     // Track workflows forked during this turn (used by executeTool)
@@ -2824,6 +2828,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     function bufferToken(chunk: string): void {
       fullResponse += chunk;
+      if (chunk.trim()) turnText.streamed = true;
 
       // Split combined buffer + chunk on newlines
       const combined = lineBuf + chunk;
@@ -2970,7 +2975,16 @@ app.post("/chat", requireAuth, async (req, res) => {
       // error (it retries) and nothing half-formed reaches the client.
       if (call.name === PRESENT_CHOICES_TOOL_NAME) {
         const args = (call.args as Record<string, unknown>) || {};
+        const intro = parseChoicesIntro(args);
         const record = parseChoicesArgs(args);
+        // The intro is the answer text above the cards. A model that already
+        // wrote text this turn is not repeated; one that wrote none (Sonnet 5.5
+        // goes straight to the tool) gets its intro streamed as the text.
+        if (!turnText.streamed) {
+          sendSSE(res, { type: "token", content: intro });
+          turnText.streamed = true;
+          turnText.intro = intro;
+        }
         sendSSE(res, { type: "choices", ...record });
         turnUi.choices = record;
         emittedInputRequest = true;
@@ -3969,7 +3983,13 @@ app.post("/chat", requireAuth, async (req, res) => {
         userMessage: message.trim(),
         tools: geminiToolDefs,
         res,
-        sendSSE,
+        // Tracks whether Gemini streamed answer text, so a present_choices
+        // intro is not written twice.
+        sendSSE: (r: express.Response, data: unknown) => {
+          const d = data as { type?: string; content?: unknown };
+          if (d && d.type === "token" && typeof d.content === "string" && d.content.trim()) turnText.streamed = true;
+          sendSSE(r, data);
+        },
         executeTool,
         signal: abortController.signal,
         // Per-config Gemini-3 thinking level (NULL → code default "low"). Only
@@ -4206,6 +4226,10 @@ app.post("/chat", requireAuth, async (req, res) => {
     // -----------------------------------------------------------------------
     // Shared post-processing (both providers)
     // -----------------------------------------------------------------------
+
+    // The present_choices intro streamed as this turn's text is also its
+    // stored text (history and reload show it above the cards).
+    if (turnText.intro && !fullResponse.trim()) fullResponse = turnText.intro;
 
     console.log(`[chat] session="${currentSessionId}" stream complete — provider=${chatProvider} tokens=${totalPromptTokens}+${totalOutputTokens} response=${fullResponse.length}chars`);
 
