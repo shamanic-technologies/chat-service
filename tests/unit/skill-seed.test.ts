@@ -15,7 +15,7 @@ const CATALOGUE_LEVELS = [
 ];
 
 const COPILOT_TOOLS = [
-  "get_channel_catalogue", "get_offer_channels", "get_offer_legs", "get_leg_rates", "list_sales_paths",
+  "get_offer_channels", "get_offer_legs", "get_leg_rates", "list_sales_paths",
   "get_selected_sales_paths", "get_trigger_events", "list_sourcing_origins", "get_offer_sourcing",
   "get_campaign_budgets", "get_campaign", "list_connected_accounts", "create_offer", "set_offer_channels",
   "set_selected_sales_paths", "set_campaign_budget", "propose_switch_on", "confirm_switch_on",
@@ -107,5 +107,12 @@ describe("funnel campaigns (owner 2026-10-10)", () => {
     }
     const order = ["create_funnel_campaign", "set_funnel_caps", "propose_switch_on", "confirm_switch_on only"].map((w) => c.indexOf(w));
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+});
+
+describe("retired huge reads (owner 2026-10-10)", () => {
+  it("get_channel_catalogue is gone from the registry and from every skill", () => {
+    expect(TOOL_REGISTRY.get_channel_catalogue).toBeUndefined();
+    for (const s of SEED_SKILLS) expect(s.content, s.slug).not.toContain("get_channel_catalogue");
   });
 });

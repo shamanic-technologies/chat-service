@@ -2039,19 +2039,17 @@ export const LAUNCH_CAMPAIGN_TOOL: Anthropic.Tool = {
 export const LIST_CAMPAIGNS_TOOL: Anthropic.Tool = {
   name: "list_campaigns",
   description:
-    "List the org's campaigns, with each campaign's id, name, status (e.g. 'active', 'stopped'), brand(s), and budgets. Read-only. Optionally filter by `brandId` or `status`. Use it to find a campaign's id before stopping it, or to report what is currently running.",
+    "List the org's campaigns, newest first, a SMALL page (default 10, max 15): id, name, status (ongoing | stopped), stopReason, offerId, featureSlug (channel), legKey, salesFunnelCampaignId (set when it is a step of a funnel campaign), createdAt. hasMore = more exist: narrow with filters, never page through everything. Read-only. Use it to find a campaign's id before stopping it, or to report what runs (status ongoing).",
   input_schema: {
     type: "object" as const,
     properties: {
-      brandId: {
-        type: "string",
-        description: "Optional. Filter to campaigns for this brand id.",
-      },
-      status: {
-        type: "string",
-        description:
-          "Optional. Filter by status (e.g. 'active', 'stopped', 'all').",
-      },
+      brandId: { type: "string", description: "Filter to this brand's campaigns." },
+      status: { type: "string", enum: ["ongoing", "stopped"], description: "Omit for both." },
+      offerId: { type: "string" },
+      featureSlug: { type: "string", description: "The channel's slug." },
+      legKey: { type: "string" },
+      salesFunnelCampaignId: { type: "string", description: "The steps of one funnel campaign." },
+      limit: { type: "integer", description: "1 to 15, default 10." },
     },
   },
 };
@@ -2261,12 +2259,6 @@ export const READ_SKILL_TOOL: Anthropic.Tool = {
   },
 };
 
-export const GET_CHANNEL_CATALOGUE_TOOL: Anthropic.Tool = {
-  name: "get_channel_catalogue",
-  description:
-    "Read the platform catalogue: every acquisition channel (cold email, LinkedIn, WhatsApp, calls…), the legs each one can perform (proactive = own budget, reactive = runs when a trigger fires, with its triggerId), the trigger types, and minimum monthly budgets. This is THE list of what exists. Read-only.",
-  input_schema: { type: "object" as const, properties: {} },
-};
 
 export const GET_OFFER_CHANNELS_TOOL: Anthropic.Tool = {
   name: "get_offer_channels",
@@ -2362,7 +2354,7 @@ export const SET_OFFER_CHANNELS_TOOL: Anthropic.Tool = {
     type: "object" as const,
     properties: {
       ...BRAND_OFFER_PROPS,
-      channelSlugs: { type: "array", items: { type: "string" }, description: "Channel slugs from get_channel_catalogue." },
+      channelSlugs: { type: "array", items: { type: "string" }, description: "Channel slugs from find_channels." },
     },
     required: ["brandId", "offerId", "channelSlugs"],
   },
@@ -2390,8 +2382,8 @@ export const SET_CAMPAIGN_BUDGET_TOOL: Anthropic.Tool = {
     type: "object" as const,
     properties: {
       ...BRAND_OFFER_PROPS,
-      legKey: { type: "string", description: "Leg key from get_channel_catalogue (legs[].legKey)." },
-      featureSlug: { type: "string", description: "The channel's feature slug from get_channel_catalogue." },
+      legKey: { type: "string", description: "Leg key (find_channels with id: legs[].legKey)." },
+      featureSlug: { type: "string", description: "The channel's feature slug (its id in find_channels)." },
       dailyBudgetCents: { type: "integer", description: "Daily cap in cents (e.g. 2000 = $20/day). Must be > 0." },
     },
     required: ["brandId", "offerId", "legKey", "featureSlug", "dailyBudgetCents"],
@@ -3013,7 +3005,6 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   present_choices: PRESENT_CHOICES_TOOL,
   open_page: OPEN_PAGE_TOOL,
   read_skill: READ_SKILL_TOOL,
-  get_channel_catalogue: GET_CHANNEL_CATALOGUE_TOOL,
   get_offer_channels: GET_OFFER_CHANNELS_TOOL,
   get_offer_legs: GET_OFFER_LEGS_TOOL,
   get_leg_rates: GET_LEG_RATES_TOOL,

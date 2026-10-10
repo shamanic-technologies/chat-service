@@ -90,23 +90,6 @@ export function launchCampaign(
   return requestJson("launch_campaign", `/v1/campaigns`, "POST", params, body);
 }
 
-export interface ListCampaignsFilters {
-  brandId?: string;
-  status?: string;
-}
-
-/** GET /v1/campaigns — list the org's campaigns, optionally by brand / status. */
-export function listCampaigns(
-  filters: ListCampaignsFilters,
-  params: FunnelCallParams,
-): Promise<unknown> {
-  const qs = new URLSearchParams();
-  if (filters.brandId) qs.set("brandId", filters.brandId);
-  if (filters.status) qs.set("status", filters.status);
-  const suffix = qs.toString() ? `?${qs.toString()}` : "";
-  return requestJson("list_campaigns", `/v1/campaigns${suffix}`, "GET", params);
-}
-
 /** POST /v1/campaigns/{id}/stop — stop a running campaign. */
 export function stopCampaign(
   campaignId: string,

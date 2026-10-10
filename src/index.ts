@@ -141,7 +141,6 @@ import {
   executeSwitchOn,
   getCampaign,
   getCampaignBudgets,
-  getChannelCatalogue,
   getLegRates,
   getOfferChannels,
   getOfferLegs,
@@ -192,7 +191,6 @@ const DECLARATION_WRITE_TOOLS: Record<
 
 // Copilot entity tools that are a straight owner-route call: name → handler.
 const COPILOT_ENTITY_TOOLS: Record<string, (args: Record<string, unknown>, p: ApiCallParams) => Promise<unknown>> = {
-  get_channel_catalogue: (_a, p) => getChannelCatalogue(p),
   get_offer_channels: getOfferChannels,
   get_offer_legs: getOfferLegs,
   get_leg_rates: getLegRates,
@@ -236,7 +234,6 @@ import {
   createBrandFromUrl,
   listBrands,
   launchCampaign,
-  listCampaigns,
   stopCampaign,
   getBrandDailyBudget,
   setBrandDailyBudget,
@@ -3824,19 +3821,6 @@ app.post("/chat", requireAuth, async (req, res) => {
         const args = (call.args as Record<string, unknown>) || {};
         const result = await launchCampaign(
           args as unknown as LaunchCampaignBody,
-          featureCallParams,
-        );
-        toolCalls.push({ name: call.name, args, result });
-        return { name: call.name, result };
-      }
-
-      if (call.name === "list_campaigns") {
-        const args = (call.args as Record<string, unknown>) || {};
-        const result = await listCampaigns(
-          {
-            brandId: args.brandId as string | undefined,
-            status: args.status as string | undefined,
-          },
           featureCallParams,
         );
         toolCalls.push({ name: call.name, args, result });
