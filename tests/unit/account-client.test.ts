@@ -110,3 +110,22 @@ describe("account-client — read-only, the dashboard's own queries", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("get_offer_performance stays small (owner rule: no tool result above ~2k tokens)", () => {
+  it("keeps the summary fields, drops the per-company list and day series, never opens", async () => {
+    const { compactOfferPerformance, OFFER_PERFORMANCE_FIELDS } = await import("../../src/lib/account-client.js");
+    const big = {
+      offerId: "o", brandId: "b", costBasis: "charged", headline: { spentUsd: 71.2 }, costEconomics: { a: 1 },
+      recipientsContacted: { count: 204 }, recipientsOpened: { count: 99 }, recipientsClicked: { count: 3 }, recipientsRepliesPositive: { count: 0 },
+      meetingsBooked: { count: 0 }, purchased: { count: 0 }, signups: { count: 0 }, formSubmissions: { count: 0 }, outcomes: { x: 1 }, maturity: { m: 1 },
+      organizations: Array.from({ length: 198 }, (_, i) => ({ id: i, name: "x".repeat(400) })),
+      timeSeries: Array.from({ length: 181 }, (_, i) => ({ day: i, v: 1 })),
+    };
+    const out = compactOfferPerformance(big) as Record<string, unknown>;
+    for (const k of OFFER_PERFORMANCE_FIELDS) expect(out).toHaveProperty(k);
+    expect(out).not.toHaveProperty("organizations");
+    expect(out).not.toHaveProperty("timeSeries");
+    expect(out).not.toHaveProperty("recipientsOpened");
+    expect(JSON.stringify(out).length).toBeLessThan(8000);
+  });
+});

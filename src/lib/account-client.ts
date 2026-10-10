@@ -105,7 +105,40 @@ export function getOfferPerformance(
     }
     qs.set("windowDays", String(days));
   }
-  return getJson("get_offer_performance", `/v1/offers/${encodeURIComponent(offerId)}/revenue?${qs}`, params);
+  return getJson("get_offer_performance", `/v1/offers/${encodeURIComponent(offerId)}/revenue?${qs}`, params).then(compactOfferPerformance);
+}
+
+/**
+ * The offer's figures, cut to the summary the dashboard headlines (owner rule:
+ * no tool result above ~2k tokens; the full body is ~144k characters, mostly
+ * the per-company list and day-by-day series). A projection of served fields,
+ * nothing computed. Opens are deprecated and never shown.
+ */
+export const OFFER_PERFORMANCE_FIELDS = [
+  "offerId",
+  "brandId",
+  "costBasis",
+  "headline",
+  "costEconomics",
+  "recipientsContacted",
+  "recipientsClicked",
+  "recipientsRepliesPositive",
+  "meetingsBooked",
+  "purchased",
+  "signups",
+  "formSubmissions",
+  "outcomes",
+  "maturity",
+] as const;
+
+export function compactOfferPerformance(body: unknown): unknown {
+  if (!body || typeof body !== "object") throw new Error("[account-client] get_offer_performance: features-service answered without a body");
+  const b = body as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of OFFER_PERFORMANCE_FIELDS) if (k in b) out[k] = b[k];
+  out.omitted =
+    "Per-company list, per-day series and per-channel detail are left out to keep the chat small: the offer and campaign pages show them (open_page).";
+  return out;
 }
 
 /**

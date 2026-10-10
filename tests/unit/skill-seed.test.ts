@@ -18,7 +18,7 @@ const COPILOT_TOOLS = [
   "get_leg_rates", "list_sales_paths",
   "get_trigger_events", "list_sourcing_origins", "get_offer_sourcing",
   "list_connected_accounts", "create_offer",
-  "set_campaign_budget", "propose_switch_on", "confirm_switch_on",
+  "propose_switch_on", "confirm_switch_on",
   "request_staff", "list_staff_requests", "request_skill_upgrade", "contact_human",
   "find_steps", "find_sales_paths", "find_channels", "find_pipes", "find_sales_funnels", "find_workflows",
   "create_step", "create_pipe", "create_sales_path", "create_sales_funnel",
@@ -191,5 +191,13 @@ describe("a campaign IS a funnel campaign in every skill (owner rule)", () => {
     const b = SEED_SKILLS.find((s) => s.slug === "budget-and-billing")!.content;
     expect(b).toMatch(/Each campaign's budget: list_campaigns/);
     expect(b).not.toMatch(/get_campaign_budgets/);
+  });
+});
+
+describe("no per-step writes in the Copilot's skills (owner 2026-10-10)", () => {
+  it("budgets are set_funnel_caps and on/off is the funnel campaign; a source has no budget of its own", () => {
+    for (const sk of SEED_SKILLS) expect(sk.content, sk.slug).not.toMatch(/set_campaign_budget|stop_campaign\b|start_campaign\b|activate_campaign/);
+    const src = SEED_SKILLS.find((s) => s.slug === "sources")!.content;
+    expect(src).toMatch(/A source has no on\/off or budget of its own/);
   });
 });
