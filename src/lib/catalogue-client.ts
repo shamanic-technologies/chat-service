@@ -121,6 +121,28 @@ function qs(params: Record<string, string | number | null>): string {
 
 type Level = "steps" | "sales-paths" | "channels" | "pipes" | "sales-funnels" | "workflows";
 
+/**
+ * Every cost the model reads carries its unit IN the same field: a row with a
+ * `costUsd` gets `cost: "$137.43 per positive reply"` built from the
+ * producer's own `costPer` (features-service). Prod 2026-10-10: a per-reply
+ * cost was quoted "per paying client" because the unit lived on the list.
+ * A cost served WITHOUT its unit is a broken producer contract: fail loud.
+ */
+export function withCostUnits(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withCostUnits);
+  if (!value || typeof value !== "object") return value;
+  const o = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  if (typeof o.costUsd === "number") {
+    if (typeof o.costPer !== "string" || o.costPer.trim() === "") {
+      throw new Error(`[catalogue] features-service served a cost without its unit (costPer) on ${String(o.id ?? "a row")}`);
+    }
+    out.cost = `$${o.costUsd} ${o.costPer}`;
+  }
+  for (const [k, v] of Object.entries(o)) out[k] = withCostUnits(v);
+  return out;
+}
+
 /** Levels whose objects can be run or not (features-service `runnable`). */
 const RUNNABLE_LEVELS: ReadonlySet<Level> = new Set(["sales-paths", "channels", "pipes", "sales-funnels"]);
 
@@ -136,12 +158,14 @@ function level(tool: string, path: Level, filters: Record<string, (v: unknown) =
       const detailQs = path === "workflows" ? qs({ pipe: extra.pipe ?? null }) : "";
       const body = (await features(tool, "GET", `/internal/catalogue/${path}/${enc(id)}${detailQs}`)) as { runnable?: unknown; name?: unknown };
       if (gated && body.runnable === false) return { id, ...NOT_RUN_TODAY };
-      return body;
+      return withCostUnits(body);
     }
-    return features(
-      tool,
-      "GET",
-      `/internal/catalogue/${path}${qs({ ...extra, ...(gated ? { runnable: "true" } : {}), q: optStr("q", a.q), limit: optLimit(a.limit) })}`,
+    return withCostUnits(
+      await features(
+        tool,
+        "GET",
+        `/internal/catalogue/${path}${qs({ ...extra, ...(gated ? { runnable: "true" } : {}), q: optStr("q", a.q), limit: optLimit(a.limit) })}`,
+      ),
     );
   };
 }
