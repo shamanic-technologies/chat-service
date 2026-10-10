@@ -585,7 +585,7 @@ A sales funnel is a sales path with a pipe on every step: the complete plan that
 - find_sales_funnels(id): its legs, the rate at each, the pipe on each, cost per paying client, return.
 
 ## Propose
-Show 1 to 3 funnels with present_choices: name, one line of what it does, cost per paying client, return. Learning: say "not measured yet". The user picks; then \`campaigns\`: it becomes a campaign with a max budget and a max volume they state.
+First WRITE the 1 to 3 funnels in your text, one line each: name, what it does, cost per paying client, return (learning: "not measured yet"). Then present_choices, one card per funnel, its cost as a number visual (cents). Cards alone hide the figures: never skip the text. The user picks; then \`campaigns\`: it becomes a campaign with a max budget and a max volume they state.
 
 ## Create
 create_sales_funnel(pipeIds in order: a pipe id, or a bare leg key for a step the customer's team works). On hold while one of its pipes is a draft (filed for you).
