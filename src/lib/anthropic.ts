@@ -2345,22 +2345,18 @@ export const PROPOSE_SWITCH_ON_TOOL: Anthropic.Tool = {
   name: "propose_switch_on",
   description:
     "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: nothing that starts work or spends money is switched on without the user's explicit yes in the chat. This tool is step 1 of 2: it records WHAT would be switched on and returns a confirmationToken; it switches NOTHING on. " +
-    "Actions: start_funnel_campaign (PREFERRED: run a whole sales funnel for an offer; refused until set_funnel_caps stated a max budget, which it shows back), start_campaign (older: one offer x leg x channel; dailyBudgetCents is MANDATORY and is set now as the cap, the campaign itself is not created), activate_campaign (turn a stopped campaign back on). " +
-    "After calling it, show the user exactly what will start and its daily cap, then ask them to confirm with present_choices. Call confirm_switch_on only after they answer yes, in their next message.",
+    "The only action: start_funnel_campaign (run a sales funnel campaign for an offer, or turn a stopped one back on; refused until set_funnel_caps stated a max budget, which it shows back). " +
+    "After calling it, show the user exactly what will start and its caps, then ask them to confirm with present_choices. Call confirm_switch_on only after they answer yes, in their next message.",
   input_schema: {
     type: "object" as const,
     properties: {
-      action: { type: "string", enum: ["start_funnel_campaign", "start_campaign", "activate_campaign"] },
-      summary: { type: "string", description: "One plain sentence the user will confirm, with the daily cap (e.g. \"Start cold email to first reply for Offer X at $20/day\")." },
+      action: { type: "string", enum: ["start_funnel_campaign"] },
+      summary: { type: "string", description: "One plain sentence the user will confirm, with the caps (e.g. 'Run Bliss for Sales-led, max $10/day')." },
       brandId: BRAND_ID_PROP,
       offerId: OFFER_ID_PROP,
-      legKey: { type: "string", description: "start_campaign: the leg key." },
-      featureSlug: { type: "string", description: "start_campaign: the channel's feature slug." },
-      dailyBudgetCents: { type: "integer", description: "start_campaign: the daily cap in cents (mandatory, > 0)." },
-      campaignId: { type: "string", description: "activate_campaign: the campaign id." },
-      salesFunnelId: { type: "string", description: "start_funnel_campaign: the sales funnel id (find_sales_funnels)." },
+      salesFunnelId: { type: "string", description: "The sales funnel id (list_campaigns or find_sales_funnels)." },
     },
-    required: ["action", "summary"],
+    required: ["action", "summary", "brandId", "offerId", "salesFunnelId"],
   },
 };
 
