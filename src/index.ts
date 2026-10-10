@@ -1145,6 +1145,10 @@ class InsufficientCreditsError extends Error {
   }
 }
 
+/** The fixed answer when billing refuses a /chat turn for lack of credits (owner 2026-10-10). */
+export const OUT_OF_CREDITS_MESSAGE = "You're out of credits. Add credits to keep going.";
+export const OUT_OF_CREDITS_ACTION_LABEL = "Add credits";
+
 class ChatCostGateError extends Error {
   constructor(
     message: string,
@@ -2700,6 +2704,8 @@ app.post("/chat", requireAuth, async (req, res) => {
   // prompt-length tier, so a summed token total cannot be priced).
   let anthropicChatCostLines: AnthropicCostLine[] = [];
   let provisionedCostIds: string[] = [];
+  // What the out-of-credits answer needs from inside the try (set once known).
+  const creditsTurn: { sessionId: string | null; text: () => string } = { sessionId: null, text: () => "" };
 
   try {
     // Get or create session (scoped by org + user + app)
@@ -2823,6 +2829,8 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     // Shared state for both providers
     let fullResponse = "";
+    creditsTurn.sessionId = currentSessionId ?? null;
+    creditsTurn.text = () => fullResponse;
     let emittedInputRequest = false;
     const toolCalls: ToolCallRecord[] = [];
     // Rich UI emitted this turn (present_choices / open_page), persisted on the
@@ -4371,6 +4379,31 @@ app.post("/chat", requireAuth, async (req, res) => {
 
     sendSSE(res, "[DONE]");
   } catch (err) {
+    // Out of credits (billing refused the turn BEFORE the model was called):
+    // not an error, a fixed message with an "Add credits" action (owner
+    // 2026-10-10). Streamed as text for any client, plus `credits_required`
+    // for a client that draws the button; stored as the assistant turn.
+    if (err instanceof ChatCostGateError && err.statusCode === 402 && creditsTurn.sessionId) {
+      console.log(`[chat] org="${orgId}" session="${creditsTurn.sessionId}" out of credits: fixed message, no model call`);
+      try {
+        const before = creditsTurn.text();
+        const text = (before.trim() ? "\n\n" : "") + OUT_OF_CREDITS_MESSAGE;
+        sendSSE(res, { type: "token", content: text });
+        sendSSE(res, { type: "credits_required", message: OUT_OF_CREDITS_MESSAGE, action: "add_credits", label: OUT_OF_CREDITS_ACTION_LABEL });
+        await db.insert(messages).values({
+          sessionId: creditsTurn.sessionId,
+          role: "assistant",
+          content: (before + text).trim(),
+        });
+        if (runId) {
+          traceEvent(runId, "out-of-credits", { orgId, userId }, workflowTracking, { data: { provider: chatProvider } });
+        }
+        sendSSE(res, "[DONE]");
+        return;
+      } catch (creditsErr) {
+        console.error(`[chat] org="${orgId}" out-of-credits message failed:`, creditsErr);
+      }
+    }
     chatFailed = true;
     const { message: errorMessage, code: errorCode } = classifyErrorForClient(err);
     console.error(`[chat] org="${orgId}" error code="${errorCode}":`, err);

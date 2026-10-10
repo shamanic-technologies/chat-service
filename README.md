@@ -1368,6 +1368,13 @@ data: {"type":"choices","question":"What next?","choices":[{"label":"Answer 3 re
 
 The tool REQUIRES `text`: 2-3 sentences, the answer above the cards (a call without it is a tool error). When the model streamed no text this turn (Sonnet 5.5 goes straight to the tool), `text` is streamed as a `token` event BEFORE the `choices` event and stored as the message content; when it already wrote text, `text` is not repeated. Clients need no change: the answer arrives as ordinary tokens.
 
+### 5d. Out of credits (`credits_required`)
+When billing refuses the turn for lack of credits (the affordability check runs BEFORE every model call), the model is not called and the turn is not an error: the fixed text streams as a `token`, then
+```
+data: {"type":"credits_required","message":"You're out of credits. Add credits to keep going.","action":"add_credits","label":"Add credits"}
+```
+The client draws a button that opens its credit top-up. The text is stored as the assistant turn; the run closes completed. A client that does not know the event still shows the text.
+
 ### 5c. Open page (optional, `open_page`)
 ```
 data: {"type":"open_page","page":"offer-today","brandId":"…","offerId":"…","title":"Your week"}
