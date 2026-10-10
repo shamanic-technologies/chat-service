@@ -147,16 +147,25 @@ describe("costs keep their unit", () => {
   it("the catalogue skill says a channel or pipe cost is never per paying client", () => {
     const cat = SEED_SKILLS.find((s) => s.slug === "catalogue")!.content;
     expect(cat).toMatch(/never per paying client/);
-    expect(SEED_SKILLS.find((s) => s.slug === "index")!.content).toMatch(/with the unit the tool gives/);
+    expect(SEED_SKILLS.find((s) => s.slug === "index")!.content).toMatch(/with the unit and basis the tool gives/);
   });
 });
 
 describe("one kind per funnel (owner 2026-10-10)", () => {
   it("the funnel and campaign skills split Proactive and Reactive and ask Up to $X / Up to N", () => {
     const f = SEED_SKILLS.find((s) => s.slug === "catalogue-sales-funnels")!.content;
-    expect(f).toMatch(/SEPARATE Reactive funnel starting at the trigger step/);
+    expect(f).toMatch(/ALSO a Reactive funnel from the list \(its line starts at the trigger step/);
     const c = SEED_SKILLS.find((s) => s.slug === "campaigns")!.content;
-    expect(c).toMatch(/"Up to \$X" and "Up to N"/);
+    expect(c).toMatch(/"Up to \$X" and "Up to N prospects handled"/);
     expect(c).toMatch(/mixed funnel .* is refused/);
+  });
+});
+
+describe("estimates and reactive funnels (owner 2026-10-10)", () => {
+  it("skills say estimated, never measured, and ask a reactive funnel Up to N prospects handled", () => {
+    const index = SEED_SKILLS.find((s) => s.slug === "index")!.content;
+    expect(index).toMatch(/An estimate is never called measured/);
+    expect(SEED_SKILLS.find((s) => s.slug === "catalogue")!.content).toMatch(/estimated \(a rate it rests on is not measured/);
+    expect(SEED_SKILLS.find((s) => s.slug === "campaigns")!.content).toMatch(/"Up to N prospects handled"/);
   });
 });
