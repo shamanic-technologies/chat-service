@@ -29,8 +29,8 @@ const call = (i: number) => {
 };
 
 /** features-service's funnel detail: one proactive pipe (cold email), the next leg bare. */
-const proactiveFunnel = () => res(200, { id: FUNNEL, type: "proactive", legs: [{ legKey: "lead_found_to_conversation", pipe: { id: "sales-cold-email-outreach|lead_found_to_conversation", mode: "proactive" } }, { legKey: "conversation_to_paid_client", pipe: null }] });
-const mixedFunnel = () => res(200, { id: FUNNEL, type: "proactive", legs: [{ pipe: { id: "sales-cold-email-outreach|lead_found_to_conversation", mode: "proactive" } }, { pipe: { id: "ai-meeting-booking|conversation_to_meeting_booked", mode: "reactive" } }] });
+const proactiveFunnel = () => res(200, { id: FUNNEL, type: "proactive", mixed: false, legs: [{ legKey: "lead_found_to_conversation", pipe: { id: "sales-cold-email-outreach|lead_found_to_conversation", mode: "proactive" } }, { legKey: "conversation_to_paid_client", pipe: null }] });
+const mixedFunnel = () => res(200, { id: FUNNEL, type: "proactive", mixed: true, legs: [{ pipe: { id: "sales-cold-email-outreach|lead_found_to_conversation", mode: "proactive" } }, { pipe: { id: "ai-meeting-booking|conversation_to_meeting_booked", mode: "reactive" } }] });
 
 async function funnel() {
   vi.resetModules();
@@ -103,9 +103,15 @@ describe("funnel campaign tools (campaign-service / billing-service, direct, cha
     await expect(FUNNEL_CAMPAIGN_TOOLS.create_funnel_campaign({ brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p)).rejects.toThrow(/without its type/);
   });
 
+  it("a funnel served without its mixed verdict fails loud", async () => {
+    fetchMock().mockResolvedValueOnce(res(200, { id: FUNNEL, type: "proactive", legs: [] }));
+    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
+    await expect(FUNNEL_CAMPAIGN_TOOLS.create_funnel_campaign({ brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p)).rejects.toThrow(/without its mixed verdict/);
+  });
+
   it("a reactive funnel (AI meeting booking from a positive reply) is one kind and passes", async () => {
     fetchMock()
-      .mockResolvedValueOnce(res(200, { id: "r", type: "reactive", legs: [{ pipe: { id: "ai-meeting-booking|conversation_to_meeting_booked", mode: "reactive" } }, { pipe: null }] }))
+      .mockResolvedValueOnce(res(200, { id: "r", type: "reactive", mixed: false, legs: [{ pipe: { id: "ai-meeting-booking|conversation_to_meeting_booked", mode: "reactive" } }, { pipe: null }] }))
       .mockResolvedValue(res(201, { created: true }));
     const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
     await FUNNEL_CAMPAIGN_TOOLS.create_funnel_campaign({ brandId: "b", offerId: "o", salesFunnelId: "r" }, p);
