@@ -334,8 +334,20 @@ describe("POST /chat — provider-call credit gates", () => {
       .send({ configKey: "test-chat", message: "hello" });
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain("Insufficient credits");
     expect(gemini.calls).toBe(0);
     expect(billing.calls).toBe(1);
+    // Out of credits is not an error (owner 2026-10-10): a fixed message and an "Add credits" action.
+    const events = res.text
+      .split("\n")
+      .filter((l: string) => l.startsWith("data: ") && !l.includes("[DONE]"))
+      .map((l: string) => JSON.parse(l.slice(6)) as Record<string, unknown>);
+    expect(events.filter((e) => e.type === "error")).toEqual([]);
+    expect(events.find((e) => e.type === "token")).toEqual({ type: "token", content: "You're out of credits. Add credits to keep going." });
+    expect(events.find((e) => e.type === "credits_required")).toEqual({
+      type: "credits_required",
+      message: "You're out of credits. Add credits to keep going.",
+      action: "add_credits",
+      label: "Add credits",
+    });
   });
 });
