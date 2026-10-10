@@ -270,6 +270,10 @@ A tool-call failure must reach the model as a **parsed, structured** `{error, to
 
 `formatToolError` (`src/lib/tool-errors.ts`) must extract field-level detail from **two** validation dialects and through api-service's double-encoding: Zod `issues[].path/message` AND workflow-service DAG `details[].field/message`. api-service commonly wraps a downstream **400 as a 500** and stringifies the body as `{"error":"<json>"}` (sometimes nested twice) — `parseValidationErrors` peels the nested `.error` wrappers and checks the field-errors BEFORE the status branch, so the actionable message survives the 500 wrapper. When adding a new downstream that returns a different validation shape, extend `extractFieldErrors`, don't special-case at the call site.
 
+## Every message insert goes through `stripNul` (prod 2026-10-10)
+
+Postgres refuses NUL in text and jsonb; one tool result carrying it (a mailbox body) failed the whole assistant save AFTER the answer streamed ("An unexpected error occurred"). `tests/unit/strip-nul.test.ts` pins every `db.insert(messages).values(` call site.
+
 ## Out of credits is an answer, not an error (owner 2026-10-10)
 
 When billing refuses a `/chat` turn (`ChatCostGateError` 402, the affordability check BEFORE every model call), the catch streams `OUT_OF_CREDITS_MESSAGE` as a token + a `credits_required` event (`action: add_credits`), stores it as the assistant turn and closes the run completed. No model call, no error event. Do not route it back through `classifyErrorForClient`.

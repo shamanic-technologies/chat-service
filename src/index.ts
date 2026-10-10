@@ -135,6 +135,7 @@ import {
   toStaffRequestBody,
 } from "./lib/staff-requests.js";
 import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
+import { stripNul } from "./lib/strip-nul.js";
 import { CATALOGUE_READ_TOOLS, CATALOGUE_WRITE_TOOLS, assertStaffBuild, type CatalogueReader } from "./lib/catalogue-client.js";
 import { FUNNEL_CAMPAIGN_TOOLS } from "./lib/funnel-campaign-client.js";
 import { DISCOVERY_READ_TOOLS, testEndpoint } from "./lib/discovery-client.js";
@@ -2821,11 +2822,11 @@ app.post("/chat", requireAuth, async (req, res) => {
     });
 
     // Save user message
-    await db.insert(messages).values({
+    await db.insert(messages).values(stripNul({
       sessionId: currentSessionId,
       role: "user",
       content: message.trim(),
-    });
+    }));
 
     // Shared state for both providers
     let fullResponse = "";
@@ -4345,7 +4346,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     const persistBlocks = (!isGeminiChat && lastContentBlocks.length > 0)
       ? stripToolUseBlocks(lastContentBlocks as Anthropic.ContentBlockParam[])
       : [];
-    await db.insert(messages).values({
+    await db.insert(messages).values(stripNul({
       sessionId: currentSessionId,
       role: "assistant",
       content: cleanedResponse,
@@ -4355,7 +4356,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       choices: turnUi.choices,
       openPages: openedPages.length > 0 ? openedPages : null,
       tokenCount: totalPromptTokens + totalOutputTokens || null,
-    });
+    }));
 
     sendSSE(res, buildContextUsageEvent({
       inputTokens: totalPromptTokens,
@@ -4390,11 +4391,11 @@ app.post("/chat", requireAuth, async (req, res) => {
         const text = (before.trim() ? "\n\n" : "") + OUT_OF_CREDITS_MESSAGE;
         sendSSE(res, { type: "token", content: text });
         sendSSE(res, { type: "credits_required", message: OUT_OF_CREDITS_MESSAGE, action: "add_credits", label: OUT_OF_CREDITS_ACTION_LABEL });
-        await db.insert(messages).values({
+        await db.insert(messages).values(stripNul({
           sessionId: creditsTurn.sessionId,
           role: "assistant",
           content: (before + text).trim(),
-        });
+        }));
         if (runId) {
           traceEvent(runId, "out-of-credits", { orgId, userId }, workflowTracking, { data: { provider: chatProvider } });
         }
