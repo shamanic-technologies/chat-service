@@ -200,8 +200,8 @@ describe("list_campaigns: a small page, compact rows (owner rule: no result abov
 
   it("calls campaign-service with filters and a limit, and cuts each row", async () => {
     fetchMock().mockResolvedValue(res(200, { campaigns: [fullRow(1)], hasMore: true }));
-    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
-    const out = (await FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ brandId: "b", status: "ongoing" }, p)) as {
+    const { listCampaignsCompact } = await funnel();
+    const out = (await listCampaignsCompact({ brandId: "b", status: "ongoing" }, p)) as {
       campaigns: Record<string, unknown>[];
       hasMore: boolean;
       note?: string;
@@ -216,15 +216,65 @@ describe("list_campaigns: a small page, compact rows (owner rule: no result abov
 
   it("a full page of the largest real rows stays under ~2k tokens", async () => {
     fetchMock().mockResolvedValue(res(200, { campaigns: Array.from({ length: 15 }, (_, i) => fullRow(i)), hasMore: true }));
-    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
-    const out = await FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ brandId: "b", limit: 15 }, p);
+    const { listCampaignsCompact } = await funnel();
+    const out = await listCampaignsCompact({ brandId: "b", limit: 15 }, p);
     expect(JSON.stringify(out).length).toBeLessThan(8000);
   });
 
   it("refuses a status the column does not store and a page over 15, before any call", async () => {
+    const { listCampaignsCompact } = await funnel();
+    await expect(listCampaignsCompact({ status: "active" }, p)).rejects.toThrow(/ongoing, stopped/);
+    await expect(listCampaignsCompact({ limit: 50 }, p)).rejects.toThrow(/1 to 15/);
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+});
+
+describe("a campaign IS a sales funnel campaign (owner rule; prod 2026-10-10 NOVEMIQ: '6 campaigns' vs 3)", () => {
+  const staff = { isStaff: async () => true };
+  const customer = { isStaff: async () => false };
+  const camp = (id: string, name: string, funnelId: string, units: number) => ({
+    id, brandId: "b", offerId: "o", salesFunnelId: funnelId, salesFunnelName: name, status: "ongoing", stopReason: null,
+    units: Array.from({ length: units }, (_, i) => ({ campaignId: `${id}-u${i}`, featureSlug: `ch${i}`, legKey: `leg${i}`, status: "ongoing", name: "Bliss 7fcf - sales-cold-email-outreach - long unit name" })),
+  });
+  const capsOf: Record<string, unknown> = {
+    bliss: { salesFunnelType: "proactive", volumeUnit: "first_contacts", maxBudget: { amountCents: "1000.0000000000", period: "daily", consumedCents: "1006.05", reached: true }, maxVolume: null },
+    motivate: { salesFunnelType: "reactive", volumeUnit: "prospects_handled", maxBudget: { amountCents: "100.0000000000", period: "daily", consumedCents: "0", reached: false }, maxVolume: null },
+    moving: { salesFunnelType: "reactive", volumeUnit: "prospects_handled", maxBudget: null, maxVolume: null },
+  };
+
+  it("lists 3 campaigns with their budgets in the owner's words, steps nested and never counted", async () => {
+    fetchMock().mockImplementation(async (url: string) => {
+      if (url.includes("/sales-funnel-campaigns")) return res(200, { salesFunnelCampaigns: [camp("c1", "Bliss", "bliss", 4), camp("c2", "Motivate", "motivate", 1), camp("c3", "Moving", "moving", 1)] });
+      const f = decodeURIComponent(url.split("/sales-funnels/")[1].split("/caps")[0]);
+      return res(200, capsOf[f]);
+    });
     const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
-    await expect(FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ status: "active" }, p)).rejects.toThrow(/ongoing, stopped/);
-    await expect(FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ limit: 50 }, p)).rejects.toThrow(/1 to 15/);
+    const out = (await FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ brandId: "b", status: "ongoing" }, p, customer)) as { campaignCount: number; campaigns: Array<Record<string, any>>; note: string };
+    expect(out.campaignCount).toBe(3);
+    expect(out.campaigns.map((c) => [c.name, c.type, c.budget])).toEqual([
+      ["Bliss", "proactive", "Max $10/day"],
+      ["Motivate", "reactive", "Up to $1/day"],
+      ["Moving", "reactive", "Not funded (no max budget)"],
+    ]);
+    expect(out.campaigns[0].spent).toBe("$10.06 spent today (cap reached: no new first touches until the next period)");
+    expect(out.campaigns[0].steps).toHaveLength(4);
+    expect(JSON.stringify(out)).not.toContain("long unit name");
+    expect(out.note).toMatch(/never campaigns/);
+  });
+
+  it("the per-step unit detail is staff only", async () => {
+    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
+    await expect(FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ staffUnits: true }, p, customer)).rejects.toThrow(/staff only/);
+    fetchMock().mockResolvedValue(res(200, { campaigns: [], hasMore: false }));
+    await FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ staffUnits: true, brandId: "b" }, p, staff);
+    expect(call(0).url).toBe("http://campaign.test/campaigns?brandId=b&limit=10");
+  });
+
+  it("get_funnel_caps refuses a campaign id passed as the funnel id (prod: read 'no caps')", async () => {
+    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
+    await expect(
+      FUNNEL_CAMPAIGN_TOOLS.get_funnel_caps({ brandId: "b", offerId: "o", salesFunnelId: "7fcf42ab-fe7a-46a5-9375-90fbdd260f18" }, p, customer),
+    ).rejects.toThrow(/not a campaign id/);
     expect(fetchMock()).not.toHaveBeenCalled();
   });
 });

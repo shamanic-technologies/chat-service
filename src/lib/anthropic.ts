@@ -2039,17 +2039,15 @@ export const LAUNCH_CAMPAIGN_TOOL: Anthropic.Tool = {
 export const LIST_CAMPAIGNS_TOOL: Anthropic.Tool = {
   name: "list_campaigns",
   description:
-    "List the org's campaigns, newest first, a SMALL page (default 10, max 15): id, name, status (ongoing | stopped), stopReason, offerId, featureSlug (channel), legKey, salesFunnelCampaignId (set when it is a step of a funnel campaign), createdAt. hasMore = more exist: narrow with filters, never page through everything. Read-only. Use it to find a campaign's id before stopping it, or to report what runs (status ongoing).",
+    "THE account's campaigns, as the Campaigns page shows them. A campaign IS a sales funnel campaign: name, type (proactive | reactive), status, budget in words ('Max $10/day', 'Up to $1/day', 'Not funded (no max budget)'), volume, what it spent this period, and its steps (sources, cold email, AI booking...). " +
+    "Use it for ANY question about campaigns, what runs, or each campaign's budget. Count and name only campaigns, never their steps (a step is part of a campaign, not a campaign). Quote budget and spent as written. Read-only.",
   input_schema: {
     type: "object" as const,
     properties: {
       brandId: { type: "string", description: "Filter to this brand's campaigns." },
       status: { type: "string", enum: ["ongoing", "stopped"], description: "Omit for both." },
       offerId: { type: "string" },
-      featureSlug: { type: "string", description: "The channel's slug." },
-      legKey: { type: "string" },
-      salesFunnelCampaignId: { type: "string", description: "The steps of one funnel campaign." },
-      limit: { type: "integer", description: "1 to 15, default 10." },
+      staffUnits: { type: "boolean", description: "STAFF ONLY: the per-step unit detail instead (never for a customer)." },
     },
   },
 };
@@ -2295,7 +2293,7 @@ export const GET_OFFER_SOURCING_TOOL: Anthropic.Tool = {
 
 export const GET_CAMPAIGN_BUDGETS_TOOL: Anthropic.Tool = {
   name: "get_campaign_budgets",
-  description: "Read the daily budget cap set for each (channel x leg) campaign of an offer. Read-only.",
+  description: "RETIRED for answers: the old per-step ceilings. A campaign's budget is its funnel caps: list_campaigns. Read-only.",
   input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
 };
 
@@ -2375,7 +2373,7 @@ const CAP_PERIOD_PROP = { type: "string", enum: ["one_off", "daily", "weekly", "
 
 export const LIST_FUNNEL_CAMPAIGNS_TOOL: Anthropic.Tool = {
   name: "list_funnel_campaigns",
-  description: "The account's funnel campaigns (brand x offer x sales funnel), each with status and its units. Filter by brandId, offerId, salesFunnelId, status (ongoing | stopped). Read-only.",
+  description: "Same as list_campaigns: the account's campaigns (each a sales funnel campaign) with budget, volume, spent and steps. Read-only.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -2389,7 +2387,7 @@ export const LIST_FUNNEL_CAMPAIGNS_TOOL: Anthropic.Tool = {
 
 export const GET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
   name: "get_funnel_caps",
-  description: "A funnel's max budget and max volume, what this period consumed, and reached (true = it holds new first touches). Quote it as is. Read-only.",
+  description: "One funnel's raw caps (max budget, max volume, consumed, reached). salesFunnelId is the FUNNEL id from list_campaigns, never a campaign id. For 'the budget of each campaign', list_campaigns already says it in words. Read-only.",
   input_schema: { type: "object" as const, properties: FUNNEL_TARGET_PROPS, required: ["brandId", "offerId", "salesFunnelId"] },
 };
 

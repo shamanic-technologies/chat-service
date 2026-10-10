@@ -109,6 +109,7 @@ export async function listFunnelCampaigns(a: Record<string, unknown>, p: ApiCall
 
 /** GET billing caps: max budget / max volume and what this period consumed (`reached` = the stop verdict). */
 export async function getFunnelCaps(a: Record<string, unknown>, p: ApiCallParams) {
+  assertFunnelId(a.salesFunnelId);
   return call("billing", "get_funnel_caps", "GET", capsPath(a), p);
 }
 
@@ -252,9 +253,124 @@ export async function listCampaignsCompact(a: Record<string, unknown>, p: ApiCal
   };
 }
 
-export const FUNNEL_CAMPAIGN_TOOLS: Record<string, (a: Record<string, unknown>, p: ApiCallParams) => Promise<unknown>> = {
-  list_campaigns: listCampaignsCompact,
-  list_funnel_campaigns: listFunnelCampaigns,
+// --- The account's campaigns, as the customer sees them -------------------------
+
+/**
+ * A campaign IS a sales funnel campaign (owner rule). Its units (one per step:
+ * a source, cold email, AI booking) are nested as `steps` and are never
+ * counted or named as campaigns (prod 2026-10-10: the Copilot told NOVEMIQ
+ * "6 campaigns" where the Campaigns page shows 3). Each campaign carries its
+ * caps from billing in the owner's words: proactive "Max $10/day", reactive
+ * "Up to $1/day", none "Not funded (no max budget)", and what this period
+ * spent. Pure formatting of served figures, nothing computed.
+ */
+interface FunnelCampaignRow {
+  id: string;
+  offerId: string;
+  salesFunnelId: string;
+  salesFunnelName?: string | null;
+  status: string;
+  stopReason?: string | null;
+  units?: Array<{ featureSlug?: string; legKey?: string; status?: string; pipeId?: string }>;
+}
+
+interface CapsBody {
+  salesFunnelType?: "proactive" | "reactive" | null;
+  volumeUnit?: string | null;
+  maxBudget?: { amountCents: string | number; period: string; consumedCents?: string | number | null; reached?: boolean; consumedUnavailableReason?: string | null } | null;
+  maxVolume?: { count: string | number; period: string; consumed?: string | number | null; reached?: boolean } | null;
+}
+
+const PER: Record<string, string> = { daily: "/day", weekly: "/week", monthly: "/month", one_off: " one-off" };
+const SPENT_WHEN: Record<string, string> = { daily: "today", weekly: "this week", monthly: "this month", one_off: "so far" };
+
+const usd = (cents: string | number): string => {
+  const v = Number(cents) / 100;
+  return `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
+};
+
+/** "Max $10/day" (proactive), "Up to $1/day" (reactive), or not funded. */
+export function budgetWords(type: "proactive" | "reactive" | null | undefined, maxBudget: CapsBody["maxBudget"]): string {
+  if (!maxBudget) return "Not funded (no max budget)";
+  return `${type === "reactive" ? "Up to" : "Max"} ${usd(maxBudget.amountCents)}${PER[maxBudget.period] ?? ` per ${maxBudget.period}`}`;
+}
+
+export function volumeWords(type: "proactive" | "reactive" | null | undefined, maxVolume: CapsBody["maxVolume"], unit: string | null | undefined): string | null {
+  if (!maxVolume) return null;
+  const what = unit === "prospects_handled" ? "prospects handled" : "first contacts";
+  return `${type === "reactive" ? "Up to" : "Max"} ${Number(maxVolume.count)} ${what}${PER[maxVolume.period] ?? ` per ${maxVolume.period}`}`;
+}
+
+export function spentWords(maxBudget: CapsBody["maxBudget"]): string | null {
+  if (!maxBudget) return null;
+  if (maxBudget.consumedCents === null || maxBudget.consumedCents === undefined) {
+    return `spend not measurable right now (${maxBudget.consumedUnavailableReason ?? "unknown reason"})`;
+  }
+  return `${usd(maxBudget.consumedCents)} spent ${SPENT_WHEN[maxBudget.period] ?? "this period"}${maxBudget.reached ? " (cap reached: no new first touches until the next period)" : ""}`;
+}
+
+export async function listAccountCampaigns(a: Record<string, unknown>, p: ApiCallParams) {
+  const status = opt(a.status);
+  if (status !== null && !(CAMPAIGN_STATUSES as readonly string[]).includes(status)) {
+    throw new Error(`[funnel-campaigns] status must be one of ${CAMPAIGN_STATUSES.join(", ")} (omit it for both)`);
+  }
+  const q = Object.entries({ brandId: opt(a.brandId), offerId: opt(a.offerId), status })
+    .filter(([, v]) => v !== null)
+    .map(([k, v]) => `${k}=${enc(v as string)}`)
+    .join("&");
+  const body = (await call("campaign", "list_campaigns", "GET", `/sales-funnel-campaigns${q ? `?${q}` : ""}`, p)) as {
+    salesFunnelCampaigns?: FunnelCampaignRow[];
+  };
+  if (!Array.isArray(body.salesFunnelCampaigns)) throw new Error("[funnel-campaigns] campaign-service answered without salesFunnelCampaigns");
+  const campaigns = await Promise.all(
+    body.salesFunnelCampaigns.map(async (c) => {
+      const brandId = opt(a.brandId) ?? (c as unknown as { brandId?: string }).brandId ?? "";
+      const caps = (await getFunnelCaps({ brandId, offerId: c.offerId, salesFunnelId: c.salesFunnelId }, p)) as CapsBody;
+      return {
+        id: c.id,
+        name: c.salesFunnelName ?? c.salesFunnelId,
+        type: caps.salesFunnelType ?? null,
+        status: c.status,
+        stopReason: c.stopReason ?? null,
+        budget: budgetWords(caps.salesFunnelType, caps.maxBudget ?? null),
+        volume: volumeWords(caps.salesFunnelType, caps.maxVolume ?? null, caps.volumeUnit),
+        spent: spentWords(caps.maxBudget ?? null),
+        offerId: c.offerId,
+        salesFunnelId: c.salesFunnelId,
+        // The funnel's steps: parts of THIS campaign, never campaigns of their own.
+        steps: (c.units ?? []).map((u) => ({ channel: u.featureSlug ?? null, leg: u.legKey ?? null, status: u.status ?? null })),
+      };
+    }),
+  );
+  return {
+    campaignCount: campaigns.length,
+    campaigns,
+    note: "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+  };
+}
+
+/** STAFF ONLY detail: every unit (one per step) of every campaign, compact. */
+export async function listCampaignUnits(a: Record<string, unknown>, p: ApiCallParams, reader: CampaignReader) {
+  if (!(await reader.isStaff())) {
+    throw new Error("[funnel-campaigns] the unit detail is staff only: a customer's campaigns are list_campaigns (funnel campaigns).");
+  }
+  return listCampaignsCompact(a, p);
+}
+
+export interface CampaignReader {
+  isStaff: () => Promise<boolean>;
+}
+
+/** get_funnel_caps takes the FUNNEL id, never a campaign id (prod: the model passed one and read "no caps"). */
+function assertFunnelId(v: unknown): void {
+  if (typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim())) {
+    throw new Error("[funnel-campaigns] salesFunnelId is the funnel's id (e.g. lead_found_to_conversation@...), not a campaign id: read it from list_campaigns (salesFunnelId).");
+  }
+}
+
+export const FUNNEL_CAMPAIGN_TOOLS: Record<string, (a: Record<string, unknown>, p: ApiCallParams, reader: CampaignReader) => Promise<unknown>> = {
+  list_campaigns: (a, p, reader) => (a.staffUnits === true ? listCampaignUnits(a, p, reader) : listAccountCampaigns(a, p)),
+  list_funnel_campaigns: (a, p) => listAccountCampaigns(a, p),
   get_funnel_caps: getFunnelCaps,
   set_funnel_caps: setFunnelCaps,
   create_funnel_campaign: createFunnelCampaign,

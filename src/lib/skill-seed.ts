@@ -296,13 +296,14 @@ Ask the user both with present_choices (2 or 3 sensible amounts, and "another am
 Never launch without the user's explicit yes, even if they asked to "just do it".
 
 ## Read and adjust
-- list_funnel_campaigns(brandId, status?): campaigns with status and units.
-- get_funnel_caps: caps, what this period consumed, reached (true = no new first touches until the next period).
+- list_campaigns(brandId, status?): THE campaigns (each a sales funnel campaign) with type, status, budget in words ("Max $10/day", "Up to $1/day", "Not funded"), volume, spent this period, and steps. Answer "how many campaigns", "what do they do" and "the budget of each" from it. Count and name only campaigns: a step (a source, cold email, AI booking) is part of a campaign, never a campaign.
+- list_funnel_campaigns: the same read as list_campaigns.
+- get_funnel_caps(salesFunnelId from list_campaigns, never a campaign id): one funnel's raw caps.
 - set_funnel_caps: change a cap (starts nothing).
 - stop_funnel_campaign: stops new first touches now; follow-ups still go out. Safe; say what stopped.
 
 ## Older campaigns
-Pre-funnel campaigns (one leg x channel) still run: list_campaigns(brandId, status ongoing), get_campaign, stop_campaign. Do not start new ones that way.
+Older per-step campaigns are steps of funnel campaigns now: never list, count or start them as campaigns.
 - Every start is refused while the org's payment is on hold: say so and point to billing.
 - Never use launch_campaign.
 `),
@@ -363,10 +364,11 @@ Owner: billing-service. Amounts are in cents where the field says so.
 
 ## Read
 - get_billing_account: balance, credits, usage, payment mode.
-- get_daily_budget(brandId), get_campaign_budgets(brandId, offerId), get_brand_pause(brandId).
+- get_daily_budget(brandId), get_brand_pause(brandId).
+- Each campaign's budget: list_campaigns (its funnel caps, in words). Never the old per-step ceilings.
 
 ## Write
-- set_campaign_budget: one campaign's daily cap (starts nothing).
+- set_funnel_caps: one campaign's max budget and max volume (starts nothing).
 - set_daily_budget(brandId): the brand's daily ceiling (0 pauses spend). Confirm the amount first.
 - set_brand_pause: pause or resume the whole brand. Resuming starts spend again: get a yes first.
 
