@@ -41,13 +41,24 @@ export function assertNotMixed(funnelId: string, pipes: readonly PipeModeLite[])
   if (proactive.length > 0 && reactive.length > 0) throw new MixedFunnelError(funnelId, proactive, reactive);
 }
 
-/** Reads the funnel (features-service detail) and refuses a mixed one. */
-export async function assertFunnelNotMixed(salesFunnelId: string): Promise<void> {
+/**
+ * Reads the funnel (features-service detail) and refuses a mixed one. The
+ * funnel's kind is features-service's served `type` (proactive when any pipe
+ * is proactive), never re-derived here; a funnel of `type` proactive that
+ * still carries a reactive pipe is the mix this rule forbids.
+ */
+export async function assertFunnelNotMixed(salesFunnelId: string): Promise<"proactive" | "reactive"> {
   const funnel = (await features(
     "funnel_mix:read_funnel",
     "GET",
     `/internal/catalogue/sales-funnels/${encodeURIComponent(salesFunnelId)}`,
-  )) as { legs?: Array<{ pipe: PipeModeLite | null }> };
+  )) as { type?: unknown; legs?: Array<{ pipe: PipeModeLite | null }> };
+  if (funnel.type !== "proactive" && funnel.type !== "reactive") {
+    throw new Error(`[funnel] features-service served ${salesFunnelId} without its type (proactive | reactive)`);
+  }
   if (!Array.isArray(funnel.legs)) throw new Error(`[funnel] features-service served ${salesFunnelId} without legs`);
-  assertNotMixed(salesFunnelId, funnel.legs.flatMap((l) => (l.pipe ? [l.pipe] : [])));
+  const pipes = funnel.legs.flatMap((l) => (l.pipe ? [l.pipe] : []));
+  const offType = pipes.filter((p) => p.mode !== undefined && p.mode !== funnel.type);
+  if (offType.length > 0) assertNotMixed(salesFunnelId, pipes);
+  return funnel.type;
 }

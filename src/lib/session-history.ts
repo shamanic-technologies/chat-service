@@ -5,7 +5,7 @@
 // reasoning/thinking blocks. This reads data already persisted by POST /chat —
 // it introduces no new storage.
 
-import type { Session, Message } from "../db/schema.js";
+import type { Session, Message, CreditsRequiredRecord } from "../db/schema.js";
 import type { ChoicesRecord, OpenPageRecord } from "../schemas.js";
 
 /**
@@ -40,6 +40,8 @@ export interface SessionHistoryMessage {
   choices: ChoicesRecord | null;
   /** Pages opened in the side panel on this turn, in order (open_page). Null when none. */
   openPages: OpenPageRecord[] | null;
+  /** Out of credits on this turn: the "Add credits" action (credits_required). Null otherwise. */
+  creditsRequired: CreditsRequiredRecord | null;
   tokenCount: number | null;
   createdAt: string;
 }
@@ -94,6 +96,7 @@ export function serializeSessionHistory(
       buttons: m.buttons ?? null,
       choices: m.choices ?? null,
       openPages: m.openPages ?? null,
+      creditsRequired: m.creditsRequired ?? null,
       tokenCount: m.tokenCount ?? null,
       createdAt: m.createdAt.toISOString(),
     })),

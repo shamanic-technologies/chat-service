@@ -4390,11 +4390,14 @@ app.post("/chat", requireAuth, async (req, res) => {
         const before = creditsTurn.text();
         const text = (before.trim() ? "\n\n" : "") + OUT_OF_CREDITS_MESSAGE;
         sendSSE(res, { type: "token", content: text });
-        sendSSE(res, { type: "credits_required", message: OUT_OF_CREDITS_MESSAGE, action: "add_credits", label: OUT_OF_CREDITS_ACTION_LABEL });
+        const creditsRequired = { message: OUT_OF_CREDITS_MESSAGE, action: "add_credits" as const, label: OUT_OF_CREDITS_ACTION_LABEL };
+        sendSSE(res, { type: "credits_required", ...creditsRequired });
         await db.insert(messages).values(stripNul({
           sessionId: creditsTurn.sessionId,
           role: "assistant",
           content: (before + text).trim(),
+          // Stored so a reload draws the "Add credits" button again.
+          creditsRequired,
         }));
         if (runId) {
           traceEvent(runId, "out-of-credits", { orgId, userId }, workflowTracking, { data: { provider: chatProvider } });

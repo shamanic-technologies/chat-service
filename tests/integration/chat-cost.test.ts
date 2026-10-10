@@ -22,6 +22,8 @@ let fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
 const sessionId = "00000000-0000-4000-8000-000000000001";
 const runId = "00000000-0000-4000-8000-000000000002";
 
+const { inserted } = vi.hoisted(() => ({ inserted: [] as Array<Record<string, unknown>> }));
+
 vi.mock("../../src/db/index.js", () => {
   const appConfig = {
     id: "cfg-1",
@@ -44,9 +46,12 @@ vi.mock("../../src/db/index.js", () => {
         })),
       })),
       insert: vi.fn(() => ({
-        values: vi.fn(() => ({
-          returning: vi.fn(() => Promise.resolve([{ id: sessionId }])),
-        })),
+        values: vi.fn((v: Record<string, unknown>) => {
+          inserted.push(v);
+          const p = Promise.resolve() as Promise<void> & { returning: () => Promise<Array<{ id: string }>> };
+          p.returning = () => Promise.resolve([{ id: sessionId }]);
+          return p;
+        }),
       })),
       update: vi.fn(() => ({
         set: vi.fn(() => ({
@@ -349,5 +354,9 @@ describe("POST /chat — provider-call credit gates", () => {
       action: "add_credits",
       label: "Add credits",
     });
+    // Stored with the turn, so a reload draws the button again.
+    const assistant = [...inserted].reverse().find((v) => v.role === "assistant")!;
+    expect(assistant.content).toBe("You're out of credits. Add credits to keep going.");
+    expect(assistant.creditsRequired).toEqual({ message: "You're out of credits. Add credits to keep going.", action: "add_credits", label: "Add credits" });
   });
 });

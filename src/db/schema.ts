@@ -43,6 +43,8 @@ export const messages = pgTable("messages", {
   // assistant emitted on this turn, so a reload re-renders them (migration 0017).
   choices: jsonb("choices").$type<ChoicesRecord>(),
   openPages: jsonb("open_pages").$type<OpenPageRecord[]>(),
+  // The out-of-credits action of this turn (credits_required, migration 0020).
+  creditsRequired: jsonb("credits_required").$type<CreditsRequiredRecord>(),
   tokenCount: integer("token_count"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -189,6 +191,13 @@ export const staffRequests = pgTable(
 
 /** bug / feature: code is broken or missing; skill_upgrade: a skill or a service doc is wrong or thin; contact_human: the user wants a person. */
 export type StaffRequestKind = "bug" | "feature" | "skill_upgrade" | "contact_human";
+
+/** The "Add credits" action stored on an out-of-credits assistant turn. */
+export interface CreditsRequiredRecord {
+  message: string;
+  action: "add_credits";
+  label: string;
+}
 
 export interface StaffRequestPiece {
   piece: string;
