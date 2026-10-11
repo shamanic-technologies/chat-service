@@ -1110,7 +1110,8 @@ export const ChatRequestSchema = z
         "UUID of an existing session to continue. Omit or pass null to start a new conversation. " +
         "When omitted, the service creates a new session and returns its ID in the first SSE event " +
         '({"sessionId":"<uuid>"}). Use that ID in subsequent requests to continue the conversation. ' +
-        "If a sessionId is provided but does not exist or belongs to a different org, the stream " +
+        "If a sessionId is provided but does not exist or belongs to another user (another org, or a teammate " +
+        "in the same org: a session is private to the user who opened it), the stream " +
         'returns a "Session not found." error and closes.',
       example: "550e8400-e29b-41d4-a716-446655440000",
     }),
@@ -1405,7 +1406,7 @@ const SSEErrorEventSchema = z
           "`rate_limited` — too many requests (respect retry-after). " +
           "`model_error` — transient upstream error. " +
           "`internal_error` — unexpected server error. " +
-          "`session_not_found` — the supplied sessionId does not exist or belongs to a different org.",
+          "`session_not_found` — the supplied sessionId does not exist or belongs to another user.",
         example: "model_overloaded",
       }),
     message: z.string().openapi({
@@ -1647,9 +1648,9 @@ registry.registerPath({
     "rebuild the chat panel exactly as the user last saw it — e.g. after a page refresh. Read-only over the " +
     "same `sessions`/`messages` tables POST /chat writes; it creates no state and does not change session " +
     "lifecycle.\n\n" +
-    "**Org-scoped.** The session must belong to the caller's org (`x-org-id`). An unknown sessionId, or one " +
-    "belonging to a different org, returns 404 with the same message the POST /chat stream emits for " +
-    "`session_not_found` (existence is not leaked across orgs).\n\n" +
+    "**Private to its user.** The session must belong to the caller's org (`x-org-id`) AND user (`x-user-id`). " +
+    "An unknown sessionId, or one belonging to another org or to a teammate in the same org, returns 404 with " +
+    "the same message the POST /chat stream emits for `session_not_found` (existence is not leaked).\n\n" +
     "Each message carries its `role`, plain-text `content`, optional provider `contentBlocks` (including " +
     "`thinking` reasoning blocks), and any `toolCalls` (tool name + input `args` + `result`).",
   request: {
@@ -1676,7 +1677,7 @@ registry.registerPath({
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     404: {
-      description: "Session does not exist or belongs to a different org",
+      description: "Session does not exist or belongs to another user",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },

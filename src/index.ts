@@ -288,7 +288,7 @@ import {
   type AnthropicCostLine,
 } from "./lib/anthropic-usage.js";
 import { buildToolResultFallback } from "./lib/tool-fallback.js";
-import { SESSION_NOT_FOUND_EVENT, SESSION_NOT_FOUND_MESSAGE } from "./lib/session-errors.js";
+import { SESSION_NOT_FOUND_EVENT, SESSION_NOT_FOUND_MESSAGE, isSessionOwner } from "./lib/session-errors.js";
 import { serializeSessionHistory } from "./lib/session-history.js";
 import { buildContextUsageEvent } from "./lib/context-usage.js";
 
@@ -2513,8 +2513,8 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
 
 // Read-only playback of a session's stored conversation. Lets a client that
 // holds a valid sessionId (e.g. the dashboard "Edit with AI" panel after a page
-// refresh) rebuild the visible history it lost. Org-scoped exactly like the
-// POST /chat session-continue check; no run tracking, no cost, no writes.
+// refresh) rebuild the visible history it lost. Org + user scoped exactly like
+// the POST /chat session-continue check; no run tracking, no cost, no writes.
 // The caller's most recently active session for one config key (org + user
 // scoped), with its history — so a client shows the same conversation on any
 // device. Registered BEFORE /sessions/:sessionId so "latest" is not read as an id.
@@ -2555,7 +2555,7 @@ app.get("/sessions/latest", requireAuth, async (req, res) => {
 });
 
 app.get("/sessions/:sessionId", requireAuth, async (req, res) => {
-  const { orgId } = res.locals as AuthLocals;
+  const { orgId, userId } = res.locals as AuthLocals;
 
   const parsed = GetSessionParamsSchema.safeParse(req.params);
   if (!parsed.success) {
@@ -2570,9 +2570,9 @@ app.get("/sessions/:sessionId", requireAuth, async (req, res) => {
     .from(sessions)
     .where(eq(sessions.id, sessionId));
 
-  // Mirror POST /chat: an unknown session OR one owned by another org is a 404
-  // with the same message — existence is not leaked across orgs.
-  if (!session || session.orgId !== orgId) {
+  // Mirror POST /chat: an unknown session OR one owned by another org or another
+  // user of the same org is a 404 with the same message — existence never leaks.
+  if (!session || !isSessionOwner(session, { orgId, userId })) {
     return res.status(404).json({ error: SESSION_NOT_FOUND_MESSAGE });
   }
 
@@ -2736,7 +2736,9 @@ app.post("/chat", requireAuth, async (req, res) => {
         .select()
         .from(sessions)
         .where(eq(sessions.id, currentSessionId));
-      if (!existing || existing.orgId !== orgId) {
+      // Private to its user: another org OR a teammate in the same org gets the
+      // same not-found as an unknown id, and nothing is written to the session.
+      if (!existing || !isSessionOwner(existing, { orgId, userId })) {
         sendSSE(res, SESSION_NOT_FOUND_EVENT);
         sendSSE(res, "[DONE]");
         res.end();

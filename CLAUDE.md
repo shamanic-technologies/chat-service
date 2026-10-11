@@ -274,6 +274,10 @@ A tool-call failure must reach the model as a **parsed, structured** `{error, to
 
 Postgres refuses NUL in text and jsonb; one tool result carrying it (a mailbox body) failed the whole assistant save AFTER the answer streamed ("An unexpected error occurred"). `tests/unit/strip-nul.test.ts` pins every `db.insert(messages).values(` call site.
 
+## A chat session is private to its user (owner 2026-10-11)
+
+Every user-scoped path touching a session BY ID (`GET /sessions/:id`, `POST /chat` continue) asks `isSessionOwner` (`session-errors.ts`): org AND user, a miss is the same not-found as an unknown id. Legacy rows with NULL `user_id` (22, all before 2026-02-04) are nobody's. Never relax it to org-only "for teammates".
+
 ## Out of credits is an answer, not an error (owner 2026-10-10)
 
 When billing refuses a `/chat` turn (`ChatCostGateError` 402, the affordability check BEFORE every model call), the catch streams `OUT_OF_CREDITS_MESSAGE` as a token + a `credits_required` event (`action: add_credits`), stores it as the assistant turn and closes the run completed; the action is stored on the message (`credits_required` column, migration 0020) and served in session history as `creditsRequired`, so a reload draws the button. No model call, no error event. Do not route it back through `classifyErrorForClient`.

@@ -133,6 +133,27 @@ describe("GET /sessions/:sessionId", () => {
     expect(res.body.error).toMatch(/Session not found/);
   });
 
+  it("returns the same 404 as an unknown id for a teammate's session in the same org", async () => {
+    const app = await loadApp();
+    sessionRow = null;
+    const unknown = await request(app).get(`/sessions/${SESSION_ID}`).set(AUTH);
+
+    sessionRow = makeSession({ userId: "user-2" });
+    const res = await request(app).get(`/sessions/${SESSION_ID}`).set(AUTH);
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual(unknown.body);
+  });
+
+  it("returns 404 for a legacy session with no recorded user", async () => {
+    sessionRow = makeSession({ userId: null });
+    const app = await loadApp();
+
+    const res = await request(app).get(`/sessions/${SESSION_ID}`).set(AUTH);
+
+    expect(res.status).toBe(404);
+  });
+
   it("returns 400 when sessionId is not a UUID", async () => {
     const app = await loadApp();
 
