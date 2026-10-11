@@ -1072,7 +1072,7 @@ Request body:
 
 - `configKey` (required) — which config to use (must match a key from `PUT /config` or `PUT /platform-config`)
 - `message` (required) — the user's chat message
-- `sessionId` (optional, nullable) — UUID of an existing session to continue. **Omit or pass `null` to start a new conversation** — the service creates the session and returns its ID in the first SSE event (`{"sessionId":"<uuid>"}`). Store that ID and pass it in subsequent requests. If a provided `sessionId` does not exist or belongs to a different org, the stream emits an SSE error event `{"type":"error","code":"session_not_found",...}` followed by `[DONE]` and closes. **Do not generate your own UUID** — always use the one returned by the service. Sessions are scoped by `orgId` only — every user inside the same org can resume any session for that org. Different-user-same-org continuation is intentional; if you need per-user isolation, segregate at the caller layer.
+- `sessionId` (optional, nullable) — UUID of an existing session to continue. **Omit or pass `null` to start a new conversation** — the service creates the session and returns its ID in the first SSE event (`{"sessionId":"<uuid>"}`). Store that ID and pass it in subsequent requests. If a provided `sessionId` does not exist or belongs to another user (another org, or a teammate in the same org), the stream emits an SSE error event `{"type":"error","code":"session_not_found",...}` followed by `[DONE]` and closes. **Do not generate your own UUID** — always use the one returned by the service. **Sessions are private to the user who opened them** (`orgId` + `userId`): a teammate in the same org gets the same `session_not_found` as an unknown id and nothing is written to the session. Legacy sessions with no recorded user are readable by nobody.
 - `context` (optional) — free-form JSON provided by the **frontend** (not user-editable). Injected into the system prompt for this request only (not stored). **Re-send on every message** — the service does not cache it. After a fork (e.g. workflow updated → new workflow created), update the context with the new IDs. Capped at **50KB** when serialized to JSON; oversized payloads return `400 {"error":"Invalid request"}`.
 
 The response is a stream of SSE events in this order:
@@ -1419,7 +1419,7 @@ data: {"type":"error","code":"model_overloaded","message":"Claude is temporarily
 | `rate_limited` | Too many requests | Show message + auto-retry after delay |
 | `model_error` | Transient upstream error (empty response, 5xx) | Show message + "Retry" button |
 | `internal_error` | Unexpected server error | Show message |
-| `session_not_found` | Provided `sessionId` does not exist or belongs to a different org | Drop the cached `sessionId` and retry with `sessionId: null` to start a new session |
+| `session_not_found` | Provided `sessionId` does not exist or belongs to another user (another org, or a teammate in the same org) | Drop the cached `sessionId` and retry with `sessionId: null` to start a new session |
 
 The frontend should display the `message` to the user and use `code` to decide whether to offer a retry action. An `error` event is always followed by `[DONE]`.
 
@@ -1445,9 +1445,9 @@ data: "[DONE]"
 
 `GET /sessions/{sessionId}` returns the full ordered conversation for a session so a client holding its `sessionId` can rebuild the chat panel exactly as the user last saw it — e.g. after a dashboard page refresh, where the client kept only the `sessionId`. It is **read-only** over the same `sessions`/`messages` tables `POST /chat` writes: no new storage, no run tracking, no cost, and no change to session lifecycle.
 
-Headers: `x-api-key`, `x-org-id`, `x-user-id`, `x-run-id` (same auth as `POST /chat`). **Org-scoped** — the session must belong to the caller's `x-org-id`.
+Headers: `x-api-key`, `x-org-id`, `x-user-id`, `x-run-id` (same auth as `POST /chat`). **Private to its user** — the session must belong to the caller's `x-org-id` AND `x-user-id`.
 
-- **404** — an unknown `sessionId`, or one owned by a different org, returns `{"error":"Session not found. …"}` (the same message the `POST /chat` stream emits for `session_not_found`; existence is not leaked across orgs).
+- **404** — an unknown `sessionId`, or one owned by another org or by a teammate in the same org, returns `{"error":"Session not found. …"}` (the same message the `POST /chat` stream emits for `session_not_found`; existence is not leaked).
 - **400** — `sessionId` is not a valid UUID.
 
 `GET /sessions/latest?configKey=<key>` returns the caller's (`x-org-id` + `x-user-id`) most recently active session for that config key, same body — so a client shows the same conversation on any device without storing a sessionId. 404 when the user has none (sessions record their `configKey` since 2026-10-09; older ones stay readable by id only).
