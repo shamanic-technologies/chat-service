@@ -9,12 +9,16 @@ import { assertFunnelNotMixed } from "./funnel-mix.js";
 // Neither is proxied by the gateway yet, so chat-service calls both DIRECTLY
 // with its service keys and the chat's identity (x-org-id, x-user-id, x-run-id).
 //
-// Money rules the owners enforce and we mirror in the agent:
-//   - a funnel campaign with NO max budget is held unfunded (a volume cap
-//     alone never funds) — the agent states BOTH caps, asked from the user;
+// Money rules (owner 2026-10-11, "il FAUT une contrainte qui doit être SOIT un
+// max $ ET/OU un max volume"):
+//   - a funnel campaign needs AT LEAST ONE cap stated by the user: a max budget,
+//     a max volume, or both. Either alone is valid; none is refused. The agent
+//     never invents a cap nor asks again for one the user declined;
+//   - whether billing FUNDS the funnel (spends on it) is billing's verdict, read
+//     from what it serves (`fundingOf`), never assumed from the caps;
 //   - a create from the chat is ALWAYS `stopped`; starting goes through the
 //     switch-on gate (propose_switch_on start_funnel_campaign → the user's yes
-//     → confirm_switch_on), which refuses while no max budget is stated.
+//     → confirm_switch_on), which refuses while no cap is stated.
 // Bodies are returned verbatim: the owners own the shapes and the figures.
 // ---------------------------------------------------------------------------
 
@@ -117,23 +121,47 @@ export async function getFunnelCaps(a: Record<string, unknown>, p: ApiCallParams
 
 /**
  * PUT billing caps. Both keys are REQUIRED by the owner (object = state, null
- * = clear). We additionally require a max budget: a funnel without one is held
- * unfunded, so stating only a volume cannot be what the user meant.
+ * = no cap), so a call that changes one cap never silently clears the other.
+ * At least one must be stated: a funnel with neither cap is refused.
  */
 export async function setFunnelCaps(a: Record<string, unknown>, p: ApiCallParams) {
-  const mb = a.maxBudget as Record<string, unknown> | null | undefined;
-  if (!mb || typeof mb !== "object") {
-    throw new Error("[funnel-campaigns] maxBudget is required ({amountCents, period}): a funnel with no max budget is held unfunded. Ask the user for it.");
+  if (!("maxBudget" in a) || !("maxVolume" in a)) {
+    throw new Error(
+      "[funnel-campaigns] send both maxBudget and maxVolume: each is {…} when the user stated it, or null when the user wants no such cap.",
+    );
   }
-  if (!("maxVolume" in a)) {
-    throw new Error("[funnel-campaigns] maxVolume is required: ask the user ({count, period}), or send null if they want no volume cap.");
-  }
+  const mb = a.maxBudget as Record<string, unknown> | null;
   const mv = a.maxVolume as Record<string, unknown> | null;
+  if (mb === null && mv === null) {
+    throw new Error(
+      "[funnel-campaigns] a campaign needs at least one cap: a max budget, a max volume, or both. Ask the user for the one they want.",
+    );
+  }
   const body = {
-    maxBudget: { amountCents: positiveInt("maxBudget.amountCents", mb.amountCents), period: period("maxBudget", mb.period) },
+    maxBudget: mb === null ? null : { amountCents: positiveInt("maxBudget.amountCents", mb?.amountCents), period: period("maxBudget", mb?.period) },
     maxVolume: mv === null ? null : { count: positiveInt("maxVolume.count", mv?.count), period: period("maxVolume", mv?.period) },
   };
-  return call("billing", "set_funnel_caps", "PUT", capsPath(a), p, body);
+  const view = (await call("billing", "set_funnel_caps", "PUT", capsPath(a), p, body)) as CapsBody;
+  return { ...view, funding: fundingWords(view) };
+}
+
+/**
+ * Whether billing FUNDS this funnel (will spend on it), read from what billing
+ * serves. Billing is adding `funded` to its caps view (volume-only funnels,
+ * billing-service 2026-10-11); until it serves it, billing's rule is that only a
+ * max budget funds, so a volume-only funnel is held. Never claim it runs on our
+ * own reading of the caps.
+ */
+export function fundingOf(caps: CapsBody): boolean {
+  if (typeof caps.funded === "boolean") return caps.funded;
+  return caps.maxBudget != null;
+}
+
+/** What to tell the user about funding, in words. */
+export function fundingWords(caps: CapsBody): string {
+  if (fundingOf(caps)) return "Funded: once started, it spends within these caps.";
+  if (!caps.maxBudget && !caps.maxVolume) return "No cap stated: it cannot start. Ask the user for a max budget or a max volume.";
+  return "Held by billing: a campaign with no max budget is not funded yet, so it spends nothing even once started. Say so plainly; never say it runs.";
 }
 
 /** POST /sales-funnel-campaigns, always STOPPED from the chat (starting is the switch-on gate). */
@@ -145,9 +173,10 @@ export async function setFunnelCaps(a: Record<string, unknown>, p: ApiCallParams
  * so the very next question uses the right words.
  */
 export function capsAskFor(type: "proactive" | "reactive"): string {
+  const rule = "It needs at least one cap: budget, volume, or both. Skip any cap the user already stated or declined; never invent one. Then set_funnel_caps.";
   return type === "reactive"
-    ? "Reactive funnel: ask with present_choices 'Up to $X' (per one-off, day, week or month) and 'Up to N prospects handled' (per period). Never say 'max budget' or 'first contacts' for it. Then set_funnel_caps."
-    : "Proactive funnel: ask with present_choices a 'Max budget' (per one-off, day, week or month) and a 'Max volume' in first contacts (per period). Then set_funnel_caps.";
+    ? `Reactive funnel: the caps read 'Up to $X' (per one-off, day, week or month) and 'Up to N prospects handled' (per period). Never say 'max budget' or 'first contacts' for it. ${rule}`
+    : `Proactive funnel: the caps read 'Max budget' (per one-off, day, week or month) and 'Max volume' in first contacts (per period). ${rule}`;
 }
 
 export async function createFunnelCampaign(a: Record<string, unknown>, p: ApiCallParams) {
@@ -170,22 +199,17 @@ export async function stopFunnelCampaign(a: Record<string, unknown>, p: ApiCallP
 
 // --- Start (only from confirm_switch_on) ----------------------------------------
 
-interface CapsRead {
-  maxBudget?: { amountCents?: number; period?: string } | null;
-  maxVolume?: { count?: number; period?: string } | null;
-}
-
-/** propose_switch_on guard: the funnel's caps as stated now; refuses while no max budget is stated. */
-export async function requireStatedMaxBudget(target: { brandId: string; offerId: string; salesFunnelId: string }, p: ApiCallParams) {
+/** propose_switch_on guard: the funnel's caps as stated now; refuses while NEITHER cap is stated. */
+export async function requireStatedCap(target: { brandId: string; offerId: string; salesFunnelId: string }, p: ApiCallParams) {
   // A mixed funnel is never started either (its budget would starve the proactive part).
   await assertFunnelNotMixed(target.salesFunnelId);
-  const caps = (await getFunnelCaps(target, p)) as CapsRead;
-  if (!caps.maxBudget) {
+  const caps = (await getFunnelCaps(target, p)) as CapsBody;
+  if (!caps.maxBudget && !caps.maxVolume) {
     throw new Error(
-      "[funnel-campaigns] this funnel has no max budget: it would be held unfunded and start nothing. Ask the user for a max budget and a max volume, set them with set_funnel_caps, then propose again.",
+      "[funnel-campaigns] this funnel has no cap: a campaign needs a max budget, a max volume, or both. Ask the user, set it with set_funnel_caps, then propose again.",
     );
   }
-  return { maxBudget: caps.maxBudget, maxVolume: caps.maxVolume ?? null };
+  return { maxBudget: caps.maxBudget ?? null, maxVolume: caps.maxVolume ?? null, funded: fundingOf(caps), funding: fundingWords(caps) };
 }
 
 /** POST status "ongoing": creates and starts, or starts the existing stopped one (`started`). */
@@ -275,6 +299,8 @@ interface FunnelCampaignRow {
 }
 
 interface CapsBody {
+  /** Billing's funding verdict, once served (see fundingOf). */
+  funded?: boolean;
   salesFunnelType?: "proactive" | "reactive" | null;
   volumeUnit?: string | null;
   maxBudget?: { amountCents: string | number; period: string; consumedCents?: string | number | null; reached?: boolean; consumedUnavailableReason?: string | null } | null;
@@ -289,9 +315,9 @@ const usd = (cents: string | number): string => {
   return `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
 };
 
-/** "Max $10/day" (proactive), "Up to $1/day" (reactive), or not funded. */
-export function budgetWords(type: "proactive" | "reactive" | null | undefined, maxBudget: CapsBody["maxBudget"]): string {
-  if (!maxBudget) return "Not funded (no max budget)";
+/** "Max $10/day" (proactive), "Up to $1/day" (reactive), or no max budget (held or not, as billing says). */
+export function budgetWords(type: "proactive" | "reactive" | null | undefined, maxBudget: CapsBody["maxBudget"], funded: boolean): string {
+  if (!maxBudget) return funded ? "No max budget (capped by volume)" : "Not funded (no max budget)";
   return `${type === "reactive" ? "Up to" : "Max"} ${usd(maxBudget.amountCents)}${PER[maxBudget.period] ?? ` per ${maxBudget.period}`}`;
 }
 
@@ -382,7 +408,7 @@ export async function listAccountCampaigns(a: Record<string, unknown>, p: ApiCal
         type: caps.salesFunnelType ?? null,
         status: c.status,
         stopReason: c.stopReason ?? null,
-        budget: budgetWords(caps.salesFunnelType, caps.maxBudget ?? null),
+        budget: budgetWords(caps.salesFunnelType, caps.maxBudget ?? null, fundingOf(caps)),
         volume: volumeWords(caps.salesFunnelType, caps.maxVolume ?? null, caps.volumeUnit),
         spent: spentWords(caps.maxBudget ?? null),
         invested: investedWords(results),
