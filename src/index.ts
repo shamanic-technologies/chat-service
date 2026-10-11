@@ -136,6 +136,7 @@ import {
 } from "./lib/staff-requests.js";
 import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
 import { stripNul } from "./lib/strip-nul.js";
+import { pushCopilotTurnInBackground, type CopilotTurnMessage } from "./lib/copilot-unibox.js";
 import { CATALOGUE_READ_TOOLS, CATALOGUE_WRITE_TOOLS, assertStaffBuild, type CatalogueReader } from "./lib/catalogue-client.js";
 import { FUNNEL_CAMPAIGN_TOOLS } from "./lib/funnel-campaign-client.js";
 import { DISCOVERY_READ_TOOLS, testEndpoint } from "./lib/discovery-client.js";
@@ -2704,7 +2705,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   let anthropicChatCostLines: AnthropicCostLine[] = [];
   let provisionedCostIds: string[] = [];
   // What the out-of-credits answer needs from inside the try (set once known).
-  const creditsTurn: { sessionId: string | null; text: () => string } = { sessionId: null, text: () => "" };
+  const creditsTurn: { sessionId: string | null; text: () => string; userMessage: CopilotTurnMessage | null } = { sessionId: null, text: () => "", userMessage: null };
 
   try {
     // Get or create session (scoped by org + user + app)
@@ -2822,16 +2823,20 @@ app.post("/chat", requireAuth, async (req, res) => {
     });
 
     // Save user message
-    await db.insert(messages).values(stripNul({
+    const [savedUserMessage] = await db.insert(messages).values(stripNul({
       sessionId: currentSessionId,
       role: "user",
       content: message.trim(),
-    }));
+    })).returning({ id: messages.id, createdAt: messages.createdAt });
+    const userTurnMessage: CopilotTurnMessage = {
+      messageId: savedUserMessage.id, role: "user", text: message.trim(), at: savedUserMessage.createdAt,
+    };
 
     // Shared state for both providers
     let fullResponse = "";
     creditsTurn.sessionId = currentSessionId ?? null;
     creditsTurn.text = () => fullResponse;
+    creditsTurn.userMessage = userTurnMessage;
     let emittedInputRequest = false;
     const toolCalls: ToolCallRecord[] = [];
     // Rich UI emitted this turn (present_choices / open_page), persisted on the
@@ -4368,7 +4373,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     const persistBlocks = (!isGeminiChat && lastContentBlocks.length > 0)
       ? stripToolUseBlocks(lastContentBlocks as Anthropic.ContentBlockParam[])
       : [];
-    await db.insert(messages).values(stripNul({
+    const [savedAnswer] = await db.insert(messages).values(stripNul({
       sessionId: currentSessionId,
       role: "assistant",
       content: cleanedResponse,
@@ -4378,7 +4383,12 @@ app.post("/chat", requireAuth, async (req, res) => {
       choices: turnUi.choices,
       openPages: openedPages.length > 0 ? openedPages : null,
       tokenCount: totalPromptTokens + totalOutputTokens || null,
-    }));
+    })).returning({ id: messages.id, createdAt: messages.createdAt });
+    // The Copilot is staff: the turn also lands in distribute.you's Unibox (crm-service).
+    pushCopilotTurnInBackground(configKey, {
+      orgId, userId, sessionId: currentSessionId,
+      messages: [userTurnMessage, { messageId: savedAnswer.id, role: "assistant", text: cleanedResponse, at: savedAnswer.createdAt }],
+    });
 
     sendSSE(res, buildContextUsageEvent({
       inputTokens: totalPromptTokens,
@@ -4414,13 +4424,20 @@ app.post("/chat", requireAuth, async (req, res) => {
         sendSSE(res, { type: "token", content: text });
         const creditsRequired = { message: OUT_OF_CREDITS_MESSAGE, action: "add_credits" as const, label: OUT_OF_CREDITS_ACTION_LABEL };
         sendSSE(res, { type: "credits_required", ...creditsRequired });
-        await db.insert(messages).values(stripNul({
+        const [savedCredits] = await db.insert(messages).values(stripNul({
           sessionId: creditsTurn.sessionId,
           role: "assistant",
           content: (before + text).trim(),
           // Stored so a reload draws the "Add credits" button again.
           creditsRequired,
-        }));
+        })).returning({ id: messages.id, createdAt: messages.createdAt });
+        pushCopilotTurnInBackground(configKey, {
+          orgId, userId, sessionId: creditsTurn.sessionId,
+          messages: [
+            ...(creditsTurn.userMessage ? [creditsTurn.userMessage] : []),
+            { messageId: savedCredits.id, role: "assistant", text: (before + text).trim(), at: savedCredits.createdAt },
+          ],
+        });
         if (runId) {
           traceEvent(runId, "out-of-credits", { orgId, userId }, workflowTracking, { data: { provider: chatProvider } });
         }
