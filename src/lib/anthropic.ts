@@ -2401,18 +2401,18 @@ export const SET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
     properties: {
       ...FUNNEL_TARGET_PROPS,
       maxBudget: {
-        type: "object",
-        nullable: true,
-        description: "The max budget the user stated, or null if they want no budget cap.",
-        properties: { amountCents: { type: "integer", description: "In cents." }, period: CAP_PERIOD_PROP },
-        required: ["amountCents", "period"],
+        description: "The max budget the user stated, or null (JSON null) if they want no budget cap.",
+        anyOf: [
+          { type: "object", properties: { amountCents: { type: "integer", description: "In cents." }, period: CAP_PERIOD_PROP }, required: ["amountCents", "period"] },
+          { type: "null" },
+        ],
       },
       maxVolume: {
-        type: "object",
-        nullable: true,
-        description: "The max volume the user stated, or null if they want no volume cap.",
-        properties: { count: { type: "integer", description: "First contacts (proactive funnel) or prospects handled (reactive funnel)." }, period: CAP_PERIOD_PROP },
-        required: ["count", "period"],
+        description: "The max volume the user stated, or null (JSON null) if they want no volume cap.",
+        anyOf: [
+          { type: "object", properties: { count: { type: "integer", description: "First contacts (proactive funnel) or prospects handled (reactive funnel)." }, period: CAP_PERIOD_PROP }, required: ["count", "period"] },
+          { type: "null" },
+        ],
       },
     },
     required: ["brandId", "offerId", "salesFunnelId", "maxBudget", "maxVolume"],

@@ -1275,13 +1275,13 @@ Every request result carries `kind` and `destination` (where it landed, in words
 |---|---|
 | `list_funnel_campaigns` | `GET /sales-funnel-campaigns?brandId&offerId&salesFunnelId&status` |
 | `get_funnel_caps` | `GET /v1/brands/:b/offers/:o/sales-funnels/:f/caps` (billing) |
-| `set_funnel_caps` | `PUT` same path `{maxBudget:{amountCents,period}, maxVolume:{count,period}\|null}`; maxBudget REQUIRED (no max budget = held unfunded), maxVolume must be sent (null only when the user wants none) |
+| `set_funnel_caps` | `PUT` same path `{maxBudget:{amountCents,period}\|null, maxVolume:{count,period}\|null}`; both keys always sent (null = the user wants no such cap; the strings `"null"`/`"none"` read as null), at least one non-null (owner 2026-10-11: max budget and/or max volume). The answer carries `funding`: billing's served `funded` verdict in words |
 | `create_funnel_campaign` | `POST /sales-funnel-campaigns` with `status: "stopped"` ALWAYS (whatever the model sends) |
 | `stop_funnel_campaign` | `PATCH /sales-funnel-campaigns/:id {status:"stop"}` |
 
 **One kind per funnel** (owner 2026-10-10): a funnel holding a proactive pipe and a reactive pipe we run (features-service `mixed`; a customer-team reactive pipe is not a mix) is refused by `create_sales_funnel` (before the POST), `create_funnel_campaign` and the `start_funnel_campaign` proposal: its budget would cap the reactive pipe with the proactive one. Make a Proactive funnel and a separate Reactive funnel starting at the trigger step.
 
-Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaign` (brandId, offerId, salesFunnelId) reads the caps and is REFUSED while no max budget is stated; `confirm_switch_on` then POSTs `status: "ongoing"` (creates and starts, or starts the existing stopped one).
+Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaign` (brandId, offerId, salesFunnelId) reads the caps and is REFUSED only while NEITHER cap is stated (its `caps` carry billing's `funded` + `funding`); `confirm_switch_on` then POSTs `status: "ongoing"` (creates and starts, or starts the existing stopped one).
 
 `get_channel_catalogue` is RETIRED (2026-10-10): one read was 128k characters; `find_channels` / `find_pipes` replace it.
 
