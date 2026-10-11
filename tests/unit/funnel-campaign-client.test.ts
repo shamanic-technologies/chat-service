@@ -78,10 +78,17 @@ describe("funnel campaign tools (campaign-service / billing-service, direct, cha
     expect(call(0).body).toEqual({ maxBudget: { amountCents: 110800, period: "one_off" }, maxVolume: null });
     expect(budgetOnly.funding).toMatch(/^Funded/);
 
+    // The model wrote "no cap" as the STRING "null" (prod replay 2026-10-11): read as no cap, never refused.
+    fetchMock().mockResolvedValueOnce(res(200, { funded: true, maxBudget: { amountCents: "110800", period: "one_off" }, maxVolume: null }));
+    await FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps({ ...t, maxBudget: { amountCents: 110800, period: "one_off" }, maxVolume: "null" }, p);
+    expect(call(1).body).toEqual({ maxBudget: { amountCents: 110800, period: "one_off" }, maxVolume: null });
+    await expect(FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps({ ...t, maxBudget: { amountCents: 100, period: "daily" }, maxVolume: 500 }, p)).rejects.toThrow(/maxVolume must be \{count, period\} when the user stated it, or null/);
+    fetchMock().mockClear();
+
     // Volume only: accepted, and billing's verdict says whether it runs.
     fetchMock().mockResolvedValueOnce(res(200, { maxBudget: null, maxVolume: { count: 500, period: "monthly" } }));
     const volumeOnly = (await FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps({ ...t, maxBudget: null, maxVolume: { count: 500, period: "monthly" } }, p)) as Record<string, unknown>;
-    expect(call(1).body).toEqual({ maxBudget: null, maxVolume: { count: 500, period: "monthly" } });
+    expect(call(0).body).toEqual({ maxBudget: null, maxVolume: { count: 500, period: "monthly" } });
     expect(volumeOnly.funding).toMatch(/Held by billing/);
     expect(volumeOnly.funding).toMatch(/never say it runs/);
   });
@@ -335,5 +342,16 @@ describe("a campaign IS a sales funnel campaign (owner rule; prod 2026-10-10 NOV
       FUNNEL_CAMPAIGN_TOOLS.get_funnel_caps({ brandId: "b", offerId: "o", salesFunnelId: "7fcf42ab-fe7a-46a5-9375-90fbdd260f18" }, p, customer),
     ).rejects.toThrow(/not a campaign id/);
     expect(fetchMock()).not.toHaveBeenCalled();
+  });
+});
+
+describe("set_funnel_caps tool schema (prod 2026-10-11: the model sent the string \"null\" under nullable:true)", () => {
+  it("declares each cap as an object OR JSON null, both keys required", async () => {
+    const { SET_FUNNEL_CAPS_TOOL } = await import("../../src/lib/anthropic.js");
+    const props = SET_FUNNEL_CAPS_TOOL.input_schema.properties as Record<string, { anyOf?: Array<{ type: string }> }>;
+    for (const k of ["maxBudget", "maxVolume"]) {
+      expect(props[k].anyOf?.map((x) => x.type)).toEqual(["object", "null"]);
+    }
+    expect(SET_FUNNEL_CAPS_TOOL.input_schema.required).toEqual(expect.arrayContaining(["maxBudget", "maxVolume"]));
   });
 });

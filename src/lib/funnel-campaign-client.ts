@@ -120,6 +120,19 @@ export async function getFunnelCaps(a: Record<string, unknown>, p: ApiCallParams
 // --- Writes (data: start nothing) ----------------------------------------------
 
 /**
+ * One cap argument: an object, or "no such cap". The model sometimes writes
+ * "no cap" as the STRING "null" (prod 2026-10-11, Doc Dinners replay: refused,
+ * then it invented a 100,000 volume), so the spellings of "none" are read as
+ * null; anything else that is not an object is refused naming the two forms.
+ */
+const NO_CAP = new Set(["null", "none", ""]);
+function capArg(name: string, v: unknown, shape: string): Record<string, unknown> | null {
+  if (v === null || (typeof v === "string" && NO_CAP.has(v.trim().toLowerCase()))) return null;
+  if (typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
+  throw new Error(`[funnel-campaigns] ${name} must be ${shape} when the user stated it, or null when they want no such cap.`);
+}
+
+/**
  * PUT billing caps. Both keys are REQUIRED by the owner (object = state, null
  * = no cap), so a call that changes one cap never silently clears the other.
  * At least one must be stated: a funnel with neither cap is refused.
@@ -130,8 +143,8 @@ export async function setFunnelCaps(a: Record<string, unknown>, p: ApiCallParams
       "[funnel-campaigns] send both maxBudget and maxVolume: each is {…} when the user stated it, or null when the user wants no such cap.",
     );
   }
-  const mb = a.maxBudget as Record<string, unknown> | null;
-  const mv = a.maxVolume as Record<string, unknown> | null;
+  const mb = capArg("maxBudget", a.maxBudget, "{amountCents, period}");
+  const mv = capArg("maxVolume", a.maxVolume, "{count, period}");
   if (mb === null && mv === null) {
     throw new Error(
       "[funnel-campaigns] a campaign needs at least one cap: a max budget, a max volume, or both. Ask the user for the one they want.",
