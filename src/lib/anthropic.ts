@@ -5,6 +5,7 @@ import {
   type AnthropicBilledTokens,
 } from "./anthropic-usage.js";
 import { OPEN_PAGE_TOOL, PRESENT_CHOICES_TOOL } from "./ui-tools.js";
+import type { AnthropicEffort } from "../schemas.js";
 import { STAFF_REQUEST_REPOS } from "./staff-requests.js";
 
 export const MODEL = "claude-sonnet-4-6";
@@ -2039,7 +2040,7 @@ export const LAUNCH_CAMPAIGN_TOOL: Anthropic.Tool = {
 export const LIST_CAMPAIGNS_TOOL: Anthropic.Tool = {
   name: "list_campaigns",
   description:
-    "THE account's campaigns, as the Campaigns page shows them. A campaign IS a sales funnel campaign: name, type (proactive | reactive), status, budget in words ('Max $10/day', 'Up to $1/day', 'Not funded (no max budget)'), volume, what it spent this period, its results since start (invested, return with its maturity: 'still learning' is never a final figure), its path (what it does, step by step), and its steps (sources, cold email, AI booking...). " +
+    "THE account's campaigns, as the Campaigns page shows them. A campaign IS a sales funnel campaign: name, type (proactive | reactive), status, budget in words ('Max $10/day', 'Up to $1/day', 'Not funded (no max budget)', or 'No max budget (capped by volume)' when billing funds a volume-only campaign), volume, what it spent this period, its results since start (invested, return with its maturity: 'still learning' is never a final figure), its path (what it does, step by step), and its steps (sources, cold email, AI booking...). " +
     "Use it for ANY question about campaigns, what runs, or each campaign's budget. Count and name only campaigns, never their steps (a step is part of a campaign, not a campaign). Quote budget and spent as written. Read-only.",
   input_schema: {
     type: "object" as const,
@@ -2345,13 +2346,13 @@ export const PROPOSE_SWITCH_ON_TOOL: Anthropic.Tool = {
   name: "propose_switch_on",
   description:
     "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: nothing that starts work or spends money is switched on without the user's explicit yes in the chat. This tool is step 1 of 2: it records WHAT would be switched on and returns a confirmationToken; it switches NOTHING on. " +
-    "The only action: start_funnel_campaign (run a sales funnel campaign for an offer, or turn a stopped one back on; refused until set_funnel_caps stated a max budget, which it shows back). " +
-    "After calling it, show the user exactly what will start and its caps, then ask them to confirm with present_choices. Call confirm_switch_on only after they answer yes, in their next message.",
+    "The only action: start_funnel_campaign (run a sales funnel campaign for an offer, or turn a stopped one back on). Refused only while the funnel has NO cap: a max budget, a max volume, or both is enough. It shows the caps back with billing's funding verdict (`caps.funded`). " +
+    "After calling it, show the user exactly what will start and its caps; if `caps.funded` is false say billing holds it (it will spend nothing yet), never that it runs. Ask yes or no. Call confirm_switch_on only after they answer yes, in their next message.",
   input_schema: {
     type: "object" as const,
     properties: {
       action: { type: "string", enum: ["start_funnel_campaign"] },
-      summary: { type: "string", description: "One plain sentence the user will confirm, with the caps (e.g. 'Run Bliss for Sales-led, max $10/day')." },
+      summary: { type: "string", description: "One plain sentence the user will confirm, with the caps they stated (e.g. 'Run Bliss for Sales-led, max $10/day, no volume cap')." },
       brandId: BRAND_ID_PROP,
       offerId: OFFER_ID_PROP,
       salesFunnelId: { type: "string", description: "The sales funnel id (list_campaigns or find_sales_funnels)." },
@@ -2390,19 +2391,26 @@ export const GET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
 export const SET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
   name: "set_funnel_caps",
   description:
-    "State a funnel's MAX BUDGET and MAX VOLUME, both ASKED from the user first (never invent them). Starts nothing. No max budget = the funnel is held unfunded, so maxBudget is required; maxVolume is required too (null only if the user wants no volume cap). A Proactive funnel: 'Max budget' / 'Max volume' (first contacts). A Reactive funnel: asked as 'Up to $X' / 'Up to N prospects handled' (billing counts what its reactive pipes handle).",
+    "State a funnel's caps as the USER gave them. Starts nothing. A campaign needs AT LEAST ONE cap: a max budget, a max volume, or both; either alone is valid. " +
+    "Send BOTH keys every time: the cap the user stated as an object, the one they did not want as null (\"no volume cap\" → maxVolume null; \"no budget cap\" → maxBudget null). " +
+    "Never invent a cap, never ask again for one the user declined, never tell them one is mandatory: only 'neither' is refused. " +
+    "The answer carries billing's `funding` verdict: repeat it, never say a held campaign runs. " +
+    "A Proactive funnel reads 'Max budget' / 'Max volume' (first contacts); a Reactive funnel reads 'Up to $X' / 'Up to N prospects handled'.",
   input_schema: {
     type: "object" as const,
     properties: {
       ...FUNNEL_TARGET_PROPS,
       maxBudget: {
         type: "object",
+        nullable: true,
+        description: "The max budget the user stated, or null if they want no budget cap.",
         properties: { amountCents: { type: "integer", description: "In cents." }, period: CAP_PERIOD_PROP },
         required: ["amountCents", "period"],
       },
       maxVolume: {
         type: "object",
-        description: "Or null for no volume cap (only if the user said so).",
+        nullable: true,
+        description: "The max volume the user stated, or null if they want no volume cap.",
         properties: { count: { type: "integer", description: "First contacts (proactive funnel) or prospects handled (reactive funnel)." }, period: CAP_PERIOD_PROP },
         required: ["count", "period"],
       },
@@ -3123,6 +3131,14 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
          * on cache tokens for any other model.
          */
         cache?: boolean;
+        /**
+         * The chat config's thinking effort (`output_config.effort`). Omitted =
+         * no `output_config` at all, byte-identical to before the knob existed
+         * (the model runs its own default: `high` on Sonnet 5.5). `max` was
+         * probed live on Sonnet 5.5 with this exact stream shape (adaptive
+         * thinking + block binding + compaction + context edits): 200.
+         */
+        effort?: AnthropicEffort;
       },
     ) {
       const cache = opts?.cache === true;
@@ -3156,6 +3172,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
           type: "adaptive" as const,
           block_binding: { prefix_mismatch_behavior: "drop_block" as const },
         },
+        ...(opts?.effort ? { output_config: { effort: opts.effort } } : {}),
         // Beta: context management for automatic compaction
         context_management: {
           edits: [

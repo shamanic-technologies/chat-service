@@ -1,5 +1,5 @@
 import { pgTable, uuid, text, timestamp, jsonb, integer, unique, index, boolean } from "drizzle-orm/pg-core";
-import type { ChoicesRecord, OpenPageRecord } from "../schemas.js";
+import type { AnthropicEffort, ChoicesRecord, OpenPageRecord } from "../schemas.js";
 
 export const sessions = pgTable(
   "sessions",
@@ -62,6 +62,9 @@ export const appConfigs = pgTable(
     // Per-config Gemini-3 thinking level for the /chat path. NULL = code default
     // ("low"). Never read by /complete. See src/lib/gemini.ts buildThinkingConfig.
     thinkingLevel: text("thinking_level").$type<"minimal" | "low" | "medium" | "high">(),
+    // Per-config Anthropic thinking effort for the /chat path (migration 0021).
+    // NULL = the model's own default (Sonnet 5.5: high). See anthropic.ts createStream.
+    effort: text("effort").$type<AnthropicEffort>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -108,6 +111,9 @@ export const platformConfigs = pgTable("platform_configs", {
   // Per-config Gemini-3 thinking level for the /chat path. NULL = code default
   // ("low"). Never read by /complete. See src/lib/gemini.ts buildThinkingConfig.
   thinkingLevel: text("thinking_level").$type<"minimal" | "low" | "medium" | "high">(),
+  // Per-config Anthropic thinking effort for the /chat path (migration 0021).
+  // NULL = the model's own default (Sonnet 5.5: high). See anthropic.ts createStream.
+  effort: text("effort").$type<AnthropicEffort>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

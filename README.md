@@ -131,9 +131,11 @@ Register a platform-wide config for a given key. Used as fallback when no per-or
 }
 ```
 
-Fields: same as `PUT /config` — `key`, `systemPrompt`, `allowedTools` (all required), plus optional `provider`, `model`, and `thinkingLevel`.
+Fields: same as `PUT /config` — `key`, `systemPrompt`, `allowedTools` (all required), plus optional `provider`, `model`, `thinkingLevel` and `effort`.
 
 **`thinkingLevel`** (optional, `"minimal" | "low" | "medium" | "high"`) — per-config Gemini-3 thinking level applied **only** on the `/chat` path. Omit to use the code default (`"low"`). Raise it (e.g. `"medium"`) to give a specific chat mode more reasoning. It is ignored for Anthropic configs and is **never** applied on `/complete` (higher thinking there burns the JSON output budget → truncation). Like `provider`/`model`, omitting `thinkingLevel` on a re-register **preserves** the stored value (never clobbers it back to null).
+
+**`effort`** (optional, `"low" | "medium" | "high" | "xhigh" | "max"`) — per-config Anthropic thinking effort applied **only** on the `/chat` path, sent as `output_config.effort` beside adaptive thinking. Omit (or store NULL) to keep the model's own default (Sonnet 5.5: `high`) with no `output_config` at all, byte-identical to before. Refused (400) on a config that names a Gemini provider; a stored effort on a config that resolves to Gemini fails the chat loudly rather than being ignored. Preserve-on-omit like `thinkingLevel`. The `copilot` config sends `"max"` (probed live on Sonnet 5.5 with the full `/chat` stream shape, 2026-10-11).
 
 This endpoint is **idempotent** (upsert on `key`). Called on every cold start by api-service.
 

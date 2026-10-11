@@ -122,8 +122,8 @@ const VISUAL_PROPERTY = {
 export const PRESENT_CHOICES_TOOL: Anthropic.Tool = {
   name: PRESENT_CHOICES_TOOL_NAME,
   description:
-    "Show the user 2 to 6 large clickable cards to pick their next step, instead of asking in plain text. " +
-    "Prefer this whenever the user has a decision to make or you are suggesting what to do next. " +
+    "Show the user 2 to 6 large clickable cards under your answer. Use them ONLY when they save the user typing: an obvious set of real options to pick from, a yes/no confirmation, or a user who does not know what to type next. " +
+    "Never for a question the user already answered (\"no volume cap\" is an answer), never for a free value (an amount, a number, a name: ask in plain text), never when there is one obvious next step. When in doubt, no cards. " +
     "Each card: a short `label`, an optional one-line `description`, an optional `visual`, and the `value` sent back when clicked " +
     "(write it as the sentence the user would type, e.g. 'Show me the 3 interested leads'; defaults to the label). " +
     "Any figure on a card must come from a tool result in this conversation, quoted as served. " +

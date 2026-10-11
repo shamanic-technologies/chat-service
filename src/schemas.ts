@@ -278,6 +278,10 @@ registry.registerPath({
 
 // --- Platform Config ---
 
+/** Anthropic `output_config.effort` values (Sonnet 5.5 / Opus 5.5, probed live 2026-10-11). */
+export const ANTHROPIC_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type AnthropicEffort = (typeof ANTHROPIC_EFFORTS)[number];
+
 export const PlatformConfigRequestSchema = z
   .object({
     key: z.string().min(1, "key is required").openapi({
@@ -325,6 +329,15 @@ export const PlatformConfigRequestSchema = z
         "applied on /complete. Omitting on a re-register preserves the stored value.",
       example: "medium",
     }),
+    effort: z.enum(ANTHROPIC_EFFORTS).optional().openapi({
+      description:
+        "Per-config Anthropic thinking effort applied ONLY on the /chat path " +
+        "(`output_config.effort`). Omit to keep the model's own default " +
+        "(Sonnet 5.5: `high`). Only valid on an `anthropic` config: a Gemini config " +
+        "uses `thinkingLevel`. Never applied on /complete. Omitting on a re-register " +
+        "preserves the stored value.",
+      example: "max",
+    }),
   })
   .strict()
   .refine(
@@ -341,6 +354,10 @@ export const PlatformConfigRequestSchema = z
       path: ["model"],
     },
   )
+  .refine((data) => data.effort === undefined || data.provider === undefined || data.provider === "anthropic", {
+    message: "effort applies to Anthropic configs only; a Gemini config uses thinkingLevel",
+    path: ["effort"],
+  })
   .openapi("PlatformConfigRequest");
 
 export const PlatformConfigResponseSchema = z
@@ -356,6 +373,9 @@ export const PlatformConfigResponseSchema = z
     }),
     thinkingLevel: z.enum(["minimal", "low", "medium", "high"]).nullable().openapi({
       description: "Per-config Gemini-3 thinking level for /chat. Null means the default (\"low\").",
+    }),
+    effort: z.enum(ANTHROPIC_EFFORTS).nullable().openapi({
+      description: "Per-config Anthropic thinking effort for /chat. Null means the model's own default.",
     }),
     createdAt: z.string(),
     updatedAt: z.string(),

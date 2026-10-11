@@ -121,7 +121,7 @@ describe("a funnel proposal shows its figures in text (prod 2026-10-10: cards on
   it("the sales-funnels skill makes the text mandatory before the cards", () => {
     const c = SEED_SKILLS.find((s) => s.slug === "catalogue-sales-funnels")!.content;
     expect(c).toMatch(/First WRITE the 1 to 3 funnels/);
-    expect(c.indexOf("WRITE")).toBeLessThan(c.indexOf("present_choices"));
+    expect(c.indexOf("WRITE")).toBeLessThan(c.indexOf("card"));
   });
 });
 
@@ -156,7 +156,7 @@ describe("one kind per funnel (owner 2026-10-10)", () => {
     const f = SEED_SKILLS.find((s) => s.slug === "catalogue-sales-funnels")!.content;
     expect(f).toMatch(/ALSO a Reactive funnel from the list \(its line starts at the trigger step/);
     const c = SEED_SKILLS.find((s) => s.slug === "campaigns")!.content;
-    expect(c).toMatch(/"Up to \$X" and "Up to N prospects handled"/);
+    expect(c).toMatch(/"Up to \$X" and\/or "Up to N prospects handled"/);
     expect(c).toMatch(/mixed funnel .* is refused/);
   });
 });
@@ -199,5 +199,27 @@ describe("no per-step writes in the Copilot's skills (owner 2026-10-10)", () => 
     for (const sk of SEED_SKILLS) expect(sk.content, sk.slug).not.toMatch(/set_campaign_budget|stop_campaign\b|start_campaign\b|activate_campaign/);
     const src = SEED_SKILLS.find((s) => s.slug === "sources")!.content;
     expect(src).toMatch(/A source has no on\/off or budget of its own/);
+  });
+});
+
+describe("caps and cards (owner 2026-10-11, Doc Dinners: 'no volume cap' answered with 20,000 / 50,000 cards)", () => {
+  it("a campaign needs at least one cap, either alone, never invented or asked again", () => {
+    const c = SEED_SKILLS.find((s) => s.slug === "campaigns")!.content;
+    expect(c).toMatch(/a max budget, a max volume, or both\. Either alone is valid; only NEITHER is refused/);
+    expect(c).toMatch(/never ask again for a declined one/);
+    expect(c).not.toMatch(/Ask the user both with present_choices/);
+  });
+
+  it("one skill says why cards exist and when not to use them; no other skill prescribes them", () => {
+    const c = SEED_SKILLS.find((s) => s.slug === "choices")!;
+    expect(c.parentSlug).toBe("index");
+    expect(c.content).toMatch(/Save the user time/);
+    expect(c.content).toMatch(/blank page/);
+    expect(c.content).toMatch(/already answered/);
+    expect(c.content).toMatch(/free value/);
+    for (const s of SEED_SKILLS) {
+      if (s.slug === "choices" || s.slug === "index") continue;
+      expect(s.content, s.slug).not.toMatch(/with present_choices/);
+    }
   });
 });

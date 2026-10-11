@@ -1,3 +1,4 @@
+import type { AnthropicEffort } from "../schemas.js";
 import type { Provider, ModelAlias } from "./anthropic.js";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,8 @@ export interface ConfigConflictSetInput {
   model?: string;
   /** Omitted (undefined) means "leave the stored value unchanged". */
   thinkingLevel?: "minimal" | "low" | "medium" | "high";
+  /** Omitted (undefined) means "leave the stored value unchanged". */
+  effort?: AnthropicEffort;
 }
 
 export interface ConfigConflictSet {
@@ -53,6 +56,7 @@ export interface ConfigConflictSet {
   provider?: "anthropic" | "google";
   model?: string;
   thinkingLevel?: "minimal" | "low" | "medium" | "high";
+  effort?: AnthropicEffort;
 }
 
 /**
@@ -71,5 +75,6 @@ export function buildConfigConflictSet(input: ConfigConflictSetInput): ConfigCon
   if (input.provider !== undefined) set.provider = input.provider;
   if (input.model !== undefined) set.model = input.model;
   if (input.thinkingLevel !== undefined) set.thinkingLevel = input.thinkingLevel;
+  if (input.effort !== undefined) set.effort = input.effort;
   return set;
 }
