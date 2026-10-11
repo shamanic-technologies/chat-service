@@ -312,7 +312,8 @@ export function spentWords(maxBudget: CapsBody["maxBudget"]): string | null {
 /** features-service's per funnel campaign results (owner 2026-10-11): one row per campaign, money since inception. */
 interface CampaignResults {
   id: string;
-  description?: string | null;
+  /** The campaign's path, in order (owner 2026-10-11: the path IS the description). */
+  path?: { items?: Array<{ kind?: string; label?: string; name?: string }> } | null;
   investedUsd?: number | null;
   roiMultiple?: number | null;
   moneyUnavailableReason?: string | null;
@@ -332,6 +333,13 @@ async function campaignResults(brandId: string, p: ApiCallParams): Promise<Map<s
   const body = JSON.parse(raw) as { salesFunnelCampaigns?: CampaignResults[] };
   if (!Array.isArray(body.salesFunnelCampaigns)) throw new Error("[funnel-campaigns] features-service answered without salesFunnelCampaigns");
   return new Map(body.salesFunnelCampaigns.map((r) => [r.id, r]));
+}
+
+/** "Lead found → Sales Cold Email Outreach → Positive reply → Paid client": the served path items, in order. */
+export function pathWords(r: CampaignResults | undefined): string | null {
+  const items = r?.path?.items;
+  if (!Array.isArray(items) || items.length === 0) return null;
+  return items.map((i) => (i.kind === "channel" ? i.name : i.label) ?? "?").join(" → ");
 }
 
 /** "$67.46 invested since start" (net, what the customer pays), or why it is not known. */
@@ -370,7 +378,7 @@ export async function listAccountCampaigns(a: Record<string, unknown>, p: ApiCal
       return {
         id: c.id,
         name: c.salesFunnelName ?? c.salesFunnelId,
-        description: results?.description ?? null,
+        path: pathWords(results),
         type: caps.salesFunnelType ?? null,
         status: c.status,
         stopReason: c.stopReason ?? null,
