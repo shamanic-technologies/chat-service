@@ -784,6 +784,19 @@
             ],
             "description": "Per-config Gemini-3 thinking level for /chat. Null means the default (\"low\")."
           },
+          "effort": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              null
+            ],
+            "description": "Per-config Anthropic thinking effort for /chat. Null means the model's own default."
+          },
           "createdAt": {
             "type": "string"
           },
@@ -798,6 +811,7 @@
           "provider",
           "model",
           "thinkingLevel",
+          "effort",
           "createdAt",
           "updatedAt"
         ]
@@ -868,6 +882,18 @@
             ],
             "description": "Per-config Gemini-3 thinking level applied ONLY on the /chat path. Omit to use the default (\"low\"). Higher levels give the model more reasoning on this chat mode. Ignored for Anthropic configs and never applied on /complete. Omitting on a re-register preserves the stored value.",
             "example": "medium"
+          },
+          "effort": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "description": "Per-config Anthropic thinking effort applied ONLY on the /chat path (`output_config.effort`). Omit to keep the model's own default (Sonnet 5.5: `high`). Only valid on an `anthropic` config: a Gemini config uses `thinkingLevel`. Never applied on /complete. Omitting on a re-register preserves the stored value.",
+            "example": "max"
           }
         },
         "required": [

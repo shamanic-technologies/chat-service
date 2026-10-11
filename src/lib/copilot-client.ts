@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
 import { FunnelError } from "./funnel-client.js";
-import { requireStatedMaxBudget, startFunnelCampaign } from "./funnel-campaign-client.js";
+import { requireStatedCap, startFunnelCampaign } from "./funnel-campaign-client.js";
 import type { ToolCallRecord } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
@@ -153,7 +153,7 @@ export interface SwitchOnProposal {
 
 /**
  * Validate and record what WOULD be switched on: a sales funnel campaign,
- * refused until its max budget is stated (the caps are data; nothing starts). Returns a token the model hands to confirm_switch_on in a
+ * refused until at least one cap (max budget and/or max volume) is stated (the caps are data; nothing starts). Returns a token the model hands to confirm_switch_on in a
  * LATER turn, after the user said yes.
  */
 export async function proposeSwitchOn(a: Record<string, unknown>, p: ApiCallParams): Promise<SwitchOnProposal & { budget?: unknown }> {
@@ -168,17 +168,18 @@ export async function proposeSwitchOn(a: Record<string, unknown>, p: ApiCallPara
     summary,
     status: "awaiting_user_confirmation" as const,
     instruction:
-      "Nothing is on yet. Show the user exactly what will start and its daily cap, and ask them to confirm (present_choices). Only after they say yes, in a later message, call confirm_switch_on with this confirmationToken.",
+      "Nothing is on yet. Show the user exactly what will start and its caps (and, if `caps.funded` is false, that billing holds it), and ask yes or no. Only after they say yes, in a later message, call confirm_switch_on with this confirmationToken.",
   };
   if (action === "start_funnel_campaign") {
-    // A funnel campaign's money is ONLY its caps: no max budget = held unfunded,
-    // so the proposal is refused until the user stated one (set_funnel_caps).
+    // A funnel campaign's money is ONLY its caps: the proposal is refused until
+    // the user stated at least one (max budget and/or max volume, set_funnel_caps).
+    // It carries billing's funding verdict so the agent never says a held one runs.
     const target = {
       brandId: rawId("brandId", a.brandId),
       offerId: rawId("offerId", a.offerId),
       salesFunnelId: rawId("salesFunnelId", a.salesFunnelId),
     };
-    const caps = await requireStatedMaxBudget(target, p);
+    const caps = await requireStatedCap(target, p);
     return { ...base, target, caps };
   }
   throw new Error(`[copilot] action must be one of ${SWITCH_ON_ACTIONS.join(", ")}`);

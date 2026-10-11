@@ -520,7 +520,7 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { key, systemPrompt, allowedTools, provider, model, thinkingLevel } = parsed.data;
+  const { key, systemPrompt, allowedTools, provider, model, thinkingLevel, effort } = parsed.data;
 
   // Validate all tool names
   const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t));
@@ -539,13 +539,14 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
       provider: provider ?? null,
       model: model ?? null,
       thinkingLevel: thinkingLevel ?? null,
+      effort: effort ?? null,
     })
     .onConflictDoUpdate({
       target: [platformConfigs.key],
       // Omitted provider/model/thinkingLevel are left out of the SET so a
       // re-registering app doesn't clobber an explicit stored override back to NULL.
       set: {
-        ...buildConfigConflictSet({ systemPrompt, allowedTools, provider, model, thinkingLevel }),
+        ...buildConfigConflictSet({ systemPrompt, allowedTools, provider, model, thinkingLevel, effort }),
         updatedAt: new Date(),
       },
     })
@@ -558,6 +559,7 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
     provider: config.provider,
     model: config.model,
     thinkingLevel: config.thinkingLevel,
+    effort: config.effort,
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString(),
   });
@@ -2623,6 +2625,12 @@ app.post("/chat", requireAuth, async (req, res) => {
   // the platform default; the Anthropic platform key has no credit balance).
   const { provider: chatProvider, modelAlias: chatModelAlias } = resolveChatProviderModel(appConfig);
   const resolvedModelInfo = resolveModel(chatProvider, chatModelAlias);
+  if (appConfig.effort && chatProvider !== "anthropic") {
+    // A stored effort on a Gemini config would be silently ignored: refuse it.
+    return res.status(500).json({
+      error: `Chat config "${configKey}" sets effort "${appConfig.effort}" but runs on ${chatProvider}; effort applies to Anthropic configs only (Gemini uses thinkingLevel).`,
+    });
+  }
 
   // Resolve API key for the configured provider
   let resolvedKey: ResolvedKey;
@@ -4121,6 +4129,8 @@ app.post("/chat", requireAuth, async (req, res) => {
         stream = claude!.createStream(turnMessages, allTools, abortController.signal, {
           model: resolvedModelInfo.apiModelId,
           cache: anthropicCachePriced(resolvedModelInfo.costPrefix),
+          // Per-config thinking effort (NULL → the model's own default).
+          effort: appConfig.effort ?? undefined,
         });
 
         try {
