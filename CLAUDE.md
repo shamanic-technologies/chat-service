@@ -276,6 +276,10 @@ Postgres refuses NUL in text and jsonb; one tool result carrying it (a mailbox b
 
 Every user-scoped path touching a session BY ID (`GET /sessions/:id`, `POST /chat` continue) asks `isSessionOwner` (`session-errors.ts`): org AND user, a miss is the same not-found as an unknown id. Legacy rows with NULL `user_id` (22, all before 2026-02-04) are nobody's. Never relax it to org-only "for teammates".
 
+## The Copilot is staff: its turns land in the staff Unibox (owner 2026-10-11)
+
+After each `copilot` turn is stored (answer AND out-of-credits), `pushCopilotTurnInBackground` (`src/lib/copilot-unibox.ts`) posts the user message + answer to crm-service `POST /internal/copilot/messages`, matched to the person by the user's email (client-service). crm files it ONLY under distribute.you's staff Unibox, never the user's org, and ignores a repeated messageId. Fire-and-forget beside the turn, failures logged; never await it in the turn and never send a scope.
+
 ## Out of credits is an answer, not an error (owner 2026-10-10)
 
 When billing refuses a `/chat` turn (`ChatCostGateError` 402, the affordability check BEFORE every model call), the catch streams `OUT_OF_CREDITS_MESSAGE` as a token + a `credits_required` event (`action: add_credits`), stores it as the assistant turn and closes the run completed; the action is stored on the message (`credits_required` column, migration 0020) and served in session history as `creditsRequired`, so a reload draws the button. No model call, no error event. Do not route it back through `classifyErrorForClient`.
