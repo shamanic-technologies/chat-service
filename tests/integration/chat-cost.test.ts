@@ -179,6 +179,35 @@ function mockBilling(capture: { calls: number }, opts?: { sufficient?: boolean }
   } satisfies MockRoute;
 }
 
+function mockBillingSequence(capture: { calls: number }, sufficient: boolean[]) {
+  return {
+    match: (url: string, init?: RequestInit) => url.includes("/v1/customer_balance/authorize") && (init?.method ?? "GET") === "POST",
+    respond: () => {
+      const ok = sufficient[Math.min(capture.calls, sufficient.length - 1)];
+      capture.calls += 1;
+      return { ok: true, body: { sufficient: ok, balance_cents: "0", required_cents: "3" } };
+    },
+  } satisfies MockRoute;
+}
+
+function mockPrepaidStatus(capture: { calls: number }, out: { status?: number; offer?: string | null }) {
+  return {
+    match: (url: string) => url.includes("/v1/accounts/prepaid_status"),
+    respond: () => {
+      capture.calls += 1;
+      if (out.status && out.status !== 200) return { ok: false, status: out.status, body: { error: "Billing account not found" } };
+      return { ok: true, body: { state: "none", free_credit_offer: out.offer ?? null, balance_cents: "0" } };
+    },
+  } satisfies MockRoute;
+}
+
+function sseEvents(text: string): Array<Record<string, unknown>> {
+  return text
+    .split("\n")
+    .filter((l: string) => l.startsWith("data: ") && !l.includes("[DONE]"))
+    .map((l: string) => JSON.parse(l.slice(6)) as Record<string, unknown>);
+}
+
 function mockWorkflowList() {
   return {
     match: (url: string, init?: RequestInit) => url.includes("/v1/workflows") && (init?.method ?? "GET") === "GET",
@@ -329,6 +358,7 @@ describe("POST /chat — provider-call credit gates", () => {
       mockRunPatch(),
       mockTraceEvents(),
       mockBilling(billing, { sufficient: false }),
+      mockPrepaidStatus({ calls: 0 }, { offer: null }),
       mockWorkflowList(),
       mockGeminiToolThenText(gemini),
     );
@@ -358,5 +388,87 @@ describe("POST /chat — provider-call credit gates", () => {
     const assistant = [...inserted].reverse().find((v) => v.role === "assistant")!;
     expect(assistant.content).toBe("You're out of credits. Add credits to keep going.");
     expect(assistant.creditsRequired).toEqual({ message: "You're out of credits. Add credits to keep going.", action: "add_credits", label: "Add credits" });
+  });
+
+  describe("an AI agent org (billing free_credit_offer agent_api) out of money", () => {
+    function baseRoutes(gemini: { calls: number }, billing: { calls: number }, sufficient: boolean[]) {
+      return [
+        mockKeyDecrypt(),
+        mockRunCreate(),
+        mockRunCosts({ provisionCalls: 0, actualCalls: 0 }),
+        mockCostPatch(),
+        mockRunPatch(),
+        mockTraceEvents(),
+        mockBillingSequence(billing, sufficient),
+        mockWorkflowList(),
+        mockGeminiToolThenText(gemini),
+      ];
+    }
+
+    it("answers HTTP 402 JSON (not a 200 stream) when refused before anything streamed", async () => {
+      const app = await loadApp();
+      const gemini = { calls: 0 };
+      const billing = { calls: 0 };
+      const prepaid = { calls: 0 };
+      routes.push(...baseRoutes(gemini, billing, [false]), mockPrepaidStatus(prepaid, { offer: "agent_api" }));
+
+      const res = await request(app).post("/chat").set(AUTH).send({ configKey: "test-chat", message: "hello" });
+
+      expect(res.status).toBe(402);
+      expect(res.headers["content-type"]).toContain("application/json");
+      expect(res.body).toEqual({
+        error: "Insufficient credits",
+        message: "You're out of credits. Add credits to keep going.",
+        balance_cents: "0",
+        required_cents: "3",
+        sessionId,
+      });
+      expect(gemini.calls).toBe(0);
+      expect(prepaid.calls).toBe(1);
+      // The turn is still stored, like the dashboard's.
+      const assistant = [...inserted].reverse().find((v) => v.role === "assistant")!;
+      expect(assistant.content).toBe("You're out of credits. Add credits to keep going.");
+    });
+
+    it("keeps the in-chat answer for an org with no billing account (404)", async () => {
+      const app = await loadApp();
+      const gemini = { calls: 0 };
+      const billing = { calls: 0 };
+      routes.push(...baseRoutes(gemini, billing, [false]), mockPrepaidStatus({ calls: 0 }, { status: 404 }));
+
+      const res = await request(app).post("/chat").set(AUTH).send({ configKey: "test-chat", message: "hello" });
+
+      expect(res.status).toBe(200);
+      expect(sseEvents(res.text).find((e) => e.type === "credits_required")).toMatchObject({ action: "add_credits" });
+    });
+
+    it("keeps the in-chat answer when the prepaid status cannot be read", async () => {
+      const app = await loadApp();
+      const gemini = { calls: 0 };
+      const billing = { calls: 0 };
+      routes.push(...baseRoutes(gemini, billing, [false]), mockPrepaidStatus({ calls: 0 }, { status: 502 }));
+
+      const res = await request(app).post("/chat").set(AUTH).send({ configKey: "test-chat", message: "hello" });
+
+      expect(res.status).toBe(200);
+      expect(sseEvents(res.text).find((e) => e.type === "credits_required")).toMatchObject({ action: "add_credits" });
+    });
+
+    it("stays a stream when refused mid-turn, after the first answer started (status already sent)", async () => {
+      const app = await loadApp();
+      const gemini = { calls: 0 };
+      const billing = { calls: 0 };
+      const prepaid = { calls: 0 };
+      routes.push(...baseRoutes(gemini, billing, [true, false]), mockPrepaidStatus(prepaid, { offer: "agent_api" }));
+
+      const res = await request(app).post("/chat").set(AUTH).send({ configKey: "test-chat", message: "Use a tool then answer." });
+
+      expect(res.status).toBe(200);
+      expect(gemini.calls).toBe(1);
+      expect(prepaid.calls).toBe(0);
+      const events = sseEvents(res.text);
+      expect(events[0]).toEqual({ sessionId });
+      expect(events.find((e) => e.type === "credits_required")).toMatchObject({ action: "add_credits" });
+    });
   });
 });
