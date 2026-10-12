@@ -76,29 +76,22 @@ describe("declaration reads hit features-service with its service key", () => {
 });
 
 describe("declare_channel", () => {
-  it("creates the channel with the chat's org as requester and files 'publish it'", async () => {
+  it("creates the channel live with the chat's org as requester; no publish request (owner 2026-10-12)", async () => {
     fetchMock().mockResolvedValue(res(201, { slug: "voice-note", published: false, legs: [] }));
     const { declareChannel } = await load();
-    const { file, filed } = fileMock();
-    const r = await declareChannel(
-      { slug: "voice-note", name: "Voice note", channelType: "outbound", userRequest: "send them a voice note", published: true },
-      ctx,
-      file,
-    );
+    const r = await declareChannel({ slug: "voice-note", name: "Voice note", channelType: "outbound", userRequest: "send them a voice note", published: true }, ctx);
     const sent = call(0);
     expect(sent).toMatchObject({ url: "http://features.test/internal/declarations/channels", method: "POST" });
     expect(sent.body).toMatchObject({ slug: "voice-note", createdBy: "user-1", requestedByOrgId: "org-1" });
     // the Copilot can never publish: the field is not forwarded
     expect(sent.body).not.toHaveProperty("published");
     expect(sent.body).not.toHaveProperty("userRequest");
-    expect(r.status).toBe("declared_on_hold");
-    expect(filed).toHaveLength(1);
-    expect(filed[0]).toMatchObject({ repo: "features-service", pieceKey: "publish-channel-voice-note", userRequest: "send them a voice note" });
+    expect(r).toEqual({ status: "declared", channel: { slug: "voice-note", published: false, legs: [] } });
   });
 });
 
 describe("declare_leg", () => {
-  it("a reactive leg on a coded trigger is created unpublished and files 'publish it'", async () => {
+  it("a reactive leg on a coded trigger is created live; no publish request", async () => {
     fetchMock().mockResolvedValue(
       res(201, {
         leg: { legKey: "positive_reply_to_meeting_booked", published: false },
@@ -121,8 +114,8 @@ describe("declare_leg", () => {
       createdBy: "user-1",
       requestedByOrgId: "org-1",
     });
-    expect(r.status).toBe("declared_on_hold");
-    expect(filed.map((f) => f.pieceKey)).toEqual(["publish-channel-voice-note", "publish-leg-voice-note-positive-reply-to-meeting-booked"]);
+    expect(r.status).toBe("declared");
+    expect(filed).toHaveLength(0);
   });
 
   it("a leg on a trigger nothing fires becomes a recorded staff request, not an error", async () => {
@@ -179,7 +172,7 @@ describe("declare_trigger_type", () => {
 });
 
 describe("declare_sales_path", () => {
-  it("files 'publish it' for each leg not visible to clients", async () => {
+  it("declares the path live; files nothing even when features-service still serves a leg as invisible", async () => {
     fetchMock().mockResolvedValue(
       res(201, {
         combinationKey: "k",
@@ -191,15 +184,13 @@ describe("declare_sales_path", () => {
       }),
     );
     const { declareSalesPath } = await load();
-    const { file, filed } = fileMock();
     const legs = [
       { channelSlug: "cold-email", legKey: "lead_found_to_positive_reply" },
       { channelSlug: "voice-note", legKey: "positive_reply_to_paid" },
     ];
-    const r = await declareSalesPath({ legs, userRequest: "u" }, ctx, file);
+    const r = await declareSalesPath({ legs, userRequest: "u" }, ctx);
     expect(call(0).body).toEqual({ legs, createdBy: "user-1", requestedByOrgId: "org-1" });
-    expect(r.status).toBe("declared_on_hold");
-    expect(filed.map((f) => f.pieceKey)).toEqual(["publish-leg-voice-note-positive-reply-to-paid"]);
+    expect(r.status).toBe("declared");
   });
 });
 

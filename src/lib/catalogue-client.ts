@@ -1,10 +1,8 @@
-import { assertNotMixed } from "./funnel-mix.js";
 import {
   DeclarationRefusedError,
   ON_HOLD_INSTRUCTION,
   detectorRequest,
   features,
-  fileLegPublish,
   type DeclarationContext,
   type FileStaffRequest,
   type HeldPiece,
@@ -22,9 +20,12 @@ import {
 // owner owns the shape and the figures, the model quotes them.
 //
 // Creates stamp `createdBy` = the requester and `requestedByOrgId` = the chat's
-// org. What a create cannot finish itself is filed with the team in the same
-// call (an unpublished pipe -> "publish it"; a reactive pipe on a trigger
-// nothing fires -> "build the detector") and reported ON HOLD, never thrown.
+// org. A created pipe, path or funnel is LIVE at once, for every customer
+// (owner 2026-10-12): no draft, no staff publish request. Whether it can run,
+// its kind and whether it is mixed are features-service's served verdicts
+// (`runnable`, `type`, `mixed`), never recomputed here. The one thing a create
+// cannot finish itself (a reactive pipe on a trigger nothing fires) is filed
+// with the team in the same call and reported ON HOLD, never thrown.
 // ---------------------------------------------------------------------------
 
 export const CATALOGUE_MAX_LIMIT = 25;
@@ -240,14 +241,13 @@ interface PipeDetail {
   id: string;
   channelSlug: string;
   legKey: string;
-  draft?: boolean;
 }
 
 const PIPE_FIELDS = ["channelSlug", "fromStep", "toStep", "mode", "triggerId", "conversionRatePct"] as const;
 
 /**
- * POST /internal/catalogue/pipes — a NEW pipe (one channel x one leg). A draft
- * pipe -> "publish it" filed with the team. A reactive pipe on a trigger
+ * POST /internal/catalogue/pipes — a NEW pipe (one channel x one leg), live
+ * once created. A reactive pipe on a trigger
  * nothing fires is refused by the owner (nothing stored) -> "build the
  * detector" filed, reported on hold.
  */
@@ -284,8 +284,7 @@ export async function createPipe(a: Record<string, unknown>, ctx: DeclarationCon
     }
     throw err;
   }
-  const onHold: HeldPiece[] = pipe.draft ? [await fileLegPublish(pipe.channelSlug, pipe.legKey, userRequest, file)] : [];
-  return { status: onHold.length ? "created_on_hold" : "created", pipe, onHold, ...(onHold.length ? { instruction: ON_HOLD_INSTRUCTION } : {}) };
+  return { status: "created", pipe };
 }
 
 /** POST /internal/catalogue/sales-paths — a NEW chain of legs to Paid client (200 `created:false` when it exists). */
@@ -296,48 +295,29 @@ export async function createSalesPath(a: Record<string, unknown>, ctx: Declarati
   });
 }
 
-interface FunnelDetail {
-  id: string;
-  draft?: boolean;
-  legs?: Array<{ legKey: string; pipe: { id: string } | null }>;
-}
-
 /**
- * POST /internal/catalogue/sales-funnels — a sales path with one pipe per leg.
- * A funnel is a draft while one of its pipes is: each draft pipe gets the SAME
- * publish request create_pipe files (deduped per org, so a repeat counts).
+ * POST /internal/catalogue/sales-funnels — a sales path with one pipe per leg,
+ * live once created. Nothing is re-graded here (owner 2026-10-12): the funnel
+ * comes back with features-service's own `type`, `mixed` and `runnable`, and
+ * the campaign tools refuse a mixed one on that served verdict. A customer only
+ * composes pipes features-service serves as `runnable` (a pipe the customer's
+ * own team works always is).
  */
-export async function createSalesFunnel(a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest, reader: CatalogueReader) {
-  const userRequest = reqStr("userRequest", a.userRequest);
+export async function createSalesFunnel(a: Record<string, unknown>, ctx: DeclarationContext, _file: FileStaffRequest, reader: CatalogueReader) {
   const pipeIds = stringArray("pipeIds", a.pipeIds);
-  // One kind per funnel (owner 2026-10-10): never compose proactive and reactive pipes together.
-  const pipes = await Promise.all(
-    pipeIds
-      .filter((p) => p.includes("|"))
-      .map(async (id) => ({ id, ...((await features("create_sales_funnel:read_pipe", "GET", `/internal/catalogue/pipes/${enc(id)}`)) as { mode?: unknown; runnable?: unknown }) })),
-  );
-  assertNotMixed(pipeIds.join("+"), pipes);
-  // A customer only gets funnels we can run: every pipe must be runnable (a bare leg key is the buyer or their team).
   if (!(await reader.isStaff())) {
-    for (const pipe of pipes) {
+    for (const id of pipeIds.filter((p) => p.includes("|"))) {
+      const pipe = (await features("create_sales_funnel:read_pipe", "GET", `/internal/catalogue/pipes/${enc(id)}`)) as { runnable?: unknown };
       if (pipe.runnable === false) {
-        throw new CatalogueArgError(`pipe ${pipe.id} is not something we run today: a customer funnel uses only runnable pipes (find_pipes lists them).`);
+        throw new CatalogueArgError(`pipe ${id} is not something we run today: a customer funnel uses only runnable pipes (find_pipes lists them).`);
       }
     }
   }
-  const funnel = (await features("create_sales_funnel", "POST", "/internal/catalogue/sales-funnels", {
+  const funnel = await features("create_sales_funnel", "POST", "/internal/catalogue/sales-funnels", {
     pipeIds,
     ...provenance(ctx),
-  })) as FunnelDetail;
-  const onHold: HeldPiece[] = [];
-  if (funnel.draft) {
-    for (const leg of funnel.legs ?? []) {
-      if (!leg.pipe) continue;
-      const pipe = (await features("create_sales_funnel:read_pipe", "GET", `/internal/catalogue/pipes/${enc(leg.pipe.id)}`)) as PipeDetail;
-      if (pipe.draft) onHold.push(await fileLegPublish(pipe.channelSlug, pipe.legKey, userRequest, file));
-    }
-  }
-  return { status: onHold.length ? "created_on_hold" : "created", funnel, onHold, ...(onHold.length ? { instruction: ON_HOLD_INSTRUCTION } : {}) };
+  });
+  return { status: "created", funnel };
 }
 
 export const CATALOGUE_WRITE_TOOLS: Record<

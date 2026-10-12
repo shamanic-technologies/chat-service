@@ -2468,7 +2468,7 @@ export const SET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
 export const CREATE_FUNNEL_CAMPAIGN_TOOL: Anthropic.Tool = {
   name: "create_funnel_campaign",
   description:
-    "Create the campaign of a sales funnel for an offer, STOPPED (data only, starts nothing; an existing one is returned as is). To run it: set_funnel_caps, then propose_switch_on start_funnel_campaign and the user's yes.",
+    "Create the campaign of a sales funnel for an offer, STOPPED (data only, starts nothing; an existing one is returned as is). To run it: set_funnel_caps, then propose_switch_on start_funnel_campaign and the user's yes. Returns funnelLine (who works each leg): tell the user what the campaign does from it, and when no step writes to a lead, that no email goes out.",
   input_schema: { type: "object" as const, properties: FUNNEL_TARGET_PROPS, required: ["brandId", "offerId", "salesFunnelId"] },
 };
 
@@ -2738,7 +2738,7 @@ export const CREATE_PIPE_TOOL: Anthropic.Tool = {
   description:
     "Create a NEW pipe: a channel working one leg (fromStep -> toStep). Proactive: no trigger. Reactive: exactly one triggerId (list_trigger_types). " +
     CATALOGUE_CREATE_RULE +
-    " A new pipe is a DRAFT until staff publishes it: the tool files that request itself and returns created_on_hold. A reactive pipe on a trigger nothing fires is not created: the tool files the detector request and returns on_hold. Say it is on hold with the team, never call request_staff again for it.",
+    " A new pipe is live at once, for every customer: nothing waits on staff. A reactive pipe on a trigger nothing fires is not created: the tool files the detector request and returns on_hold. Say it is on hold with the team, never call request_staff again for it.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -2768,9 +2768,9 @@ export const CREATE_SALES_PATH_TOOL: Anthropic.Tool = {
 export const CREATE_SALES_FUNNEL_TOOL: Anthropic.Tool = {
   name: "create_sales_funnel",
   description:
-    "Create a NEW sales funnel: one entry per leg of a sales path, in order: a pipe id, or the bare leg key of a leg no channel performs (the customer's team). Returns created:false when it exists. " +
-    CATALOGUE_CREATE_RULE +
-    " A funnel using a draft pipe is on hold until staff publishes it (filed for you).",
+    "Create a NEW sales funnel: one pipe id per leg of a sales path, in order (a Your Team pipe for a leg the customer's own team works, e.g. your-team-closing-calls|lead_found_to_paid_client). Live at once, nothing waits on staff. Returns created:false when it exists. " +
+    "The funnel comes back with features-service's own type, mixed and runnable: read them, never judge a mix yourself. A source then the customer's team (Start -> Lead found -> Paid client) is a valid funnel that only finds leads. " +
+    CATALOGUE_CREATE_RULE,
   input_schema: {
     type: "object" as const,
     properties: { pipeIds: idList("One per leg, in order."), userRequest: CATALOGUE_USER_REQUEST_PROP },
@@ -2849,7 +2849,7 @@ const USER_REQUEST_PROP = {
 };
 
 const DECLARATION_HOLD_RULE =
-  "A declaration lands UNPUBLISHED (invisible to clients) until staff publishes it: the tool files the staff request itself and returns status declared_on_hold with onHold[]. Tell the user that piece is on hold with the team, then carry on. Never call request_staff again for a piece listed in onHold.";
+  "A declaration is live the moment it is created, for every customer: nothing waits on staff, never file a publish request. When the tool returns status on_hold or declared_on_hold with onHold[] (a trigger nothing fires yet), tell the user that piece is on hold with the team, then carry on. Never call request_staff again for a piece listed in onHold.";
 
 export const LIST_DECLARED_CHANNELS_TOOL: Anthropic.Tool = {
   name: "list_declared_channels",
@@ -2974,8 +2974,7 @@ export const DECLARE_SALES_PATH_TOOL: Anthropic.Tool = {
   name: "declare_sales_path",
   description:
     "Declare a NEW sales path: 1 to 12 channel legs in order, starting at the entry step, each leg starting where the previous ended, ending at paid, no loop. Every leg must exist (declare it first). Ticks nothing and starts nothing. " +
-    "A path is visible to clients once all its legs and channels are published; the tool files the publish requests for the ones that are not. " +
-    DECLARATION_HOLD_RULE,
+        DECLARATION_HOLD_RULE,
   input_schema: {
     type: "object" as const,
     properties: {
