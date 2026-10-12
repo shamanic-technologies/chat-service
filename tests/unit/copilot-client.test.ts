@@ -90,11 +90,11 @@ describe("offer steps and leg rates (owner 2026-10-12: ask before proposing a fu
   it("set_leg_rates PUTs a partial patch at the brand grain", async () => {
     fetchMock().mockResolvedValue(ok({ legRates: [] }));
     const { setLegRates } = await load();
-    await setLegRates({ brandId: "b-1", legRates: [{ fromStep: "website_visit", toStep: "meeting_booked", ratePct: 0.5 }, { fromStep: "a", toStep: "b", ratePct: null }] }, params);
+    await setLegRates({ brandId: "b-1", legRates: [{ fromStep: "Website visit", toStep: "Meeting booked", ratePct: 0.5 }, { fromStep: "a", toStep: "b", ratePct: null }] }, params);
     expect(call(0)).toEqual({
       url: "https://api.test.local/v1/brands/b-1/leg-rates",
       method: "PUT",
-      body: { legRates: [{ fromStep: "website_visit", toStep: "meeting_booked", ratePct: 0.5 }, { fromStep: "a", toStep: "b", ratePct: null }] },
+      body: { legRates: [{ fromStep: "Website visit", toStep: "Meeting booked", ratePct: 0.5 }, { fromStep: "a", toStep: "b", ratePct: null }] },
     });
   });
 
@@ -104,6 +104,7 @@ describe("offer steps and leg rates (owner 2026-10-12: ask before proposing a fu
     [[{ fromStep: "a", toStep: "b", ratePct: "0.5%" }]],
     [[{ fromStep: "a", toStep: "b" }]],
     [[{ fromStep: "", toStep: "b", ratePct: 1 }]],
+    [[{ fromStep: "website_visit", toStep: "Meeting booked", ratePct: 0.5 }]],
   ])("set_leg_rates refuses %j before any call", async (legRates) => {
     const { setLegRates } = await load();
     await expect(setLegRates({ brandId: "b-1", legRates }, params)).rejects.toThrow(/\[copilot\]/);

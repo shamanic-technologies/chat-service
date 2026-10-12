@@ -67,6 +67,28 @@ describe("catalogue reads: one tool per level, features-service service key", ()
     expect(call(0)).toMatchObject({ url: `http://features.test${path}`, method: "GET", key: "features-key" });
   });
 
+  it.each([
+    ["find_sales_funnels", { paths: "a+b", offerId: "o-1", brandId: "b-1" }, "/internal/catalogue/sales-funnels?paths=a%2Bb&offerId=o-1&brandId=b-1&runnable=true"],
+    ["find_sales_funnels", { id: "f-1", offerId: "o-1", brandId: "b-1" }, "/internal/catalogue/sales-funnels/f-1?offerId=o-1&brandId=b-1"],
+    ["find_sales_paths", { containsSteps: ["purchase"], offerId: "o-1", brandId: "b-1" }, "/internal/catalogue/sales-paths?containsSteps=purchase&offerId=o-1&brandId=b-1&runnable=true"],
+  ])("per offer (owner 2026-10-12): %s(%j) → GET %s with the chat's org as x-org-id", async (tool, args, path) => {
+    fetchMock().mockResolvedValue(res(200, { rows: [], setAside: { total: 1, truncated: false, rows: [{ id: "x", name: "X", line: "l", missingSteps: [{ id: "purchase", name: "Purchase" }] }] } }));
+    const { CATALOGUE_READ_TOOLS } = await load();
+    const out = (await CATALOGUE_READ_TOOLS[tool](args, { ...customer, orgId: "org-uuid" })) as Record<string, any>;
+    expect(call(0)).toMatchObject({ url: `http://features.test${path}`, method: "GET", key: "features-key" });
+    expect(((fetchMock().mock.calls[0] as [string, RequestInit])[1].headers as Record<string, string>)["x-org-id"]).toBe("org-uuid");
+    expect(out.setAside.rows[0].missingSteps[0].id).toBe("purchase");
+  });
+
+  it("a fleet read sends no x-org-id; an offer without its brand is refused before any call", async () => {
+    fetchMock().mockResolvedValue(res(200, { rows: [] }));
+    const { CATALOGUE_READ_TOOLS } = await load();
+    await CATALOGUE_READ_TOOLS.find_sales_funnels({}, { ...customer, orgId: "org-uuid" });
+    expect(((fetchMock().mock.calls[0] as [string, RequestInit])[1].headers as Record<string, string>)["x-org-id"]).toBeUndefined();
+    await expect(CATALOGUE_READ_TOOLS.find_sales_funnels({ offerId: "o-1" }, { ...customer, orgId: "org-uuid" })).rejects.toThrow(/brandId/);
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps pages small: a limit over 25 is refused before any call", async () => {
     const { CATALOGUE_READ_TOOLS } = await load();
     await expect(CATALOGUE_READ_TOOLS.find_channels({ limit: 100 }, customer)).rejects.toThrow(/1 to 25/);
