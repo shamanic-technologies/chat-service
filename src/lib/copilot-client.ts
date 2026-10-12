@@ -152,6 +152,8 @@ export const addOfferStep = async (a: Record<string, unknown>, p: ApiCallParams)
 export const removeOfferStep = async (a: Record<string, unknown>, p: ApiCallParams) =>
   call("remove_offer_step", `${offerStepsPath(a)}/${id("stepKey", a.stepKey)}`, "DELETE", p);
 
+const STEP_KEY_SHAPE = /^[a-z0-9]+(_[a-z0-9]+)+$/;
+
 function legRatesPatch(value: unknown): Array<{ fromStep: string; toStep: string; ratePct: number | null }> {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error("[copilot] legRates must be a non-empty list of { fromStep, toStep, ratePct }");
@@ -160,6 +162,13 @@ function legRatesPatch(value: unknown): Array<{ fromStep: string; toStep: string
     const r = (v ?? {}) as Record<string, unknown>;
     const fromStep = rawId(`legRates[${i}].fromStep`, r.fromStep);
     const toStep = rawId(`legRates[${i}].toStep`, r.toStep);
+    // brand-service names a leg by its step LABELS ("Website visit"); a step key
+    // (website_visit) would be stored as a second, unknown leg nobody reads.
+    for (const step of [fromStep, toStep]) {
+      if (STEP_KEY_SHAPE.test(step)) {
+        throw new Error(`[copilot] legRates[${i}]: "${step}" is a step key; spell the step exactly as get_leg_rates lists it (e.g. "Website visit")`);
+      }
+    }
     if (!("ratePct" in r) || r.ratePct === undefined) {
       throw new Error(`[copilot] legRates[${i}].ratePct is required: a percent 0-100 (0.5 = 0.5%), or null to clear the stated rate`);
     }

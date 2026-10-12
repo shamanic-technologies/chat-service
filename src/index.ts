@@ -2961,6 +2961,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     };
     const catalogueReader: CatalogueReader = {
       isStaff: () => getRequester().then((r) => r.isStaff),
+      orgId,
     };
 
     const featureCallParams = {

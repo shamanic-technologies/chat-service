@@ -27,7 +27,7 @@ At each level, show a SHORT list (name, one line, cost, return) and let the user
 2. **Sales paths**: chains of steps to a paying client that contain it. find_sales_paths
 3. **Channels**: who works those steps (LinkedIn posting, cold email...). find_channels
 4. **Pipes**: one channel on one step. find_pipes
-5. **Sales funnels**: a path with one pipe per step. THIS is what you propose: its name, cost per paying client, return. find_sales_funnels. Only funnels whose every step the client's business has: get_offer_steps, ask about the unknown ones.
+5. **Sales funnels**: a path with one pipe per step. THIS is what you propose: its name, cost per paying client, return. find_sales_funnels(offerId, brandId). Only funnels whose every step the client's business has: ask about the steps a set-aside funnel misses.
 6. **Workflows** (optional): how one pipe runs. The platform picks the best; show only if asked. find_workflows
 7. **Campaigns**: the chosen funnel becomes a campaign with at least one cap the user states (a max budget, a max volume, or both), and runs only after their yes. Load \`campaigns\`.
 If the user named a channel, find it first to learn what it produces, then walk from Steps.
@@ -206,7 +206,7 @@ A leg is the move of a lead from one sales step to the next, e.g. lead found to 
 - get_leg_rates(brandId): conversion rate per leg.
 
 ## Write
-- set_leg_rates(brandId, legRates): the rates the client STATES, for the whole brand. ratePct is a percent: "0.5%" is 0.5; null clears it. Legs not named stay as they are. Read back with get_leg_rates and quote it. Never invent a rate.
+- set_leg_rates(brandId, legRates): the rates the client STATES, for the whole brand. Steps spelled as get_leg_rates lists them ("Website visit"). ratePct is a percent: "0.5%" is 0.5; null clears it. Legs not named stay as they are. Read back with get_leg_rates and quote it. Never invent a rate.
 - STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_leg(channelSlug, fromStep, toStep, mode, triggerId?): a NEW leg on a channel (declared or coded), created live. Proactive: no trigger. Reactive: exactly one trigger (list_trigger_types).
 - The offer's legs come from the funnels it runs (funnel campaigns, see campaigns).
 
@@ -613,14 +613,14 @@ A sales funnel is a sales path with a pipe on every step: the complete plan that
 Its budget caps every pipe in it, so a funnel is either **Proactive** (it reaches out: cold email) or **Reactive** (it answers a trigger: AI meeting booking or an AI call on a positive reply), never both: a reactive pipe inside a proactive funnel can starve it. Every row's \`type\` and \`mixed\` say which: features-service's verdict, never yours (a step the user's own team works is no mix). Propose one Proactive funnel; if the user wants replies handled by AI, ALSO a Reactive funnel from the list (its line starts at the trigger step, e.g. Positive reply). The campaign tools refuse a funnel served as mixed.
 
 ## Read
-- find_sales_funnels(paths, containsChannels): best return first.
+- find_sales_funnels(paths, containsChannels, offerId, brandId): best return first, per offer.
 - find_sales_funnels(id): its legs, the rate at each, the pipe on each, cost per paying client, return.
 
 ## Only funnels the client's business can run (owner 2026-10-12)
-A funnel is worth proposing only if the client's business has EVERY step on its line. A funnel through Direct purchase is worthless to a business that sells no other way than a call. So before proposing, read get_offer_steps.
+A funnel is worth proposing only if the client's business has EVERY step on its line. A funnel through Direct purchase is worthless to a business that sells no other way than a call. So read per offer: find_sales_funnels(offerId, brandId). rows = funnels its business can run; setAside = funnels through a step it has not stated, with missingSteps. get_offer_steps shows the list itself.
 - Lead found and Paid client are in every business: never ask about them.
 - A step it lists: fine. stated false: nothing is known yet.
-- A step not listed (or nothing known): ASK the client, plainly, before proposing that funnel ("Do you sell by direct purchase on your website?"). One question for the steps that matter, not a survey.
+- A step not listed (a setAside funnel's missingSteps, or nothing known): ASK the client, plainly, before proposing that funnel ("Do you sell by direct purchase on your website?"). One question for the steps that matter, not a survey.
 - Yes: add_offer_step, then the funnel may be proposed. No: remove_offer_step if listed, and drop every funnel through that step, now and later.
 - A funnel's path never changes: never "move" a campaign to another path. A campaign on a step the business lacks: offer to stop it (stop_funnel_campaign) and start a new one on the right funnel.
 

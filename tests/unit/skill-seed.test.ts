@@ -242,7 +242,9 @@ describe("ask before proposing a funnel on a step the business may lack (owner 2
       expect(f).toContain(w);
     }
     expect(f.indexOf("get_offer_steps")).toBeLessThan(f.indexOf("## Propose"));
-    expect(bySlug.get("index")!).toContain("get_offer_steps");
+    expect(f).toContain("find_sales_funnels(offerId, brandId)");
+    expect(f).toContain("setAside");
+    expect(bySlug.get("index")!).toContain("find_sales_funnels(offerId, brandId)");
   });
 
   it("the legs skill writes a stated rate as a percent", () => {

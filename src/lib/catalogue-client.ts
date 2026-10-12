@@ -40,6 +40,8 @@ export const CATALOGUE_MAX_LIMIT = 25;
  */
 export interface CatalogueReader {
   isStaff: () => Promise<boolean>;
+  /** The chat's org (internal UUID): sent as x-org-id on a per-offer read. */
+  orgId?: string;
 }
 
 export const NOT_RUN_TODAY = {
@@ -156,17 +158,38 @@ export function withCostUnits(value: unknown): unknown {
 /** Levels whose objects can be run or not (features-service `runnable`). */
 const RUNNABLE_LEVELS: ReadonlySet<Level> = new Set(["sales-paths", "channels", "pipes", "sales-funnels"]);
 
+/**
+ * Levels read PER OFFER (features-service, owner 2026-10-12): with `offerId` +
+ * `brandId` (and the chat's org as x-org-id) a sales path or funnel walking a
+ * step the offer's business does not have leaves `rows` for `setAside`, with
+ * its `missingSteps`, and funnels are priced on the offer's own figures.
+ */
+const OFFER_LEVELS: ReadonlySet<Level> = new Set(["sales-paths", "sales-funnels"]);
+
+function offerScope(a: Record<string, unknown>, reader: CatalogueReader): { query: Record<string, string>; headers?: Record<string, string> } {
+  const offerId = optStr("offerId", a.offerId);
+  if (!offerId) return { query: {} };
+  const brandId = optStr("brandId", a.brandId);
+  if (!brandId) throw new CatalogueArgError("offerId needs its brandId (list_offers)");
+  if (!reader.orgId) throw new Error("[catalogue] a per-offer read needs the chat's org");
+  return { query: { offerId, brandId }, headers: { "x-org-id": reader.orgId } };
+}
+
 /** One level: a page (filters) or one object (`id`). */
 function level(tool: string, path: Level, filters: Record<string, (v: unknown) => string | null>) {
   return async (a: Record<string, unknown>, reader: CatalogueReader): Promise<unknown> => {
     const id = optStr("id", a.id);
     const extra: Record<string, string | number | null> = {};
     for (const [k, read] of Object.entries(filters)) extra[k] = read(a[k]);
+    const offer = OFFER_LEVELS.has(path) ? offerScope(a, reader) : { query: {} };
     const gated = RUNNABLE_LEVELS.has(path) && !(await wantsEverything(a, reader));
     if (id) {
-      // A detail read keeps only the filters the owner reads there (`pipe` for workflows).
-      const detailQs = path === "workflows" ? qs({ pipe: extra.pipe ?? null }) : "";
-      const body = (await features(tool, "GET", `/internal/catalogue/${path}/${enc(id)}${detailQs}`)) as { runnable?: unknown; name?: unknown };
+      // A detail read keeps only the filters the owner reads there (`pipe` for workflows, the offer).
+      const detailQs = path === "workflows" ? qs({ pipe: extra.pipe ?? null }) : qs(offer.query);
+      const body = (await features(tool, "GET", `/internal/catalogue/${path}/${enc(id)}${detailQs}`, undefined, offer.headers)) as {
+        runnable?: unknown;
+        name?: unknown;
+      };
       if (gated && body.runnable === false) return { id, ...NOT_RUN_TODAY };
       return withCostUnits(body);
     }
@@ -174,7 +197,9 @@ function level(tool: string, path: Level, filters: Record<string, (v: unknown) =
       await features(
         tool,
         "GET",
-        `/internal/catalogue/${path}${qs({ ...extra, ...(gated ? { runnable: "true" } : {}), q: optStr("q", a.q), limit: optLimit(a.limit) })}`,
+        `/internal/catalogue/${path}${qs({ ...extra, ...offer.query, ...(gated ? { runnable: "true" } : {}), q: optStr("q", a.q), limit: optLimit(a.limit) })}`,
+        undefined,
+        offer.headers,
       ),
     );
   };

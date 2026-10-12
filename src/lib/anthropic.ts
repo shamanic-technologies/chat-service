@@ -2318,7 +2318,7 @@ export const GET_LEG_RATES_TOOL: Anthropic.Tool = {
 export const SET_LEG_RATES_TOOL: Anthropic.Tool = {
   name: "set_leg_rates",
   description:
-    "Write the conversion rates the client states, for the whole brand (the same for every offer). Each leg is { fromStep, toStep, ratePct }: step keys (find_steps) and a PERCENT from 0 to 100, so \"0.5%\" is 0.5; ratePct null clears a stated rate. Legs you do not name are untouched. Returns every leg as read after the write. Data only: starts nothing, spends nothing. Write only a rate the client stated; never invent one.",
+    "Write the conversion rates the client states, for the whole brand (the same for every offer). Read get_leg_rates first: each leg is { fromStep, toStep, ratePct } with the two steps spelled EXACTLY as get_leg_rates lists them (e.g. Website visit -> Meeting booked, never a key like website_visit) and a PERCENT from 0 to 100, so \"0.5%\" is 0.5; ratePct null clears a stated rate. Legs you do not name are untouched. Returns every leg as read after the write. Data only: starts nothing, spends nothing. Write only a rate the client stated; never invent one.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -2326,12 +2326,12 @@ export const SET_LEG_RATES_TOOL: Anthropic.Tool = {
       legRates: {
         type: "array",
         minItems: 1,
-        description: "The legs to write, e.g. [{ fromStep: \"website_visit\", toStep: \"meeting_booked\", ratePct: 0.5 }].",
+        description: "The legs to write, e.g. [{ fromStep: \"Website visit\", toStep: \"Meeting booked\", ratePct: 0.5 }].",
         items: {
           type: "object",
           properties: {
-            fromStep: { type: "string", description: "Step key the leg starts from (e.g. website_visit)." },
-            toStep: { type: "string", description: "Step key the leg leads to (e.g. meeting_booked)." },
+            fromStep: { type: "string", description: "The step the leg starts from, as get_leg_rates spells it (e.g. Website visit)." },
+            toStep: { type: "string", description: "The step the leg leads to, as get_leg_rates spells it (e.g. Meeting booked)." },
             ratePct: {
               anyOf: [{ type: "number", minimum: 0, maximum: 100 }, { type: "null" }],
               description: "Percent 0-100 (0.5 = 0.5%). null clears the stated rate.",
@@ -2702,14 +2702,19 @@ export const FIND_STEPS_TOOL: Anthropic.Tool = {
   input_schema: { type: "object" as const, properties: CATALOGUE_PAGE_PROPS },
 };
 
+const CATALOGUE_OFFER_PROPS = {
+  offerId: { type: "string", description: "The offer (list_offers): read per offer, setting aside what its business lacks. Needs brandId." },
+  brandId: BRAND_ID_PROP,
+};
+
 export const FIND_SALES_PATHS_TOOL: Anthropic.Tool = {
   name: "find_sales_paths",
   description:
-    "Level 2: SALES PATHS, chains of steps from first contact to Paid client (no channel yet), ranked by return. Filter with containsSteps (step ids from find_steps). " +
+    "Level 2: SALES PATHS, chains of steps from first contact to Paid client (no channel yet), ranked by return. Filter with containsSteps (step ids from find_steps). Pass offerId + brandId to keep only paths the offer's business can run: the others come back in setAside with their missingSteps. " +
     CATALOGUE_ROW_NOTE,
   input_schema: {
     type: "object" as const,
-    properties: { containsSteps: idList("Step ids (or labels) the path must contain."), ...CATALOGUE_PAGE_PROPS, ...INCLUDE_NOT_RUNNABLE_PROP },
+    properties: { containsSteps: idList("Step ids (or labels) the path must contain."), ...CATALOGUE_OFFER_PROPS, ...CATALOGUE_PAGE_PROPS, ...INCLUDE_NOT_RUNNABLE_PROP },
   },
 };
 
@@ -2749,13 +2754,14 @@ export const FIND_PIPES_TOOL: Anthropic.Tool = {
 export const FIND_SALES_FUNNELS_TOOL: Anthropic.Tool = {
   name: "find_sales_funnels",
   description:
-    "Level 5: SALES FUNNELS, a sales path with one pipe per leg: the thing you PROPOSE to the user (name, cost per paying client, ROI). Filter with paths and/or containsChannels. Read one with id for its legs, rates and pipes. " +
+    "Level 5: SALES FUNNELS, a sales path with one pipe per leg: the thing you PROPOSE to the user (name, cost per paying client, ROI). Filter with paths and/or containsChannels. ALWAYS pass offerId + brandId when you know the offer: rows are then the funnels its business can run, priced on its own figures, and setAside lists the funnels through a step the offer has not stated (missingSteps: ask the client about those before proposing one). Read one with id for its legs, rates and pipes. " +
     CATALOGUE_ROW_NOTE,
   input_schema: {
     type: "object" as const,
     properties: {
       paths: idList("Sales path ids."),
       containsChannels: idList("Channel ids the funnel must use."),
+      ...CATALOGUE_OFFER_PROPS,
       ...CATALOGUE_PAGE_PROPS,
       ...INCLUDE_NOT_RUNNABLE_PROP,
     },
