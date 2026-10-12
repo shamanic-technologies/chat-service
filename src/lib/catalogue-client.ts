@@ -137,6 +137,25 @@ export function withCostUnits(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
   const o = value as Record<string, unknown>;
   const out: Record<string, unknown> = {};
+  // EXPECTED economics (features-service, owner 2026-10-11): an assumption-backed
+  // figure with its own `basis` (measured < stated < fleet < default), never a
+  // measured one. It says so in the same field, like an estimate.
+  if (o.status === "expected") {
+    for (const [k, v] of Object.entries(o)) out[k] = withCostUnits(v);
+    if (typeof o.costUsd === "number") {
+      if (typeof o.costPer !== "string" || o.costPer.trim() === "") {
+        throw new Error("[catalogue] features-service served an expected cost without its unit (costPer)");
+      }
+      out.cost = `$${o.costUsd} ${o.costPer} (expected)`;
+    }
+    if (typeof o.roi === "number") {
+      if (typeof o.basis !== "string" || o.basis.trim() === "") {
+        throw new Error("[catalogue] features-service served an expected return without its basis");
+      }
+      out.return = `${o.roi}x (expected, ${o.basis} inputs)`;
+    }
+    return out;
+  }
   if (typeof o.costUsd === "number") {
     if (typeof o.costPer !== "string" || o.costPer.trim() === "") {
       throw new Error(`[catalogue] features-service served a cost without its unit (costPer) on ${String(o.id ?? "a row")}`);

@@ -500,6 +500,7 @@ id, name, icon, line, cost, costUsd, roi, status.
 - cost: the figure WITH its unit ("$137.43 per positive reply", "$2748.69 per paying client (estimated)"). Quote it exactly, unit and "(estimated)" included. A channel or pipe cost is per its outcome, never per paying client; only sales paths and funnels are per paying client.
 - return: "0.91x (estimated)". Every return is an estimate today: say "estimated" (or "about"), never "measured".
 - roi: value / cost. Above 1 pays back.
+- expected: the same figures where an input is assumed (cost and return carry "(expected)" and what they rest on). Use it only when cost or return is null, and say "expected".
 - status: measured (real evidence), estimated (a rate it rests on is not measured: say "estimated", never "measured"), learning (not measured yet: cost and roi are null, say so), customer_time (the customer's own team: no cost to us).
 Pages are 10 rows by default, 25 at most. Narrow with filters or q, never page through everything. Pass id to any find tool to read ONE object in detail.
 
