@@ -18,6 +18,7 @@ import {
   COST_PREFIX,
   anthropicRejectsSampling,
   AnthropicUnsupportedOptionError,
+  assertAnthropicEffortSupported,
   PROVIDER_MODELS,
   costPrefixForModel,
   resolveModel,
@@ -580,7 +581,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, responseSchema, temperature, maxTokens, provider: requestedProvider, model: requestedModel, imageUrl, imageContext, webSearch: webSearchRaw, disableThinking: disableThinkingRaw, thinkingLevel } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, maxTokens, provider: requestedProvider, model: requestedModel, imageUrl, imageContext, webSearch: webSearchRaw, disableThinking: disableThinkingRaw, thinkingLevel, effort } = parsed.data;
   const webSearch = webSearchRaw === true;
   const disableThinking = disableThinkingRaw === true;
 
@@ -630,6 +631,16 @@ app.post("/complete", requireAuth, async (req, res) => {
   // which of our fields caused it.
   const samplingRefusal = samplingRefusalFor(provider, effectiveModel, requestedModel, temperature);
   if (samplingRefusal) return res.status(400).json(samplingRefusal);
+  // A stated effort on a model that cannot honour it is refused here, before
+  // the cost hold, in the same shape as a provider-refused option.
+  if (provider === "anthropic") {
+    try {
+      assertAnthropicEffortSupported(effectiveModel, effort, disableThinkingRaw);
+    } catch (err) {
+      if (!(err instanceof AnthropicUnsupportedOptionError)) throw err;
+      return res.status(400).json({ error: "Provider rejected a request option.", detail: err.message, retryable: false });
+    }
+  }
 
   // Catalog names for this call. Resolved BEFORE anything is fetched or spent:
   // a model costs-service cannot price must fail while the request is still
@@ -785,6 +796,7 @@ app.post("/complete", requireAuth, async (req, res) => {
         maxTokens: providerMaxOutputTokens,
         webSearch,
         disableThinking,
+        effort,
         cache: anthropicCachePriced(resolved.costPrefix),
       });
       // The four billed dimensions (input / cache read / cache write / output),
@@ -2194,7 +2206,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, webSearch: webSearchRaw, disableThinking: disableThinkingRaw, thinkingLevel } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, webSearch: webSearchRaw, disableThinking: disableThinkingRaw, thinkingLevel, effort } = parsed.data;
   const webSearch = webSearchRaw === true;
   const disableThinking = disableThinkingRaw === true;
 
@@ -2236,6 +2248,16 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   // which of our fields caused it.
   const samplingRefusal = samplingRefusalFor(provider, effectiveModel, requestedModel, temperature);
   if (samplingRefusal) return res.status(400).json(samplingRefusal);
+  // A stated effort on a model that cannot honour it is refused here, before
+  // the cost hold, in the same shape as a provider-refused option.
+  if (provider === "anthropic") {
+    try {
+      assertAnthropicEffortSupported(effectiveModel, effort, disableThinkingRaw);
+    } catch (err) {
+      if (!(err instanceof AnthropicUnsupportedOptionError)) throw err;
+      return res.status(400).json({ error: "Provider rejected a request option.", detail: err.message, retryable: false });
+    }
+  }
 
   // Catalog names, resolved before any fetch — same one-timestamp rule as
   // /complete: the regime is picked once, from the UTC clock at declaration.
@@ -2317,6 +2339,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
         model: effectiveModel,
         webSearch,
         disableThinking,
+        effort,
         cache: anthropicCachePriced(resolved.costPrefix),
       });
       result = { ...anthropicResult, costLines: anthropicCostLines(resolved.costPrefix, anthropicResult.billed) };

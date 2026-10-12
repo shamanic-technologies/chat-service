@@ -600,6 +600,52 @@ export function anthropicEffortFloor(apiModelId: string): "low" | null {
 }
 
 /**
+ * Anthropic models that accept a caller-stated `effort` on `/complete`, sent as
+ * `thinking: {type: "adaptive"}` + `output_config.effort`. Without the
+ * `thinking` block these models do NOT reason on `/complete` (probed live
+ * 2026-10-12: Opus 5.5 at effort `medium` with no `thinking` block → 0
+ * thinking tokens; with it → adaptive thinking that scales with the level).
+ * Each id was probed the same day with adaptive + effort + json_schema format
+ * → 200 (Opus 5.5 at all five levels). A model absent here is refused with a
+ * 400 before any spend, never silently answered without reasoning.
+ */
+const ANTHROPIC_EFFORT_MODELS: ReadonlySet<string> = new Set([
+  "claude-opus-5-5",
+  "claude-sonnet-5-5",
+  "claude-haiku-5-5",
+  "claude-fable-5-1",
+]);
+
+/** True when this Anthropic model honours a caller-stated `effort` on /complete. */
+export function anthropicAcceptsEffort(apiModelId: string): boolean {
+  return ANTHROPIC_EFFORT_MODELS.has(apiModelId);
+}
+
+/**
+ * Fail loud when a caller states an `effort` the request cannot honour: a model
+ * not in ANTHROPIC_EFFORT_MODELS, or `effort` beside `disableThinking: true`
+ * (two contradictory asks). A no-op when no effort is stated.
+ */
+export function assertAnthropicEffortSupported(
+  apiModelId: string,
+  effort: AnthropicEffort | undefined,
+  disableThinking: boolean | undefined,
+): void {
+  if (effort == null) return;
+  if (disableThinking === true) {
+    throw new AnthropicUnsupportedOptionError(
+      `"effort" and "disableThinking: true" contradict each other; send one of them.`,
+    );
+  }
+  if (!anthropicAcceptsEffort(apiModelId)) {
+    throw new AnthropicUnsupportedOptionError(
+      `Model "${apiModelId}" does not accept "effort" on /complete. ` +
+        `Models that do: ${[...ANTHROPIC_EFFORT_MODELS].join(", ")}.`,
+    );
+  }
+}
+
+/**
  * A caller sent a sampling parameter to a model that refuses it.
  *
  * Its own class so the completion routes can answer 400 (a request-shape error
@@ -3245,6 +3291,13 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
          */
         disableThinking?: boolean;
         /**
+         * Caller-stated thinking effort for this one call. When set, sends
+         * `thinking: {type: "adaptive"}` + `output_config.effort`, so the model
+         * reasons at that level (thinking tokens are billed as output and are
+         * already in `usage.output_tokens`). Omitted = byte-identical request.
+         */
+        effort?: AnthropicEffort;
+        /**
          * Cache the system prompt (+ tools) with a 5-minute breakpoint. Pass
          * true ONLY for a model whose cache rows are priced
          * (`anthropicCachePriced`). The user message is never cached: it is the
@@ -3271,6 +3324,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       // completion routes check the same thing earlier so the caller gets a 400
       // before a cost is held; this makes it unreachable from any other caller.
       assertAnthropicSamplingSupported(effectiveModel, options?.temperature);
+      assertAnthropicEffortSupported(effectiveModel, options?.effort, options?.disableThinking);
 
       // Build user content — multimodal when imageUrl is provided
       let userContent: Anthropic.MessageCreateParamsNonStreaming["messages"][0]["content"];
@@ -3292,7 +3346,8 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       // rejects permissive schemas with 400). Callers requiring JSON mode on
       // Anthropic must supply `responseSchema`; the route handlers reject
       // `responseFormat:"json"` without a schema upfront.
-      const effort = options?.disableThinking === true ? anthropicEffortFloor(effectiveModel) : null;
+      const effort = options?.effort
+        ?? (options?.disableThinking === true ? anthropicEffortFloor(effectiveModel) : null);
       const outputConfig = {
         ...(options?.responseSchema != null
           ? {
@@ -3316,6 +3371,9 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
           : systemPrompt,
         messages: [{ role: "user", content: userContent }],
         ...(options?.temperature != null ? { temperature: options.temperature } : {}),
+        // Only a caller-stated effort turns reasoning ON; disableThinking's
+        // floor never sends a thinking block (unchanged behaviour).
+        ...(options?.effort != null ? { thinking: { type: "adaptive" } } : {}),
         ...(Object.keys(outputConfig).length > 0 ? { output_config: outputConfig } : {}),
         // Native server-side web search. Attached only when requested, keeping
         // non-grounded calls byte-identical. max_uses caps billable searches.

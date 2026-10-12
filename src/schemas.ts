@@ -563,10 +563,20 @@ export const CompleteRequestSchema = z
         "`disableThinking` (when set) always wins → the provider floor, ignoring this field. Otherwise " +
         "the model generates at this level. Omitted = the service default (\"low\"), byte-identical to " +
         "a normal call (existing callers see ZERO change). Applies only to Gemini-3 models; a safe " +
-        "no-op on Gemini 2.5 (uses its bounded budget) and Anthropic (thinking is never enabled on " +
-        "/complete). Example use: an extraction task asks for \"low\" — cheaper/faster than default " +
+        "no-op on Gemini 2.5 (uses its bounded budget) and Anthropic (use `effort` there). Example use: an extraction task asks for \"low\" — cheaper/faster than default " +
         "but above the floor.",
       example: "low",
+    }),
+    effort: z.enum(ANTHROPIC_EFFORTS).optional().openapi({
+      description:
+        "Optional per-call Anthropic thinking effort (`low` | `medium` | `high` | `xhigh` | `max`). " +
+        "When set, the model reasons at that level for this one call (sent as adaptive thinking + " +
+        "`output_config.effort`); works with `responseSchema`. Thinking tokens are billed as output " +
+        "tokens and are included in `tokensOutput`. Omitted = byte-identical to a call without it " +
+        "(no thinking block is sent). Anthropic only (`opus`, `sonnet`, `haiku`, `fable`): with any " +
+        "other provider, or beside `disableThinking: true`, the request is refused with a 400. " +
+        "Gemini callers use `thinkingLevel`.",
+      example: "medium",
     }),
     imageUrl: z.string().url().optional().openapi({
       description: "URL of an image to include in the prompt. The image is fetched server-side and sent to the model as a visual input. Supported by all models, but recommended with provider: \"google\", model: \"flash-lite\" for cost-effective vision tasks (image classification, scoring, analysis).",
@@ -604,6 +614,20 @@ export const CompleteRequestSchema = z
         code: z.ZodIssueCode.custom,
         message: `Model "${data.model}" is not valid for provider "${data.provider}". Valid models: ${allowed.join(", ")}`,
         path: ["model"],
+      });
+    }
+    if (data.effort !== undefined && data.provider !== "anthropic") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `effort applies to provider "anthropic" only; provider "${data.provider}" uses thinkingLevel / disableThinking.`,
+        path: ["effort"],
+      });
+    }
+    if (data.effort !== undefined && data.disableThinking === true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `effort and disableThinking: true contradict each other; send one of them.`,
+        path: ["effort"],
       });
     }
   })
@@ -913,8 +937,19 @@ export const InternalPlatformCompleteRequestSchema = z
       description:
         "Optional per-call Gemini-3 thinking level. Same semantics as POST /complete: `disableThinking` " +
         "(when set) wins → floor; otherwise the model generates at this level; omitted = the service " +
-        "default (\"low\"), byte-identical to a normal call. No-op on Gemini 2.5 and Anthropic.",
+        "default (\"low\"), byte-identical to a normal call. No-op on Gemini 2.5 and Anthropic (use `effort` there).",
       example: "low",
+    }),
+    effort: z.enum(ANTHROPIC_EFFORTS).optional().openapi({
+      description:
+        "Optional per-call Anthropic thinking effort (`low` | `medium` | `high` | `xhigh` | `max`). " +
+        "When set, the model reasons at that level for this one call (sent as adaptive thinking + " +
+        "`output_config.effort`); works with `responseSchema`. Thinking tokens are billed as output " +
+        "tokens and are included in `tokensOutput`. Omitted = byte-identical to a call without it " +
+        "(no thinking block is sent). Anthropic only (`opus`, `sonnet`, `haiku`, `fable`): with any " +
+        "other provider, or beside `disableThinking: true`, the request is refused with a 400. " +
+        "Same semantics as POST /complete.",
+      example: "medium",
     }),
   })
   .superRefine((data, ctx) => {
@@ -935,6 +970,20 @@ export const InternalPlatformCompleteRequestSchema = z
         code: z.ZodIssueCode.custom,
         message: `Model "${data.model}" is not valid for provider "${data.provider}". Valid models: ${allowed.join(", ")}`,
         path: ["model"],
+      });
+    }
+    if (data.effort !== undefined && data.provider !== "anthropic") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `effort applies to provider "anthropic" only; provider "${data.provider}" uses thinkingLevel / disableThinking.`,
+        path: ["effort"],
+      });
+    }
+    if (data.effort !== undefined && data.disableThinking === true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `effort and disableThinking: true contradict each other; send one of them.`,
+        path: ["effort"],
       });
     }
   })
