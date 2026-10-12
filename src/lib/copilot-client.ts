@@ -132,6 +132,53 @@ export const setCampaignBudget = (a: Record<string, unknown>, p: ApiCallParams) 
     dailyBudgetCents: cents("dailyBudgetCents", a.dailyBudgetCents),
   });
 
+// --- The steps an offer's business has (owner 2026-10-12) ---------------------
+// brand-service owns the list; the Copilot reads it before proposing a sales
+// funnel, ASKS the client about a step the offer has not stated, and records
+// the answer one step at a time. Data only: nothing starts, nothing spends.
+
+const offerStepsPath = (a: Record<string, unknown>) =>
+  `/v1/brands/${id("brandId", a.brandId)}/offers/${id("offerId", a.offerId)}/steps`;
+
+/** GET /v1/brands/{id}/offers/{offerId}/steps — { stated, steps, statedAt }. stated:false = never said. */
+export const getOfferSteps = async (a: Record<string, unknown>, p: ApiCallParams) =>
+  call("get_offer_steps", offerStepsPath(a), "GET", p);
+
+/** PUT …/steps/{stepKey} — the client said its business HAS this step. Idempotent (`changed`). */
+export const addOfferStep = async (a: Record<string, unknown>, p: ApiCallParams) =>
+  call("add_offer_step", `${offerStepsPath(a)}/${id("stepKey", a.stepKey)}`, "PUT", p);
+
+/** DELETE …/steps/{stepKey} — the client said its business does NOT have this step. Idempotent. */
+export const removeOfferStep = async (a: Record<string, unknown>, p: ApiCallParams) =>
+  call("remove_offer_step", `${offerStepsPath(a)}/${id("stepKey", a.stepKey)}`, "DELETE", p);
+
+function legRatesPatch(value: unknown): Array<{ fromStep: string; toStep: string; ratePct: number | null }> {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("[copilot] legRates must be a non-empty list of { fromStep, toStep, ratePct }");
+  }
+  return value.map((v, i) => {
+    const r = (v ?? {}) as Record<string, unknown>;
+    const fromStep = rawId(`legRates[${i}].fromStep`, r.fromStep);
+    const toStep = rawId(`legRates[${i}].toStep`, r.toStep);
+    if (!("ratePct" in r) || r.ratePct === undefined) {
+      throw new Error(`[copilot] legRates[${i}].ratePct is required: a percent 0-100 (0.5 = 0.5%), or null to clear the stated rate`);
+    }
+    const ratePct = r.ratePct;
+    if (ratePct !== null && (typeof ratePct !== "number" || !Number.isFinite(ratePct) || ratePct < 0 || ratePct > 100)) {
+      throw new Error(`[copilot] legRates[${i}].ratePct must be a number from 0 to 100 (a percent: 0.5 = 0.5%), or null`);
+    }
+    return { fromStep, toStep, ratePct: ratePct as number | null };
+  });
+}
+
+/**
+ * PUT /v1/brands/{id}/leg-rates { legRates } — the conversion rates the client
+ * states, at the BRAND grain (the same for every offer). Partial: a leg not
+ * named is untouched; ratePct null clears a stated rate. Returns every leg.
+ */
+export const setLegRates = async (a: Record<string, unknown>, p: ApiCallParams) =>
+  call("set_leg_rates", `/v1/brands/${id("brandId", a.brandId)}/leg-rates`, "PUT", p, { legRates: legRatesPatch(a.legRates) });
+
 // --- Switch ON: propose (this turn) → confirm (a later turn) ------------------
 
 // A campaign is a sales funnel campaign (owner 2026-10-10): the only thing the

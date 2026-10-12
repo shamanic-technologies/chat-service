@@ -57,6 +57,60 @@ describe("copilot entity reads hit the owner routes", () => {
   });
 });
 
+describe("offer steps and leg rates (owner 2026-10-12: ask before proposing a funnel on an unstated step)", () => {
+  it("get_offer_steps reads the offer's stated steps", async () => {
+    fetchMock().mockResolvedValue(ok({ offerId: "o-1", stated: true, steps: ["conversation"], statedAt: "t" }));
+    const { getOfferSteps } = await load();
+    expect(await getOfferSteps({ brandId: "b-1", offerId: "o-1" }, params)).toMatchObject({ stated: true, steps: ["conversation"] });
+    expect(call(0)).toEqual({ url: "https://api.test.local/v1/brands/b-1/offers/o-1/steps", method: "GET", body: null });
+  });
+
+  it.each([
+    ["addOfferStep", "PUT"],
+    ["removeOfferStep", "DELETE"],
+  ])("%s → %s one step key", async (fn, method) => {
+    fetchMock().mockResolvedValue(ok({ stated: true, steps: [], changed: true }));
+    const mod = (await load()) as unknown as Record<string, (a: unknown, p: unknown) => Promise<unknown>>;
+    await mod[fn]({ brandId: "b-1", offerId: "o-1", stepKey: " purchase " }, params);
+    expect(call(0)).toEqual({ url: "https://api.test.local/v1/brands/b-1/offers/o-1/steps/purchase", method, body: null });
+  });
+
+  it("refuses a step write without a step key, before any call", async () => {
+    const { addOfferStep } = await load();
+    await expect(addOfferStep({ brandId: "b-1", offerId: "o-1" }, params)).rejects.toThrow(/stepKey is required/);
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("an unknown step comes back with the owner's knownSteps (fail loud, verbatim)", async () => {
+    fetchMock().mockResolvedValue({ ok: false, status: 400, text: () => Promise.resolve('{"reason":"unknown_step","knownSteps":["purchase"]}') });
+    const { addOfferStep } = await load();
+    await expect(addOfferStep({ brandId: "b-1", offerId: "o-1", stepKey: "buy" }, params)).rejects.toThrow(/knownSteps/);
+  });
+
+  it("set_leg_rates PUTs a partial patch at the brand grain", async () => {
+    fetchMock().mockResolvedValue(ok({ legRates: [] }));
+    const { setLegRates } = await load();
+    await setLegRates({ brandId: "b-1", legRates: [{ fromStep: "website_visit", toStep: "meeting_booked", ratePct: 0.5 }, { fromStep: "a", toStep: "b", ratePct: null }] }, params);
+    expect(call(0)).toEqual({
+      url: "https://api.test.local/v1/brands/b-1/leg-rates",
+      method: "PUT",
+      body: { legRates: [{ fromStep: "website_visit", toStep: "meeting_booked", ratePct: 0.5 }, { fromStep: "a", toStep: "b", ratePct: null }] },
+    });
+  });
+
+  it.each([
+    [[]],
+    [[{ fromStep: "a", toStep: "b", ratePct: 101 }]],
+    [[{ fromStep: "a", toStep: "b", ratePct: "0.5%" }]],
+    [[{ fromStep: "a", toStep: "b" }]],
+    [[{ fromStep: "", toStep: "b", ratePct: 1 }]],
+  ])("set_leg_rates refuses %j before any call", async (legRates) => {
+    const { setLegRates } = await load();
+    await expect(setLegRates({ brandId: "b-1", legRates }, params)).rejects.toThrow(/\[copilot\]/);
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+});
+
 describe("switch-on gate: propose in one turn, confirm in a later one", () => {
   it("per-step starts are retired: only start_funnel_campaign is proposed (owner 2026-10-10)", async () => {
     const { proposeSwitchOn, SWITCH_ON_ACTIONS } = await load();

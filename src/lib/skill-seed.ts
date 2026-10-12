@@ -27,7 +27,7 @@ At each level, show a SHORT list (name, one line, cost, return) and let the user
 2. **Sales paths**: chains of steps to a paying client that contain it. find_sales_paths
 3. **Channels**: who works those steps (LinkedIn posting, cold email...). find_channels
 4. **Pipes**: one channel on one step. find_pipes
-5. **Sales funnels**: a path with one pipe per step. THIS is what you propose: its name, cost per paying client, return. find_sales_funnels
+5. **Sales funnels**: a path with one pipe per step. THIS is what you propose: its name, cost per paying client, return. find_sales_funnels. Only funnels whose every step the client's business has: get_offer_steps, ask about the unknown ones.
 6. **Workflows** (optional): how one pipe runs. The platform picks the best; show only if asked. find_workflows
 7. **Campaigns**: the chosen funnel becomes a campaign with at least one cap the user states (a max budget, a max volume, or both), and runs only after their yes. Load \`campaigns\`.
 If the user named a channel, find it first to learn what it produces, then walk from Steps.
@@ -74,9 +74,11 @@ An offer is one thing a brand sells. Every campaign, leg, sales path, budget and
 - list_brands: the org's brands (brandId).
 - list_offers(brandId): offers with id, name, status.
 - get_offer_performance(brandId, offerId[, windowDays]): spend, emails, replies, return.
+- get_offer_steps(brandId, offerId): the sales steps the client's business has for this offer (conversation, booking call, purchase...).
 
 ## Write
 - create_offer(brandId, name): data only, starts nothing. Confirm the name first.
+- add_offer_step / remove_offer_step(brandId, offerId, stepKey): record the client's answer about one step. Why and when: \`catalogue-sales-funnels\`.
 
 ## Not available from the chat yet
 - Rename, describe, archive an offer, set its economics (deal value): the user does it on the offer page (open_page), or request_staff if they insist on doing it here.
@@ -204,6 +206,7 @@ A leg is the move of a lead from one sales step to the next, e.g. lead found to 
 - get_leg_rates(brandId): conversion rate per leg.
 
 ## Write
+- set_leg_rates(brandId, legRates): the rates the client STATES, for the whole brand. ratePct is a percent: "0.5%" is 0.5; null clears it. Legs not named stay as they are. Read back with get_leg_rates and quote it. Never invent a rate.
 - STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_leg(channelSlug, fromStep, toStep, mode, triggerId?): a NEW leg on a channel (declared or coded), created live. Proactive: no trigger. Reactive: exactly one trigger (list_trigger_types).
 - The offer's legs come from the funnels it runs (funnel campaigns, see campaigns).
 
@@ -253,8 +256,8 @@ declare_leg on a trigger that is not coded is refused and nothing is stored. The
   {
     slug: "sales-paths",
     parentSlug: "index",
-    title: "This offer's funnels (old ticked list, retired)",
-    description: "Reading an offer's per-offer funnel figures. The ticked list is retired: a campaign IS a funnel campaign.",
+    title: "This offer's funnels",
+    description: "Reading an offer's per-offer funnel figures. A campaign IS a funnel campaign.",
     position: 80,
     content: t(`
 # This offer's funnels
@@ -264,8 +267,8 @@ Per offer, each row here is a chain of legs to paid client, each leg on a channe
 ## Read
 - list_sales_paths(brandId, offerId): every path with channels, rates, cost per paying client, return.
 
-## Retired: the ticked list (owner 2026-10-10)
-A campaign IS a funnel campaign now (\`campaigns\`: create_funnel_campaign). The offer's old ticked list is retired: there is no tool to read or write it. To run a funnel, create its funnel campaign.
+## Running one
+A campaign IS a funnel campaign (\`campaigns\`: create_funnel_campaign). Only a funnel whose every step the client's business has is worth proposing: see the steps check in \`catalogue-sales-funnels\`.
 
 ## Articulation
 Map the user's sequence onto the closest ranked funnel first. Show its return and cost per paying client before proposing it. Create a new one only when none matches (create_sales_funnel).
@@ -612,6 +615,14 @@ Its budget caps every pipe in it, so a funnel is either **Proactive** (it reache
 ## Read
 - find_sales_funnels(paths, containsChannels): best return first.
 - find_sales_funnels(id): its legs, the rate at each, the pipe on each, cost per paying client, return.
+
+## Only funnels the client's business can run (owner 2026-10-12)
+A funnel is worth proposing only if the client's business has EVERY step on its line. A funnel through Direct purchase is worthless to a business that sells no other way than a call. So before proposing, read get_offer_steps.
+- Lead found and Paid client are in every business: never ask about them.
+- A step it lists: fine. stated false: nothing is known yet.
+- A step not listed (or nothing known): ASK the client, plainly, before proposing that funnel ("Do you sell by direct purchase on your website?"). One question for the steps that matter, not a survey.
+- Yes: add_offer_step, then the funnel may be proposed. No: remove_offer_step if listed, and drop every funnel through that step, now and later.
+- A funnel's path never changes: never "move" a campaign to another path. A campaign on a step the business lacks: offer to stop it (stop_funnel_campaign) and start a new one on the right funnel.
 
 ## Propose
 First WRITE the 1 to 3 funnels in the text, one line each: name, what it does, cost per paying client, return (learning: "not measured yet"). Two or more real options are an obvious pick: one card per funnel (see \`choices\`), its cost as a number visual (cents). One clear best funnel: say why and ask, no cards. The user picks; then \`campaigns\`: it becomes a campaign with at least one cap they state (max budget, max volume, or both).

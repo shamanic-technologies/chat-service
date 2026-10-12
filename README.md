@@ -1254,6 +1254,9 @@ The two prompt tools act on the SHARED platform templates (every org's emails ar
 |---|---|
 | `read_skill` | Loads one skill of the Copilot skill tree by slug (markdown + sub-skills). A config allowing it also gets the INDEX skill appended to its system prompt (see Copilot skill tree). |
 | `get_leg_rates` | Conversion rate per leg. `GET /v1/brands/:id/leg-rates` |
+| `set_leg_rates` | Write the rates the client states, brand grain, partial (`ratePct` 0-100 percent, null clears). `PUT /v1/brands/:id/leg-rates {legRates:[{fromStep,toStep,ratePct}]}` |
+| `get_offer_steps` | The sales steps the client's business has for one offer (`stated:false` = never said). `GET /v1/brands/:id/offers/:offerId/steps` |
+| `add_offer_step` / `remove_offer_step` | Record the client's yes / no about one step, idempotent. `PUT` / `DELETE /v1/brands/:id/offers/:offerId/steps/:stepKey` |
 | `list_sales_paths` | Sales paths ranked by return. `GET /v1/offers/:offerId/sales-paths?brandId=` |
 | `get_trigger_events` | Per trigger type: fired / ran / skipped and why. `GET /v1/offers/:offerId/trigger-events/summary?brandId=` |
 | `list_sourcing_origins` | Where leads can come from. `GET /v1/public/sourcing-origins` |

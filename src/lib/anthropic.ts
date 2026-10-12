@@ -2315,6 +2315,70 @@ export const GET_LEG_RATES_TOOL: Anthropic.Tool = {
   input_schema: { type: "object" as const, properties: { brandId: BRAND_ID_PROP }, required: ["brandId"] },
 };
 
+export const SET_LEG_RATES_TOOL: Anthropic.Tool = {
+  name: "set_leg_rates",
+  description:
+    "Write the conversion rates the client states, for the whole brand (the same for every offer). Each leg is { fromStep, toStep, ratePct }: step keys (find_steps) and a PERCENT from 0 to 100, so \"0.5%\" is 0.5; ratePct null clears a stated rate. Legs you do not name are untouched. Returns every leg as read after the write. Data only: starts nothing, spends nothing. Write only a rate the client stated; never invent one.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      legRates: {
+        type: "array",
+        minItems: 1,
+        description: "The legs to write, e.g. [{ fromStep: \"website_visit\", toStep: \"meeting_booked\", ratePct: 0.5 }].",
+        items: {
+          type: "object",
+          properties: {
+            fromStep: { type: "string", description: "Step key the leg starts from (e.g. website_visit)." },
+            toStep: { type: "string", description: "Step key the leg leads to (e.g. meeting_booked)." },
+            ratePct: {
+              anyOf: [{ type: "number", minimum: 0, maximum: 100 }, { type: "null" }],
+              description: "Percent 0-100 (0.5 = 0.5%). null clears the stated rate.",
+            },
+          },
+          required: ["fromStep", "toStep", "ratePct"],
+        },
+      },
+    },
+    required: ["brandId", "legRates"],
+  },
+};
+
+const STEP_KEY_PROP = {
+  type: "string",
+  description: "A step key from find_steps (e.g. purchase, booking_call, meeting_booked, website_visit).",
+};
+
+export const GET_OFFER_STEPS_TOOL: Anthropic.Tool = {
+  name: "get_offer_steps",
+  description:
+    "Read which sales steps the client's business HAS for one offer (e.g. conversation, booking_call, meeting_booked, purchase). stated false = the client never said: nothing is known. Lead found and Paid client are in every business and never listed. Read it before proposing a sales funnel. Read-only.",
+  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
+};
+
+export const ADD_OFFER_STEP_TOOL: Anthropic.Tool = {
+  name: "add_offer_step",
+  description:
+    "Record that the client's business HAS this step for this offer, after the client said so (e.g. yes, we sell by direct purchase on our site). One step per call; adding a step already there changes nothing. Data only, starts nothing.",
+  input_schema: {
+    type: "object" as const,
+    properties: { ...BRAND_OFFER_PROPS, stepKey: STEP_KEY_PROP },
+    required: [...BRAND_OFFER_REQUIRED, "stepKey"],
+  },
+};
+
+export const REMOVE_OFFER_STEP_TOOL: Anthropic.Tool = {
+  name: "remove_offer_step",
+  description:
+    "Record that the client's business does NOT have this step for this offer, after the client said so. One step per call; removing a step not there changes nothing. Data only, starts or stops nothing.",
+  input_schema: {
+    type: "object" as const,
+    properties: { ...BRAND_OFFER_PROPS, stepKey: STEP_KEY_PROP },
+    required: [...BRAND_OFFER_REQUIRED, "stepKey"],
+  },
+};
+
 export const LIST_SALES_PATHS_TOOL: Anthropic.Tool = {
   name: "list_sales_paths",
   description:
@@ -3088,6 +3152,10 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   open_page: OPEN_PAGE_TOOL,
   read_skill: READ_SKILL_TOOL,
   get_leg_rates: GET_LEG_RATES_TOOL,
+  set_leg_rates: SET_LEG_RATES_TOOL,
+  get_offer_steps: GET_OFFER_STEPS_TOOL,
+  add_offer_step: ADD_OFFER_STEP_TOOL,
+  remove_offer_step: REMOVE_OFFER_STEP_TOOL,
   list_sales_paths: LIST_SALES_PATHS_TOOL,
   get_trigger_events: GET_TRIGGER_EVENTS_TOOL,
   list_sourcing_origins: LIST_SOURCING_ORIGINS_TOOL,
