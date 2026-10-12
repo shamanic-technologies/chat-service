@@ -4474,7 +4474,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         let answerHttp402 = false;
         if (!sse.isOpen()) {
           try {
-            answerHttp402 = await isAgentApiOrg(orgId, userId);
+            answerHttp402 = await isAgentApiOrg(orgId, userId, runId ?? parentRunId);
           } catch (offerErr) {
             console.error(`[chat] org="${orgId}" prepaid status unreadable, answering the in-chat message:`, offerErr);
           }

@@ -193,8 +193,13 @@ function mockBillingSequence(capture: { calls: number }, sufficient: boolean[]) 
 function mockPrepaidStatus(capture: { calls: number }, out: { status?: number; offer?: string | null }) {
   return {
     match: (url: string) => url.includes("/v1/accounts/prepaid_status"),
-    respond: () => {
+    respond: (_url: string, init?: RequestInit) => {
       capture.calls += 1;
+      // billing 400s an identity read without x-run-id (prod 2026-10-12).
+      const h = (init?.headers ?? {}) as Record<string, string>;
+      if (!h["x-org-id"] || !h["x-user-id"] || !h["x-run-id"]) {
+        return { ok: false, status: 400, body: { error: "x-run-id header is required" } };
+      }
       if (out.status && out.status !== 200) return { ok: false, status: out.status, body: { error: "Billing account not found" } };
       return { ok: true, body: { state: "none", free_credit_offer: out.offer ?? null, balance_cents: "0" } };
     },
