@@ -85,3 +85,33 @@ export async function authorizeCredits(
 
   return (await res.json()) as AuthorizeCreditResult;
 }
+
+/** billing-service's mark on an org opened through the API by an AI agent (prepaid only). */
+export const AGENT_API_OFFER = "agent_api";
+
+/**
+ * True when billing marks the org `free_credit_offer: agent_api`: an org an AI
+ * agent opened through the API, with no dashboard button to click. Such an org
+ * gets a /chat refusal for lack of money as an HTTP 402 the gateway turns into
+ * its prepay instructions. 404 (no billing account) = not an agent org.
+ * Throws on any other failure.
+ */
+export async function isAgentApiOrg(orgId: string, userId: string): Promise<boolean> {
+  if (!BILLING_SERVICE_API_KEY) {
+    throw new Error("[billing-client] BILLING_SERVICE_API_KEY is required to read the prepaid status");
+  }
+  const res = await fetch(`${BILLING_SERVICE_URL}/v1/accounts/prepaid_status`, {
+    headers: { "X-API-Key": BILLING_SERVICE_API_KEY, "x-org-id": orgId, "x-user-id": userId },
+  });
+  if (res.status === 404) return false;
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new BillingError(
+      `[billing-client] GET /v1/accounts/prepaid_status returned ${res.status}: ${text}`,
+      res.status,
+      text,
+    );
+  }
+  const body = (await res.json()) as { free_credit_offer?: string | null };
+  return body.free_credit_offer === AGENT_API_OFFER;
+}

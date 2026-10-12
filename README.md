@@ -1377,6 +1377,8 @@ data: {"type":"credits_required","message":"You're out of credits. Add credits t
 ```
 The client draws a button that opens its credit top-up. The text is stored as the assistant turn with the action (`creditsRequired` in `GET /sessions/*` history, so a reload draws the button); the run closes completed. A client that does not know the event still shows the text.
 
+**AI agent orgs get an HTTP 402 instead.** The stream's bytes (including the `sessionId` event) are held until the turn's first billing check passes. When that first check refuses AND billing marks the org `free_credit_offer: agent_api` (an org an AI agent opened through the API, no button to click), `/chat` answers `402 {"error":"Insufficient credits","message":"…","balance_cents":…,"required_cents":…,"sessionId":"…"}` instead of a 200 stream; the api-service gateway turns it into its `payment_required` answer with the prepay route. The turn is still stored. A refusal later in the turn (after the stream started) stays the in-chat answer above, as does every other org's.
+
 ### 5c. Open page (optional, `open_page`)
 ```
 data: {"type":"open_page","page":"offer-today","brandId":"…","offerId":"…","title":"Your week"}

@@ -223,7 +223,8 @@ import {
   listKeySources,
   checkProviderRequirements,
 } from "./lib/key-client.js";
-import { authorizeCredits, BillingError } from "./lib/billing-client.js";
+import { authorizeCredits, BillingError, isAgentApiOrg } from "./lib/billing-client.js";
+import { holdSseUntilOpen } from "./lib/held-sse.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
 import {
   createBrandFromUrl,
@@ -1159,6 +1160,8 @@ class ChatCostGateError extends Error {
   constructor(
     message: string,
     public readonly statusCode: number,
+    /** The refusal's body (402: `balance_cents` / `required_cents`). */
+    public readonly body: Record<string, unknown>,
   ) {
     super(message);
     this.name = "ChatCostGateError";
@@ -2700,7 +2703,10 @@ app.post("/chat", requireAuth, async (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
-  res.flushHeaders();
+  // Held until the turn's first billing check passes: an org an AI agent opened
+  // through the API, refused for lack of money before any byte left, then still
+  // gets an HTTP 402 (the gateway turns it into its prepay instructions).
+  const sse = holdSseUntilOpen(res);
 
   // Build system prompt with optional context and campaign feature inputs
   // A config that allows read_skill gets the skill INDEX (method + map of
@@ -2841,9 +2847,10 @@ app.post("/chat", requireAuth, async (req, res) => {
           description: `chat — ${resolvedModelInfo.apiModelId}`,
         });
         provisionedCostIds.push(...costIds);
+        sse.open();
       } catch (costErr) {
         const r = costErrorResponse(costErr, "chat", orgId);
-        throw new ChatCostGateError(String(r.body.error), r.status);
+        throw new ChatCostGateError(String(r.body.error), r.status, r.body);
       }
     };
 
@@ -4461,11 +4468,24 @@ app.post("/chat", requireAuth, async (req, res) => {
     if (err instanceof ChatCostGateError && err.statusCode === 402 && creditsTurn.sessionId) {
       console.log(`[chat] org="${orgId}" session="${creditsTurn.sessionId}" out of credits: fixed message, no model call`);
       try {
+        // An API caller cannot click a button: an agent org refused before any
+        // byte streamed gets an HTTP 402 instead (decided by the org: the
+        // gateway forwards no caller type). Every other turn keeps the answer.
+        let answerHttp402 = false;
+        if (!sse.isOpen()) {
+          try {
+            answerHttp402 = await isAgentApiOrg(orgId, userId);
+          } catch (offerErr) {
+            console.error(`[chat] org="${orgId}" prepaid status unreadable, answering the in-chat message:`, offerErr);
+          }
+        }
         const before = creditsTurn.text();
         const text = (before.trim() ? "\n\n" : "") + OUT_OF_CREDITS_MESSAGE;
-        sendSSE(res, { type: "token", content: text });
         const creditsRequired = { message: OUT_OF_CREDITS_MESSAGE, action: "add_credits" as const, label: OUT_OF_CREDITS_ACTION_LABEL };
-        sendSSE(res, { type: "credits_required", ...creditsRequired });
+        if (!answerHttp402) {
+          sendSSE(res, { type: "token", content: text });
+          sendSSE(res, { type: "credits_required", ...creditsRequired });
+        }
         const [savedCredits] = await db.insert(messages).values(stripNul({
           sessionId: creditsTurn.sessionId,
           role: "assistant",
@@ -4481,7 +4501,17 @@ app.post("/chat", requireAuth, async (req, res) => {
           ],
         });
         if (runId) {
-          traceEvent(runId, "out-of-credits", { orgId, userId }, workflowTracking, { data: { provider: chatProvider } });
+          traceEvent(runId, "out-of-credits", { orgId, userId }, workflowTracking, { data: { provider: chatProvider, http402: answerHttp402 } });
+        }
+        if (answerHttp402) {
+          sse.discard();
+          res.status(402).json({
+            ...err.body,
+            error: "Insufficient credits",
+            message: OUT_OF_CREDITS_MESSAGE,
+            sessionId: creditsTurn.sessionId,
+          });
+          return;
         }
         sendSSE(res, "[DONE]");
         return;
@@ -4510,8 +4540,9 @@ app.post("/chat", requireAuth, async (req, res) => {
     });
     sendSSE(res, "[DONE]");
   } finally {
-    // End SSE stream immediately so the client is not blocked
-    res.end();
+    // End SSE stream immediately so the client is not blocked (a 402 JSON
+    // answer has already ended it).
+    if (!res.writableEnded) res.end();
 
     // Reconcile: record ACTUAL real tokens, then release the provisioned worst-case holds.
     // If the actual POST fails, the provisioned-max rows stay as a fallback record — the
