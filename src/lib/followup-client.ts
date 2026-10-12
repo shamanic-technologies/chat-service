@@ -22,6 +22,18 @@ import { fetchRequesterEmail } from "./staff-requests.js";
 /** The follow-up funnel (features-service): trigger `follow_up_due` -> AI Follow-up Email. */
 export const FOLLOWUP_FUNNEL_ID = "signup_to_paid_client@ai-follow-up-email";
 export const FOLLOWUP_TRIGGER_ID = "follow_up_due";
+/** Same channel, waiting on a GitHub issue: fires by itself once the issue is IN PROD (campaign-service detector). */
+export const ISSUE_FOLLOWUP_FUNNEL_ID = "conversation_to_paid_client@ai-follow-up-email";
+
+const ISSUE_URL = /^https:\/\/github\.com\/(shamanic-technologies\/[A-Za-z0-9._-]+)\/issues\/(\d+)\/?$/;
+
+/** The issue a follow-up waits on, from the URL request_staff returned; only our own repos. */
+export function githubIssueArg(v: unknown): { repo: string; number: number } | null {
+  if (v === undefined || v === null || v === "") return null;
+  const m = typeof v === "string" ? ISSUE_URL.exec(v.trim()) : null;
+  if (!m) throw new FollowupError("waitForIssue must be the issue URL request_staff returned (https://github.com/shamanic-technologies/<repo>/issues/<n>).");
+  return { repo: m[1], number: Number(m[2]) };
+}
 const MAX_INSTRUCTION = 4000;
 
 export class FollowupError extends Error {
@@ -116,6 +128,8 @@ interface Row {
   instruction: string | null;
   salesFunnelId: string;
   people: { email: string; leadId?: string | null }[];
+  githubIssue?: { repo: string; number: number } | null;
+  githubIssueCheck?: { state: string } | null;
 }
 
 function rowsOf(body: Record<string, unknown>): Row[] {
@@ -125,7 +139,13 @@ function rowsOf(body: Record<string, unknown>): Row[] {
 }
 
 function view(r: Row) {
-  return { followUpId: r.id, status: r.status, instruction: r.instruction, salesFunnelId: r.salesFunnelId };
+  return {
+    followUpId: r.id,
+    status: r.status,
+    instruction: r.instruction,
+    salesFunnelId: r.salesFunnelId,
+    ...(r.githubIssue ? { waitsForIssue: `https://github.com/${r.githubIssue.repo}/issues/${r.githubIssue.number}`, issueState: r.githubIssueCheck?.state ?? "not_checked_yet" } : {}),
+  };
 }
 
 /** This person's own follow-ups (every status unless `status` is given). */
@@ -148,15 +168,18 @@ export interface FollowupContext {
 export async function createFollowup(a: Record<string, unknown>, ctx: FollowupContext, deps = defaultFollowupDeps) {
   const s = scope();
   const instruction = instructionArg(a.instruction);
+  const githubIssue = githubIssueArg(a.waitForIssue);
+  const salesFunnelId = githubIssue ? ISSUE_FOLLOWUP_FUNNEL_ID : FOLLOWUP_FUNNEL_ID;
   const email = await personEmail(ctx.userId, deps);
   const runId = await deps.newRunId();
   const created = await send(deps, "CAMPAIGN_SERVICE", "POST", "/sales-funnel-campaigns", s, runId, {
     brandId: s.brandId,
     offerId: s.offerId,
-    salesFunnelId: FOLLOWUP_FUNNEL_ID,
+    salesFunnelId,
     status: "stopped",
     people: [{ email }],
     instruction,
+    ...(githubIssue ? { githubIssue } : {}),
   });
   const campaign = created.salesFunnelCampaign as Row | undefined;
   if (!campaign?.id) throw new FollowupError(`campaign-service answered without a campaign id: ${JSON.stringify(created).slice(0, 300)}`);
@@ -171,13 +194,20 @@ export async function createFollowup(a: Record<string, unknown>, ctx: FollowupCo
     deps,
     "BILLING_SERVICE",
     "PUT",
-    `/internal/brands/${enc(s.brandId)}/offers/${enc(s.offerId)}/sales-funnels/${enc(FOLLOWUP_FUNNEL_ID)}/campaigns/${enc(campaign.id)}/caps`,
+    `/internal/brands/${enc(s.brandId)}/offers/${enc(s.offerId)}/sales-funnels/${enc(salesFunnelId)}/campaigns/${enc(campaign.id)}/caps`,
     s,
     null,
     { maxBudget: null, maxVolume: { count: 1, period: "one_off" } },
   );
   await send(deps, "CAMPAIGN_SERVICE", "PATCH", `/sales-funnel-campaigns/${enc(campaign.id)}`, s, runId, { status: "activate" });
-  return { followUpId: campaign.id, status: "ongoing", to: email, instruction, sendsAtMost: 1, firesWhen: "fire_followup is called" };
+  return {
+    followUpId: campaign.id,
+    status: "ongoing",
+    to: email,
+    instruction,
+    sendsAtMost: 1,
+    firesWhen: githubIssue ? "by itself, once that issue is shipped and live in production" : "fire_followup is called",
+  };
 }
 
 export async function updateFollowup(a: Record<string, unknown>, ctx: FollowupContext, deps = defaultFollowupDeps) {
@@ -206,6 +236,7 @@ export async function listFollowups(_a: Record<string, unknown>, ctx: FollowupCo
 export async function fireFollowup(a: Record<string, unknown>, ctx: FollowupContext, deps = defaultFollowupDeps) {
   const s = scope();
   const row = await ownRow(a.followUpId, await personEmail(ctx.userId, deps), s, deps);
+  if (row.githubIssue) throw new FollowupError("this follow-up waits on its GitHub issue and fires by itself once it is live; nothing to fire.");
   const leadId = row.people?.[0]?.leadId;
   if (!leadId) throw new FollowupError("this follow-up has no lead id yet, so it cannot fire.");
   const event = await send(deps, "CAMPAIGN_SERVICE", "POST", "/internal/trigger-events", s, null, {

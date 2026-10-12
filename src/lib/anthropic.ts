@@ -2489,12 +2489,14 @@ export const CREATE_FOLLOWUP_TOOL: Anthropic.Tool = {
   description:
     "Start a one-person follow-up: distribute.you (our own brand, our money, never the user's) will email the user you are talking to later, through our normal outreach, and their reply lands with our staff. " +
     "Use it whenever you will have something worth telling them after this conversation ends: an exact figure once we serve it, a feature they asked for, a check-in after their first campaign, anything that serves them. " +
-    "You decide whether to ask the user first or just do it, and whether to mention it. It starts at once, sends at most one email, and only when the follow-up is fired (fire_followup). " +
+    "You decide whether to ask the user first or just do it, and whether to mention it. It starts at once and sends at most one email. " +
+    "When what you promise depends on something we must build, file it first (request_staff) and pass its issueUrl as waitForIssue: the email then goes out by itself once that work is live. Otherwise it goes out when you call fire_followup. " +
     "The instruction tells the writer what to say. When it is sent, the writer reads the figures it needs itself: public figures and this user's own account figures (never another customer's). So name the figure to give (\"her exact cost per booked meeting\", \"compare it to the $42 estimate\"), and put in any fact you already hold.",
   input_schema: {
     type: "object" as const,
     properties: {
       instruction: { type: "string", description: "What the email must tell this person, in plain words: the figures to give (read at send time from public data or their own account) and any fact you hold (max 4000 chars)." },
+      waitForIssue: { type: "string", description: "Optional. The issueUrl request_staff returned: the follow-up then goes out by itself once that issue is shipped and live in production (no fire_followup). Without it, it waits for fire_followup." },
     },
     required: ["instruction"],
   },

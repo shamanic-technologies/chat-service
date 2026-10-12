@@ -4,6 +4,8 @@ import {
   createFollowup,
   fireFollowup,
   FOLLOWUP_FUNNEL_ID,
+  githubIssueArg,
+  ISSUE_FOLLOWUP_FUNNEL_ID,
   listFollowups,
   updateFollowup,
   type FollowupDeps,
@@ -138,6 +140,36 @@ describe("Copilot follow-ups", () => {
     const d = TOOL_REGISTRY.create_followup.description ?? "";
     expect(d).toContain("this user's own account figures");
     expect(d).toContain("never another customer's");
+  });
+
+  it("create with waitForIssue: waits on that issue on the GitHub-issue funnel, capped, activated, never fired by hand", async () => {
+    const { deps, calls } = fakeDeps((c) => {
+      if (c.method === "POST") return { status: 201, body: { salesFunnelCampaign: { ...marieRow, id: "fu-2" }, filing: [{ outcome: "filed" }] } };
+      return { status: 200, body: {} };
+    });
+    const out = await createFollowup(
+      { instruction: "Give her the exact cost per meeting.", waitForIssue: "https://github.com/shamanic-technologies/features-service/issues/1600" },
+      { userId: "u" },
+      deps,
+    );
+    expect(calls[0].body).toMatchObject({
+      salesFunnelId: ISSUE_FOLLOWUP_FUNNEL_ID,
+      githubIssue: { repo: "shamanic-technologies/features-service", number: 1600 },
+    });
+    expect(calls[1].url).toContain(`/sales-funnels/${encodeURIComponent(ISSUE_FOLLOWUP_FUNNEL_ID)}/campaigns/fu-2/caps`);
+    expect(out.firesWhen).toContain("by itself");
+
+    const waiting = { ...marieRow, githubIssue: { repo: "shamanic-technologies/features-service", number: 1600 }, githubIssueCheck: { state: "open" } };
+    const f = fakeDeps(() => listing([waiting]));
+    await expect(fireFollowup({ followUpId: "fu-1" }, { userId: "u" }, f.deps)).rejects.toThrow("fires by itself");
+    const l = fakeDeps(() => listing([waiting]));
+    expect((await listFollowups({}, { userId: "u" }, l.deps)).followUps[0]).toMatchObject({ issueState: "open" });
+  });
+
+  it("waitForIssue accepts only an issue URL of our own repos", () => {
+    expect(githubIssueArg(undefined)).toBeNull();
+    expect(() => githubIssueArg("https://github.com/someone-else/repo/issues/3")).toThrow("waitForIssue");
+    expect(() => githubIssueArg("#1600")).toThrow("waitForIssue");
   });
 
   it("every follow-up tool is registered for allowedTools", () => {
