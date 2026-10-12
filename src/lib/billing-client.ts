@@ -96,12 +96,13 @@ export const AGENT_API_OFFER = "agent_api";
  * its prepay instructions. 404 (no billing account) = not an agent org.
  * Throws on any other failure.
  */
-export async function isAgentApiOrg(orgId: string, userId: string): Promise<boolean> {
+export async function isAgentApiOrg(orgId: string, userId: string, runId: string): Promise<boolean> {
   if (!BILLING_SERVICE_API_KEY) {
     throw new Error("[billing-client] BILLING_SERVICE_API_KEY is required to read the prepaid status");
   }
   const res = await fetch(`${BILLING_SERVICE_URL}/v1/accounts/prepaid_status`, {
-    headers: { "X-API-Key": BILLING_SERVICE_API_KEY, "x-org-id": orgId, "x-user-id": userId },
+    // billing requires x-run-id on every identity-scoped read (400 without it).
+    headers: { "X-API-Key": BILLING_SERVICE_API_KEY, "x-org-id": orgId, "x-user-id": userId, "x-run-id": runId },
   });
   if (res.status === 404) return false;
   if (!res.ok) {
