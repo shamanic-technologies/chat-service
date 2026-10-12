@@ -151,6 +151,40 @@ describe("funnel campaign tools (campaign-service / billing-service, direct, cha
     expect(out.askCapsAs).toMatch(/Never say 'max budget'/);
   });
 
+  it("LEADS-ONLY (owner 2026-10-12): Apollo -> Your Team is served unmixed, gets its stopped campaign and the 'no email goes out' rule", async () => {
+    const LEADS = "start_to_lead_found@apollo-cold-filters+lead_found_to_paid_client@your-team-closing-calls";
+    fetchMock()
+      .mockResolvedValueOnce(
+        res(200, {
+          id: LEADS,
+          type: "proactive",
+          mixed: false,
+          line: "Apollo Cold Filters → Your Team",
+          legs: [
+            { pipe: { id: "apollo-cold-filters|start_to_lead_found", mode: "proactive" } },
+            { pipe: { id: "your-team-closing-calls|lead_found_to_paid_client", mode: "reactive" } },
+          ],
+        }),
+      )
+      .mockResolvedValue(res(201, { created: true, started: false }));
+    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
+    const out = (await FUNNEL_CAMPAIGN_TOOLS.create_funnel_campaign({ brandId: "b", offerId: "o", salesFunnelId: LEADS }, p)) as Record<string, string>;
+    expect(call(1).body).toMatchObject({ salesFunnelId: LEADS, status: "stopped" });
+    expect(out.funnelLine).toBe("Apollo Cold Filters → Your Team");
+    expect(out.tellUser).toMatch(/no email goes out/);
+  });
+
+  it("a $5 one-off budget alone is a valid cap for it", async () => {
+    fetchMock().mockResolvedValue(res(200, { maxBudget: { amountCents: 500, period: "one_off" }, maxVolume: null }));
+    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
+    const out = (await FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps(
+      { brandId: "b", offerId: "o", salesFunnelId: FUNNEL, maxBudget: { amountCents: 500, period: "one_off" }, maxVolume: null },
+      p,
+    )) as Record<string, string>;
+    expect(call(0).body).toEqual({ maxBudget: { amountCents: 500, period: "one_off" }, maxVolume: null });
+    expect(out.funding).toMatch(/^Funded/);
+  });
+
   it("a refusal carries the owner's reason", async () => {
     fetchMock().mockResolvedValueOnce(proactiveFunnel()).mockResolvedValue(res(400, { error: "That funnel has a step we cannot run.", reason: "pipe_not_runnable" }));
     const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
@@ -190,7 +224,7 @@ describe("start_funnel_campaign goes through the switch-on gate", () => {
     const { proposeSwitchOn } = await copilot();
     await expect(
       proposeSwitchOn({ action: "start_funnel_campaign", summary: "s", brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p),
-    ).rejects.toThrow(/mixes proactive/);
+    ).rejects.toThrow(/serves .* as mixed/);
   });
 
   it("propose with a stated max budget records the caps and a token, starts nothing", async () => {

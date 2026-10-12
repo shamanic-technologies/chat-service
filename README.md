@@ -1299,9 +1299,9 @@ Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaig
 | `find_sales_funnels` | `GET /internal/catalogue/sales-funnels[/:id]` (`paths`, `containsChannels`) |
 | `find_workflows` | `GET /internal/catalogue/workflows[/:id]?pipe=` (`pipe` required) |
 | `create_step` | `POST /internal/catalogue/steps` |
-| `create_pipe` | `POST /internal/catalogue/pipes`. A draft pipe files "publish it" (features-service, piece `publish-leg-<slug>-<legKey>`) and returns `created_on_hold`; `trigger_not_fired` files the detector request and returns `on_hold` (same as `declare_leg`). |
+| `create_pipe` | `POST /internal/catalogue/pipes`, live at once (no publish request, owner 2026-10-12); `trigger_not_fired` files the detector request and returns `on_hold` (same as `declare_leg`). |
 | `create_sales_path` | `POST /internal/catalogue/sales-paths` (`created:false` when it exists) |
-| `create_sales_funnel` | `POST /internal/catalogue/sales-funnels`. A draft funnel files "publish it" for each draft pipe. |
+| `create_sales_funnel` | `POST /internal/catalogue/sales-funnels`, live at once. Returns features-service's own `type` / `mixed` / `runnable`; the Copilot never re-grades a mix (a leads-only funnel, a source then Your Team, is valid). |
 
 Every create stamps `createdBy` = the requester and `requestedByOrgId` = the chat's org.
 
@@ -1323,7 +1323,7 @@ Every create stamps `createdBy` = the requester and `requestedByOrgId` = the cha
 | Tool | Description |
 |---|---|
 | `list_declared_channels` | Every channel, coded and declared, with `published` / `visibleToClients` and its legs; `slug` for one. `GET /internal/declarations/channels[/:slug]` |
-| `declare_channel` | New channel (unpublished, no leg). `POST /internal/declarations/channels` |
+| `declare_channel` | New channel (live at once, no leg). `POST /internal/declarations/channels` |
 | `list_declared_legs` | Every leg; `channelSlug` to filter. `GET /internal/declarations/legs` |
 | `declare_leg` | New leg on a channel. `POST /internal/declarations/channels/:slug/legs` |
 | `list_trigger_types` | Every trigger type with `kind` (event / delay / poll), `params`, `coded`; `triggerId` for one. `GET /internal/declarations/trigger-types[/:id]` |
@@ -1331,8 +1331,7 @@ Every create stamps `createdBy` = the requester and `requestedByOrgId` = the cha
 | `list_declared_sales_paths` | Paths declared live; `combinationKey` for one. `GET /internal/declarations/sales-paths[/:key]` |
 | `declare_sales_path` | New path, 1-12 chained legs ending at paid. `POST /internal/declarations/sales-paths` |
 
-Every `declare_*` takes the user's words (`userRequest`) and files its own staff request (same record / issue / Telegram path as `request_staff`) for what it cannot do itself, returning `onHold[]`:
-- a channel or leg that lands unpublished (a path: each leg not visible to clients) → "publish it", repo `features-service`, piece `publish-channel-<slug>` / `publish-leg-<slug>-<legKey>`;
+Every `declare_*` takes the user's words (`userRequest`) and is live once created, no publish request (owner 2026-10-12). It files its own staff request (same record / issue / Telegram path as `request_staff`) only for what it cannot do itself, returning `onHold[]`:
 - a reactive leg refused with 409 `trigger_not_fired` (nothing stored), or a declared trigger type that is not coded → "build the detector": `delay` / `poll` → campaign-service, piece `<kind>-trigger-detector` (one generic detector per kind); `event` → the fleet repo in `firedBy`, else campaign-service, piece `fire-<trigger>-trigger`. `declare_leg` then returns `status: "on_hold"`, not an error.
 Any other refusal (`leg_exists`, `path_not_chained`, ...) is an error carrying features-service's named `reason`.
 

@@ -157,7 +157,8 @@ describe("one kind per funnel (owner 2026-10-10)", () => {
     expect(f).toMatch(/ALSO a Reactive funnel from the list \(its line starts at the trigger step/);
     const c = SEED_SKILLS.find((s) => s.slug === "campaigns")!.content;
     expect(c).toMatch(/"Up to \$X" and\/or "Up to N prospects handled"/);
-    expect(c).toMatch(/mixed funnel .* is refused/);
+    expect(c).toMatch(/served `mixed` is refused/);
+    expect(c).toMatch(/no email goes out/);
   });
 });
 

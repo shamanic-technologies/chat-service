@@ -192,15 +192,24 @@ export function capsAskFor(type: "proactive" | "reactive"): string {
     : `Proactive funnel: the caps read 'Max budget' (per one-off, day, week or month) and 'Max volume' in first contacts (per period). ${rule}`;
 }
 
+/**
+ * What the campaign does is the funnel's own served line (who works each leg),
+ * said to the user in plain words. Homogeneous for every funnel: a funnel whose
+ * line holds no channel that writes to a lead (a source, then the customer's
+ * own team) only FINDS leads, and the user is told no email goes out.
+ */
+export const FUNNEL_LINE_RULE =
+  "Say what this campaign does from funnelLine, in plain words. When no step on it writes to a lead (only a lead source, then the user's own team), say plainly: we find the leads and hand them to your team, no email goes out.";
+
 export async function createFunnelCampaign(a: Record<string, unknown>, p: ApiCallParams) {
-  const type = await assertFunnelNotMixed(req("salesFunnelId", a.salesFunnelId));
+  const { type, line } = await assertFunnelNotMixed(req("salesFunnelId", a.salesFunnelId));
   const created = (await call("campaign", "create_funnel_campaign", "POST", "/sales-funnel-campaigns", p, {
     brandId: req("brandId", a.brandId),
     offerId: req("offerId", a.offerId),
     salesFunnelId: req("salesFunnelId", a.salesFunnelId),
     status: "stopped",
   })) as Record<string, unknown>;
-  return { ...created, funnelType: type, askCapsAs: capsAskFor(type) };
+  return { ...created, funnelType: type, funnelLine: line, askCapsAs: capsAskFor(type), tellUser: FUNNEL_LINE_RULE };
 }
 
 /** PATCH stop: no new first touches (follow-ups of contacted leads still go out). Safe, no confirmation. */
