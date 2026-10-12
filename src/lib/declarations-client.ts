@@ -39,13 +39,19 @@ export class DeclarationRefusedError extends Error {
   }
 }
 
-export async function features(operation: string, method: string, path: string, body?: unknown): Promise<unknown> {
+export async function features(
+  operation: string,
+  method: string,
+  path: string,
+  body?: unknown,
+  extraHeaders?: Record<string, string>,
+): Promise<unknown> {
   const url = process.env.FEATURES_SERVICE_URL;
   const key = process.env.FEATURES_SERVICE_API_KEY;
   if (!url || !key) throw new Error("FEATURES_SERVICE_URL / FEATURES_SERVICE_API_KEY not configured");
   const res = await fetch(`${url}${path}`, {
     method,
-    headers: { "x-api-key": key, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
+    headers: { "x-api-key": key, ...(extraHeaders ?? {}), ...(body !== undefined ? { "content-type": "application/json" } : {}) },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(30_000),
   });
