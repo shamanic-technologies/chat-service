@@ -89,6 +89,31 @@ describe("catalogue reads: one tool per level, features-service service key", ()
     expect(fetchMock()).toHaveBeenCalledTimes(1);
   });
 
+  it("an EXPECTED figure (features-service) reads as expected with its basis, never throws for lacking roiBasis (prod 2026-10-12)", async () => {
+    fetchMock().mockResolvedValue(
+      res(200, {
+        rows: [
+          {
+            id: "f",
+            costUsd: 100,
+            costPer: "per paying client",
+            roi: 2,
+            roiBasis: "estimated",
+            status: "estimated",
+            expected: { status: "expected", costUsd: 120, costPer: "per paying client", roi: 1.5, basis: "fleet", unavailableReason: null },
+          },
+          { id: "g", costUsd: null, roi: null, status: "learning", expected: { status: "expected", costUsd: null, costPer: null, roi: null, basis: null, unavailableReason: "no_lifetime_revenue" } },
+        ],
+      }),
+    );
+    const { CATALOGUE_READ_TOOLS } = await load();
+    const out = (await CATALOGUE_READ_TOOLS.find_sales_funnels({}, customer)) as { rows: Array<Record<string, any>> };
+    expect(out.rows[0].expected.cost).toBe("$120 per paying client (expected)");
+    expect(out.rows[0].expected.return).toBe("1.5x (expected, fleet inputs)");
+    expect(out.rows[0].return).toBe("2x (estimated)");
+    expect(out.rows[1].expected.unavailableReason).toBe("no_lifetime_revenue");
+  });
+
   it("keeps pages small: a limit over 25 is refused before any call", async () => {
     const { CATALOGUE_READ_TOOLS } = await load();
     await expect(CATALOGUE_READ_TOOLS.find_channels({ limit: 100 }, customer)).rejects.toThrow(/1 to 25/);
