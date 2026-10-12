@@ -275,6 +275,7 @@ export function buildIssueBody(row: StaffRequest): string {
     `---`,
     `chat-service staff request \`${row.id}\` · piece \`${row.pieceKey}\`${row.sessionId ? ` · session \`${row.sessionId}\`` : ""}.`,
     `When this ships, the Copilot can switch the piece on for the user.`,
+    `**Close this issue FROM the PR that ships it ("Closes #<this issue>")**: a user may be waiting on it, and their follow-up email goes out by itself only once the closing merge is live in production.`,
   ];
   return lines.join("\n");
 }
