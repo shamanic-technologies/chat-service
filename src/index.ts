@@ -148,6 +148,10 @@ import {
   getCampaign,
   getCampaignBudgets,
   getLegRates,
+  setLegRates,
+  getOfferSteps,
+  addOfferStep,
+  removeOfferStep,
   getOfferSourcing,
   getTriggerEvents,
   listConnectedAccounts,
@@ -193,6 +197,10 @@ const DECLARATION_WRITE_TOOLS: Record<
 // Copilot entity tools that are a straight owner-route call: name → handler.
 const COPILOT_ENTITY_TOOLS: Record<string, (args: Record<string, unknown>, p: ApiCallParams) => Promise<unknown>> = {
   get_leg_rates: getLegRates,
+  set_leg_rates: setLegRates,
+  get_offer_steps: getOfferSteps,
+  add_offer_step: addOfferStep,
+  remove_offer_step: removeOfferStep,
   list_sales_paths: listSalesPaths,
   get_trigger_events: getTriggerEvents,
   list_sourcing_origins: (_a, p) => listSourcingOrigins(p),

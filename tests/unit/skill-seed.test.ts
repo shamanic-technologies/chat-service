@@ -15,7 +15,7 @@ const CATALOGUE_LEVELS = [
 ];
 
 const COPILOT_TOOLS = [
-  "get_leg_rates", "list_sales_paths",
+  "get_leg_rates", "set_leg_rates", "get_offer_steps", "add_offer_step", "remove_offer_step", "list_sales_paths",
   "get_trigger_events", "list_sourcing_origins", "get_offer_sourcing",
   "list_connected_accounts", "create_offer",
   "propose_switch_on", "confirm_switch_on",
@@ -222,5 +222,30 @@ describe("caps and cards (owner 2026-10-11, Doc Dinners: 'no volume cap' answere
       if (s.slug === "choices" || s.slug === "index") continue;
       expect(s.content, s.slug).not.toMatch(/with present_choices/);
     }
+  });
+});
+
+describe("ask before proposing a funnel on a step the business may lack (owner 2026-10-12)", () => {
+  const bySlug = new Map(SEED_SKILLS.map((s) => [s.slug, s.content]));
+
+  it("the retired ticked-list line that licensed the incident is gone", () => {
+    for (const sk of SEED_SKILLS) {
+      expect(sk.content, sk.slug).not.toMatch(/ticked list/i);
+      expect(sk.content, sk.slug).not.toMatch(/no tool to read or write/);
+      expect(sk.title, sk.slug).not.toMatch(/ticked list/i);
+    }
+  });
+
+  it("the funnel skill reads the offer's steps, asks about an unknown one, records yes and no, and never moves a funnel", () => {
+    const f = bySlug.get("catalogue-sales-funnels")!;
+    for (const w of ["get_offer_steps", "ASK the client", "add_offer_step", "remove_offer_step", "Lead found and Paid client are in every business", "never \"move\""]) {
+      expect(f).toContain(w);
+    }
+    expect(f.indexOf("get_offer_steps")).toBeLessThan(f.indexOf("## Propose"));
+    expect(bySlug.get("index")!).toContain("get_offer_steps");
+  });
+
+  it("the legs skill writes a stated rate as a percent", () => {
+    expect(bySlug.get("legs")!).toMatch(/set_leg_rates\(brandId, legRates\).*"0\.5%" is 0\.5/);
   });
 });
