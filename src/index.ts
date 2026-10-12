@@ -140,6 +140,7 @@ import { stripNul } from "./lib/strip-nul.js";
 import { pushCopilotTurnInBackground, type CopilotTurnMessage } from "./lib/copilot-unibox.js";
 import { CATALOGUE_READ_TOOLS, CATALOGUE_WRITE_TOOLS, assertStaffBuild, type CatalogueReader } from "./lib/catalogue-client.js";
 import { FUNNEL_CAMPAIGN_TOOLS } from "./lib/funnel-campaign-client.js";
+import { FOLLOWUP_TOOLS } from "./lib/followup-client.js";
 import { DISCOVERY_READ_TOOLS, testEndpoint } from "./lib/discovery-client.js";
 import {
   createOffer,
@@ -3197,6 +3198,15 @@ app.post("/chat", requireAuth, async (req, res) => {
       if (funnelCampaignTool) {
         const args = (call.args as Record<string, unknown>) || {};
         const result = await funnelCampaignTool(args, featureCallParams, catalogueReader);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Copilot: one-person follow-ups on OUR brand (campaign / billing, direct) ---
+      const followupTool = FOLLOWUP_TOOLS[call.name];
+      if (followupTool) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await followupTool(args, { userId });
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }

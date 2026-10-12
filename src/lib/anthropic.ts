@@ -2482,6 +2482,52 @@ export const STOP_FUNNEL_CAMPAIGN_TOOL: Anthropic.Tool = {
   },
 };
 
+const FOLLOWUP_ID_PROP = { followUpId: { type: "string", description: "Its id (list_followups or create_followup)." } };
+
+export const CREATE_FOLLOWUP_TOOL: Anthropic.Tool = {
+  name: "create_followup",
+  description:
+    "Start a one-person follow-up: distribute.you (our own brand, our money, never the user's) will email the user you are talking to later, through our normal outreach, and their reply lands with our staff. " +
+    "Use it whenever you will have something worth telling them after this conversation ends: an exact figure once we serve it, a feature they asked for, a check-in after their first campaign, anything that serves them. " +
+    "You decide whether to ask the user first or just do it, and whether to mention it. It starts at once, sends at most one email, and only when the follow-up is fired (fire_followup). " +
+    "The instruction tells the writer what to say: put in every figure and fact you already hold.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      instruction: { type: "string", description: "What the email must tell this person, in plain words, with the figures you hold (max 4000 chars)." },
+    },
+    required: ["instruction"],
+  },
+};
+
+export const UPDATE_FOLLOWUP_TOOL: Anthropic.Tool = {
+  name: "update_followup",
+  description: "Change what an open follow-up will say, e.g. the user corrected something or you now hold the exact figure.",
+  input_schema: {
+    type: "object" as const,
+    properties: { ...FOLLOWUP_ID_PROP, instruction: { type: "string", description: "The new instruction (replaces the old one)." } },
+    required: ["followUpId", "instruction"],
+  },
+};
+
+export const CANCEL_FOLLOWUP_TOOL: Anthropic.Tool = {
+  name: "cancel_followup",
+  description: "Stop a follow-up that no longer makes sense: the user got the answer, asked you not to write, or it will never be due.",
+  input_schema: { type: "object" as const, properties: FOLLOWUP_ID_PROP, required: ["followUpId"] },
+};
+
+export const LIST_FOLLOWUPS_TOOL: Anthropic.Tool = {
+  name: "list_followups",
+  description: "The open follow-ups for the user you are talking to (what each will say).",
+  input_schema: { type: "object" as const, properties: {} },
+};
+
+export const FIRE_FOLLOWUP_TOOL: Anthropic.Tool = {
+  name: "fire_followup",
+  description: "The moment a follow-up is due: send it now (one email, written from its instruction). Fire only when what it promises is true.",
+  input_schema: { type: "object" as const, properties: FOLLOWUP_ID_PROP, required: ["followUpId"] },
+};
+
 export const CONFIRM_SWITCH_ON_TOOL: Anthropic.Tool = {
   name: "confirm_switch_on",
   description:
@@ -3053,6 +3099,11 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   set_funnel_caps: SET_FUNNEL_CAPS_TOOL,
   create_funnel_campaign: CREATE_FUNNEL_CAMPAIGN_TOOL,
   stop_funnel_campaign: STOP_FUNNEL_CAMPAIGN_TOOL,
+  create_followup: CREATE_FOLLOWUP_TOOL,
+  update_followup: UPDATE_FOLLOWUP_TOOL,
+  cancel_followup: CANCEL_FOLLOWUP_TOOL,
+  list_followups: LIST_FOLLOWUPS_TOOL,
+  fire_followup: FIRE_FOLLOWUP_TOOL,
   request_staff: REQUEST_STAFF_TOOL,
   request_skill_upgrade: REQUEST_SKILL_UPGRADE_TOOL,
   contact_human: CONTACT_HUMAN_TOOL,
