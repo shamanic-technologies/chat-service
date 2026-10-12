@@ -1,56 +1,31 @@
 // ---------------------------------------------------------------------------
-// Tool-result fallback summary
+// Tool-result fallback answer
 // ---------------------------------------------------------------------------
 //
 // When an agentic chat turn runs one or more tools but the model's follow-up
-// "summarize" turn comes back with NO text, the chat must never surface to the
-// user as silence (a frozen tool card with no reply). This builds a readable
-// fallback assistant message from the raw tool results so the user always sees
-// what the tools returned — provider-agnostic (used by both the Gemini and
-// Anthropic agentic loops).
+// turn comes back with NO text, the chat must never surface as silence (a
+// frozen tool card with no reply). This builds a short assistant message
+// naming what was looked up. It does NOT paste the tool results: raw JSON is
+// unreadable for a person and, for an agent driving the chat through the MCP,
+// made the answer too big to hand back (prod 2026-10-12: 22 results, 339 KB).
+// The results are already on the turn's `tool_result` events and in history.
 //
-// This is a SAFETY NET, not the happy path: the model normally writes its own
-// summary. The fallback only fires when that summary is empty, and it renders
-// the REAL tool results (no fabricated data), alongside a loud server log so
-// the empty-turn root cause stays diagnosable.
-
-const MAX_RENDERED_RESULT_CHARS = 4000;
-
-/** Render a single tool result as readable markdown, truncated for safety. */
-function renderToolResult(result: unknown): string {
-  if (result === null || result === undefined) return "_(no result)_";
-  if (typeof result === "string") {
-    return result.length > MAX_RENDERED_RESULT_CHARS
-      ? result.slice(0, MAX_RENDERED_RESULT_CHARS) + "…"
-      : result;
-  }
-  let json: string;
-  try {
-    json = JSON.stringify(result, null, 2);
-  } catch {
-    json = String(result);
-  }
-  const body =
-    json.length > MAX_RENDERED_RESULT_CHARS
-      ? json.slice(0, MAX_RENDERED_RESULT_CHARS) + "\n…"
-      : json;
-  return "```json\n" + body + "\n```";
-}
+// This is a SAFETY NET, not the happy path: the final round of the tool budget
+// (`tool-budget.ts`) makes the model answer. It fires only when that answer is
+// still empty, alongside a loud server log so the root cause stays findable.
 
 /**
- * Build a fallback assistant message summarizing the tool calls that ran when
- * the model produced no summary text of its own. Always returns a non-empty
- * string when `toolCalls` is non-empty.
+ * Build a fallback assistant message for a turn whose tools ran but whose
+ * model wrote no answer. Always returns a non-empty string when `toolCalls`
+ * is non-empty.
  */
 export function buildToolResultFallback(
   toolCalls: Array<{ name: string; result?: unknown }>,
 ): string {
   if (toolCalls.length === 0) return "";
-  const header =
-    "I retrieved the requested information, but couldn't generate a written " +
-    "summary this time. Here is what the tools returned:";
-  const blocks = toolCalls.map(
-    (tc) => `**${tc.name}**\n${renderToolResult(tc.result)}`,
+  const names = [...new Set(toolCalls.map((tc) => tc.name))];
+  return (
+    `I looked this up (${names.join(", ")}) but did not finish writing the answer. ` +
+    "Ask me again and I will pick up from there."
   );
-  return [header, ...blocks].join("\n\n");
 }

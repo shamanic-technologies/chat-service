@@ -49,6 +49,23 @@ describe("createStream() effort", () => {
   });
 });
 
+describe("createStream() final round of the tool budget", () => {
+  const tools = [{ name: "list_audiences", description: "d", input_schema: { type: "object" as const, properties: {} } }];
+
+  it("sends tool_choice none, keeping the tools declared", () => {
+    const claude = createAnthropicClient({ apiKey: "k", systemPrompt: "Sys" });
+    claude.createStream([{ role: "user", content: "hi" }], tools, undefined, { model: "claude-sonnet-5-5", toolChoice: "none" });
+    expect(capturedParams!.tool_choice).toEqual({ type: "none" });
+    expect(capturedParams!.tools).toHaveLength(1);
+  });
+
+  it("sends no tool_choice on every other round", () => {
+    const claude = createAnthropicClient({ apiKey: "k", systemPrompt: "Sys" });
+    claude.createStream([{ role: "user", content: "hi" }], tools, undefined, { model: "claude-sonnet-5-5" });
+    expect(capturedParams).not.toHaveProperty("tool_choice");
+  });
+});
+
 describe("platform config effort", () => {
   const base = { key: "copilot", systemPrompt: "s", allowedTools: ["present_choices"] };
 

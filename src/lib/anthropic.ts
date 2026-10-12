@@ -1769,7 +1769,7 @@ export const REFRESH_BRAND_PROFILE_FROM_WEBSITE_TOOL: Anthropic.Tool = {
 export const LIST_AUDIENCES_TOOL: Anthropic.Tool = {
   name: "list_audiences",
   description:
-    "List the customer audiences for the current brand (the brand from context.brandId — no brandId parameter needed). Optionally filter by lifecycle status. Read-only — never modifies anything. Use this to summarize audiences, and to look up an audience's id before renaming it, changing its status, or refreshing its counts.",
+    "List the customer audiences for the current brand (the brand from context.brandId — no brandId parameter needed), 15 per page: id, name, status, offerId, size, channels, and who it targets in one line. Optionally filter by lifecycle status. Read-only — never modifies anything. Use this to summarize audiences, and to look up an audience's id before renaming it, changing its status, or refreshing its counts. When nextOffset is not null, more audiences exist: call again with that offset only if you need them.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -1778,6 +1778,10 @@ export const LIST_AUDIENCES_TOOL: Anthropic.Tool = {
         enum: ["suggested", "active", "paused", "archived"],
         description:
           "Optional. Filter to audiences with this lifecycle status. Omit to list all statuses. 'suggested' audiences are inactive candidates awaiting activation.",
+      },
+      offset: {
+        type: "integer",
+        description: "Optional. The nextOffset of the previous page. Omit for the first page.",
       },
     },
   },
@@ -3237,6 +3241,12 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
          * thinking + block binding + compaction + context edits): 200.
          */
         effort?: AnthropicEffort;
+        /**
+         * "none" = the final round of a turn's tool budget (`tool-budget.ts`):
+         * tools stay declared (the history holds tool_use blocks) but the
+         * model cannot call one, so it must answer in text.
+         */
+        toolChoice?: "none";
       },
     ) {
       const cache = opts?.cache === true;
@@ -3261,6 +3271,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         ...(cache ? { cache_control: { type: "ephemeral" as const } } : {}),
         messages,
         tools: tools && tools.length > 0 ? tools : undefined,
+        ...(opts?.toolChoice && tools && tools.length > 0 ? { tool_choice: { type: opts.toolChoice } } : {}),
         // A thinking block is signed against the conversation prefix it was
         // made in. Compaction (above 100k) and history trimming REWRITE that
         // prefix, after which the API 400s the whole turn ("The block is bound
