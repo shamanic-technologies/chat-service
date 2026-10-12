@@ -134,6 +134,12 @@ describe("Copilot follow-ups", () => {
     await expect(listFollowups({}, { userId: "u" }, deps)).rejects.toThrow("COPILOT_FOLLOWUP_OFFER_ID");
   });
 
+  it("create_followup tells the agent the writer reads the user's own and public figures at send time", () => {
+    const d = TOOL_REGISTRY.create_followup.description ?? "";
+    expect(d).toContain("this user's own account figures");
+    expect(d).toContain("never another customer's");
+  });
+
   it("every follow-up tool is registered for allowedTools", () => {
     for (const t of ["create_followup", "update_followup", "cancel_followup", "list_followups", "fire_followup"]) {
       expect(TOOL_REGISTRY[t]?.name).toBe(t);
