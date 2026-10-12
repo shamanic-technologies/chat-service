@@ -66,6 +66,7 @@ import {
   listWorkflows,
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
+import { hasStaffOnlyTool, lookupRequester, toolsForRequester, type Requester } from "./lib/staff-only-tools.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
 import { createRun, updateRunStatus, addRunCosts, updateRunCostStatus, createPlatformRun, addPlatformRunCosts, updatePlatformRunStatus, type CostItem, type RunIdentityHeaders } from "./lib/runs-client.js";
 import { traceEvent } from "./lib/trace-event.js";
@@ -130,8 +131,6 @@ import {
   listStaffRequests,
   listStaffRequestsForModel,
   StaffRequestValidationError,
-  fetchRequesterEmail,
-  isStaffEmail,
   submitStaffRequest,
   toStaffRequestBody,
 } from "./lib/staff-requests.js";
@@ -2644,7 +2643,15 @@ app.post("/chat", requireAuth, async (req, res) => {
     });
   }
 
-  const allowedToolNames: string[] = appConfig.allowedTools as string[];
+  // Staff-only tools (shared prompt templates) are offered only when the
+  // requester is staff; the lookup runs once per turn and is shared with the
+  // catalogue's staff check below.
+  const configToolNames = appConfig.allowedTools as string[];
+  let requesterLookup: Promise<Requester> | null = null;
+  const getRequester = (): Promise<Requester> => (requesterLookup ??= lookupRequester(userId));
+  const allowedToolNames: string[] = hasStaffOnlyTool(configToolNames)
+    ? toolsForRequester(configToolNames, await getRequester())
+    : configToolNames;
 
   // Resolve provider/model from config (NULL = default: google/pro — Gemini is
   // the platform default; the Anthropic platform key has no credit balance).
@@ -2926,15 +2933,15 @@ app.post("/chat", requireAuth, async (req, res) => {
     // Who is chatting decides only what a STAFF-ONLY catalogue option may show
     // (catalogue-client CatalogueReader). Looked up once per turn, on first
     // need; a failed lookup is a customer (fail closed: they see what we run).
-    let staffLookup: Promise<boolean> | null = null;
+    // A staff-only tool reached the dispatcher only if the tool list kept it,
+    // i.e. the requester is staff; re-assert so a config edit cannot bypass it.
+    const staffEmailOrThrow = async (): Promise<string> => {
+      const r = await getRequester();
+      if (!r.isStaff || !r.email) throw new Error("This tool is reserved to distribute.you staff.");
+      return r.email;
+    };
     const catalogueReader: CatalogueReader = {
-      isStaff: () =>
-        (staffLookup ??= fetchRequesterEmail(userId)
-          .then((email) => isStaffEmail(email))
-          .catch((err) => {
-            console.error(`[chat] staff lookup failed for user="${userId}", treating as a customer:`, err);
-            return false;
-          })),
+      isStaff: () => getRequester().then((r) => r.isStaff),
     };
 
     const featureCallParams = {
@@ -3445,6 +3452,7 @@ app.post("/chat", requireAuth, async (req, res) => {
             userId,
             runId: runId!,
             trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+            staffEmail: await staffEmailOrThrow(),
           },
         );
 
@@ -3466,6 +3474,7 @@ app.post("/chat", requireAuth, async (req, res) => {
             userId,
             runId: runId!,
             trackingHeaders: Object.keys(trackingHeaders).length > 0 ? trackingHeaders as Record<string, string> : undefined,
+            staffEmail: await staffEmailOrThrow(),
           },
         );
 

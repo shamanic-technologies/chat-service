@@ -1151,8 +1151,10 @@ Read-only and supporting workflow tools:
 | `get_workflow_required_providers` | Returns BYOK providers needed to execute a workflow via `GET /workflows/{id}/key-status` |
 | `list_workflows` | Lists workflows via `GET /workflows` with optional filters |
 | `validate_workflow` | Validates a workflow's DAG structure |
-| `get_prompt_template` | Retrieves a stored prompt template by type |
-| `update_prompt_template` | Creates a new version of an existing prompt template (auto-versions). `variables` is an array of `{ name, description }` objects (the deployed content-generation contract — not bare strings) |
+| `get_prompt_template` | **Staff only.** Retrieves a stored prompt template by type |
+| `update_prompt_template` | **Staff only.** Creates a new version of an existing prompt template (auto-versions). `variables` is an array of `{ name, description }` objects (the deployed content-generation contract — not bare strings) |
+
+The two prompt tools act on the SHARED platform templates (every org's emails are written from them), which api-service serves only to staff (`requireStaff`: platform key + `x-email` in its allowlist). chat-service reads the requester's email from client-service (`GET /internal/users/:userId`, keyed on the gateway-resolved `x-user-id`): a non-staff requester (or a failed lookup) never gets these tools in the turn's tool list, and a staff requester's calls carry their email as `x-email` (`src/lib/staff-only-tools.ts`).
 
 **Service discovery tools (read-only):**
 
@@ -1518,7 +1520,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `TRANSACTIONAL_EMAIL_SERVICE_API_KEY` | No | API key for transactional-email-service. Unset → the out-of-credit staff alert does not send (logged, never fatal) |
 | `COPILOT_FOLLOWUP_ORG_ID` / `_USER_ID` / `_BRAND_ID` / `_OFFER_ID` | For Copilot follow-ups | distribute.you's own org, a staff user, our brand and offer: the scope every `create_followup` campaign runs under (platform org, never charged). Unset → the follow-up tools fail loud |
 | `CRM_SERVICE_URL` / `CRM_SERVICE_API_KEY` | For the Copilot | Every `copilot` chat turn (user message + answer) is pushed to crm-service `POST /internal/copilot/messages` once stored, so it shows in distribute.you's staff Unibox with the answer from "AI Copilot". Fire-and-forget: a failure is logged, the chat is unaffected |
-| `CLIENT_SERVICE_URL` / `CLIENT_SERVICE_API_KEY` | For `request_staff` and the Copilot Unibox push | Reads the requester's email (`GET /internal/users/:userId`) to decide the staff Telegram ping. Unset → lookup fails, logged, the ping still goes out |
+| `CLIENT_SERVICE_URL` / `CLIENT_SERVICE_API_KEY` | For `request_staff`, the Copilot Unibox push and the staff-only prompt tools | Reads the requester's email (`GET /internal/users/:userId`) to decide the staff Telegram ping and whether the prompt-template tools are offered. Unset → lookup fails, logged, the ping still goes out, the prompt tools are hidden |
 | `GITHUB_ISSUES_TOKEN` | For `request_staff` | GitHub token with issues:write on the `shamanic-technologies` repos. Unset → the request is recorded without an issue (`issueError`), and a repeat retries |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_OWNER_CHAT_ID` | For `request_staff` | Same bot + chat as billing-service and the dashboard. Unset → no ping (`telegramError` recorded) |
 | `FEATURES_SERVICE_URL` / `FEATURES_SERVICE_API_KEY` | For the `declare_*` / `list_declared_*` / `list_trigger_types` / catalogue (`find_*`, `create_*`) tools | features-service base URL and its service key (`/internal/declarations/*`, `/internal/catalogue/*`). Unset → those tools fail loud (`not configured`) |
