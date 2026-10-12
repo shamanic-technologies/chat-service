@@ -57,6 +57,10 @@ export interface Audience {
   createdByUserId: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Served by human-service beside the fields above; read by `toAudienceRows`. */
+  offerId?: string | null;
+  targetText?: string | null;
+  channels?: Array<{ channel: string }> | null;
 }
 
 /** One candidate from POST /suggest — already persisted as an inactive `suggested` row. */
@@ -87,6 +91,58 @@ export async function listAudiences(
   );
   if (!res.ok) return failLoud(res, "list audiences");
   return res.json() as Promise<{ audiences: Audience[]; total: number }>;
+}
+
+// ---------------------------------------------------------------------------
+// What the chat model reads from list_audiences: one short row per audience,
+// a page at a time. The full rows (filters, nlPrompt, targetText) weigh ~4 KB
+// EACH: 26 audiences returned 111 KB (~30k tokens) per call and a Copilot turn
+// read it twice (prod 2026-10-12). Owner rule: no tool result above ~2k tokens.
+// ---------------------------------------------------------------------------
+
+export const AUDIENCE_PAGE_SIZE = 15;
+const TARGET_CHARS = 120;
+
+export interface AudienceRow {
+  id: string;
+  name: string;
+  status: AudienceStatus;
+  offerId: string | null;
+  size: number | null;
+  channels: string[];
+  /** Who it targets, cut to one line (targetText, else the nlPrompt). */
+  target: string | null;
+}
+
+function oneLine(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > TARGET_CHARS ? `${flat.slice(0, TARGET_CHARS)}…` : flat;
+}
+
+export function toAudienceRows(
+  audiences: Audience[],
+  offset: number,
+): { total: number; offset: number; audiences: AudienceRow[]; nextOffset: number | null } {
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new Error(`[audience-client] offset must be a whole number >= 0, got ${offset}`);
+  }
+  const page = audiences.slice(offset, offset + AUDIENCE_PAGE_SIZE);
+  const next = offset + page.length;
+  return {
+    total: audiences.length,
+    offset,
+    audiences: page.map((a) => ({
+      id: a.id,
+      name: a.name,
+      status: a.status,
+      offerId: a.offerId ?? null,
+      size: a.apolloCount ?? a.apifyCount ?? null,
+      channels: [...new Set((a.channels ?? []).map((c) => c.channel))],
+      target: oneLine(a.targetText ?? a.nlPrompt),
+    })),
+    nextOffset: next < audiences.length ? next : null,
+  };
 }
 
 /**

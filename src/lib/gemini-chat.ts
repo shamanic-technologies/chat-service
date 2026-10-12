@@ -8,6 +8,7 @@ import type { ToolCallRecord } from "../db/schema.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
 import { sanitizeGeminiSchema, buildThinkingConfig, geminiCostPrefix, type GeminiThinkingLevel } from "./gemini.js";
 import { buildToolResultFallback } from "./tool-fallback.js";
+import { FINAL_ROUND_NOTE, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH } from "./tool-budget.js";
 import { mergeGeminiCostLines, readGeminiBilledTokens, type GeminiCostLine, type GeminiUsageMetadata } from "./gemini-usage.js";
 import { formatToolError } from "./tool-errors.js";
 import { CLIENT_UI_TOOL_NAMES } from "./ui-tools.js";
@@ -36,7 +37,6 @@ const GEMINI_TIMEOUT_MS: Record<string, number> = {
 };
 const DEFAULT_GEMINI_TIMEOUT_MS = 10 * 60_000;
 
-const MAX_TOOL_CHAIN_DEPTH = 10;
 
 // Thinking config (`buildThinkingConfig`) is generation-specific and shared with
 // the /complete path — it lives in gemini.ts so both paths bound Gemini-3
@@ -157,6 +157,8 @@ export interface StreamGeminiChatOptions {
 
 export interface StreamGeminiChatResult {
   tokensInput: number;
+  /** Input of the LAST request of the loop: the context the model read (the gauge). */
+  lastRequestTokensInput: number;
   tokensOutput: number;
   /** Catalog lines summed over every turn of the tool loop (one request per turn). */
   costLines: GeminiCostLine[];
@@ -400,6 +402,7 @@ export async function streamGeminiChat(
   } = options;
 
   let totalTokensInput = 0;
+  let lastRequestTokensInput = 0;
   let totalTokensOutput = 0;
   let totalCostLines: GeminiCostLine[] = [];
   let fullResponse = "";
@@ -446,6 +449,11 @@ export async function streamGeminiChat(
       },
       ...(functionDeclarations.length > 0
         ? { tools: [{ functionDeclarations }] }
+        : {}),
+      // Final round of the tool budget: tools stay declared (history holds
+      // function calls) but the model cannot call one, so it answers in text.
+      ...(functionDeclarations.length > 0 && isFinalToolRound(depth)
+        ? { toolConfig: { functionCallingConfig: { mode: "NONE" } } }
         : {}),
     };
 
@@ -563,6 +571,7 @@ export async function streamGeminiChat(
 
     const turnBilled = readGeminiBilledTokens(turnUsage, model, geminiCostPrefix(model));
     totalTokensInput += turnBilled.tokensInput;
+    lastRequestTokensInput = turnBilled.tokensInput;
     totalTokensOutput += turnBilled.tokensOutput;
     totalCostLines = mergeGeminiCostLines(totalCostLines, turnBilled.costLines);
 
@@ -615,6 +624,7 @@ export async function streamGeminiChat(
           // Still add partial results so far
           return {
             tokensInput: totalTokensInput,
+            lastRequestTokensInput,
             tokensOutput: totalTokensOutput,
             costLines: totalCostLines,
             fullResponse,
@@ -671,7 +681,10 @@ export async function streamGeminiChat(
 
     // Append model function calls + tool results to conversation
     turnMessages.push({ role: "model", parts: modelParts });
-    turnMessages.push({ role: "user", parts: responseParts });
+    turnMessages.push({
+      role: "user",
+      parts: isFinalToolRound(depth + 1) ? [...responseParts, { text: FINAL_ROUND_NOTE }] : responseParts,
+    });
   }
 
   // Tool(s) ran but the follow-up "summarize" turn produced no text. This must
@@ -711,6 +724,7 @@ export async function streamGeminiChat(
 
   return {
     tokensInput: totalTokensInput,
+    lastRequestTokensInput,
     tokensOutput: totalTokensOutput,
     costLines: totalCostLines,
     fullResponse,

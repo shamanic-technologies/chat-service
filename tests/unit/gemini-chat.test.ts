@@ -329,7 +329,8 @@ describe("streamGeminiChat tool-then-empty guard", () => {
     // ...and the response is NOT silently empty — it summarizes the tool result.
     expect(result.fullResponse).not.toBe("");
     expect(result.fullResponse).toContain("list_audiences");
-    expect(result.fullResponse).toContain("Founders");
+    // Names what was looked up; never pastes the raw results (prod 2026-10-12).
+    expect(result.fullResponse).not.toContain("Founders");
     // The fallback text was streamed to the client as a token event.
     const tokenText = events
       .filter((e): e is { type: string; content: string } =>
@@ -337,7 +338,7 @@ describe("streamGeminiChat tool-then-empty guard", () => {
       )
       .map((e) => e.content)
       .join("");
-    expect(tokenText).toContain("Founders");
+    expect(tokenText).toBe(result.fullResponse);
   });
 
   it("still fails loud on a wholly-empty stream (no tools, no usage)", async () => {

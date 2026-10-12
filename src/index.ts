@@ -86,6 +86,7 @@ import {
 } from "./lib/brand-content-client.js";
 import {
   listAudiences,
+  toAudienceRows,
   suggestAudiences,
   setAudienceStatus,
   renameAudience,
@@ -291,6 +292,7 @@ import {
   type AnthropicCostLine,
 } from "./lib/anthropic-usage.js";
 import { buildToolResultFallback } from "./lib/tool-fallback.js";
+import { FINAL_ROUND_NOTE, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH } from "./lib/tool-budget.js";
 import { SESSION_NOT_FOUND_EVENT, SESSION_NOT_FOUND_MESSAGE, isSessionOwner } from "./lib/session-errors.js";
 import { serializeSessionHistory } from "./lib/session-history.js";
 import { buildContextUsageEvent } from "./lib/context-usage.js";
@@ -2734,6 +2736,8 @@ app.post("/chat", requireAuth, async (req, res) => {
   let runId: string | null = null;
   let chatFailed = false;
   let totalPromptTokens = 0;
+  // Input of the turn's LAST model call: what the context gauge shows.
+  let lastPromptTokens = 0;
   let totalOutputTokens = 0;
   // Gemini: exact billed lines, summed over the tool loop (null on Anthropic).
   let geminiChatCostLines: GeminiCostLine[] | null = null;
@@ -3776,11 +3780,12 @@ app.post("/chat", requireAuth, async (req, res) => {
       if (call.name === "list_audiences") {
         const args = (call.args as Record<string, unknown>) || {};
         const brandId = requireSingleBrandId("list_audiences");
-        const result = await listAudiences(
+        const { audiences } = await listAudiences(
           brandId,
           args.status as AudienceStatus | undefined,
           featureCallParams,
         );
+        const result = toAudienceRows(audiences, args.offset === undefined ? 0 : Number(args.offset));
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -4118,6 +4123,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       toolCalls.length = 0;
       toolCalls.push(...geminiResult.toolCalls, ...turnEnding);
       totalPromptTokens = geminiResult.tokensInput;
+      lastPromptTokens = geminiResult.lastRequestTokensInput;
       totalOutputTokens = geminiResult.tokensOutput;
       geminiChatCostLines = geminiResult.costLines;
 
@@ -4143,7 +4149,6 @@ app.post("/chat", requireAuth, async (req, res) => {
       { role: "user", content: message.trim() },
     ];
 
-    const MAX_TOOL_CHAIN_DEPTH = 10;
     let depth = 0;
 
     // A config whose answers end on present_choices shows ONE text: the final
@@ -4185,6 +4190,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           cache: anthropicCachePriced(resolvedModelInfo.costPrefix),
           // Per-config thinking effort (NULL → the model's own default).
           effort: appConfig.effort ?? undefined,
+          ...(isFinalToolRound(depth) ? { toolChoice: "none" as const } : {}),
         });
 
         try {
@@ -4247,7 +4253,8 @@ app.post("/chat", requireAuth, async (req, res) => {
         anthropicChatCostLines,
         anthropicCostLines(resolvedModelInfo.costPrefix, billed),
       );
-      totalPromptTokens += anthropicPromptTokens(billed);
+      lastPromptTokens = anthropicPromptTokens(billed);
+      totalPromptTokens += lastPromptTokens;
       totalOutputTokens += billed.tokensOutput;
       lastContentBlocks = finalMessage.content;
 
@@ -4329,9 +4336,15 @@ app.post("/chat", requireAuth, async (req, res) => {
         }
       }
 
-      // Append tool results and continue the loop
-      turnMessages.push({ role: "user", content: toolResultBlocks });
+      // Append tool results and continue the loop; before the final round,
+      // tell the model its tool budget is spent (tools go off that round).
       depth++;
+      turnMessages.push({
+        role: "user",
+        content: isFinalToolRound(depth)
+          ? [...toolResultBlocks, { type: "text", text: FINAL_ROUND_NOTE }]
+          : toolResultBlocks,
+      });
     }
 
     // Finalize Anthropic line buffer
@@ -4439,8 +4452,11 @@ app.post("/chat", requireAuth, async (req, res) => {
       messages: [userTurnMessage, { messageId: savedAnswer.id, role: "assistant", text: cleanedResponse, at: savedAnswer.createdAt }],
     });
 
+    // The gauge is the context the model READ on its last call, never the
+    // turn's summed input (each tool round re-sends the whole prompt, so the
+    // sum read "212k / 100%" on 30k-token calls, prod 2026-10-12).
     sendSSE(res, buildContextUsageEvent({
-      inputTokens: totalPromptTokens,
+      inputTokens: lastPromptTokens,
       outputTokens: totalOutputTokens,
     }));
 

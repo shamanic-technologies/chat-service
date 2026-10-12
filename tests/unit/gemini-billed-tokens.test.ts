@@ -269,6 +269,54 @@ describe("streamGeminiChat (POST /chat, streaming + tool loop)", () => {
     ]);
   });
 
+  it("reports the LAST request's input as the context size, not the sum", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          sseResponse([
+            {
+              candidates: [{ content: { parts: [{ functionCall: { name: "list_audiences", args: {} } }] } }],
+              usageMetadata: { promptTokenCount: 30_000, candidatesTokenCount: 10, totalTokenCount: 30_010 },
+            },
+          ]),
+        )
+        .mockResolvedValueOnce(
+          sseResponse([
+            {
+              candidates: [{ content: { parts: [{ text: "Done." }] }, finishReason: "STOP" }],
+              usageMetadata: { promptTokenCount: 31_000, candidatesTokenCount: 5, totalTokenCount: 31_005 },
+            },
+          ]),
+        ),
+    );
+    const result = await streamGeminiChat(chatOptions());
+    expect(result.tokensInput).toBe(61_000);
+    expect(result.lastRequestTokensInput).toBe(31_000);
+  });
+
+  it("turns tools off on the final round and tells the model to answer", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      sseResponse([
+        {
+          candidates: [{ content: { parts: [{ functionCall: { name: "list_audiences", args: {} } }] } }],
+          usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 1, totalTokenCount: 11 },
+        },
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await streamGeminiChat(chatOptions());
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse(c[1].body as string));
+    expect(bodies).toHaveLength(11);
+    for (const body of bodies.slice(0, 10)) expect(body).not.toHaveProperty("toolConfig");
+    const last = bodies[10];
+    expect(last.toolConfig).toEqual({ functionCallingConfig: { mode: "NONE" } });
+    expect(last.tools).toBeDefined();
+    const lastUserParts = last.contents[last.contents.length - 1].parts;
+    expect(lastUserParts[lastUserParts.length - 1].text).toMatch(/no more tool calls/);
+  });
+
   it("fails loud on a usage total it cannot price", async () => {
     vi.stubGlobal(
       "fetch",
