@@ -103,7 +103,7 @@ describe("catalogue creates", () => {
     });
   });
 
-  it("create_pipe: a DRAFT pipe files the publish request itself and reports on hold", async () => {
+  it("create_pipe: a new pipe is live at once, no publish request is filed (owner 2026-10-12)", async () => {
     fetchMock().mockResolvedValue(
       res(201, { object: "pipe", id: "organic-linkedin-publishing|start_to_website_visit", channelSlug: "organic-linkedin-publishing", legKey: "start_to_website_visit", draft: true }),
     );
@@ -114,20 +114,9 @@ describe("catalogue creates", () => {
       ctx,
       file,
       staff,
-    )) as { status: string; onHold: unknown[] };
+    )) as { status: string };
     expect(call(0).body).toMatchObject({ channelSlug: "organic-linkedin-publishing", fromStep: null, toStep: "website_visit", mode: "proactive", createdBy: "user-1", requestedByOrgId: "org-1" });
     expect(call(0).body.userRequest).toBeUndefined();
-    expect(out.status).toBe("created_on_hold");
-    expect(filed).toHaveLength(1);
-    expect(filed[0]).toMatchObject({ kind: "feature", repo: "features-service" });
-    expect(filed[0].pieceKey).toMatch(/^publish-leg-organic-linkedin-publishing/);
-  });
-
-  it("create_pipe: a published pipe files nothing", async () => {
-    fetchMock().mockResolvedValue(res(201, { id: "c|l", channelSlug: "c", legKey: "l", draft: false }));
-    const { CATALOGUE_WRITE_TOOLS } = await load();
-    const { file, filed } = fileMock();
-    const out = (await CATALOGUE_WRITE_TOOLS.create_pipe({ channelSlug: "c", toStep: "x", mode: "proactive", userRequest: "u" }, ctx, file, staff)) as { status: string };
     expect(out.status).toBe("created");
     expect(filed).toHaveLength(0);
   });
@@ -157,44 +146,34 @@ describe("catalogue creates", () => {
     expect(call(0).body).toEqual({ legKeys: ["a", "b"], createdBy: "user-1", requestedByOrgId: "org-1" });
   });
 
-  it("create_sales_funnel on a draft: files a publish request per DRAFT pipe only", async () => {
+  it("create_sales_funnel: live at once, no publish request, even if a pipe is served as draft (owner 2026-10-12)", async () => {
+    fetchMock().mockResolvedValue(res(201, { id: "f", draft: true, type: "proactive", mixed: false, legs: [] }));
+    const { CATALOGUE_WRITE_TOOLS } = await load();
+    const { file, filed } = fileMock();
+    const out = (await CATALOGUE_WRITE_TOOLS.create_sales_funnel({ pipeIds: ["c1|l1", "c2|l2"], userRequest: "u" }, ctx, file, staff)) as { status: string };
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+    expect(call(0).body).toEqual({ pipeIds: ["c1|l1", "c2|l2"], createdBy: "user-1", requestedByOrgId: "org-1" });
+    expect(out.status).toBe("created");
+    expect(filed).toHaveLength(0);
+  });
+
+  it("LEADS-ONLY: a customer builds Start -> Lead found (Apollo) -> Paid client (Your Team); no local mix verdict, features-service's is returned", async () => {
     const pipes: Record<string, unknown> = {
-      "c1|l1": { id: "c1|l1", channelSlug: "c1", legKey: "l1", mode: "proactive", draft: false },
-      "c2|l2": { id: "c2|l2", channelSlug: "c2", legKey: "l2", mode: "proactive", draft: true },
+      "apollo-cold-filters|start_to_lead_found": { mode: "proactive", runnable: true },
+      "your-team-closing-calls|lead_found_to_paid_client": { mode: "reactive", runnable: true },
     };
     fetchMock().mockImplementation(async (url: string, init?: RequestInit) => {
-      if (init?.method === "POST") {
-        return res(201, { id: "f", draft: true, legs: [{ legKey: "l1", pipe: { id: "c1|l1" } }, { legKey: "l2", pipe: { id: "c2|l2" } }, { legKey: "l3", pipe: null }] });
-      }
-      const id = decodeURIComponent(url.split("/pipes/")[1]);
-      return res(200, pipes[id]);
+      if (init?.method === "POST") return res(201, { created: true, id: "leads-only", type: "proactive", mixed: false, runnable: true });
+      return res(200, pipes[decodeURIComponent(url.split("/pipes/")[1])]);
     });
     const { CATALOGUE_WRITE_TOOLS } = await load();
     const { file, filed } = fileMock();
-    const out = (await CATALOGUE_WRITE_TOOLS.create_sales_funnel({ pipeIds: ["c1|l1", "c2|l2", "l3"], userRequest: "u" }, ctx, file, staff)) as { status: string };
-    const post = fetchMock().mock.calls.find((c) => (c[1] as RequestInit).method === "POST")!;
-    expect(JSON.parse((post[1] as RequestInit).body as string)).toEqual({ pipeIds: ["c1|l1", "c2|l2", "l3"], createdBy: "user-1", requestedByOrgId: "org-1" });
-    expect(out.status).toBe("created_on_hold");
-    expect(filed).toHaveLength(1);
-    expect(filed[0].pieceKey).toMatch(/^publish-leg-c2-l2/);
-  });
-
-  it("never composes a MIXED funnel: proactive and reactive pipes together are refused before it is created (owner 2026-10-10)", async () => {
-    const pipes: Record<string, unknown> = {
-      "sales-cold-email-outreach|lead_found_to_conversation": { mode: "proactive", runnable: true },
-      "ai-meeting-booking|conversation_to_meeting_booked": { mode: "reactive", runnable: true },
+    const out = (await CATALOGUE_WRITE_TOOLS.create_sales_funnel({ pipeIds: Object.keys(pipes), userRequest: "only find leads" }, ctx, file, customer)) as {
+      status: string;
+      funnel: { mixed: boolean };
     };
-    fetchMock().mockImplementation(async (url: string) => res(200, pipes[decodeURIComponent(url.split("/pipes/")[1])]));
-    const { CATALOGUE_WRITE_TOOLS } = await load();
-    await expect(
-      CATALOGUE_WRITE_TOOLS.create_sales_funnel(
-        { pipeIds: Object.keys(pipes).concat(["meeting_booked_to_paid_client"]), userRequest: "u" },
-        ctx,
-        fileMock().file,
-        staff,
-      ),
-    ).rejects.toThrow(/mixes proactive pipes .* and reactive pipes/);
-    expect(fetchMock().mock.calls.some((c) => (c[1] as RequestInit).method === "POST")).toBe(false);
+    expect(out).toMatchObject({ status: "created", funnel: { mixed: false } });
+    expect(filed).toHaveLength(0);
   });
 
   it("refuses an empty pipe list before any call", async () => {

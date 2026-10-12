@@ -176,8 +176,8 @@ A channel is a way to reach a lead: cold email, LinkedIn outreach, WhatsApp, AI 
 ## Write
 - STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_channel: a NEW channel, created live as data (never a PR). It has no leg yet: declare its legs next (see legs). Confirm its name and what it does with the user first.
 
-## Publish rule
-A declared channel is invisible to every client until staff publishes it. declare_channel files that staff request itself and returns declared_on_hold: tell the user the channel is on hold with the team, then carry on. Never call request_staff again for it, and never claim it is live.
+## Live at once
+A declared channel is live the moment it is created, for every customer. Nothing waits on staff: never file a publish request.
 
 ## Articulation
 - A channel needs its account connected to send (see connected-accounts).
@@ -207,8 +207,8 @@ A leg is the move of a lead from one sales step to the next, e.g. lead found to 
 - STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_leg(channelSlug, fromStep, toStep, mode, triggerId?): a NEW leg on a channel (declared or coded), created live. Proactive: no trigger. Reactive: exactly one trigger (list_trigger_types).
 - The offer's legs come from the funnels it runs (funnel campaigns, see campaigns).
 
-## Two hold cases (never a dead end)
-- **Unpublished:** a declared leg is invisible to clients until staff publishes it (and its channel). declare_leg files that request itself: status declared_on_hold.
+## Live at once, one hold case (never a dead end)
+A declared leg is live the moment it is created; nothing waits on staff, never file a publish request.
 - **Trigger nothing fires:** a reactive leg on a trigger that is not coded is REFUSED and not stored. declare_leg files the staff request to build its detector itself and returns status on_hold. Tell the user the leg waits on the team; once the detector runs, declare it again.
 In both cases say it is on hold, never call request_staff again for that piece, and carry on.
 
@@ -288,7 +288,8 @@ A campaign needs a max budget, a max volume, or both. Either alone is valid; onl
 - **Reactive:** read as "Up to $X" and/or "Up to N prospects handled" per period (spends only when its trigger fires).
 - Ask once, in plain text, for what the user has not stated. "No volume cap" or "pas de max" is an answer: that cap is null. Never invent a cap, never ask again for a declined one, never say one is mandatory. No cards for amounts (\`choices\`).
 - Billing decides if it is FUNDED; its verdict comes back with the caps. If billing holds it (today: no max budget), say it will spend nothing yet; never say it runs.
-- A mixed funnel (proactive + reactive pipes) is refused: make two funnels.
+- A funnel served \`mixed\` is refused: make two. Never judge a mix yourself.
+- **Leads only** (a source, then Your Team): we find leads, no email goes out; say so.
 
 ## Launch (always this order)
 1. Know the offer (list_offers) and the funnel (find_sales_funnels).
@@ -473,7 +474,7 @@ Four kinds, each lands with someone who acts. Every tool records the request and
 - This chat, its tools and skills: chat-service
 
 ## Filed for you
-The create and declare tools file their own requests (publish a draft, build a detector) and list them in onHold. Never file those again.
+What you create is live at once, nothing waits on staff publishing. The one request the tools file themselves (build a detector for a trigger nothing fires) is listed in onHold. Never file it again.
 
 ## Rules
 - Never promise a date.
@@ -591,7 +592,7 @@ A pipe is one channel working one leg (from one step to the next). Proactive pip
 - find_pipes(id): one pipe, with its best workflow and conversion rate.
 
 ## Create (staff only)
-create_pipe(channelSlug, fromStep, toStep, mode, triggerId?): refused for a customer. A draft until staff publishes it. The tool files that request itself and returns created_on_hold. A reactive pipe on a trigger nothing fires is not created: the tool asks for the detector and returns on_hold. Either way: say it is on hold with the team, carry on.
+create_pipe(channelSlug, fromStep, toStep, mode, triggerId?): refused for a customer. Live at once. A reactive pipe on a trigger nothing fires is not created: the tool asks for the detector and returns on_hold: say it is on hold with the team, carry on.
 `),
   },
   {
@@ -606,7 +607,7 @@ create_pipe(channelSlug, fromStep, toStep, mode, triggerId?): refused for a cust
 A sales funnel is a sales path with a pipe on every step: the complete plan that turns strangers into paying clients. It is what you PROPOSE. It has a name (uplifting words: Zenith, Bliss) and a face image.
 
 ## One kind per funnel
-Its budget caps every pipe in it, so a funnel is either **Proactive** (it reaches out: cold email) or **Reactive** (it answers a trigger: AI meeting booking or an AI call on a positive reply), never both: a reactive pipe inside a proactive funnel can starve it. Every row's \`type\` says which. Propose one Proactive funnel; if the user wants replies handled by AI, ALSO a Reactive funnel from the list (its line starts at the trigger step, e.g. Positive reply). The tools refuse a mixed funnel (create, campaign, start).
+Its budget caps every pipe in it, so a funnel is either **Proactive** (it reaches out: cold email) or **Reactive** (it answers a trigger: AI meeting booking or an AI call on a positive reply), never both: a reactive pipe inside a proactive funnel can starve it. Every row's \`type\` and \`mixed\` say which: features-service's verdict, never yours (a step the user's own team works is no mix). Propose one Proactive funnel; if the user wants replies handled by AI, ALSO a Reactive funnel from the list (its line starts at the trigger step, e.g. Positive reply). The campaign tools refuse a funnel served as mixed.
 
 ## Read
 - find_sales_funnels(paths, containsChannels): best return first.
@@ -616,7 +617,7 @@ Its budget caps every pipe in it, so a funnel is either **Proactive** (it reache
 First WRITE the 1 to 3 funnels in the text, one line each: name, what it does, cost per paying client, return (learning: "not measured yet"). Two or more real options are an obvious pick: one card per funnel (see \`choices\`), its cost as a number visual (cents). One clear best funnel: say why and ask, no cards. The user picks; then \`campaigns\`: it becomes a campaign with at least one cap they state (max budget, max volume, or both).
 
 ## Create
-create_sales_funnel(pipeIds in order: a pipe id, or a bare leg key for a step the customer's team works). For a customer every pipe must be one we run (refused otherwise).
+create_sales_funnel(pipeIds in order: one pipe per step, a Your Team pipe for a step the customer's team works). Live at once. For a customer every pipe must be one we run (refused otherwise). A user who only wants leads: Start -> Lead found with a source, then Paid client with your-team-closing-calls; no email goes out, say so.
 `),
   },
   {

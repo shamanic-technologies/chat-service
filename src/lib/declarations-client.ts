@@ -9,15 +9,15 @@ import { STAFF_REQUEST_REPOS, type StaffRequestInput, type StaffRequestResult } 
 // its own features-service key, never through the gateway, and stamps
 // `requestedByOrgId` = the chat's org and `createdBy` = the requester.
 //
-// What a declaration CANNOT do on its own, the chat files with the team in the
-// same call, so the user never hits a dead end:
-//   - a channel or leg lands UNPUBLISHED (invisible to every client read until
-//     staff publishes it) → a staff request "publish it" (features-service);
+// A declaration is LIVE the moment it is created, for every customer (owner
+// 2026-10-12): no draft, no staff publish step, no "publish it" request. Whether
+// a piece can RUN is features-service's served verdict (`runnable`), never a
+// staff click. What a declaration CANNOT do on its own, the chat files with the
+// team in the same call, so the user never hits a dead end:
 //   - a reactive leg on a trigger nothing fires is refused (409
 //     `trigger_not_fired`, nothing stored) → a staff request "build the
 //     detector" (the service that fires it; campaign-service for the generic
 //     delay / poll detectors) and the leg is reported ON HOLD, not as an error.
-// The Copilot never publishes: publishing changes what every org can buy.
 // ---------------------------------------------------------------------------
 
 export interface DeclarationContext {
@@ -124,47 +124,12 @@ export const listDeclaredSalesPaths = (a: Record<string, unknown>) => {
 
 export interface HeldPiece {
   piece: string;
-  waitingFor: "staff_publish" | "trigger_detector";
+  waitingFor: "trigger_detector";
   staffRequest: StaffRequestResult;
 }
 
 export const ON_HOLD_INSTRUCTION =
   "Tell the user plainly: this piece is created and on hold with the team (it goes live for them once staff does the step named in waitingFor). It is NOT an error. Then carry on with the rest of their request.";
-
-function publishRequest(kindLabel: string, pieceKey: string, title: string, userRequest: string, what: string): StaffRequestInput {
-  return {
-    kind: "feature",
-    repo: "features-service",
-    pieceKey,
-    title,
-    userRequest,
-    missingPiece: `${what} was declared by the Copilot and is UNPUBLISHED: no client sees it until staff reviews and publishes it (PATCH /internal/declarations/... { published: true }).`,
-    decomposition: [
-      { piece: `Declare the ${kindLabel}`, outcome: "create", detail: "done by the Copilot, unpublished" },
-      { piece: `Publish the ${kindLabel} to clients`, outcome: "needs_code", detail: "staff action in features-service" },
-    ],
-  };
-}
-
-async function fileChannelPublish(slug: string, userRequest: string, file: FileStaffRequest): Promise<HeldPiece> {
-  const staffRequest = await file(
-    publishRequest("channel", `publish-channel-${kebab(slug)}`, `Publish declared channel ${slug}`, userRequest, `Channel \`${slug}\``),
-  );
-  return { piece: `channel ${slug}`, waitingFor: "staff_publish", staffRequest };
-}
-
-export async function fileLegPublish(slug: string, legKey: string, userRequest: string, file: FileStaffRequest): Promise<HeldPiece> {
-  const staffRequest = await file(
-    publishRequest(
-      "leg",
-      `publish-leg-${kebab(slug)}-${kebab(legKey)}`.slice(0, 80).replace(/-+$/, ""),
-      `Publish declared leg ${legKey} on ${slug}`,
-      userRequest,
-      `Leg \`${legKey}\` on channel \`${slug}\` (a leg reaches clients only once its channel is published too)`,
-    ),
-  );
-  return { piece: `leg ${legKey} on ${slug}`, waitingFor: "staff_publish", staffRequest };
-}
 
 export interface TriggerTypeLite {
   id: string;
@@ -225,20 +190,18 @@ const CHANNEL_FIELDS = [
   "maxDaysToFirstProduction",
 ] as const;
 
-/** POST /internal/declarations/channels → unpublished channel + staff request "publish it". */
-export async function declareChannel(a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest) {
-  const userRequest = str("userRequest", a.userRequest);
+/** POST /internal/declarations/channels: the channel is live once created. */
+export async function declareChannel(a: Record<string, unknown>, ctx: DeclarationContext) {
   const channel = (await features("declare_channel", "POST", "/internal/declarations/channels", {
     ...pick(a, CHANNEL_FIELDS),
     ...provenance(ctx),
-  })) as { slug: string; published?: boolean };
-  const onHold: HeldPiece[] = channel.published ? [] : [await fileChannelPublish(channel.slug, userRequest, file)];
-  return { status: onHold.length ? "declared_on_hold" : "declared", channel, onHold, ...(onHold.length ? { instruction: ON_HOLD_INSTRUCTION } : {}) };
+  })) as { slug: string };
+  return { status: "declared", channel };
 }
 
 /**
- * POST /internal/declarations/channels/:slug/legs. Unpublished leg (or its
- * channel) → publish request. `trigger_not_fired` → detector request, the leg
+ * POST /internal/declarations/channels/:slug/legs, live once created.
+ * `trigger_not_fired` → detector request, the leg
  * reported on hold (nothing was stored by features-service). Every other
  * refusal propagates as an error the model reads.
  */
@@ -252,7 +215,7 @@ export async function declareLeg(a: Record<string, unknown>, ctx: DeclarationCon
     ...(a.triggerId !== undefined && a.triggerId !== null ? { triggerId: a.triggerId } : {}),
     ...provenance(ctx),
   };
-  let created: { leg: { legKey: string; published?: boolean }; channel: { slug: string; published?: boolean } };
+  let created: { leg: { legKey: string }; channel: { slug: string } };
   try {
     created = (await features("declare_leg", "POST", `/internal/declarations/channels/${enc(channelSlug)}/legs`, body)) as typeof created;
   } catch (err) {
@@ -273,10 +236,7 @@ export async function declareLeg(a: Record<string, unknown>, ctx: DeclarationCon
     }
     throw err;
   }
-  const onHold: HeldPiece[] = [];
-  if (created.channel.published === false) onHold.push(await fileChannelPublish(created.channel.slug, userRequest, file));
-  if (created.leg.published === false) onHold.push(await fileLegPublish(created.channel.slug, created.leg.legKey, userRequest, file));
-  return { status: onHold.length ? "declared_on_hold" : "declared", ...created, onHold, ...(onHold.length ? { instruction: ON_HOLD_INSTRUCTION } : {}) };
+  return { status: "declared", ...created };
 }
 
 /** POST /internal/declarations/trigger-types. Not coded → detector request (same piece key a refused leg files). */
@@ -301,28 +261,11 @@ export async function declareTriggerType(a: Record<string, unknown>, ctx: Declar
   };
 }
 
-interface SalesPathLegView {
-  channelSlug: string;
-  legKey: string;
-  visibleToClients?: boolean;
-}
-
-/**
- * POST /internal/declarations/sales-paths. A path has no publish flag of its
- * own: it is visible once every leg (and channel) is. Each invisible leg gets
- * the SAME publish request a leg declaration files (deduped per org).
- */
-export async function declareSalesPath(a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest) {
-  const userRequest = str("userRequest", a.userRequest);
-  const salesPath = (await features("declare_sales_path", "POST", "/internal/declarations/sales-paths", {
+/** POST /internal/declarations/sales-paths: the path is live once created. */
+export async function declareSalesPath(a: Record<string, unknown>, ctx: DeclarationContext) {
+  const salesPath = await features("declare_sales_path", "POST", "/internal/declarations/sales-paths", {
     legs: a.legs,
     ...provenance(ctx),
-  })) as { combinationKey: string; visibleToClients?: boolean; legs?: SalesPathLegView[] };
-  const onHold: HeldPiece[] = [];
-  if (salesPath.visibleToClients === false) {
-    for (const l of salesPath.legs ?? []) {
-      if (l.visibleToClients === false) onHold.push(await fileLegPublish(l.channelSlug, l.legKey, userRequest, file));
-    }
-  }
-  return { status: onHold.length ? "declared_on_hold" : "declared", salesPath, onHold, ...(onHold.length ? { instruction: ON_HOLD_INSTRUCTION } : {}) };
+  });
+  return { status: "declared", salesPath };
 }
