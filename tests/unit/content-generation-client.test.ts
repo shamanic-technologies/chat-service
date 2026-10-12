@@ -39,6 +39,7 @@ describe("getPromptTemplate", () => {
       orgId: "org-1",
       userId: "user-1",
       runId: "run-1",
+      staffEmail: "kevin@distribute.you",
     });
 
     expect(fetch).toHaveBeenCalledWith(
@@ -50,6 +51,7 @@ describe("getPromptTemplate", () => {
           "x-org-id": "org-1",
           "x-user-id": "user-1",
           "x-run-id": "run-1",
+          "x-email": "kevin@distribute.you",
         }),
       }),
     );
@@ -67,6 +69,7 @@ describe("getPromptTemplate", () => {
       orgId: "org-1",
       userId: "user-1",
       runId: "run-1",
+      staffEmail: "kevin@distribute.you",
     });
 
     const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0];
@@ -84,6 +87,7 @@ describe("getPromptTemplate", () => {
       orgId: "org-1",
       userId: "user-1",
       runId: "run-1",
+      staffEmail: "kevin@distribute.you",
       trackingHeaders: { "x-campaign-id": "camp-1" },
     });
 
@@ -100,7 +104,7 @@ describe("getPromptTemplate", () => {
 
     const { getPromptTemplate } = await loadModule();
     await expect(
-      getPromptTemplate("nonexistent", { orgId: "o", userId: "u", runId: "r" }),
+      getPromptTemplate("nonexistent", { orgId: "o", userId: "u", runId: "r", staffEmail: "kevin@distribute.you" }),
     ).rejects.toThrow(/returned 404/);
   });
 
@@ -109,7 +113,7 @@ describe("getPromptTemplate", () => {
 
     const { getPromptTemplate } = await loadModule();
     await expect(
-      getPromptTemplate("cold-email", { orgId: "o", userId: "u", runId: "r" }),
+      getPromptTemplate("cold-email", { orgId: "o", userId: "u", runId: "r", staffEmail: "kevin@distribute.you" }),
     ).rejects.toThrow(/ADMIN_DISTRIBUTE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
@@ -123,7 +127,7 @@ describe("getPromptTemplate", () => {
     });
 
     const { getPromptTemplate } = await loadModule();
-    await getPromptTemplate("cold-email", { orgId: "o", userId: "u", runId: "r" });
+    await getPromptTemplate("cold-email", { orgId: "o", userId: "u", runId: "r", staffEmail: "kevin@distribute.you" });
 
     expect(fetch).toHaveBeenCalledWith(
       "https://api.distribute.you/v1/prompts?type=cold-email",
@@ -158,7 +162,7 @@ describe("updatePromptTemplate", () => {
         prompt: "New prompt for {{leadFirstName}}",
         variables,
       },
-      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1", staffEmail: "kevin@distribute.you" },
     );
 
     expect(fetch).toHaveBeenCalledWith(
@@ -221,7 +225,7 @@ describe("updatePromptTemplate", () => {
         prompt: "Hi {{leadFirstName}} ... {{callToAction}}",
         variables,
       },
-      { orgId: "org-1", userId: "user-1", runId: "run-1" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1", staffEmail: "kevin@distribute.you" },
     );
 
     // Assert the OUTBOUND PUT body carries object variables — not strings.
@@ -251,7 +255,7 @@ describe("updatePromptTemplate", () => {
     const { updatePromptTemplate } = await loadModule();
     await updatePromptTemplate(
       { sourceType: "cold-email", prompt: "test", variables: [] },
-      { orgId: "org-1", userId: "user-1", runId: "run-1", trackingHeaders: { "x-brand-id": "brand-1" } },
+      { orgId: "org-1", userId: "user-1", runId: "run-1", staffEmail: "kevin@distribute.you", trackingHeaders: { "x-brand-id": "brand-1" } },
     );
 
     const callHeaders = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].headers;
@@ -269,7 +273,7 @@ describe("updatePromptTemplate", () => {
     await expect(
       updatePromptTemplate(
         { sourceType: "bad", prompt: "", variables: [] },
-        { orgId: "o", userId: "u", runId: "r" },
+        { orgId: "o", userId: "u", runId: "r", staffEmail: "kevin@distribute.you" },
       ),
     ).rejects.toThrow(/returned 400/);
   });
@@ -281,10 +285,37 @@ describe("updatePromptTemplate", () => {
     await expect(
       updatePromptTemplate(
         { sourceType: "cold-email", prompt: "test", variables: [] },
-        { orgId: "o", userId: "u", runId: "r" },
+        { orgId: "o", userId: "u", runId: "r", staffEmail: "kevin@distribute.you" },
       ),
     ).rejects.toThrow(/ADMIN_DISTRIBUTE_API_KEY is required/);
 
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("staff-only prompt routes", () => {
+  it("refuses to call the gateway without a staff email", async () => {
+    const { getPromptTemplate, updatePromptTemplate } = await loadModule();
+    await expect(
+      getPromptTemplate("cold-email", { orgId: "o", userId: "u", runId: "r", staffEmail: "" }),
+    ).rejects.toThrow(/staffEmail is required/);
+    await expect(
+      updatePromptTemplate(
+        { sourceType: "cold-email", prompt: "p", variables: [] },
+        { orgId: "o", userId: "u", runId: "r", staffEmail: "" },
+      ),
+    ).rejects.toThrow(/staffEmail is required/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("PUT forwards the staff email as x-email", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+    const { updatePromptTemplate } = await loadModule();
+    await updatePromptTemplate(
+      { sourceType: "cold-email", prompt: "p", variables: [] },
+      { orgId: "o", userId: "u", runId: "r", staffEmail: "kevin@distribute.you" },
+    );
+    const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(init.headers["x-email"]).toBe("kevin@distribute.you");
   });
 });
