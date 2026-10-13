@@ -2536,17 +2536,8 @@ export const SET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
 export const CREATE_FUNNEL_CAMPAIGN_TOOL: Anthropic.Tool = {
   name: "create_funnel_campaign",
   description:
-    "Create the campaign of a sales funnel for an offer, STOPPED (data only, starts nothing; an existing one is returned as is, its status untouched). To run it: set_funnel_caps, then propose_switch_on start_funnel_campaign and the user's yes. Returns funnelLine (who works each leg): tell the user what the campaign does from it, and when no step writes to a lead, that no email goes out. " +
-    "audienceIds = the brand's audiences this campaign works: it only finds and writes to those people. Read list_audiences and pick the ones matching the funnel's channel and intent (an audience named for WhatsApp goes to the WhatsApp funnel); ask the user when it is not obvious. Required when the offer already has another funnel campaign, or both would work the same people. " +
-    "To change the audiences of an existing campaign, call this tool again with the new audienceIds: it restates them on the campaign and every step, without starting or stopping it. Tell the user, by name, which audiences it works.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      ...FUNNEL_TARGET_PROPS,
-      audienceIds: { type: "array", items: { type: "string" }, description: "Audience ids from list_audiences (at least one). Omit only when the offer has no other funnel campaign and the user wants every audience of the brand." },
-    },
-    required: ["brandId", "offerId", "salesFunnelId"],
-  },
+    "Create the campaign of a sales funnel for an offer, STOPPED (data only, starts nothing; an existing one is returned as is). To run it: set_funnel_caps, then propose_switch_on start_funnel_campaign and the user's yes. Returns funnelLine (who works each leg): tell the user what the campaign does from it, and when no step writes to a lead, that no email goes out.",
+  input_schema: { type: "object" as const, properties: FUNNEL_TARGET_PROPS, required: ["brandId", "offerId", "salesFunnelId"] },
 };
 
 export const STOP_FUNNEL_CAMPAIGN_TOOL: Anthropic.Tool = {
