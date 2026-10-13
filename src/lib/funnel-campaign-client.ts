@@ -201,90 +201,15 @@ export function capsAskFor(type: "proactive" | "reactive"): string {
 export const FUNNEL_LINE_RULE =
   "Say what this campaign does from funnelLine, in plain words. When no step on it writes to a lead (only a lead source, then the user's own team), say plainly: we find the leads and hand them to your team, no email goes out.";
 
-// --- Audiences a funnel campaign works (LEAK-1012, 2026-10-13) -------------------
-// Two funnels of one offer on the same lead source each walked EVERY audience of
-// the offer: one took 73 people of the other's audience. campaign-service now
-// carries the funnel campaign's `audienceIds` onto every unit (null = the brand's
-// audiences). The Copilot states them at launch; create_funnel_campaign on an
-// existing campaign restates them (campaign-service hand-back, status untouched).
-
-export const MAX_AUDIENCE_IDS = 100;
-
-/** The audiences as the agent stated them: absent/null = none named; else 1..100 ids, trimmed, each once. */
-export function audienceIdsArg(v: unknown): string[] | null {
-  if (v === undefined || v === null) return null;
-  if (!Array.isArray(v) || v.length === 0) {
-    throw new Error("[funnel-campaigns] audienceIds must be a list of at least one audience id (from list_audiences).");
-  }
-  const ids = v.map((x) => {
-    if (typeof x !== "string" || x.trim() === "") throw new Error("[funnel-campaigns] every audienceIds entry must be an audience id (from list_audiences).");
-    return x.trim();
-  });
-  const unique = [...new Set(ids)];
-  if (unique.length > MAX_AUDIENCE_IDS) throw new Error(`[funnel-campaigns] at most ${MAX_AUDIENCE_IDS} audiences per campaign.`);
-  return unique;
-}
-
-interface SiblingFunnelCampaign {
-  id: string;
-  salesFunnelId: string;
-  salesFunnelName?: string | null;
-  status?: string;
-  audienceIds?: string[] | null;
-  /** People it is scoped to (a one-person follow-up): it walks no audience. */
-  people?: unknown[] | null;
-}
-
-/**
- * The offer's funnel campaigns that walk audiences, as campaign-service serves
- * them. One scoped to named people (a follow-up) walks none, so it is left out.
- */
-async function offerFunnelCampaigns(brandId: string, offerId: string, p: ApiCallParams, operation: string): Promise<SiblingFunnelCampaign[]> {
-  const body = (await call("campaign", operation, "GET", `/sales-funnel-campaigns?brandId=${enc(brandId)}&offerId=${enc(offerId)}`, p)) as {
-    salesFunnelCampaigns?: SiblingFunnelCampaign[];
-  };
-  if (!Array.isArray(body.salesFunnelCampaigns)) throw new Error(`[funnel-campaigns] ${operation}: campaign-service answered without salesFunnelCampaigns`);
-  return body.salesFunnelCampaigns.filter((c) => !(Array.isArray(c.people) && c.people.length > 0));
-}
-
-/**
- * A funnel campaign naming no audience walks every audience of the brand. When
- * the offer already runs ANOTHER funnel campaign, the two then take each other's
- * people (LEAK-1012), so naming none is refused there, with what the others work.
- */
-function requireAudiencesBesideSiblings(salesFunnelId: string, audienceIds: string[] | null, siblings: SiblingFunnelCampaign[]): void {
-  if (audienceIds !== null) return;
-  const others = siblings.filter((c) => c.salesFunnelId !== salesFunnelId);
-  if (others.length === 0) return;
-  const list = others
-    .map((c) => `${c.salesFunnelName ?? c.salesFunnelId} (${c.status ?? "?"}, audiences: ${c.audienceIds?.length ? c.audienceIds.join(", ") : "none named = every audience"})`)
-    .join("; ");
-  throw new Error(
-    `[funnel-campaigns] this offer already has another funnel campaign: ${list}. Without audienceIds both would work the same people. ` +
-      "Read list_audiences, pick the audiences this funnel is for (by its channel and intent; ask the user when it is not obvious), and send them as audienceIds.",
-  );
-}
-
-/** What to tell the user about the audiences, in words. */
-export const AUDIENCES_RULE =
-  "Tell the user, by name, which audiences this campaign works (it only finds and writes to those people). If it names none, say it works every audience of the brand.";
-
 export async function createFunnelCampaign(a: Record<string, unknown>, p: ApiCallParams) {
-  const brandId = req("brandId", a.brandId);
-  const offerId = req("offerId", a.offerId);
-  const salesFunnelId = req("salesFunnelId", a.salesFunnelId);
-  const audienceIds = audienceIdsArg(a.audienceIds);
-  const { type, line } = await assertFunnelNotMixed(salesFunnelId);
-  requireAudiencesBesideSiblings(salesFunnelId, audienceIds, await offerFunnelCampaigns(brandId, offerId, p, "create_funnel_campaign:siblings"));
-  // An existing one is handed back as is; audiences stated here are restated on it and every unit (status untouched).
+  const { type, line } = await assertFunnelNotMixed(req("salesFunnelId", a.salesFunnelId));
   const created = (await call("campaign", "create_funnel_campaign", "POST", "/sales-funnel-campaigns", p, {
-    brandId,
-    offerId,
-    salesFunnelId,
+    brandId: req("brandId", a.brandId),
+    offerId: req("offerId", a.offerId),
+    salesFunnelId: req("salesFunnelId", a.salesFunnelId),
     status: "stopped",
-    ...(audienceIds !== null ? { audienceIds } : {}),
   })) as Record<string, unknown>;
-  return { ...created, funnelType: type, funnelLine: line, askCapsAs: capsAskFor(type), tellUser: `${FUNNEL_LINE_RULE} ${AUDIENCES_RULE}` };
+  return { ...created, funnelType: type, funnelLine: line, askCapsAs: capsAskFor(type), tellUser: FUNNEL_LINE_RULE };
 }
 
 /** PATCH stop: no new first touches (follow-ups of contacted leads still go out). Safe, no confirmation. */
@@ -300,27 +225,13 @@ export async function stopFunnelCampaign(a: Record<string, unknown>, p: ApiCallP
 export async function requireStatedCap(target: { brandId: string; offerId: string; salesFunnelId: string }, p: ApiCallParams) {
   // A mixed funnel is never started either (its budget would starve the proactive part).
   await assertFunnelNotMixed(target.salesFunnelId);
-  // Starting creates the campaign when it does not exist yet, with no audiences: create it first
-  // (create_funnel_campaign states them), and a running one beside a sibling must name its own.
-  const siblings = await offerFunnelCampaigns(target.brandId, target.offerId, p, "propose_switch_on:siblings");
-  const own = siblings.find((c) => c.salesFunnelId === target.salesFunnelId);
-  if (!own) {
-    throw new Error("[funnel-campaigns] this funnel has no campaign yet: create_funnel_campaign first (with its audiences), then propose again.");
-  }
-  requireAudiencesBesideSiblings(target.salesFunnelId, own.audienceIds?.length ? own.audienceIds : null, siblings);
   const caps = (await getFunnelCaps(target, p)) as CapsBody;
   if (!caps.maxBudget && !caps.maxVolume) {
     throw new Error(
       "[funnel-campaigns] this funnel has no cap: a campaign needs a max budget, a max volume, or both. Ask the user, set it with set_funnel_caps, then propose again.",
     );
   }
-  return {
-    maxBudget: caps.maxBudget ?? null,
-    maxVolume: caps.maxVolume ?? null,
-    funded: fundingOf(caps),
-    funding: fundingWords(caps),
-    audienceIds: own.audienceIds ?? null,
-  };
+  return { maxBudget: caps.maxBudget ?? null, maxVolume: caps.maxVolume ?? null, funded: fundingOf(caps), funding: fundingWords(caps) };
 }
 
 /** POST status "ongoing": creates and starts, or starts the existing stopped one (`started`). */
@@ -406,8 +317,6 @@ interface FunnelCampaignRow {
   salesFunnelName?: string | null;
   status: string;
   stopReason?: string | null;
-  /** The audiences it works (LEAK-1012); null = none named, every audience of the brand. */
-  audienceIds?: string[] | null;
   units?: Array<{ featureSlug?: string; legKey?: string; status?: string; pipeId?: string }>;
 }
 
@@ -521,7 +430,6 @@ export async function listAccountCampaigns(a: Record<string, unknown>, p: ApiCal
         type: caps.salesFunnelType ?? null,
         status: c.status,
         stopReason: c.stopReason ?? null,
-        audienceIds: c.audienceIds ?? null,
         budget: budgetWords(caps.salesFunnelType, caps.maxBudget ?? null, fundingOf(caps)),
         volume: volumeWords(caps.salesFunnelType, caps.maxVolume ?? null, caps.volumeUnit),
         spent: spentWords(caps.maxBudget ?? null),
