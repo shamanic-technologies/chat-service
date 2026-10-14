@@ -1261,11 +1261,9 @@ The two prompt tools act on the SHARED platform templates (every org's emails ar
 | `get_trigger_events` | Per trigger type: fired / ran / skipped and why. `GET /v1/offers/:offerId/trigger-events/summary?brandId=` |
 | `list_sourcing_origins` | Where leads can come from. `GET /v1/public/sourcing-origins` |
 | `get_offer_sourcing` | Leads, cost and return per source. `GET /v1/offers/:offerId/sourcing?brandId=` |
-| `get_campaign_budgets` | Daily cap per (channel x leg). `GET /v1/brands/:brandId/offers/:offerId/campaign-budgets` |
 | `get_campaign` | One campaign. `GET /v1/campaigns/:id` |
 | `list_connected_accounts` | Google mailboxes, messaging links, GoHighLevel, PostHog, Stripe (one block per provider; a failing provider carries its error in place). |
 | `create_offer` | New offer by name (data). `POST /v1/brands/:id/offers` |
-| `set_campaign_budget` | Daily cap of one (offer x leg x channel); creates no campaign. `PUT /v1/brands/:brandId/campaign-budget` |
 | `propose_switch_on` | Step 1: records what would switch on (`start_campaign` with a MANDATORY `dailyBudgetCents`, set now as the cap; `activate_campaign`) and returns a `confirmationToken`. Switches nothing on. |
 | `confirm_switch_on` | Step 2: executes a proposal (`POST /v1/campaigns/start-funded-pair`, `PATCH /v1/campaigns/:id {status:"activate"}`, `POST /v1/offers/:offerId/reactive-defaults`). Only accepts a token found in the session history recorded BEFORE this turn, so a user message always sits between proposal and switch-on; a used token is refused. |
 | `request_staff` | Files a bug or a feature: records it (deduped per org on repo + kind + `pieceKey`), opens a GitHub issue in the owning repo, pings staff on Telegram unless the requester is staff. `pieceKey` (default: kebab of the title) and `decomposition` are optional. |

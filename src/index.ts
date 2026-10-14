@@ -146,7 +146,6 @@ import {
   createOffer,
   executeSwitchOn,
   getCampaign,
-  getCampaignBudgets,
   getLegRates,
   setLegRates,
   getOfferSteps,
@@ -159,7 +158,6 @@ import {
   listSourcingOrigins,
   proposeSwitchOn,
   resolveSwitchOnProposal,
-  setCampaignBudget,
 } from "./lib/copilot-client.js";
 import type { ApiCallParams } from "./lib/api-client.js";
 import {
@@ -205,11 +203,9 @@ const COPILOT_ENTITY_TOOLS: Record<string, (args: Record<string, unknown>, p: Ap
   get_trigger_events: getTriggerEvents,
   list_sourcing_origins: (_a, p) => listSourcingOrigins(p),
   get_offer_sourcing: getOfferSourcing,
-  get_campaign_budgets: getCampaignBudgets,
   get_campaign: getCampaign,
   list_connected_accounts: listConnectedAccounts,
   create_offer: createOffer,
-  set_campaign_budget: setCampaignBudget,
 };
 import {
   embedText,
