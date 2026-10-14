@@ -1301,12 +1301,15 @@ Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaig
 | `find_pipes` | `GET /internal/catalogue/pipes[/:id]` (`paths`, `channels`, `legKeys`) |
 | `find_sales_funnels` | `GET /internal/catalogue/sales-funnels[/:id]` (`paths`, `containsChannels`) |
 | `find_workflows` | `GET /internal/catalogue/workflows[/:id]?pipe=` (`pipe` required) |
+| `find_plays` | `GET /internal/catalogue/plays[/:id]?pipe=` (`pipe` required): the ways one pipe runs (pipe x strategy), each priced; a play id is what `create_sales_funnel` names for that leg |
+| `find_strategies` / `find_tactics` | `GET /internal/catalogue/{strategies,tactics}[/:id]` |
 | `create_step` | `POST /internal/catalogue/steps` |
 | `create_pipe` | `POST /internal/catalogue/pipes`, live at once (no publish request, owner 2026-10-12); `trigger_not_fired` files the detector request and returns `on_hold` (same as `declare_leg`). |
 | `create_sales_path` | `POST /internal/catalogue/sales-paths` (`created:false` when it exists) |
-| `create_sales_funnel` | `POST /internal/catalogue/sales-funnels`, live at once. Returns features-service's own `type` / `mixed` / `runnable`; the Copilot never re-grades a mix (a leads-only funnel, a source then Your Team, is valid). |
+| `create_tactic` / `create_strategy` / `create_play` | `POST /internal/catalogue/{tactics,strategies,plays}` (a strategy requires/excludes at least one tactic; a play = pipe x strategy) |
+| `create_sales_funnel` | `POST /internal/catalogue/sales-funnels` (pipe or play ids), live at once. Returns features-service's own `type` / `mixed` / `runnable`; the Copilot never re-grades a mix (a leads-only funnel, a source then Your Team, is valid). |
 
-Every create stamps `createdBy` = the requester and `requestedByOrgId` = the chat's org.
+Every create stamps `createdBy` = the requester and `requestedByOrgId` = the chat's org (tactics, strategies and plays: `createdBy` only, they are shared by every customer).
 
 **Every cost carries its unit.** features-service serves `costPer` on every catalogue row and detail (`per positive reply`, `per paying client`); `withCostUnits` adds `cost: "$137.43 per positive reply"` beside every `costUsd` (suffixed ` (estimated)` when features-service serves `status: estimated`) and `return: "0.91x (estimated)"` beside every `roi` (from `roiBasis`), recursively, and FAILS LOUD on a cost served without its unit or a return without its basis (prod 2026-10-10: a per-reply channel cost was quoted per paying client).
 
