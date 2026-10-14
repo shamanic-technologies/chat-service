@@ -2090,7 +2090,8 @@ export const LAUNCH_CAMPAIGN_TOOL: Anthropic.Tool = {
 export const LIST_CAMPAIGNS_TOOL: Anthropic.Tool = {
   name: "list_campaigns",
   description:
-    "THE account's campaigns, as the Campaigns page shows them. A campaign IS a sales funnel campaign: name, type (proactive | reactive), status, budget in words ('Max $10/day', 'Up to $1/day', 'Not funded (no max budget)', or 'No max budget (capped by volume)' when billing funds a volume-only campaign), volume, what it spent this period, its results since start (invested, return with its maturity: 'still learning' is never a final figure), its path (what it does, step by step), and its steps (sources, cold email, AI booking...). " +
+    "THE account's campaigns, as the Campaigns page shows them. A campaign IS a sales funnel campaign: name, type (proactive | reactive), status, budget in words ('Max $10/day', 'Up to $1/day', 'Not funded (no max budget)', or 'No max budget (capped by volume)' when billing funds a volume-only campaign), volume, what it spent this period, its results since start (invested, return with its maturity: 'still learning' is never a final figure), its path (what it does, step by step), runsWhen (the trigger that starts it, e.g. 'Each time: Email Pushed Via API'), and its steps (sources, cold email, AI booking...). " +
+    "Read it BEFORE saying something is missing: a running campaign may already do what the user asks. " +
     "Use it for ANY question about campaigns, what runs, or each campaign's budget. Count and name only campaigns, never their steps (a step is part of a campaign, not a campaign). Quote budget and spent as written. Read-only.",
   input_schema: {
     type: "object" as const,
@@ -2437,19 +2438,25 @@ export const CREATE_OFFER_TOOL: Anthropic.Tool = {
 export const PROPOSE_SWITCH_ON_TOOL: Anthropic.Tool = {
   name: "propose_switch_on",
   description:
-    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: nothing that starts work or spends money is switched on without the user's explicit yes in the chat. This tool is step 1 of 2: it records WHAT would be switched on and returns a confirmationToken; it switches NOTHING on. " +
-    "The only action: start_funnel_campaign (run a sales funnel campaign for an offer, or turn a stopped one back on). Refused only while the funnel has NO cap: a max budget, a max volume, or both is enough. It shows the caps back with billing's funding verdict (`caps.funded`). " +
-    "After calling it, show the user exactly what will start and its caps; if `caps.funded` is false say billing holds it (it will spend nothing yet), never that it runs. Ask yes or no. Call confirm_switch_on only after they answer yes, in their next message.",
+    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: nothing that starts work, spends money or sends an email goes out without the user's explicit yes in the chat. This tool is step 1 of 2: it records WHAT would happen and returns a confirmationToken; it does NOTHING yet. " +
+    "Action start_funnel_campaign: run a sales funnel campaign for an offer (or turn a stopped one back on). Refused only while the funnel has NO cap: a max budget, a max volume, or both is enough. It shows the caps back with billing's funding verdict (`caps.funded`); if false say billing holds it (it will spend nothing yet), never that it runs. " +
+    "Action push_email: send ONE email the user wrote, word for word, to one person (a test to themselves, or one prospect), through the offer's running campaign that answers 'Email Pushed Via API'. Give email, subject and bodyText (or bodyHtml) exactly as the user wrote them. It returns a preview: recipient, the email, which campaign sends it with its caps, the cost of one send, and the sender rule (the inbox is picked at send time: never name one). If it answers status no_live_campaign, follow its instruction (propose turning a campaign on), never request_staff. " +
+    "After calling it, show the user exactly what will happen and ask yes or no. Call confirm_switch_on only after they answer yes, in their next message.",
   input_schema: {
     type: "object" as const,
     properties: {
-      action: { type: "string", enum: ["start_funnel_campaign"] },
-      summary: { type: "string", description: "One plain sentence the user will confirm, with the caps they stated (e.g. 'Run Bliss for Sales-led, max $10/day, no volume cap')." },
+      action: { type: "string", enum: ["start_funnel_campaign", "push_email"] },
+      summary: { type: "string", description: "One plain sentence the user will confirm (e.g. 'Run Bliss for Sales-led, max $10/day, no volume cap', or 'Send your email \"Hiring in Leeds?\" to sam@acme.com through Dulcet')." },
       brandId: BRAND_ID_PROP,
       offerId: OFFER_ID_PROP,
-      salesFunnelId: { type: "string", description: "The sales funnel id (list_campaigns or find_sales_funnels)." },
+      salesFunnelId: { type: "string", description: "start_funnel_campaign: the sales funnel id (list_campaigns or find_sales_funnels)." },
+      email: { type: "string", description: "push_email: the recipient's email address." },
+      name: { type: "string", description: "push_email, optional: the recipient's name." },
+      subject: { type: "string", description: "push_email: the subject, exactly as the user wrote it." },
+      bodyText: { type: "string", description: "push_email: the body as plain text, exactly as the user wrote it (or bodyHtml)." },
+      bodyHtml: { type: "string", description: "push_email: the body as HTML, only if the user gave HTML." },
     },
-    required: ["action", "summary", "brandId", "offerId", "salesFunnelId"],
+    required: ["action", "summary", "brandId", "offerId"],
   },
 };
 
@@ -2580,7 +2587,7 @@ export const FIRE_FOLLOWUP_TOOL: Anthropic.Tool = {
 export const CONFIRM_SWITCH_ON_TOOL: Anthropic.Tool = {
   name: "confirm_switch_on",
   description:
-    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: call this ONLY after the user explicitly said yes to the exact proposal, in a message AFTER the one where you proposed it. Step 2 of 2: switches on what propose_switch_on recorded. A token proposed in the current turn is refused; a token already used is refused.",
+    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: call this ONLY after the user explicitly said yes to the exact proposal, in a message AFTER the one where you proposed it. Step 2 of 2: does what propose_switch_on recorded (starts the campaign, or pushes the email and returns its trigger event: say what `event.outcome` reads). A token proposed in the current turn is refused; a token already used is refused.",
   input_schema: {
     type: "object" as const,
     properties: { confirmationToken: { type: "string", description: "The token propose_switch_on returned." } },

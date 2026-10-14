@@ -58,6 +58,7 @@ describe("seeded skill tree", () => {
       "start_to_lead_found", "lead_found_to_positive_reply", "start_campaign", "activate_campaign",
       "switch_on_reactive_legs", "needs_code", "declared_on_hold", "on_hold", "trigger_not_fired",
       "customer_time", "created_on_hold", "paid_client", "website_visit", "meeting_booked", "step_not_found", "linkedin_post", "one_off", "start_funnel_campaign",
+      "email_pushed_via_api", "push_email", "campaign_off",
     ]);
     const named = new Set(all.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []);
     const unknown = [...named].filter((n) => !notTools.has(n) && !TOOL_REGISTRY[n] && !n.startsWith("lead_found_to") && !n.startsWith("start_to"));
@@ -92,6 +93,17 @@ describe("chat-first walk (owner 2026-10-10)", () => {
       const cap = s.slug === "index" ? 3600 : 3200;
       expect(s.content.length, s.slug).toBeLessThan(cap);
     }
+  });
+
+  it("an email the user wrote is pushed through their live campaign, never a feature request (COPILOT-PUSH-EMAIL-1014)", () => {
+    const e = bySlug.get("emails-you-wrote")!;
+    expect(e.parentSlug).toBe("index");
+    for (const w of ["email_pushed_via_api", "POST /v1/trigger-events", "push_email", "confirm_switch_on", "Never request_staff", "The client brings them"]) expect(e.content).toContain(w);
+    expect(bySlug.get("index")!.content).toContain("emails-you-wrote");
+    const r = bySlug.get("staff-requests")!.content;
+    expect(r).toContain("## Before filing");
+    expect(r.indexOf("list_campaigns")).toBeLessThan(r.indexOf("Only then request_staff"));
+    expect(r).toContain("discover_service_endpoints");
   });
 
   it("the request skill states where each kind lands", () => {

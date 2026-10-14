@@ -33,14 +33,16 @@ At each level, show a SHORT list (name, one line, cost, return) and let the user
 If the user named a channel, find it first to learn what it produces, then walk from Steps.
 
 ## When something is missing
-- We only offer what we run today: the find_* tools list nothing else. The user asks for something we do not run (LinkedIn posting, ads): say so in one plain sentence, offer what we run that gets the same result, and if they still want it, request_staff (kind feature). Never describe its price, terms or how it would work.
-- A path or funnel shape is missing but every piece runs: create it as data (create_step, create_sales_path, create_sales_funnel).
-- The user wants a campaign to behave differently (attach a document to replies, skip some addresses): that is the step's play, not a setting. Load \`catalogue-plays\`.
-- It needs code, or something is broken: request_staff. A skill or doc misled you: request_skill_upgrade. The user wants a person: contact_human. Load \`staff-requests\`.
+- First check it is missing: list_campaigns (a running campaign may already do it: its path, runsWhen), then the API (\`staff-requests\`).
+- An email the user wrote, sent as written (test, list, CSV, API): it exists, load \`emails-you-wrote\`.
+- We only offer what we run today. Not run (LinkedIn posting, ads): say so in one sentence, offer what we run for the same result; if they insist, request_staff (kind feature). Never describe its price or terms.
+- A path or funnel shape is missing but every piece runs: create it (create_step, create_sales_path, create_sales_funnel).
+- A campaign should behave differently (attach a document, skip some addresses): that is the step's play. Load \`catalogue-plays\`.
+- Needs code or is broken: request_staff. A skill misled you: request_skill_upgrade. Wants a person: contact_human.
 - Building something new from our services: load \`infra\`.
 
 ## Rules that never bend
-- Nothing that starts work or spends money goes on without the user's explicit yes in this chat (propose_switch_on, then confirm_switch_on in their next message).
+- Nothing that starts work, spends money or sends an email goes out without the user's explicit yes in this chat (propose_switch_on, then confirm_switch_on in their next message).
 - Quote figures exactly as the tools return them, with the unit and basis the tool gives ("per paying client (estimated)", "0.91x (estimated)": keep both). An estimate is never called measured. "learning" means not measured yet: say so, never invent a figure.
 - Keep reads small: the find_* tools, a filter, a limit.
 - Every answer: 2 or 3 short sentences of TEXT first, with the figures you read (in present_choices, that is its required \`text\`). Cards alone hide what you found.
@@ -165,6 +167,7 @@ A source is where leads come from. Live origins: Apollo cold filters, Apollo buy
 - It runs and stops with its funnel campaign: propose_switch_on (start_funnel_campaign) then confirm_switch_on after the user's yes; stop_funnel_campaign to stop. A source has no on/off or budget of its own.
 
 ## Articulation
+Leads the client brings (emails they wrote, pushed one person at a time) need no source: see \`emails-you-wrote\`.
 "Each time someone reacts to my LinkedIn posts" is a SOURCE (LinkedIn engagement signals), not a trigger: it finds those people as leads; the following legs then reach them.
 `),
   },
@@ -256,6 +259,9 @@ A trigger is **coded** when something fires it today. Only a coded trigger can r
 ## trigger_not_fired
 declare_leg on a trigger that is not coded is refused and nothing is stored. The tool files "build the detector" with the team and returns on_hold: tell the user that leg waits on the team, then carry on. Never call request_staff again for it.
 
+## Email Pushed Via API (\`email_pushed_via_api\`)
+Fired by the client's own push: one email they wrote, for one person (POST /v1/trigger-events with their API key, or propose_switch_on push_email from the chat). See \`emails-you-wrote\`.
+
 ## Articulation
 - Check list_trigger_types before declaring: reuse an existing type of the same meaning.
 - "Someone reacts to my LinkedIn post" is not a trigger today; it is a SOURCE (see sources).
@@ -318,6 +324,38 @@ A campaign needs a max budget, a max volume, or both. Either alone is valid; onl
 
 ## Parts of a campaign
 A campaign owns one part per step of its funnel, each with its own campaign id and workflow (older per-step campaigns are parts too). Trigger events, stats and runs show PART ids; a campaign-level read may refuse one. get_campaign(part id) (API: GET /v1/campaigns/{id}) names its salesFunnelCampaignId; GET /v1/sales-funnel-campaigns/{id} lists its units (campaignId, pipeId, workflowSlug). To change how a step behaves: \`catalogue-plays\`.
+`),
+  },
+  {
+    slug: "emails-you-wrote",
+    parentSlug: "index",
+    title: "Send emails the user wrote, as written",
+    description: "A client wants their own email sent unchanged (one test, a list, a CSV, by API). Load before calling it missing.",
+    position: 92,
+    content: t(`
+# Send emails the user wrote, as written
+
+A client who wants an email THEY wrote sent unchanged (one test, a list, a CSV, by API) needs no new feature. Their offer's reactive campaign that runs "Each time: Email Pushed Via API" (Email Sending) sends it word for word from our inboxes. One push = one person. No template, no AI writing.
+
+## Check first
+list_campaigns(brandId, offerId): a running campaign whose runsWhen is "Each time: Email Pushed Via API".
+- None running: offer to turn a stopped one back on, else start one from find_sales_funnels (a funnel starting on that trigger, Email Sending first): create_funnel_campaign, its caps (Up to $X and/or Up to N prospects handled), propose_switch_on start_funnel_campaign. Never request_staff for it.
+
+## From the chat (a test, or a few people)
+1. propose_switch_on(action push_email, brandId, offerId, email, name?, subject, bodyText or bodyHtml, exactly as written).
+2. Show its preview: recipient, the email, the campaign sending it and its caps, the cost of one send (costOfOneSend, as written), the sender line (the inbox is picked when it goes out: never name one). Ask yes or no.
+3. After their yes, in their next message: confirm_switch_on. Say what event.outcome reads: ran = sending; skipped = say why (skipReason: campaign_off, unfunded...); pending = fires within minutes.
+A test to the user themselves is the same push, to their own address. Never push a whole list from the chat.
+
+## A list, a CSV, ongoing volume (e.g. 1,800 a month)
+The client pushes from their own system with their API key, one call per person: POST /v1/trigger-events
+\`{triggerId: "email_pushed_via_api", brandId, offerId, person: {email, name?, timezone?}, item: {subject, bodyText | bodyHtml}, idempotencyKey}\`
+- The answer's event.outcome says ran or skipped (skipReason). Read back: GET /v1/offers/{offerId}/trigger-events. The operation's own description is the reference (discover_endpoint api POST /v1/trigger-events).
+- Every send counts against the campaign's caps: size "Up to N prospects handled" to the volume.
+- A reply goes on to the campaign's next steps, like any campaign.
+
+## Where do the leads come from?
+The client brings them: each push names the person. No source runs, no lead is bought.
 `),
   },
   {
@@ -460,6 +498,11 @@ Four kinds, each lands with someone who acts. Every tool records the request and
 | Feature: a piece needs code | request_staff (kind feature) | GitHub issue in the owning repo + Telegram |
 | A skill or a service doc misled you | request_skill_upgrade | GitHub issue (chat-service for a skill, else the service's repo) with your proposed text + Telegram |
 | The user wants a person | contact_human | Telegram to the founder, now. No issue |
+
+## Before filing (always)
+1. list_campaigns: does a running campaign already do it (its path, runsWhen)? Then use it, never a request. Prod 2026-10-14: two features filed for "send our own emails as written" while the client's live campaign did exactly that.
+2. Search the API the client's key can call: discover_service_endpoints(service "api", q: the ask's words), then discover_endpoint. A route covering it is the answer: do it with a tool, or tell the user how.
+3. Only then request_staff, saying in missingPiece what you checked.
 
 ## How
 - request_staff: repo, title, userRequest, missingPiece. pieceKey and decomposition are optional. Call list_staff_requests first: the same need reuses its pieceKey (it counts the repeat).
