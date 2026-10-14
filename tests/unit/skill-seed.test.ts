@@ -265,14 +265,14 @@ describe("making a campaign behave a certain way (MCP role-play 2026-10-14: docu
     for (const w of ["**Tactic**", "**Strategy**", "**Play**", "find_plays", "find_tactics", "create_tactic", "create_strategy", "create_play", "~<strategy id>", "STOPPED", "stop_funnel_campaign", "allowedActiveWorkflowCount"]) {
       expect(c, w).toContain(w);
     }
-    expect(c).toMatch(/both answer the same positive reply/);
+    expect(c).toMatch(/BOTH answer a positive reply/);
     expect(c).toContain("POST /v1/sales-funnel-campaigns");
   });
 
   it("offers says uploading documents is half the setup", () => {
     const c = bySlug.get("offers")!.content;
     expect(c).toMatch(/Uploading is half the setup/);
-    expect(c).toMatch(/WHEN to attach it and when NOT/);
+    expect(c).toMatch(/what the file is and when it helps a prospect/);
     expect(c).toContain("catalogue-plays");
   });
 
@@ -280,5 +280,38 @@ describe("making a campaign behave a certain way (MCP role-play 2026-10-14: docu
     const c = bySlug.get("campaigns")!.content;
     expect(c).toMatch(/one part per step/);
     expect(c).toMatch(/salesFunnelCampaignId/);
+  });
+});
+
+describe("MCP role-play gaps 2026-10-14 (attach the right PDF): API agents must reach every step", () => {
+  const bySlug = new Map(SEED_SKILLS.map((s) => [s.slug, s]));
+
+  it("funnels by id through the API are a q search, never an id filter; a play lists its funnels", () => {
+    const c = bySlug.get("catalogue-plays")!.content;
+    expect(c).toMatch(/sales-funnels\?brandId=&q=/);
+    expect(c).toMatch(/no id filter/);
+    expect(c).toContain("GET /v1/plays/{id} (salesFunnels)");
+  });
+
+  it("switching a campaign carries the cap over, asks the amount, stops the old then starts the new", () => {
+    const c = bySlug.get("catalogue-plays")!.content;
+    expect(c).toMatch(/Caps belong to the funnel: the new one has none/);
+    expect(c).toMatch(/the client says the amount/);
+    expect(c.indexOf("stop_funnel_campaign(old)")).toBeLessThan(c.indexOf("confirm_switch_on(new)"));
+    expect(c).toMatch(/No single call swaps them/);
+    expect(c).toMatch(/DELETE \.\.\.\/\{id\} \(409 if running or with history\)/);
+  });
+
+  it("documents: description wording matches the API field, near-duplicates go to the client", () => {
+    const c = bySlug.get("offers")!.content;
+    expect(c).not.toMatch(/when NOT/);
+    expect(c).toMatch(/Near-duplicates/);
+    expect(c).toMatch(/Never delete or rewrite a client's file unasked/);
+  });
+
+  it("workflows: how to see which workflows a play runs, by name and description", () => {
+    const c = bySlug.get("catalogue-workflows")!.content;
+    expect(c).toContain("excludedWorkflowDynastySlugs");
+    expect(c).toContain("GET /v1/workflows/summaries?featureSlug=<channel slug>&status=active");
   });
 });
