@@ -82,7 +82,8 @@ An offer is one thing a brand sells. Every campaign, leg, sales path, budget and
 - add_offer_step / remove_offer_step(brandId, offerId, stepKey): record the client's answer about one step. Why and when: \`catalogue-sales-funnels\`.
 
 ## Documents (files to send prospects)
-An offer holds the client's files about it (one-pager, case study, price list; pdf, docx, pptx, images...; 5 MB each, 25 per offer). Each has a description: write it as WHEN to attach it and when NOT ("Attach when a prospect asks for prices; never in a first reply"), since the AI answering picks a file by it.
+An offer holds the client's files about it (one-pager, case study, price list; pdf, docx, pptx, images...; 5 MB each, 25 per offer). Each has a description: what the file is and when it helps a prospect ("Price list for UK employers: helps when a prospect asks what a listing costs"). The AI answering picks a file on name + description alone, so each must say what sets it apart from the others.
+- Near-duplicates already on the offer (same content, overlapping descriptions) blur the pick: show them to the client and ask which to keep, or how each differs. Never delete or rewrite a client's file unasked.
 - Uploading is half the setup: only workflows that attach a document send them, and the step answering prospects may run one that does not. Give that step a play whose strategy requires that tactic: \`catalogue-plays\`.
 - From the chat: the user uploads on the offer page (open_page). Through the API: GET, POST /v1/brands/{id}/offers/{offerId}/documents (JSON fileName, description, contentBase64), PATCH and DELETE .../documents/{documentId}.
 
@@ -615,28 +616,31 @@ create_pipe(channelSlug, fromStep, toStep, mode, triggerId?): refused for a cust
     content: t(`
 # Plays: make a step behave a certain way
 
-"Attach the right PDF when you answer interested prospects", "skip catch-all addresses", "only business contacts": none of these is a setting. Several workflows compete on each step and the platform runs the best one by return. A play limits which workflows a step may run. Shared by every customer (owner: features-service).
+"Attach the right PDF when you answer interested prospects", "skip catch-all addresses": none of these is a setting. Several workflows compete on each step and the platform runs the best one by return. A play limits which workflows a step may run. Shared by every customer (owner: features-service).
 
 ## Three words
-- **Tactic**: a yes/no trait judged on every workflow from its description ("Catch-all": sends to addresses that cannot be confirmed). A new one is judged on every workflow within minutes.
+- **Tactic**: a yes/no trait judged on every workflow from its description, within minutes of its creation.
 - **Strategy**: the tactics a workflow must follow (requires) and must not follow (excludes).
-- **Play**: one pipe run under one strategy. The default play is the bare pipe id; another is \`<pipe id>~<strategy id>\`. The step then runs only the workflows the strategy allows, best return first. None allowed: the step waits.
+- **Play**: one pipe run under one strategy, id \`<pipe id>~<strategy id>\` (the default play is the bare pipe id). The step runs only the workflows the strategy allows, best return first; none allowed: the step waits.
 
 ## Find before you create
 1. Name the step that must change: answering an interested prospect is the AI meeting booking step after Positive reply (find_pipes).
 2. find_plays(pipe): a play doing it already? Use it.
-3. Else find_tactics(q) and find_strategies(q): the trait, a strategy over it.
-4. Missing: create_tactic (describe what a workflow DOES, precise enough to judge: "the reply it sends attaches one of the offer's documents"), create_strategy(requires, excludes), create_play(pipeId, strategyId). General names, never one client's.
-5. Read the play back (find_plays): allowedActiveWorkflowCount 0 means no workflow does it yet. Say the step would wait; request_staff (repo workflow-service) for one.
+3. Else find_tactics(q), find_strategies(q).
+4. Missing: create_tactic (what a workflow DOES, precise enough to judge: "the reply it sends attaches one of the offer's documents"), create_strategy(requires, excludes), create_play(pipeId, strategyId). General names, never one client's.
+5. Read the play back: allowedActiveWorkflowCount 0 = no workflow does it yet, the step would wait; request_staff (repo workflow-service). Which workflows it counts: \`catalogue-workflows\`.
 
-## How a campaign gets it
-A funnel names one play per step in its id (\`...@ai-meeting-booking~<strategy id>+...\`), and the catalogue builds a funnel for every play by itself. A running campaign's funnel never changes. So: take the campaign's funnel id, add \`~<strategy id>\` after that step's channel, read it with find_sales_funnels(id), then create_funnel_campaign on it, STOPPED. The user starts it (\`campaigns\`).
+## The funnel carrying it
+A funnel names one play per step in its id (\`...@ai-meeting-booking~<strategy id>+...\`); the catalogue builds one for every play by itself. The play's read lists them (salesFunnels). Or add \`~<strategy id>\` after that step's channel in the campaign's funnel id and read it: find_sales_funnels(id).
 
-## Never answer one reply twice
-Two running campaigns of one offer with the same reactive step both answer the same positive reply. Starting the new one means stopping the old one (stop_funnel_campaign) in the same move: say so when you propose it.
+## Switch a running campaign
+Its funnel never changes: a new behaviour is a new campaign. Two running campaigns of one offer with the same reactive step BOTH answer a positive reply, so the old one stops when the new one starts. No single call swaps them:
+1. create_funnel_campaign on the new funnel, STOPPED.
+2. Caps belong to the funnel: the new one has none. Read the old one's (get_funnel_caps), propose carrying it over; the client says the amount (their money); set_funnel_caps.
+3. Propose the start, saying the old one stops. On their yes: stop_funnel_campaign(old), then confirm_switch_on(new). Start refused: say why, offer to restart the old one.
 
 ## Through the API (no Copilot tools)
-GET and POST /v1/tactics, /v1/strategies, /v1/plays?pipe=. GET /v1/offers/{offerId}/sales-funnels?brandId= lists funnels. POST /v1/sales-funnel-campaigns {brandId, offerId, salesFunnelId, status: "stopped"}; PATCH /v1/sales-funnel-campaigns/{id} {status: "activate" or "stop"}. The workflow each step runs: GET /v1/sales-funnel-campaigns/{id}, units[].workflowSlug.
+/v1/tactics, /v1/strategies, /v1/plays?pipe= (GET, POST); GET /v1/plays/{id} (salesFunnels). Funnels: GET /v1/offers/{offerId}/sales-funnels?brandId=&q=<funnel id, or ~<strategy id>>, then match the id exactly (no id filter: an unknown param is ignored and you get the top 10 by ROI). Caps: GET, PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps. Campaigns: POST /v1/sales-funnel-campaigns {brandId, offerId, salesFunnelId, status: "stopped"}; PATCH .../{id} {status: "stop"} on the old, then {status: "activate"} on the new. Created by mistake (stopped, never ran): DELETE .../{id} (409 if running or with history).
 `),
   },
   {
@@ -684,7 +688,9 @@ create_sales_funnel(pipeIds in order: one pipe or play per step (find_plays), a 
 A workflow is the program that runs one pipe (find, write, send, wait). Several compete on each pipe; the platform runs the best one by itself. Owner of the ranking: features-service; the programs: workflow-service.
 
 ## Read
-- find_workflows(pipe): the ranking for one pipe, with outcomes and cost. find_workflows(pipe, id) for one.
+- find_workflows(pipe): the ranking for one pipe, with outcomes, cost and, per tactic, whether each follows it. find_workflows(pipe, id) for one.
+- Which workflows a play runs: a play counts them (allowedActiveWorkflowCount); its detail (API GET /v1/plays/{id}) names those its strategy rules out (excludedWorkflowDynastySlugs). Allowed = the pipe's workflows minus those.
+- Through the API, what each workflow does (name + description, no program): GET /v1/workflows/summaries?featureSlug=<channel slug>&status=active (newly added; if it answers 400, GET /v1/workflows?workflowDynastySlug=<slug> reads one, program included).
 
 ## When
 Only when the user wants to choose or understand how a step runs. Never ask them to pick one by default.
