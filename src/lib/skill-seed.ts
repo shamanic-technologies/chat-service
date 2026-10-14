@@ -35,6 +35,7 @@ If the user named a channel, find it first to learn what it produces, then walk 
 ## When something is missing
 - We only offer what we run today: the find_* tools list nothing else. The user asks for something we do not run (LinkedIn posting, ads): say so in one plain sentence, offer what we run that gets the same result, and if they still want it, request_staff (kind feature). Never describe its price, terms or how it would work.
 - A path or funnel shape is missing but every piece runs: create it as data (create_step, create_sales_path, create_sales_funnel).
+- The user wants a campaign to behave differently (attach a document to replies, skip some addresses): that is the step's play, not a setting. Load \`catalogue-plays\`.
 - It needs code, or something is broken: request_staff. A skill or doc misled you: request_skill_upgrade. The user wants a person: contact_human. Load \`staff-requests\`.
 - Building something new from our services: load \`infra\`.
 
@@ -80,9 +81,15 @@ An offer is one thing a brand sells. Every campaign, leg, sales path, budget and
 - create_offer(brandId, name): data only, starts nothing. Confirm the name first.
 - add_offer_step / remove_offer_step(brandId, offerId, stepKey): record the client's answer about one step. Why and when: \`catalogue-sales-funnels\`.
 
+## Documents (files to send prospects)
+An offer holds the client's files about it (one-pager, case study, price list; pdf, docx, pptx, images...; 5 MB each, 25 per offer). Each has a description: write it as WHEN to attach it and when NOT ("Attach when a prospect asks for prices; never in a first reply"), since the AI answering picks a file by it.
+- Uploading is half the setup: only workflows that attach a document send them, and the step answering prospects may run one that does not. Give that step a play whose strategy requires that tactic: \`catalogue-plays\`.
+- From the chat: the user uploads on the offer page (open_page). Through the API: GET, POST /v1/brands/{id}/offers/{offerId}/documents (JSON fileName, description, contentBase64), PATCH and DELETE .../documents/{documentId}.
+
 ## Not available from the chat yet
 - Rename, describe, archive an offer, set its economics (deal value): the user does it on the offer page (open_page), or request_staff if they insist on doing it here.
 - Archiving is refused while a campaign of the offer is running.
+- API agents list a brand's offers with GET /v1/brands/{id}/offers.
 
 ## Articulation
 Before building anything, know WHICH offer the request is about. If the brand has several and the user did not say, ask which (the offers are an obvious pick: see \`choices\`).
@@ -299,20 +306,17 @@ A campaign needs a max budget, a max volume, or both. Either alone is valid; onl
 2. create_funnel_campaign: created STOPPED, starts nothing.
 3. Ask the caps the user has not stated (max budget and/or max volume); set_funnel_caps with both keys (null = no such cap).
 4. propose_switch_on(action start_funnel_campaign, brandId, offerId, salesFunnelId): refused only while no cap is stated. Show the funnel name, its caps and billing's funding verdict; ask yes or no.
-5. confirm_switch_on only after their yes, in their next message. If it is refused (no workflow yet, payment), say why plainly; request_staff only if it needs code.
-Never launch without the user's explicit yes, even if they asked to "just do it".
+5. confirm_switch_on only after their yes, in their next message, even if they said "just do it". Refused (no workflow yet, payment): say why plainly; request_staff only if it needs code.
 
 ## Read and adjust
-- list_campaigns(brandId, status?): THE campaigns (each a sales funnel campaign) with type, status, budget in words ("Max $10/day", "Up to $1/day", "Not funded"), volume, spent this period, results since start (invested, return: "still learning" means not final), its path ("Lead found → Sales Cold Email Outreach → Positive reply → Paid client": that IS what it does), and steps. Answer "how many campaigns", "what do they do" and "the budget of each" from it. Count and name only campaigns: a step (a source, cold email, AI booking) is part of a campaign, never a campaign.
-- list_funnel_campaigns: the same read as list_campaigns.
+- list_campaigns(brandId, status?): THE campaigns with type, status, budget in words ("Max $10/day", "Up to $1/day", "Not funded"), volume, spent this period, results since start ("still learning" = not final), its path (that IS what it does) and steps. Count and name only campaigns: a step (a source, cold email, AI booking) is part of a campaign, never a campaign. list_funnel_campaigns is the same read.
 - get_funnel_caps(salesFunnelId from list_campaigns, never a campaign id): one funnel's raw caps.
-- set_funnel_caps: change a cap (starts nothing). Send both keys: the cap you do not change keeps its current value (read it with get_funnel_caps).
-- stop_funnel_campaign: stops new first touches now; follow-ups still go out. Safe; say what stopped.
+- set_funnel_caps: change a cap (starts nothing). Send both keys: the one you keep stays as get_funnel_caps reads it.
+- stop_funnel_campaign: stops new first touches now; follow-ups still go out. Say what stopped.
+- Every start is refused while the org's payment is on hold: point to billing. Never use launch_campaign.
 
-## Older campaigns
-Older per-step campaigns are steps of funnel campaigns now: never list, count or start them as campaigns.
-- Every start is refused while the org's payment is on hold: say so and point to billing.
-- Never use launch_campaign.
+## Parts of a campaign
+A campaign owns one part per step of its funnel, each with its own campaign id and workflow (older per-step campaigns are parts too). Trigger events, stats and runs show PART ids; a campaign-level read may refuse one. get_campaign(part id) (API: GET /v1/campaigns/{id}) names its salesFunnelCampaignId; GET /v1/sales-funnel-campaigns/{id} lists its units (campaignId, pipeId, workflowSlug). To change how a step behaves: \`catalogue-plays\`.
 `),
   },
   {
@@ -596,12 +600,43 @@ A pipe is one channel working one leg (from one step to the next). Proactive pip
 - find_pipes(id): one pipe, with its best workflow and conversion rate.
 
 ## Plays: how a step runs (owner 2026-10-13)
-A play is a pipe run under one strategy (e.g. cold email "Valid only" vs "Valid + Catch-all"), with its own cost and return; the default play is the bare pipe id. A strategy = tactics it requires and excludes; a tactic = a yes/no trait judged on every workflow. Who a step reaches or skips is its play, never a per-campaign pick.
-- find_plays(pipe): the plays of one step. Before a funnel is built, show the plays of each step we run that has more than one, and let the user keep one, or ask for a new way.
-- A new way: find_tactics / find_strategies first; else create_tactic, create_strategy(requires, excludes), then create_play(pipeId, strategyId). Shared by every customer: name them generally. Nothing fits: a new pipe (below).
+A pipe runs under a play (a strategy over tactics), with its own cost and return. Who a step reaches or skips, and how it behaves, is its play, never a per-campaign pick. find_plays(pipe): before a funnel is built, show the plays of each step that has more than one. Finding or creating one: \`catalogue-plays\`.
 
 ## Create (staff only)
 create_pipe(channelSlug, fromStep, toStep, mode, triggerId?): refused for a customer. Live at once. A reactive pipe on a trigger nothing fires is not created: the tool asks for the detector and returns on_hold: say it is on hold with the team, carry on.
+`),
+  },
+  {
+    slug: "catalogue-plays",
+    parentSlug: "catalogue",
+    title: "Plays: make a step behave a certain way",
+    description: "Tactics, strategies, plays. Load when the user wants a campaign to do something differently (attach a document, skip some addresses, reach only some people).",
+    position: 45,
+    content: t(`
+# Plays: make a step behave a certain way
+
+"Attach the right PDF when you answer interested prospects", "skip catch-all addresses", "only business contacts": none of these is a setting. Several workflows compete on each step and the platform runs the best one by return. A play limits which workflows a step may run. Shared by every customer (owner: features-service).
+
+## Three words
+- **Tactic**: a yes/no trait judged on every workflow from its description ("Catch-all": sends to addresses that cannot be confirmed). A new one is judged on every workflow within minutes.
+- **Strategy**: the tactics a workflow must follow (requires) and must not follow (excludes).
+- **Play**: one pipe run under one strategy. The default play is the bare pipe id; another is \`<pipe id>~<strategy id>\`. The step then runs only the workflows the strategy allows, best return first. None allowed: the step waits.
+
+## Find before you create
+1. Name the step that must change: answering an interested prospect is the AI meeting booking step after Positive reply (find_pipes).
+2. find_plays(pipe): a play doing it already? Use it.
+3. Else find_tactics(q) and find_strategies(q): the trait, a strategy over it.
+4. Missing: create_tactic (describe what a workflow DOES, precise enough to judge: "the reply it sends attaches one of the offer's documents"), create_strategy(requires, excludes), create_play(pipeId, strategyId). General names, never one client's.
+5. Read the play back (find_plays): allowedActiveWorkflowCount 0 means no workflow does it yet. Say the step would wait; request_staff (repo workflow-service) for one.
+
+## How a campaign gets it
+A funnel names one play per step in its id (\`...@ai-meeting-booking~<strategy id>+...\`), and the catalogue builds a funnel for every play by itself. A running campaign's funnel never changes. So: take the campaign's funnel id, add \`~<strategy id>\` after that step's channel, read it with find_sales_funnels(id), then create_funnel_campaign on it, STOPPED. The user starts it (\`campaigns\`).
+
+## Never answer one reply twice
+Two running campaigns of one offer with the same reactive step both answer the same positive reply. Starting the new one means stopping the old one (stop_funnel_campaign) in the same move: say so when you propose it.
+
+## Through the API (no Copilot tools)
+GET and POST /v1/tactics, /v1/strategies, /v1/plays?pipe=. GET /v1/offers/{offerId}/sales-funnels?brandId= lists funnels. POST /v1/sales-funnel-campaigns {brandId, offerId, salesFunnelId, status: "stopped"}; PATCH /v1/sales-funnel-campaigns/{id} {status: "activate" or "stop"}. The workflow each step runs: GET /v1/sales-funnel-campaigns/{id}, units[].workflowSlug.
 `),
   },
   {
