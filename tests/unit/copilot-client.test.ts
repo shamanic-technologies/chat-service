@@ -112,9 +112,9 @@ describe("offer steps and leg rates (owner 2026-10-12: ask before proposing a fu
 });
 
 describe("switch-on gate: propose in one turn, confirm in a later one", () => {
-  it("per-step starts are retired: only start_funnel_campaign is proposed (owner 2026-10-10)", async () => {
+  it("per-step starts are retired: a funnel campaign start and an email push are proposed (owner 2026-10-10, 2026-10-14)", async () => {
     const { proposeSwitchOn, SWITCH_ON_ACTIONS } = await load();
-    expect(SWITCH_ON_ACTIONS).toEqual(["start_funnel_campaign"]);
+    expect(SWITCH_ON_ACTIONS).toEqual(["start_funnel_campaign", "push_email"]);
     for (const action of ["start_campaign", "activate_campaign"]) {
       await expect(proposeSwitchOn({ action, summary: "s", brandId: "b", offerId: "o", legKey: "l", featureSlug: "f", dailyBudgetCents: 2000, campaignId: "c" }, params)).rejects.toThrow(/action must be one of/);
     }
