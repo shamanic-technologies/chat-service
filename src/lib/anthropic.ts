@@ -2406,12 +2406,6 @@ export const GET_OFFER_SOURCING_TOOL: Anthropic.Tool = {
   input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
 };
 
-export const GET_CAMPAIGN_BUDGETS_TOOL: Anthropic.Tool = {
-  name: "get_campaign_budgets",
-  description: "RETIRED for answers: the old per-step ceilings. A campaign's budget is its funnel caps: list_campaigns. Read-only.",
-  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
-};
-
 export const GET_CAMPAIGN_TOOL: Anthropic.Tool = {
   name: "get_campaign",
   description: "Read one campaign: its offer, leg, channel, status and caps. Read-only.",
@@ -2437,22 +2431,6 @@ export const CREATE_OFFER_TOOL: Anthropic.Tool = {
     type: "object" as const,
     properties: { brandId: BRAND_ID_PROP, name: { type: "string", description: "Offer name." } },
     required: ["brandId", "name"],
-  },
-};
-
-export const SET_CAMPAIGN_BUDGET_TOOL: Anthropic.Tool = {
-  name: "set_campaign_budget",
-  description:
-    "Set the daily budget CAP of one (offer x leg x channel) campaign, in cents. Creates no campaign and starts nothing: a cap is a ceiling, not a start. Confirm the amount with the user first.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      ...BRAND_OFFER_PROPS,
-      legKey: { type: "string", description: "Leg key (find_channels with id: legs[].legKey)." },
-      featureSlug: { type: "string", description: "The channel's feature slug (its id in find_channels)." },
-      dailyBudgetCents: { type: "integer", description: "Daily cap in cents (e.g. 2000 = $20/day). Must be > 0." },
-    },
-    required: ["brandId", "offerId", "legKey", "featureSlug", "dailyBudgetCents"],
   },
 };
 
@@ -3239,11 +3217,9 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   get_trigger_events: GET_TRIGGER_EVENTS_TOOL,
   list_sourcing_origins: LIST_SOURCING_ORIGINS_TOOL,
   get_offer_sourcing: GET_OFFER_SOURCING_TOOL,
-  get_campaign_budgets: GET_CAMPAIGN_BUDGETS_TOOL,
   get_campaign: GET_CAMPAIGN_TOOL,
   list_connected_accounts: LIST_CONNECTED_ACCOUNTS_TOOL,
   create_offer: CREATE_OFFER_TOOL,
-  set_campaign_budget: SET_CAMPAIGN_BUDGET_TOOL,
   propose_switch_on: PROPOSE_SWITCH_ON_TOOL,
   confirm_switch_on: CONFIRM_SWITCH_ON_TOOL,
   list_funnel_campaigns: LIST_FUNNEL_CAMPAIGNS_TOOL,
