@@ -595,6 +595,11 @@ A pipe is one channel working one leg (from one step to the next). Proactive pip
 - find_pipes(paths, channels): the pipes on the chosen paths and channels, cost per outcome and return.
 - find_pipes(id): one pipe, with its best workflow and conversion rate.
 
+## Plays: how a step runs (owner 2026-10-13)
+A play is a pipe run under one strategy (e.g. cold email "Valid only" vs "Valid + Catch-all"), with its own cost and return; the default play is the bare pipe id. A strategy = tactics it requires and excludes; a tactic = a yes/no trait judged on every workflow. Who a step reaches or skips is its play, never a per-campaign pick.
+- find_plays(pipe): the plays of one step. Before a funnel is built, show the plays of each step we run that has more than one, and let the user keep one, or ask for a new way.
+- A new way: find_tactics / find_strategies first; else create_tactic, create_strategy(requires, excludes), then create_play(pipeId, strategyId). Shared by every customer: name them generally. Nothing fits: a new pipe (below).
+
 ## Create (staff only)
 create_pipe(channelSlug, fromStep, toStep, mode, triggerId?): refused for a customer. Live at once. A reactive pipe on a trigger nothing fires is not created: the tool asks for the detector and returns on_hold: say it is on hold with the team, carry on.
 `),
@@ -629,7 +634,7 @@ A funnel is worth proposing only if the client's business has EVERY step on its 
 First WRITE the 1 to 3 funnels in the text, one line each: name, what it does, cost per paying client, return (learning: "not measured yet"). Two or more real options are an obvious pick: one card per funnel (see \`choices\`), its cost as a number visual (cents). One clear best funnel: say why and ask, no cards. The user picks; then \`campaigns\`: it becomes a campaign with at least one cap they state (max budget, max volume, or both).
 
 ## Create
-create_sales_funnel(pipeIds in order: one pipe per step, a Your Team pipe for a step the customer's team works). Live at once. For a customer every pipe must be one we run (refused otherwise). A user who only wants leads: Start -> Lead found with a source, then Paid client with your-team-closing-calls; no email goes out, say so.
+create_sales_funnel(pipeIds in order: one pipe or play per step (find_plays), a Your Team pipe for a step the customer's team works). Live at once. For a customer every pipe must be one we run (refused otherwise). A user who only wants leads: Start -> Lead found with a source, then Paid client with your-team-closing-calls; no email goes out, say so.
 `),
   },
   {

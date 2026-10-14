@@ -2780,6 +2780,33 @@ export const FIND_WORKFLOWS_TOOL: Anthropic.Tool = {
   },
 };
 
+export const FIND_PLAYS_TOOL: Anthropic.Tool = {
+  name: "find_plays",
+  description:
+    "The PLAYS of one pipe: each is a way to run that step (a strategy), with its own cost and return; the default play is the bare pipe id. A play's id is what create_sales_funnel takes for that leg. " +
+    "Before building a funnel, read the plays of each step and let the user keep one, ask for a new strategy (find_strategies / create_strategy, then create_play), or a new pipe. Never pick who a campaign reaches any other way. " +
+    CATALOGUE_ROW_NOTE,
+  input_schema: {
+    type: "object" as const,
+    properties: { pipe: { type: "string", description: "The pipe id (`<channel slug>|<leg key>`) from find_pipes." }, ...CATALOGUE_PAGE_PROPS },
+    required: ["pipe"],
+  },
+};
+
+export const FIND_STRATEGIES_TOOL: Anthropic.Tool = {
+  name: "find_strategies",
+  description:
+    "STRATEGIES: a way of running a step, defined by the tactics it requires and excludes, with the pipes that already have it as a play. Search with q; read one with id.",
+  input_schema: { type: "object" as const, properties: CATALOGUE_PAGE_PROPS },
+};
+
+export const FIND_TACTICS_TOOL: Anthropic.Tool = {
+  name: "find_tactics",
+  description:
+    "TACTICS: yes/no traits judged on every workflow (e.g. \"Catch-all\": sends to addresses that cannot be confirmed), with how many workflows follow each. A strategy is built from them. Search with q; read one with id.",
+  input_schema: { type: "object" as const, properties: CATALOGUE_PAGE_PROPS },
+};
+
 const CATALOGUE_USER_REQUEST_PROP = {
   type: "string",
   description: "The user's request, in their words (carried into any staff request this create files).",
@@ -2842,13 +2869,59 @@ export const CREATE_SALES_PATH_TOOL: Anthropic.Tool = {
 export const CREATE_SALES_FUNNEL_TOOL: Anthropic.Tool = {
   name: "create_sales_funnel",
   description:
-    "Create a NEW sales funnel: one pipe id per leg of a sales path, in order (a Your Team pipe for a leg the customer's own team works, e.g. your-team-closing-calls|lead_found_to_paid_client). Live at once, nothing waits on staff. Returns created:false when it exists. " +
+    "Create a NEW sales funnel: one pipe or play id per leg of a sales path, in order (a play id from find_plays runs that leg under its strategy; a Your Team pipe for a leg the customer's own team works, e.g. your-team-closing-calls|lead_found_to_paid_client). Live at once, nothing waits on staff. Returns created:false when it exists. " +
     "The funnel comes back with features-service's own type, mixed and runnable: read them, never judge a mix yourself. A source then the customer's team (Start -> Lead found -> Paid client) is a valid funnel that only finds leads. " +
     CATALOGUE_CREATE_RULE,
   input_schema: {
     type: "object" as const,
     properties: { pipeIds: idList("One per leg, in order."), userRequest: CATALOGUE_USER_REQUEST_PROP },
     required: ["pipeIds", "userRequest"],
+  },
+};
+
+export const CREATE_TACTIC_TOOL: Anthropic.Tool = {
+  name: "create_tactic",
+  description:
+    "Create a NEW tactic: one yes/no trait a workflow either follows or not, described so it can be judged on the workflow alone (every workflow is then judged on it, which takes a few minutes). Shared by every customer, so name it generally. " +
+    CATALOGUE_CREATE_RULE,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      name: { type: "string", description: "Short name, under 60 characters." },
+      description: { type: "string", description: "What a workflow following it does, one or two sentences." },
+    },
+    required: ["name", "description"],
+  },
+};
+
+export const CREATE_STRATEGY_TOOL: Anthropic.Tool = {
+  name: "create_strategy",
+  description:
+    "Create a NEW strategy: the tactics it requires and/or excludes (at least one). Then create_play to run a pipe under it. " + CATALOGUE_CREATE_RULE,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      name: { type: "string", description: "Short name, under 60 characters." },
+      description: { type: "string", description: "What it does, in one line the user understands." },
+      requires: idList("Tactic ids it requires."),
+      excludes: idList("Tactic ids it excludes."),
+    },
+    required: ["name", "description"],
+  },
+};
+
+export const CREATE_PLAY_TOOL: Anthropic.Tool = {
+  name: "create_play",
+  description:
+    "Run one pipe under one strategy: a new play of that pipe, priced on its own once it runs. Returns its id for create_sales_funnel. created:false when it exists. Only on a step we run (never a Your Team pipe). " +
+    CATALOGUE_CREATE_RULE,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      pipeId: { type: "string", description: "The pipe id from find_pipes." },
+      strategyId: { type: "string", description: "The strategy id from find_strategies or create_strategy." },
+    },
+    required: ["pipeId", "strategyId"],
   },
 };
 
@@ -3193,6 +3266,12 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   find_pipes: FIND_PIPES_TOOL,
   find_sales_funnels: FIND_SALES_FUNNELS_TOOL,
   find_workflows: FIND_WORKFLOWS_TOOL,
+  find_plays: FIND_PLAYS_TOOL,
+  find_strategies: FIND_STRATEGIES_TOOL,
+  find_tactics: FIND_TACTICS_TOOL,
+  create_tactic: CREATE_TACTIC_TOOL,
+  create_strategy: CREATE_STRATEGY_TOOL,
+  create_play: CREATE_PLAY_TOOL,
   create_step: CREATE_STEP_TOOL,
   create_pipe: CREATE_PIPE_TOOL,
   create_sales_path: CREATE_SALES_PATH_TOOL,

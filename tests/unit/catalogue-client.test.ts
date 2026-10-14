@@ -327,3 +327,62 @@ describe("an estimate says so (owner 2026-10-10: never call an estimate measured
     await expect(CATALOGUE_READ_TOOLS.find_sales_funnels({}, customer)).rejects.toThrow(/without its basis/);
   });
 });
+
+describe("plays: a step runs under a strategy (features-service tactics / strategies / plays, owner 2026-10-13)", () => {
+  const PIPE = "sales-cold-email-outreach|lead_found_to_conversation";
+
+  it("find_plays reads one pipe's plays, each cost with its unit; a learning play has none", async () => {
+    fetchMock().mockResolvedValue(
+      res(200, {
+        object: "play",
+        rows: [
+          { id: PIPE, strategyId: "valid-only", default: true, costUsd: 85.35, costPer: "per positive reply", roi: 1.46, roiBasis: "estimated", status: "measured" },
+          { id: `${PIPE}~valid-catch-all`, strategyId: "valid-catch-all", default: false, costUsd: null, costPer: null, roi: null, roiBasis: null, status: "learning" },
+        ],
+      }),
+    );
+    const { CATALOGUE_READ_TOOLS } = await load();
+    const out = (await CATALOGUE_READ_TOOLS.find_plays({ pipe: PIPE }, customer)) as { rows: Array<Record<string, unknown>> };
+    expect(call(0)).toMatchObject({ url: `http://features.test/internal/catalogue/plays?pipe=${encodeURIComponent(PIPE)}`, method: "GET", key: "features-key" });
+    expect(out.rows[0].cost).toBe("$85.35 per positive reply");
+    expect(out.rows[1]).not.toHaveProperty("cost");
+  });
+
+  it("find_strategies / find_tactics page and read by id", async () => {
+    fetchMock().mockResolvedValue(res(200, { rows: [] }));
+    const { CATALOGUE_READ_TOOLS } = await load();
+    await CATALOGUE_READ_TOOLS.find_strategies({ q: "valid" }, customer);
+    await CATALOGUE_READ_TOOLS.find_tactics({ id: "catch-all" }, customer);
+    expect(call(0).url).toBe("http://features.test/internal/catalogue/strategies?q=valid");
+    expect(call(1).url).toBe("http://features.test/internal/catalogue/tactics/catch-all");
+  });
+
+  it("create_tactic / create_strategy / create_play post data stamped with the chat user", async () => {
+    fetchMock().mockResolvedValue(res(201, { id: "x" }));
+    const { CATALOGUE_WRITE_TOOLS } = await load();
+    const { file } = fileMock();
+    await CATALOGUE_WRITE_TOOLS.create_tactic({ name: "Signed up", description: "Writes only to people who signed up." }, ctx, file, customer);
+    await CATALOGUE_WRITE_TOOLS.create_strategy({ name: "Signups", description: "Signups only.", requires: [" signed-up "] }, ctx, file, customer);
+    await CATALOGUE_WRITE_TOOLS.create_play({ pipeId: PIPE, strategyId: "signups" }, ctx, file, customer);
+    expect(call(0)).toMatchObject({ url: "http://features.test/internal/catalogue/tactics", method: "POST", body: { name: "Signed up", description: "Writes only to people who signed up.", createdBy: "user-1" } });
+    expect(call(1)).toMatchObject({ url: "http://features.test/internal/catalogue/strategies", body: { requires: ["signed-up"], excludes: [], createdBy: "user-1" } });
+    expect(call(2)).toMatchObject({ url: "http://features.test/internal/catalogue/plays", body: { pipeId: PIPE, strategyId: "signups", createdBy: "user-1" } });
+  });
+
+  it("a strategy with no tactic, or a bad tactic list, is refused before any call", async () => {
+    const { CATALOGUE_WRITE_TOOLS } = await load();
+    const { file } = fileMock();
+    await expect(CATALOGUE_WRITE_TOOLS.create_strategy({ name: "n", description: "d" }, ctx, file, customer)).rejects.toThrow(/at least one tactic/);
+    await expect(CATALOGUE_WRITE_TOOLS.create_strategy({ name: "n", description: "d", requires: "x" }, ctx, file, customer)).rejects.toThrow(/list of tactic ids/);
+    await expect(CATALOGUE_WRITE_TOOLS.create_play({ pipeId: PIPE }, ctx, file, customer)).rejects.toThrow(/strategyId/);
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("create_sales_funnel takes a play id and checks it like a pipe", async () => {
+    fetchMock().mockResolvedValueOnce(res(200, { runnable: true })).mockResolvedValue(res(201, { id: "f" }));
+    const { CATALOGUE_WRITE_TOOLS } = await load();
+    await CATALOGUE_WRITE_TOOLS.create_sales_funnel({ pipeIds: [`${PIPE}~valid-catch-all`], userRequest: "u" }, ctx, fileMock().file, customer);
+    expect(call(0).url).toBe(`http://features.test/internal/catalogue/pipes/${encodeURIComponent(`${PIPE}~valid-catch-all`)}`);
+    expect(call(1).body.pipeIds).toEqual([`${PIPE}~valid-catch-all`]);
+  });
+});
