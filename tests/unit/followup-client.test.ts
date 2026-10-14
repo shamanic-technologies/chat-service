@@ -20,20 +20,48 @@ const ENV = {
   COPILOT_FOLLOWUP_ORG_ID: "our-org",
   COPILOT_FOLLOWUP_USER_ID: "staff-user",
   COPILOT_FOLLOWUP_BRAND_ID: "our-brand",
-  COPILOT_FOLLOWUP_OFFER_ID: "our-offer",
+  CRM_SERVICE_URL: "http://crm",
+  CRM_SERVICE_API_KEY: "rk",
+  API_SERVICE_URL: "http://gateway",
+  ADMIN_DISTRIBUTE_API_KEY: "ak",
 };
+
+const OFFERS = {
+  offers: [
+    { offerId: "archived-offer", status: "archived" },
+    { offerId: "live-offer", status: "active" },
+    { offerId: "newer-live-offer", status: "active" },
+  ],
+};
+const NOBODY = { status: 404, body: { type: "not_found", reason: "person_not_found", error: "no person holds email:marie@example.com" } };
+
+/** The create path's reads, answered by default: nobody in crm, a live offer, billing funds the cap. */
+function createRoutes(over: (c: Call) => { status: number; body: unknown } | undefined = () => undefined) {
+  return (c: Call) => {
+    const o = over(c);
+    if (o) return o;
+    if (c.url.startsWith("http://crm/orgs/people/timeline")) return NOBODY;
+    if (c.url === "http://gateway/v1/brands/our-brand/offers") return { status: 200, body: OFFERS };
+    if (c.method === "POST" && c.url === "http://campaign/sales-funnel-campaigns") return { status: 201, body: { salesFunnelCampaign: marieRow, filing: [{ outcome: "filed" }] } };
+    if (c.method === "PUT") return { status: 200, body: { funded: true, fundedBy: "max_volume" } };
+    return { status: 200, body: {} };
+  };
+}
 
 const marieRow = {
   id: "fu-1",
   status: "ongoing",
   instruction: "Tell Marie her cost per meeting is $37.",
   salesFunnelId: FOLLOWUP_FUNNEL_ID,
+  offerId: "live-offer",
   people: [{ email: "marie@example.com", leadId: "lead-marie" }],
 };
 
 type Call = { url: string; method: string; headers: Record<string, string>; body: unknown };
 
-function fakeDeps(routes: (c: Call) => { status: number; body: unknown }) {
+function fakeDeps(routes: (c: Call) => { status: number; body: unknown }, judge: FollowupDeps["judge"] = async () => {
+  throw new Error("judge must not be called");
+}) {
   const calls: Call[] = [];
   const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
     const c: Call = {
@@ -50,6 +78,7 @@ function fakeDeps(routes: (c: Call) => { status: number; body: unknown }) {
     fetchEmail: async () => "Marie@Example.com",
     newRunId: async () => "platform-run-1",
     fetchImpl: fetchImpl as unknown as typeof fetch,
+    judge,
   };
   return { deps, calls };
 }
@@ -62,28 +91,90 @@ describe("Copilot follow-ups", () => {
     for (const k of Object.keys(ENV)) delete process.env[k];
   });
 
-  it("create: stopped campaign on OUR org naming the chat user, then a volume-1 one_off cap, then activate", async () => {
-    const { deps, calls } = fakeDeps((c) => {
-      if (c.method === "POST") return { status: 201, body: { salesFunnelCampaign: marieRow, filing: [{ outcome: "filed" }] } };
-      return { status: 200, body: {} };
-    });
+  it("create: reads the thread, picks the brand's LIVE offer, stopped campaign naming the chat user, funded volume-1 cap, then activate", async () => {
+    const { deps, calls } = fakeDeps(createRoutes());
     const out = await createFollowup({ instruction: "Tell Marie her cost per meeting is $37." }, { userId: "marie-user" }, deps);
 
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET http://crm/orgs/people/timeline?brandId=our-brand&personKey=${encodeURIComponent("email:marie@example.com")}`,
+      "GET http://gateway/v1/brands/our-brand/offers",
       "POST http://campaign/sales-funnel-campaigns",
-      `PUT http://billing/internal/brands/our-brand/offers/our-offer/sales-funnels/${encodeURIComponent(FOLLOWUP_FUNNEL_ID)}/campaigns/fu-1/caps`,
+      `PUT http://billing/internal/brands/our-brand/offers/live-offer/sales-funnels/${encodeURIComponent(FOLLOWUP_FUNNEL_ID)}/campaigns/fu-1/caps`,
       "PATCH http://campaign/sales-funnel-campaigns/fu-1",
     ]);
-    expect(calls[0].headers["x-org-id"]).toBe("our-org");
-    expect(calls[0].headers["x-run-id"]).toBe("platform-run-1");
-    expect(calls[0].body).toMatchObject({ status: "stopped", people: [{ email: "marie@example.com" }], brandId: "our-brand" });
-    expect(calls[1].body).toEqual({ maxBudget: null, maxVolume: { count: 1, period: "one_off" } });
-    expect(calls[2].body).toEqual({ status: "activate" });
-    expect(out).toMatchObject({ followUpId: "fu-1", to: "marie@example.com", sendsAtMost: 1 });
+    expect(calls[1].headers["x-api-key"]).toBe("ak");
+    expect(calls[2].headers["x-org-id"]).toBe("our-org");
+    expect(calls[2].headers["x-run-id"]).toBe("platform-run-1");
+    expect(calls[2].body).toMatchObject({ status: "stopped", people: [{ email: "marie@example.com" }], brandId: "our-brand", offerId: "live-offer" });
+    expect(calls[3].body).toEqual({ maxBudget: null, maxVolume: { count: 1, period: "one_off" } });
+    expect(calls[4].body).toEqual({ status: "activate" });
+    expect(out).toMatchObject({ created: true, followUpId: "fu-1", to: "marie@example.com", sendsAtMost: 1 });
+  });
+
+  it("create: never lands on an archived offer, and fails loud when the brand has no live offer", async () => {
+    const { deps, calls } = fakeDeps(
+      createRoutes((c) => (c.url.startsWith("http://gateway") ? { status: 200, body: { offers: [{ offerId: "archived-offer", status: "archived" }] } } : undefined)),
+    );
+    await expect(createFollowup({ instruction: "x" }, { userId: "u" }, deps)).rejects.toThrow("no live offer");
+    expect(calls.some((c) => c.url.includes("archived-offer"))).toBe(false);
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+  });
+
+  it("create: billing not funding the cap leaves it stopped and fails loud", async () => {
+    const { deps, calls } = fakeDeps(createRoutes((c) => (c.method === "PUT" ? { status: 200, body: { funded: false, fundedBy: null } } : undefined)));
+    await expect(createFollowup({ instruction: "x" }, { userId: "u" }, deps)).rejects.toThrow("billing does not fund");
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  });
+
+  it("create: a message we already sent that says it means nothing is created (Jev judges our outbound emails only)", async () => {
+    const timeline = {
+      status: 200,
+      body: {
+        sources: [{ source: "gmail", status: "ok" }],
+        items: [
+          { at: "2026-10-14T13:20:00Z", channel: "chat", kind: "message", direction: "outbound", subject: null, text: "I'll email you." },
+          { at: "2026-10-14T13:59:15Z", channel: "email", kind: "message", direction: "outbound", subject: "Re: Enquiry", text: "Good news: test sending is live." },
+          { at: "2026-10-14T14:00:00Z", channel: "web", kind: "event", direction: null, subject: null, text: "/" },
+        ],
+      },
+    };
+    let judged: unknown;
+    const { deps, calls } = fakeDeps(
+      createRoutes((c) => (c.url.startsWith("http://crm") ? timeline : undefined)),
+      async (state) => {
+        judged = state;
+        return { alreadyKept: { type: "noul", noul: 0.93 } };
+      },
+    );
+    const out = await createFollowup({ instruction: "Tell them one-off test sending is live." }, { userId: "u" }, deps);
+    expect(out).toMatchObject({ created: false, reason: "already_told", lastMessageSubject: "Re: Enquiry" });
+    expect((judged as { messagesWeAlreadySentThem: unknown[] }).messagesWeAlreadySentThem).toEqual([
+      { at: "2026-10-14T13:59:15Z", channel: "email", subject: "Re: Enquiry", text: "Good news: test sending is live." },
+    ]);
+    expect(calls.map((c) => c.method)).toEqual(["GET"]);
+  });
+
+  it("create: Jev saying our messages do not say it goes on to create", async () => {
+    const timeline = { status: 200, body: { sources: [], items: [{ at: "t", channel: "email", kind: "message", direction: "outbound", subject: "Hi", text: "Welcome." }] } };
+    const { deps } = fakeDeps(createRoutes((c) => (c.url.startsWith("http://crm") ? timeline : undefined)), async () => ({ alreadyKept: { type: "noul", noul: 0.1 } }));
+    expect(await createFollowup({ instruction: "x" }, { userId: "u" }, deps)).toMatchObject({ created: true });
+  });
+
+  it("create: an unreadable message source or crm error fails loud, nothing created", async () => {
+    const broken = { status: 200, body: { sources: [{ source: "gmail", status: "error", error: "token expired" }], items: [] } };
+    const a = fakeDeps(createRoutes((c) => (c.url.startsWith("http://crm") ? broken : undefined)));
+    await expect(createFollowup({ instruction: "x" }, { userId: "u" }, a.deps)).rejects.toThrow("gmail: token expired");
+    expect(a.calls.some((c) => c.method === "POST")).toBe(false);
+
+    const b = fakeDeps(createRoutes((c) => (c.url.startsWith("http://crm") ? { status: 502, body: { error: "down" } } : undefined)));
+    await expect(createFollowup({ instruction: "x" }, { userId: "u" }, b.deps)).rejects.toThrow("502");
+    expect(b.calls.some((c) => c.method === "POST")).toBe(false);
   });
 
   it("create: a person the brand cannot file is never started", async () => {
-    const { deps, calls } = fakeDeps(() => ({ status: 201, body: { salesFunnelCampaign: marieRow, filing: [{ outcome: "person_not_known" }] } }));
+    const { deps, calls } = fakeDeps(
+      createRoutes((c) => (c.method === "POST" ? { status: 201, body: { salesFunnelCampaign: marieRow, filing: [{ outcome: "person_not_known" }] } } : undefined)),
+    );
     await expect(createFollowup({ instruction: "x" }, { userId: "u" }, deps)).rejects.toThrow("person_not_known");
     expect(calls.some((c) => c.method === "PATCH")).toBe(false);
   });
@@ -125,38 +216,38 @@ describe("Copilot follow-ups", () => {
     expect(calls[1]).toMatchObject({
       method: "POST",
       url: "http://campaign/internal/trigger-events",
-      body: { triggerId: "follow_up_due", brandId: "our-brand", offerId: "our-offer", leadId: "lead-marie" },
+      body: { triggerId: "follow_up_due", brandId: "our-brand", offerId: "live-offer", leadId: "lead-marie" },
     });
     expect(out.event).toEqual({ outcome: "ran" });
   });
 
   it("fails loud when the follow-up scope is not configured", async () => {
-    delete process.env.COPILOT_FOLLOWUP_OFFER_ID;
+    delete process.env.COPILOT_FOLLOWUP_BRAND_ID;
     const { deps } = fakeDeps(() => ({ status: 200, body: {} }));
-    await expect(listFollowups({}, { userId: "u" }, deps)).rejects.toThrow("COPILOT_FOLLOWUP_OFFER_ID");
+    await expect(listFollowups({}, { userId: "u" }, deps)).rejects.toThrow("COPILOT_FOLLOWUP_BRAND_ID");
   });
 
   it("create_followup tells the agent the writer reads the user's own and public figures at send time", () => {
     const d = TOOL_REGISTRY.create_followup.description ?? "";
     expect(d).toContain("this user's own account figures");
     expect(d).toContain("never another customer's");
+    expect(d).toContain("already_told");
   });
 
   it("create with waitForIssue: waits on that issue on the GitHub-issue funnel, capped, activated, never fired by hand", async () => {
-    const { deps, calls } = fakeDeps((c) => {
-      if (c.method === "POST") return { status: 201, body: { salesFunnelCampaign: { ...marieRow, id: "fu-2" }, filing: [{ outcome: "filed" }] } };
-      return { status: 200, body: {} };
-    });
+    const { deps, calls } = fakeDeps(
+      createRoutes((c) => (c.method === "POST" ? { status: 201, body: { salesFunnelCampaign: { ...marieRow, id: "fu-2" }, filing: [{ outcome: "filed" }] } } : undefined)),
+    );
     const out = await createFollowup(
       { instruction: "Give her the exact cost per meeting.", waitForIssue: "https://github.com/shamanic-technologies/features-service/issues/1600" },
       { userId: "u" },
       deps,
     );
-    expect(calls[0].body).toMatchObject({
+    expect(calls[2].body).toMatchObject({
       salesFunnelId: ISSUE_FOLLOWUP_FUNNEL_ID,
       githubIssue: { repo: "shamanic-technologies/features-service", number: 1600 },
     });
-    expect(calls[1].url).toContain(`/sales-funnels/${encodeURIComponent(ISSUE_FOLLOWUP_FUNNEL_ID)}/campaigns/fu-2/caps`);
+    expect(calls[3].url).toContain(`/offers/live-offer/sales-funnels/${encodeURIComponent(ISSUE_FOLLOWUP_FUNNEL_ID)}/campaigns/fu-2/caps`);
     expect(out.firesWhen).toContain("by itself");
 
     const waiting = { ...marieRow, githubIssue: { repo: "shamanic-technologies/features-service", number: 1600 }, githubIssueCheck: { state: "open" } };
