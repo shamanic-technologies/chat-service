@@ -1301,7 +1301,7 @@ Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaig
 | `find_pipes` | `GET /internal/catalogue/pipes[/:id]` (`paths`, `channels`, `legKeys`) |
 | `find_sales_funnels` | `GET /internal/catalogue/sales-funnels[/:id]` (`paths`, `containsChannels`) |
 | `find_workflows` | `GET /internal/catalogue/workflows[/:id]?pipe=` (`pipe` required) |
-| `find_plays` | `GET /internal/catalogue/plays[/:id]?pipe=` (`pipe` required): the ways one pipe runs (pipe x strategy), each priced; a play id is what `create_sales_funnel` names for that leg |
+| `find_plays` | `GET /internal/catalogue/plays[/:id]?pipe=` (`pipe` required): the ways one pipe runs (pipe x strategy), each priced; a play id is what `create_sales_funnel` names for that leg. A customer reads only plays served `runnable` (staff: `includeNotRunnable`) |
 | `find_strategies` / `find_tactics` | `GET /internal/catalogue/{strategies,tactics}[/:id]` |
 | `create_step` | `POST /internal/catalogue/steps` |
 | `create_pipe` | `POST /internal/catalogue/pipes`, live at once (no publish request, owner 2026-10-12); `trigger_not_fired` files the detector request and returns `on_hold` (same as `declare_leg`). |

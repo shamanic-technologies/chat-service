@@ -255,7 +255,18 @@ export const findWorkflows = async (a: Record<string, unknown>, reader: Catalogu
  * sales funnel names for that leg (`<pipe id>~<strategy id>`; the default play
  * is the bare pipe id), so choosing how a step runs is choosing its play.
  */
-export const findPlays = level("find_plays", "plays", { pipe: (v) => optStr("pipe", v) });
+const findPlaysRaw = level("find_plays", "plays", { pipe: (v) => optStr("pipe", v) });
+/**
+ * A customer is only offered a play we run today (served `runnable`): features-service
+ * lists every catalogued play of a pipe, one still waiting on its workflow included.
+ */
+export const findPlays = async (a: Record<string, unknown>, reader: CatalogueReader): Promise<unknown> => {
+  const body = (await findPlaysRaw(a, reader)) as { rows?: Array<{ runnable?: unknown }>; runnable?: unknown; id?: unknown };
+  if (await wantsEverything(a, reader)) return body;
+  if (Array.isArray(body.rows)) return { ...body, rows: body.rows.filter((r) => r.runnable !== false) };
+  if (body.runnable === false) return { id: body.id, ...NOT_RUN_TODAY };
+  return body;
+};
 export const findStrategies = level("find_strategies", "strategies", {});
 export const findTactics = level("find_tactics", "tactics", {});
 

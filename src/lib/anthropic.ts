@@ -2788,7 +2788,7 @@ export const FIND_PLAYS_TOOL: Anthropic.Tool = {
     CATALOGUE_ROW_NOTE,
   input_schema: {
     type: "object" as const,
-    properties: { pipe: { type: "string", description: "The pipe id (`<channel slug>|<leg key>`) from find_pipes." }, ...CATALOGUE_PAGE_PROPS },
+    properties: { pipe: { type: "string", description: "The pipe id (`<channel slug>|<leg key>`) from find_pipes." }, ...CATALOGUE_PAGE_PROPS, ...INCLUDE_NOT_RUNNABLE_PROP },
     required: ["pipe"],
   },
 };
