@@ -386,3 +386,29 @@ describe("plays: a step runs under a strategy (features-service tactics / strate
     expect(call(1).body.pipeIds).toEqual([`${PIPE}~valid-catch-all`]);
   });
 });
+
+describe("find_plays offers a customer only the plays we run today", () => {
+  const PIPE = "sourcing-crm-contacts|start_to_lead_found";
+  const rows = [
+    { id: PIPE, default: true, runnable: true },
+    { id: `${PIPE}~customers-prospects`, default: false, runnable: false },
+    { id: `${PIPE}~reachable-by-phone`, default: false, runnable: true },
+  ];
+
+  it("a customer reads only runnable plays; staff with includeNotRunnable reads them all", async () => {
+    fetchMock().mockResolvedValue(res(200, { rows }));
+    const { CATALOGUE_READ_TOOLS } = await load();
+    const forCustomer = (await CATALOGUE_READ_TOOLS.find_plays({ pipe: PIPE }, customer)) as { rows: Array<{ id: string }> };
+    expect(forCustomer.rows.map((r) => r.id)).toEqual([PIPE, `${PIPE}~reachable-by-phone`]);
+    const forStaff = (await CATALOGUE_READ_TOOLS.find_plays({ pipe: PIPE, includeNotRunnable: true }, staff)) as { rows: unknown[] };
+    expect(forStaff.rows).toHaveLength(3);
+  });
+
+  it("a non-runnable play read by id says we do not run it", async () => {
+    fetchMock().mockResolvedValue(res(200, { id: `${PIPE}~customers-prospects`, runnable: false, strategyName: "Customers & prospects" }));
+    const { CATALOGUE_READ_TOOLS } = await load();
+    const out = (await CATALOGUE_READ_TOOLS.find_plays({ pipe: PIPE, id: `${PIPE}~customers-prospects` }, customer)) as Record<string, unknown>;
+    expect(out.weRunItToday).toBe(false);
+    expect(out).not.toHaveProperty("strategyName");
+  });
+});
