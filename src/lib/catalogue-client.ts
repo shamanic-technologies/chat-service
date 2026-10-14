@@ -123,7 +123,7 @@ function qs(params: Record<string, string | number | null>): string {
   return parts.length ? `?${parts.join("&")}` : "";
 }
 
-type Level = "steps" | "sales-paths" | "channels" | "pipes" | "sales-funnels" | "workflows";
+type Level = "steps" | "sales-paths" | "channels" | "pipes" | "sales-funnels" | "workflows" | "plays" | "strategies" | "tactics";
 
 /**
  * Every cost the model reads carries its unit IN the same field: a row with a
@@ -248,6 +248,17 @@ export const findWorkflows = async (a: Record<string, unknown>, reader: Catalogu
   return findWorkflowsRaw(a, reader);
 };
 
+/**
+ * PLAYS (features-service, owner 2026-10-13): a play is a pipe run under one
+ * STRATEGY, and a strategy is the TACTICS it requires and excludes (a tactic is
+ * a yes/no tag Jev judges on every workflow version). A play's id is what a
+ * sales funnel names for that leg (`<pipe id>~<strategy id>`; the default play
+ * is the bare pipe id), so choosing how a step runs is choosing its play.
+ */
+export const findPlays = level("find_plays", "plays", { pipe: (v) => optStr("pipe", v) });
+export const findStrategies = level("find_strategies", "strategies", {});
+export const findTactics = level("find_tactics", "tactics", {});
+
 export const CATALOGUE_READ_TOOLS: Record<string, (a: Record<string, unknown>, reader: CatalogueReader) => Promise<unknown>> = {
   find_steps: findSteps,
   find_sales_paths: findSalesPaths,
@@ -255,6 +266,9 @@ export const CATALOGUE_READ_TOOLS: Record<string, (a: Record<string, unknown>, r
   find_pipes: findPipes,
   find_sales_funnels: findSalesFunnels,
   find_workflows: findWorkflows,
+  find_plays: findPlays,
+  find_strategies: findStrategies,
+  find_tactics: findTactics,
 };
 
 // --- Creates (data, starts nothing) ------------------------------------------
@@ -364,6 +378,49 @@ export async function createSalesFunnel(a: Record<string, unknown>, ctx: Declara
   return { status: "created", funnel };
 }
 
+/** A list of tactic ids in a strategy create (absent = none). */
+function tacticIdList(name: string, v: unknown): string[] {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || v.some((x) => typeof x !== "string" || x.trim() === "")) {
+    throw new CatalogueArgError(`${name} must be a list of tactic ids (find_tactics)`);
+  }
+  return (v as string[]).map((x) => x.trim());
+}
+
+/** POST /internal/catalogue/tactics — a NEW yes/no tag; Jev then judges every workflow version on it. */
+export async function createTactic(a: Record<string, unknown>, ctx: DeclarationContext) {
+  return features("create_tactic", "POST", "/internal/catalogue/tactics", {
+    name: reqStr("name", a.name),
+    description: reqStr("description", a.description),
+    createdBy: ctx.userId,
+  });
+}
+
+/** POST /internal/catalogue/strategies — the tactics a way of running requires and excludes. */
+export async function createStrategy(a: Record<string, unknown>, ctx: DeclarationContext) {
+  const requires = tacticIdList("requires", a.requires);
+  const excludes = tacticIdList("excludes", a.excludes);
+  if (requires.length + excludes.length === 0) {
+    throw new CatalogueArgError("a strategy requires or excludes at least one tactic (find_tactics, or create_tactic first)");
+  }
+  return features("create_strategy", "POST", "/internal/catalogue/strategies", {
+    name: reqStr("name", a.name),
+    description: reqStr("description", a.description),
+    requires,
+    excludes,
+    createdBy: ctx.userId,
+  });
+}
+
+/** POST /internal/catalogue/plays — run one pipe under one strategy (created:false when it exists). */
+export async function createPlay(a: Record<string, unknown>, ctx: DeclarationContext) {
+  return features("create_play", "POST", "/internal/catalogue/plays", {
+    pipeId: reqStr("pipeId", a.pipeId),
+    strategyId: reqStr("strategyId", a.strategyId),
+    createdBy: ctx.userId,
+  });
+}
+
 export const CATALOGUE_WRITE_TOOLS: Record<
   string,
   (a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest, reader: CatalogueReader) => Promise<unknown>
@@ -372,4 +429,7 @@ export const CATALOGUE_WRITE_TOOLS: Record<
   create_pipe: createPipe,
   create_sales_path: (a, ctx) => createSalesPath(a, ctx),
   create_sales_funnel: createSalesFunnel,
+  create_tactic: (a, ctx) => createTactic(a, ctx),
+  create_strategy: (a, ctx) => createStrategy(a, ctx),
+  create_play: (a, ctx) => createPlay(a, ctx),
 };
