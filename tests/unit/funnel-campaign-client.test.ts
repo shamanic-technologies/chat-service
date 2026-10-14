@@ -356,6 +356,13 @@ describe("a campaign IS a sales funnel campaign (owner rule; prod 2026-10-10 NOV
     expect(out.note).toMatch(/never campaigns/);
   });
 
+  it("a reactive campaign's path names its trigger, never '?' (prod 2026-10-14)", async () => {
+    const { pathWords } = await funnel();
+    expect(pathWords({ id: "c", path: { items: [{ kind: "trigger", name: "Email Pushed Via API" }, { kind: "channel", name: "Email Sending" }, { kind: "step", label: "Positive reply" }] } })).toBe(
+      "Email Pushed Via API → Email Sending → Positive reply",
+    );
+  });
+
   it("a campaign with no max budget reads as billing serves it: held, or capped by volume once billing funds it", async () => {
     const { budgetWords } = await funnel();
     expect(budgetWords("proactive", null, false)).toBe("Not funded (no max budget)");
