@@ -32,7 +32,6 @@ describe("copilot entity reads hit the owner routes", () => {
     ["listSalesPaths", "/v1/offers/o-1/sales-paths?brandId=b-1"],
     ["getTriggerEvents", "/v1/offers/o-1/trigger-events/summary?brandId=b-1"],
     ["getOfferSourcing", "/v1/offers/o-1/sourcing?brandId=b-1"],
-    ["getCampaignBudgets", "/v1/brands/b-1/offers/o-1/campaign-budgets"],
   ])("%s → GET %s", async (fn, path) => {
     fetchMock().mockResolvedValue(ok({ ok: 1 }));
     const mod = (await load()) as unknown as Record<string, (a: unknown, p: unknown) => Promise<unknown>>;

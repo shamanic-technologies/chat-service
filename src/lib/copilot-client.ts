@@ -6,7 +6,7 @@ import type { ToolCallRecord } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
 // Copilot entity tools — ONE read per entity of the platform (channels, legs,
-// triggers, sales paths, sources, connected accounts, budgets, campaigns) and
+// triggers, sales paths, sources, connected accounts, campaigns) and
 // the DATA writes whose owner routes exist, all through the api-service
 // gateway with the caller's identity. Bodies are returned verbatim: the owner
 // service owns the shape, the model quotes it.
@@ -37,14 +37,6 @@ function rawId(name: string, value: unknown): string {
   return value.trim();
 }
 
-function cents(name: string, value: unknown): number {
-  const n = Number(value);
-  if (value === undefined || value === null || !Number.isInteger(n) || n < 1) {
-    throw new Error(`[copilot] ${name} must be a positive integer number of cents (a budget cap is mandatory)`);
-  }
-  return n;
-}
-
 function stringList(name: string, value: unknown): string[] {
   if (!Array.isArray(value) || value.some((v) => typeof v !== "string" || v.trim() === "")) {
     throw new Error(`[copilot] ${name} must be an array of non-empty strings`);
@@ -54,6 +46,9 @@ function stringList(name: string, value: unknown): string[] {
 
 
 // --- Reads (free) ------------------------------------------------------------
+// A campaign's budget is its sales funnel's caps (funnel-campaign-client:
+// get_funnel_caps / set_funnel_caps / list_campaigns). The per-campaign budget
+// routes are deprecated at api-service (Sunset 2027-04-12): never call them.
 
 /** GET /v1/brands/{id}/leg-rates — the brand's conversion rate per leg. */
 export const getLegRates = (a: Record<string, unknown>, p: ApiCallParams) =>
@@ -73,10 +68,6 @@ export const listSourcingOrigins = (p: ApiCallParams) => call("list_sourcing_ori
 /** GET /v1/offers/{offerId}/sourcing?brandId — the offer's lead sources with cost and ROI per origin. */
 export const getOfferSourcing = (a: Record<string, unknown>, p: ApiCallParams) =>
   call("get_offer_sourcing", `/v1/offers/${id("offerId", a.offerId)}/sourcing?brandId=${id("brandId", a.brandId)}`, "GET", p);
-
-/** GET /v1/brands/{brandId}/offers/{offerId}/campaign-budgets — the daily cap per (channel x leg). */
-export const getCampaignBudgets = (a: Record<string, unknown>, p: ApiCallParams) =>
-  call("get_campaign_budgets", `/v1/brands/${id("brandId", a.brandId)}/offers/${id("offerId", a.offerId)}/campaign-budgets`, "GET", p);
 
 /** GET /v1/campaigns/{id} — one campaign: offer, leg, channel, status. */
 export const getCampaign = (a: Record<string, unknown>, p: ApiCallParams) =>
@@ -118,19 +109,6 @@ export async function listConnectedAccounts(a: Record<string, unknown>, p: ApiCa
 /** POST /v1/brands/{id}/offers { name } — a new offer (data only). */
 export const createOffer = (a: Record<string, unknown>, p: ApiCallParams) =>
   call("create_offer", `/v1/brands/${id("brandId", a.brandId)}/offers`, "POST", p, { name: rawId("name", a.name) });
-
-/**
- * PUT /v1/brands/{brandId}/campaign-budget { offerId, legKey, featureSlug, dailyBudgetCents }
- * — the daily CAP of one (offer x leg x channel) campaign. Creates no campaign
- * and starts nothing ("money never starts anything", campaign-service).
- */
-export const setCampaignBudget = (a: Record<string, unknown>, p: ApiCallParams) =>
-  call("set_campaign_budget", `/v1/brands/${id("brandId", a.brandId)}/campaign-budget`, "PUT", p, {
-    offerId: rawId("offerId", a.offerId),
-    legKey: rawId("legKey", a.legKey),
-    featureSlug: rawId("featureSlug", a.featureSlug),
-    dailyBudgetCents: cents("dailyBudgetCents", a.dailyBudgetCents),
-  });
 
 // --- The steps an offer's business has (owner 2026-10-12) ---------------------
 // brand-service owns the list; the Copilot reads it before proposing a sales
