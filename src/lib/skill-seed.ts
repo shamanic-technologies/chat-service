@@ -340,6 +340,7 @@ A client who wants an email THEY wrote sent unchanged (one test, a list, a CSV, 
 ## Check first
 list_campaigns(brandId, offerId): a running campaign whose runsWhen is "Each time: Email Pushed Via API".
 - None running: offer to turn a stopped one back on, else start one from find_sales_funnels (a funnel starting on that trigger, Email Sending first): create_funnel_campaign, its caps (Up to $X and/or Up to N prospects handled), propose_switch_on start_funnel_campaign. Never request_staff for it.
+- Through the MCP or the API: GET /v1/sales-funnel-campaigns?brandId&offerId gives each campaign's salesFunnelId and status; GET /v1/public/catalogue/sales-funnels?containsChannels=email-sending gives each funnel's \`trigger\` (\`email_pushed_via_api\`). The chat tools named here (propose_switch_on...) are the Copilot's; an API agent calls the operations.
 
 ## From the chat (a test, or a few people)
 1. propose_switch_on(action push_email, brandId, offerId, email, name?, subject, bodyText or bodyHtml, exactly as written).
@@ -350,8 +351,9 @@ A test to the user themselves is the same push, to their own address. Never push
 ## A list, a CSV, ongoing volume (e.g. 1,800 a month)
 The client pushes from their own system with their API key, one call per person: POST /v1/trigger-events
 \`{triggerId: "email_pushed_via_api", brandId, offerId, person: {email, name?, timezone?}, item: {subject, bodyText | bodyHtml}, idempotencyKey}\`
-- The answer's event.outcome says ran or skipped (skipReason). Read back: GET /v1/offers/{offerId}/trigger-events. The operation's own description is the reference (discover_endpoint api POST /v1/trigger-events).
-- Every send counts against the campaign's caps: size "Up to N prospects handled" to the volume.
+- The answer's event.outcome says ran or skipped (skipReason). Read back: GET /v1/offers/{offerId}/trigger-events. The operation's own description (POST /v1/trigger-events) is the reference.
+- No CSV upload: the client's script loops over the rows, one call per person; a retry with the same idempotencyKey sends nothing twice.
+- Every send counts against the campaign's caps, the dollar one first: size "Up to $X" (what one push cost: GET /v1/runs/{runId}, runId in the event's detail.triggered) and "Up to N prospects handled" to the volume.
 - A reply goes on to the campaign's next steps, like any campaign.
 
 ## Where do the leads come from?

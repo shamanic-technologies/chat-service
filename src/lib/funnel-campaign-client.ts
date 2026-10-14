@@ -388,7 +388,8 @@ async function campaignResults(brandId: string, p: ApiCallParams): Promise<Map<s
 export function pathWords(r: CampaignResults | undefined): string | null {
   const items = r?.path?.items;
   if (!Array.isArray(items) || items.length === 0) return null;
-  return items.map((i) => (i.kind === "channel" ? i.name : i.label) ?? "?").join(" → ");
+  // A step carries its label; a channel and a reactive funnel's trigger carry their name (prod 2026-10-14: the trigger read "?").
+  return items.map((i) => (i.kind === "step" ? i.label : i.name) ?? "?").join(" → ");
 }
 
 /** "$67.46 invested since start" (net, what the customer pays), or why it is not known. */
