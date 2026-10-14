@@ -10,7 +10,7 @@ const TOPICS = [
 ];
 
 const CATALOGUE_LEVELS = [
-  "catalogue-steps", "catalogue-sales-paths", "catalogue-channels", "catalogue-pipes",
+  "catalogue-steps", "catalogue-sales-paths", "catalogue-channels", "catalogue-pipes", "catalogue-plays",
   "catalogue-sales-funnels", "catalogue-workflows",
 ];
 
@@ -250,5 +250,35 @@ describe("ask before proposing a funnel on a step the business may lack (owner 2
 
   it("the legs skill writes a stated rate as a percent", () => {
     expect(bySlug.get("legs")!).toMatch(/set_leg_rates\(brandId, legRates\).*"0\.5%" is 0\.5/);
+  });
+});
+
+describe("making a campaign behave a certain way (MCP role-play 2026-10-14: documents uploaded, campaign never changed)", () => {
+  const bySlug = new Map(SEED_SKILLS.map((s) => [s.slug, s]));
+
+  it("the index points a behaviour change to the plays skill", () => {
+    expect(bySlug.get("index")!.content).toMatch(/behave differently .* Load `catalogue-plays`/);
+  });
+
+  it("the plays skill explains the three words, find before create, the funnel id, and one responder per reply", () => {
+    const c = bySlug.get("catalogue-plays")!.content;
+    for (const w of ["**Tactic**", "**Strategy**", "**Play**", "find_plays", "find_tactics", "create_tactic", "create_strategy", "create_play", "~<strategy id>", "STOPPED", "stop_funnel_campaign", "allowedActiveWorkflowCount"]) {
+      expect(c, w).toContain(w);
+    }
+    expect(c).toMatch(/both answer the same positive reply/);
+    expect(c).toContain("POST /v1/sales-funnel-campaigns");
+  });
+
+  it("offers says uploading documents is half the setup", () => {
+    const c = bySlug.get("offers")!.content;
+    expect(c).toMatch(/Uploading is half the setup/);
+    expect(c).toMatch(/WHEN to attach it and when NOT/);
+    expect(c).toContain("catalogue-plays");
+  });
+
+  it("campaigns explains part ids", () => {
+    const c = bySlug.get("campaigns")!.content;
+    expect(c).toMatch(/one part per step/);
+    expect(c).toMatch(/salesFunnelCampaignId/);
   });
 });
