@@ -1,4 +1,5 @@
 import type { ApiCallParams } from "./api-client.js";
+import { features } from "./declarations-client.js";
 import { assertFunnelNotMixed } from "./funnel-mix.js";
 
 // ---------------------------------------------------------------------------
@@ -403,6 +404,11 @@ export function returnWords(r: CampaignResults | undefined): string {
   return r.maturity?.isMature === true ? `${r.roiMultiple}x` : `${r.roiMultiple}x so far (still learning, not mature)`;
 }
 
+/** "Each time: Email Pushed Via API" for a reactive funnel; a proactive one runs on its own caps. */
+export function triggerWords(triggerName: string | null): string {
+  return triggerName ? `Each time: ${triggerName}` : "On its own, within its caps (no trigger)";
+}
+
 export async function listAccountCampaigns(a: Record<string, unknown>, p: ApiCallParams) {
   const status = opt(a.status);
   if (status !== null && !(CAMPAIGN_STATUSES as readonly string[]).includes(status)) {
@@ -423,10 +429,15 @@ export async function listAccountCampaigns(a: Record<string, unknown>, p: ApiCal
       const brandId = opt(a.brandId) ?? (c as unknown as { brandId?: string }).brandId ?? "";
       const caps = (await getFunnelCaps({ brandId, offerId: c.offerId, salesFunnelId: c.salesFunnelId }, p)) as CapsBody;
       const results = resultsByBrand.get(brandId)?.get(c.id);
+      const served = (await features("list_campaigns:funnel", "GET", `/internal/catalogue/sales-funnels/${enc(c.salesFunnelId)}`)) as {
+        trigger?: { name?: string } | null;
+      };
       return {
         id: c.id,
         name: c.salesFunnelName ?? c.salesFunnelId,
         path: pathWords(results),
+        // What starts it (owner 2026-10-14: read what a running campaign already does before calling anything missing).
+        runsWhen: triggerWords(served.trigger?.name ?? null),
         type: caps.salesFunnelType ?? null,
         status: c.status,
         stopReason: c.stopReason ?? null,

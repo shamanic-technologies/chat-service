@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
 import { FunnelError } from "./funnel-client.js";
 import { requireStatedCap, startFunnelCampaign } from "./funnel-campaign-client.js";
+import { emailPushTarget, previewEmailPush, pushEmail, type EmailPushTarget } from "./email-push.js";
 import type { ToolCallRecord } from "../db/schema.js";
 
 // ---------------------------------------------------------------------------
@@ -171,7 +172,9 @@ export const setLegRates = async (a: Record<string, unknown>, p: ApiCallParams) 
 // A campaign is a sales funnel campaign (owner 2026-10-10): the only thing the
 // Copilot switches on. The per-step starts (start_campaign, activate_campaign)
 // are retired: campaign-service refuses per-step writes on converted units.
-export const SWITCH_ON_ACTIONS = ["start_funnel_campaign"] as const;
+// push_email (2026-10-14): one email the USER wrote, sent as written by the
+// brand's live campaign answering `email_pushed_via_api` (email-push.ts).
+export const SWITCH_ON_ACTIONS = ["start_funnel_campaign", "push_email"] as const;
 export type SwitchOnAction = (typeof SWITCH_ON_ACTIONS)[number];
 
 export interface SwitchOnProposal {
@@ -180,6 +183,8 @@ export interface SwitchOnProposal {
   target: Record<string, string | number>;
   /** start_funnel_campaign: the caps as stated when proposed (shown to the user). */
   caps?: unknown;
+  /** push_email: what the user confirms (recipient, the email, which campaigns send it, caps, cost, sender). */
+  preview?: unknown;
   summary: string;
   status: "awaiting_user_confirmation";
   instruction: string;
@@ -216,6 +221,19 @@ export async function proposeSwitchOn(a: Record<string, unknown>, p: ApiCallPara
     const caps = await requireStatedCap(target, p);
     return { ...base, target, caps };
   }
+  if (action === "push_email") {
+    const target = emailPushTarget(a);
+    const preview = await previewEmailPush(target, p);
+    // No live campaign sends it: nothing to confirm, the answer says what to propose instead.
+    if ("status" in preview) return preview as unknown as SwitchOnProposal;
+    return {
+      ...base,
+      target: target as unknown as Record<string, string>,
+      preview,
+      instruction:
+        "Nothing is sent yet. Show the user, in plain text: the recipient, the subject and body exactly as they will go out, which campaign sends it with its caps (and if `funded` is false, that billing holds it), the cost of one send as written in costOfOneSend, and the sender line as written (never name an inbox). Ask yes or no. Only after they say yes, in a later message, call confirm_switch_on with this confirmationToken.",
+    };
+  }
   throw new Error(`[copilot] action must be one of ${SWITCH_ON_ACTIONS.join(", ")}`);
 }
 
@@ -250,7 +268,7 @@ export function resolveSwitchOnProposal(token: unknown, priorHistory: readonly H
       }
       if (tc.name === "confirm_switch_on" && (tc.args as Record<string, unknown>)?.confirmationToken === token) {
         const res = tc.result as Record<string, unknown> | undefined;
-        if (res && res.switchedOn === true) {
+        if (res && (res.switchedOn === true || res.pushed === true)) {
           throw new SwitchOnConfirmationError("This confirmation token was already used: that action is already on.");
         }
       }
@@ -275,6 +293,8 @@ export async function executeSwitchOn(proposal: SwitchOnProposal, p: ApiCallPara
       { brandId: String(t.brandId), offerId: String(t.offerId), salesFunnelId: String(t.salesFunnelId) },
       p,
     );
+  } else if (proposal.action === "push_email") {
+    return { pushed: true, action: proposal.action, result: await pushEmail(t as unknown as EmailPushTarget, proposal.confirmationToken, p) };
   } else {
     // A proposal recorded before an action was retired (switch_on_reactive_legs,
     // start_campaign, activate_campaign: per-step starts, 2026-10-10).
