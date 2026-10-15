@@ -104,13 +104,13 @@ function mockKeyDecrypt() {
   } satisfies MockRoute;
 }
 
-function mockBilling(opts?: { sufficient?: boolean }) {
+function mockBilling(opts?: { sufficient?: boolean; extra?: Record<string, unknown> }) {
   return {
     match: (url: string, init?: RequestInit) =>
       url.includes("/v1/customer_balance/authorize") && (init?.method ?? "GET") === "POST",
     respond: () => ({
       ok: true,
-      body: { sufficient: opts?.sufficient ?? true, balance_cents: "100000", required_cents: "1" },
+      body: { sufficient: opts?.sufficient ?? true, balance_cents: "100000", required_cents: "1", ...opts?.extra },
     }),
   } satisfies MockRoute;
 }
@@ -374,6 +374,44 @@ describe("POST /complete — cost provision → authorize → execute → reconc
     expect(res.body.error).toMatch(/Insufficient credits/);
     expect(gemini.calls).toBe(0);
     // provisioned holds released on insufficient credits
+    expect(cap.patchedStatuses).toContain("cancelled");
+    expect(res.body.reason).toBeUndefined();
+  });
+
+  // FUNNEL-CAP-REACHED-AT-2PCT-1015: billing refused on the campaign's max budget,
+  // not the balance. The caller must read that cause, never "Insufficient credits".
+  it("names a sales funnel max budget refusal and carries billing's reason + cap", async () => {
+    const cap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string }>>, patchedStatuses: [] as string[] };
+    const gemini = { calls: 0 };
+    const fundCap = {
+      salesFunnelId: "funnel-1",
+      salesFunnelCampaignId: "bf99ff60-0000-0000-0000-000000000000",
+      amountCents: "1000",
+      period: "day",
+      consumedCents: "20",
+      reservedCents: "985",
+    };
+    routes.push(
+      mockRunsCreate(),
+      mockKeyDecrypt(),
+      mockBilling({ sufficient: false, extra: { reason: "sales_funnel_max_budget_reached", sales_funnel_cap: fundCap } }),
+      mockGeminiComplete(gemini),
+      ...mockRunsCostRoutes(cap),
+      mockRunsStatusPatch(),
+    );
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "hi", systemPrompt: "be brief", provider: "google", model: "flash" });
+
+    expect(res.status).toBe(402);
+    expect(res.body.error).toBe("Sales funnel max budget reached");
+    expect(res.body.error).not.toMatch(/Insufficient credits/);
+    expect(res.body.reason).toBe("sales_funnel_max_budget_reached");
+    expect(res.body.sales_funnel_cap).toEqual(fundCap);
+    expect(res.body.balance_cents).toBe("100000");
+    expect(gemini.calls).toBe(0);
     expect(cap.patchedStatuses).toContain("cancelled");
   });
 });

@@ -235,7 +235,7 @@ import {
   listKeySources,
   checkProviderRequirements,
 } from "./lib/key-client.js";
-import { authorizeCredits, BillingError, isAgentApiOrg } from "./lib/billing-client.js";
+import { authorizeCredits, BillingError, isAgentApiOrg, type AuthorizeCreditResult, type BillingRefusalReason, type SalesFunnelCap } from "./lib/billing-client.js";
 import { holdSseUntilOpen } from "./lib/held-sse.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
 import {
@@ -385,7 +385,7 @@ function samplingRefusalFor(
 function classifyErrorForClient(err: unknown): { message: string; code: string } {
   if (err instanceof ChatCostGateError) {
     return {
-      code: err.statusCode === 402 ? "insufficient_credits" : "internal_error",
+      code: err.statusCode !== 402 ? "internal_error" : typeof err.body.reason === "string" ? err.body.reason : "insufficient_credits",
       message: err.message,
     };
   }
@@ -1155,16 +1155,36 @@ function buildBrandProfileQuery(fields: Record<string, string>): string {
   return lines.join("\n");
 }
 
-/** Thrown when billing reports the org cannot afford a platform-key spend. */
+/**
+ * The client-facing `error` per refusal cause. A funnel max budget is NOT a
+ * shortage: adding credit cannot help, raising the campaign's max budget can
+ * (FUNNEL-CAP-REACHED-AT-2PCT-1015). Never fold a `reason` back into
+ * "Insufficient credits".
+ */
+const REFUSAL_ERROR: Record<BillingRefusalReason, string> = {
+  sales_funnel_max_budget_reached: "Sales funnel max budget reached",
+  sales_funnel_max_budget_unreadable: "Sales funnel max budget unreadable",
+};
+
+/** Thrown when billing refuses a platform-key spend (`sufficient: false`). */
 class InsufficientCreditsError extends Error {
-  constructor(
-    public readonly balanceCents: string | number,
-    public readonly requiredCents: string | number,
-  ) {
-    super("Insufficient credits");
+  public readonly balanceCents: string | number;
+  public readonly requiredCents: string | number;
+  /** Set when a sales funnel max budget refused it, not the balance. */
+  public readonly reason?: BillingRefusalReason;
+  public readonly salesFunnelCap?: SalesFunnelCap;
+  constructor(auth: AuthorizeCreditResult) {
+    super(auth.reason ? REFUSAL_ERROR[auth.reason] : "Insufficient credits");
     this.name = "InsufficientCreditsError";
+    this.balanceCents = auth.balance_cents;
+    this.requiredCents = auth.required_cents;
+    this.reason = auth.reason;
+    this.salesFunnelCap = auth.sales_funnel_cap;
   }
 }
+
+/** The fixed /chat answer when a campaign's max budget refuses the turn: no "Add credits" button. */
+export const MAX_BUDGET_REACHED_MESSAGE = "This campaign reached its max budget. Raise it to keep going.";
 
 /** The fixed answer when billing refuses a /chat turn for lack of credits (owner 2026-10-10). */
 export const OUT_OF_CREDITS_MESSAGE = "You're out of credits. Add credits to keep going.";
@@ -1233,7 +1253,7 @@ async function provisionAndAuthorizeEmbeddingCost(args: {
         await updateRunCostStatus(runId, costId, "cancelled", identity, trackingHeaders).catch((e) =>
           console.error(`[rag] cancel after insufficient credits failed runId="${runId}":`, e),
         );
-        throw new InsufficientCreditsError(auth.balance_cents, auth.required_cents);
+        throw new InsufficientCreditsError(auth);
       }
     } catch (err) {
       if (err instanceof InsufficientCreditsError) throw err;
@@ -1256,11 +1276,17 @@ function costErrorResponse(
 ): { status: number; body: Record<string, unknown> } {
   if (err instanceof InsufficientCreditsError) {
     console.warn(
-      `[${tag}] insufficient credits: org="${orgId}" balance_cents=${err.balanceCents} required_cents=${err.requiredCents}`,
+      `[${tag}] ${err.reason ?? "insufficient credits"}: org="${orgId}" balance_cents=${err.balanceCents} required_cents=${err.requiredCents}` +
+        (err.salesFunnelCap ? ` sales_funnel_cap=${JSON.stringify(err.salesFunnelCap)}` : ""),
     );
     return {
       status: 402,
-      body: { error: "Insufficient credits", balance_cents: err.balanceCents, required_cents: err.requiredCents },
+      body: {
+        error: err.message,
+        balance_cents: err.balanceCents,
+        required_cents: err.requiredCents,
+        ...(err.reason ? { reason: err.reason, sales_funnel_cap: err.salesFunnelCap } : {}),
+      },
     };
   }
   if (err instanceof BillingError && err.isClientError) {
@@ -1399,7 +1425,7 @@ async function provisionAndAuthorizeLlmCost(args: {
       });
       if (!auth.sufficient) {
         await cancelProvisionedCosts(runId, costIds, identity, trackingHeaders);
-        throw new InsufficientCreditsError(auth.balance_cents, auth.required_cents);
+        throw new InsufficientCreditsError(auth);
       }
     } catch (err) {
       if (err instanceof InsufficientCreditsError) throw err;
@@ -1993,7 +2019,7 @@ async function runOrgJudgment(args: {
         if (!auth.sufficient) {
           await cancelProvisionedCosts(runId, [provisionedCostId], identity, trackingHeaders);
           provisionedCostId = null;
-          throw new InsufficientCreditsError(auth.balance_cents, auth.required_cents);
+          throw new InsufficientCreditsError(auth);
         }
       }
     } catch (costErr) {
@@ -4613,11 +4639,17 @@ app.post("/chat", requireAuth, async (req, res) => {
           }
         }
         const before = creditsTurn.text();
-        const text = (before.trim() ? "\n\n" : "") + OUT_OF_CREDITS_MESSAGE;
-        const creditsRequired = { message: OUT_OF_CREDITS_MESSAGE, action: "add_credits" as const, label: OUT_OF_CREDITS_ACTION_LABEL };
+        // A campaign max budget refused it, not the balance: adding credit cannot
+        // help, so no "Add credits" button (FUNNEL-CAP-REACHED-AT-2PCT-1015).
+        const maxBudget = typeof err.body.reason === "string";
+        const answer = maxBudget ? MAX_BUDGET_REACHED_MESSAGE : OUT_OF_CREDITS_MESSAGE;
+        const text = (before.trim() ? "\n\n" : "") + answer;
+        const creditsRequired = maxBudget
+          ? null
+          : { message: OUT_OF_CREDITS_MESSAGE, action: "add_credits" as const, label: OUT_OF_CREDITS_ACTION_LABEL };
         if (!answerHttp402) {
           sendSSE(res, { type: "token", content: text });
-          sendSSE(res, { type: "credits_required", ...creditsRequired });
+          if (creditsRequired) sendSSE(res, { type: "credits_required", ...creditsRequired });
         }
         const [savedCredits] = await db.insert(messages).values(stripNul({
           sessionId: creditsTurn.sessionId,
@@ -4640,8 +4672,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           sse.discard();
           res.status(402).json({
             ...err.body,
-            error: "Insufficient credits",
-            message: OUT_OF_CREDITS_MESSAGE,
+            message: answer,
             sessionId: creditsTurn.sessionId,
           });
           return;

@@ -166,14 +166,14 @@ function mockCostPatch() {
   } satisfies MockRoute;
 }
 
-function mockBilling(capture: { calls: number }, opts?: { sufficient?: boolean }) {
+function mockBilling(capture: { calls: number }, opts?: { sufficient?: boolean; extra?: Record<string, unknown> }) {
   return {
     match: (url: string, init?: RequestInit) => url.includes("/v1/customer_balance/authorize") && (init?.method ?? "GET") === "POST",
     respond: () => {
       capture.calls += 1;
       return {
         ok: true,
-        body: { sufficient: opts?.sufficient ?? true, balance_cents: "100000", required_cents: "1" },
+        body: { sufficient: opts?.sufficient ?? true, balance_cents: "100000", required_cents: "1", ...opts?.extra },
       };
     },
   } satisfies MockRoute;
@@ -393,6 +393,41 @@ describe("POST /chat — provider-call credit gates", () => {
     const assistant = [...inserted].reverse().find((v) => v.role === "assistant")!;
     expect(assistant.content).toBe("You're out of credits. Add credits to keep going.");
     expect(assistant.creditsRequired).toEqual({ message: "You're out of credits. Add credits to keep going.", action: "add_credits", label: "Add credits" });
+  });
+
+  // FUNNEL-CAP-REACHED-AT-2PCT-1015: the campaign's max budget refused the turn,
+  // not the balance. "Add credits" would be false advice: say the real cause, no button.
+  it("answers a sales funnel max budget refusal with its own message and no Add credits button", async () => {
+    const app = await loadApp();
+    const gemini = { calls: 0 };
+    const billing = { calls: 0 };
+    routes.push(
+      mockKeyDecrypt(),
+      mockRunCreate(),
+      mockRunCosts({ provisionCalls: 0, actualCalls: 0 }),
+      mockCostPatch(),
+      mockRunPatch(),
+      mockTraceEvents(),
+      mockBilling(billing, { sufficient: false, extra: { reason: "sales_funnel_max_budget_reached", sales_funnel_cap: { salesFunnelId: "f", salesFunnelCampaignId: "c", amountCents: "1000", period: "day", consumedCents: "20", reservedCents: "985" } } }),
+      mockPrepaidStatus({ calls: 0 }, { offer: null }),
+      mockWorkflowList(),
+      mockGeminiToolThenText(gemini),
+    );
+
+    const res = await request(app).post("/chat").set(AUTH).send({ configKey: "test-chat", message: "hello" });
+
+    expect(res.status).toBe(200);
+    expect(gemini.calls).toBe(0);
+    const events = res.text
+      .split("\n")
+      .filter((l: string) => l.startsWith("data: ") && !l.includes("[DONE]"))
+      .map((l: string) => JSON.parse(l.slice(6)) as Record<string, unknown>);
+    expect(events.filter((e) => e.type === "error")).toEqual([]);
+    expect(events.find((e) => e.type === "token")).toEqual({ type: "token", content: "This campaign reached its max budget. Raise it to keep going." });
+    expect(events.find((e) => e.type === "credits_required")).toBeUndefined();
+    const assistant = [...inserted].reverse().find((v) => v.role === "assistant")!;
+    expect(assistant.content).toBe("This campaign reached its max budget. Raise it to keep going.");
+    expect(assistant.creditsRequired).toBeNull();
   });
 
   describe("an AI agent org (billing free_credit_offer agent_api) out of money", () => {
