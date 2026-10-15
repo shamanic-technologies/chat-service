@@ -56,11 +56,10 @@ describe("ChatRequestSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects missing message", () => {
-    const result = ChatRequestSchema.safeParse({
-      configKey: "workflow",
-    });
-    expect(result.success).toBe(false);
+  it("parses a nudge without message (the /chat handler refuses a message-less non-nudge)", () => {
+    expect(ChatRequestSchema.safeParse({ configKey: "copilot", nudge: true }).success).toBe(true);
+    expect(ChatRequestSchema.safeParse({ configKey: "copilot", nudge: false }).success).toBe(false);
+    expect(ChatRequestSchema.safeParse({ configKey: "workflow", message: "" }).success).toBe(false);
   });
 
   it("accepts sessionId: null (reset chat sends null)", () => {

@@ -93,10 +93,12 @@ describe("openapi.json", () => {
     expect(schemas?.SSEErrorEvent.properties.message.type).toBe("string");
   });
 
-  it("ChatRequest schema requires only message (appId removed)", () => {
+  it("ChatRequest schema: message optional only for a nudge (appId removed)", () => {
     const spec = JSON.parse(readFileSync(openapiPath, "utf-8"));
     const chatReq = spec.components.schemas.ChatRequest;
-    expect(chatReq.required).toContain("message");
+    // A nudge carries no message; /chat refuses a message-less non-nudge with 400.
+    expect(chatReq.required).not.toContain("message");
+    expect(chatReq.properties.nudge.enum).toEqual([true]);
     expect(chatReq.required).not.toContain("appId");
     expect(chatReq.properties.message.type).toBe("string");
     expect(chatReq.properties.appId).toBeUndefined();

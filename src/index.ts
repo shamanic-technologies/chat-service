@@ -138,6 +138,14 @@ import {
 import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
 import { stripNul } from "./lib/strip-nul.js";
 import { pushCopilotTurnInBackground, type CopilotTurnMessage } from "./lib/copilot-unibox.js";
+import {
+  buildNudgeState,
+  NUDGE_QUESTION,
+  NUDGE_QUESTION_KEY,
+  NUDGE_TRIGGER_MESSAGE,
+  nudgeVerdict,
+  type NudgeTurn,
+} from "./lib/copilot-nudge.js";
 import { CATALOGUE_READ_TOOLS, CATALOGUE_WRITE_TOOLS, assertStaffBuild, type CatalogueReader } from "./lib/catalogue-client.js";
 import { FUNNEL_CAMPAIGN_TOOLS } from "./lib/funnel-campaign-client.js";
 import { FOLLOWUP_TOOLS } from "./lib/followup-client.js";
@@ -268,6 +276,7 @@ import {
   TYPESAFE_DEFAULT_MODEL,
   TYPESAFE_PROVIDER,
   type TypeSafeQuestion,
+  type TypeSafeModel,
 } from "./lib/typesafe.js";
 import { TYPESAFE_INPUT_TOKENS_COST_NAME } from "./lib/cost-names.js";
 import { requireAuth, requireInternalAuth, buildTrackingHeaders, type AuthLocals } from "./middleware/auth.js";
@@ -1876,35 +1885,49 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
 
 // --- Typed judgments (TypeSafe) — org-billed, input tokens only -------------
 
-app.post("/orgs/judgments", requireAuth, async (req, res) => {
-  const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
-  const trackingHeaders = buildTrackingHeaders(workflowTracking);
+type OrgJudgmentOutcome =
+  | { ok: true; result: Awaited<ReturnType<typeof judgeWithTypeSafe>> }
+  | { ok: false; status: number; body: Record<string, unknown> };
 
-  const parsed = JudgmentsRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res
-      .status(400)
-      .json({ error: "Invalid request", details: parsed.error.flatten() });
-  }
-  const { state, questions } = parsed.data;
-  const model = parsed.data.model ?? TYPESAFE_DEFAULT_MODEL;
+/**
+ * One org-billed Jev judgment: its own run (child of the caller's), the org's
+ * TypeSafe key, PROVISION → AUTHORIZE the input-token hold, EXECUTE, then
+ * RECONCILE to the vendor's exact count. Shared by `/orgs/judgments` and the
+ * Copilot nudge (`/chat` with `nudge: true`), so both bill the same way.
+ * Never throws: every failure comes back as the HTTP status + body to answer.
+ */
+async function runOrgJudgment(args: {
+  orgId: string;
+  userId: string;
+  parentRunId: string;
+  workflowTracking: AuthLocals["workflowTracking"];
+  taskName: string;
+  callerPath: string;
+  state: unknown;
+  questions: Record<string, TypeSafeQuestion>;
+  model: TypeSafeModel;
+}): Promise<OrgJudgmentOutcome> {
+  const { orgId, userId, parentRunId, workflowTracking, taskName, callerPath, state, questions, model } = args;
+  const trackingHeaders = buildTrackingHeaders(workflowTracking);
 
   let runId: string | null = null;
   try {
     const run = await createRun(
-      { serviceName: "chat-service", taskName: "judgments" },
+      { serviceName: "chat-service", taskName },
       { orgId, userId, runId: parentRunId },
       trackingHeaders,
     );
     runId = run.id;
     traceEvent(runId, "run-created", { orgId, userId }, workflowTracking, {
-      data: { taskName: "judgments", parentRunId, model, questionCount: Object.keys(questions).length },
+      data: { taskName, parentRunId, model, questionCount: Object.keys(questions).length },
     });
   } catch (runErr) {
-    console.error(`[judgments] org="${orgId}" run creation failed:`, runErr);
-    return res.status(502).json({
-      error: "Service temporarily unavailable (run tracking). Please try again.",
-    });
+    console.error(`[${taskName}] org="${orgId}" run creation failed:`, runErr);
+    return {
+      ok: false,
+      status: 502,
+      body: { error: "Service temporarily unavailable (run tracking). Please try again." },
+    };
   }
 
   const identity: RunIdentityHeaders = { orgId, userId, runId };
@@ -1922,15 +1945,17 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
         orgId,
         userId,
         runId,
-        caller: { method: "POST", path: "/orgs/judgments" },
+        caller: { method: "POST", path: callerPath },
         trackingHeaders,
       });
     } catch (err) {
       judgmentFailed = true;
-      console.error(`[judgments] Failed to resolve ${TYPESAFE_PROVIDER} key for org="${orgId}":`, err);
-      return res.status(502).json({
-        error: `Failed to resolve ${TYPESAFE_PROVIDER} API key. Ensure the key is configured in key-service.`,
-      });
+      console.error(`[${taskName}] Failed to resolve ${TYPESAFE_PROVIDER} key for org="${orgId}":`, err);
+      return {
+        ok: false,
+        status: 502,
+        body: { error: `Failed to resolve ${TYPESAFE_PROVIDER} API key. Ensure the key is configured in key-service.` },
+      };
     }
 
     const estimatedInputTokens = estimateRequestTokens({ state, questions });
@@ -1953,14 +1978,14 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
       );
       provisionedCostId = costs[0]?.id ?? null;
       if (!provisionedCostId) {
-        throw new Error("[judgments] provision returned no cost id");
+        throw new Error(`[${taskName}] provision returned no cost id`);
       }
       if (resolvedKey.keySource === "platform") {
         const auth = await authorizeCredits({
           items: [
             { costName: TYPESAFE_INPUT_TOKENS_COST_NAME, quantity: estimatedInputTokens },
           ],
-          description: `judgments — ${model}`,
+          description: `${taskName} — ${model}`,
           orgId,
           userId,
           runId,
@@ -1978,8 +2003,8 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
         await cancelProvisionedCosts(runId, [provisionedCostId], identity, trackingHeaders);
         provisionedCostId = null;
       }
-      const r = costErrorResponse(costErr, "judgments", orgId);
-      return res.status(r.status).json(r.body);
+      const r = costErrorResponse(costErr, taskName, orgId);
+      return { ok: false, status: r.status, body: r.body };
     }
 
     // EXECUTE
@@ -1987,7 +2012,7 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
       apiKey: resolvedKey.key,
       model,
       state,
-      questions: questions as Record<string, TypeSafeQuestion>,
+      questions,
     });
 
     // RECONCILE to the vendor's own count: post the real quantity as `actual`,
@@ -2009,8 +2034,8 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
       );
     } catch (actErr) {
       judgmentFailed = true;
-      console.error(`[judgments] cost actualize failed runId="${runId}" orgId="${orgId}":`, actErr);
-      return res.status(502).json({ error: "Cost finalization failed. Please try again." });
+      console.error(`[${taskName}] cost actualize failed runId="${runId}" orgId="${orgId}":`, actErr);
+      return { ok: false, status: 502, body: { error: "Cost finalization failed. Please try again." } };
     }
     await cancelProvisionedCosts(runId, [provisionedCostId], identity, trackingHeaders);
     provisionedCostId = null;
@@ -2023,11 +2048,7 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
       },
     });
 
-    res.json({
-      model: result.model,
-      answers: result.answers,
-      usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
-    });
+    return { ok: true, result };
   } catch (err) {
     judgmentFailed = true;
     // The vendor call threw after provisioning → release the hold. Nothing was
@@ -2036,7 +2057,7 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
       await cancelProvisionedCosts(runId, [provisionedCostId], identity, trackingHeaders);
       provisionedCostId = null;
     }
-    console.error(`[judgments] org="${orgId}" error:`, err);
+    console.error(`[${taskName}] org="${orgId}" error:`, err);
     if (runId) {
       traceEvent(runId, "judgments-failed", { orgId, userId }, workflowTracking, {
         level: "error",
@@ -2048,24 +2069,28 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
     // A refused request SHAPE will be refused forever — say so, and say it in
     // the vendor's own words, rather than advising a retry that cannot work.
     if (err instanceof TypeSafeInvalidRequestError) {
-      return res.status(400).json({
-        error: "TypeSafe refused the request",
-        detail: err.vendorMessage,
-        retryable: false,
-      });
+      return {
+        ok: false,
+        status: 400,
+        body: { error: "TypeSafe refused the request", detail: err.vendorMessage, retryable: false },
+      };
     }
     // A rate limit is not an outage: no model ran, nothing was billed, and it
     // clears. Surfacing it as a 502 would hide saturation as flakiness.
     if (err instanceof TypeSafeRateLimitError) {
-      return res.status(429).json({
-        error: "TypeSafe rate limit",
-        detail: err.vendorMessage,
-        attempts: err.attempts,
-        waitedMs: err.waitedMs,
-        retryable: true,
-      });
+      return {
+        ok: false,
+        status: 429,
+        body: {
+          error: "TypeSafe rate limit",
+          detail: err.vendorMessage,
+          attempts: err.attempts,
+          waitedMs: err.waitedMs,
+          retryable: true,
+        },
+      };
     }
-    res.status(502).json({ error: "Judgment failed. Please try again." });
+    return { ok: false, status: 502, body: { error: "Judgment failed. Please try again." } };
   } finally {
     if (runId) {
       try {
@@ -2076,10 +2101,40 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
           trackingHeaders,
         );
       } catch (runErr) {
-        console.error(`[judgments] failed to finalize run runId="${runId}" orgId="${orgId}":`, runErr);
+        console.error(`[${taskName}] failed to finalize run runId="${runId}" orgId="${orgId}":`, runErr);
       }
     }
   }
+}
+
+app.post("/orgs/judgments", requireAuth, async (req, res) => {
+  const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
+
+  const parsed = JudgmentsRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const { state, questions } = parsed.data;
+  const outcome = await runOrgJudgment({
+    orgId,
+    userId,
+    parentRunId,
+    workflowTracking,
+    taskName: "judgments",
+    callerPath: "/orgs/judgments",
+    state,
+    questions: questions as Record<string, TypeSafeQuestion>,
+    model: parsed.data.model ?? TYPESAFE_DEFAULT_MODEL,
+  });
+  if (!outcome.ok) return res.status(outcome.status).json(outcome.body);
+  const { result } = outcome;
+  res.json({
+    model: result.model,
+    answers: result.answers,
+    usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+  });
 });
 
 // --- Typed judgments, platform-billed (TypeSafe) — the org-less twin --------
@@ -2632,7 +2687,14 @@ app.post("/chat", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { configKey, message, sessionId, context } = parsed.data;
+  const { configKey, sessionId, context, nudge } = parsed.data;
+  // A nudge asks whether the Copilot speaks first: it carries no user message.
+  if (nudge ? parsed.data.message !== undefined : parsed.data.message === undefined) {
+    return res.status(400).json({
+      error: nudge ? "A nudge request carries no message: omit `message`." : "message is required",
+    });
+  }
+  const message = nudge ? NUDGE_TRIGGER_MESSAGE : parsed.data.message!;
 
   // Look up app config by (orgId, configKey), fall back to platform config by configKey
   const [orgConfig] = await db
@@ -2661,6 +2723,55 @@ app.post("/chat", requireAuth, async (req, res) => {
   const allowedToolNames: string[] = hasStaffOnlyTool(configToolNames)
     ? toolsForRequester(configToolNames, await getRequester())
     : configToolNames;
+
+  // Copilot nudge: Jev decides whether to speak BEFORE anything is stored or
+  // any model runs. Quiet = a JSON answer, no session, no message, no stream.
+  if (nudge) {
+    if (!allowedToolNames.includes("present_choices")) {
+      return res.status(400).json({
+        error: `Chat config "${configKey}" does not allow present_choices: a nudge turn ends on clickable choices.`,
+      });
+    }
+    let turns: NudgeTurn[] = [];
+    if (sessionId) {
+      const [existing] = await db.select().from(sessions).where(eq(sessions.id, sessionId));
+      if (!existing || !isSessionOwner(existing, { orgId, userId })) {
+        return res.status(404).json({ error: SESSION_NOT_FOUND_MESSAGE });
+      }
+      const rows = await db.query.messages.findMany({
+        where: eq(messages.sessionId, sessionId),
+        orderBy: (m, { asc }) => [asc(m.createdAt)],
+      });
+      turns = rows.map((m) => ({
+        role: m.role,
+        content: m.content,
+        createdAt: m.createdAt,
+        proactiveTrigger: m.proactiveTrigger,
+        hasChoices: m.choices != null,
+      }));
+    }
+    const judged = await runOrgJudgment({
+      orgId,
+      userId,
+      parentRunId,
+      workflowTracking,
+      taskName: "copilot-nudge",
+      callerPath: "/chat",
+      state: buildNudgeState(context, turns, new Date()),
+      questions: { [NUDGE_QUESTION_KEY]: NUDGE_QUESTION },
+      model: TYPESAFE_DEFAULT_MODEL,
+    });
+    if (!judged.ok) return res.status(judged.status).json(judged.body);
+    let verdict: { speak: boolean; probability: number };
+    try {
+      verdict = nudgeVerdict(judged.result.answers);
+    } catch (err) {
+      console.error(`[chat] nudge org="${orgId}" unreadable judgment:`, err);
+      return res.status(502).json({ error: "Judgment failed. Please try again." });
+    }
+    console.log(`[chat] nudge org="${orgId}" user="${userId}" session="${sessionId ?? "new"}" p=${verdict.probability.toFixed(2)} → ${verdict.speak ? "speak" : "quiet"}`);
+    if (!verdict.speak) return res.json({ nudge: "quiet" });
+  }
 
   // Resolve provider/model from config (NULL = default: google/pro — Gemini is
   // the platform default; the Anthropic platform key has no credit balance).
@@ -2873,6 +2984,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       sessionId: currentSessionId,
       role: "user",
       content: message.trim(),
+      proactiveTrigger: nudge === true,
     })).returning({ id: messages.id, createdAt: messages.createdAt });
     const userTurnMessage: CopilotTurnMessage = {
       messageId: savedUserMessage.id, role: "user", text: message.trim(), at: savedUserMessage.createdAt,
@@ -2882,7 +2994,8 @@ app.post("/chat", requireAuth, async (req, res) => {
     let fullResponse = "";
     creditsTurn.sessionId = currentSessionId ?? null;
     creditsTurn.text = () => fullResponse;
-    creditsTurn.userMessage = userTurnMessage;
+    // A nudge's trigger is not the user's words: the staff Unibox gets the answer only.
+    creditsTurn.userMessage = nudge ? null : userTurnMessage;
     let emittedInputRequest = false;
     const toolCalls: ToolCallRecord[] = [];
     // Rich UI emitted this turn (present_choices / open_page), persisted on the
@@ -4454,7 +4567,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     // The Copilot is staff: the turn also lands in distribute.you's Unibox (crm-service).
     pushCopilotTurnInBackground(configKey, {
       orgId, userId, sessionId: currentSessionId,
-      messages: [userTurnMessage, { messageId: savedAnswer.id, role: "assistant", text: cleanedResponse, at: savedAnswer.createdAt }],
+      messages: [...(nudge ? [] : [userTurnMessage]), { messageId: savedAnswer.id, role: "assistant", text: cleanedResponse, at: savedAnswer.createdAt }],
     });
 
     // The gauge is the context the model READ on its last call, never the
