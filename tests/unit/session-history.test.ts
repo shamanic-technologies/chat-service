@@ -44,6 +44,16 @@ describe("serializeSessionHistory", () => {
     expect(out.brandIds).toBeNull();
   });
 
+  it("never serves a Copilot nudge's trigger turn: the answer shows, the trigger does not", () => {
+    const out = serializeSessionHistory(baseSession, [
+      msg({ id: "m1", role: "user", content: "hi" }),
+      msg({ id: "m2", role: "assistant", content: "hello" }),
+      msg({ id: "m3", role: "user", content: "(Not written by the user...)", proactiveTrigger: true }),
+      msg({ id: "m4", role: "assistant", content: "Looking for your funnels?" }),
+    ]);
+    expect(out.messages.map((m) => m.id)).toEqual(["m1", "m2", "m4"]);
+  });
+
   it("preserves message order and shape (user + assistant turns)", () => {
     const out = serializeSessionHistory(baseSession, [
       msg({ id: "m1", role: "user", content: "hi", createdAt: new Date("2026-07-16T10:00:01.000Z") }),

@@ -155,6 +155,13 @@
       "when": 1791849600000,
       "tag": "0021_add_effort_to_configs",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791936000000,
+      "tag": "0022_messages_proactive_trigger",
+      "breakpoints": true
     }
   ]
 }
