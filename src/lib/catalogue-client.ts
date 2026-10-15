@@ -299,13 +299,6 @@ function stringArray(name: string, v: unknown): string[] {
   return (v as string[]).map((x) => x.trim());
 }
 
-const STEP_FIELDS = ["key", "label", "description", "shortDescription", "icon", "towardStep", "towardRatePct", "producedBy"] as const;
-
-/** POST /internal/catalogue/steps — a NEW step (stage a lead can reach). */
-export async function createStep(a: Record<string, unknown>, ctx: DeclarationContext) {
-  return features("create_step", "POST", "/internal/catalogue/steps", { ...pick(a, STEP_FIELDS), ...provenance(ctx) });
-}
-
 interface PipeDetail {
   id: string;
   channelSlug: string;
@@ -436,7 +429,6 @@ export const CATALOGUE_WRITE_TOOLS: Record<
   string,
   (a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest, reader: CatalogueReader) => Promise<unknown>
 > = {
-  create_step: (a, ctx) => createStep(a, ctx),
   create_pipe: createPipe,
   create_sales_path: (a, ctx) => createSalesPath(a, ctx),
   create_sales_funnel: createSalesFunnel,

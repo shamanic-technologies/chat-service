@@ -133,21 +133,12 @@ describe("catalogue reads: one tool per level, features-service service key", ()
 });
 
 describe("catalogue creates", () => {
-  it("create_step stamps the requester and the org, forwards only the step fields", async () => {
-    fetchMock().mockResolvedValue(res(201, { object: "step", id: "linkedin_follow" }));
+  it("no catalogue write creates a step: a new step is a feature request (owner 2026-10-15, C1)", async () => {
     const { CATALOGUE_WRITE_TOOLS } = await load();
-    const { file } = fileMock();
-    await CATALOGUE_WRITE_TOOLS.create_step(
-      { key: "linkedin_follow", label: "LinkedIn follow", description: "d", shortDescription: "s", icon: "user-plus", towardStep: "conversation", towardRatePct: 5, published: true },
-      ctx,
-      file,
-      customer,
+    expect(Object.keys(CATALOGUE_WRITE_TOOLS).sort()).toEqual(
+      ["create_pipe", "create_play", "create_sales_funnel", "create_sales_path", "create_strategy", "create_tactic"],
     );
-    expect(call(0)).toMatchObject({ url: "http://features.test/internal/catalogue/steps", method: "POST" });
-    expect(call(0).body).toEqual({
-      key: "linkedin_follow", label: "LinkedIn follow", description: "d", shortDescription: "s", icon: "user-plus",
-      towardStep: "conversation", towardRatePct: 5, createdBy: "user-1", requestedByOrgId: "org-1",
-    });
+    expect(fetchMock()).not.toHaveBeenCalled();
   });
 
   it("create_pipe: a new pipe is live at once, no publish request is filed (owner 2026-10-12)", async () => {

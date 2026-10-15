@@ -1266,7 +1266,7 @@ The two prompt tools act on the SHARED platform templates (every org's emails ar
 | `create_offer` | New offer by name (data). `POST /v1/brands/:id/offers` |
 | `propose_switch_on` | Step 1: records what would happen and returns a `confirmationToken`; does nothing yet. `start_funnel_campaign` (refused while the funnel has no cap); `push_email` (brandId, offerId, email, name?, subject, bodyText/bodyHtml as the user wrote them): previews the push of ONE email through the offer's running campaign answering `email_pushed_via_api` (recipient, email, campaign + caps in words, catalogue cost of one send, sender rule: the inbox is picked at send time). No running campaign = `status: "no_live_campaign"` with what to turn on instead, no token. |
 | `confirm_switch_on` | Step 2: executes a proposal (`POST /v1/campaigns/start-funded-pair`, `PATCH /v1/campaigns/:id {status:"activate"}`, `POST /v1/offers/:offerId/reactive-defaults`). Only accepts a token found in the session history recorded BEFORE this turn, so a user message always sits between proposal and switch-on; a used token is refused. `push_email`: `POST /v1/trigger-events` through the gateway with the chat's identity, `idempotencyKey: copilot-email-push-<token>`, returns the trigger event (`outcome`). |
-| `request_staff` | Files a bug or a feature: records it (deduped per org on repo + kind + `pieceKey`), opens a GitHub issue in the owning repo, pings staff on Telegram unless the requester is staff. `pieceKey` (default: kebab of the title) and `decomposition` are optional. |
+| `request_staff` | Files a bug or a feature: records it (deduped per org on repo + kind + `pieceKey`), opens a GitHub issue in the owning repo, pings staff on Telegram unless the requester is staff. `pieceKey` (default: kebab of the title) and `decomposition` are optional. **A new step (outcome) or trigger is ONLY this** (owner 2026-10-15, C1: built with the backend that fills it, never a bare catalogue row): `newStepOrTrigger: {kind: step\|trigger, name, tool, event, example}` (all required, `kind: feature` only) adds a section to the issue with the user's words, the real event and the client tool that would fill it, and an example; `pieceKey` defaults to `new-<kind>-<name>`. |
 | `request_skill_upgrade` | The agent asks to upgrade its own knowledge: `skillSlug` (issue in chat-service) or `repo` (a service doc; issue in that repo), with `problem` + `proposedChange`. Issue + Telegram. Unknown skill → 404-style error. |
 | `contact_human` | The user wants a person: Telegram to the owner straight away (no issue, `repo` null). At most one ping per org per 10 minutes; a repeat inside the window is recorded with `telegramSkippedReason: "recent_contact_already_pinged"`. |
 | `list_staff_requests` | This org's requests. |
@@ -1301,7 +1301,6 @@ Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaig
 | `find_workflows` | `GET /internal/catalogue/workflows[/:id]?pipe=` (`pipe` required) |
 | `find_plays` | `GET /internal/catalogue/plays[/:id]?pipe=` (`pipe` required): the ways one pipe runs (pipe x strategy), each priced; a play id is what `create_sales_funnel` names for that leg. A customer reads only plays served `runnable` (staff: `includeNotRunnable`) |
 | `find_strategies` / `find_tactics` | `GET /internal/catalogue/{strategies,tactics}[/:id]` |
-| `create_step` | `POST /internal/catalogue/steps` |
 | `create_pipe` | `POST /internal/catalogue/pipes`, live at once (no publish request, owner 2026-10-12); `trigger_not_fired` files the detector request and returns `on_hold` (same as `declare_leg`). |
 | `create_sales_path` | `POST /internal/catalogue/sales-paths` (`created:false` when it exists) |
 | `create_tactic` / `create_strategy` / `create_play` | `POST /internal/catalogue/{tactics,strategies,plays}` (a strategy requires/excludes at least one tactic; a play = pipe x strategy) |
@@ -1322,7 +1321,7 @@ Every create stamps `createdBy` = the requester and `requestedByOrgId` = the cha
 | `discover_endpoint` | `GET /discover/services/:service/endpoint?method=&path=` (full doc + stats) |
 | `test_endpoint` | `POST /call/:service` with the chat's `x-org-id` / `x-user-id` and `x-run-id` (so any cost lands on that org). GET only, `/orgs/`, `/public/` or `/v1/` paths, never an internal / admin / staff / platform route (the registry injects the target's SERVICE key). Bodies over 6,000 characters are cut (`truncated`, `dataPreview`). |
 
-**Copilot declarations** (`src/lib/declarations-client.ts`). Channels, legs, trigger types and sales paths are created LIVE as data, never through a PR. Owner: features-service `/internal/declarations/*`, called directly with chat-service's features-service key (staff-only routes; a channel is shared by every client). Every write sends `requestedByOrgId` = the chat's org and `createdBy` = the requester's user id. The Copilot never publishes.
+**Copilot declarations** (`src/lib/declarations-client.ts`). Channels, legs and sales paths are created LIVE as data, never through a PR. No tool creates a step or a trigger type (`create_step` / `declare_trigger_type` retired 2026-10-15: a row nothing fills never fires); both are `request_staff` + `newStepOrTrigger`. `RETIRED_TOOL_NAMES` keeps the two names accepted by `PUT /config` / `PUT /platform-config` (an app may still register them) and never offers them to the model. Owner: features-service `/internal/declarations/*`, called directly with chat-service's features-service key (staff-only routes; a channel is shared by every client). Every write sends `requestedByOrgId` = the chat's org and `createdBy` = the requester's user id. The Copilot never publishes.
 
 | Tool | Description |
 |---|---|
@@ -1331,12 +1330,11 @@ Every create stamps `createdBy` = the requester and `requestedByOrgId` = the cha
 | `list_declared_legs` | Every leg; `channelSlug` to filter. `GET /internal/declarations/legs` |
 | `declare_leg` | New leg on a channel. `POST /internal/declarations/channels/:slug/legs` |
 | `list_trigger_types` | Every trigger type with `kind` (event / delay / poll), `params`, `coded`; `triggerId` for one. `GET /internal/declarations/trigger-types[/:id]` |
-| `declare_trigger_type` | New trigger type (never coded on its own). `POST /internal/declarations/trigger-types` |
 | `list_declared_sales_paths` | Paths declared live; `combinationKey` for one. `GET /internal/declarations/sales-paths[/:key]` |
 | `declare_sales_path` | New path, 1-12 chained legs ending at paid. `POST /internal/declarations/sales-paths` |
 
 Every `declare_*` takes the user's words (`userRequest`) and is live once created, no publish request (owner 2026-10-12). It files its own staff request (same record / issue / Telegram path as `request_staff`) only for what it cannot do itself, returning `onHold[]`:
-- a reactive leg refused with 409 `trigger_not_fired` (nothing stored), or a declared trigger type that is not coded → "build the detector": `delay` / `poll` → campaign-service, piece `<kind>-trigger-detector` (one generic detector per kind); `event` → the fleet repo in `firedBy`, else campaign-service, piece `fire-<trigger>-trigger`. `declare_leg` then returns `status: "on_hold"`, not an error.
+- a reactive leg refused with 409 `trigger_not_fired` (nothing stored) → "build the detector": `delay` / `poll` → campaign-service, piece `<kind>-trigger-detector` (one generic detector per kind); `event` → the fleet repo in `firedBy`, else campaign-service, piece `fire-<trigger>-trigger`. `declare_leg` then returns `status: "on_hold"`, not an error.
 Any other refusal (`leg_exists`, `path_not_chained`, ...) is an error carrying features-service's named `reason`.
 
 **UI tools:**

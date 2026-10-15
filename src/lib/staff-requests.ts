@@ -145,15 +145,77 @@ export function parseStaffRequestArgs(args: Record<string, unknown>): StaffReque
       ...(typeof o.detail === "string" && o.detail.trim() ? { detail: o.detail.trim() } : {}),
     };
   });
+  const missingPiece = str("missingPiece", 4000);
+  const gap = parseNewStepOrTrigger(args.newStepOrTrigger);
+  if (gap && kind !== "feature") throw new StaffRequestValidationError(`a new step or trigger is a "feature" request`);
   return {
     kind,
     repo,
-    pieceKey,
+    pieceKey: gap && (args.pieceKey === undefined || args.pieceKey === null) ? pieceKeyOf(`new-${gap.kind}-${gap.name}`) : pieceKey,
     title,
     userRequest: str("userRequest", 4000),
     decomposition,
-    missingPiece: str("missingPiece", 4000),
+    missingPiece: gap ? `${missingPiece}\n\n${newStepOrTriggerBlock(gap)}` : missingPiece,
   };
+}
+
+// ---------------------------------------------------------------------------
+// A new step (outcome) or trigger is a FEATURE REQUEST, never a bare catalogue
+// row (owner 2026-10-15, C1: « si rien dans le backend n'ajoute des entrées en
+// bdd pour ce step, ça ne sert à rien »). The Copilot has no tool that creates
+// one; it files request_staff with `newStepOrTrigger`, which carries what the
+// team needs to build the row TOGETHER with the backend that fills it.
+// ---------------------------------------------------------------------------
+
+export const NEW_STEP_OR_TRIGGER_KINDS = ["step", "trigger"] as const;
+
+export interface NewStepOrTrigger {
+  kind: (typeof NEW_STEP_OR_TRIGGER_KINDS)[number];
+  name: string;
+  /** The client's tool where the real event happens (CRM, form, payment, site...). */
+  tool: string;
+  /** The real event in that tool that would fill it. */
+  event: string;
+  /** One person or case it would have fired for. */
+  example: string;
+}
+
+export function parseNewStepOrTrigger(raw: unknown): NewStepOrTrigger | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new StaffRequestValidationError("newStepOrTrigger must be an object {kind, name, tool, event, example}");
+  }
+  const o = raw as Record<string, unknown>;
+  if (!(NEW_STEP_OR_TRIGGER_KINDS as readonly unknown[]).includes(o.kind)) {
+    throw new StaffRequestValidationError(`newStepOrTrigger.kind must be one of ${NEW_STEP_OR_TRIGGER_KINDS.join(", ")}`);
+  }
+  const field = (name: "name" | "tool" | "event" | "example", max: number): string => {
+    const v = o[name];
+    if (typeof v !== "string" || v.trim() === "") {
+      throw new StaffRequestValidationError(`newStepOrTrigger.${name} is required: ask the user if you do not know it`);
+    }
+    if (v.length > max) throw new StaffRequestValidationError(`newStepOrTrigger.${name} must be at most ${max} characters`);
+    return v.trim();
+  };
+  return {
+    kind: o.kind as NewStepOrTrigger["kind"],
+    name: field("name", 200),
+    tool: field("tool", 200),
+    event: field("event", 1000),
+    example: field("example", 1000),
+  };
+}
+
+function newStepOrTriggerBlock(g: NewStepOrTrigger): string {
+  return [
+    `## New ${g.kind}: build it WITH the backend that fills it`,
+    ``,
+    `- **${g.kind === "step" ? "Step (outcome)" : "Trigger"}, in the user's words:** ${g.name}`,
+    `- **Filled by:** ${g.event} (in ${g.tool})`,
+    `- **Example:** ${g.example}`,
+    ``,
+    `No row was created: a ${g.kind} nothing fills never fires. Ship the catalogue row together with the code that writes it.`,
+  ].join("\n");
 }
 
 /** A stable kebab-case dedupe key from free text (max 80 chars). */
