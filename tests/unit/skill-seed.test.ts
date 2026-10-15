@@ -22,7 +22,7 @@ const COPILOT_TOOLS = [
   "request_staff", "list_staff_requests", "request_skill_upgrade", "contact_human",
   "find_steps", "find_sales_paths", "find_channels", "find_pipes", "find_sales_funnels", "find_workflows",
   "find_plays", "find_strategies", "find_tactics", "create_tactic", "create_strategy", "create_play",
-  "create_step", "create_pipe", "create_sales_path", "create_sales_funnel",
+  "create_pipe", "create_sales_path", "create_sales_funnel",
   "discover_services", "discover_service_endpoints", "discover_endpoint", "test_endpoint",
   "list_funnel_campaigns", "get_funnel_caps", "set_funnel_caps", "create_funnel_campaign", "stop_funnel_campaign",
 ];

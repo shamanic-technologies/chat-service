@@ -14,6 +14,7 @@ import {
   buildSystemPrompt,
   resolveToolSet,
   AVAILABLE_TOOL_NAMES,
+  RETIRED_TOOL_NAMES,
   MODEL,
   COST_PREFIX,
   anthropicRejectsSampling,
@@ -172,7 +173,6 @@ import {
   declareChannel,
   declareLeg,
   declareSalesPath,
-  declareTriggerType,
   listDeclaredChannels,
   listDeclaredLegs,
   listDeclaredSalesPaths,
@@ -196,7 +196,6 @@ const DECLARATION_WRITE_TOOLS: Record<
 > = {
   declare_channel: declareChannel,
   declare_leg: declareLeg,
-  declare_trigger_type: declareTriggerType,
   declare_sales_path: declareSalesPath,
 };
 
@@ -473,7 +472,7 @@ app.put("/config", requireAuth, async (req, res) => {
   const { key, systemPrompt, allowedTools, provider, model } = parsed.data;
 
   // Validate all tool names
-  const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t));
+  const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t) && !RETIRED_TOOL_NAMES.includes(t));
   if (unknownTools.length > 0) {
     return res.status(400).json({
       error: `Unknown tools: ${unknownTools.join(", ")}. Available: ${AVAILABLE_TOOL_NAMES.join(", ")}`,
@@ -541,7 +540,7 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
   const { key, systemPrompt, allowedTools, provider, model, thinkingLevel, effort } = parsed.data;
 
   // Validate all tool names
-  const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t));
+  const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t) && !RETIRED_TOOL_NAMES.includes(t));
   if (unknownTools.length > 0) {
     return res.status(400).json({
       error: `Unknown tools: ${unknownTools.join(", ")}. Available: ${AVAILABLE_TOOL_NAMES.join(", ")}`,

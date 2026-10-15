@@ -1,8 +1,10 @@
 import { STAFF_REQUEST_REPOS, type StaffRequestInput, type StaffRequestResult } from "./staff-requests.js";
 
 // ---------------------------------------------------------------------------
-// Copilot declarations — channels, legs, trigger types and sales paths are
-// created LIVE as data (owner rule 2026-10-09), never through a PR.
+// Copilot declarations — channels, legs and sales paths are created LIVE as
+// data (owner rule 2026-10-09), never through a PR. A trigger type is NOT
+// declared here: a new trigger is a feature request (request_staff +
+// newStepOrTrigger), built with the backend that fires it (owner 2026-10-15).
 //
 // Owner: features-service `/internal/declarations/*` (staff-only, service key:
 // a channel is shared by every client). chat-service calls it directly with
@@ -243,28 +245,6 @@ export async function declareLeg(a: Record<string, unknown>, ctx: DeclarationCon
     throw err;
   }
   return { status: "declared", ...created };
-}
-
-/** POST /internal/declarations/trigger-types. Not coded → detector request (same piece key a refused leg files). */
-export async function declareTriggerType(a: Record<string, unknown>, ctx: DeclarationContext, file: FileStaffRequest) {
-  const userRequest = str("userRequest", a.userRequest);
-  const trigger = (await features("declare_trigger_type", "POST", "/internal/declarations/trigger-types", {
-    ...pick(a, ["id", "label", "description", "icon", "kind", "fromStep", "firedBy", "params"]),
-    ...provenance(ctx),
-  })) as TriggerTypeLite & { coded?: boolean };
-  const onHold: HeldPiece[] = [];
-  if (trigger.coded === false) {
-    const staffRequest = await file(detectorRequest(trigger, userRequest, `Trigger type ${trigger.id}`));
-    onHold.push({ piece: `trigger ${trigger.id}`, waitingFor: "trigger_detector", staffRequest });
-  }
-  return {
-    status: onHold.length ? "declared_on_hold" : "declared",
-    trigger,
-    onHold,
-    ...(onHold.length
-      ? { instruction: `${ON_HOLD_INSTRUCTION} No reactive leg can name this trigger until its detector runs (declare_leg on it is put on hold the same way).` }
-      : {}),
-  };
 }
 
 /** POST /internal/declarations/sales-paths: the path is live once created. */

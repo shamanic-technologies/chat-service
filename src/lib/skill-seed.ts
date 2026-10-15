@@ -36,7 +36,7 @@ If the user named a channel, find it first to learn what it produces, then walk 
 - First check it is missing: list_campaigns (a running campaign may already do it: its path, runsWhen), then the API (\`staff-requests\`).
 - An email the user wrote, sent as written (test, list, CSV, API): it exists, load \`emails-you-wrote\`.
 - We only offer what we run today. Not run (LinkedIn posting, ads): say so in one sentence, offer what we run for the same result; if they insist, request_staff (kind feature). Never describe its price or terms.
-- A path or funnel shape is missing but every piece runs: create it (create_step, create_sales_path, create_sales_funnel).
+- A path or funnel shape is missing but every piece runs: create it (create_sales_path, create_sales_funnel). A new step or trigger: request_staff + newStepOrTrigger, never a create.
 - A campaign should behave differently (attach a document, skip some addresses): that is the step's play. Load \`catalogue-plays\`.
 - Needs code or is broken: request_staff. A skill misled you: request_skill_upgrade. Wants a person: contact_human.
 - Building something new from our services: load \`infra\`.
@@ -253,7 +253,7 @@ A trigger is **coded** when something fires it today. Only a coded trigger can r
 - get_trigger_events(brandId, offerId): per type, fired / ran / skipped and why (campaign off, unfunded).
 
 ## Write
-- STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_trigger_type(id, label, description, icon, kind, params...): a NEW trigger type, created live. It is not coded: the tool files the staff request for its detector itself (status declared_on_hold).
+- A NEW trigger = a feature request, never a create (nothing would fire a bare row): request_staff with newStepOrTrigger (kind trigger). Tell the user it is with the team.
 - A trigger turns on when the Reactive funnel campaign that answers it turns on: propose_switch_on (start_funnel_campaign), then confirm after the user's yes.
 
 ## trigger_not_fired
@@ -263,7 +263,7 @@ declare_leg on a trigger that is not coded is refused and nothing is stored. The
 Fired by the client's own push: one email they wrote, for one person (POST /v1/trigger-events with their API key, or propose_switch_on push_email from the chat). See \`emails-you-wrote\`.
 
 ## Articulation
-- Check list_trigger_types before declaring: reuse an existing type of the same meaning.
+- Check list_trigger_types before requesting one: reuse an existing type of the same meaning.
 - "Someone reacts to my LinkedIn post" is not a trigger today; it is a SOURCE (see sources).
 `),
   },
@@ -508,6 +508,7 @@ Four kinds, each lands with someone who acts. Every tool records the request and
 
 ## How
 - request_staff: repo, title, userRequest, missingPiece. pieceKey and decomposition are optional. Call list_staff_requests first: the same need reuses its pieceKey (it counts the repeat).
+- A new step (outcome) or trigger: request_staff kind feature + newStepOrTrigger {kind, name in their words, tool, event, example}; repo = the service that will fill it (crm-service for a CRM stage). Never a create.
 - request_skill_upgrade: whenever a skill made you guess, hesitate or fail. Send skillSlug (or repo for a service doc), the problem, and the text you propose, ready to paste. Do it quietly; carry on.
 - contact_human: reason + the user's message. Then tell them a person has it and will reply. One ping per account every 10 minutes.
 - After a feature: tell the user that piece is on hold with the team, then carry on with the rest.
@@ -563,7 +564,7 @@ step id → find_sales_paths(containsSteps) → path id → find_channels(forPat
 3. Cards: the funnels we run, and "I want LinkedIn posting anyway" (then request_staff, kind feature, repo features-service, their words).
 
 ## Create
-create_step, create_sales_path, create_sales_funnel (runnable pipes only). Data only, starts nothing. Find first; never create what exists. create_pipe (a channel on a new step) is staff work.
+create_sales_path, create_sales_funnel (runnable pipes only). Data only, starts nothing. Find first; never create what exists. create_pipe (a channel on a new step) is staff work. A new step or trigger is never created: it is a feature request (catalogue-steps).
 `),
   },
   {
@@ -584,7 +585,7 @@ A step is a result a lead reaches: Lead found, Website visit, Positive reply, Me
 Map the user's ask to the step it produces: "book meetings" produces Meeting booked. Search with q first; q matches names, so try the user's word, then a synonym, then read the full list (10 steps). When unsure, show the 3 likeliest and let the user pick.
 
 ## Missing (e.g. "a LinkedIn post")
-A step_not_found refusal or an empty search means the step does not exist yet. Never stop there: if no existing step means the same thing, create_step it. It needs the step it leads to (towardStep, e.g. website_visit) and the share of people who get there (towardRatePct): ask the user, or state a cautious guess and say it is one. Then carry on the walk with the new step id.
+A step_not_found refusal or an empty search means the step does not exist yet. If no existing step means the same thing, a new step = a feature request, never a create: a step nothing fills never moves. Ask which real event, in which of their tools (CRM, form, payments, site), shows a lead reached it, and one example person; then request_staff (kind feature, repo = the service that will fill it) with newStepOrTrigger (kind step). Tell the user it is with the team, and carry on with the steps that exist.
 `),
   },
   {
