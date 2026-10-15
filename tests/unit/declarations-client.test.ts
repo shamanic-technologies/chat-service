@@ -154,20 +154,10 @@ describe("declare_leg", () => {
   });
 });
 
-describe("declare_trigger_type", () => {
-  it("an uncoded trigger files the same detector piece a refused leg files", async () => {
-    fetchMock().mockResolvedValue(res(201, { id: "no_reply_3d", kind: "delay", coded: false, params: { afterStep: "lead_found", days: 3 } }));
-    const { declareTriggerType } = await load();
-    const { file, filed } = fileMock();
-    const r = await declareTriggerType(
-      { id: "no_reply_3d", label: "No reply after 3 days", description: "d", icon: "clock", kind: "delay", params: { afterStep: "lead_found", days: 3 }, coded: true, userRequest: "u" },
-      ctx,
-      file,
-    );
-    expect(call(0).body).not.toHaveProperty("coded");
-    expect(call(0).body).toMatchObject({ id: "no_reply_3d", kind: "delay", createdBy: "user-1", requestedByOrgId: "org-1" });
-    expect(r.status).toBe("declared_on_hold");
-    expect(filed[0].pieceKey).toBe("delay-trigger-detector");
+describe("trigger types", () => {
+  it("no declaration declares a trigger type: a new trigger is a feature request (owner 2026-10-15, C1)", async () => {
+    const mod = (await load()) as Record<string, unknown>;
+    expect(mod.declareTriggerType).toBeUndefined();
   });
 });
 

@@ -2599,7 +2599,8 @@ export const REQUEST_STAFF_TOOL: Anthropic.Tool = {
   name: "request_staff",
   description:
     "Report a BUG (something exists but fails) or request a FEATURE (one missing piece that needs CODE: no tool, route, setting or create does it). Records the request, opens a GitHub issue in the repo of the service that owns the piece, and pings the team on Telegram. Deduplicated per org on (repo, kind, pieceKey): call list_staff_requests first and reuse an existing pieceKey for the same need. pieceKey and decomposition are optional (pieceKey defaults to the title). " +
-    "Call it once per missing piece, then tell the user that piece is on hold and will be switched on once it is built, and carry on with the rest of their request. Read the staff-requests skill for which repo owns what.",
+    "Call it once per missing piece, then tell the user that piece is on hold and will be switched on once it is built, and carry on with the rest of their request. Read the staff-requests skill for which repo owns what. " +
+    "A NEW step (outcome) or trigger is ALWAYS this tool with newStepOrTrigger, never a create: nothing would ever fill a bare row (repo = the service that will fill it, e.g. crm-service for a CRM stage).",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -2621,6 +2622,18 @@ export const REQUEST_STAFF_TOOL: Anthropic.Tool = {
           },
           required: ["piece", "outcome"],
         },
+      },
+      newStepOrTrigger: {
+        type: "object",
+        description: "Send ONLY when the missing piece is a new step (a stage a lead can reach) or a new trigger (an entry door of a reactive campaign). Ask the user for any field you do not know.",
+        properties: {
+          kind: { type: "string", enum: ["step", "trigger"] },
+          name: { type: "string", description: "The step or trigger in the user's words, e.g. \"Followed on LinkedIn\", \"Contract signed\"." },
+          tool: { type: "string", description: "The user's tool where it happens: their CRM (name it), a form, payments, their site..." },
+          event: { type: "string", description: "The real event in that tool that would fill it, e.g. \"deal moved to stage Signed in HubSpot\"." },
+          example: { type: "string", description: "One real person or case it would have fired for." },
+        },
+        required: ["kind", "name", "tool", "event", "example"],
       },
     },
     required: ["kind", "repo", "title", "userRequest", "missingPiece"],
@@ -2800,25 +2813,6 @@ const CATALOGUE_USER_REQUEST_PROP = {
 
 const CATALOGUE_CREATE_RULE =
   "Creates DATA only: starts nothing, spends nothing. Check with the find tool first: never create what exists. Confirm the name and what it does with the user first.";
-
-export const CREATE_STEP_TOOL: Anthropic.Tool = {
-  name: "create_step",
-  description: "Create a NEW step (a stage a lead can reach that the catalogue lacks, e.g. \"Followed on LinkedIn\"). " + CATALOGUE_CREATE_RULE,
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      key: { type: "string", description: "snake_case id, e.g. linkedin_follow." },
-      label: { type: "string", description: "Short name, e.g. \"LinkedIn follow\"." },
-      description: { type: "string" },
-      shortDescription: { type: "string", description: "One line, under 80 characters." },
-      icon: { type: "string", description: "Phosphor icon name, kebab-case." },
-      towardStep: { type: "string", description: "The existing step it leads to (e.g. conversation)." },
-      towardRatePct: { type: "number", description: "Share of people at this step who reach towardStep, in (0, 100]." },
-      producedBy: { type: "string", description: "Optional: what produces this step." },
-    },
-    required: ["key", "label", "description", "shortDescription", "icon", "towardStep", "towardRatePct"],
-  },
-};
 
 export const CREATE_PIPE_TOOL: Anthropic.Tool = {
   name: "create_pipe",
@@ -3071,28 +3065,6 @@ export const LIST_TRIGGER_TYPES_TOOL: Anthropic.Tool = {
   },
 };
 
-export const DECLARE_TRIGGER_TYPE_TOOL: Anthropic.Tool = {
-  name: "declare_trigger_type",
-  description:
-    "Declare a NEW trigger type (an event that should run a reactive leg). kind event = a service detects something on a lead; delay = N days after a step if nothing happened (params {afterStep, days}); poll = a new item appeared at a source (params {source, everyMinutes >= 5}). " +
-    "A declared trigger is NOT coded until a detector for it runs: the tool files the staff request for that detector itself and returns status declared_on_hold. Check list_trigger_types first: never declare one that exists.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      id: { type: "string", description: "snake_case id (e.g. \"no_reply_after_3_days\")." },
-      label: { type: "string" },
-      description: { type: "string" },
-      icon: { type: "string" },
-      kind: { type: "string", enum: ["event", "delay", "poll"] },
-      fromStep: { type: "string", description: "event: the step the lead is at when it fires." },
-      firedBy: { type: "string", description: "event: the service that detects it, if known." },
-      params: { type: "object", description: "delay: {afterStep, days}. poll: {source, everyMinutes}." },
-      userRequest: USER_REQUEST_PROP,
-    },
-    required: ["id", "label", "description", "icon", "kind", "userRequest"],
-  },
-};
-
 export const LIST_DECLARED_SALES_PATHS_TOOL: Anthropic.Tool = {
   name: "list_declared_sales_paths",
   description:
@@ -3256,7 +3228,6 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   create_tactic: CREATE_TACTIC_TOOL,
   create_strategy: CREATE_STRATEGY_TOOL,
   create_play: CREATE_PLAY_TOOL,
-  create_step: CREATE_STEP_TOOL,
   create_pipe: CREATE_PIPE_TOOL,
   create_sales_path: CREATE_SALES_PATH_TOOL,
   create_sales_funnel: CREATE_SALES_FUNNEL_TOOL,
@@ -3269,13 +3240,22 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   list_declared_legs: withStaffBuild(LIST_DECLARED_LEGS_TOOL),
   declare_leg: withStaffBuild(DECLARE_LEG_TOOL),
   list_trigger_types: withStaffBuild(LIST_TRIGGER_TYPES_TOOL),
-  declare_trigger_type: withStaffBuild(DECLARE_TRIGGER_TYPE_TOOL),
   list_declared_sales_paths: withStaffBuild(LIST_DECLARED_SALES_PATHS_TOOL),
   declare_sales_path: withStaffBuild(DECLARE_SALES_PATH_TOOL),
 };
 
 /** All tool names available for use in allowedTools config. */
 export const AVAILABLE_TOOL_NAMES = Object.keys(TOOL_REGISTRY);
+
+/**
+ * Tools removed from the registry that an app may still register in its
+ * allowedTools (the dashboard re-registers its list at boot). Accepted by
+ * PUT /config and /platform-config so that registration keeps working, and
+ * never offered to the model. A new step or trigger is a feature request
+ * (request_staff + newStepOrTrigger), never a bare row (owner 2026-10-15, C1).
+ * Drop a name once no app registers it.
+ */
+export const RETIRED_TOOL_NAMES: readonly string[] = ["create_step", "declare_trigger_type"];
 
 /**
  * Resolve a list of tool names to their Anthropic tool definitions.
@@ -3287,7 +3267,7 @@ export function resolveToolSet(allowedTools: string[]): Anthropic.Tool[] {
     const tool = TOOL_REGISTRY[name];
     if (tool) {
       tools.push(tool);
-    } else {
+    } else if (!RETIRED_TOOL_NAMES.includes(name)) {
       console.warn(`[chat-service] Unknown tool in allowedTools: "${name}" — skipping`);
     }
   }
