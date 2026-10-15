@@ -32,16 +32,38 @@ export interface AuthorizeCreditParams {
   trackingHeaders?: Record<string, string>;
 }
 
+/**
+ * Why billing refused a spend when the balance is NOT the cause: a sales funnel
+ * campaign's MAX BUDGET (billing-service `AuthorizeResponse.reason`). Absent on a
+ * balance refusal. The client must tell "raise the campaign's max budget" apart
+ * from "add credit", so this travels to every caller (FUNNEL-CAP-REACHED-AT-2PCT-1015).
+ */
+export type BillingRefusalReason =
+  | "sales_funnel_max_budget_reached"
+  | "sales_funnel_max_budget_unreadable";
+
+/** The cap that refused the spend, verbatim from billing (present only with `reason`). */
+export interface SalesFunnelCap {
+  salesFunnelId: string;
+  salesFunnelCampaignId: string | null;
+  amountCents: string;
+  period: string;
+  consumedCents: string | null;
+  reservedCents: string;
+}
+
 export interface AuthorizeCreditResult {
   sufficient: boolean;
   balance_cents: number;
   required_cents: number;
+  reason?: BillingRefusalReason;
+  sales_funnel_cap?: SalesFunnelCap;
 }
 
 /**
  * Request credit authorization from billing-service.
  * Send costName + quantity items — billing-service resolves the price.
- * Returns { sufficient, balance_cents, required_cents }.
+ * Returns { sufficient, balance_cents, required_cents, reason?, sales_funnel_cap? }.
  * Throws on network/server errors.
  */
 export async function authorizeCredits(
