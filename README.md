@@ -282,7 +282,7 @@ Response:
 
 Unlike POST /chat, this endpoint is **stateless** (no sessions), accepts an **inline systemPrompt**, and returns **JSON** instead of SSE. Run tracking and billing work identically to POST /chat.
 
-Error responses: 400 (validation, or a provider refusing a request option — see [Direct vendor models](#direct-vendor-models)), 401 (auth), 402 (insufficient credits), 429 (a direct vendor still at capacity after the bounded rate-limit retry — `retryable: true`), 502 (upstream failure).
+Error responses: 400 (validation, or a provider refusing a request option — see [Direct vendor models](#direct-vendor-models)), 401 (auth), 402 (insufficient credits, or a sales funnel max budget: `reason` set), 429 (a direct vendor still at capacity after the bounded rate-limit retry — `retryable: true`), 502 (upstream failure).
 
 ### Claude Haiku 5.5 (`haiku`)
 
@@ -1423,6 +1423,18 @@ If the org has insufficient credits, the endpoint returns a **402** (JSON, not S
   "required_cents": 25
 }
 ```
+
+When billing refuses because a **sales funnel campaign's max budget** binds the spend (whatever the balance), the 402 names that cause and carries billing's `reason` + `sales_funnel_cap` verbatim, so the caller can tell "raise the campaign's max budget" apart from "add credit":
+```json
+{
+  "error": "Sales funnel max budget reached",
+  "reason": "sales_funnel_max_budget_reached",
+  "balance_cents": "100000",
+  "required_cents": "1",
+  "sales_funnel_cap": { "salesFunnelId": "…", "salesFunnelCampaignId": "…", "amountCents": "1000", "period": "day", "consumedCents": "20", "reservedCents": "985" }
+}
+```
+`reason` is `sales_funnel_max_budget_reached` or `sales_funnel_max_budget_unreadable` (`error`: "Sales funnel max budget unreadable"); it is absent on a balance refusal. On `/chat` the turn answers "This campaign reached its max budget. Raise it to keep going." with no `credits_required` button (adding credit cannot help).
 
 If a cost can't be declared (runs-service `422 Unknown cost name`) or billing-service is unreachable, the spend is blocked: `502` on `/complete`, an SSE `error` event on `/chat` (the stream is already open by provisioning time). The model is never called when the cost can't be declared or afforded.
 

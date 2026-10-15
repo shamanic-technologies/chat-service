@@ -48,13 +48,32 @@ export const ValidationErrorResponseSchema = z
 
 export const InsufficientCreditsResponseSchema = z
   .object({
-    error: z.literal("Insufficient credits"),
+    error: z.enum(["Insufficient credits", "Sales funnel max budget reached", "Sales funnel max budget unreadable"]).openapi({
+      description:
+        "Why billing refused the spend. \"Insufficient credits\" = the balance (adding credit helps). " +
+        "\"Sales funnel max budget reached\" / \"... unreadable\" = the campaign's max budget refused it whatever " +
+        "the balance: adding credit cannot help, raising the campaign's max budget can.",
+    }),
     balance_cents: z.number().openapi({
       description: "Current credit balance in USD cents",
     }),
     required_cents: z.number().openapi({
       description: "Estimated cost of this request in USD cents",
     }),
+    reason: z.enum(["sales_funnel_max_budget_reached", "sales_funnel_max_budget_unreadable"]).optional().openapi({
+      description: "billing-service's refusal reason, verbatim. Present only when a sales funnel max budget refused the spend, absent on a balance refusal.",
+    }),
+    sales_funnel_cap: z
+      .object({
+        salesFunnelId: z.string(),
+        salesFunnelCampaignId: z.string().nullable(),
+        amountCents: z.string(),
+        period: z.string(),
+        consumedCents: z.string().nullable(),
+        reservedCents: z.string(),
+      })
+      .optional()
+      .openapi({ description: "The cap that refused the spend, verbatim from billing-service; present only with `reason`." }),
   })
   .openapi("InsufficientCreditsResponse");
 
@@ -728,7 +747,7 @@ All Google models require a Google API key configured in key-service (provider: 
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     402: {
-      description: "Insufficient credits (platform-key only)",
+      description: "Billing refused the spend: insufficient credits, or a sales funnel max budget (`reason` set). Platform-key only.",
       content: {
         "application/json": { schema: InsufficientCreditsResponseSchema },
       },
@@ -844,7 +863,7 @@ Chat-service owns provider key resolution, Gemini request shaping, run creation,
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     402: {
-      description: "Insufficient credits (platform-key only)",
+      description: "Billing refused the spend: insufficient credits, or a sales funnel max budget (`reason` set). Platform-key only.",
       content: {
         "application/json": { schema: InsufficientCreditsResponseSchema },
       },
@@ -1630,8 +1649,8 @@ Choices and opened pages are persisted on the assistant message and returned by 
     },
     402: {
       description:
-        "Insufficient credits — the org's credit balance is too low to cover this request. " +
-        "Only applies to platform-key usage (BYOK orgs are not charged).",
+        "Billing refused the spend: the org's credit balance is too low (`Insufficient credits`), or the " +
+        "campaign's sales funnel max budget refused it (`reason` set). Only applies to platform-key usage (BYOK orgs are not charged).",
       content: {
         "application/json": { schema: InsufficientCreditsResponseSchema },
       },
@@ -2487,7 +2506,7 @@ Backed by TypeSafe (\`jev\`), which is built for exactly this and does not gener
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     402: {
-      description: "Insufficient credits for the platform-key spend",
+      description: "Billing refused the platform-key spend: insufficient credits, or a sales funnel max budget (`reason` set)",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     429: {
