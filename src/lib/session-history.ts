@@ -58,7 +58,7 @@ export interface SessionHistoryResponse {
   configKey: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Full ordered conversation, oldest turn first. */
+  /** Full ordered conversation, oldest turn first (a Copilot nudge's hidden trigger left out). */
   messages: SessionHistoryMessage[];
 }
 
@@ -81,7 +81,8 @@ export function serializeSessionHistory(
     configKey: session.configKey ?? null,
     createdAt: session.createdAt.toISOString(),
     updatedAt: session.updatedAt.toISOString(),
-    messages: messages.map((m) => ({
+    // A Copilot nudge's trigger is the user's turn on paper only: never shown.
+    messages: messages.filter((m) => !m.proactiveTrigger).map((m) => ({
       id: m.id,
       role: m.role,
       content: m.content,

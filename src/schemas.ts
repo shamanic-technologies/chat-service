@@ -1170,9 +1170,19 @@ export const ChatRequestSchema = z
         "Examples: 'workflow', 'feature', 'press-kit'.",
       example: "workflow",
     }),
-    message: z.string().min(1, "message is required").openapi({
-      description: "The user's chat message",
+    message: z.string().min(1, "message is required").optional().openapi({
+      description: "The user's chat message. Required, unless `nudge` is true (then it must be omitted).",
       example: "What campaigns are performing best this week?",
+    }),
+    nudge: z.literal(true).optional().openapi({
+      description:
+        "Copilot nudge: ask whether the assistant should speak FIRST (the user looks stuck), instead of sending a message. " +
+        "Send it with `configKey`, the usual `context` (`currentPage`, `recentActions`, `account`) and, when one exists, `sessionId`; omit `message`. " +
+        "A Jev judgment decides (org-billed, input tokens only). " +
+        "Quiet: HTTP 200 JSON `{\"nudge\":\"quiet\"}`, nothing stored, no session created, no model turn. " +
+        "Speak: the normal SSE stream (sessionId, tokens, optional open_page, choices), the assistant answer stored in the session; " +
+        "the trigger turn is stored hidden and never returned by GET /sessions/*. The config must allow `present_choices`.",
+      example: true,
     }),
     sessionId: z.string().uuid().nullish().openapi({
       description:
@@ -1210,6 +1220,14 @@ export const ChatRequestSchema = z
   .openapi("ChatRequest");
 
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
+
+export const ChatNudgeQuietResponseSchema = z
+  .object({
+    nudge: z.literal("quiet").openapi({
+      description: "The Copilot does not speak now: nothing was stored and nothing is to be shown.",
+    }),
+  })
+  .openapi("ChatNudgeQuietResponse");
 
 // --- Rich UI: choices + open page (emitted by the present_choices / open_page tools) ---
 //
@@ -1591,11 +1609,13 @@ Choices and opened pages are persisted on the assistant message and returned by 
       description:
         "SSE stream of chat events. Each `data:` line is a JSON object matching one of the SSE event schemas " +
         "(SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, " +
-        'SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEChoicesEvent, SSEOpenPageEvent, SSEButtonsEvent, SSEContextUsageEvent, SSEErrorEvent), except the final `data: "[DONE]"` which is a plain string.',
+        'SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEChoicesEvent, SSEOpenPageEvent, SSEButtonsEvent, SSEContextUsageEvent, SSEErrorEvent), except the final `data: "[DONE]"` which is a plain string. ' +
+        "A `nudge` request the Copilot stays quiet on answers `application/json` `{\"nudge\":\"quiet\"}` instead: show nothing.",
       content: {
         "text/event-stream": {
           schema: z.string(),
         },
+        "application/json": { schema: ChatNudgeQuietResponseSchema },
       },
     },
     400: {

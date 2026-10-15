@@ -1386,6 +1386,21 @@
         "description": "How capable the model behind an alias is. `cheap` = the small/fast tier a vendor sells for volume; `strong` = the vendor's main workhorse flagship; `frontier` = the premium tier above that flagship. Recorded per alias in chat-service, never derived from the alias name — `flash-pro` is `cheap` (it resolves to a Flash model) and `deepseek-pro` is `cheap` (a deprecated synonym pointing at V4.1 Flash), so a substring rule on \"pro\" gets both wrong.",
         "example": "strong"
       },
+      "ChatNudgeQuietResponse": {
+        "type": "object",
+        "properties": {
+          "nudge": {
+            "type": "string",
+            "enum": [
+              "quiet"
+            ],
+            "description": "The Copilot does not speak now: nothing was stored and nothing is to be shown."
+          }
+        },
+        "required": [
+          "nudge"
+        ]
+      },
       "ChatRequest": {
         "type": "object",
         "properties": {
@@ -1398,8 +1413,16 @@
           "message": {
             "type": "string",
             "minLength": 1,
-            "description": "The user's chat message",
+            "description": "The user's chat message. Required, unless `nudge` is true (then it must be omitted).",
             "example": "What campaigns are performing best this week?"
+          },
+          "nudge": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "Copilot nudge: ask whether the assistant should speak FIRST (the user looks stuck), instead of sending a message. Send it with `configKey`, the usual `context` (`currentPage`, `recentActions`, `account`) and, when one exists, `sessionId`; omit `message`. A Jev judgment decides (org-billed, input tokens only). Quiet: HTTP 200 JSON `{\"nudge\":\"quiet\"}`, nothing stored, no session created, no model turn. Speak: the normal SSE stream (sessionId, tokens, optional open_page, choices), the assistant answer stored in the session; the trigger turn is stored hidden and never returned by GET /sessions/*. The config must allow `present_choices`.",
+            "example": true
           },
           "sessionId": {
             "type": "string",
@@ -1424,8 +1447,7 @@
           }
         },
         "required": [
-          "configKey",
-          "message"
+          "configKey"
         ]
       },
       "SessionHistoryResponse": {
@@ -3754,11 +3776,16 @@
         },
         "responses": {
           "200": {
-            "description": "SSE stream of chat events. Each `data:` line is a JSON object matching one of the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEChoicesEvent, SSEOpenPageEvent, SSEButtonsEvent, SSEContextUsageEvent, SSEErrorEvent), except the final `data: \"[DONE]\"` which is a plain string.",
+            "description": "SSE stream of chat events. Each `data:` line is a JSON object matching one of the SSE event schemas (SSESessionEvent, SSETokenEvent, SSEThinkingStartEvent, SSEThinkingDeltaEvent, SSEThinkingStopEvent, SSEToolCallEvent, SSEToolResultEvent, SSEInputRequestEvent, SSEChoicesEvent, SSEOpenPageEvent, SSEButtonsEvent, SSEContextUsageEvent, SSEErrorEvent), except the final `data: \"[DONE]\"` which is a plain string. A `nudge` request the Copilot stays quiet on answers `application/json` `{\"nudge\":\"quiet\"}` instead: show nothing.",
             "content": {
               "text/event-stream": {
                 "schema": {
                   "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatNudgeQuietResponse"
                 }
               }
             }

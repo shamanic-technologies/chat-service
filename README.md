@@ -1388,6 +1388,17 @@ data: {"type":"open_page","page":"offer-today","brandId":"…","offerId":"…","
 ```
 Optional ids: `brandId`, `offerId`, `campaignId`, `audienceId`, `leadId`, plus a short `title`. `page` is an identifier the client maps to a URL (never a URL). Does not end the turn. Stored on the assistant message (`openPages`).
 
+### 5e. Copilot nudge (`nudge: true`): the Copilot speaks first
+While the Copilot is open, the client may ask whether it should speak FIRST (the user looks stuck), on a page change or after an idle spell:
+```json
+{ "configKey": "copilot", "nudge": true, "sessionId": "<uuid, when a chat exists>",
+  "context": { "currentPage": "…", "recentActions": [{ "at": "…", "kind": "page|click", "label": "…", "page": "…" }], "account": { … } } }
+```
+`message` must be omitted (400 otherwise); the config must allow `present_choices` (400 otherwise). A Jev judgment (`/orgs/judgments` billing: org-billed, input tokens only, own run `taskName: copilot-nudge`) reads the context, the last 6 turns, how long ago the Copilot last spoke first and whether it is waiting for an answer; it speaks when the yes-probability is ≥ 0.6.
+- **Quiet:** `200 application/json {"nudge":"quiet"}`. Nothing stored, no session created, no model call; the only cost row is the Jev input tokens. Show nothing.
+- **Speak:** the normal SSE stream (`sessionId`, tokens, optional `open_page`, `choices`). The assistant answer is stored and pushed to the staff Unibox like any turn. The trigger is stored as the user turn with `messages.proactive_trigger = true` (the model replays it) and is NEVER returned by `GET /sessions/*`, so the client has nothing to hide. Not pushed to the Unibox either.
+- A Jev failure answers its own JSON status (402/429/502…): show nothing.
+
 ### 6. Buttons (optional)
 AI-generated quick-reply buttons, sent after all tokens are done:
 ```

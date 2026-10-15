@@ -45,6 +45,9 @@ export const messages = pgTable("messages", {
   openPages: jsonb("open_pages").$type<OpenPageRecord[]>(),
   // The out-of-credits action of this turn (credits_required, migration 0020).
   creditsRequired: jsonb("credits_required").$type<CreditsRequiredRecord>(),
+  // The user turn of a Copilot nudge (the Copilot spoke first, migration 0022):
+  // replayed to the model, never served by GET /sessions/*.
+  proactiveTrigger: boolean("proactive_trigger").notNull().default(false),
   tokenCount: integer("token_count"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
