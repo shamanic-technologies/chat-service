@@ -248,6 +248,7 @@ Each trigger type has a kind:
 A trigger is **coded** when something fires it today. Only a coded trigger can run a reactive leg. Delay and poll triggers become coded when campaign-service runs the generic detector for that kind.
 
 ## Read
+- Outcome triggers (an outcome was just reached for a person: Form submitted, Meeting booked, Paid client...) are callable: when that fact happens in the client's own tools, fire one through the one door, POST /v1/trigger-events {triggerId, brandId, offerId, person:{email}} (MCP: distribute_list_triggers, then distribute_call_api). Condition triggers computed by us (an outcome + a delay + 'still not' another, a GitHub issue in prod) carry callable:false and are never fired by a call. Each trigger's \`callable\` (GET /v1/public/channels triggers[], features-service) is the answer.
 - list_trigger_types(triggerId?): every type with kind, params and coded. The truth for "does this fire today?".
 - find_pipes(id): a reactive pipe's triggerId.
 - get_trigger_events(brandId, offerId): per type, fired / ran / skipped and why (campaign off, unfunded).

@@ -53,6 +53,8 @@ describe("seeded skill tree", () => {
     const all = SEED_SKILLS.map((s) => s.content).join("\n");
     // Names the skills mention as RETIRED or as data values (leg keys, trigger types) are not tools.
     const notTools = new Set([
+      // MCP tool names (the skill is served to API agents too), not Copilot tools.
+      "distribute_list_triggers", "distribute_call_api",
       "list_personas", "create_persona", "get_brand_profile", "lead_requested", "positive_reply_received",
       "website_visited", "meeting_booked", "meeting_attended", "signed_up", "form_submitted",
       "start_to_lead_found", "lead_found_to_positive_reply", "start_campaign", "activate_campaign",
@@ -325,5 +327,12 @@ describe("MCP role-play gaps 2026-10-14 (attach the right PDF): API agents must 
     const c = bySlug.get("catalogue-workflows")!.content;
     expect(c).toContain("excludedWorkflowDynastySlugs");
     expect(c).toContain("GET /v1/workflows/summaries?featureSlug=<channel slug>&status=active");
+  });
+});
+
+describe("triggers skill (OUTCOME-TRIGGERS-CALLABLE-1015)", () => {
+  it("says which triggers an outside call may fire, and where to read it", () => {
+    const t = SEED_SKILLS.find((x) => x.slug === "triggers")!.content;
+    for (const w of ["callable:false", "POST /v1/trigger-events", "distribute_list_triggers", "GET /v1/public/channels"]) expect(t).toContain(w);
   });
 });
