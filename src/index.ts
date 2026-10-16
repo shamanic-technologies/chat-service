@@ -4873,10 +4873,26 @@ app.post("/orgs/staff-requests", requireAuth, async (req, res) => {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const sessionId = typeof body.sessionId === "string" && /^[0-9a-f-]{36}$/i.test(body.sessionId) ? body.sessionId : null;
   try {
-    const result = await fileAgentRequest(db, { orgId, userId, brandId: workflowTracking.brandId ?? null, sessionId }, body);
+    const result = await fileAgentRequest(
+      db,
+      { orgId, userId, brandId: workflowTracking.brandId ?? null, sessionId, source: "api" },
+      body,
+    );
     return res.status(result.duplicate ? 200 : 201).json(result);
   } catch (err) {
     if (err instanceof StaffRequestValidationError) return res.status(400).json({ error: err.message });
+    const mapped = skillErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+// The calling org's own requests (what the Copilot's list_staff_requests reads):
+// an agent checks it before filing, so a repeat reuses the same pieceKey.
+app.get("/orgs/staff-requests", requireAuth, async (_req, res) => {
+  const { orgId } = res.locals as AuthLocals;
+  try {
+    return res.json(await listStaffRequestsForModel(db, orgId));
+  } catch (err) {
     const mapped = skillErrorStatus(err);
     return res.status(mapped.status).json({ error: mapped.error });
   }
@@ -4907,7 +4923,7 @@ if (process.env.NODE_ENV !== "test") {
       // seed content, NEVER touch a human-edited one. ~16 rows, safe to await.
       const skillSeed = await seedSkills(db);
       console.log(
-        `[chat-service] Skill seed: inserted=[${skillSeed.inserted.join(",")}] refreshed=[${skillSeed.refreshed.join(",")}] keptHumanEdit=[${skillSeed.keptHumanEdit.join(",")}]`,
+        `[chat-service] Skill seed: inserted=[${skillSeed.inserted.join(",")}] refreshed=[${skillSeed.refreshed.join(",")}] keptHumanEdit=[${skillSeed.keptHumanEdit.join(",")}] removedMerged=[${skillSeed.removedMerged.join(",")}]`,
       );
       const server = app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
