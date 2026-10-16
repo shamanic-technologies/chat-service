@@ -2642,7 +2642,43 @@
           },
           "missingPiece": {
             "type": "string",
-            "description": "bug / feature: what is broken or missing."
+            "description": "bug / feature: what is broken or missing, and what you checked first."
+          },
+          "newStepOrTrigger": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "step",
+                  "trigger"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "The new outcome (step) or trigger, in the user's words."
+              },
+              "tool": {
+                "type": "string",
+                "description": "The client's tool where the real event happens (CRM, form, payments, site...)."
+              },
+              "event": {
+                "type": "string",
+                "description": "The real event in that tool that would fill it."
+              },
+              "example": {
+                "type": "string",
+                "description": "One person or case it would have fired for."
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "tool",
+              "event",
+              "example"
+            ],
+            "description": "feature only: a NEW outcome or trigger is a feature request, never a catalogue row (nothing would fill it). Carries what the team needs to ship the row WITH the backend that fills it. Default pieceKey: new-<kind>-<name>."
           },
           "decomposition": {
             "type": "array",
@@ -5153,7 +5189,7 @@
           "Skills"
         ],
         "summary": "File a request from an agent: bug, feature, skill/doc upgrade, or contact a human",
-        "description": "The same paths the Copilot's tools take (request_staff, request_skill_upgrade, contact_human), for any agent acting for an org. Every kind reaches someone who acts: bug / feature / skill_upgrade open a GitHub issue in the owning repo (chat-service for a skill) and ping the team on Telegram; contact_human pings the owner on Telegram straight away (no issue, at most one ping per org every 10 minutes). Deduplicated per org on (repo, kind, pieceKey) for issue kinds: a repeat answers 200 with duplicate:true and bumps requestCount. Staff requesters are never pinged.",
+        "description": "The same paths the Copilot's tools take (request_staff, request_skill_upgrade, contact_human), for any agent acting for an org: same record, same GitHub repo, same Telegram ping (the issue and ping say it came through the API). A new outcome or trigger is kind feature + newStepOrTrigger. Every kind reaches someone who acts: bug / feature / skill_upgrade open a GitHub issue in the owning repo (chat-service for a skill) and ping the team on Telegram; contact_human pings the owner on Telegram straight away (no issue, at most one ping per org every 10 minutes). Deduplicated per org on (repo, kind, pieceKey) for issue kinds: a repeat answers 200 with duplicate:true and bumps requestCount. Staff requesters are never pinged.",
         "parameters": [
           {
             "schema": {
@@ -5238,6 +5274,125 @@
           },
           "404": {
             "description": "Unknown skillSlug",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Skills"
+        ],
+        "summary": "List the calling org's requests to the team (newest first, 50 max)",
+        "description": "What the Copilot's list_staff_requests reads. Check it before filing: the same need reuses its pieceKey, and the repeat is counted instead of filed twice.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The org's requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "requestId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "bug",
+                              "feature",
+                              "skill_upgrade",
+                              "contact_human"
+                            ]
+                          },
+                          "repo": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "pieceKey": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "issueUrl": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "requestCount": {
+                            "type": "integer"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "requestId",
+                          "kind",
+                          "repo",
+                          "pieceKey",
+                          "title",
+                          "issueUrl",
+                          "requestCount",
+                          "createdAt"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "requests"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
             "content": {
               "application/json": {
                 "schema": {

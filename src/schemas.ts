@@ -2776,7 +2776,20 @@ export const AgentRequestBodySchema = z
     pieceKey: z.string().optional().openapi({ description: "bug / feature: kebab-case dedupe key (default: from the title)." }),
     title: z.string().optional().openapi({ description: "bug / feature / skill_upgrade: short title." }),
     userRequest: z.string().optional().openapi({ description: "bug / feature: the user's words. skill_upgrade: optional." }),
-    missingPiece: z.string().optional().openapi({ description: "bug / feature: what is broken or missing." }),
+    missingPiece: z.string().optional().openapi({ description: "bug / feature: what is broken or missing, and what you checked first." }),
+    newStepOrTrigger: z
+      .object({
+        kind: z.enum(["step", "trigger"]),
+        name: z.string().openapi({ description: "The new outcome (step) or trigger, in the user's words." }),
+        tool: z.string().openapi({ description: "The client's tool where the real event happens (CRM, form, payments, site...)." }),
+        event: z.string().openapi({ description: "The real event in that tool that would fill it." }),
+        example: z.string().openapi({ description: "One person or case it would have fired for." }),
+      })
+      .optional()
+      .openapi({
+        description:
+          "feature only: a NEW outcome or trigger is a feature request, never a catalogue row (nothing would fill it). Carries what the team needs to ship the row WITH the backend that fills it. Default pieceKey: new-<kind>-<name>.",
+      }),
     decomposition: z
       .array(z.object({ piece: z.string(), outcome: z.enum(["exists", "create", "needs_code"]), detail: z.string().optional() }))
       .optional(),
@@ -2810,7 +2823,7 @@ registry.registerPath({
   tags: ["Skills"],
   summary: "File a request from an agent: bug, feature, skill/doc upgrade, or contact a human",
   description:
-    "The same paths the Copilot's tools take (request_staff, request_skill_upgrade, contact_human), for any agent acting for an org. Every kind reaches someone who acts: bug / feature / skill_upgrade open a GitHub issue in the owning repo (chat-service for a skill) and ping the team on Telegram; contact_human pings the owner on Telegram straight away (no issue, at most one ping per org every 10 minutes). Deduplicated per org on (repo, kind, pieceKey) for issue kinds: a repeat answers 200 with duplicate:true and bumps requestCount. Staff requesters are never pinged.",
+    "The same paths the Copilot's tools take (request_staff, request_skill_upgrade, contact_human), for any agent acting for an org: same record, same GitHub repo, same Telegram ping (the issue and ping say it came through the API). A new outcome or trigger is kind feature + newStepOrTrigger. Every kind reaches someone who acts: bug / feature / skill_upgrade open a GitHub issue in the owning repo (chat-service for a skill) and ping the team on Telegram; contact_human pings the owner on Telegram straight away (no issue, at most one ping per org every 10 minutes). Deduplicated per org on (repo, kind, pieceKey) for issue kinds: a repeat answers 200 with duplicate:true and bumps requestCount. Staff requesters are never pinged.",
   request: {
     headers: z.object({
       "x-api-key": z.string(),
@@ -2826,6 +2839,47 @@ registry.registerPath({
     200: { description: "Already filed by this org (requestCount bumped)", content: { "application/json": { schema: AgentRequestResultSchema } } },
     400: { description: "Invalid request", content: { "application/json": { schema: ErrorResponseSchema } } },
     404: { description: "Unknown skillSlug", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/orgs/staff-requests",
+  tags: ["Skills"],
+  summary: "List the calling org's requests to the team (newest first, 50 max)",
+  description:
+    "What the Copilot's list_staff_requests reads. Check it before filing: the same need reuses its pieceKey, and the repeat is counted instead of filed twice.",
+  request: {
+    headers: z.object({
+      "x-api-key": z.string(),
+      "x-org-id": z.string(),
+      "x-user-id": z.string(),
+      "x-run-id": z.string(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "The org's requests",
+      content: {
+        "application/json": {
+          schema: z.object({
+            requests: z.array(
+              z.object({
+                requestId: z.string().uuid(),
+                kind: z.enum(["bug", "feature", "skill_upgrade", "contact_human"]),
+                repo: z.string().nullable(),
+                pieceKey: z.string(),
+                title: z.string(),
+                issueUrl: z.string().nullable(),
+                requestCount: z.number().int(),
+                createdAt: z.string(),
+              }),
+            ),
+          }),
+        },
+      },
+    },
+    ...skillErrors,
   },
 });
 

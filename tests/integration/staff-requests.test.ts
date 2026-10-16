@@ -4,7 +4,8 @@ import postgres from "postgres";
 import { like } from "drizzle-orm";
 import * as schema from "../../src/db/schema.js";
 import { submitStaffRequest, type StaffRequestInput, type StaffRequestDeps } from "../../src/lib/staff-requests.js";
-import { fileContactHuman, fileSkillUpgrade } from "../../src/lib/agent-requests.js";
+import { fileAgentRequest, fileContactHuman, fileSkillUpgrade } from "../../src/lib/agent-requests.js";
+import { listStaffRequestsForModel } from "../../src/lib/staff-requests.js";
 
 const connectionString = process.env.CHAT_SERVICE_DATABASE_URL;
 const RUN = Date.now().toString(36);
@@ -139,5 +140,28 @@ describe("agent requests: skill upgrade and contact a human", { timeout: 30000 }
     expect(r.kind).toBe("skill_upgrade");
     expect(d.openGithubIssue.mock.calls[0][0]).toBe("features-service");
     expect(d.openGithubIssue.mock.calls[0][1]).toMatch(/^\[Copilot skill upgrade\]/);
+  });
+
+  it("an API agent files a new outcome as a feature: same record, issue in the owning repo, Telegram, each saying it came through the API", async () => {
+    const d = deps("client@acme.com");
+    const ctx = { orgId: `org-${RUN}-api`, userId: "u-api", brandId: null, sessionId: null, source: "api" as const };
+    const r = await fileAgentRequest(db as never, ctx, {
+      kind: "feature",
+      repo: "crm-service",
+      title: "New step: Demo done",
+      userRequest: "count a demo done as a result",
+      missingPiece: "No step means a demo happened; checked GET /v1/catalogue/steps.",
+      newStepOrTrigger: { kind: "step", name: "Demo done", tool: "HubSpot", event: "Deal stage moves to Demo done", example: "Jane at Acme" },
+    }, d);
+    expect(r).toMatchObject({ kind: "feature", duplicate: false, staffPinged: true, destination: "GitHub issue in crm-service + Telegram to the team" });
+    const [repo, title, body] = d.openGithubIssue.mock.calls[0] as unknown as [string, string, string];
+    expect(repo).toBe("crm-service");
+    expect(title).toBe("[Copilot feature] New step: Demo done");
+    expect(body).toContain("Raised by an agent through the API");
+    expect(body).toContain("## New step: build it WITH the backend that fills it");
+    expect(String((d.sendStaffTelegram.mock.calls[0] as unknown as [string])[0])).toContain("via API agent");
+
+    const listed = await listStaffRequestsForModel(db as never, ctx.orgId);
+    expect(listed.requests.map((x) => x.pieceKey)).toEqual(["new-step-demo-done"]);
   });
 });

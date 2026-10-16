@@ -2,10 +2,12 @@ import { describe, it, expect } from "vitest";
 import { SEED_SKILLS } from "../../src/lib/skill-seed.js";
 import { SKILL_SLUG_RE, INDEX_SKILL_SLUG } from "../../src/lib/skills.js";
 import { TOOL_REGISTRY } from "../../src/lib/anthropic.js";
+import { MERGED_SKILL_SLUGS } from "../../src/lib/skill-seed.js";
+import { COPILOT_TOOL_API_OPS, skillApiGaps } from "../../src/lib/skill-api-ops.js";
 
 const TOPICS = [
-  "offers", "client-profiles", "qualification", "sources", "channels", "legs", "triggers",
-  "sales-paths", "campaigns", "workflows-and-templates", "connected-accounts", "budget-and-billing",
+  "offers", "client-profiles", "qualification", "sources", "legs", "triggers",
+  "campaigns", "workflows-and-templates", "connected-accounts", "budget-and-billing",
   "costs-roi-stats", "staff-requests", "catalogue", "infra",
 ];
 
@@ -54,13 +56,15 @@ describe("seeded skill tree", () => {
     // Names the skills mention as RETIRED or as data values (leg keys, trigger types) are not tools.
     const notTools = new Set([
       // MCP tool names (the skill is served to API agents too), not Copilot tools.
-      "distribute_list_triggers", "distribute_call_api",
+      "distribute_list_triggers", "distribute_call_api", "distribute_find_api", "distribute_describe_api", "distribute_prepay",
       "list_personas", "create_persona", "get_brand_profile", "lead_requested", "positive_reply_received",
       "website_visited", "meeting_booked", "meeting_attended", "signed_up", "form_submitted",
       "start_to_lead_found", "lead_found_to_positive_reply", "start_campaign", "activate_campaign",
       "switch_on_reactive_legs", "needs_code", "declared_on_hold", "on_hold", "trigger_not_fired",
       "customer_time", "created_on_hold", "paid_client", "website_visit", "meeting_booked", "step_not_found", "linkedin_post", "one_off", "start_funnel_campaign",
       "email_pushed_via_api", "push_email", "campaign_off",
+      // Data values and path segments (an API reader needs them verbatim).
+      "prepaid_checkout", "positive_reply", "skill_upgrade", "reactive_pipe_from_lead_found", "pipe_in_use",
     ]);
     const named = new Set(all.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []);
     const unknown = [...named].filter((n) => !notTools.has(n) && !TOOL_REGISTRY[n] && !n.startsWith("lead_found_to") && !n.startsWith("start_to"));
@@ -90,9 +94,11 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     for (const t of ["request_staff", "request_skill_upgrade", "contact_human"]) expect(index).toContain(t);
   });
 
-  it("every skill stays small (under ~800 tokens), the index under ~900", () => {
+  // One text serves the Copilot AND an API agent (owner 2026-10-16): the API
+  // operation beside each tool costs ~150 tokens on the busiest skills.
+  it("every skill stays small (under ~950 tokens), the index under ~1100", () => {
     for (const s of SEED_SKILLS) {
-      const cap = s.slug === "index" ? 3600 : 3200;
+      const cap = s.slug === "index" ? 4400 : 3900;
       expect(s.content.length, s.slug).toBeLessThan(cap);
     }
   });
@@ -334,5 +340,68 @@ describe("triggers skill (OUTCOME-TRIGGERS-CALLABLE-1015)", () => {
   it("says which triggers an outside call may fire, and where to read it", () => {
     const t = SEED_SKILLS.find((x) => x.slug === "triggers")!.content;
     for (const w of ["callable:false", "POST /v1/trigger-events", "distribute_list_triggers", "GET /v1/public/channels"]) expect(t).toContain(w);
+  });
+});
+
+describe("one skill text, two readers (standard vocabulary, owner 2026-10-16)", () => {
+  const tools = Object.keys(TOOL_REGISTRY);
+
+  it("every Copilot tool a skill names comes with its API operation, or says there is no API route yet", () => {
+    for (const s of SEED_SKILLS) {
+      const gaps = skillApiGaps(s.content, tools);
+      expect(gaps, s.slug).toEqual({ missing: [], unmapped: [] });
+    }
+  });
+
+  it("the guard catches a bare tool and an unmapped one (dry-run both ways)", () => {
+    expect(skillApiGaps("- find_steps: all steps.", tools).missing).toEqual(["find_steps"]);
+    expect(skillApiGaps("- find_steps → GET /v1/catalogue/steps", tools).missing).toEqual([]);
+    expect(skillApiGaps("- create_sales_path (no API route yet)", tools).missing).toEqual([]);
+    expect(skillApiGaps("- fork_workflow it", tools).unmapped).toEqual(["fork_workflow"]);
+  });
+
+  it("every mapped tool exists in the registry", () => {
+    for (const tool of Object.keys(COPILOT_TOOL_API_OPS)) expect(TOOL_REGISTRY[tool], tool).toBeDefined();
+  });
+
+  it("the index tells an API reader how to read the tools", () => {
+    expect(SEED_SKILLS[0].content).toMatch(/Reading this through the API or the MCP\?/);
+  });
+
+  it("an outside agent files a request the way the Copilot does, a new outcome or trigger included", () => {
+    const r = SEED_SKILLS.find((s) => s.slug === "staff-requests")!.content;
+    for (const w of ["POST /v1/staff-requests", "GET /v1/staff-requests", "newStepOrTrigger", "kind feature", "skill_upgrade", "contact_human"]) {
+      expect(r, w).toContain(w);
+    }
+    for (const slug of ["triggers", "catalogue-steps"]) {
+      expect(SEED_SKILLS.find((s) => s.slug === slug)!.content, slug).toContain("POST /v1/staff-requests");
+    }
+  });
+
+  it("no skill tells an agent to create an outcome or trigger row", () => {
+    for (const s of SEED_SKILLS) {
+      expect(s.content, s.slug).not.toMatch(/create_step|declare_trigger_type|POST \/v1\/catalogue\/(steps|triggers)/);
+    }
+  });
+
+  it("one skill per topic: channels and sales paths live under the catalogue; the old slugs answer the merged skill", () => {
+    const slugs = new Set(SEED_SKILLS.map((s) => s.slug));
+    expect(MERGED_SKILL_SLUGS).toEqual({ channels: "catalogue-channels", "sales-paths": "catalogue-sales-paths" });
+    for (const [old, into] of Object.entries(MERGED_SKILL_SLUGS)) {
+      expect(slugs.has(old), old).toBe(false);
+      expect(slugs.has(into), into).toBe(true);
+    }
+    const ch = SEED_SKILLS.find((s) => s.slug === "catalogue-channels")!.content;
+    for (const w of ["list_declared_channels", "declare_channel", "connected-accounts", "needs a workflow"]) expect(ch, w).toContain(w);
+    expect(SEED_SKILLS.find((s) => s.slug === "catalogue-sales-paths")!.content).toContain("list_sales_paths(brandId, offerId)");
+    for (const s of SEED_SKILLS) expect(s.content, s.slug).not.toMatch(/`(channels|sales-paths)`|see (channels|sales-paths)\b/);
+  });
+
+  it("workflow ranking is named a multi-armed bandit (best ROI runs, the others are still explored)", () => {
+    for (const slug of ["index", "catalogue-workflows", "catalogue-plays", "workflows-and-templates"]) {
+      const c = SEED_SKILLS.find((s) => s.slug === slug)!.content;
+      expect(c, slug).toContain("multi-armed bandit");
+      expect(c, slug).toMatch(/explor/);
+    }
   });
 });

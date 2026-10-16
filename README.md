@@ -1271,7 +1271,7 @@ The two prompt tools act on the SHARED platform templates (every org's emails ar
 | `contact_human` | The user wants a person: Telegram to the owner straight away (no issue, `repo` null). At most one ping per org per 10 minutes; a repeat inside the window is recorded with `telegramSkippedReason: "recent_contact_already_pinged"`. |
 | `list_staff_requests` | This org's requests. |
 
-Every request result carries `kind` and `destination` (where it landed, in words). The same four kinds are filed by any agent over HTTP: `POST /orgs/staff-requests` (`x-api-key`, `x-org-id`, `x-user-id`, `x-run-id`; body `{ kind, ... }`, the tool's fields; 201 filed, 200 duplicate, 400 invalid).
+Every request result carries `kind` and `destination` (where it landed, in words). The same four kinds are filed by any agent over HTTP: `POST /orgs/staff-requests` (`x-api-key`, `x-org-id`, `x-user-id`, `x-run-id`; body `{ kind, ... }`, the tool's fields, `newStepOrTrigger` included; 201 filed, 200 duplicate, 400 invalid). Same record, same repo, same Telegram ping as the Copilot; the issue body and the ping say it came through the API (gateway `POST /v1/staff-requests`). `GET /orgs/staff-requests` lists the calling org's requests (what `list_staff_requests` reads).
 
 **Sales funnel campaigns** (`src/lib/funnel-campaign-client.ts`, owner 2026-10-10). A campaign is brand x offer x sales funnel. campaign-service `/sales-funnel-campaigns` (v0.75.15) and billing-service funnel caps (v0.83.6) are not proxied by the gateway yet, so chat-service calls both directly with its service keys and the chat's `x-org-id` / `x-user-id` / `x-run-id`.
 
@@ -1570,7 +1570,11 @@ Uses PostgreSQL via Drizzle ORM. Eight tables:
 
 ## Copilot skill tree (`/internal/skills`)
 
-The Copilot's platform knowledge is a tree of markdown skills: an `index` skill (the walk + rules, appended to the system prompt of any config allowing `read_skill`, with its DIRECT sub-skills only) and one sub-skill per topic (catalogue, offers, client-profiles, qualification, sources, channels, legs, triggers, sales-paths, campaigns, workflows-and-templates, connected-accounts, budget-and-billing, costs-roi-stats, staff-requests, infra), loaded on demand with `read_skill`. Deeper levels are listed by `read_skill` on their parent: `catalogue` → `catalogue-steps`, `catalogue-sales-paths`, `catalogue-channels`, `catalogue-pipes`, `catalogue-plays` (tactics, strategies, plays: making a step behave a certain way, e.g. attach an offer document), `catalogue-sales-funnels`, `catalogue-workflows`; `infra` → `infra-build-workflow`. Every skill stays under ~800 tokens (guarded). Staff edit them live from the dashboard.
+The Copilot's platform knowledge is a tree of markdown skills: an `index` skill (the walk + rules, appended to the system prompt of any config allowing `read_skill`, with its DIRECT sub-skills only) and one sub-skill per topic (catalogue, offers, client-profiles, qualification, sources, legs, triggers, campaigns, emails-you-wrote, choices, workflows-and-templates, connected-accounts, budget-and-billing, costs-roi-stats, staff-requests, infra), loaded on demand with `read_skill`. Deeper levels are listed by `read_skill` on their parent: `catalogue` → `catalogue-steps`, `catalogue-sales-paths`, `catalogue-channels`, `catalogue-pipes`, `catalogue-plays` (tactics, strategies, plays: making a step behave a certain way, e.g. attach an offer document), `catalogue-sales-funnels`, `catalogue-workflows`; `infra` → `infra-build-workflow`. Every skill stays under ~950 tokens, the index ~1100 (guarded). Staff edit them live from the dashboard.
+
+**One text, two readers (owner 2026-10-16):** an outside agent reads the same skills through the gateway (`GET /v1/skills`, MCP `distribute_read_skill`) and can only call the gateway. So beside every Copilot tool it names, a skill names the gateway operation for the same act, or "no API route yet". `src/lib/skill-api-ops.ts` holds the tool → operation map; `tests/unit/skill-seed.test.ts` fails on a seed skill naming a tool without its operation, or a tool missing from the map. Workflow ranking is described as a multi-armed bandit (best by return runs, the others are still explored).
+
+**One skill per topic:** `channels` was merged into `catalogue-channels` and `sales-paths` into `catalogue-sales-paths` (`MERGED_SKILL_SLUGS`). The boot seed deletes the old row while it still holds seed content (a human-edited one is kept); `GET /internal/skills/channels` (and `read_skill`) answers the merged skill, never a 404; re-creating the old slug is refused.
 
 | Route | Description |
 |---|---|
@@ -1580,6 +1584,7 @@ The Copilot's platform knowledge is a tree of markdown skills: an `index` skill 
 | `GET /internal/skills/:slug/versions` | `{ slug, versions: SkillVersion[] }`, newest first, with content. |
 | `GET /internal/skills/:slug/versions/:version` | One version. Restore = PUT its content back. |
 | `GET /internal/staff-requests?orgId=&limit=` | Copilot escalations, newest first. |
+| `GET /orgs/staff-requests` | The calling org's requests, compact (`requestId`, `kind`, `repo`, `pieceKey`, `title`, `issueUrl`, `requestCount`), 50 max. |
 
 **Seed rule:** at boot, `seedSkills` inserts a seed skill absent from the table and refreshes a row ONLY while `updated_by = "seed"`. A skill any human saved is never overwritten by a deploy (`editedBy: "seed"` is refused on PUT).
 
