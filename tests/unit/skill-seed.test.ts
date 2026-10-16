@@ -356,7 +356,7 @@ describe("one skill text, two readers (standard vocabulary, owner 2026-10-16)", 
   it("the guard catches a bare tool and an unmapped one (dry-run both ways)", () => {
     expect(skillApiGaps("- find_steps: all steps.", tools).missing).toEqual(["find_steps"]);
     expect(skillApiGaps("- find_steps → GET /v1/catalogue/steps", tools).missing).toEqual([]);
-    expect(skillApiGaps("- create_sales_path (no API route yet)", tools).missing).toEqual([]);
+    expect(skillApiGaps("- declare_channel (no API route yet)", tools).missing).toEqual([]);
     expect(skillApiGaps("- fork_workflow it", tools).unmapped).toEqual(["fork_workflow"]);
   });
 
