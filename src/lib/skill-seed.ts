@@ -53,7 +53,7 @@ If the user named a channel, find it first to learn what it produces, then walk 
 - First check it is missing: list_campaigns → GET /v1/sales-funnel-campaigns (a running campaign may already do it: its path, runsWhen), then the API (\`staff-requests\`).
 - An email the user wrote, sent as written (test, list, CSV, API): it exists, load \`emails-you-wrote\`.
 - We only offer what we run today. Not run (LinkedIn posting, ads): say so in one sentence, offer what we run for the same result; if they insist, a feature request. Never describe its price or terms.
-- A funnel shape is missing but every piece runs: create it (create_sales_funnel → POST /v1/catalogue/sales-funnels; create_sales_path: no API route yet). A new step or trigger: a feature request with newStepOrTrigger, never a create.
+- A funnel shape is missing but every piece runs: create it (create_sales_path → POST /v1/catalogue/sales-paths, create_sales_funnel → POST /v1/catalogue/sales-funnels). A new step or trigger: a feature request with newStepOrTrigger, never a create.
 - A campaign should behave differently (attach a document, skip some addresses): that is the step's play. Load \`catalogue-plays\`.
 - Needs code or is broken: request_staff. A skill misled you: request_skill_upgrade. Wants a person: contact_human. All three → POST /v1/staff-requests.
 - Building something new from our services: load \`infra\`.
@@ -525,7 +525,7 @@ id, name, icon, line, cost, costUsd, roi, status.
 Pages are 10 rows by default, 25 at most. Narrow with filters or q, never page through everything. Pass id to any find tool to read ONE object in detail.
 
 ## Through the API
-GET /v1/catalogue/{steps,sales-paths,channels,pipes,sales-funnels,workflows,triggers}[/{id}] answer a staff key today. A customer key reads GET /v1/public/catalogue/steps, GET /v1/public/channels, GET /v1/offers/{offerId}/sales-funnels?brandId= (per offer) and GET /v1/public/catalogue/sales-funnels.
+GET /v1/catalogue/{steps,sales-paths,channels,pipes,sales-funnels,triggers}[/{id}] answer a customer key too (lists show only what we run); GET /v1/catalogue/workflows answers a staff key (a customer reads GET /v1/workflows/summaries). POST /v1/catalogue/sales-paths and POST /v1/catalogue/sales-funnels take a customer key; POST /v1/catalogue/pipes is staff. Per offer: GET /v1/offers/{offerId}/sales-funnels?brandId=.
 
 ## Chaining
 step id → find_sales_paths(containsSteps) → path id → find_channels(forPaths) → channel id → find_pipes(paths, channels) → find_sales_funnels(paths, containsChannels) → funnel id → find_workflows(pipe) only if asked. API: GET /v1/catalogue/sales-paths, GET /v1/catalogue/channels, GET /v1/catalogue/pipes, GET /v1/catalogue/sales-funnels, GET /v1/catalogue/workflows, same filters.
@@ -536,7 +536,7 @@ step id → find_sales_paths(containsSteps) → path id → find_channels(forPat
 3. Cards: the funnels we run, and "I want LinkedIn posting anyway" (then request_staff → POST /v1/staff-requests, kind feature, repo features-service, their words).
 
 ## Create
-create_sales_path (no API route yet), create_sales_funnel → POST /v1/catalogue/sales-funnels (runnable pipes only). Data only, starts nothing. Find first; never create what exists. create_pipe → POST /v1/catalogue/pipes (a channel on a new step) is staff work. A new step or trigger is never created: it is a feature request (catalogue-steps).
+create_sales_path → POST /v1/catalogue/sales-paths, create_sales_funnel → POST /v1/catalogue/sales-funnels (runnable pipes only). Data only, starts nothing. Find first; never create what exists. create_pipe → POST /v1/catalogue/pipes (a channel on a new step) is staff work. A new step or trigger is never created: it is a feature request (catalogue-steps).
 `),
   },
   {
@@ -579,7 +579,7 @@ A sales path is a chain of steps from first contact to Paid client, with no chan
 Prefer measured paths with the highest roi. A path is only a shape: the channels come next. Map the user's sequence onto the closest ranked funnel first and show its return and cost per paying client before proposing it. A campaign IS a funnel campaign: see \`campaigns\`.
 
 ## Create
-create_sales_path(legKeys in order) when the user's sequence matches none (no API route yet). Every leg must be performed by some pipe (find_pipes → GET /v1/catalogue/pipes). Returns created:false when it exists. A new funnel: \`catalogue-sales-funnels\`.
+create_sales_path(legKeys in order) when the user's sequence matches none → POST /v1/catalogue/sales-paths {legKeys, triggerId?}. Every leg must be performed by some pipe (find_pipes → GET /v1/catalogue/pipes). Returns created:false when it exists. A new funnel: \`catalogue-sales-funnels\`.
 `),
   },
   {
