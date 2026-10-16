@@ -85,4 +85,30 @@ describe("messages per kind", () => {
     expect(body).toContain("## Upgrade");
     expect(body).not.toContain("| Piece |");
   });
+  it("filed through the API: same issue and ping, each saying it came from an API agent", () => {
+    const row = { ...base, kind: "feature", repo: "crm-service", title: "New step: Demo done", userRequest: "u", missingPiece: "m" } as StaffRequest;
+    expect(buildIssueBody(row, "api")).toContain("Raised by an agent through the API (POST /v1/staff-requests)");
+    expect(buildIssueBody(row)).toContain("Raised by the Copilot chat");
+    expect(buildTelegramMessage(row, "a@b.co", "api")).toContain("Copilot feature request</b> · crm-service · via API agent");
+    expect(buildTelegramMessage(row, "a@b.co")).not.toContain("via API agent");
+  });
+});
+
+describe("a new outcome or trigger through the API body (newStepOrTrigger)", () => {
+  it("is a feature with the block the team needs and a default pieceKey", () => {
+    const r = parseStaffRequestArgs({
+      kind: "feature",
+      repo: "crm-service",
+      title: "New step: Demo done",
+      userRequest: "count a demo done as a result",
+      missingPiece: "No step means a demo happened.",
+      newStepOrTrigger: { kind: "step", name: "Demo done", tool: "HubSpot", event: "Deal stage moves to Demo done", example: "Jane at Acme, 2026-10-15" },
+    });
+    expect(r.pieceKey).toBe("new-step-demo-done");
+    expect(r.missingPiece).toContain("## New step: build it WITH the backend that fills it");
+    expect(r.missingPiece).toContain("Deal stage moves to Demo done (in HubSpot)");
+    expect(() =>
+      parseStaffRequestArgs({ kind: "bug", repo: "crm-service", title: "t", userRequest: "u", missingPiece: "m", newStepOrTrigger: { kind: "trigger", name: "n", tool: "t", event: "e", example: "x" } }),
+    ).toThrow(/feature/);
+  });
 });

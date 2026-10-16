@@ -37,7 +37,7 @@ describe("skill tree store", { timeout: 30000 }, () => {
   });
 
   afterAll(async () => {
-    await db.delete(schema.skills).where(inArray(schema.skills.slug, [root, child, `t-${RUN}-new`]));
+    await db.delete(schema.skills).where(inArray(schema.skills.slug, [root, child, `t-${RUN}-new`, `t-${RUN}-old`, `t-${RUN}-kept`]));
     await client?.end();
   });
 
@@ -107,5 +107,36 @@ describe("skill tree store", { timeout: 30000 }, () => {
 
   it("refuses the reserved seed editor", async () => {
     await expect(writeSkill(db as never, root, { content: "y", editedBy: SEED_EDITOR })).rejects.toThrow(/reserved/);
+  });
+
+  it("a merged slug: the seed drops its seed row, keeps a human-edited one, and a read of it answers the merged skill", async () => {
+    const old = `t-${RUN}-old`;
+    const kept = `t-${RUN}-kept`;
+    const merged = { [old]: root, [kept]: root };
+    // Both exist as seed rows first; then a human edits `kept`.
+    await seedSkills(db as never, [
+      ...seeds("root v2", "child v2"),
+      { slug: old, parentSlug: root, title: "Old", description: "old", position: 2, content: "old" },
+      { slug: kept, parentSlug: root, title: "Kept", description: "kept", position: 3, content: "kept" },
+    ], {});
+    await writeSkill(db as never, kept, { content: "kept, edited by Kevin", editedBy: "kevin@distribute.you" });
+
+    const r = await seedSkills(db as never, seeds("root v2", "child v2"), merged);
+    expect(r.removedMerged).toEqual([old]);
+    expect(r.keptHumanEdit).toContain(kept);
+    const [gone] = await db.select().from(schema.skills).where(eq(schema.skills.slug, old));
+    expect(gone).toBeUndefined();
+
+    // The old slug never 404s: it answers the skill it was merged into.
+    const read = await getSkill(db as never, old, merged);
+    expect(read.slug).toBe(root);
+    // A human-edited row still answers itself.
+    expect((await getSkill(db as never, kept, merged)).slug).toBe(kept);
+  });
+
+  it("refuses to re-create a slug merged into another skill", async () => {
+    await expect(writeSkill(db as never, "channels", { content: "x", title: "T", description: "D", parentSlug: root, editedBy: "k" })).rejects.toThrow(
+      /merged into "catalogue-channels"/,
+    );
   });
 });

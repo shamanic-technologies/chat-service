@@ -1,7 +1,7 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { db as Db } from "../db/index.js";
 import { skills, skillVersions, type Skill, type SkillVersion } from "../db/schema.js";
-import { SEED_SKILLS, type SeedSkill } from "./skill-seed.js";
+import { MERGED_SKILL_SLUGS, SEED_SKILLS, type SeedSkill } from "./skill-seed.js";
 
 // ---------------------------------------------------------------------------
 // Copilot SKILL TREE store.
@@ -86,10 +86,24 @@ export async function listSkills(database: Database): Promise<Skill[]> {
   return database.select().from(skills).orderBy(asc(skills.position), asc(skills.slug));
 }
 
-export async function getSkill(database: Database, slug: string): Promise<Skill> {
+/**
+ * One skill by slug. A slug merged into another skill (MERGED_SKILL_SLUGS)
+ * answers the skill it was merged into, so a caller still asking for the old
+ * slug never gets a 404 (its body carries the new slug).
+ */
+export async function getSkill(
+  database: Database,
+  slug: string,
+  merged: Readonly<Record<string, string>> = MERGED_SKILL_SLUGS,
+): Promise<Skill> {
   const [row] = await database.select().from(skills).where(eq(skills.slug, slug));
-  if (!row) throw new SkillNotFoundError(slug);
-  return row;
+  if (row) return row;
+  const mergedInto = merged[slug];
+  if (mergedInto) {
+    const [target] = await database.select().from(skills).where(eq(skills.slug, mergedInto));
+    if (target) return target;
+  }
+  throw new SkillNotFoundError(slug);
 }
 
 export async function listSkillVersions(database: Database, slug: string): Promise<SkillVersion[]> {
@@ -139,6 +153,10 @@ export async function writeSkill(
     }
 
     if (!existing) {
+      const mergedInto = MERGED_SKILL_SLUGS[slug];
+      if (mergedInto) {
+        throw new SkillValidationError(`Skill "${slug}" was merged into "${mergedInto}": edit that one.`);
+      }
       if (!write.title || !write.description) {
         throw new SkillValidationError(`Skill "${slug}" does not exist: creating it needs a title and a description.`);
       }
@@ -232,11 +250,27 @@ export async function writeSkill(
 export async function seedSkills(
   database: Database,
   seeds: readonly SeedSkill[] = SEED_SKILLS,
-): Promise<{ inserted: string[]; refreshed: string[]; keptHumanEdit: string[] }> {
+  merged: Readonly<Record<string, string>> = MERGED_SKILL_SLUGS,
+): Promise<{ inserted: string[]; refreshed: string[]; keptHumanEdit: string[]; removedMerged: string[] }> {
   const inserted: string[] = [];
   const refreshed: string[] = [];
   const keptHumanEdit: string[] = [];
+  const removedMerged: string[] = [];
   const now = new Date();
+
+  // A slug merged into another skill: its row goes while it still holds seed
+  // content (reads of the old slug answer the merged skill). A human-edited
+  // row is kept, like every human edit.
+  for (const slug of Object.keys(merged)) {
+    const [row] = await database.select().from(skills).where(eq(skills.slug, slug));
+    if (!row) continue;
+    if (row.updatedBy !== SEED_EDITOR) {
+      keptHumanEdit.push(slug);
+      continue;
+    }
+    await database.delete(skills).where(and(eq(skills.id, row.id), eq(skills.updatedBy, SEED_EDITOR)));
+    removedMerged.push(slug);
+  }
 
   for (const seed of seeds) {
     await database.transaction(async (tx) => {
@@ -304,7 +338,7 @@ export async function seedSkills(
       refreshed.push(seed.slug);
     });
   }
-  return { inserted, refreshed, keptHumanEdit };
+  return { inserted, refreshed, keptHumanEdit, removedMerged };
 }
 
 /**
@@ -335,8 +369,9 @@ export async function readSkillForModel(database: Database, slug: unknown) {
     throw new SkillValidationError("read_skill needs a slug (see the skill index).");
   }
   const all = await listSkills(database);
-  const skill = all.find((s) => s.slug === slug.trim());
-  if (!skill) throw new SkillNotFoundError(slug.trim());
+  const wanted = slug.trim();
+  const skill = all.find((s) => s.slug === wanted) ?? all.find((s) => s.slug === MERGED_SKILL_SLUGS[wanted]);
+  if (!skill) throw new SkillNotFoundError(wanted);
   return {
     slug: skill.slug,
     title: skill.title,

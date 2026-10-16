@@ -310,9 +310,17 @@ export async function fetchRequesterEmail(userId: string): Promise<string | null
 
 // --- GitHub ------------------------------------------------------------------
 
-export function buildIssueBody(row: StaffRequest): string {
+/** Who filed it: the Copilot chat, or an outside agent through the API (same record, same places). */
+export type StaffRequestSource = "copilot" | "api";
+
+const SOURCE_LINES: Record<StaffRequestSource, string> = {
+  copilot: "Raised by the Copilot chat",
+  api: "Raised by an agent through the API (POST /v1/staff-requests)",
+};
+
+export function buildIssueBody(row: StaffRequest, source: StaffRequestSource = "copilot"): string {
   const lines = [
-    `**Raised by the Copilot chat** for org \`${row.orgId}\`${row.brandId ? `, brand \`${row.brandId}\`` : ""}, user \`${row.userId}\`${row.requesterIsStaff ? " (staff)" : ""}.`,
+    `**${SOURCE_LINES[source]}** for org \`${row.orgId}\`${row.brandId ? `, brand \`${row.brandId}\`` : ""}, user \`${row.userId}\`${row.requesterIsStaff ? " (staff)" : ""}.`,
     ``,
     `## What the user asked`,
     ``,
@@ -401,11 +409,16 @@ const KIND_LABELS: Record<StaffRequestKind, string> = {
   contact_human: "🙋 <b>A user asks for a human</b>",
 };
 
-export function buildTelegramMessage(row: StaffRequest, requesterEmail: string | null): string {
+export function buildTelegramMessage(
+  row: StaffRequest,
+  requesterEmail: string | null,
+  source: StaffRequestSource = "copilot",
+): string {
   const e = escapeTelegramHtml;
+  const via = source === "api" ? " · via API agent" : "";
   if (row.kind === "contact_human") {
     return [
-      `${KIND_LABELS.contact_human}${row.missingPiece.includes("URGENT") ? " · <b>URGENT</b>" : ""}`,
+      `${KIND_LABELS.contact_human}${row.missingPiece.includes("URGENT") ? " · <b>URGENT</b>" : ""}${via}`,
       `<b>${e(row.title)}</b>`,
       `Message: ${e(row.userRequest.slice(0, 1500))}`,
       `From: ${e(requesterEmail ?? row.userId)} · org ${e(row.orgId)}${row.brandId ? ` · brand ${e(row.brandId)}` : ""}`,
@@ -413,7 +426,7 @@ export function buildTelegramMessage(row: StaffRequest, requesterEmail: string |
     ].join("\n");
   }
   return [
-    `${KIND_LABELS[row.kind]} · ${e(row.repo ?? "no repo")}`,
+    `${KIND_LABELS[row.kind]} · ${e(row.repo ?? "no repo")}${via}`,
     `<b>${e(row.title)}</b>`,
     `User asked: ${e(row.userRequest.slice(0, 500))}`,
     `Missing: ${e(row.missingPiece.slice(0, 500))}`,
@@ -429,6 +442,8 @@ export interface StaffRequestContext {
   userId: string;
   brandId: string | null;
   sessionId: string | null;
+  /** Default "copilot". "api" = filed through POST /orgs/staff-requests (gateway POST /v1/staff-requests). */
+  source?: StaffRequestSource;
 }
 
 export interface StaffRequestDeps {
@@ -520,7 +535,7 @@ export async function submitStaffRequest(
   if (!isContact && !row.issueUrl) {
     try {
       const prefix = ISSUE_PREFIXES[input.kind as Exclude<StaffRequestKind, "contact_human">];
-      const issue = await deps.openGithubIssue(row.repo as string, `${prefix} ${row.title}`, buildIssueBody(row));
+      const issue = await deps.openGithubIssue(row.repo as string, `${prefix} ${row.title}`, buildIssueBody(row, ctx.source));
       [row] = await database
         .update(staffRequests)
         .set({ issueUrl: issue.url, issueNumber: issue.number, issueError: null, updatedAt: new Date() })
@@ -555,7 +570,7 @@ export async function submitStaffRequest(
         .returning();
     } else {
       const sent = await deps.sendStaffTelegram(
-        buildTelegramMessage(row, requesterEmail ?? (lookupError ? `${ctx.userId} (email lookup failed)` : null)),
+        buildTelegramMessage(row, requesterEmail ?? (lookupError ? `${ctx.userId} (email lookup failed)` : null), ctx.source),
       );
       if (sent.ok) {
         staffPinged = true;
