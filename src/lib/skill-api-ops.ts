@@ -16,7 +16,7 @@
 export const NO_API_ROUTE = "no API route";
 
 export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> = {
-  // catalogue walk (GET /v1/catalogue/* answer a staff key today; public reads cover customers)
+  // catalogue walk (a customer key reads steps, sales paths, channels, pipes, funnels, triggers; workflows are staff)
   find_steps: ["GET /v1/catalogue/steps"],
   find_sales_paths: ["GET /v1/catalogue/sales-paths"],
   find_channels: ["GET /v1/catalogue/channels"],
@@ -31,7 +31,7 @@ export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> =
   create_play: ["POST /v1/plays"],
   create_pipe: ["POST /v1/catalogue/pipes"],
   create_sales_funnel: ["POST /v1/catalogue/sales-funnels"],
-  create_sales_path: [NO_API_ROUTE],
+  create_sales_path: ["POST /v1/catalogue/sales-paths"],
   list_trigger_types: ["GET /v1/catalogue/triggers"],
   list_declared_channels: [NO_API_ROUTE],
   declare_channel: [NO_API_ROUTE],
