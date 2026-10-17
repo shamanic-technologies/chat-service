@@ -1248,6 +1248,18 @@ The two prompt tools act on the SHARED platform templates (every org's emails ar
 | `list_replies_to_handle` | People who replied with interest and nobody handled yet, with `total` (the dashboard's "needs your call"). `GET /v1/leads?bucket=positive_reply&standing=sales_interest` |
 | `list_recent_runs` | The brand's latest runs (work done), optional `window`. `GET /v1/runs` |
 
+**People corrections** (`src/lib/people-client.ts`, PEOPLE-CORRECTIONS-1017): how distribute.you matched the brand's people (one person per human, their tags, the companies they speak for), and the user's fixes. Rows are projected (a people row is ~5 KB verbatim). A crm-service refusal (404 / 409 / 422 `{type: "refused", reason, error}`) comes back as the tool result `{refused: true, status, reason, error}` so the model says why; any other failure throws. Writes act only on the user's word (tool description HARD RULE).
+
+| Tool | Description |
+|---|---|
+| `find_people` | Search the brand's people (name, email, phone, company, message words), 1-10 per page: personId, name, emails, phones, channels, tags, organizations. `GET /v1/orgs/people?q=` |
+| `list_people_organizations` | The companies the people speak for, with counts and work tags (1-25). `GET /v1/orgs/people/organizations` |
+| `correct_person` | `tag_add` / `tag_remove` {personId, tag}, `organization_add` {personId, domain, tags?}, `organization_remove` {personId, companyId}, `domain_kind` {domain, domainKind}; `reason` = the user's words. `POST /v1/orgs/people/corrections` |
+| `list_people_corrections` | Active corrections + stated merges (undone with `includeUndone`), 20 each, with ids to undo. `GET /v1/orgs/people/corrections` + `GET /v1/orgs/people/merges` |
+| `undo_people_correction` | Take a correction back. `POST /v1/orgs/people/corrections/:correctionId/undo` |
+| `merge_people` | Two personIds are the same human. `POST /v1/orgs/people/merges` |
+| `undo_people_merge` | Split them back. `POST /v1/orgs/people/merges/:mergeId/undo` |
+
 **Copilot tools** (`src/lib/copilot-client.ts`, `skills.ts`, `staff-requests.ts`). One read per platform entity, the data writes whose owner routes exist, a two-step switch-on gate, and the staff escalation. Owner bodies are returned verbatim.
 
 | Tool | Description |
