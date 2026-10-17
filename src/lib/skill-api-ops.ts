@@ -98,6 +98,15 @@ export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> =
   create_workflow: ["POST /v1/workflows/create"],
   upgrade_workflow: ["POST /v1/workflows/upgrade"],
 
+  // people: how the brand's people were matched, and the user's corrections
+  find_people: ["GET /v1/orgs/people"],
+  list_people_organizations: ["/v1/orgs/people/organizations"],
+  correct_person: ["POST /v1/orgs/people/corrections"],
+  list_people_corrections: ["GET /v1/orgs/people/corrections"],
+  undo_people_correction: ["/v1/orgs/people/corrections/{correctionId}/undo"],
+  merge_people: ["POST /v1/orgs/people/merges"],
+  undo_people_merge: ["/v1/orgs/people/merges/{mergeId}/undo"],
+
   // accounts
   list_connected_accounts: ["/v1/orgs/google/accounts"],
 

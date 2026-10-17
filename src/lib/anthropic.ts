@@ -2274,6 +2274,135 @@ export const LIST_REPLIES_TO_HANDLE_TOOL: Anthropic.Tool = {
   },
 };
 
+// --- People corrections (PEOPLE-CORRECTIONS-1017): how distribute.you matched the brand's people ---
+
+const PERSON_TAG_WORDS =
+  "personal_to_user = a friend or family of the user who connected the account; personal_not_to_user = personal, but not with that user (chatter in a group); professional_to_brand = speaks about what this brand sells (a prospect, client, user, partner); professional_not_to_brand = work about something else (a supplier, the accountant, another activity of the owner).";
+
+const PERSON_ID_PROP = { type: "string", description: "The person id (personId from find_people)." };
+
+export const FIND_PEOPLE_TOOL: Anthropic.Tool = {
+  name: "find_people",
+  description:
+    "Find people the brand deals with (from Gmail, WhatsApp, the CRM, payments, signups...), each grouped as ONE person per real human, with how distribute.you sees them: their tags and the companies they speak for. " +
+    "Use it whenever the user names someone (\"Mom\", \"Sarah from Acme\", an email, a phone) before correcting or merging them, or asks \"how do you see X?\", \"who is tagged as a friend?\". " +
+    `Tags: ${PERSON_TAG_WORDS} Read-only. Several matches: ask the user which one, never guess.`,
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      query: { type: "string", description: "Name, email, phone, company or words they wrote. Omit to list the most recent people." },
+      limit: { type: "integer", description: "How many people (1-10, default 5)." },
+      offset: { type: "integer", description: "Skip this many (next page: the nextOffset returned)." },
+    },
+    required: ["brandId"],
+  },
+};
+
+export const LIST_PEOPLE_ORGANIZATIONS_TOOL: Anthropic.Tool = {
+  name: "list_people_organizations",
+  description:
+    "List the companies the brand's people speak for at work, most people first, with how many people each has and their work tags. Use it when the user asks \"which companies do you see?\", \"who do you have at Acme?\", or before removing a company from a person (it gives the companyId). Read-only.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      limit: { type: "integer", description: "How many companies (1-25, default 15)." },
+      offset: { type: "integer", description: "Skip this many (next page)." },
+    },
+    required: ["brandId"],
+  },
+};
+
+export const CORRECT_PERSON_TOOL: Anthropic.Tool = {
+  name: "correct_person",
+  description:
+    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: only correct what the user explicitly told you is wrong, never on your own guess. " +
+    "Fix how distribute.you sees a person or an email domain, when the user says it is wrong. Their word wins over the automatic answer until undone, and the people list updates in about a minute. Kinds:\n" +
+    "- tag_add / tag_remove {personId, tag}: \"Mom is a client, not family\" = tag_add professional_to_brand AND tag_remove personal_to_user (two calls); \"he is a friend\" = tag_add personal_to_user.\n" +
+    "- organization_add {personId, domain, tags?}: \"she works at acme.com\" (domain or website of the company).\n" +
+    "- organization_remove {personId, companyId}: \"she left Acme\" (companyId from find_people or list_people_organizations).\n" +
+    "- domain_kind {domain, domainKind}: \"mybiz.co is a company, not a public mailbox\" = organization; \"proton.me is a public mailbox\" = mailbox_provider.\n" +
+    `Tags: ${PERSON_TAG_WORDS} ` +
+    "Put the user's words in reason. A refusal comes back as {refused, reason, error}: tell the user why in plain words (person_not_found = find them again; company_unresolved = no company is known at that domain, ask for its website). To take it back, use undo_people_correction.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      kind: { type: "string", enum: ["tag_add", "tag_remove", "organization_add", "organization_remove", "domain_kind"] },
+      personId: PERSON_ID_PROP,
+      tag: { type: "string", enum: ["personal_to_user", "personal_not_to_user", "professional_to_brand", "professional_not_to_brand"], description: "tag_add / tag_remove only." },
+      domain: { type: "string", description: "organization_add: the company's domain or website. domain_kind: the email domain." },
+      companyId: { type: "string", description: "organization_remove only: the company id." },
+      domainKind: { type: "string", enum: ["mailbox_provider", "organization"], description: "domain_kind only: a public mailbox (gmail-like) or a company." },
+      tags: {
+        type: "array",
+        items: { type: "string", enum: ["professional_to_brand", "professional_not_to_brand"] },
+        description: "organization_add only, optional: how they speak for that company (default: the person's own work tags).",
+      },
+      reason: { type: "string", description: "The user's own words, kept with the correction." },
+    },
+    required: ["brandId", "kind"],
+  },
+};
+
+export const LIST_PEOPLE_CORRECTIONS_TOOL: Anthropic.Tool = {
+  name: "list_people_corrections",
+  description:
+    "List the corrections the brand stated on its people (tags, companies, domains) and the people it said were the same person, newest first, each with its id. Use it when the user says \"undo that\", \"what did I change?\", \"take back the merge\", to find the id to undo. Read-only.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      includeUndone: { type: "boolean", description: "Also list the ones already undone (default false)." },
+    },
+    required: ["brandId"],
+  },
+};
+
+export const UNDO_PEOPLE_CORRECTION_TOOL: Anthropic.Tool = {
+  name: "undo_people_correction",
+  description:
+    "Take back a correction made with correct_person (\"undo that\", \"put it back\"): the automatic answer applies again in about a minute. Only when the user asks. The correctionId comes from correct_person's answer in this chat or from list_people_corrections. A refusal comes back as {refused, reason, error}: say why.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      correctionId: { type: "string", description: "The correction id." },
+    },
+    required: ["brandId", "correctionId"],
+  },
+};
+
+export const MERGE_PEOPLE_TOOL: Anthropic.Tool = {
+  name: "merge_people",
+  description:
+    "State that two people are the same human (\"these two are the same person\", \"that WhatsApp number is Sarah\"): they become one person with one thread, every channel kept. Only when the user says so. Find both with find_people first and confirm which two if there is any doubt. A refusal comes back as {refused, reason, error}: already_one_person = nothing to do; same_person = the same id twice. Undo with undo_people_merge.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      personIds: { type: "array", items: { type: "string" }, description: "Exactly the two personIds from find_people." },
+      reason: { type: "string", description: "The user's own words." },
+    },
+    required: ["brandId", "personIds"],
+  },
+};
+
+export const UNDO_PEOPLE_MERGE_TOOL: Anthropic.Tool = {
+  name: "undo_people_merge",
+  description:
+    "Split two people the brand said were the same person back apart (\"they are not the same person\", \"undo the merge\"). Only when the user asks. The mergeId comes from merge_people's answer or list_people_corrections. A refusal comes back as {refused, reason, error}: say why.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      mergeId: { type: "string", description: "The merge id." },
+    },
+    required: ["brandId", "mergeId"],
+  },
+};
+
 export const LIST_RECENT_RUNS_TOOL: Anthropic.Tool = {
   name: "list_recent_runs",
   description:
@@ -3185,6 +3314,13 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   get_offer_performance: GET_OFFER_PERFORMANCE_TOOL,
   list_replies_to_handle: LIST_REPLIES_TO_HANDLE_TOOL,
   list_recent_runs: LIST_RECENT_RUNS_TOOL,
+  find_people: FIND_PEOPLE_TOOL,
+  list_people_organizations: LIST_PEOPLE_ORGANIZATIONS_TOOL,
+  correct_person: CORRECT_PERSON_TOOL,
+  list_people_corrections: LIST_PEOPLE_CORRECTIONS_TOOL,
+  undo_people_correction: UNDO_PEOPLE_CORRECTION_TOOL,
+  merge_people: MERGE_PEOPLE_TOOL,
+  undo_people_merge: UNDO_PEOPLE_MERGE_TOOL,
   present_choices: PRESENT_CHOICES_TOOL,
   open_page: OPEN_PAGE_TOOL,
   read_skill: READ_SKILL_TOOL,
