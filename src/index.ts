@@ -268,6 +268,7 @@ import {
   listRecentRuns,
   listRepliesToHandle,
 } from "./lib/account-client.js";
+import { PEOPLE_TOOL_HANDLERS } from "./lib/people-client.js";
 import {
   judgeWithTypeSafe,
   TypeSafeInvalidRequestError,
@@ -3285,6 +3286,14 @@ app.post("/chat", requireAuth, async (req, res) => {
           { brandId: args.brandId, window: args.window, limit: args.limit },
           featureCallParams,
         );
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // People corrections (PEOPLE-CORRECTIONS-1017): read, correct, undo, merge.
+      if (Object.hasOwn(PEOPLE_TOOL_HANDLERS, call.name)) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await PEOPLE_TOOL_HANDLERS[call.name](args, featureCallParams);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
