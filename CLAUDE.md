@@ -54,6 +54,7 @@ CI will warn if source files change without corresponding test changes. Do not s
 - `src/lib/runs-client.ts` — RunsService HTTP client for run tracking and cost reporting
 - `src/lib/config-defaults.ts` — Chat provider/model default resolution + registration merge semantics
 - `src/lib/skills.ts` / `skill-seed.ts` — Copilot skill tree store + seed; `copilot-client.ts` — per-entity reads/writes + switch-on gate; `staff-requests.ts` + `agent-requests.ts` — requests (bug, feature, skill_upgrade, contact_human: record, GitHub issue, Telegram); `catalogue-client.ts` — the agent catalogue walk (features-service `/internal/catalogue/*`); `discovery-client.ts` — infra discovery + read-only test runs (api-registry)
+- `src/lib/channel-copilot.ts` + `channel-sign-in.ts` — the Copilot on WhatsApp (inbound hand-off from crm, number → account, guest sign-in, reply via crm)
 - `scripts/generate-openapi.ts` — Generates openapi.json from Zod schemas
 - `tests/` — Test files (`*.test.ts`)
 - `openapi.json` — Auto-generated, do NOT edit manually
@@ -275,6 +276,10 @@ The system prompt is owned by the calling app (stored in `app_configs.system_pro
 A tool-call failure must reach the model as a **parsed, structured** `{error, tool, suggestion}` so it can self-correct — NOT a raw client error string. This applies to BOTH agentic loops and they must stay in parity: the Anthropic loop (`src/index.ts` catch → `formatToolError`) and the Gemini loop (`src/lib/gemini-chat.ts` catch → `formatToolError`). Do NOT reintroduce a bare `{ error: rawMsg }` on the Gemini path — that regresses to handing the model an unparsed blob (incident 2026-07-03: `upgrade_workflow` with a `script` node missing `config.code` failed and the Gemini path passed the raw error through, unlike Anthropic).
 
 `formatToolError` (`src/lib/tool-errors.ts`) must extract field-level detail from **two** validation dialects and through api-service's double-encoding: Zod `issues[].path/message` AND workflow-service DAG `details[].field/message`. api-service commonly wraps a downstream **400 as a 500** and stringifies the body as `{"error":"<json>"}` (sometimes nested twice) — `parseValidationErrors` peels the nested `.error` wrappers and checks the field-errors BEFORE the status branch, so the actionable message survives the 500 wrapper. When adding a new downstream that returns a different validation shape, extend `extractFieldErrors`, don't special-case at the call site.
+
+## The Copilot on WhatsApp: one agent, the number is the identity (owner 2026-10-18)
+
+`POST /internal/copilot/channel-messages` (crm-service hands every inbound message of the assistant's linked account; `src/lib/channel-copilot.ts`) runs the turn through `/chat` ITSELF (same config, tools, billing, refusals), never a second agent or prompt. The assistant's name/voice is the linked account's persona (data from crm), never a literal here. Identity = client-service `users.phone`; an unknown number is a GUEST session (`sessions.guest`) with the sign-in tools ONLY (`channel-sign-in.ts`), and `context.channel` / the sign-in tools take effect only on a session whose `channel_phone` this route wrote (a web caller cannot tie a number). WhatsApp turns are never pushed to `/internal/copilot/messages` (crm already holds the thread; the owner would be pinged twice). Guest sessions never answer `GET /sessions/latest`.
 
 ## Every message insert goes through `stripNul` (prod 2026-10-10)
 
