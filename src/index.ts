@@ -5,7 +5,9 @@ import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { db } from "./db/index.js";
-import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings } from "./db/schema.js";
+import { DEFAULT_TRANSCRIPTION_MODEL, TRANSCRIPTION_MODELS, TranscriptionError, probeSource, redactSourceUrl, type SourceInfo } from "./lib/transcription.js";
+import { readTranscription, runTranscriptionJob, toTranscriptionBody } from "./lib/transcription-job.js";
+import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions } from "./db/schema.js";
 import { transferBrand } from "./lib/transfer-brand.js";
 import { eq, and, desc, sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
@@ -249,7 +251,7 @@ import {
   setBrandPauseState,
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -2623,6 +2625,65 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
       console.error(`[internal/platform-images/generate] failed to finalize platform run runId="${runId}":`, statusErr);
     }
   }
+});
+
+// --- Platform transcription (speech → verbatim timed text, async) ---
+//
+// POST checks the source in the request (named 4xx, nothing billed), stores a
+// `processing` row on a platform run and answers 202; the job runs in the
+// background (src/lib/transcription-job.ts). GET reads it back.
+app.post("/internal/platform-transcriptions", requireInternalAuth, async (req, res) => {
+  const parsed = StartTranscriptionRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const { url } = parsed.data;
+  const model = TRANSCRIPTION_MODELS[parsed.data.model ?? DEFAULT_TRANSCRIPTION_MODEL];
+
+  let source: SourceInfo;
+  try {
+    source = await probeSource(url);
+  } catch (err) {
+    if (err instanceof TranscriptionError) {
+      return res.status(err.httpStatus).json({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
+
+  let runId: string;
+  try {
+    runId = (await createPlatformRun({ serviceName: "chat-service", taskName: "transcribe-media" })).id;
+  } catch (runErr) {
+    console.error(`[internal/platform-transcriptions] platform-run creation failed:`, runErr);
+    return res.status(502).json({ error: "Service temporarily unavailable (run tracking). Please try again." });
+  }
+
+  const [row] = await db
+    .insert(transcriptions)
+    .values({
+      status: "processing",
+      sourceUrl: redactSourceUrl(url),
+      mimeType: source.mimeType,
+      sizeBytes: source.sizeBytes,
+      model,
+      runId,
+    })
+    .returning();
+
+  runTranscriptionJob(db, { id: row.id, runId, url, model, source }).catch((err) =>
+    console.error(`[internal/platform-transcriptions] job ${row.id} crashed:`, err),
+  );
+  return res.status(202).json(toTranscriptionBody(row));
+});
+
+app.get("/internal/platform-transcriptions/:id", requireInternalAuth, async (req, res) => {
+  const parsed = TranscriptionIdParamsSchema.safeParse(req.params);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const row = await readTranscription(db, parsed.data.id);
+  if (!row) return res.status(404).json({ error: `No transcription "${parsed.data.id}".` });
+  return res.json(toTranscriptionBody(row));
 });
 
 // --- Chat ---
