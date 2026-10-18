@@ -7,7 +7,7 @@ import { dirname, join } from "path";
 import { db } from "./db/index.js";
 import { DEFAULT_TRANSCRIPTION_MODEL, TRANSCRIPTION_MODELS, TranscriptionError, probeSource, redactSourceUrl, type SourceInfo } from "./lib/transcription.js";
 import { readTranscription, runTranscriptionJob, toTranscriptionBody } from "./lib/transcription-job.js";
-import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions } from "./db/schema.js";
+import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions, channelInboundMessages } from "./db/schema.js";
 import { transferBrand } from "./lib/transfer-brand.js";
 import { modelIdCatalogue } from "./lib/model-ids.js";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -143,6 +143,25 @@ import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest 
 import { stripNul } from "./lib/strip-nul.js";
 import { pushCopilotTurnInBackground, type CopilotTurnMessage } from "./lib/copilot-unibox.js";
 import {
+  ChatChannelContextSchema,
+  buildChannelBlock,
+  createChannelRootRun,
+  enqueueChannelMessage,
+  listOrgBrandIds,
+  recoverChannelMessages,
+  resolvePhoneAccount,
+  runChatOnSelf,
+  sendWhatsappReply,
+  type ChannelDeps,
+} from "./lib/channel-copilot.js";
+import {
+  COMPLETE_SIGN_IN_TOOL_NAME,
+  SIGN_IN_TOOL_NAMES,
+  START_SIGN_IN_TOOL_NAME,
+  completeSignIn,
+  startSignIn,
+} from "./lib/channel-sign-in.js";
+import {
   buildNudgeState,
   NUDGE_QUESTION,
   NUDGE_QUESTION_KEY,
@@ -252,7 +271,7 @@ import {
   setBrandPauseState,
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, ChannelMessageRequestSchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -2724,6 +2743,8 @@ app.get("/sessions/latest", requireAuth, async (req, res) => {
         eq(sessions.orgId, orgId),
         eq(sessions.userId, userId),
         eq(sessions.configKey, configKey),
+        // A guest WhatsApp thread runs under the number owner's user: not theirs.
+        eq(sessions.guest, false),
       ),
     )
     .orderBy(desc(sessions.updatedAt))
@@ -2817,9 +2838,40 @@ app.post("/chat", requireAuth, async (req, res) => {
   const configToolNames = appConfig.allowedTools as string[];
   let requesterLookup: Promise<Requester> | null = null;
   const getRequester = (): Promise<Requester> => (requesterLookup ??= lookupRequester(userId));
-  const allowedToolNames: string[] = hasStaffOnlyTool(configToolNames)
+  const configAllowedToolNames: string[] = hasStaffOnlyTool(configToolNames)
     ? toolsForRequester(configToolNames, await getRequester())
     : configToolNames;
+
+  // A session POST /internal/copilot/channel-messages tied to a WhatsApp number
+  // (never settable by a caller): a GUEST (no account behind the number) gets
+  // the sign-in tools only; a known person keeps every tool plus sign-in.
+  let channelSession: { channelPhone: string; guest: boolean } | null = null;
+  if (sessionId) {
+    const [s] = await db
+      .select({ orgId: sessions.orgId, userId: sessions.userId, channelPhone: sessions.channelPhone, guest: sessions.guest })
+      .from(sessions)
+      .where(eq(sessions.id, sessionId));
+    if (s?.channelPhone && isSessionOwner(s, { orgId, userId })) {
+      channelSession = { channelPhone: s.channelPhone, guest: s.guest };
+    }
+  }
+  const allowedToolNames: string[] = channelSession?.guest
+    ? [...SIGN_IN_TOOL_NAMES]
+    : channelSession
+      ? [...configAllowedToolNames, ...SIGN_IN_TOOL_NAMES]
+      : configAllowedToolNames;
+  // This turn came in on WhatsApp: the channel block joins the prompt and the
+  // turn is not re-filed in the staff Unibox (crm already holds the thread).
+  const channelContext = channelSession && context?.channel !== undefined
+    ? ChatChannelContextSchema.safeParse(context.channel)
+    : null;
+  if (channelContext && !channelContext.success) {
+    return res.status(400).json({ error: "Invalid context.channel", details: channelContext.error.flatten() });
+  }
+  const channelTurn = channelContext?.success ? channelContext.data : null;
+  const promptContext = context && "channel" in context
+    ? Object.fromEntries(Object.entries(context).filter(([k]) => k !== "channel"))
+    : context;
 
   // Copilot nudge: Jev decides whether to speak BEFORE anything is stored or
   // any model runs. Quiet = a JSON answer, no session, no message, no stream.
@@ -2941,7 +2993,9 @@ app.post("/chat", requireAuth, async (req, res) => {
       return;
     }
   }
-  const systemPrompt = buildSystemPrompt(appConfig.systemPrompt + skillIndexBlock, context, campaignFeatureInputs);
+  const systemPrompt =
+    buildSystemPrompt(appConfig.systemPrompt + skillIndexBlock, promptContext, campaignFeatureInputs) +
+    (channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
   const isGeminiChat = chatProvider === "google";
   const claude = isGeminiChat ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
 
@@ -3301,6 +3355,44 @@ app.post("/chat", requireAuth, async (req, res) => {
         openedPages.push(record);
         const result = { opened: true, page: record.page };
         toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // Sign-in from WhatsApp: the number is the session's (set from a
+      // delivered message), never the model's or the caller's.
+      if (call.name === START_SIGN_IN_TOOL_NAME || call.name === COMPLETE_SIGN_IN_TOOL_NAME) {
+        const args = (call.args as Record<string, unknown>) || {};
+        if (!channelSession) throw new Error(`${call.name} works only in a WhatsApp conversation.`);
+        if (call.name === START_SIGN_IN_TOOL_NAME) {
+          const result = await startSignIn(args.email, channelSession.channelPhone);
+          toolCalls.push({ name: call.name, args, result });
+          return { name: call.name, result };
+        }
+        const signed = await completeSignIn(args.email, args.code, channelSession.channelPhone);
+        if (!signed.ok) {
+          toolCalls.push({ name: call.name, args: { email: args.email }, result: signed });
+          return { name: call.name, result: signed };
+        }
+        // The thread now belongs to that account: its next message (and the web
+        // Copilot) continue this same session with the account's access.
+        const brandIds = await listOrgBrandIds({ orgId: signed.account.orgId, userId: signed.account.userId, runId: runId! });
+        await db
+          .update(sessions)
+          .set({
+            orgId: signed.account.orgId,
+            userId: signed.account.userId,
+            guest: false,
+            brandIds: brandIds.length > 0 ? brandIds : null,
+            updatedAt: new Date(),
+          })
+          .where(eq(sessions.id, currentSessionId!));
+        const result = {
+          ok: true,
+          signedIn: signed.account.email,
+          accountCreated: signed.account.created,
+          note: "This WhatsApp number is now tied to this account. From their next message you act with its access.",
+        };
+        toolCalls.push({ name: call.name, args: { email: args.email }, result });
         return { name: call.name, result };
       }
 
@@ -4670,7 +4762,8 @@ app.post("/chat", requireAuth, async (req, res) => {
       tokenCount: totalPromptTokens + totalOutputTokens || null,
     })).returning({ id: messages.id, createdAt: messages.createdAt });
     // The Copilot is staff: the turn also lands in distribute.you's Unibox (crm-service).
-    pushCopilotTurnInBackground(configKey, {
+    // A WhatsApp turn is already in crm's WhatsApp thread: never filed twice.
+    if (!channelTurn) pushCopilotTurnInBackground(configKey, {
       orgId, userId, sessionId: currentSessionId,
       messages: [...(nudge ? [] : [userTurnMessage]), { messageId: savedAnswer.id, role: "assistant", text: cleanedResponse, at: savedAnswer.createdAt }],
     });
@@ -4738,7 +4831,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           // Stored so a reload draws the "Add credits" button again.
           creditsRequired,
         })).returning({ id: messages.id, createdAt: messages.createdAt });
-        pushCopilotTurnInBackground(configKey, {
+        if (!channelTurn) pushCopilotTurnInBackground(configKey, {
           orgId, userId, sessionId: creditsTurn.sessionId,
           messages: [
             ...(creditsTurn.userMessage ? [creditsTurn.userMessage] : []),
@@ -4850,6 +4943,31 @@ function stripButtons(text: string): string {
 }
 
 // --- Internal: Transfer Brand ---
+
+const channelDeps: ChannelDeps = {
+  db,
+  resolvePhone: (phone) => resolvePhoneAccount(phone),
+  listBrandIds: (identity) => listOrgBrandIds(identity),
+  createRootRun: (identity) => createChannelRootRun(identity),
+  runChat: (args) => runChatOnSelf(PORT, args),
+  sendReply: (args) => sendWhatsappReply(args),
+};
+
+app.post("/internal/copilot/channel-messages", requireInternalAuth, async (req, res) => {
+  const parsed = ChannelMessageRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const msg = parsed.data;
+  const [row] = await db
+    .insert(channelInboundMessages)
+    .values({ messageId: msg.messageId, channel: msg.channel, senderPhone: msg.sender.phone, status: "received", payload: msg })
+    .onConflictDoNothing({ target: channelInboundMessages.messageId })
+    .returning({ id: channelInboundMessages.id });
+  if (!row) return res.status(200).json({ status: "duplicate" });
+  res.status(202).json({ status: "accepted" });
+  void enqueueChannelMessage(channelDeps, msg.sender.phone, row.id);
+});
 
 app.post("/internal/transfer-brand", requireInternalAuth, async (req, res) => {
   const parsed = TransferBrandRequestSchema.safeParse(req.body);
@@ -5008,6 +5126,12 @@ if (process.env.NODE_ENV !== "test") {
       const server = app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });
+      // WhatsApp messages a restart cut off mid-turn: answered once the port is up.
+      setTimeout(() => {
+        recoverChannelMessages(channelDeps)
+          .then((n) => { if (n > 0) console.log(`[chat-service] re-running ${n} WhatsApp message(s) cut off by a restart`); })
+          .catch((err) => console.error("[chat-service] WhatsApp recovery failed:", err));
+      }, 60_000).unref();
 
       // Node 20 defaults requestTimeout to 300s (5 min). SSE chat streams
       // can run for 30–60 min when the LLM makes many tool calls, so we
