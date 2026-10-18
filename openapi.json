@@ -1425,10 +1425,11 @@
           },
           "languages": {
             "type": "array",
+            "nullable": true,
             "items": {
               "type": "string"
             },
-            "description": "Completed only. ISO 639-1 codes spoken, in order of first appearance (`[\"en\",\"fr\"]`); empty when nothing is spoken."
+            "description": "Completed only. ISO 639-1 codes spoken, in order of first appearance (`[\"en\",\"fr\"]`); empty when nothing is spoken; null when the model did not state them (never guessed)."
           },
           "durationSeconds": {
             "type": "number",

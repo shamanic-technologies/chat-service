@@ -68,7 +68,7 @@ export async function runTranscriptionJob(db: Db, job: TranscriptionJobInput): P
       .where(eq(transcriptions.id, job.id));
     console.log(
       `[transcription] ${job.id} completed | model=${job.model} | bytes=${job.source.sizeBytes}` +
-        ` | segments=${parsed.segments.length} | languages=${parsed.languages.join(",")}` +
+        ` | segments=${parsed.segments.length} | languages=${parsed.languages?.join(",") ?? "not stated"}` +
         ` | in=${result.tokensInput} | out=${result.tokensOutput}`,
     );
   } catch (err) {
@@ -123,7 +123,7 @@ export function toTranscriptionBody(row: Transcription) {
     source: { url: row.sourceUrl, mimeType: row.mimeType, sizeBytes: row.sizeBytes },
     ...(row.status === "completed"
       ? {
-          languages: row.languages ?? [],
+          languages: row.languages,
           durationSeconds: row.durationSeconds,
           segments: segments ?? [],
           text: (segments ?? []).map((s) => s.text).join("\n"),

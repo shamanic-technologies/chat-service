@@ -87,8 +87,12 @@ export interface TranscriptSegment {
 }
 
 export interface ParsedTranscript {
-  /** ISO 639-1 codes spoken, in order of appearance; empty when nothing is spoken. */
-  languages: string[];
+  /**
+   * ISO 639-1 codes spoken, in order of appearance; empty when nothing is
+   * spoken; null when the model did not state them (seen in prod: it skipped
+   * the line on a mixed recording). Never guessed from the text.
+   */
+  languages: string[] | null;
   segments: TranscriptSegment[];
 }
 
@@ -215,7 +219,7 @@ export const TRANSCRIPTION_PROMPT = [
   "Do not translate, summarize, correct or clean up: keep filler words, repetitions, false starts and the grammar exactly as spoken.",
   "If the speaker switches language, write each part in the language it was spoken in.",
   "Start a new line at each sentence or short group of sentences, prefixed with the time it starts in the recording as [MM:SS] (or [H:MM:SS] past one hour).",
-  "The very first line is: LANGUAGES: followed by the ISO 639-1 codes of the languages spoken, comma separated, in order of first appearance.",
+  "The very first line, with no time marker, is: LANGUAGES: followed by the ISO 639-1 codes of the languages spoken, comma separated, in order of first appearance.",
   "If nothing is spoken, answer exactly two lines: LANGUAGES: none, then NO SPEECH.",
   "Write nothing else: no title, no notes, no speaker labels, no descriptions of sounds.",
 ].join("\n");
@@ -225,6 +229,9 @@ const TIMESTAMP_LINE = /^\s*\[(?:(\d+):)?(\d{1,2}):(\d{2})(?:\.\d+)?\]\s*(.*)$/;
 /**
  * Turn the model's `[MM:SS] words` lines into segments. A line without a
  * timestamp continues the previous segment (the model wrapped a paragraph).
+ * The LANGUAGES / NO SPEECH answer lines are recognised with OR without a
+ * time marker in front: the model wrote `[00:00] LANGUAGES: fr` on a real
+ * 1-min French phone video (prod 2026-10-18), which was served as speech.
  * Fails loud on output that is neither a transcript nor the NO SPEECH answer.
  */
 export function parseTranscript(raw: string): ParsedTranscript {
@@ -234,24 +241,24 @@ export function parseTranscript(raw: string): ParsedTranscript {
   let noSpeech = false;
 
   for (const line of lines) {
-    const lang = /^LANGUAGES?\s*:\s*(.*)$/i.exec(line);
-    if (lang && languages === null && segments.length === 0) {
+    const ts = TIMESTAMP_LINE.exec(line);
+    const body = ts ? ts[4].trim() : line;
+    const lang = /^LANGUAGES?\s*:\s*(.*)$/i.exec(body);
+    if (lang && languages === null) {
       const value = lang[1].trim().toLowerCase();
       languages = value === "none" || value === "" ? [] : value.split(/[,\s]+/).filter(Boolean);
       continue;
     }
-    if (/^NO SPEECH\.?$/i.test(line) && segments.length === 0) {
+    if (/^NO SPEECH\.?$/i.test(body) && segments.length === 0) {
       noSpeech = true;
       continue;
     }
-    const ts = TIMESTAMP_LINE.exec(line);
     if (ts) {
       const hours = ts[1] ? Number(ts[1]) : 0;
       const minutes = Number(ts[2]);
       const seconds = Number(ts[3]);
-      const text = ts[4].trim();
       const start = hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${ts[3]}` : `${String(minutes).padStart(2, "0")}:${ts[3]}`;
-      segments.push({ startSeconds: hours * 3600 + minutes * 60 + seconds, start, text });
+      segments.push({ startSeconds: hours * 3600 + minutes * 60 + seconds, start, text: body });
       continue;
     }
     if (segments.length > 0) {
@@ -270,7 +277,7 @@ export function parseTranscript(raw: string): ParsedTranscript {
   if (kept.length === 0 && !noSpeech) {
     throw new TranscriptionError("unparseable_transcript", "The model answered no timed transcript lines.", 502);
   }
-  return { languages: languages ?? [], segments: kept };
+  return { languages, segments: kept };
 }
 
 // --- Gemini Files API + generateContent ------------------------------------
