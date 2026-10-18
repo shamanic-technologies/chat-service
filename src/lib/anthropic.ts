@@ -2730,6 +2730,7 @@ export const REQUEST_STAFF_TOOL: Anthropic.Tool = {
   description:
     "Report a BUG (something exists but fails) or request a FEATURE (one missing piece that needs CODE: no tool, route, setting or create does it). Records the request, opens a GitHub issue in the repo of the service that owns the piece, and pings the team on Telegram. Deduplicated per org on (repo, kind, pieceKey): call list_staff_requests first and reuse an existing pieceKey for the same need. pieceKey and decomposition are optional (pieceKey defaults to the title). " +
     "Call it once per missing piece, then tell the user that piece is on hold and will be switched on once it is built, and carry on with the rest of their request. Read the staff-requests skill for which repo owns what. " +
+    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: the user is a client. Never show them the issue link, a repo name or an internal cause, and never mention a BUG you filed: the team handles it silently, you answer with what works. " +
     "A NEW step (outcome) or trigger is ALWAYS this tool with newStepOrTrigger, never a create: nothing would ever fill a bare row (repo = the service that will fill it, e.g. crm-service for a CRM stage).",
   input_schema: {
     type: "object" as const,
