@@ -284,6 +284,7 @@ import {
 } from "./lib/ui-tools.js";
 import {
   getBillingAccount,
+  getCampaignNextSteps,
   getOfferPerformance,
   getOrgUsage,
   getSpendByCampaign,
@@ -3422,6 +3423,13 @@ app.post("/chat", requireAuth, async (req, res) => {
       if (call.name === "get_spend_by_campaign") {
         const args = (call.args as Record<string, unknown>) || {};
         const result = await getSpendByCampaign({ brandId: args.brandId, window: args.window }, featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      if (call.name === "get_campaign_next_steps") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await getCampaignNextSteps({ brandId: args.brandId, campaignId: args.campaignId }, featureCallParams);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }

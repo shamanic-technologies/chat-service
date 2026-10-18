@@ -68,6 +68,21 @@ export function getBillingAccount(params: ApiCallParams): Promise<unknown> {
   return getJson("get_billing_account", `/v1/billing/accounts`, params);
 }
 
+/**
+ * GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{campaignId}/next-steps — what comes next in one
+ * campaign (CAMPAIGN-NEXT-STEPS-1018): leads queued in the email sender, when they go out, and the measured time
+ * from a first email to a first positive reply. features-service computes every figure.
+ */
+export function getCampaignNextSteps(input: { brandId: unknown; campaignId: unknown }, params: ApiCallParams): Promise<unknown> {
+  const brandId = requireId("brandId", input.brandId);
+  const campaignId = requireId("campaignId", input.campaignId);
+  return getJson(
+    "get_campaign_next_steps",
+    `/v1/features/brands/${encodeURIComponent(brandId)}/sales-funnel-campaigns/${encodeURIComponent(campaignId)}/next-steps`,
+    params,
+  );
+}
+
 /** GET /v1/features/orgs/usage — everything the org has been billed, by kind of work. */
 export function getOrgUsage(params: ApiCallParams): Promise<unknown> {
   return getJson("get_org_usage", `/v1/features/orgs/usage`, params);
