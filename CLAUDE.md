@@ -134,6 +134,8 @@ Every entry in `MODEL_MAP` (`src/lib/anthropic.ts`) carries a required `capabili
 
 The field is REQUIRED, so a new alias does not compile until someone decides its tier — there is no default to fall back to, and `capabilityTierFor` throws through `resolveModel` on an alias this service cannot resolve. `modelCatalogue()` walks `PROVIDER_MODELS` through `resolveModel`, so an alias the validation list advertises but the map does not carry throws rather than being skipped. The route serves the alias and tier ONLY — `apiModelId` and `costPrefix` move whenever a vendor renames a model (DeepSeek, 2026-09-10) and are none of a consumer's business.
 
+**`GET /internal/model-ids` is the same facts per CONCRETE id (what consumers store), served AND retired** (`src/lib/model-ids.ts`). Served rows derive from `MODEL_MAP`; when an alias moves, the id it LEAVES goes into `RETIRED_MODELS` with its tier and former alias, never deleted (it still names old emails, LIVE-RESEARCH-1018). Every id needs a `MODEL_DISPLAY_NAMES` entry or the route throws.
+
 ## Chat provider/model default — Gemini, in code (not the DB)
 
 The default LLM for `/chat` is **Gemini `google`/`flash-pro`** (Gemini 3.8 Flash, mid-tier), resolved in code by `resolveChatProviderModel` (`src/lib/config-defaults.ts`). A config row (`app_configs` / `platform_configs`) with `provider`/`model` NULL resolves to `google`/`flash-pro` — **NOT** `anthropic`/`sonnet`. The Anthropic platform key has no credit balance; defaulting to it 400s every chat that uses a default config.

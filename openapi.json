@@ -1622,6 +1622,74 @@
         "description": "How capable the model behind an alias is. `cheap` = the small/fast tier a vendor sells for volume; `strong` = the vendor's main workhorse flagship; `frontier` = the premium tier above that flagship. Recorded per alias in chat-service, never derived from the alias name — `flash-pro` is `cheap` (it resolves to a Flash model) and `deepseek-pro` is `cheap` (a deprecated synonym pointing at V4.1 Flash), so a substring rule on \"pro\" gets both wrong.",
         "example": "strong"
       },
+      "ModelIdCatalogueResponse": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelIdEntry"
+            }
+          }
+        },
+        "required": [
+          "models"
+        ]
+      },
+      "ModelIdEntry": {
+        "type": "object",
+        "properties": {
+          "modelId": {
+            "type": "string",
+            "description": "The concrete model id the vendor answered with — the value consumers store per generation (content-generation-service `email_generations.model`). Not an alias.",
+            "example": "gemini-3.1-pro-preview"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "How to name this model in words on a page.",
+            "example": "Gemini 3.1 Pro"
+          },
+          "provider": {
+            "type": "string",
+            "description": "Vendor slug, as `provider` on /complete.",
+            "example": "google"
+          },
+          "capabilityTier": {
+            "$ref": "#/components/schemas/CapabilityTier"
+          },
+          "servedToday": {
+            "type": "boolean",
+            "description": "True when an alias on /complete resolves to this id today; false for a retired id that only names past generations."
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Aliases that resolve to this id today. Empty when retired.",
+            "example": [
+              "pro"
+            ]
+          },
+          "formerAliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Aliases that resolved to this id before (as their target, or as the Gemini 2.5 retry fallback). Empty for an id never resolved by chat-service (its caller reached the vendor itself).",
+            "example": []
+          }
+        },
+        "required": [
+          "modelId",
+          "displayName",
+          "provider",
+          "capabilityTier",
+          "servedToday",
+          "aliases",
+          "formerAliases"
+        ]
+      },
       "ChatNudgeQuietResponse": {
         "type": "object",
         "properties": {
@@ -4083,6 +4151,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ModelCatalogueResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/model-ids": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Concrete model id → display name + capability tier, served and retired",
+        "description": "Every concrete model id this service writes with today, and every one written with before (a retired model still names old emails). One row per id, ~35 rows, static: cheap to read on every refresh.\n\n**Auth:** Requires only `x-api-key` (no identity headers).\n\n**Tier vocabulary** (same as `GET /internal/models`): `cheap` = the vendor's small/fast volume tier (every Flash, Flash-Lite, Haiku, GLM Flash, Kimi K2.6); `strong` = its main flagship (Gemini Pro, Sonnet, GLM-5.x, Kimi K3, DeepSeek V4 Pro); `frontier` = above that flagship (Opus, Fable, GPT-6 Astra). A Flash / Pro split reads `cheap` as Flash and `strong` + `frontier` as Pro.\n\nThe tier describes the MODEL, never the alias string: `gemini-3.8-flash` is `cheap` although its alias is `flash-pro`. Rows served today are derived from the same map `/complete` resolves through; retired rows are recorded facts.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every concrete model id, served today first, then retired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelIdCatalogueResponse"
                 }
               }
             }

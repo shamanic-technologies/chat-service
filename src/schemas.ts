@@ -1315,6 +1315,71 @@ Derived from the same map \`/complete\` resolves through, so it cannot drift fro
   },
 });
 
+// --- Concrete model ids ---
+
+export const ModelIdEntrySchema = z
+  .object({
+    modelId: z.string().openapi({
+      description:
+        "The concrete model id the vendor answered with \u2014 the value consumers store per generation " +
+        "(content-generation-service `email_generations.model`). Not an alias.",
+      example: "gemini-3.1-pro-preview",
+    }),
+    displayName: z.string().openapi({
+      description: "How to name this model in words on a page.",
+      example: "Gemini 3.1 Pro",
+    }),
+    provider: z.string().openapi({ description: "Vendor slug, as `provider` on /complete.", example: "google" }),
+    capabilityTier: CapabilityTierSchema,
+    servedToday: z.boolean().openapi({
+      description: "True when an alias on /complete resolves to this id today; false for a retired id that only names past generations.",
+    }),
+    aliases: z.array(z.string()).openapi({
+      description: "Aliases that resolve to this id today. Empty when retired.",
+      example: ["pro"],
+    }),
+    formerAliases: z.array(z.string()).openapi({
+      description:
+        "Aliases that resolved to this id before (as their target, or as the Gemini 2.5 retry fallback). " +
+        "Empty for an id never resolved by chat-service (its caller reached the vendor itself).",
+      example: [],
+    }),
+  })
+  .openapi("ModelIdEntry");
+
+export const ModelIdCatalogueResponseSchema = z
+  .object({ models: z.array(ModelIdEntrySchema) })
+  .openapi("ModelIdCatalogueResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/model-ids",
+  tags: ["Internal"],
+  summary: "Concrete model id \u2192 display name + capability tier, served and retired",
+  description: `Every concrete model id this service writes with today, and every one written with before (a retired model still names old emails). One row per id, ~35 rows, static: cheap to read on every refresh.
+
+**Auth:** Requires only \`x-api-key\` (no identity headers).
+
+**Tier vocabulary** (same as \`GET /internal/models\`): \`cheap\` = the vendor's small/fast volume tier (every Flash, Flash-Lite, Haiku, GLM Flash, Kimi K2.6); \`strong\` = its main flagship (Gemini Pro, Sonnet, GLM-5.x, Kimi K3, DeepSeek V4 Pro); \`frontier\` = above that flagship (Opus, Fable, GPT-6 Astra). A Flash / Pro split reads \`cheap\` as Flash and \`strong\` + \`frontier\` as Pro.
+
+The tier describes the MODEL, never the alias string: \`gemini-3.8-flash\` is \`cheap\` although its alias is \`flash-pro\`. Rows served today are derived from the same map \`/complete\` resolves through; retired rows are recorded facts.`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Every concrete model id, served today first, then retired",
+      content: { "application/json": { schema: ModelIdCatalogueResponseSchema } },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // --- Chat ---
 
 export const ChatRequestSchema = z
