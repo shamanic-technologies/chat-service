@@ -479,12 +479,12 @@ Owners: runs-service (work done and its cost), features-service (usage, return),
 - get_offer_performance(brandId, offerId) → GET /v1/offers/{offerId}/revenue?brandId=: spend, emails, replies, return.
 - list_sales_paths → GET /v1/offers/{offerId}/sales-paths: return per path. get_offer_sourcing → GET /v1/offers/{offerId}/sourcing: return per source.
 - list_replies_to_handle(brandId, offerId) → GET /v1/leads?brandId=&offerId=&bucket=positive_reply: people who replied with interest and wait for the user.
-- get_campaign_next_steps(brandId, campaignId) → GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{campaignId}/next-steps: what comes next in one campaign. Leads whose first email is queued (emailSendQueue.leadsAwaitingFirstEmail), when they go out (firstEmailsFrom, in each lead's own business hours: sendWindow), and the measured median days from a first email to a first positive reply (timeToFirstPositiveReply).
+- get_campaign_next_steps(brandId, campaignId) → GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{campaignId}/next-steps: what comes next in one campaign. Leads waiting for a send on any channel (nextSends.leadsQueued: follow-ups scheduled on email, WhatsApp... plus the email sender's queue), when the next send happens (nextSends.nextSendAt, in each lead's own working hours; scheduledFollowups.byDay per day), and the measured median days from a first email to a first positive reply (timeToFirstPositiveReply).
 
 ## "How are my campaigns doing?"
 Tell it as a short story, one running campaign at a time (list_campaigns → GET /v1/sales-funnel-campaigns, then get_campaign_next_steps for each):
 1. It runs, its cap, what it used this period (list_campaigns: budget, maxBudget).
-2. What waits and when it leaves: "12 leads are queued and go out from Monday, in their business hours." Only when leadsAwaitingFirstEmail > 0. firstEmailsFrom is the earliest moment, never an exact promise.
+2. What waits and when it leaves: "47 leads are queued, the next go out Monday morning in their own working hours." Read nextSends only: leadsQueued (every channel), nextSendAt (the earliest moment, never an exact promise), dueNow (already due: they go at the next pass). leadsQueued null = say you cannot see the queue right now, never "nothing queued".
 3. When replies come: "Expect a positive reply about 5 days after the first email." Say whose figure it is (basis): this campaign, or our clients on the same channel. learning: true = too early to tell, no number.
 4. A reactive campaign acts on its trigger (runsWhen): say what starts it. No tool serves its delay: state none.
 
