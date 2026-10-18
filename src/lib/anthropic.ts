@@ -2234,6 +2234,20 @@ export const GET_ORG_USAGE_TOOL: Anthropic.Tool = {
   input_schema: { type: "object" as const, properties: {} },
 };
 
+export const GET_CAMPAIGN_NEXT_STEPS_TOOL: Anthropic.Tool = {
+  name: "get_campaign_next_steps",
+  description:
+    "Read what comes next in one campaign: how many leads have their first email queued (emailSendQueue.leadsAwaitingFirstEmail), when the sending window next opens for them in their own business hours (firstEmailsFrom, sendWindow), and the measured median days from a first email to a first positive reply (timeToFirstPositiveReply, its basis says whose figure: this campaign or our clients on the same channel; learning: true means too early to tell, never give a number). Read-only. Use it to answer \"how are my campaigns doing?\" for each running campaign.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      campaignId: { type: "string", description: "The campaign id (from list_campaigns)." },
+    },
+    required: ["brandId", "campaignId"],
+  },
+};
+
 export const GET_SPEND_BY_CAMPAIGN_TOOL: Anthropic.Tool = {
   name: "get_spend_by_campaign",
   description:
@@ -3313,6 +3327,7 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   get_billing_account: GET_BILLING_ACCOUNT_TOOL,
   get_org_usage: GET_ORG_USAGE_TOOL,
   get_spend_by_campaign: GET_SPEND_BY_CAMPAIGN_TOOL,
+  get_campaign_next_steps: GET_CAMPAIGN_NEXT_STEPS_TOOL,
   get_offer_performance: GET_OFFER_PERFORMANCE_TOOL,
   list_replies_to_handle: LIST_REPLIES_TO_HANDLE_TOOL,
   list_recent_runs: LIST_RECENT_RUNS_TOOL,

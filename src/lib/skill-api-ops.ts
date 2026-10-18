@@ -86,6 +86,7 @@ export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> =
   get_brand_pause: ["/v1/brands/{brandId}/pause"],
   set_brand_pause: ["/v1/brands/{brandId}/pause"],
   get_spend_by_campaign: ["/v1/runs/stats/costs"],
+  get_campaign_next_steps: ["/v1/features/brands/{brandId}/sales-funnel-campaigns/{campaignId}/next-steps"],
   list_recent_runs: ["GET /v1/runs"],
   get_org_usage: ["/v1/features/orgs/usage"],
   list_replies_to_handle: ["GET /v1/leads"],
