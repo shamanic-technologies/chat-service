@@ -1568,6 +1568,14 @@ Response `200`:
 
 Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token streaming is complete and **before** `[DONE]`. Each button has a `label` (display text) and `value` (text to send back as the next user message). Only render buttons when `buttons.length > 0`.
 
+## The Copilot on WhatsApp (`POST /internal/copilot/channel-messages`)
+
+crm-service hands every inbound message of the assistant's linked WhatsApp account (automation on, the brand the Copilot serves) to this route and sends nothing itself. Answers `202 {"status":"accepted"}` (or `200 {"status":"duplicate"}` for a `messageId` already received), then, one turn at a time per number:
+
+1. **Identity = the number.** client-service `GET /internal/phone-accounts?phone=`. A known number continues that user's latest `copilot` session (the one `GET /sessions/latest` serves the web), with exactly that user's access. An unknown number gets a **guest** session (`sessions.guest`, billed to the number owner's org under `accountUserId`) that sees no account and has only `start_sign_in` / `complete_sign_in`: the agent-signup email code, whose completion carries `whatsappPhone` so client-service ties the number to the proven account; the session is then re-keyed to that account (web and next message continue it).
+2. **Same turn as the web.** The route calls `POST /chat` on this process with the person's identity, `configKey: "copilot"`, and `context.channel` (persona + the thread's last messages, campaign sends included). `/chat` honours `context.channel` only on a session this route tied to a number (`sessions.channel_phone`), appends the WhatsApp block (name and voice from the persona, WhatsApp formatting), and does not re-file the turn in the staff Unibox.
+3. **Reply** through crm-service `POST /orgs/whatsapp/messages` from `fromAccount` (key `copilot:<messageId>`): markdown → WhatsApp markup, long dashes stripped, choices as a numbered list, out of credits with the dashboard link, first line `*<persona name>*`. A failed turn still answers with a short apology and is recorded `failed` on `channel_inbound_messages`. Messages cut off by a restart (last 30 min) run again ~60 s after boot.
+
 ## Environment Variables
 
 | Variable | Required | Description |
@@ -1586,7 +1594,8 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 | `TRANSACTIONAL_EMAIL_SERVICE_API_KEY` | No | API key for transactional-email-service. Unset → the out-of-credit staff alert does not send (logged, never fatal) |
 | `COPILOT_FOLLOWUP_ORG_ID` / `_USER_ID` / `_BRAND_ID` | For Copilot follow-ups | distribute.you's own org, a staff user and our brand: the scope every `create_followup` campaign runs under (platform org, never charged). The offer is NOT configured: each follow-up reads the brand's live offer from brand-service at create time (an archived offer is never used). Unset → the follow-up tools fail loud |
 | `CRM_SERVICE_URL` / `CRM_SERVICE_API_KEY` | For the Copilot | Every `copilot` chat turn (user message + answer) is pushed to crm-service `POST /internal/copilot/messages` once stored, so it shows in distribute.you's staff Unibox with the answer from "AI Copilot". Fire-and-forget: a failure is logged, the chat is unaffected |
-| `CLIENT_SERVICE_URL` / `CLIENT_SERVICE_API_KEY` | For `request_staff`, the Copilot Unibox push and the staff-only prompt tools | Reads the requester's email (`GET /internal/users/:userId`) to decide the staff Telegram ping and whether the prompt-template tools are offered. Unset → lookup fails, logged, the ping still goes out, the prompt tools are hidden |
+| `DASHBOARD_URL` | No | Link given on WhatsApp for pages and adding credits (default `https://dashboard.distribute.you`) |
+| `CLIENT_SERVICE_URL` / `CLIENT_SERVICE_API_KEY` | For WhatsApp (number → account, sign-in), `request_staff`, the Copilot Unibox push and the staff-only prompt tools | Reads the requester's email (`GET /internal/users/:userId`) to decide the staff Telegram ping and whether the prompt-template tools are offered. Unset → lookup fails, logged, the ping still goes out, the prompt tools are hidden |
 | `GITHUB_ISSUES_TOKEN` | For `request_staff` | GitHub token with issues:write on the `shamanic-technologies` repos. Unset → the request is recorded without an issue (`issueError`), and a repeat retries |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_OWNER_CHAT_ID` | For `request_staff` | Same bot + chat as billing-service and the dashboard. Unset → no ping (`telegramError` recorded) |
 | `FEATURES_SERVICE_URL` / `FEATURES_SERVICE_API_KEY` | For the `declare_*` / `list_declared_*` / `list_trigger_types` / catalogue (`find_*`, `create_*`) tools | features-service base URL and its service key (`/internal/declarations/*`, `/internal/catalogue/*`). Unset → those tools fail loud (`not configured`) |

@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { START_SIGN_IN_TOOL, COMPLETE_SIGN_IN_TOOL } from "./channel-sign-in.js";
 import {
   anthropicPromptTokens,
   readAnthropicBilledTokens,
@@ -3344,6 +3345,8 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   create_funnel_campaign: CREATE_FUNNEL_CAMPAIGN_TOOL,
   stop_funnel_campaign: STOP_FUNNEL_CAMPAIGN_TOOL,
   create_followup: CREATE_FOLLOWUP_TOOL,
+  start_sign_in: START_SIGN_IN_TOOL,
+  complete_sign_in: COMPLETE_SIGN_IN_TOOL,
   update_followup: UPDATE_FOLLOWUP_TOOL,
   cancel_followup: CANCEL_FOLLOWUP_TOOL,
   list_followups: LIST_FOLLOWUPS_TOOL,

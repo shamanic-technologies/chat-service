@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, unique, index, boolean, bigint, real } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, unique, uniqueIndex, index, boolean, bigint, real } from "drizzle-orm/pg-core";
 import type { AnthropicEffort, ChoicesRecord, OpenPageRecord } from "../schemas.js";
 
 export const sessions = pgTable(
@@ -17,6 +17,12 @@ export const sessions = pgTable(
     // The chat config key the session was started under (migration 0017).
     // NULL on sessions created before 2026-10-09. Read by GET /sessions/latest.
     configKey: text("config_key"),
+    // The WhatsApp number this session talks to (migration 0024): set only by
+    // POST /internal/copilot/channel-messages, from a message WhatsApp delivered.
+    channelPhone: text("channel_phone"),
+    // A number with no distribute.you account yet: the turn sees no account and
+    // gets the sign-in tools only. Never served by GET /sessions/latest.
+    guest: boolean("guest").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -26,6 +32,7 @@ export const sessions = pgTable(
   (table) => [
     index("sessions_org_brand_idx").on(table.orgId, table.brandIds),
     index("sessions_org_user_config_updated_idx").on(table.orgId, table.userId, table.configKey, table.updatedAt),
+    index("sessions_channel_phone_idx").on(table.channelPhone),
   ],
 );
 
@@ -235,6 +242,27 @@ export const transcriptions = pgTable("transcriptions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });
+
+/** One inbound channel message crm-service handed over (migration 0024). */
+export const channelInboundMessages = pgTable(
+  "channel_inbound_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    messageId: text("message_id").notNull(),
+    channel: text("channel").notNull(),
+    senderPhone: text("sender_phone").notNull(),
+    orgId: text("org_id"),
+    userId: text("user_id"),
+    sessionId: uuid("session_id"),
+    status: text("status").notNull().$type<"received" | "processing" | "answered" | "failed">(),
+    replyText: text("reply_text"),
+    error: text("error"),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("channel_inbound_messages_message_id_idx").on(table.messageId)],
+);
 
 export interface ToolCallRecord {
   name: string;

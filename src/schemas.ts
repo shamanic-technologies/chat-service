@@ -1195,6 +1195,62 @@ registry.registerPath({
   },
 });
 
+// --- The Copilot on WhatsApp (SOPHIE-COPILOT-WA-1018) ---
+
+const E164 = z.string().regex(/^\+[1-9]\d{6,14}$/, "phone must be E.164, e.g. +33612345678");
+
+export const ChannelMessageRequestSchema = z
+  .object({
+    channel: z.literal("whatsapp"),
+    messageId: z.string().min(1).max(300).openapi({ description: "Stable id of this inbound message (burst); a retry sends the same one and is answered once." }),
+    orgId: z.string().uuid().openapi({ description: "The linked account's org (pays for a guest's turn)." }),
+    brandId: z.string().uuid().openapi({ description: "The linked account's brand." }),
+    accountUserId: z.string().uuid().openapi({ description: "A real user of that org the account's work is billed under." }),
+    fromAccount: E164.openapi({ description: "The linked account's own number: the reply goes out from it." }),
+    assistant: z
+      .object({
+        name: z.string().max(200).nullable(),
+        role: z.string().max(200).nullable(),
+        instructions: z.string().max(4000).nullable(),
+      })
+      .openapi({ description: "The linked account's persona: the assistant's name, role and voice on this number." }),
+    sender: z.object({ phone: E164, name: z.string().max(300).nullable().optional() }),
+    text: z.string().min(1).max(20_000),
+    at: z.string().datetime({ offset: true }),
+    thread: z
+      .array(z.object({ at: z.string(), direction: z.enum(["inbound", "outbound"]), text: z.string().max(5000) }))
+      .max(30)
+      .openapi({ description: "The conversation's last messages BEFORE this one, oldest first, campaign sends included." }),
+  })
+  .openapi("ChannelMessageRequest");
+export type ChannelMessageRequest = z.infer<typeof ChannelMessageRequestSchema>;
+
+const ChannelMessageResponseSchema = z
+  .object({ status: z.enum(["accepted", "duplicate"]) })
+  .openapi("ChannelMessageResponse");
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/copilot/channel-messages",
+  tags: ["Internal"],
+  summary: "Hand an inbound WhatsApp message to the Copilot (it answers from the same number)",
+  description: `crm-service calls this for every inbound message on the assistant's linked WhatsApp account, and sends nothing itself. Answers **202** at once; the Copilot then runs the turn and replies through crm-service \`POST /orgs/whatsapp/messages\` from \`fromAccount\` (idempotency key \`copilot:<messageId>\`).
+
+**Identity:** the sender's number IS the person (client-service \`users.phone\`). A known number continues that user's latest Copilot session (the thread the web shows) with exactly their access; an unknown number is a guest session that sees no account and can only sign up or in (email + emailed code), after which the number is tied to that account.
+
+**Name and voice:** from \`assistant\` (the linked account's persona), never from code. One turn at a time per number.`,
+  request: {
+    headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
+    body: { content: { "application/json": { schema: ChannelMessageRequestSchema } } },
+  },
+  responses: {
+    202: { description: "Accepted: the answer goes out asynchronously", content: { "application/json": { schema: ChannelMessageResponseSchema } } },
+    200: { description: "This messageId was already received: nothing runs again", content: { "application/json": { schema: ChannelMessageResponseSchema } } },
+    400: { description: "Missing or invalid request fields", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing x-api-key header", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 // --- Internal Platform Image Generation ---
 
 registry.registerPath({
