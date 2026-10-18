@@ -356,6 +356,39 @@ describe("a campaign IS a sales funnel campaign (owner rule; prod 2026-10-10 NOV
     expect(out.note).toMatch(/never campaigns/);
   });
 
+  it("a campaign whose sales funnel was RETIRED is listed and flagged, never failing the whole list (campaign-service#764)", async () => {
+    const RETIRED = "trigger:signup_not_paid_5_min+signup_to_paid_client@ai-follow-up-email";
+    fetchMock().mockImplementation(async (url: string) => {
+      if (url.startsWith("http://features.test/brands/b/sales-funnel-campaigns")) return res(200, { salesFunnelCampaigns: [] });
+      if (url.startsWith("http://features.test/internal/catalogue/sales-funnels/")) {
+        const id = decodeURIComponent(url.split("/sales-funnels/")[1]);
+        if (id === RETIRED) return res(404, { error: `no sales funnel ${id}`, reason: "sales_funnel_not_found" });
+        return res(200, { id, trigger: { name: "Follow-up Due" } });
+      }
+      if (url.includes("/sales-funnel-campaigns")) {
+        return res(200, { salesFunnelCampaigns: [{ ...camp("c1", "Signup Follow-up Deals", RETIRED, 1), status: "stopped" }, { ...camp("c2", "Signup Follow-up", "ok", 1), status: "stopped" }] });
+      }
+      return res(200, { salesFunnelType: "reactive", volumeUnit: "prospects_handled", maxBudget: null, maxVolume: null });
+    });
+    const { FUNNEL_CAMPAIGN_TOOLS, RETIRED_FUNNEL_WORDS } = await funnel();
+    const out = (await FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ brandId: "b" }, p, customer)) as { campaignCount: number; campaigns: Array<Record<string, any>> };
+    expect(out.campaignCount).toBe(2);
+    expect(out.campaigns[0]).toMatchObject({ name: "Signup Follow-up Deals", status: "stopped", runsWhen: RETIRED_FUNNEL_WORDS, funnelRetired: true });
+    expect(out.campaigns[1]).toMatchObject({ name: "Signup Follow-up", runsWhen: "Each time: Follow-up Due" });
+    expect(out.campaigns[1]).not.toHaveProperty("funnelRetired");
+  });
+
+  it("any other catalogue refusal still fails loud", async () => {
+    fetchMock().mockImplementation(async (url: string) => {
+      if (url.startsWith("http://features.test/brands/b/sales-funnel-campaigns")) return res(200, { salesFunnelCampaigns: [] });
+      if (url.startsWith("http://features.test/internal/catalogue/sales-funnels/")) return res(502, { error: "down" });
+      if (url.includes("/sales-funnel-campaigns")) return res(200, { salesFunnelCampaigns: [camp("c1", "X", "x", 1)] });
+      return res(200, { salesFunnelType: "reactive", maxBudget: null, maxVolume: null });
+    });
+    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
+    await expect(FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ brandId: "b" }, p, customer)).rejects.toThrow(/502/);
+  });
+
   it("a reactive campaign's path names its trigger, never '?' (prod 2026-10-14)", async () => {
     const { pathWords } = await funnel();
     expect(pathWords({ id: "c", path: { items: [{ kind: "trigger", name: "Email Pushed Via API" }, { kind: "channel", name: "Email Sending" }, { kind: "step", label: "Positive reply" }] } })).toBe(

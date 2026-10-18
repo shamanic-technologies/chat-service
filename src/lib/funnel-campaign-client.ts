@@ -1,5 +1,5 @@
 import type { ApiCallParams } from "./api-client.js";
-import { features } from "./declarations-client.js";
+import { DeclarationRefusedError, features } from "./declarations-client.js";
 import { assertFunnelNotMixed } from "./funnel-mix.js";
 
 // ---------------------------------------------------------------------------
@@ -410,6 +410,30 @@ export function triggerWords(triggerName: string | null): string {
   return triggerName ? `Each time: ${triggerName}` : "On its own, within its caps (no trigger)";
 }
 
+/** What a campaign whose sales funnel features-service retired says it runs on (campaign-service#764). */
+export const RETIRED_FUNNEL_WORDS = "Not known: its sales funnel was retired from the catalogue (the campaign is kept, stopped, with its history)";
+
+/**
+ * The funnel as features-service serves it. A RETIRED funnel (catalogue retire, features v2026-10-16) answers
+ * 404 `sales_funnel_not_found` while campaigns still point at it: that campaign is listed and flagged, never
+ * dropped, and one orphan never fails the whole list (prod 2026-10-18, org f0420eb5: "Signup Follow-up Deals"
+ * made every stopped / unfiltered list fail). Any other refusal stays loud.
+ */
+async function servedFunnel(salesFunnelId: string): Promise<{ retired: boolean; trigger?: { name?: string } | null }> {
+  try {
+    const body = (await features("list_campaigns:funnel", "GET", `/internal/catalogue/sales-funnels/${enc(salesFunnelId)}`)) as {
+      trigger?: { name?: string } | null;
+    };
+    return { retired: false, trigger: body.trigger ?? null };
+  } catch (err) {
+    if (err instanceof DeclarationRefusedError && err.status === 404 && err.reason === "sales_funnel_not_found") {
+      console.error(`[funnel-campaigns] list_campaigns: sales funnel ${salesFunnelId} is retired from the catalogue, campaign flagged funnelRetired`);
+      return { retired: true };
+    }
+    throw err;
+  }
+}
+
 export async function listAccountCampaigns(a: Record<string, unknown>, p: ApiCallParams) {
   const status = opt(a.status);
   if (status !== null && !(CAMPAIGN_STATUSES as readonly string[]).includes(status)) {
@@ -430,15 +454,14 @@ export async function listAccountCampaigns(a: Record<string, unknown>, p: ApiCal
       const brandId = opt(a.brandId) ?? (c as unknown as { brandId?: string }).brandId ?? "";
       const caps = (await getFunnelCaps({ brandId, offerId: c.offerId, salesFunnelId: c.salesFunnelId }, p)) as CapsBody;
       const results = resultsByBrand.get(brandId)?.get(c.id);
-      const served = (await features("list_campaigns:funnel", "GET", `/internal/catalogue/sales-funnels/${enc(c.salesFunnelId)}`)) as {
-        trigger?: { name?: string } | null;
-      };
+      const served = await servedFunnel(c.salesFunnelId);
       return {
         id: c.id,
         name: c.salesFunnelName ?? c.salesFunnelId,
         path: pathWords(results),
         // What starts it (owner 2026-10-14: read what a running campaign already does before calling anything missing).
-        runsWhen: triggerWords(served.trigger?.name ?? null),
+        runsWhen: served.retired ? RETIRED_FUNNEL_WORDS : triggerWords(served.trigger?.name ?? null),
+        ...(served.retired ? { funnelRetired: true } : {}),
         type: caps.salesFunnelType ?? null,
         status: c.status,
         stopReason: c.stopReason ?? null,
