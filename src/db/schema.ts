@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, unique, index, boolean } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, unique, index, boolean, bigint, real } from "drizzle-orm/pg-core";
 import type { AnthropicEffort, ChoicesRecord, OpenPageRecord } from "../schemas.js";
 
 export const sessions = pgTable(
@@ -214,6 +214,28 @@ export interface StaffRequestPiece {
   detail?: string;
 }
 
+// One speech transcription of a video/audio file (POST /internal/platform-
+// transcriptions, migration 0023). Platform-only: no org. The source URL is
+// stored WITHOUT its query string (a presigned signature is never kept).
+export const transcriptions = pgTable("transcriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  status: text("status").notNull().$type<"processing" | "completed" | "failed">(),
+  sourceUrl: text("source_url").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+  model: text("model").notNull(),
+  runId: uuid("run_id"),
+  languages: text("languages").array(),
+  segments: jsonb("segments").$type<Array<{ startSeconds: number; start: string; text: string }>>(),
+  durationSeconds: real("duration_seconds"),
+  tokensInput: integer("tokens_input"),
+  tokensOutput: integer("tokens_output"),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+});
+
 export interface ToolCallRecord {
   name: string;
   args: Record<string, unknown>;
@@ -243,3 +265,4 @@ export type NewPlatformConfig = typeof platformConfigs.$inferInsert;
 export type Skill = typeof skills.$inferSelect;
 export type SkillVersion = typeof skillVersions.$inferSelect;
 export type StaffRequest = typeof staffRequests.$inferSelect;
+export type Transcription = typeof transcriptions.$inferSelect;

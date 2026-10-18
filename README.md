@@ -752,6 +752,15 @@ Use this endpoint when platform tooling or agents calling through the api-regist
 
 Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
 
+## Internal Platform Transcription (speech → verbatim timed text)
+
+`POST /internal/platform-transcriptions` with `{ "url": "<https GET url of a video/audio file>", "model"?: "flash" | "flash-pro" }` (`x-api-key` only, no org) starts an ASYNC job and answers **202** `{ id, status: "processing", ... }`. Poll `GET /internal/platform-transcriptions/:id` until `status` is `completed` (`languages`, `segments: [{ startSeconds, start: "MM:SS", text }]`, `text`, `durationSeconds`) or `failed` (`error: { code, message }`).
+
+- **Verbatim, in the language spoken**: no translation, summary or cleanup; a mixed English/French file keeps each part in its own language. One segment per sentence or short group of sentences.
+- **Checked in the request (named 4xx, nothing billed)**: `source_unreachable` (URL failed / expired, 422), `source_size_unknown` (422), `file_too_large` (> 2 GB, 413), `not_media` (422; a generic `application/octet-stream` resolves from the extension). Later failures land on the job: `upload_failed`, `unreadable_media`, `provider_refused`, `transcript_truncated`, `unparseable_transcript`, `interrupted` (a restart cut the job: reported after one hour, start again).
+- **How the file reaches the model**: the source is streamed (never buffered) into a Gemini Files API resumable upload (2 GB limit), decoded by Google, transcribed, then deleted. The presigned query string is never stored.
+- **Model + cost**: default `flash` = Gemini 3.5 Flash-Lite, which bills audio/video/text input at one rate, so it is priced by the existing `google-flash-lite-3.5-tokens-*` rows (`flash-pro` = Gemini 3.8 Flash, `google-flash-3.8-tokens-*`). Video at 1 fps and LOW media resolution (~91 input tokens per second): measured 2026-10-18, a 5 min mp4 = 27.9k in / 1.9k out in ~35 s; a 1.09 GB / 15:17 mp4 = 83.6k in / 6.3k out in ~2.5 min (≈ $0.04), transcript to the last word. Declared on a platform run as `actual` once the model answers.
+
 ## Internal: Transfer Brand
 
 `POST /internal/transfer-brand` — moves everything chat-service holds for one brand from one org to another (brand-service orchestrates it across the fleet).

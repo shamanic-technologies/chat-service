@@ -1058,6 +1058,143 @@ Does not support \`imageUrl\` or \`imageContext\` — use \`POST /complete\` for
   },
 });
 
+// --- Internal Platform Transcription (speech → verbatim timed text) ---
+
+export const TRANSCRIPTION_ERROR_CODES = [
+  "source_unreachable",
+  "source_size_unknown",
+  "file_too_large",
+  "not_media",
+  "upload_failed",
+  "unreadable_media",
+  "provider_refused",
+  "transcript_truncated",
+  "unparseable_transcript",
+  "interrupted",
+] as const;
+
+export const StartTranscriptionRequestSchema = z
+  .object({
+    url: z
+      .string()
+      .url()
+      .refine((u) => u.startsWith("https://"), { message: "url must be https" })
+      .openapi({
+        description:
+          "HTTPS GET URL of the video or audio file (a presigned bucket URL is fine; it must stay valid for the whole job, ~10 min for 2 GB). Range requests are used for the check; the file is then streamed once. Max 2 GB. The query string (signature) is never stored.",
+        example: "https://bucket.example.r2.cloudflarestorage.com/videos/take-12.mp4?X-Amz-Signature=...",
+      }),
+    model: z.enum(["flash", "flash-pro"]).optional().openapi({
+      description:
+        "`flash` (default, Gemini 3.5 Flash-Lite, cheapest) or `flash-pro` (Gemini 3.8 Flash, for a recording the default transcribes poorly).",
+    }),
+  })
+  .openapi("StartTranscriptionRequest");
+
+export const TranscriptionSegmentSchema = z
+  .object({
+    startSeconds: z.number().openapi({ description: "Where this passage starts in the recording, in seconds." }),
+    start: z.string().openapi({ description: "The same position as `MM:SS` (or `H:MM:SS`).", example: "03:41" }),
+    text: z.string().openapi({ description: "The words spoken, verbatim, in the language spoken (never translated)." }),
+  })
+  .openapi("TranscriptionSegment");
+
+export const TranscriptionErrorCodeSchema = z.enum(TRANSCRIPTION_ERROR_CODES).openapi("TranscriptionErrorCode", {
+  description:
+    "`source_unreachable` the URL failed or expired · `source_size_unknown` no Content-Length/Content-Range · `file_too_large` over 2 GB · `not_media` not a video/audio type · `upload_failed` transfer to the provider failed · `unreadable_media` the provider could not decode the file · `provider_refused` the model call failed · `transcript_truncated` the output limit was hit before the end · `unparseable_transcript` the model answered something that is not a timed transcript · `interrupted` a service restart cut the job (start it again).",
+});
+
+export const TranscriptionResponseSchema = z
+  .object({
+    id: z.string().uuid(),
+    status: z.enum(["processing", "completed", "failed"]),
+    model: z.string().openapi({ description: "Provider model id that transcribes (or transcribed) the file." }),
+    source: z.object({
+      url: z.string().openapi({ description: "Source URL WITHOUT its query string." }),
+      mimeType: z.string(),
+      sizeBytes: z.number().int(),
+    }),
+    languages: z.array(z.string()).optional().openapi({
+      description: "Completed only. ISO 639-1 codes spoken, in order of first appearance (`[\"en\",\"fr\"]`); empty when nothing is spoken.",
+    }),
+    durationSeconds: z.number().nullable().optional().openapi({
+      description: "Completed only. Length of the video as the provider decoded it (null for audio or when not reported).",
+    }),
+    segments: z.array(TranscriptionSegmentSchema).optional().openapi({
+      description: "Completed only. One entry per sentence or short group of sentences, in order.",
+    }),
+    text: z.string().optional().openapi({ description: "Completed only. Every segment's text, one per line." }),
+    tokensInput: z.number().int().nullable().optional(),
+    tokensOutput: z.number().int().nullable().optional(),
+    error: z
+      .object({ code: TranscriptionErrorCodeSchema.nullable(), message: z.string().nullable() })
+      .optional()
+      .openapi({ description: "Failed only. Why, as a code and in words." }),
+    runId: z.string().uuid().nullable().openapi({ description: "Platform run carrying the declared cost." }),
+    createdAt: z.string(),
+    completedAt: z.string().nullable(),
+  })
+  .openapi("TranscriptionResponse");
+
+export const TranscriptionErrorResponseSchema = z
+  .object({
+    error: z.string().openapi({ description: "The reason, in words." }),
+    code: TranscriptionErrorCodeSchema,
+  })
+  .openapi("TranscriptionErrorResponse");
+
+export const TranscriptionIdParamsSchema = z.object({ id: z.string().uuid() });
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/platform-transcriptions",
+  tags: ["Internal"],
+  summary: "Start transcribing a video/audio file behind a URL (platform, async)",
+  description: `Starts a verbatim speech transcription of the video or audio file at \`url\` and answers **202** with the job (\`status: "processing"\`). Poll \`GET /internal/platform-transcriptions/{id}\` (every 10-30 s) until \`status\` is \`completed\` or \`failed\`: a 5 min phone video takes ~1-2 min, a 1 GB / 15 min one a few minutes.
+
+**What comes back:** the words spoken, verbatim (no translation, summary or cleanup), in the language spoken; mixed languages keep each part in its own. One segment per sentence or short group of sentences, each with its start time.
+
+**Checked before 202 (named errors, nothing billed):** the URL answers (else 422 \`source_unreachable\`), reports its size (422 \`source_size_unknown\`), is at most 2 GB (413 \`file_too_large\`) and is a video/audio type (422 \`not_media\`; a generic \`application/octet-stream\` is resolved from the file extension). Later failures land on the job as \`error.code\`.
+
+**Auth:** \`x-api-key\` only (no org, no user).
+
+**Spend:** declared on a platform run (\`costSource: "platform"\`) under the model's Gemini token cost names (e.g. \`google-flash-lite-3.5-tokens-input\` / \`-tokens-output\`), as \`actual\` once the model answered (even when the answer is then refused as truncated).`,
+  request: {
+    headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
+    body: { content: { "application/json": { schema: StartTranscriptionRequestSchema } } },
+  },
+  responses: {
+    202: { description: "Job started", content: { "application/json": { schema: TranscriptionResponseSchema } } },
+    400: { description: "Missing or invalid request fields", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing x-api-key header", content: { "application/json": { schema: ErrorResponseSchema } } },
+    413: { description: "File over 2 GB (`file_too_large`)", content: { "application/json": { schema: TranscriptionErrorResponseSchema } } },
+    422: {
+      description: "The URL failed, reports no size, or is not media (`source_unreachable`, `source_size_unknown`, `not_media`)",
+      content: { "application/json": { schema: TranscriptionErrorResponseSchema } },
+    },
+    502: { description: "Run tracking unavailable", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/platform-transcriptions/{id}",
+  tags: ["Internal"],
+  summary: "Read a transcription job",
+  description:
+    "The job started by `POST /internal/platform-transcriptions`: `processing`, then `completed` (with `languages`, `segments`, `text`) or `failed` (with `error.code` + `error.message`). A job cut off by a service restart is reported `failed` / `interrupted` after an hour.",
+  request: {
+    headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
+    params: TranscriptionIdParamsSchema,
+  },
+  responses: {
+    200: { description: "The job", content: { "application/json": { schema: TranscriptionResponseSchema } } },
+    400: { description: "Invalid id", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing x-api-key header", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "No such job", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 // --- Internal Platform Image Generation ---
 
 registry.registerPath({
