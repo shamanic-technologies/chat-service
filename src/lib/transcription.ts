@@ -13,11 +13,12 @@
 // in memory or on disk. The uploaded file is deleted once the job ends (Google
 // also expires it after 48 h).
 //
-// Cost: Gemini 3.5 Flash-Lite (`flash` alias) bills audio, video and text input
-// at ONE rate, so the existing `google-flash-lite-3.5-tokens-*` catalog rows
-// price it (no new cost name). Video frames are irrelevant to a transcript, so
-// they go at LOW media resolution (~91 tokens per second of video in total,
-// measured: 5 min = 27.9k input tokens, 15 min = 83.6k ≈ $0.04 with the answer).
+// Cost: Gemini 3.8 Flash (`flash-pro` alias, the default) is priced by the
+// existing `google-flash-3.8-tokens-*` catalog rows; `flash` (3.5 Flash-Lite,
+// `google-flash-lite-3.5-tokens-*`) stays selectable. Video frames are
+// irrelevant to a transcript, so they go at LOW media resolution (~86-91
+// tokens per second of video in total, measured: 4 min = 20.4k input tokens
+// ≈ $0.04 on Flash 3.8 with the answer).
 // ---------------------------------------------------------------------------
 
 import { buildThinkingConfig, geminiCostPrefix } from "./gemini.js";
@@ -29,13 +30,23 @@ const GEMINI_UPLOAD_BASE = "https://generativelanguage.googleapis.com/upload/v1b
 /** Gemini Files API per-file limit. */
 export const MAX_TRANSCRIPTION_BYTES = 2 * 1024 * 1024 * 1024;
 
-/** Aliases a caller may pick; the cheapest faithful one is the default. */
+/** Aliases a caller may pick; the default is the one that keeps every word. */
 export const TRANSCRIPTION_MODELS = {
   flash: "gemini-3.5-flash-lite",
   "flash-pro": "gemini-3.8-flash",
 } as const;
 export type TranscriptionModelAlias = keyof typeof TRANSCRIPTION_MODELS;
-export const DEFAULT_TRANSCRIPTION_MODEL: TranscriptionModelAlias = "flash";
+// Flash 3.8, NOT Flash-Lite. Do not move the default back to `flash` to save
+// money: on a 238 s French phone video of slow speech with many pauses,
+// Flash-Lite 3.5 dropped ~90 s of speech (288 words served of ~415) and
+// stretched its timestamps so the transcript still reached the last second,
+// i.e. the loss is invisible from the timestamps. Six re-runs 2026-10-18:
+// Flash-Lite 367-409 words with 20-27 s holes, different on every run;
+// Flash 3.8 408-419 words, no hole, timestamps on the real speech onsets.
+// Normal-pace clips came out equal on both (94/96, 535/540, 139/141 words).
+// Cost ≈ $0.01 per minute of video vs $0.002: the transcripts feed a corpus
+// where a missing passage is the failure.
+export const DEFAULT_TRANSCRIPTION_MODEL: TranscriptionModelAlias = "flash-pro";
 
 /** A job still `processing` after this long was cut off (restart): reported failed. */
 export const TRANSCRIPTION_STALE_AFTER_MS = 60 * 60_000;

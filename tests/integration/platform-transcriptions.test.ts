@@ -111,7 +111,7 @@ describe("POST /internal/platform-transcriptions", { timeout: 30000 }, () => {
   it("transcribes in the background and declares the cost on a platform run", async () => {
     const start = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ url: SOURCE });
     expect(start.status).toBe(202);
-    expect(start.body).toMatchObject({ status: "processing", model: "gemini-3.5-flash-lite" });
+    expect(start.body).toMatchObject({ status: "processing", model: "gemini-3.8-flash" });
     // The presigned signature is never stored or served back.
     expect(start.body.source).toEqual({ url: "https://bucket.test/videos/take-12.mp4", mimeType: "video/mp4", sizeBytes: VIDEO_BYTES.length });
 
@@ -129,8 +129,8 @@ describe("POST /internal/platform-transcriptions", { timeout: 30000 }, () => {
     expect(cap.uploadedBody).toBe(VIDEO_BYTES);
     expect(cap.costs).toEqual([
       [
-        { costName: "google-flash-lite-3.5-tokens-input", quantity: 27930, costSource: "platform" },
-        { costName: "google-flash-lite-3.5-tokens-output", quantity: 1942, costSource: "platform" },
+        { costName: "google-flash-3.8-tokens-input", quantity: 27930, costSource: "platform" },
+        { costName: "google-flash-3.8-tokens-output", quantity: 1942, costSource: "platform" },
       ],
     ]);
     expect(cap.runStatuses).toEqual(["completed"]);

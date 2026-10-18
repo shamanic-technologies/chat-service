@@ -1086,7 +1086,7 @@ export const StartTranscriptionRequestSchema = z
       }),
     model: z.enum(["flash", "flash-pro"]).optional().openapi({
       description:
-        "`flash` (default, Gemini 3.5 Flash-Lite, cheapest) or `flash-pro` (Gemini 3.8 Flash, for a recording the default transcribes poorly).",
+        "`flash-pro` (default, Gemini 3.8 Flash) or `flash` (Gemini 3.5 Flash-Lite, ~5x cheaper, but it drops passages of slow, pause-heavy speech).",
     }),
   })
   .openapi("StartTranscriptionRequest");
