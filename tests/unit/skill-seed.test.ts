@@ -93,6 +93,8 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     expect(voice.parentSlug).toBe("index");
     expect(voice.content).toMatch(/reassured, knowing what happens next/);
     expect(voice.content).toMatch(/goes to the team silently/);
+    expect(voice.content).toMatch(/wins over any other wording rule/);
+    expect(voice.content).toMatch(/Never say what you could not read/);
     expect(voice.content).not.toMatch(/[\u2014\u2013]/);
     expect(bySlug.get("index")!.content).toContain("`client-comms`");
   });
