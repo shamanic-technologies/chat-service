@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_TRANSCRIPTION_MODEL,
   MAX_TRANSCRIPTION_BYTES,
+  TRANSCRIPTION_MODELS,
   TranscriptionError,
   assertTranscriptComplete,
   buildTranscriptionRequestBody,
@@ -13,6 +15,16 @@ import {
 } from "../../src/lib/transcription.js";
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe("default transcription model", () => {
+  // Flash-Lite 3.5 dropped ~90 s of slow French speech from a 238 s phone video
+  // and stretched its timestamps to hide the hole (prod 2026-10-18); Flash 3.8
+  // kept every word. The transcripts feed a voice corpus: the default keeps every word.
+  it("is Gemini 3.8 Flash, never Flash-Lite", () => {
+    expect(DEFAULT_TRANSCRIPTION_MODEL).toBe("flash-pro");
+    expect(TRANSCRIPTION_MODELS[DEFAULT_TRANSCRIPTION_MODEL]).toBe("gemini-3.8-flash");
+  });
+});
 
 function stubFetch(handler: (url: string, init?: RequestInit) => Response) {
   const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
