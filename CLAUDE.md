@@ -210,6 +210,10 @@ The pre-call cost reservation (`provision → authorize`) sizes the output-token
 
 **Never re-couple the hold to the provider's 64k cap** (the regression that caused the incident). The previous-section note that "64k matches the provisioned hold" was the OLD design and is gone. `/chat` uses the same right-sized hold (`estimateOutputTokens`); its streaming cap (`createStream` `MAX_TOKENS`) is separate and stays 64k. `/internal/platform-complete` posts actual-only (no hold), so it is unaffected. Integration tests in `tests/integration/complete-cost.test.ts` assert the hold quantity — they encode this invariant; if you change the sizing, update them deliberately, do not "fix" them back to 64k.
 
+## Platform transcription (`/internal/platform-transcriptions`) — async, Files API, 1 fps
+
+Speech → verbatim timed text for a video/audio URL (`src/lib/transcription.ts` + `transcription-job.ts`, table `transcriptions`, migration 0023). POST probes the source with a 1-byte `Range` GET (presigned URLs are signed for GET, so never HEAD) and answers named 4xx before any spend; the job streams the file into a Gemini Files resumable upload (`duplex: "half"`, never buffered: files reach 2 GB on a 15 GB box). **Never lower `VIDEO_FPS` below 1**: at 0.1 fps both Flash-Lite 3.5 and Flash 3.8 dropped the speech after the last sampled frame (2026-10-18). Costs are declared BEFORE the transcript is judged (a refused answer was still billed). The prompt is owned here (not a `/complete` passthrough); never ask it to clean up or translate — verbatim is the product.
+
 ## Code Conventions
 
 - TypeScript strict mode, ESM modules
