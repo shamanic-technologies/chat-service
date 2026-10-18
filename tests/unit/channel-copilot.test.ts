@@ -179,6 +179,14 @@ describe("processChannelMessage", () => {
     expect(d.listBrandIds).not.toHaveBeenCalled();
   });
 
+  it("a number linked in Integrations acts as the user who linked it, over users.phone", async () => {
+    const { db } = fakeDb({ selects: [[{ ...ROW, payload: { ...MSG, sender: { ...MSG.sender, linkedBy: { orgId: "org-linked", userId: "user-linked" } } } }], [{ id: "sess-l", brandIds: ["b"] }]], inserts: [] });
+    const { d, chats } = deps(db);
+    await processChannelMessage(d, "row-1");
+    expect(d.resolvePhone).not.toHaveBeenCalled();
+    expect(chats[0]).toMatchObject({ orgId: "org-linked", userId: "user-linked", sessionId: "sess-l" });
+  });
+
   it("an unknown number gets a guest session under the number owner's org", async () => {
     const { db, inserted } = fakeDb({ selects: [[ROW], []], inserts: [[{ id: "sess-guest" }]] });
     const { d, chats, sent } = deps(db, { resolvePhone: vi.fn(async () => null) });
