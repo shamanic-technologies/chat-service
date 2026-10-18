@@ -97,6 +97,12 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     expect(bySlug.get("index")!.content).toContain("`client-comms`");
   });
 
+  it("a figure doubt goes to the team, never to the client (owner 2026-10-18, the 8-vs-3 reply)", () => {
+    const stats = bySlug.get("costs-roi-stats")!.content;
+    expect(stats).not.toMatch(/say so plainly/);
+    expect(stats).toMatch(/silently; tell the client only what is certain/);
+  });
+
   it("the index keeps inner words away from the user and names every request kind", () => {
     const index = bySlug.get("index")!.content;
     expect(index).toMatch(/Never say pipe/);
