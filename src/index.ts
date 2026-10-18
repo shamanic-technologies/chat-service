@@ -122,6 +122,7 @@ import {
   SkillNotFoundError,
   SkillValidationError,
   buildSkillIndexBlock,
+  buildClientCommsBlock,
   getSkill,
   listSkillVersions,
   listSkills,
@@ -2978,9 +2979,11 @@ app.post("/chat", requireAuth, async (req, res) => {
   // A config that allows read_skill gets the skill INDEX (method + map of
   // sub-skills) appended; sub-skills are loaded on demand with read_skill.
   let skillIndexBlock = "";
-  if (allowedToolNames.includes("read_skill")) {
+  // A WhatsApp guest has no read_skill: it still gets the voice (client-comms).
+  const wantsVoiceOnly = channelSession?.guest === true && configAllowedToolNames.includes("read_skill");
+  if (allowedToolNames.includes("read_skill") || wantsVoiceOnly) {
     try {
-      skillIndexBlock = await buildSkillIndexBlock(db);
+      skillIndexBlock = wantsVoiceOnly ? await buildClientCommsBlock(db) : await buildSkillIndexBlock(db);
     } catch (err) {
       console.error(`[chat] skill index unavailable for configKey="${configKey}":`, err);
       sendSSE(res, {

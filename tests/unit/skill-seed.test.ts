@@ -88,6 +88,15 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     expect([...at].sort((a, b) => a - b)).toEqual(at);
   });
 
+  it("one voice for every surface: client-comms, pointed to by the index (owner 2026-10-18)", () => {
+    const voice = bySlug.get("client-comms")!;
+    expect(voice.parentSlug).toBe("index");
+    expect(voice.content).toMatch(/reassured, knowing what happens next/);
+    expect(voice.content).toMatch(/goes to the team silently/);
+    expect(voice.content).not.toMatch(/[\u2014\u2013]/);
+    expect(bySlug.get("index")!.content).toContain("`client-comms`");
+  });
+
   it("the index keeps inner words away from the user and names every request kind", () => {
     const index = bySlug.get("index")!.content;
     expect(index).toMatch(/Never say pipe/);
