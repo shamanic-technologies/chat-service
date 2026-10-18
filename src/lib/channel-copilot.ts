@@ -264,7 +264,9 @@ export async function processChannelMessage(deps: ChannelDeps, rowId: string): P
   let turnRunId: string | null = null;
   let identity: { orgId: string; userId: string } = { orgId: msg.orgId, userId: msg.accountUserId };
   try {
-    const account = await deps.resolvePhone(phone);
+    // A number the person linked in Integrations is their identity, and a
+    // stronger fact than users.phone (which can name an old empty shell).
+    const account = msg.sender.linkedBy ?? (await deps.resolvePhone(phone));
     identity = account ?? identity;
     turnRunId = await deps.createRootRun(identity);
     const picked = await pickChannelSession(deps, msg, account, turnRunId);
