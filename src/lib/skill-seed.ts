@@ -481,8 +481,8 @@ Owners: runs-service (work done and its cost), features-service (usage, return),
 - list_replies_to_handle(brandId, offerId) → GET /v1/leads?brandId=&offerId=&bucket=positive_reply: people who replied with interest and wait for the user.
 
 ## Rules
-- Quote served figures exactly. Never add, average or estimate a figure yourself.
-- If two figures disagree, say so plainly; do not pick one.
+- Use served figures only. Never add, average or estimate a figure yourself.
+- Two figures disagree: file it for the team (request_staff → POST /v1/staff-requests, kind bug), silently; tell the client only what is certain (\`client-comms\`).
 `),
   },
   {
