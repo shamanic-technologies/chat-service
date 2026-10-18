@@ -9,6 +9,7 @@ import { DEFAULT_TRANSCRIPTION_MODEL, TRANSCRIPTION_MODELS, TranscriptionError, 
 import { readTranscription, runTranscriptionJob, toTranscriptionBody } from "./lib/transcription-job.js";
 import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions } from "./db/schema.js";
 import { transferBrand } from "./lib/transfer-brand.js";
+import { modelIdCatalogue } from "./lib/model-ids.js";
 import { eq, and, desc, sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import {
@@ -458,6 +459,15 @@ app.get("/health", (_req, res) => {
  */
 app.get("/internal/models", requireInternalAuth, (_req, res) => {
   res.json({ models: modelCatalogue() });
+});
+
+/**
+ * Concrete model id → display name + tier, served and retired. Consumers
+ * store the id that answered, not the alias, so a study naming models reads
+ * this rather than keeping its own id → label table.
+ */
+app.get("/internal/model-ids", requireInternalAuth, (_req, res) => {
+  res.json({ models: modelIdCatalogue() });
 });
 
 // --- App Config Registration ---

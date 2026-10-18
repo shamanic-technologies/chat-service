@@ -682,6 +682,23 @@ Current catalogue:
 
 Error responses: 401 (auth).
 
+## Concrete model ids (`GET /internal/model-ids`)
+
+`GET /internal/model-ids` — one row per **concrete model id** (what a consumer stores per generation, e.g. `gemini-3.1-pro-preview`), served today AND retired, with its display name, capability tier and the aliases that point (or pointed) to it. `X-API-Key` only.
+
+```json
+{
+  "models": [
+    { "modelId": "gemini-3.8-flash", "displayName": "Gemini 3.8 Flash", "provider": "google",
+      "capabilityTier": "cheap", "servedToday": true, "aliases": ["flash-pro"], "formerAliases": [] },
+    { "modelId": "glm-5.2", "displayName": "GLM-5.2", "provider": "zai",
+      "capabilityTier": "strong", "servedToday": false, "aliases": [], "formerAliases": ["glm-pro"] }
+  ]
+}
+```
+
+Rows served today are derived from `MODEL_MAP` (cannot drift). Retired rows live in `RETIRED_MODELS` (`src/lib/model-ids.ts`): when an alias moves, add the id it left there with its tier; `tests/unit/model-ids.test.ts` fails if an id that ever named a stored generation goes missing, or lacks a display name. A Flash / Pro split reads `cheap` as Flash and `strong` + `frontier` as Pro.
+
 ## Internal Platform Completion
 
 `POST /internal/platform-complete` — platform-level LLM completion for internal service-to-service calls.
