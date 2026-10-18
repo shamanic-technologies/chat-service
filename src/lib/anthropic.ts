@@ -2237,7 +2237,7 @@ export const GET_ORG_USAGE_TOOL: Anthropic.Tool = {
 export const GET_CAMPAIGN_NEXT_STEPS_TOOL: Anthropic.Tool = {
   name: "get_campaign_next_steps",
   description:
-    "Read what comes next in one campaign: how many leads have their first email queued (emailSendQueue.leadsAwaitingFirstEmail), when the sending window next opens for them in their own business hours (firstEmailsFrom, sendWindow), and the measured median days from a first email to a first positive reply (timeToFirstPositiveReply, its basis says whose figure: this campaign or our clients on the same channel; learning: true means too early to tell, never give a number). Read-only. Use it to answer \"how are my campaigns doing?\" for each running campaign.",
+    "Read what comes next in one campaign: how many leads wait for a send on ANY channel (nextSends.leadsQueued: follow-ups scheduled on email, WhatsApp... plus the email sender's queue; nextSends.dueNow already due, they go at the next pass), when the next send happens in each lead's own working hours (nextSends.nextSendAt; scheduledFollowups.byDay splits it by day), and the measured median days from a first email to a first positive reply (timeToFirstPositiveReply, its basis says whose figure: this campaign or our clients on the same channel; learning: true means too early to tell, never give a number). Read-only. Use it to answer \"how are my campaigns doing?\" for each running campaign.",
   input_schema: {
     type: "object" as const,
     properties: {

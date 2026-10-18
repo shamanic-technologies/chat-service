@@ -422,3 +422,17 @@ describe("one skill text, two readers (standard vocabulary, owner 2026-10-16)", 
     }
   });
 });
+
+describe("campaign next steps: queued means every channel (NEXT-STEPS-ALL-CHANNELS-1019)", () => {
+  // A follow-up campaign writing in Gmail threads and WhatsApp queues nothing in the email sender: reading
+  // leadsAwaitingFirstEmail alone told a client "nothing queued" beside 47 people scheduled for Monday.
+  it("the stats skill and the tool read nextSends, never the sender's first-email count alone", () => {
+    const skill = SEED_SKILLS.find((s) => s.slug === "costs-roi-stats")!;
+    expect(skill.content).toContain("nextSends.leadsQueued");
+    expect(skill.content).toContain("nextSends.nextSendAt");
+    expect(skill.content).not.toContain("leadsAwaitingFirstEmail");
+    const tool = TOOL_REGISTRY.get_campaign_next_steps;
+    expect(tool.description).toContain("nextSends.leadsQueued");
+    expect(tool.description).not.toContain("leadsAwaitingFirstEmail");
+  });
+});
