@@ -50,6 +50,22 @@ describe("parseTranscript", () => {
     expect(parsed.segments).toEqual([{ startSeconds: 5, start: "00:05", text: "First part of the same sentence." }]);
   });
 
+  it("reads a LANGUAGES line the model put behind a time marker, never as speech (prod 2026-10-18)", () => {
+    const parsed = parseTranscript("[00:00] LANGUAGES: fr\n[00:00] lâcher prise dans cette contenance.\n[00:04] bon le fait d'être percé.");
+    expect(parsed.languages).toEqual(["fr"]);
+    expect(parsed.segments.map((s) => s.text)).toEqual(["lâcher prise dans cette contenance.", "bon le fait d'être percé."]);
+  });
+
+  it("answers languages null, not empty, when the model did not state them", () => {
+    const parsed = parseTranscript("[00:00] de la y even more, un peu de français.");
+    expect(parsed.languages).toBeNull();
+    expect(parsed.segments).toHaveLength(1);
+  });
+
+  it("reads a timed NO SPEECH answer", () => {
+    expect(parseTranscript("[00:00] LANGUAGES: none\n[00:00] NO SPEECH")).toEqual({ languages: [], segments: [] });
+  });
+
   it("answers no segments for a silent recording", () => {
     expect(parseTranscript("LANGUAGES: none\nNO SPEECH")).toEqual({ languages: [], segments: [] });
   });

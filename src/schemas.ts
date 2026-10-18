@@ -1114,8 +1114,8 @@ export const TranscriptionResponseSchema = z
       mimeType: z.string(),
       sizeBytes: z.number().int(),
     }),
-    languages: z.array(z.string()).optional().openapi({
-      description: "Completed only. ISO 639-1 codes spoken, in order of first appearance (`[\"en\",\"fr\"]`); empty when nothing is spoken.",
+    languages: z.array(z.string()).nullable().optional().openapi({
+      description: "Completed only. ISO 639-1 codes spoken, in order of first appearance (`[\"en\",\"fr\"]`); empty when nothing is spoken; null when the model did not state them (never guessed).",
     }),
     durationSeconds: z.number().nullable().optional().openapi({
       description: "Completed only. Length of the video as the provider decoded it (null for audio or when not reported).",
