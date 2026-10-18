@@ -1662,6 +1662,24 @@
                 "type": "string",
                 "nullable": true,
                 "maxLength": 300
+              },
+              "linkedBy": {
+                "type": "object",
+                "properties": {
+                  "orgId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "userId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "orgId",
+                  "userId"
+                ],
+                "description": "Present when the sender's number is a WhatsApp account a user LINKED in Integrations (crm): that user and the link's org. Wins over client-service users.phone (owner 2026-10-18: a number linked in Integrations is that user's identity)."
               }
             },
             "required": [

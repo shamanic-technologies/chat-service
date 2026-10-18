@@ -1214,7 +1214,17 @@ export const ChannelMessageRequestSchema = z
         instructions: z.string().max(4000).nullable(),
       })
       .openapi({ description: "The linked account's persona: the assistant's name, role and voice on this number." }),
-    sender: z.object({ phone: E164, name: z.string().max(300).nullable().optional() }),
+    sender: z.object({
+      phone: E164,
+      name: z.string().max(300).nullable().optional(),
+      linkedBy: z
+        .object({ orgId: z.string().uuid(), userId: z.string().uuid() })
+        .optional()
+        .openapi({
+          description:
+            "Present when the sender's number is a WhatsApp account a user LINKED in Integrations (crm): that user and the link's org. Wins over client-service users.phone (owner 2026-10-18: a number linked in Integrations is that user's identity).",
+        }),
+    }),
     text: z.string().min(1).max(20_000),
     at: z.string().datetime({ offset: true }),
     thread: z
