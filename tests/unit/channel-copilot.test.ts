@@ -58,28 +58,20 @@ describe("toWhatsappText", () => {
 });
 
 describe("renderChannelReply", () => {
-  it("signs with the persona name from the data and lists choices by number", () => {
-    const text = renderChannelReply(
-      { text: "Pick one:", choices: { choices: [{ label: "A" }, { label: "B" }] }, inputLabel: null, creditsRequired: null, error: null },
-      "Sophie",
-    );
-    expect(text).toBe("*Sophie*\nPick one:\n\n1. A\n2. B");
-  });
-
-  it("no persona name: no signature line", () => {
-    expect(renderChannelReply({ text: "Hi", choices: null, inputLabel: null, creditsRequired: null, error: null }, null)).toBe("Hi");
+  it("lists choices by number, with no name header (owner: a bare name line reads as a robot)", () => {
+    const text = renderChannelReply({ text: "Pick one:", choices: { choices: [{ label: "A" }, { label: "B" }] }, inputLabel: null, creditsRequired: null, error: null });
+    expect(text).toBe("Pick one:\n\n1. A\n2. B");
   });
 
   it("out of credits gives the link to add credits", () => {
     const text = renderChannelReply(
       { text: "You're out of credits. Add credits to keep going.", choices: null, inputLabel: null, creditsRequired: { message: "You're out of credits. Add credits to keep going.", label: "Add credits" }, error: null },
-      "Sophie",
     );
     expect(text).toContain("Add credits: https://dashboard.distribute.you");
   });
 
   it("an empty answer is never sent empty", () => {
-    expect(renderChannelReply({ text: "", choices: null, inputLabel: null, creditsRequired: null, error: null }, null)).toBe(CHANNEL_FAILURE_TEXT);
+    expect(renderChannelReply({ text: "", choices: null, inputLabel: null, creditsRequired: null, error: null })).toBe(CHANNEL_FAILURE_TEXT);
   });
 });
 
@@ -89,6 +81,7 @@ describe("buildChannelBlock", () => {
   it("names the assistant from the persona and shows the thread, campaign sends included", () => {
     const block = buildChannelBlock(channel, false);
     expect(block).toContain("as Sophie, Distribute.you Assistant");
+    expect(block).toContain("never as a header");
     expect(block).toContain("us: Hi from our campaign");
     expect(block).toContain("exactly this person's access");
   });
@@ -174,7 +167,7 @@ describe("processChannelMessage", () => {
     expect((chats[0].context as { channel: ChatChannelContext }).channel.assistant.name).toBe("Sophie");
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ orgId: MSG.orgId, brandId: MSG.brandId, phone: "+33680478702", fromAccount: "+77776879632", idempotencyKey: "copilot:$evt-1" });
-    expect(sent[0].text).toBe("*Sophie*\nYou have *2* campaigns, Alpha and Beta.");
+    expect(sent[0].text).toBe("You have *2* campaigns, Alpha and Beta.");
     expect(updates.at(-1)).toMatchObject({ status: "answered", error: null });
     expect(d.listBrandIds).not.toHaveBeenCalled();
   });
@@ -208,7 +201,7 @@ describe("processChannelMessage", () => {
     const { db, updates } = fakeDb({ selects: [[ROW], [{ id: "sess-web", brandIds: ["b"] }]], inserts: [] });
     const { d, sent } = deps(db, { runChat: vi.fn(async () => ({ status: 500, body: "boom" })) });
     await processChannelMessage(d, "row-1");
-    expect(sent[0].text).toBe(`*Sophie*\n${CHANNEL_FAILURE_TEXT}`);
+    expect(sent[0].text).toBe(CHANNEL_FAILURE_TEXT);
     expect(updates.at(-1)).toMatchObject({ status: "failed" });
   });
 

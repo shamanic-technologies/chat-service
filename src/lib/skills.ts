@@ -20,6 +20,8 @@ import { MERGED_SKILL_SLUGS, SEED_SKILLS, type SeedSkill } from "./skill-seed.js
 
 export const SEED_EDITOR = "seed";
 export const INDEX_SKILL_SLUG = "index";
+/** The one voice of every message a person reads from us (owner 2026-10-18), always loaded with the index. */
+export const CLIENT_COMMS_SKILL_SLUG = "client-comms";
 
 /** A typing burst by one editor inside this window is ONE version. */
 export const SKILL_VERSION_COALESCE_MS = 10 * 60_000;
@@ -351,16 +353,30 @@ export async function buildSkillIndexBlock(database: Database): Promise<string> 
   const all = await listSkills(database);
   const index = all.find((s) => s.slug === INDEX_SKILL_SLUG);
   if (!index) throw new SkillNotFoundError(INDEX_SKILL_SLUG);
-  const children = all.filter((s) => s.parentSlug === INDEX_SKILL_SLUG);
+  const voice = all.find((s) => s.slug === CLIENT_COMMS_SKILL_SLUG);
+  if (!voice) throw new SkillNotFoundError(CLIENT_COMMS_SKILL_SLUG);
+  const children = all.filter((s) => s.parentSlug === INDEX_SKILL_SLUG && s.slug !== CLIENT_COMMS_SKILL_SLUG);
   const lines = children.map((s) => `- \`${s.slug}\`: ${s.title}. ${s.description}`);
   return [
     `\n\n---\n## Skills (platform knowledge)`,
     index.content.trim(),
     ``,
+    voice.content.trim(),
+    ``,
     `### Sub-skills you can load with read_skill`,
     `(A skill lists its own sub-skills when you load it.)`,
     ...lines,
   ].join("\n");
+}
+
+/**
+ * The voice alone (client-comms), for a turn that gets no skill index: a guest
+ * on WhatsApp with no account still hears the same voice.
+ */
+export async function buildClientCommsBlock(database: Database): Promise<string> {
+  const voice = (await listSkills(database)).find((s) => s.slug === CLIENT_COMMS_SKILL_SLUG);
+  if (!voice) throw new SkillNotFoundError(CLIENT_COMMS_SKILL_SLUG);
+  return `\n\n---\n${voice.content.trim()}`;
 }
 
 /** What `read_skill` returns to the model: the skill, plus its direct children. */

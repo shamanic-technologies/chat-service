@@ -51,7 +51,7 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
   const who = name ? `${name}${role ? `, ${role}` : ""}` : "the distribute.you Copilot";
   const lines = [
     "\n\n---\n## Channel: WhatsApp (this turn)",
-    `You are answering on WhatsApp as ${who}. You are the distribute.you Copilot: same person, same conversation as on the web, same rules, same personality.${name ? ` Here your name is ${name}.` : ""}`,
+    `You are answering on WhatsApp as ${who}. You are the distribute.you Copilot: same person, same conversation as on the web, same rules, same personality.${name ? ` Here your name is ${name}: say it only when you first greet someone, never as a header.` : ""}`,
     "WhatsApp shows plain text. Write short messages. Use WhatsApp markup only (*bold*, _italic_): no tables, no headings, no markdown links (write the URL itself). Never use the long dash characters.",
     "Clickable choices (present_choices) are shown as a numbered list: the person answers with a number or in words.",
     `Pages you open (open_page) cannot be shown here: when a page helps, give the link ${DASHBOARD_URL}.`,
@@ -134,7 +134,8 @@ export function toWhatsappText(markdown: string): string {
 
 export const CHANNEL_FAILURE_TEXT = "Sorry, something went wrong on my side. Please send your message again in a minute.";
 
-export function renderChannelReply(turn: ChannelTurnResult, assistantName: string | null): string {
+/** No name header (owner 2026-10-18: a bare "Sophie" line read as a robot); the model introduces itself. */
+export function renderChannelReply(turn: ChannelTurnResult): string {
   let body = toWhatsappText(turn.text);
   if (turn.choices) {
     const list = turn.choices.choices
@@ -148,8 +149,7 @@ export function renderChannelReply(turn: ChannelTurnResult, assistantName: strin
     body = body.includes(turn.creditsRequired.message) ? `${body}\n${turn.creditsRequired.label}: ${DASHBOARD_URL}` : [body, credits].filter(Boolean).join("\n\n");
   }
   if (!body) body = CHANNEL_FAILURE_TEXT;
-  const name = assistantName?.trim();
-  return (name ? `*${name}*\n${body}` : body).slice(0, 4096);
+  return body.slice(0, 4096);
 }
 
 // ---------------------------------------------------------------------------
@@ -286,13 +286,12 @@ export async function processChannelMessage(deps: ChannelDeps, rowId: string): P
     if (status === 200) {
       const turn = parseChatStream(body);
       if (turn.error && !turn.text) failure = `chat stream error: ${turn.error}`;
-      else replyText = renderChannelReply(turn, msg.assistant.name);
+      else replyText = renderChannelReply(turn);
     } else if (status === 402) {
       // An org opened by the API agent signup is refused with a 402 JSON: still an answer.
       const json = JSON.parse(body || "{}") as Record<string, unknown>;
       replyText = renderChannelReply(
         { text: "", choices: null, inputLabel: null, error: null, creditsRequired: { message: String(json.message ?? json.error ?? "You're out of credits. Add credits to keep going."), label: "Add credits" } },
-        msg.assistant.name,
       );
     } else {
       failure = `POST /chat ${status}: ${body.slice(0, 500)}`;
@@ -302,7 +301,7 @@ export async function processChannelMessage(deps: ChannelDeps, rowId: string): P
   }
   if (failure) {
     console.error(`[chat-service] whatsapp message "${row.messageId}" from ${phone}: turn failed: ${failure}`);
-    replyText = renderChannelReply({ text: CHANNEL_FAILURE_TEXT, choices: null, inputLabel: null, creditsRequired: null, error: null }, msg.assistant.name);
+    replyText = renderChannelReply({ text: CHANNEL_FAILURE_TEXT, choices: null, inputLabel: null, creditsRequired: null, error: null });
   }
   try {
     await deps.sendReply({
