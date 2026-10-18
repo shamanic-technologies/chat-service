@@ -52,6 +52,14 @@ describe("account-client — read-only, the dashboard's own queries", () => {
     expect(urls).toEqual(["https://api.test.local/v1/billing/accounts", "https://api.test.local/v1/features/orgs/usage"]);
   });
 
+  it("get_campaign_next_steps reads one campaign's next steps from features-service (CAMPAIGN-NEXT-STEPS-1018)", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(okJson({ emailSendQueue: null }));
+    const { getCampaignNextSteps } = await loadModule();
+    expect(await getCampaignNextSteps({ brandId: "b-1", campaignId: "c 1" }, params)).toEqual({ emailSendQueue: null });
+    expect(calledUrl()).toBe("https://api.test.local/v1/features/brands/b-1/sales-funnel-campaigns/c%201/next-steps");
+    expect(() => getCampaignNextSteps({ brandId: "b-1", campaignId: "" }, params)).toThrow("campaignId is required");
+  });
+
   it("get_spend_by_campaign asks runs-service per campaign since UTC midnight of the window", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-09T15:30:00Z"));
