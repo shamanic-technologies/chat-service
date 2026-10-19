@@ -7,7 +7,7 @@ import { dirname, join } from "path";
 import { db } from "./db/index.js";
 import { DEFAULT_TRANSCRIPTION_MODEL, TRANSCRIPTION_MODELS, TranscriptionError, probeSource, redactSourceUrl, type SourceInfo } from "./lib/transcription.js";
 import { readTranscription, runTranscriptionJob, toTranscriptionBody } from "./lib/transcription-job.js";
-import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions, channelInboundMessages } from "./db/schema.js";
+import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions, channelInboundMessages, copilotProactiveTurns } from "./db/schema.js";
 import { transferBrand } from "./lib/transfer-brand.js";
 import { modelIdCatalogue } from "./lib/model-ids.js";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -137,12 +137,14 @@ import {
   listStaffRequests,
   listStaffRequestsForModel,
   StaffRequestValidationError,
+  fetchRequesterEmail,
+  isStaffEmail,
   submitStaffRequest,
   toStaffRequestBody,
 } from "./lib/staff-requests.js";
 import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
 import { stripNul } from "./lib/strip-nul.js";
-import { pushCopilotTurnInBackground, type CopilotTurnMessage } from "./lib/copilot-unibox.js";
+import { COPILOT_CONFIG_KEY, pushCopilotTurnInBackground, type CopilotTurnMessage } from "./lib/copilot-unibox.js";
 import {
   ChatChannelContextSchema,
   buildChannelBlock,
@@ -170,6 +172,13 @@ import {
   nudgeVerdict,
   type NudgeTurn,
 } from "./lib/copilot-nudge.js";
+import {
+  failInterruptedProactiveTurns,
+  pickProactiveRecipient,
+  processProactiveTurn,
+  proactiveToolNames,
+  type ProactiveDeps,
+} from "./lib/copilot-proactive.js";
 import { CATALOGUE_READ_TOOLS, CATALOGUE_WRITE_TOOLS, assertStaffBuild, type CatalogueReader } from "./lib/catalogue-client.js";
 import { FUNNEL_CAMPAIGN_TOOLS } from "./lib/funnel-campaign-client.js";
 import { FOLLOWUP_TOOLS } from "./lib/followup-client.js";
@@ -272,7 +281,7 @@ import {
   setBrandPauseState,
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, ChannelMessageRequestSchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, ChannelMessageRequestSchema, ProactiveTurnRequestSchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -2857,11 +2866,29 @@ app.post("/chat", requireAuth, async (req, res) => {
       channelSession = { channelPhone: s.channelPhone, guest: s.guest };
     }
   }
-  const allowedToolNames: string[] = channelSession?.guest
+  // A proactive turn (POST /internal/copilot/proactive-turns, on this process):
+  // only a turn in progress for this org, user and session unlocks it, and it
+  // gets READ tools only: nothing is created, started or sent in that turn.
+  let proactiveTurn = false;
+  if (parsed.data.proactiveTurnId) {
+    const [t] = await db
+      .select({ orgId: copilotProactiveTurns.orgId, recipientUserId: copilotProactiveTurns.recipientUserId, sessionId: copilotProactiveTurns.sessionId, status: copilotProactiveTurns.status })
+      .from(copilotProactiveTurns)
+      .where(eq(copilotProactiveTurns.id, parsed.data.proactiveTurnId));
+    if (nudge || !t || t.status !== "processing" || t.orgId !== orgId || t.recipientUserId !== userId || t.sessionId !== sessionId) {
+      return res.status(400).json({ error: "proactiveTurnId names no proactive turn in progress for this session." });
+    }
+    proactiveTurn = true;
+  }
+  // A trigger the user did not write (nudge, proactive turn): stored hidden,
+  // never filed in the staff Unibox as the user's words.
+  const hiddenTrigger = nudge === true || proactiveTurn;
+  const sessionToolNames: string[] = channelSession?.guest
     ? [...SIGN_IN_TOOL_NAMES]
     : channelSession
       ? [...configAllowedToolNames, ...SIGN_IN_TOOL_NAMES]
       : configAllowedToolNames;
+  const allowedToolNames: string[] = proactiveTurn ? proactiveToolNames(sessionToolNames) : sessionToolNames;
   // This turn came in on WhatsApp: the channel block joins the prompt and the
   // turn is not re-filed in the staff Unibox (crm already holds the thread).
   const channelContext = channelSession && context?.channel !== undefined
@@ -2955,7 +2982,9 @@ app.post("/chat", requireAuth, async (req, res) => {
 
   // Fetch campaign context if campaignId is present (Convention 2)
   let campaignFeatureInputs: Record<string, unknown> | null = null;
-  if (workflowTracking.campaignId) {
+  // A proactive turn's campaign is the step that woke the Copilot, not one the
+  // user launched: its inputs would mislead the turn (the id still bills it).
+  if (workflowTracking.campaignId && !proactiveTurn) {
     try {
       campaignFeatureInputs = await getCampaignFeatureInputs(
         workflowTracking.campaignId,
@@ -3139,7 +3168,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       sessionId: currentSessionId,
       role: "user",
       content: message.trim(),
-      proactiveTrigger: nudge === true,
+      proactiveTrigger: hiddenTrigger,
     })).returning({ id: messages.id, createdAt: messages.createdAt });
     const userTurnMessage: CopilotTurnMessage = {
       messageId: savedUserMessage.id, role: "user", text: message.trim(), at: savedUserMessage.createdAt,
@@ -3150,7 +3179,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     creditsTurn.sessionId = currentSessionId ?? null;
     creditsTurn.text = () => fullResponse;
     // A nudge's trigger is not the user's words: the staff Unibox gets the answer only.
-    creditsTurn.userMessage = nudge ? null : userTurnMessage;
+    creditsTurn.userMessage = hiddenTrigger ? null : userTurnMessage;
     let emittedInputRequest = false;
     const toolCalls: ToolCallRecord[] = [];
     // Rich UI emitted this turn (present_choices / open_page), persisted on the
@@ -4776,7 +4805,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     // A WhatsApp turn is already in crm's WhatsApp thread: never filed twice.
     if (!channelTurn) pushCopilotTurnInBackground(configKey, {
       orgId, userId, sessionId: currentSessionId,
-      messages: [...(nudge ? [] : [userTurnMessage]), { messageId: savedAnswer.id, role: "assistant", text: cleanedResponse, at: savedAnswer.createdAt }],
+      messages: [...(hiddenTrigger ? [] : [userTurnMessage]), { messageId: savedAnswer.id, role: "assistant", text: cleanedResponse, at: savedAnswer.createdAt }],
     });
 
     // The gauge is the context the model READ on its last call, never the
@@ -4980,6 +5009,110 @@ app.post("/internal/copilot/channel-messages", requireInternalAuth, async (req, 
   void enqueueChannelMessage(channelDeps, msg.sender.phone, row.id);
 });
 
+const proactiveDeps: ProactiveDeps = {
+  db,
+  fetchEmail: (userId) => fetchRequesterEmail(userId),
+  isStaffEmail: (email) => isStaffEmail(email),
+  runChat: async (args) => {
+    const res = await fetch(`http://127.0.0.1:${PORT}/chat`, {
+      method: "POST",
+      headers: {
+        ...args.trackingHeaders,
+        "content-type": "application/json",
+        "x-api-key": process.env.CHAT_SERVICE_API_KEY || "chat-service-self",
+        "x-org-id": args.orgId,
+        "x-user-id": args.userId,
+        "x-run-id": args.runId,
+      },
+      body: JSON.stringify({ configKey: COPILOT_CONFIG_KEY, message: args.message, sessionId: args.sessionId, context: args.context, proactiveTurnId: args.proactiveTurnId }),
+      signal: AbortSignal.timeout(15 * 60_000),
+    });
+    return { status: res.status, body: await res.text() };
+  },
+  sendWhatsapp: (args) => sendWhatsappReply(args),
+};
+
+function proactiveTurnBody(row: typeof copilotProactiveTurns.$inferSelect, duplicate: boolean) {
+  return {
+    id: row.id,
+    status: row.status,
+    duplicate,
+    recipientUserId: row.recipientUserId,
+    sessionId: row.sessionId,
+    delivery: row.delivery,
+    replyText: row.replyText,
+    error: row.error,
+  };
+}
+
+app.post("/internal/copilot/proactive-turns", requireInternalAuth, async (req, res) => {
+  const parsed = ProactiveTurnRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const turn = parsed.data;
+  const parentRunId = req.headers["x-run-id"];
+  if (typeof parentRunId !== "string" || !parentRunId) {
+    return res.status(400).json({ error: "x-run-id header is required (the calling step's run)" });
+  }
+  const headerOrg = req.headers["x-org-id"];
+  if (typeof headerOrg === "string" && headerOrg && headerOrg !== turn.orgId) {
+    return res.status(400).json({ error: "x-org-id does not match orgId" });
+  }
+  const [existing] = await db
+    .select()
+    .from(copilotProactiveTurns)
+    .where(and(eq(copilotProactiveTurns.orgId, turn.orgId), eq(copilotProactiveTurns.idempotencyKey, turn.idempotencyKey)));
+  if (existing) return res.status(200).json(proactiveTurnBody(existing, true));
+
+  const recipient = await pickProactiveRecipient(proactiveDeps, turn.orgId);
+  if (!recipient) {
+    return res.status(409).json({ error: "no_copilot_user", detail: "Nobody in this org has used the Copilot yet: there is no thread to write in." });
+  }
+  const [row] = await db
+    .insert(copilotProactiveTurns)
+    .values({
+      idempotencyKey: turn.idempotencyKey,
+      kind: turn.kind,
+      orgId: turn.orgId,
+      brandId: turn.brandId,
+      recipientUserId: recipient.userId,
+      sessionId: recipient.sessionId,
+      delivery: recipient.whatsapp ? "whatsapp" : "web",
+      status: "processing",
+      parentRunId,
+      payload: turn,
+    })
+    .onConflictDoNothing({ target: [copilotProactiveTurns.orgId, copilotProactiveTurns.idempotencyKey] })
+    .returning();
+  if (!row) {
+    // A concurrent retry won the insert: answer its row.
+    const [raced] = await db
+      .select()
+      .from(copilotProactiveTurns)
+      .where(and(eq(copilotProactiveTurns.orgId, turn.orgId), eq(copilotProactiveTurns.idempotencyKey, turn.idempotencyKey)));
+    return res.status(200).json(proactiveTurnBody(raced, true));
+  }
+  res.status(202).json(proactiveTurnBody(row, false));
+  const trackingHeaders = buildTrackingHeaders({
+    campaignId: typeof req.headers["x-campaign-id"] === "string" ? req.headers["x-campaign-id"] : undefined,
+    brandId: typeof req.headers["x-brand-id"] === "string" ? req.headers["x-brand-id"] : turn.brandId,
+    workflowSlug: typeof req.headers["x-workflow-slug"] === "string" ? req.headers["x-workflow-slug"] : undefined,
+    featureSlug: typeof req.headers["x-feature-slug"] === "string" ? req.headers["x-feature-slug"] : undefined,
+  });
+  void processProactiveTurn(proactiveDeps, row.id, recipient, trackingHeaders).catch((err) =>
+    console.error(`[chat-service] proactive turn "${row.id}" crashed:`, err),
+  );
+});
+
+app.get("/internal/copilot/proactive-turns/:id", requireInternalAuth, async (req, res) => {
+  const id = String(req.params.id);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(404).json({ error: "Proactive turn not found" });
+  const [row] = await db.select().from(copilotProactiveTurns).where(eq(copilotProactiveTurns.id, id));
+  if (!row) return res.status(404).json({ error: "Proactive turn not found" });
+  res.json(proactiveTurnBody(row, false));
+});
+
 app.post("/internal/transfer-brand", requireInternalAuth, async (req, res) => {
   const parsed = TransferBrandRequestSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -5134,9 +5267,14 @@ if (process.env.NODE_ENV !== "test") {
       console.log(
         `[chat-service] Skill seed: inserted=[${skillSeed.inserted.join(",")}] refreshed=[${skillSeed.refreshed.join(",")}] keptHumanEdit=[${skillSeed.keptHumanEdit.join(",")}] removedMerged=[${skillSeed.removedMerged.join(",")}]`,
       );
+      const bootedAt = new Date();
       const server = app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });
+      // Proactive turns a restart cut off: marked failed, never re-run (one message per fact).
+      failInterruptedProactiveTurns(db, bootedAt)
+        .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
+        .catch((err) => console.error("[chat-service] proactive turn recovery failed:", err));
       // WhatsApp messages a restart cut off mid-turn: answered once the port is up.
       setTimeout(() => {
         recoverChannelMessages(channelDeps)

@@ -176,6 +176,13 @@
       "when": 1792108800000,
       "tag": "0024_copilot_channel",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792195200000,
+      "tag": "0025_copilot_proactive_turns",
+      "breakpoints": true
     }
   ]
 }
