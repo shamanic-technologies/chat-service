@@ -119,6 +119,23 @@ describe("pickProactiveRecipient", () => {
     expect(r).toEqual({ userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000", inbound: INBOUND } });
   });
 
+  it("a user with no known email never outranks a known team member (prod population, distribute.you org 2026-10-19)", async () => {
+    const { db } = fakeDb([
+      [
+        { id: "s-gmail", userId: "cfe148ed", channelPhone: "+33680478702" },
+        { id: "s-dy", userId: "7b417d70", channelPhone: null },
+        { id: "s-null", userId: "d2317462", channelPhone: null },
+      ],
+      [{ payload: INBOUND }],
+    ]);
+    const emails: Record<string, string | null> = { cfe148ed: "kevin.lourd@gmail.com", "7b417d70": "kevin@distribute.you", d2317462: null };
+    const r = await pickProactiveRecipient(
+      { db, fetchEmail: async (u) => emails[u], isStaffEmail: (e) => e === "kevin.lourd@gmail.com" || e === "kevin@distribute.you" },
+      REQ.orgId,
+    );
+    expect(r).toEqual({ userId: "cfe148ed", sessionId: "s-gmail", whatsapp: { phone: "+33680478702", inbound: INBOUND } });
+  });
+
   it("on an org where everyone is staff, the latest staff member; nobody ever used the Copilot → null", async () => {
     const staffOnly = fakeDb([[{ id: "s-1", userId: "u-1", channelPhone: null }]]);
     expect(await pickProactiveRecipient({ db: staffOnly.db, fetchEmail: async () => "kevin@distribute.you", isStaffEmail: () => true }, REQ.orgId))
