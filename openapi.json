@@ -1829,6 +1829,146 @@
           "thread"
         ]
       },
+      "ProactiveTurnResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "processing",
+              "delivered",
+              "out_of_credits",
+              "failed"
+            ],
+            "description": "`processing`: the turn is running. `delivered`: the message is in the recipient's thread (and on WhatsApp when `delivery` is whatsapp). `out_of_credits`: the org could not pay for the turn; nothing reached a phone. `failed`: see `error`."
+          },
+          "duplicate": {
+            "type": "boolean",
+            "description": "true when this idempotency key was already received: nothing ran again."
+          },
+          "recipientUserId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "whatsapp",
+              "web"
+            ]
+          },
+          "replyText": {
+            "type": "string",
+            "nullable": true
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "duplicate",
+          "recipientUserId",
+          "sessionId",
+          "delivery",
+          "replyText",
+          "error"
+        ]
+      },
+      "ProactiveTurnRequest": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "hot_lead"
+            ],
+            "description": "The fact the campaign step reports. `hot_lead`: a person who is a lead of the brand and wants business with it just wrote to the brand."
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "Stable id of this fact (e.g. the step's run id, or the lead-service fact id). A retry with the same key (same org) writes nothing again and answers the stored turn."
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The brand's org (internal UUID): its team receives the message and it pays for the turn."
+          },
+          "brandId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The brand the person wrote to."
+          },
+          "lead": {
+            "type": "object",
+            "properties": {
+              "leadId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "personId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "email": {
+                "type": "string",
+                "maxLength": 320
+              },
+              "phone": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 300
+              },
+              "company": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "description": "The person who became hot, by the ids lead-service / crm-service know them by. The Copilot reads the rest itself."
+          },
+          "inbound": {
+            "type": "object",
+            "properties": {
+              "channel": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 5000
+              },
+              "at": {
+                "type": "string",
+                "maxLength": 100
+              }
+            },
+            "description": "What they wrote, when the caller has it (channel, text, time)."
+          }
+        },
+        "required": [
+          "kind",
+          "idempotencyKey",
+          "orgId",
+          "brandId",
+          "lead"
+        ]
+      },
       "ModelCatalogueResponse": {
         "type": "object",
         "properties": {
@@ -2002,6 +2142,11 @@
               "brandId": "brand-123",
               "brandUrl": "https://example.com"
             }
+          },
+          "proactiveTurnId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Internal: set only by chat-service itself when running a proactive turn (POST /internal/copilot/proactive-turns). Must name a turn in progress for this org, user and session, or the request is refused (400). The turn then gets read tools only and its trigger is stored hidden."
           }
         },
         "required": [
@@ -4552,6 +4697,191 @@
           },
           "401": {
             "description": "Missing x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/copilot/proactive-turns": {
+      "post": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "A campaign step asks the Copilot to write first to the brand's team (e.g. a hot lead just wrote)",
+        "description": "Called by a workflow step. Answers **202** at once; the Copilot then runs ONE turn and writes ONE short message to the brand's team: who the person is, what they wrote, one concrete proposal of what to set up for them, ending with a request for the team's go.\n\n**Recipient:** one member of the org's team: the person who used the Copilot on this org most recently (a customer member before any staff member). Never the lead, never anyone outside the org. The message lands in their latest Copilot session, the thread the web and WhatsApp share; it is also sent on WhatsApp when that thread is tied to a number (from the linked account that last answered them, crm-service idempotency key `copilot-proactive:<id>`).\n\n**Nothing happens for the lead in that turn:** the turn has read tools only. The team answers in the same thread and the Copilot continues with its usual confirm-before-switch-on rules.\n\n**Billing:** an org-billed Copilot turn, child of `x-run-id`; the tracking headers are forwarded for attribution.\n\n**Idempotent** on (`orgId`, `idempotencyKey`): a retry answers **200** with the stored turn and `duplicate: true`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The calling step's run: parent of the turn's run."
+            },
+            "required": true,
+            "description": "The calling step's run: parent of the turn's run.",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "When sent, must equal `orgId`."
+            },
+            "required": false,
+            "description": "When sent, must equal `orgId`.",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-feature-slug",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProactiveTurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "This idempotency key was already received: the stored turn, nothing ran again",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProactiveTurnResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted: the turn runs and the message goes out asynchronously",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProactiveTurnResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nobody in this org has used the Copilot yet: there is no thread to write in (`error: no_copilot_user`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/copilot/proactive-turns/{id}": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Read a proactive turn: status, recipient, what was written",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The turn",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProactiveTurnResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown id",
             "content": {
               "application/json": {
                 "schema": {
