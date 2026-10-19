@@ -390,6 +390,25 @@ export async function resolvePhoneAccount(phone: string, fetchImpl: typeof fetch
   return { orgId: json.orgId, userId: json.userId };
 }
 
+/** crm-service refused a WhatsApp send: the status and its `code` (e.g. `whatsapp_not_connected`) stay readable. */
+export class WhatsappSendError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  constructor(status: number, body: string) {
+    super(`crm-service whatsapp send ${status}: ${body}`);
+    this.name = "WhatsappSendError";
+    this.status = status;
+    let code: string | null = null;
+    try {
+      const parsed = JSON.parse(body) as { code?: unknown };
+      if (typeof parsed.code === "string") code = parsed.code;
+    } catch {
+      // not JSON: no code to read
+    }
+    this.code = code;
+  }
+}
+
 export async function sendWhatsappReply(
   args: Parameters<ChannelDeps["sendReply"]>[0],
   fetchImpl: typeof fetch = fetch,
@@ -415,7 +434,7 @@ export async function sendWhatsappReply(
     }),
     signal: AbortSignal.timeout(90_000),
   });
-  if (!res.ok) throw new Error(`crm-service whatsapp send ${res.status}: ${await res.text().catch(() => "")}`);
+  if (!res.ok) throw new WhatsappSendError(res.status, await res.text().catch(() => ""));
 }
 
 export async function createChannelRootRun(identity: { orgId: string; userId: string }, fetchImpl: typeof fetch = fetch): Promise<string> {

@@ -192,6 +192,7 @@ import {
   pickProactiveRecipient,
   processProactiveTurn,
   proactiveToolNames,
+  readPersonThread,
   type ProactiveDeps,
 } from "./lib/copilot-proactive.js";
 import { CATALOGUE_READ_TOOLS, CATALOGUE_WRITE_TOOLS, assertStaffBuild, type CatalogueReader } from "./lib/catalogue-client.js";
@@ -5165,6 +5166,7 @@ const proactiveDeps: ProactiveDeps = {
     return { status: res.status, body: await res.text() };
   },
   sendWhatsapp: (args) => sendWhatsappReply(args),
+  readThread: (args) => readPersonThread(args),
 };
 
 function proactiveTurnBody(row: typeof copilotProactiveTurns.$inferSelect, duplicate: boolean) {
