@@ -778,6 +778,14 @@ Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
 - **How the file reaches the model**: the source is streamed (never buffered) into a Gemini Files API resumable upload (2 GB limit), decoded by Google, transcribed, then deleted. The presigned query string is never stored.
 - **Model + cost**: default `flash-pro` = Gemini 3.8 Flash, priced by the existing `google-flash-3.8-tokens-*` rows (≈ $0.01 per minute of video). `flash` = Gemini 3.5 Flash-Lite (`google-flash-lite-3.5-tokens-*`, ~5x cheaper) stays selectable but is not the default: on slow, pause-heavy speech it dropped ~90 s of a 4 min clip while its timestamps still ran to the end (2026-10-18). Video at 1 fps and LOW media resolution (~91 input tokens per second): measured 2026-10-18, a 5 min mp4 = 27.9k in / 1.9k out in ~35 s; a 1.09 GB / 15:17 mp4 = 83.6k in / 6.3k out in ~2.5 min (≈ $0.04), transcript to the last word. Declared on a platform run as `actual` once the model answers.
 
+## Org Transcription of a short audio file (voice note)
+
+`POST /orgs/transcriptions` with `{ "audio": { "base64": "...", "mimeType": "audio/ogg; codecs=opus" }, "durationSeconds"?: 12, "model"?: "flash" | "flash-pro" }` (`x-api-key` + `x-org-id` + `x-user-id` + `x-run-id`) answers **synchronously** `{ text, languages, segments, model, tokensInput, tokensOutput, runId }`. Same verbatim prompt and default model (Gemini 3.8 Flash) as the platform route; the audio travels inline (max 7 MB, ~1 h of WhatsApp Opus). Nothing spoken = 200 with `text: ""`.
+
+- **Caller**: crm-service, for a voice note someone sent to a brand's assistant line (SOPHIE-VOICE-1019): it shows the transcript in the Unibox / owner ping and hands it to the Copilot as `🎤 Voice note: <words>` (or `🎤 Voice note (could not be understood)`), which the Copilot's WhatsApp block explains. The assistant always answers in text (owner 2026-10-19).
+- **Cost**: org-billed like `/complete`: run under the caller's `x-run-id`, worst-case hold PROVISIONED (32 audio tokens per second + 500, output 1000 + 10 per second; duration = `durationSeconds` else size at 8 kbit/s) then AUTHORIZED (platform key), the real `google-flash-3.8-tokens-*` lines posted `actual`, the hold cancelled. Google prices audio input like text for these models.
+- **Errors**: 413 `file_too_large`, 422 `not_media` (before any spend), 402 billing refusal, 502 `provider_refused` / `transcript_truncated` / `unparseable_transcript` (tokens spent are still declared).
+
 ## Internal: Transfer Brand
 
 `POST /internal/transfer-brand` — moves everything chat-service holds for one brand from one org to another (brand-service orchestrates it across the fleet).

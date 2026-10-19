@@ -6,6 +6,10 @@ import {
   TranscriptionError,
   assertTranscriptComplete,
   buildTranscriptionRequestBody,
+  buildInlineTranscriptionRequestBody,
+  inlineAudioHold,
+  resolveInlineAudioMimeType,
+  transcriptPlainText,
   parseGoogleDuration,
   parseTranscript,
   probeSource,
@@ -205,5 +209,30 @@ describe("redactSourceUrl", () => {
     expect(redactSourceUrl("https://b.r2.test/videos/take-1.mp4?X-Amz-Signature=secret&X-Amz-Expires=3600")).toBe(
       "https://b.r2.test/videos/take-1.mp4",
     );
+  });
+});
+
+describe("inline audio (SOPHIE-VOICE-1019)", () => {
+  it("drops media type parameters and refuses anything but audio", () => {
+    expect(resolveInlineAudioMimeType("audio/ogg; codecs=opus")).toBe("audio/ogg");
+    expect(() => resolveInlineAudioMimeType("video/mp4")).toThrow(TranscriptionError);
+  });
+
+  it("holds 32 tokens per second + the prompt, duration from the caller else from the size at 8 kbit/s", () => {
+    expect(inlineAudioHold(5540, 2)).toEqual({ inputTokens: 2 * 32 + 500, outputTokens: 1_020 });
+    // No duration: 60 kB read as 60 s.
+    expect(inlineAudioHold(60_000, undefined)).toEqual({ inputTokens: 60 * 32 + 500, outputTokens: 1_600 });
+  });
+
+  it("sends the audio inline before the same verbatim prompt", () => {
+    const body = buildInlineTranscriptionRequestBody("gemini-3.8-flash", { mimeType: "audio/ogg", base64: "T2dnUw==" });
+    const parts = (body.contents as Array<{ parts: Array<Record<string, unknown>> }>)[0].parts;
+    expect(parts[0]).toEqual({ inlineData: { mimeType: "audio/ogg", data: "T2dnUw==" } });
+    expect(String(parts[1].text)).toContain("verbatim");
+  });
+
+  it("plain text = the segments' words, one per line, no time markers", () => {
+    expect(transcriptPlainText(parseTranscript("LANGUAGES: fr\n[00:00] Bonjour.\n[00:02] Ça va ?"))).toBe("Bonjour.\nÇa va ?");
+    expect(transcriptPlainText(parseTranscript("LANGUAGES: none\nNO SPEECH"))).toBe("");
   });
 });

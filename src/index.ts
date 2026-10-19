@@ -5,7 +5,21 @@ import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { db } from "./db/index.js";
-import { DEFAULT_TRANSCRIPTION_MODEL, TRANSCRIPTION_MODELS, TranscriptionError, probeSource, redactSourceUrl, type SourceInfo } from "./lib/transcription.js";
+import {
+  DEFAULT_TRANSCRIPTION_MODEL,
+  MAX_INLINE_TRANSCRIPTION_BYTES,
+  TRANSCRIPTION_MODELS,
+  TranscriptionError,
+  assertTranscriptComplete,
+  inlineAudioHold,
+  parseTranscript,
+  probeSource,
+  redactSourceUrl,
+  resolveInlineAudioMimeType,
+  transcribeInlineAudio,
+  transcriptPlainText,
+  type SourceInfo,
+} from "./lib/transcription.js";
 import { readTranscription, runTranscriptionJob, toTranscriptionBody } from "./lib/transcription-job.js";
 import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions, channelInboundMessages } from "./db/schema.js";
 import { transferBrand } from "./lib/transfer-brand.js";
@@ -43,6 +57,7 @@ import {
   GEMINI_IMAGE_COST_PREFIX,
   GEMINI_IMAGE_MODEL,
   estimateGeminiImageOutputTokens,
+  geminiCostPrefix,
 } from "./lib/gemini.js";
 import {
   completeWithVendor,
@@ -272,7 +287,7 @@ import {
   setBrandPauseState,
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, ChannelMessageRequestSchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelMessageRequestSchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -2705,6 +2720,126 @@ app.post("/internal/platform-transcriptions", requireInternalAuth, async (req, r
     console.error(`[internal/platform-transcriptions] job ${row.id} crashed:`, err),
   );
   return res.status(202).json(toTranscriptionBody(row));
+});
+
+// --- Org transcription of a short inline audio file (SOPHIE-VOICE-1019) ---
+//
+// A voice note someone sent to a brand's assistant line: crm-service holds the
+// file (Matrix media) and sends it inline. Synchronous (a voice note is small),
+// org-billed like /complete: PROVISION the worst-case hold → AUTHORIZE (platform
+// key) → call → post the real token lines `actual` → release the hold.
+app.post("/orgs/transcriptions", requireAuth, async (req, res) => {
+  const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
+  const trackingHeaders = buildTrackingHeaders(workflowTracking);
+  const parsed = OrgTranscriptionRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const model = TRANSCRIPTION_MODELS[parsed.data.model ?? DEFAULT_TRANSCRIPTION_MODEL];
+  let mimeType: string;
+  try {
+    mimeType = resolveInlineAudioMimeType(parsed.data.audio.mimeType);
+  } catch (err) {
+    if (err instanceof TranscriptionError) return res.status(err.httpStatus).json({ error: err.message, code: err.code });
+    throw err;
+  }
+  const base64 = parsed.data.audio.base64.replace(/\s+/g, "");
+  const sizeBytes = Buffer.from(base64, "base64").length;
+  if (sizeBytes === 0) return res.status(422).json({ error: "The audio file is empty.", code: "not_media" });
+  if (sizeBytes > MAX_INLINE_TRANSCRIPTION_BYTES) {
+    return res.status(413).json({
+      error: `The audio file is ${(sizeBytes / 1024 ** 2).toFixed(1)} MB; the inline limit is ${MAX_INLINE_TRANSCRIPTION_BYTES / 1024 ** 2} MB.`,
+      code: "file_too_large",
+    });
+  }
+
+  let resolvedKey: ResolvedKey;
+  try {
+    resolvedKey = await resolveKey({
+      provider: "google",
+      orgId,
+      userId,
+      runId: parentRunId,
+      caller: { method: "POST", path: "/orgs/transcriptions" },
+      trackingHeaders,
+    });
+  } catch (err) {
+    console.error(`[orgs/transcriptions] Failed to resolve google key for org="${orgId}":`, err);
+    return res.status(502).json({ error: "Failed to resolve google API key. Ensure the key is configured in key-service." });
+  }
+  const costSource: "platform" | "org" = resolvedKey.keySource === "org" ? "org" : "platform";
+
+  let runId: string;
+  try {
+    runId = (await createRun({ serviceName: "chat-service", taskName: "transcribe-audio" }, { orgId, userId, runId: parentRunId }, trackingHeaders)).id;
+  } catch (runErr) {
+    console.error(`[orgs/transcriptions] org="${orgId}" run creation failed:`, runErr);
+    return res.status(502).json({ error: "Service temporarily unavailable (run tracking). Please try again." });
+  }
+
+  const identity = { orgId, userId, runId };
+  const hold = inlineAudioHold(sizeBytes, parsed.data.durationSeconds);
+  let failed = false;
+  let provisionedCostIds: string[] = [];
+  let actualLines: GeminiCostLine[] = [];
+  try {
+    try {
+      provisionedCostIds = await provisionAndAuthorizeLlmCost({
+        runId,
+        costNames: flatCostNames(geminiCostPrefix(model)),
+        inputTokens: hold.inputTokens,
+        outputTokens: hold.outputTokens,
+        keySource: resolvedKey.keySource,
+        identity,
+        trackingHeaders,
+        description: `transcribe-audio — ${model}`,
+      });
+    } catch (costErr) {
+      failed = true;
+      const r = costErrorResponse(costErr, "orgs/transcriptions", orgId);
+      return res.status(r.status).json(r.body);
+    }
+
+    const result = await transcribeInlineAudio(resolvedKey.key, model, { mimeType, base64 });
+    // The call spent: its real lines are declared in `finally` even when the answer is refused below.
+    actualLines = result.costLines;
+    assertTranscriptComplete(result);
+    const transcript = parseTranscript(result.raw);
+    console.log(
+      `[orgs/transcriptions] org="${orgId}" run="${runId}" model=${model} bytes=${sizeBytes} segments=${transcript.segments.length}` +
+        ` languages=${transcript.languages?.join(",") ?? "not stated"} in=${result.tokensInput} out=${result.tokensOutput}`,
+    );
+    return res.json({
+      text: transcriptPlainText(transcript),
+      languages: transcript.languages,
+      segments: transcript.segments,
+      model,
+      tokensInput: result.tokensInput,
+      tokensOutput: result.tokensOutput,
+      runId,
+    });
+  } catch (err) {
+    failed = true;
+    const code = err instanceof TranscriptionError ? err.code : "provider_refused";
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[orgs/transcriptions] org="${orgId}" run="${runId}" failed | code=${code} | ${message}`);
+    return res.status(err instanceof TranscriptionError ? err.httpStatus : 502).json({ error: message, code });
+  } finally {
+    // Reconcile: the real lines `actual`, then release the hold. Fail-loud on the
+    // declaration is logged here (the answer already left); the hold stays as the
+    // over-declared fallback when posting the actual lines failed.
+    if (provisionedCostIds.length > 0) {
+      try {
+        if (actualLines.length > 0) await addRunCosts(runId, actualLines.map((l) => ({ ...l, costSource })), identity, trackingHeaders);
+        await cancelProvisionedCosts(runId, provisionedCostIds, identity, trackingHeaders);
+      } catch (costErr) {
+        console.error(`[orgs/transcriptions] cost reconcile failed runId="${runId}" (provisioned hold kept as the declared cost):`, costErr);
+      }
+    }
+    await updateRunStatus(runId, failed ? "failed" : "completed", identity, trackingHeaders).catch((runErr) =>
+      console.error(`[orgs/transcriptions] failed to finalize run runId="${runId}":`, runErr),
+    );
+  }
 });
 
 app.get("/internal/platform-transcriptions/:id", requireInternalAuth, async (req, res) => {
