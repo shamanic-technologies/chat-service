@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   buildChannelBlock,
+  VOICE_NOTE_PREFIX,
+  VOICE_NOTE_UNREADABLE,
   parseChatStream,
   processChannelMessage,
   renderChannelReply,
@@ -84,6 +86,16 @@ describe("buildChannelBlock", () => {
     expect(block).toContain("never as a header");
     expect(block).toContain("us: Hi from our campaign");
     expect(block).toContain("exactly this person's access");
+  });
+
+  it("reads a transcribed voice note as their message, an unreadable one as a request to write, and always answers in text (SOPHIE-VOICE-1019)", () => {
+    const block = buildChannelBlock(channel, false);
+    expect(block).toContain(`${VOICE_NOTE_PREFIX} followed by words is what they SAID`);
+    expect(block).toContain(`${VOICE_NOTE_UNREADABLE} means a voice note we could not understand`);
+    expect(block).toContain("Always answer in text");
+    // Byte-equal to what crm-service writes (src/lib/matrix/voice-notes.ts there).
+    expect(VOICE_NOTE_PREFIX).toBe("🎤 Voice note:");
+    expect(VOICE_NOTE_UNREADABLE).toBe("🎤 Voice note (could not be understood)");
   });
 
   it("a guest is told it sees no account and how to sign in", () => {

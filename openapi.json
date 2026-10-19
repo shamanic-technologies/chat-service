@@ -1575,6 +1575,96 @@
           "url"
         ]
       },
+      "OrgTranscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The words spoken, verbatim, one line per sentence group, no time markers. Empty when nothing is spoken."
+          },
+          "languages": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "ISO 639-1 codes spoken, in order; empty when nothing is spoken; null when the model did not state them."
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TranscriptionSegment"
+            }
+          },
+          "model": {
+            "type": "string"
+          },
+          "tokensInput": {
+            "type": "integer"
+          },
+          "tokensOutput": {
+            "type": "integer"
+          },
+          "runId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "This service's run for the call, child of the caller's `x-run-id`: the cost rows are on it."
+          }
+        },
+        "required": [
+          "text",
+          "languages",
+          "segments",
+          "model",
+          "tokensInput",
+          "tokensOutput",
+          "runId"
+        ]
+      },
+      "OrgTranscriptionRequest": {
+        "type": "object",
+        "properties": {
+          "audio": {
+            "type": "object",
+            "properties": {
+              "base64": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The audio file, base64. At most 7 MB of audio (~1 h of a WhatsApp voice note)."
+              },
+              "mimeType": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Its media type as the sender stated it; parameters are dropped (`audio/ogg; codecs=opus` → `audio/ogg`). Must be `audio/*`.",
+                "example": "audio/ogg; codecs=opus"
+              }
+            },
+            "required": [
+              "base64",
+              "mimeType"
+            ],
+            "description": "The recording itself (a voice note is small: no URL, no upload)."
+          },
+          "durationSeconds": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "maximum": 86400,
+            "description": "Length of the recording when the caller knows it: sizes the pre-call cost hold. Absent = read off the file size."
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "flash",
+              "flash-pro"
+            ],
+            "description": "`flash-pro` (default, Gemini 3.8 Flash) or `flash` (Gemini 3.5 Flash-Lite, cheaper, drops passages of slow speech)."
+          }
+        },
+        "required": [
+          "audio"
+        ]
+      },
       "ChannelMessageResponse": {
         "type": "object",
         "properties": {
@@ -4351,6 +4441,190 @@
           },
           "404": {
             "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/transcriptions": {
+      "post": {
+        "tags": [
+          "Transcription"
+        ],
+        "summary": "Transcribe a short audio file sent inline (org-billed, synchronous)",
+        "description": "Verbatim speech transcription of a short audio file (a voice note) carried in the request, answered in the same call (a 1 min voice note takes a few seconds). Same prompt and model as `/internal/platform-transcriptions`: the words as spoken, in the language spoken, never translated or cleaned up.\n\n**Spend:** org-billed like `/complete`: a run under the caller's `x-run-id`, the worst-case token hold PROVISIONED then AUTHORIZED (platform key) before the call, the real Gemini token lines posted `actual` after it and the hold released. Cost names are the model's Gemini token names (`google-flash-3.8-tokens-input` / `-tokens-output`; Google prices audio input like text for these models).\n\n**Errors:** 413 `file_too_large` (over 7 MB), 422 `not_media` (not `audio/*`) before any spend; 402 when billing refuses; 502 `provider_refused` / `transcript_truncated` / `unparseable_transcript` when the model call fails (the tokens it spent are still declared).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID from client-service (the org billed)"
+            },
+            "required": true,
+            "description": "Internal org UUID from client-service (the org billed)",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal user UUID from client-service",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Caller's run ID"
+            },
+            "required": true,
+            "description": "Caller's run ID",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Campaign ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Campaign ID — injected automatically by workflow-service",
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+              "example": "550e8400-e29b-41d4-a716-446655440000,660f9500-f30c-52e5-b827-557766551111"
+            },
+            "required": false,
+            "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Workflow slug — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Workflow slug — injected automatically by workflow-service",
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Feature slug — propagated through the entire service chain"
+            },
+            "required": false,
+            "description": "Feature slug — propagated through the entire service chain",
+            "name": "x-feature-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow."
+            },
+            "required": false,
+            "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow.",
+            "name": "x-audience-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgTranscriptionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The transcript",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgTranscriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing auth headers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Billing refused the spend",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Audio over 7 MB (`file_too_large`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptionErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Not audio (`not_media`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptionErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Run tracking, cost declaration or the model call failed",
             "content": {
               "application/json": {
                 "schema": {
