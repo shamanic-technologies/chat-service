@@ -9,10 +9,22 @@ import {
   pickProactiveRecipient,
   processProactiveTurn,
   proactiveToolNames,
+  withoutAskingCampaign,
   type ProactiveDeps,
   type ProactiveRecipient,
 } from "../../src/lib/copilot-proactive.js";
 import type { ChannelMessageRequest, ProactiveTurnRequest } from "../../src/schemas.js";
+import type { AskingCampaign } from "../../src/lib/funnel-campaign-client.js";
+
+// The prod case (2026-10-19, org f0420eb5): the header named the STEP e81d3018,
+// list_campaigns showed its funnel campaign ba08bcca by the name "Lead Proposal Deals".
+const ASKING: AskingCampaign = {
+  ids: ["e81d3018-0cae-456b-90a3-0290071c6cb8", "ba08bcca-084d-4a85-bebc-465330ed77de"],
+  name: "Lead Proposal Deals",
+  salesFunnelId: "start_to_paid_client@ai-lead-proposal",
+  channel: "ai-lead-proposal",
+};
+const resolveAskingCampaign = async () => ASKING;
 
 // Every tool name the chat service declares (src/lib/*.ts, 2026-10-19).
 const ALL_TOOLS = (
@@ -73,18 +85,21 @@ describe("buildProactiveTriggerMessage", () => {
     expect(m).not.toMatch(/[—–]/);
   });
 
-  it("names the asking campaign as the notification itself, never the proposal", () => {
-    const m = buildProactiveTriggerMessage(REQ, { thread: [], askingCampaignId: "camp-42" });
-    expect(m).toContain("The campaign that asked you (campaign id camp-42) IS this notification");
+  it("names the asking campaign by the name, funnel and channel the team sees, as the notification itself", () => {
+    const m = buildProactiveTriggerMessage(REQ, { thread: [], asking: ASKING });
+    expect(m).toContain('The campaign that asked you is "Lead Proposal Deals" (funnel start_to_paid_client@ai-lead-proposal, channel ai-lead-proposal): it IS this notification');
     expect(m).toContain("never writes to the person");
+    expect(m).toContain("hidden from your reads in this turn");
     expect(m).toContain("what to set up FOR THEM");
+    expect(m).toContain("never answer that nothing new is needed");
+    expect(m).not.toContain("e81d3018");
   });
 
   it("quotes the person's own message from their thread when the caller sent no text", () => {
     const m = buildProactiveTriggerMessage(
       { ...REQ, inbound: undefined },
       {
-        askingCampaignId: null,
+        asking: null,
         thread: [
           { at: "2026-10-18T10:00:00Z", direction: "outbound", channel: "email", text: "Hi Jose, saw you signed up." },
           { at: "2026-10-19T06:30:00Z", direction: "inbound", channel: "email", text: "We need   200 law firms\nas clients, can you help?" },
@@ -93,18 +108,67 @@ describe("buildProactiveTriggerMessage", () => {
     );
     expect(m).toContain('THEY wrote on email (2026-10-19T06:30:00Z): "We need 200 law firms as clients, can you help?"');
     expect(m).toContain("a short quote of their own words");
-    expect(m).not.toContain("could not be read");
+    expect(m).not.toContain("could not read a message");
   });
 
   it("with no words from the person, says so instead of inventing a quote", () => {
     const m = buildProactiveTriggerMessage({ ...REQ, inbound: undefined });
-    expect(m).toContain("their message could not be read here");
+    expect(m).toContain("you could not read a message from them and move on");
+    expect(m).toContain("never describe what else their thread holds");
   });
 
   it("never lets the model gender a person whose pronouns are unknown", () => {
     const m = buildProactiveTriggerMessage(REQ);
     expect(m).toContain("never he or she");
     expect(m).toContain("they/them");
+  });
+});
+
+describe("withoutAskingCampaign", () => {
+  // list_campaigns as the model sees it (listAccountCampaigns rows), the asking one by its funnel name.
+  const LIST = {
+    campaignCount: 2,
+    campaigns: [
+      { id: "ba08bcca-084d-4a85-bebc-465330ed77de", name: "Lead Proposal Deals", status: "ongoing", budget: "Up to $10/week", salesFunnelId: "start_to_paid_client@ai-lead-proposal" },
+      { id: "sfc-outbound", name: "Outbound Deals", status: "ongoing", budget: "Max $10/day", salesFunnelId: "lead_found_to_paid_client@cold-email" },
+    ],
+    note: "A campaign is a sales funnel campaign.",
+  };
+
+  it("drops the asking funnel campaign from list_campaigns, so the turn cannot propose it", () => {
+    const out = withoutAskingCampaign("list_campaigns", LIST, ASKING) as typeof LIST & { hidden: string };
+    expect(out.campaigns.map((c) => c.name)).toEqual(["Outbound Deals"]);
+    expect(out.campaignCount).toBe(1);
+    expect(out.hidden).toContain('"Lead Proposal Deals"');
+    expect(out.hidden).toContain("never acts for the person");
+    expect(JSON.stringify(out.campaigns)).not.toContain("Lead Proposal");
+  });
+
+  it("drops it from list_funnel_campaigns and from the staff unit rows (by unit id or its funnel campaign)", () => {
+    expect((withoutAskingCampaign("list_funnel_campaigns", LIST, ASKING) as typeof LIST).campaigns).toHaveLength(1);
+    const units = {
+      shown: 2,
+      campaigns: [
+        { id: "e81d3018-0cae-456b-90a3-0290071c6cb8", name: "Lead Proposal Deals ba08bcca - ai-lead-proposal", salesFunnelCampaignId: "ba08bcca-084d-4a85-bebc-465330ed77de" },
+        { id: "unit-2", name: "Outbound", salesFunnelCampaignId: "sfc-outbound" },
+      ],
+    };
+    const out = withoutAskingCampaign("list_campaigns", units, ASKING) as typeof units;
+    expect(out.campaigns.map((c) => c.id)).toEqual(["unit-2"]);
+    expect(out.shown).toBe(1);
+  });
+
+  it("drops its sales funnel from the catalogue, list and detail", () => {
+    const rows = { rows: [{ id: "start_to_paid_client@ai-lead-proposal" }, { id: "lead_found_to_paid_client@cold-email" }] };
+    expect((withoutAskingCampaign("find_sales_funnels", rows, ASKING) as typeof rows).rows).toEqual([{ id: "lead_found_to_paid_client@cold-email" }]);
+    const detail = withoutAskingCampaign("find_sales_funnels", { id: "start_to_paid_client@ai-lead-proposal", name: "AI Lead Proposal" }, ASKING);
+    expect(detail).toEqual({ id: "start_to_paid_client@ai-lead-proposal", hidden: expect.stringContaining("asked you to notify the team") });
+  });
+
+  it("leaves every other result untouched", () => {
+    const other = { ...LIST, campaigns: LIST.campaigns.slice(1) };
+    expect(withoutAskingCampaign("list_campaigns", other, ASKING)).toBe(other);
+    expect(withoutAskingCampaign("list_offers", LIST, ASKING)).toBe(LIST);
   });
 });
 
@@ -226,7 +290,7 @@ describe("processProactiveTurn", () => {
     const { db, updates } = fakeDb([[ROW]]);
     const runChat = vi.fn(async () => ({ status: 200, body: sse({ type: "token", content: "Marie from Acme wants outbound. Start the Outbound offer at $10/day? Go?" }) }));
     const sendWhatsapp = vi.fn(async () => {});
-    await processProactiveTurn({ db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], runChat, sendWhatsapp }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
+    await processProactiveTurn({ db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
     expect(runChat).toHaveBeenCalledTimes(1);
     const args = (runChat.mock.calls[0] as unknown as [Parameters<ProactiveDeps["runChat"]>[0]])[0];
     expect(args).toMatchObject({ orgId: REQ.orgId, userId: "u-owner", runId: "run-1", sessionId: "s-owner", proactiveTurnId: "turn-1", trackingHeaders: { "x-campaign-id": "c-1" } });
@@ -242,11 +306,13 @@ describe("processProactiveTurn", () => {
     const { db } = fakeDb([[{ ...ROW, payload: { ...REQ, inbound: undefined } }]]);
     const runChat = vi.fn(async () => ({ status: 200, body: sse({ type: "token", content: "ok" }) }));
     const readThread = vi.fn(async () => [{ at: null, direction: "inbound" as const, channel: "email", text: "Do you do LinkedIn?" }]);
-    await processProactiveTurn({ db, fetchEmail: async () => null, isStaffEmail: () => false, runChat, sendWhatsapp: vi.fn(async () => {}), readThread }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
+    const resolve = vi.fn(resolveAskingCampaign);
+    await processProactiveTurn({ db, fetchEmail: async () => null, isStaffEmail: () => false, runChat, sendWhatsapp: vi.fn(async () => {}), readThread, resolveAskingCampaign: resolve }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
+    expect(resolve).toHaveBeenCalledWith({ orgId: REQ.orgId, userId: "u-owner", runId: "run-1", campaignId: "c-1" });
     expect(readThread).toHaveBeenCalledWith(expect.objectContaining({ userId: "u-owner", runId: "run-1", brandId: REQ.brandId }));
     const msg = (runChat.mock.calls[0] as unknown as [{ message: string }])[0].message;
     expect(msg).toContain('"Do you do LinkedIn?"');
-    expect(msg).toContain("campaign id c-1");
+    expect(msg).toContain('"Lead Proposal Deals"');
   });
 
   it("a 422 whatsapp_not_connected then success delivers once, same text and key, the turn ran once", async () => {

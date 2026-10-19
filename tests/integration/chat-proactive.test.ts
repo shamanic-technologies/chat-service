@@ -12,6 +12,8 @@ process.env.BILLING_SERVICE_API_KEY = process.env.BILLING_SERVICE_API_KEY || "te
 process.env.BILLING_SERVICE_URL = process.env.BILLING_SERVICE_URL || "https://billing.test.local";
 process.env.CLIENT_SERVICE_URL = process.env.CLIENT_SERVICE_URL || "https://client.test.local";
 process.env.CLIENT_SERVICE_API_KEY = process.env.CLIENT_SERVICE_API_KEY || "test-client-key";
+process.env.CAMPAIGN_SERVICE_URL = process.env.CAMPAIGN_SERVICE_URL || "https://campaign.test.local";
+process.env.CAMPAIGN_SERVICE_API_KEY = process.env.CAMPAIGN_SERVICE_API_KEY || "test-campaign-key";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const BRAND = "22222222-2222-4222-8222-222222222222";
@@ -133,6 +135,15 @@ function baseRoutes(gemini: { calls: number; bodies: Array<Record<string, unknow
         return { ok: r.status === 200, status: r.status, body: r.text, text: r.text };
       },
     },
+    // campaign-service: the asking STEP (x-campaign-id) and its funnel campaign, as list_campaigns names it.
+    {
+      match: (url) => url === `${process.env.CAMPAIGN_SERVICE_URL}/campaigns/camp-1`,
+      respond: () => ({ ok: true, body: { campaign: { id: "camp-1", name: "Lead Proposal Deals sfc-1 - ai-lead-proposal", featureSlug: "ai-lead-proposal", salesFunnelCampaignId: "sfc-1" } } }),
+    },
+    {
+      match: (url) => url === `${process.env.CAMPAIGN_SERVICE_URL}/sales-funnel-campaigns/sfc-1`,
+      respond: () => ({ ok: true, body: { salesFunnelCampaign: { id: "sfc-1", salesFunnelId: "start_to_paid_client@ai-lead-proposal", salesFunnelName: "Lead Proposal Deals" } } }),
+    },
     { match: (url) => url.includes("/internal/users/"), respond: () => ({ ok: true, body: { user: { email: "owner@acme.example" } } }) },
     { match: (url) => url.includes("/keys/google/decrypt"), respond: () => ({ ok: true, body: { provider: "google", key: "fake", keySource: "platform" } }) },
     { match: (url, init) => url.endsWith("/v1/runs") && init?.method === "POST", respond: () => ({ ok: true, status: 201, body: { id: RUN, status: "running" } }) },
@@ -202,6 +213,8 @@ describe("POST /internal/copilot/proactive-turns — the Copilot writes first to
     expect(trigger.proactiveTrigger).toBe(true);
     expect(trigger.content).toContain("Marie Dupont");
     expect(trigger.content).toContain("asking the team for their go");
+    // The asking campaign is named the way the team (and list_campaigns) sees it.
+    expect(trigger.content).toContain('The campaign that asked you is "Lead Proposal Deals" (funnel start_to_paid_client@ai-lead-proposal, channel ai-lead-proposal): it IS this notification');
 
     // The model was offered reads only: no create/start/send tool, no cards.
     const declared = (gemini.bodies[0].tools as Array<{ function_declarations?: Array<{ name: string }>; functionDeclarations?: Array<{ name: string }> }>)
@@ -216,7 +229,9 @@ describe("POST /internal/copilot/proactive-turns — the Copilot writes first to
     expect((chatCall.init!.headers as Record<string, string>)["x-user-id"]).toBe(USER);
 
     // The campaign that woke the Copilot is not read as one the user launched.
-    expect(fetchCalls.some((c) => c.url.includes("/campaigns/camp-1"))).toBe(false);
+    expect(fetchCalls.some((c) => c.url.includes("/v1/campaigns/camp-1"))).toBe(false);
+    // Resolved twice: once to name it in the trigger, once by /chat to hide it from the turn's reads.
+    expect(fetchCalls.filter((c) => c.url === `${process.env.CAMPAIGN_SERVICE_URL}/campaigns/camp-1`)).toHaveLength(2);
 
     const geminiCalls = gemini.calls;
     const inserted = state.messageInserts.length;

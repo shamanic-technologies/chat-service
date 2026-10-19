@@ -429,3 +429,40 @@ describe("set_funnel_caps tool schema (prod 2026-10-11: the model sent the strin
     expect(SET_FUNNEL_CAPS_TOOL.input_schema.required).toEqual(expect.arrayContaining(["maxBudget", "maxVolume"]));
   });
 });
+
+describe("resolveAskingCampaign (the campaign that asked for a proactive turn)", () => {
+  const UNIT = "e81d3018-0cae-456b-90a3-0290071c6cb8";
+  const SFC = "ba08bcca-084d-4a85-bebc-465330ed77de";
+
+  it("resolves the asking STEP to its funnel campaign, the id and name list_campaigns shows (prod 2026-10-19)", async () => {
+    const { resolveAskingCampaign } = await funnel();
+    fetchMock()
+      .mockResolvedValueOnce(res(200, { campaign: { id: UNIT, name: "Lead Proposal Deals ba08bcca - ai-lead-proposal", featureSlug: "ai-lead-proposal", salesFunnelCampaignId: SFC } }))
+      .mockResolvedValueOnce(res(200, { salesFunnelCampaign: { id: SFC, salesFunnelId: "start_to_paid_client@ai-lead-proposal", salesFunnelName: "Lead Proposal Deals" } }));
+    expect(await resolveAskingCampaign(UNIT, p)).toEqual({
+      ids: [UNIT, SFC],
+      name: "Lead Proposal Deals",
+      salesFunnelId: "start_to_paid_client@ai-lead-proposal",
+      channel: "ai-lead-proposal",
+    });
+    expect(call(0).url).toBe(`http://campaign.test/campaigns/${UNIT}`);
+    expect(call(1).url).toBe(`http://campaign.test/sales-funnel-campaigns/${SFC}`);
+    expect(call(0).headers).toMatchObject({ "x-api-key": "campaign-key", "x-org-id": "org-1" });
+  });
+
+  it("an id that is already a funnel campaign is read as one", async () => {
+    const { resolveAskingCampaign } = await funnel();
+    fetchMock()
+      .mockResolvedValueOnce(res(404, { error: "Campaign not found" }))
+      .mockResolvedValueOnce(res(200, { salesFunnelCampaign: { id: SFC, salesFunnelId: "f@x", salesFunnelName: "Deals" } }));
+    expect(await resolveAskingCampaign(SFC, p)).toEqual({ ids: [SFC], name: "Deals", salesFunnelId: "f@x", channel: null });
+  });
+
+  it("an id unknown to campaign-service fails loud (the turn never runs blind to its own campaign)", async () => {
+    const { resolveAskingCampaign } = await funnel();
+    fetchMock()
+      .mockResolvedValueOnce(res(404, { error: "Campaign not found" }))
+      .mockResolvedValueOnce(res(404, { error: "Sales funnel campaign not found" }));
+    await expect(resolveAskingCampaign("nope", p)).rejects.toThrow(/404/);
+  });
+});

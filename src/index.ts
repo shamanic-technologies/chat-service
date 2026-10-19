@@ -192,11 +192,12 @@ import {
   pickProactiveRecipient,
   processProactiveTurn,
   proactiveToolNames,
+  withoutAskingCampaign,
   readPersonThread,
   type ProactiveDeps,
 } from "./lib/copilot-proactive.js";
 import { CATALOGUE_READ_TOOLS, CATALOGUE_WRITE_TOOLS, assertStaffBuild, type CatalogueReader } from "./lib/catalogue-client.js";
-import { FUNNEL_CAMPAIGN_TOOLS } from "./lib/funnel-campaign-client.js";
+import { FUNNEL_CAMPAIGN_TOOLS, resolveAskingCampaign, type AskingCampaign } from "./lib/funnel-campaign-client.js";
 import { FOLLOWUP_TOOLS } from "./lib/followup-client.js";
 import { DISCOVERY_READ_TOOLS, testEndpoint } from "./lib/discovery-client.js";
 import {
@@ -3016,6 +3017,16 @@ app.post("/chat", requireAuth, async (req, res) => {
     }
     proactiveTurn = true;
   }
+  // The campaign that asked for a proactive turn is hidden from the turn's reads
+  // (withoutAskingCampaign): the turn proposes for the person, never itself.
+  let askingCampaign: AskingCampaign | null = null;
+  if (proactiveTurn && workflowTracking.campaignId) {
+    try {
+      askingCampaign = await resolveAskingCampaign(workflowTracking.campaignId, { orgId, userId, runId: parentRunId });
+    } catch (err) {
+      return res.status(502).json({ error: `The campaign that asked for this proactive turn could not be read: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }
   // A trigger the user did not write (nudge, proactive turn): stored hidden,
   // never filed in the staff Unibox as the user's words.
   const hiddenTrigger = nudge === true || proactiveTurn;
@@ -3706,7 +3717,8 @@ app.post("/chat", requireAuth, async (req, res) => {
       const funnelCampaignTool = FUNNEL_CAMPAIGN_TOOLS[call.name];
       if (funnelCampaignTool) {
         const args = (call.args as Record<string, unknown>) || {};
-        const result = await funnelCampaignTool(args, featureCallParams, catalogueReader);
+        const served = await funnelCampaignTool(args, featureCallParams, catalogueReader);
+        const result = askingCampaign ? withoutAskingCampaign(call.name, served, askingCampaign) : served;
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -3724,7 +3736,8 @@ app.post("/chat", requireAuth, async (req, res) => {
       const catalogueRead = CATALOGUE_READ_TOOLS[call.name];
       if (catalogueRead) {
         const args = (call.args as Record<string, unknown>) || {};
-        const result = await catalogueRead(args, catalogueReader);
+        const served = await catalogueRead(args, catalogueReader);
+        const result = askingCampaign ? withoutAskingCampaign(call.name, served, askingCampaign) : served;
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -5167,6 +5180,7 @@ const proactiveDeps: ProactiveDeps = {
   },
   sendWhatsapp: (args) => sendWhatsappReply(args),
   readThread: (args) => readPersonThread(args),
+  resolveAskingCampaign: ({ campaignId, ...p }) => resolveAskingCampaign(campaignId, p),
 };
 
 function proactiveTurnBody(row: typeof copilotProactiveTurns.$inferSelect, duplicate: boolean) {
