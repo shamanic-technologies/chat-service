@@ -1261,6 +1261,106 @@ registry.registerPath({
   },
 });
 
+// --- Internal: proactive Copilot turn toward the brand's team ---
+
+export const ProactiveTurnRequestSchema = z
+  .object({
+    kind: z.enum(["hot_lead"]).openapi({
+      description: "The fact the campaign step reports. `hot_lead`: a person who is a lead of the brand and wants business with it just wrote to the brand.",
+    }),
+    idempotencyKey: z.string().min(1).max(300).openapi({
+      description: "Stable id of this fact (e.g. the step's run id, or the lead-service fact id). A retry with the same key (same org) writes nothing again and answers the stored turn.",
+    }),
+    orgId: z.string().uuid().openapi({ description: "The brand's org (internal UUID): its team receives the message and it pays for the turn." }),
+    brandId: z.string().uuid().openapi({ description: "The brand the person wrote to." }),
+    lead: z
+      .object({
+        leadId: z.string().min(1).max(300).optional(),
+        personId: z.string().min(1).max(300).optional(),
+        email: z.string().max(320).optional(),
+        phone: z.string().max(40).optional(),
+        name: z.string().max(300).optional(),
+        company: z.string().max(300).optional(),
+      })
+      .refine((l) => Boolean(l.leadId || l.personId || l.email || l.phone), { message: "lead needs at least one of leadId, personId, email, phone" })
+      .openapi({ description: "The person who became hot, by the ids lead-service / crm-service know them by. The Copilot reads the rest itself." }),
+    inbound: z
+      .object({
+        channel: z.string().max(100).optional(),
+        text: z.string().max(5000).optional(),
+        at: z.string().max(100).optional(),
+      })
+      .optional()
+      .openapi({ description: "What they wrote, when the caller has it (channel, text, time)." }),
+  })
+  .openapi("ProactiveTurnRequest");
+export type ProactiveTurnRequest = z.infer<typeof ProactiveTurnRequestSchema>;
+
+export const ProactiveTurnResponseSchema = z
+  .object({
+    id: z.string().uuid(),
+    status: z.enum(["processing", "delivered", "out_of_credits", "failed"]).openapi({
+      description: "`processing`: the turn is running. `delivered`: the message is in the recipient's thread (and on WhatsApp when `delivery` is whatsapp). `out_of_credits`: the org could not pay for the turn; nothing reached a phone. `failed`: see `error`.",
+    }),
+    duplicate: z.boolean().openapi({ description: "true when this idempotency key was already received: nothing ran again." }),
+    recipientUserId: z.string(),
+    sessionId: z.string().uuid(),
+    delivery: z.enum(["whatsapp", "web"]),
+    replyText: z.string().nullable(),
+    error: z.string().nullable(),
+  })
+  .openapi("ProactiveTurnResponse");
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/copilot/proactive-turns",
+  tags: ["Internal"],
+  summary: "A campaign step asks the Copilot to write first to the brand's team (e.g. a hot lead just wrote)",
+  description: `Called by a workflow step. Answers **202** at once; the Copilot then runs ONE turn and writes ONE short message to the brand's team: who the person is, what they wrote, one concrete proposal of what to set up for them, ending with a request for the team's go.
+
+**Recipient:** one member of the org's team: the person who used the Copilot on this org most recently (a customer member before any staff member). Never the lead, never anyone outside the org. The message lands in their latest Copilot session, the thread the web and WhatsApp share; it is also sent on WhatsApp when that thread is tied to a number (from the linked account that last answered them, crm-service idempotency key \`copilot-proactive:<id>\`).
+
+**Nothing happens for the lead in that turn:** the turn has read tools only. The team answers in the same thread and the Copilot continues with its usual confirm-before-switch-on rules.
+
+**Billing:** an org-billed Copilot turn, child of \`x-run-id\`; the tracking headers are forwarded for attribution.
+
+**Idempotent** on (\`orgId\`, \`idempotencyKey\`): a retry answers **200** with the stored turn and \`duplicate: true\`.`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+      "x-run-id": z.string().openapi({ description: "The calling step's run: parent of the turn's run." }),
+      "x-org-id": z.string().optional().openapi({ description: "When sent, must equal `orgId`." }),
+      "x-campaign-id": z.string().optional(),
+      "x-brand-id": z.string().optional(),
+      "x-workflow-slug": z.string().optional(),
+      "x-feature-slug": z.string().optional(),
+    }),
+    body: { content: { "application/json": { schema: ProactiveTurnRequestSchema } } },
+  },
+  responses: {
+    202: { description: "Accepted: the turn runs and the message goes out asynchronously", content: { "application/json": { schema: ProactiveTurnResponseSchema } } },
+    200: { description: "This idempotency key was already received: the stored turn, nothing ran again", content: { "application/json": { schema: ProactiveTurnResponseSchema } } },
+    400: { description: "Missing or invalid request fields", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing x-api-key header", content: { "application/json": { schema: ErrorResponseSchema } } },
+    409: { description: "Nobody in this org has used the Copilot yet: there is no thread to write in (`error: no_copilot_user`)", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/copilot/proactive-turns/{id}",
+  tags: ["Internal"],
+  summary: "Read a proactive turn: status, recipient, what was written",
+  request: {
+    headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
+    params: z.object({ id: z.string().uuid() }),
+  },
+  responses: {
+    200: { description: "The turn", content: { "application/json": { schema: ProactiveTurnResponseSchema } } },
+    404: { description: "Unknown id", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 // --- Internal Platform Image Generation ---
 
 registry.registerPath({
@@ -1503,6 +1603,12 @@ export const ChatRequestSchema = z
           brandUrl: "https://example.com",
         },
       }),
+    proactiveTurnId: z.string().uuid().optional().openapi({
+      description:
+        "Internal: set only by chat-service itself when running a proactive turn (POST /internal/copilot/proactive-turns). " +
+        "Must name a turn in progress for this org, user and session, or the request is refused (400). " +
+        "The turn then gets read tools only and its trigger is stored hidden.",
+    }),
   })
   .openapi("ChatRequest");
 

@@ -264,6 +264,31 @@ export const channelInboundMessages = pgTable(
   (table) => [uniqueIndex("channel_inbound_messages_message_id_idx").on(table.messageId)],
 );
 
+// One proactive Copilot turn a campaign step asked for (migration 0025,
+// HOT-LEAD-PROPOSAL-1019): dedupes a retried step on (org, idempotency key)
+// and records who received it, where, and what was written (or why not).
+export const copilotProactiveTurns = pgTable(
+  "copilot_proactive_turns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    kind: text("kind").notNull(),
+    orgId: text("org_id").notNull(),
+    brandId: text("brand_id").notNull(),
+    recipientUserId: text("recipient_user_id").notNull(),
+    sessionId: uuid("session_id").notNull(),
+    delivery: text("delivery").notNull().$type<"whatsapp" | "web">(),
+    status: text("status").notNull().$type<"processing" | "delivered" | "out_of_credits" | "failed">(),
+    parentRunId: text("parent_run_id").notNull(),
+    payload: jsonb("payload").notNull(),
+    replyText: text("reply_text"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("copilot_proactive_turns_org_key_idx").on(table.orgId, table.idempotencyKey)],
+);
+
 export interface ToolCallRecord {
   name: string;
   args: Record<string, unknown>;
