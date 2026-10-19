@@ -511,3 +511,52 @@ export const FUNNEL_CAMPAIGN_TOOLS: Record<string, (a: Record<string, unknown>, 
   create_funnel_campaign: createFunnelCampaign,
   stop_funnel_campaign: stopFunnelCampaign,
 };
+
+// --- The campaign that asked for a proactive turn --------------------------------
+
+/**
+ * The campaign whose step asked the Copilot to speak first (x-campaign-id), as
+ * the team sees it. The header carries the STEP (one unit of a funnel
+ * campaign), while list_campaigns shows funnel campaigns by their own id and
+ * name, so the model could not tie the two (prod 2026-10-19: the hot-lead turn
+ * proposed "Lead Proposal Deals", the very campaign notifying the team).
+ * Resolved from campaign-service: the unit, then its funnel campaign. An id that
+ * is already a funnel campaign is read as one. Unknown to both = loud.
+ */
+export interface AskingCampaign {
+  /** Every id that names it: the unit and its funnel campaign. */
+  ids: string[];
+  name: string | null;
+  salesFunnelId: string | null;
+  /** The channel of the asking step (its feature slug), when the id was a unit. */
+  channel: string | null;
+}
+
+export async function resolveAskingCampaign(campaignId: string, p: ApiCallParams): Promise<AskingCampaign> {
+  const readFunnelCampaign = async (id: string) =>
+    ((await call("campaign", "proactive:asking_funnel_campaign", "GET", `/sales-funnel-campaigns/${enc(id)}`, p)) as {
+      salesFunnelCampaign?: { id: string; salesFunnelId?: string | null; salesFunnelName?: string | null };
+    }).salesFunnelCampaign;
+  let unit: { id: string; name?: string | null; featureSlug?: string | null; salesFunnelCampaignId?: string | null } | undefined;
+  try {
+    unit = ((await call("campaign", "proactive:asking_campaign", "GET", `/campaigns/${enc(campaignId)}`, p)) as { campaign?: typeof unit }).campaign;
+  } catch (err) {
+    if (!(err instanceof FunnelCampaignError && err.status === 404)) throw err;
+  }
+  if (!unit) {
+    const funnel = await readFunnelCampaign(campaignId);
+    if (!funnel) throw new Error(`[funnel-campaigns] the asking campaign ${campaignId} is unknown to campaign-service`);
+    return { ids: [funnel.id], name: funnel.salesFunnelName ?? funnel.salesFunnelId ?? null, salesFunnelId: funnel.salesFunnelId ?? null, channel: null };
+  }
+  if (!unit.salesFunnelCampaignId) {
+    return { ids: [unit.id], name: unit.name ?? null, salesFunnelId: null, channel: unit.featureSlug ?? null };
+  }
+  const funnel = await readFunnelCampaign(unit.salesFunnelCampaignId);
+  if (!funnel) throw new Error(`[funnel-campaigns] campaign-service answered without the funnel campaign of ${campaignId}`);
+  return {
+    ids: [unit.id, funnel.id],
+    name: funnel.salesFunnelName ?? funnel.salesFunnelId ?? null,
+    salesFunnelId: funnel.salesFunnelId ?? null,
+    channel: unit.featureSlug ?? null,
+  };
+}
