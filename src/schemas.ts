@@ -1362,7 +1362,7 @@ export const ProactiveTurnResponseSchema = z
   .object({
     id: z.string().uuid(),
     status: z.enum(["processing", "delivered", "out_of_credits", "failed"]).openapi({
-      description: "`processing`: the turn is running. `delivered`: the message is in the recipient's thread (and on WhatsApp when `delivery` is whatsapp). `out_of_credits`: the org could not pay for the turn; nothing reached a phone. `failed`: see `error`.",
+      description: "`processing`: the turn is running. `delivered`: the message is in the recipient's thread (and on WhatsApp when `delivery` is whatsapp). `out_of_credits`: the org could not pay for the turn; nothing reached a phone. `failed`: see `error` (a WhatsApp delivery that still failed after its retries says so there; the message is then in the recipient's web Copilot thread).",
     }),
     duplicate: z.boolean().openapi({ description: "true when this idempotency key was already received: nothing ran again." }),
     recipientUserId: z.string(),
