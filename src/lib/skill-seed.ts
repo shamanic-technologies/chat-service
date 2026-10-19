@@ -485,7 +485,7 @@ Owners: runs-service (work done and its cost), features-service (usage, return),
 Tell it as a short story, one running campaign at a time (list_campaigns → GET /v1/sales-funnel-campaigns, then get_campaign_next_steps for each):
 1. It runs, its cap, what it used this period (list_campaigns: budget, maxBudget).
 2. What waits and when it leaves: "47 leads are queued, the next go out Monday morning in their own working hours." Read nextSends only: leadsQueued (every channel), nextSendAt (the earliest moment, never an exact promise), dueNow (already due: they go at the next pass). leadsQueued null = say you cannot see the queue right now, never "nothing queued".
-3. When replies come: "Expect a positive reply about 5 days after the first email." Say whose figure it is (basis): this campaign, or our clients on the same channel. learning: true = too early to tell, no number.
+3. When replies come: ALWAYS say it, never skip this line. Measured (timeToFirstPositiveReply has a figure): "Expect a reply about <that figure> after the first email", and whose figure it is (basis): this campaign, or our clients on the same channel. Not measured (learning: true, or no figure): "It is too early to say how long replies take on this campaign." No number, no guess, no word "learning".
 4. A reactive campaign acts on its trigger (runsWhen): say what starts it. No tool serves its delay: state none.
 
 ## Rules

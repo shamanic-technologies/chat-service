@@ -436,3 +436,17 @@ describe("campaign next steps: queued means every channel (NEXT-STEPS-ALL-CHANNE
     expect(tool.description).not.toContain("leadsAwaitingFirstEmail");
   });
 });
+
+describe("campaign next steps: the reply-timing line is always said (CAMPAIGN-NEXT-STEPS-1018)", () => {
+  // Prod 2026-10-19: with timeToFirstPositiveReply learning: true the Copilot said nothing about replies,
+  // reading "too early to tell, no number" as "skip it". Not measured = say it is too early, in plain words.
+  it("the stats skill and the tool tell the agent to always say when replies come, with no invented figure", () => {
+    const skill = SEED_SKILLS.find((s) => s.slug === "costs-roi-stats")!;
+    expect(skill.content).toContain("ALWAYS say it, never skip this line");
+    expect(skill.content).toContain("It is too early to say how long replies take on this campaign.");
+    expect(skill.content).not.toMatch(/about \d+ days/);
+    const tool = TOOL_REGISTRY.get_campaign_next_steps;
+    expect(tool.description).toContain("never skip the reply-timing line");
+    expect(tool.description).not.toMatch(/about \d+ days/);
+  });
+});
