@@ -25,7 +25,8 @@ import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import type { db as Db } from "../db/index.js";
 import { channelInboundMessages, copilotProactiveTurns, sessions } from "../db/schema.js";
 import type { ChannelMessageRequest, ProactiveTurnRequest } from "../schemas.js";
-import { parseChatStream, renderChannelReply, type ChatChannelContext } from "./channel-copilot.js";
+import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
+import { WhatsappSendError, parseChatStream, renderChannelReply, type ChatChannelContext } from "./channel-copilot.js";
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
 
 /**
@@ -42,8 +43,29 @@ export function proactiveToolNames(allowed: readonly string[]): string[] {
   return allowed.filter(isProactiveReadTool);
 }
 
+/** One message of the person's thread with the brand (crm-service merged timeline), as the turn reads it. */
+export interface PersonThreadMessage {
+  at: string | null;
+  /** inbound = the person wrote; outbound = the brand did. */
+  direction: "inbound" | "outbound" | "other" | null;
+  channel: string;
+  text: string;
+}
+
+export interface ProactiveTurnContext {
+  /** The person's latest messages with the brand, oldest first (empty when none was read). */
+  thread: PersonThreadMessage[];
+  /** The campaign whose step asked for this turn (x-campaign-id), when the caller sent it. */
+  askingCampaignId: string | null;
+}
+
+const THREAD_MESSAGES_SHOWN = 6;
+const THREAD_TEXT_CHARS = 600;
+
+const oneLine = (text: string, max: number) => text.replace(/\s+/g, " ").trim().slice(0, max);
+
 /** The hidden user turn of a proactive turn: the facts, then the game (never canned wording). */
-export function buildProactiveTriggerMessage(req: ProactiveTurnRequest): string {
+export function buildProactiveTriggerMessage(req: ProactiveTurnRequest, ctx: ProactiveTurnContext = { thread: [], askingCampaignId: null }): string {
   const lead = req.lead;
   const facts: string[] = [];
   if (lead.name) facts.push(`name: ${lead.name}`);
@@ -55,14 +77,70 @@ export function buildProactiveTriggerMessage(req: ProactiveTurnRequest): string 
   const wrote: string[] = [];
   if (req.inbound?.channel) wrote.push(`on ${req.inbound.channel}`);
   if (req.inbound?.at) wrote.push(`at ${req.inbound.at}`);
-  const quote = req.inbound?.text ? `\nWhat they wrote: "${req.inbound.text.replace(/\s+/g, " ").slice(0, 1500)}"` : "";
+  const quote = req.inbound?.text ? `\nWhat they wrote: "${oneLine(req.inbound.text, 1500)}"` : "";
+  const shown = ctx.thread.slice(-THREAD_MESSAGES_SHOWN);
+  const thread = shown.length
+    ? `\nTheir latest messages with the brand, oldest first:\n${shown
+        .map((m) => `- ${m.direction === "inbound" ? "THEY wrote" : m.direction === "outbound" ? "the brand wrote" : "event"} on ${m.channel}${m.at ? ` (${m.at})` : ""}: "${oneLine(m.text, THREAD_TEXT_CHARS)}"`)
+        .join("\n")}`
+    : "";
+  const hasWords = Boolean(req.inbound?.text) || shown.some((m) => m.direction === "inbound");
+  const asking = ctx.askingCampaignId ? ` (campaign id ${ctx.askingCampaignId})` : "";
   return [
     "(Not written by the user. A campaign step of this brand asked you to speak first: a person who is not a customer and not a personal contact just wrote to the brand and wants business with it (a hot lead).",
-    `Brand id: ${req.brandId}. The person: ${facts.join(", ")}.${wrote.length ? ` They wrote ${wrote.join(" ")}.` : ""}${quote}`,
-    "You are writing to the brand's own team, in their Copilot thread. Read what you need first with your tools: who this person is, what they wrote, the brand's offers, its running campaigns, and what we run today.",
-    "Then write ONE short message, the size of a WhatsApp message: who the person is (name, company, how they reached us), what they wrote in a short quote, and ONE concrete proposal of what to set up for them from what we run today (an offer, a campaign, a next step), with its cap when it costs money.",
+    `Brand id: ${req.brandId}. The person: ${facts.join(", ")}.${wrote.length ? ` They wrote ${wrote.join(" ")}.` : ""}${quote}${thread}`,
+    `\nThe campaign that asked you${asking} IS this notification: its only job is to tell the team that this person is hot. It never writes to the person and sets nothing up for them, so it is never the answer to "what do we do for them".`,
+    "The game: the team decides, lead by lead, what we do for each hot lead. You are writing to the brand's own team, in their Copilot thread, to give them a choice they can answer with one word. Read what you need first with your tools: who this person is, the brand's offers, its running campaigns, and what we run today.",
+    hasWords
+      ? "Then write ONE short message, the size of a WhatsApp message: who the person is (name, company, how they reached us), what they wrote in a short quote of their own words, and ONE concrete proposal of what to set up FOR THEM from what we run today (a personal answer, the offer that fits what they asked, a campaign or funnel that writes to them, a meeting...), with its cap when it costs money. When they asked for something precise, the proposal answers that."
+      : "Then write ONE short message, the size of a WhatsApp message: who the person is (name, company, how they reached us), say in a few words that their message could not be read here, and ONE concrete proposal of what to set up FOR THEM from what we run today (a personal answer, the offer that fits them, a campaign or funnel that writes to them, a meeting...), with its cap when it costs money.",
+    "You do not know this person's pronouns: call them by their name (or first name), or say they/them; never he or she, never a gender guessed from a name or an address.",
     "End by asking the team for their go in one plain question. Do not set anything up, start anything, send anything to the person or spend anything now: nothing happens for them until a person of the team says go in this thread, and then your usual confirm rules apply.)",
   ].join(" ");
+}
+
+/**
+ * The person's thread with the brand, read from crm-service's merged timeline
+ * through the gateway (`GET /v1/orgs/people/timeline`, the Unibox thread), as
+ * the recipient. Named by the first identity the caller gave: email, phone, then
+ * crm person id. Messages with text only, the latest first page.
+ */
+export async function readPersonThread(
+  args: { orgId: string; userId: string; runId: string; brandId: string; lead: ProactiveTurnRequest["lead"] },
+  fetchImpl: (path: string, params: ApiCallParams) => Promise<Response> = (path, params) => apiServiceFetch(path, "GET", params),
+): Promise<PersonThreadMessage[]> {
+  const qs = new URLSearchParams({ brandId: args.brandId, limit: "30" });
+  const { lead } = args;
+  if (lead.email) qs.set("personKey", `email:${lead.email.trim().toLowerCase()}`);
+  else if (lead.phone) qs.set("personKey", `phone:${lead.phone.trim()}`);
+  else if (lead.personId && /^[0-9a-f-]{36}$/i.test(lead.personId)) qs.set("personId", lead.personId);
+  else return [];
+  const res = await fetchImpl(`/v1/orgs/people/timeline?${qs.toString()}`, { orgId: args.orgId, userId: args.userId, runId: args.runId });
+  if (res.status === 404) return [];
+  const raw = await res.text();
+  if (!res.ok) throw new Error(`people timeline ${res.status}: ${raw.slice(0, 300)}`);
+  const body = JSON.parse(raw) as { items?: Array<Record<string, unknown>> };
+  return (body.items ?? [])
+    .filter((i) => i.kind === "message" && typeof i.text === "string" && i.text.trim())
+    .map((i) => ({
+      at: typeof i.at === "string" ? i.at : null,
+      direction: (i.direction as PersonThreadMessage["direction"]) ?? null,
+      channel: typeof i.channel === "string" ? i.channel : "unknown",
+      text: i.text as string,
+    }));
+}
+
+/**
+ * Delivery retries of a WhatsApp message already written: same text, same crm
+ * idempotency key (crm sends it once at most), never a new turn. ~7.5 min in all.
+ */
+export const DELIVERY_RETRY_DELAYS_MS = [15_000, 30_000, 60_000, 120_000, 240_000] as const;
+
+/** A refusal that can clear by waiting: the account offline for a moment, a rate limit, a crm 5xx, a network cut. */
+export function isRetryableDelivery(err: unknown): boolean {
+  if (!(err instanceof WhatsappSendError)) return true;
+  if (err.status >= 500 || err.status === 429) return true;
+  return err.status === 422 && err.code === "whatsapp_not_connected";
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +165,10 @@ export interface ProactiveDeps {
   }) => Promise<{ status: number; body: string }>;
   /** crm-service POST /orgs/whatsapp/messages. */
   sendWhatsapp: (args: { orgId: string; brandId: string; userId: string; runId: string | null; phone: string; fromAccount: string; text: string; idempotencyKey: string }) => Promise<void>;
+  /** The person's thread with the brand (readPersonThread). */
+  readThread: (args: { orgId: string; userId: string; runId: string; brandId: string; lead: ProactiveTurnRequest["lead"] }) => Promise<PersonThreadMessage[]>;
+  /** Waits between delivery attempts (injected for tests). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface ProactiveRecipient {
@@ -165,12 +247,22 @@ export async function processProactiveTurn(
   let replyText: string | null = null;
   let error: string | null = null;
   try {
+    // What they wrote: the caller's text, else their thread with the brand. A
+    // failed read never blocks the notification; the turn is told it has no words.
+    let thread: PersonThreadMessage[] = [];
+    if (!req.inbound?.text) {
+      try {
+        thread = await deps.readThread({ orgId: row.orgId, userId: recipient.userId, runId: row.parentRunId, brandId: row.brandId, lead: req.lead });
+      } catch (err) {
+        console.error(`[chat-service] proactive turn "${row.id}": person thread read failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
     const { status: http, body } = await deps.runChat({
       orgId: row.orgId,
       userId: recipient.userId,
       runId: row.parentRunId,
       sessionId: recipient.sessionId,
-      message: buildProactiveTriggerMessage(req),
+      message: buildProactiveTriggerMessage(req, { thread, askingCampaignId: trackingHeaders["x-campaign-id"] ?? null }),
       context: { brandId: row.brandId, ...(recipient.whatsapp ? { channel: proactiveChannelContext(recipient.whatsapp) } : {}) },
       proactiveTurnId: row.id,
       trackingHeaders,
@@ -189,7 +281,7 @@ export async function processProactiveTurn(
       if (recipient.whatsapp) {
         const w = recipient.whatsapp;
         replyText = renderChannelReply(turn);
-        await deps.sendWhatsapp({
+        const send = {
           orgId: w.inbound.orgId,
           brandId: w.inbound.brandId,
           userId: w.inbound.accountUserId,
@@ -198,7 +290,23 @@ export async function processProactiveTurn(
           fromAccount: w.inbound.fromAccount,
           text: replyText,
           idempotencyKey: `copilot-proactive:${row.id}`,
-        });
+        };
+        const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+        for (let attempt = 1; ; attempt++) {
+          try {
+            await deps.sendWhatsapp(send);
+            break;
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            const delay = DELIVERY_RETRY_DELAYS_MS[attempt - 1];
+            if (!isRetryableDelivery(err) || delay === undefined) {
+              // The message is written and stored in the web Copilot thread; only the phone hop failed.
+              throw new Error(`whatsapp delivery failed after ${attempt} attempt(s), the message waits in the web Copilot thread: ${reason}`);
+            }
+            console.warn(`[chat-service] proactive turn "${row.id}": whatsapp delivery attempt ${attempt} refused, retrying in ${delay / 1000}s: ${reason}`);
+            await sleep(delay);
+          }
+        }
       }
       status = "delivered";
     }
