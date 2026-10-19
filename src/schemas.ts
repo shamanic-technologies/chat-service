@@ -1195,6 +1195,68 @@ registry.registerPath({
   },
 });
 
+// --- Org transcription of a short audio file sent inline (SOPHIE-VOICE-1019) ---
+
+export const OrgTranscriptionRequestSchema = z
+  .object({
+    audio: z
+      .object({
+        base64: z.string().min(1).openapi({ description: "The audio file, base64. At most 7 MB of audio (~1 h of a WhatsApp voice note)." }),
+        mimeType: z.string().min(1).openapi({ description: "Its media type as the sender stated it; parameters are dropped (`audio/ogg; codecs=opus` → `audio/ogg`). Must be `audio/*`.", example: "audio/ogg; codecs=opus" }),
+      })
+      .openapi({ description: "The recording itself (a voice note is small: no URL, no upload)." }),
+    durationSeconds: z.number().positive().max(24 * 3600).optional().openapi({
+      description: "Length of the recording when the caller knows it: sizes the pre-call cost hold. Absent = read off the file size.",
+    }),
+    model: z.enum(["flash", "flash-pro"]).optional().openapi({
+      description: "`flash-pro` (default, Gemini 3.8 Flash) or `flash` (Gemini 3.5 Flash-Lite, cheaper, drops passages of slow speech).",
+    }),
+  })
+  .openapi("OrgTranscriptionRequest");
+
+export const OrgTranscriptionResponseSchema = z
+  .object({
+    text: z.string().openapi({ description: "The words spoken, verbatim, one line per sentence group, no time markers. Empty when nothing is spoken." }),
+    languages: z.array(z.string()).nullable().openapi({ description: "ISO 639-1 codes spoken, in order; empty when nothing is spoken; null when the model did not state them." }),
+    segments: z.array(TranscriptionSegmentSchema),
+    model: z.string(),
+    tokensInput: z.number().int(),
+    tokensOutput: z.number().int(),
+    runId: z.string().uuid().openapi({ description: "This service's run for the call, child of the caller's `x-run-id`: the cost rows are on it." }),
+  })
+  .openapi("OrgTranscriptionResponse");
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/transcriptions",
+  tags: ["Transcription"],
+  summary: "Transcribe a short audio file sent inline (org-billed, synchronous)",
+  description: `Verbatim speech transcription of a short audio file (a voice note) carried in the request, answered in the same call (a 1 min voice note takes a few seconds). Same prompt and model as \`/internal/platform-transcriptions\`: the words as spoken, in the language spoken, never translated or cleaned up.
+
+**Spend:** org-billed like \`/complete\`: a run under the caller's \`x-run-id\`, the worst-case token hold PROVISIONED then AUTHORIZED (platform key) before the call, the real Gemini token lines posted \`actual\` after it and the hold released. Cost names are the model's Gemini token names (\`google-flash-3.8-tokens-input\` / \`-tokens-output\`; Google prices audio input like text for these models).
+
+**Errors:** 413 \`file_too_large\` (over 7 MB), 422 \`not_media\` (not \`audio/*\`) before any spend; 402 when billing refuses; 502 \`provider_refused\` / \`transcript_truncated\` / \`unparseable_transcript\` when the model call fails (the tokens it spent are still declared).`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+      "x-org-id": z.string().openapi({ description: "Internal org UUID from client-service (the org billed)" }),
+      "x-user-id": z.string().openapi({ description: "Internal user UUID from client-service" }),
+      "x-run-id": z.string().uuid().openapi({ description: "Caller's run ID" }),
+      ...workflowTrackingHeaders,
+    }),
+    body: { content: { "application/json": { schema: OrgTranscriptionRequestSchema } } },
+  },
+  responses: {
+    200: { description: "The transcript", content: { "application/json": { schema: OrgTranscriptionResponseSchema } } },
+    400: { description: "Missing or invalid request fields", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing auth headers", content: { "application/json": { schema: ErrorResponseSchema } } },
+    402: { description: "Billing refused the spend", content: { "application/json": { schema: ErrorResponseSchema } } },
+    413: { description: "Audio over 7 MB (`file_too_large`)", content: { "application/json": { schema: TranscriptionErrorResponseSchema } } },
+    422: { description: "Not audio (`not_media`)", content: { "application/json": { schema: TranscriptionErrorResponseSchema } } },
+    502: { description: "Run tracking, cost declaration or the model call failed", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 // --- The Copilot on WhatsApp (SOPHIE-COPILOT-WA-1018) ---
 
 const E164 = z.string().regex(/^\+[1-9]\d{6,14}$/, "phone must be E.164, e.g. +33612345678");

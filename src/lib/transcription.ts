@@ -459,8 +459,72 @@ export function buildTranscriptionRequestBody(model: string, file: GeminiFile): 
 
 /** One generateContent call on the uploaded file; retries only a 429/5xx/timeout. */
 export async function transcribeGeminiFile(apiKey: string, model: string, file: GeminiFile): Promise<TranscribeResult> {
+  return generateTranscript(apiKey, model, buildTranscriptionRequestBody(model, file));
+}
+
+// --- Inline audio (a voice note: small, sent in the request) ---------------
+
+/**
+ * Largest audio file `POST /orgs/transcriptions` takes inline. Base64 adds a
+ * third, and the JSON body limit is 10 MB: 7 MB of audio is ~1 h of a
+ * WhatsApp voice note (Opus, ~16 kbit/s). Anything bigger goes through the
+ * URL path (`/internal/platform-transcriptions`, Files API, 2 GB).
+ */
+export const MAX_INLINE_TRANSCRIPTION_BYTES = 7 * 1024 * 1024;
+
+/** Gemini bills audio at 32 tokens per second (https://ai.google.dev/gemini-api/docs/audio). */
+export const AUDIO_TOKENS_PER_SECOND = 32;
+
+/**
+ * The media type of an inline audio file: `audio/ogg; codecs=opus` (the
+ * WhatsApp bridge's) → `audio/ogg`. Anything but `audio/*` is refused.
+ */
+export function resolveInlineAudioMimeType(mimeType: string): string {
+  const type = mimeType.split(";")[0].trim().toLowerCase();
+  if (!type.startsWith("audio/")) {
+    throw new TranscriptionError("not_media", `The file is not audio (media type "${type || "none"}").`);
+  }
+  return type;
+}
+
+export function buildInlineTranscriptionRequestBody(model: string, audio: { mimeType: string; base64: string }): Record<string, unknown> {
+  return {
+    contents: [{ role: "user", parts: [{ inlineData: { mimeType: audio.mimeType, data: audio.base64 } }, { text: TRANSCRIPTION_PROMPT }] }],
+    generationConfig: {
+      temperature: 0,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+      thinkingConfig: buildThinkingConfig(model, true),
+    },
+  };
+}
+
+/** One generateContent call on an inline audio file; retries only a 429/5xx/timeout. */
+export async function transcribeInlineAudio(apiKey: string, model: string, audio: { mimeType: string; base64: string }): Promise<TranscribeResult> {
+  return generateTranscript(apiKey, model, buildInlineTranscriptionRequestBody(model, audio));
+}
+
+/**
+ * Worst-case token hold for an inline audio file before the call: the
+ * recording's tokens + the prompt (input), and the words a person can say in
+ * that time (output). Duration = the caller's, else read off the size at a
+ * floor bitrate of 8 kbit/s (over-estimates every real voice note).
+ */
+export function inlineAudioHold(sizeBytes: number, durationSeconds: number | undefined): { inputTokens: number; outputTokens: number } {
+  const seconds = Math.max(1, Math.ceil(durationSeconds ?? sizeBytes / 1000));
+  return {
+    inputTokens: seconds * AUDIO_TOKENS_PER_SECOND + 500,
+    outputTokens: Math.min(MAX_OUTPUT_TOKENS, 1_000 + seconds * 10),
+  };
+}
+
+/** The transcript as plain words: one line per segment, no time markers. */
+export function transcriptPlainText(parsed: ParsedTranscript): string {
+  return parsed.segments.map((s) => s.text).join("\n").trim();
+}
+
+async function generateTranscript(apiKey: string, model: string, requestBody: Record<string, unknown>): Promise<TranscribeResult> {
   const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const body = JSON.stringify(buildTranscriptionRequestBody(model, file));
+  const body = JSON.stringify(requestBody);
   let lastError = "";
   for (let attempt = 1; attempt <= GENERATE_MAX_ATTEMPTS; attempt++) {
     let res: Response;

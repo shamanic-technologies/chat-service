@@ -26,6 +26,15 @@ import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
 import { listBrands } from "./funnel-client.js";
 
 export const CHANNEL_TASK_NAME = "copilot-whatsapp";
+
+/**
+ * How crm-service writes a voice note into a message (SOPHIE-VOICE-1019): the
+ * transcript after `VOICE_NOTE_PREFIX`, or `VOICE_NOTE_UNREADABLE` when it could
+ * not be transcribed. Byte-equal to crm-service `src/lib/matrix/voice-notes.ts`.
+ * The owner decided (2026-10-19) the assistant always answers in TEXT.
+ */
+export const VOICE_NOTE_PREFIX = "🎤 Voice note:";
+export const VOICE_NOTE_UNREADABLE = "🎤 Voice note (could not be understood)";
 const DASHBOARD_URL = process.env.DASHBOARD_URL || "https://dashboard.distribute.you";
 
 /** The `context.channel` block the internal route passes to /chat. */
@@ -55,6 +64,7 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
     "WhatsApp shows plain text. Write short messages. Use WhatsApp markup only (*bold*, _italic_): no tables, no headings, no markdown links (write the URL itself). Never use the long dash characters.",
     "Clickable choices (present_choices) are shown as a numbered list: the person answers with a number or in words.",
     `Pages you open (open_page) cannot be shown here: when a page helps, give the link ${DASHBOARD_URL}.`,
+    `People may send voice notes. ${VOICE_NOTE_PREFIX} followed by words is what they SAID in a voice note, transcribed: treat it as their message and answer it like any written one. ${VOICE_NOTE_UNREADABLE} means a voice note we could not understand: say you could not listen to it and ask them to write it or send it again. Always answer in text: you cannot send voice notes.`,
   ];
   if (channel.assistant.instructions?.trim()) lines.push(`How you speak on this number: ${channel.assistant.instructions.trim()}`);
   if (guest) {

@@ -8,8 +8,9 @@
  * `hot_lead`, a person who newly wrote to the brand with business interest).
  * Here:
  *  1. the recipient is ONE member of the org's team: the person who used the
- *     Copilot on that org most recently (staff only when no customer member
- *     ever used it), never the lead, never anyone outside the org;
+ *     Copilot on that org most recently (a known customer email first, staff
+ *     only when no customer member ever used it, an unknown email last), never
+ *     the lead, never anyone outside the org;
  *  2. the turn runs through POST /chat itself on that member's latest Copilot
  *     session (the thread the web and WhatsApp share), with READ tools only:
  *     nothing is created, started, sent or spent for the lead in that turn;
@@ -98,9 +99,10 @@ export interface ProactiveRecipient {
 const MAX_CANDIDATES = 10;
 
 /**
- * The team member who receives it: the latest Copilot user of the org, a
- * customer member before any staff member (staff are Clerk members of the
- * client orgs they help set up; on a staff org everyone is staff). Their
+ * The team member who receives it: the latest Copilot user of the org with a
+ * known non-staff email (a customer member), else the latest with a known email
+ * (staff are Clerk members of the client orgs they help set up; on a staff org
+ * everyone is staff), else the latest at all. Their
  * latest Copilot session is the thread; null when nobody ever used the Copilot.
  */
 export async function pickProactiveRecipient(
@@ -120,8 +122,12 @@ export async function pickProactiveRecipient(
     if (latestPerUser.length >= MAX_CANDIDATES) break;
   }
   if (latestPerUser.length === 0) return null;
-  const staff = await Promise.all(latestPerUser.map(async (c) => deps.isStaffEmail(await deps.fetchEmail(c.userId))));
-  const pick = latestPerUser.find((_, i) => !staff[i]) ?? latestPerUser[0];
+  // A customer member is POSITIVE evidence: a known email that is not staff.
+  // A user with no known email never outranks a known team member (prod
+  // 2026-10-19: an email-less one-session user would have taken Kevin's place).
+  const emails = await Promise.all(latestPerUser.map((c) => deps.fetchEmail(c.userId)));
+  const known = latestPerUser.filter((_, i) => Boolean(emails[i]));
+  const pick = latestPerUser.find((_, i) => Boolean(emails[i]) && !deps.isStaffEmail(emails[i])) ?? known[0] ?? latestPerUser[0];
 
   let whatsapp: ProactiveRecipient["whatsapp"] = null;
   if (pick.channelPhone) {
