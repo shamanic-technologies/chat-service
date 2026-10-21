@@ -1057,9 +1057,10 @@ Both judgment routes accept `image: { url }` (public https PNG/JPEG, source ≤ 
 | `judge` | Vendor | Questions | Cost name (input tokens only) |
 |---|---|---|---|
 | `jev` (default) | TypeSafe Jev 1.13 (`TypeSafe-Danger-Zone-Images: true`, images flagged experimental by TypeSafe) | noul, choice, score | `typesafe-jev-1.13-tokens-input` |
+| `cloudflare-clef` / `cloudflare-clef-flash` | Cloudflare Clef 27B / 9B on Workers AI (platform `cloudflare-workers-ai` token + `cloudflare-workers-ai-account-id`), image as base64, empty state when only an image is judged | noul, choice, score | `cloudflare-clef-tokens-input` ($0.24/M), `cloudflare-clef-flash-tokens-input` ($0.038/M) |
 | `openai-luna` | OpenAI Decisions API, `gpt-6-luna` (public beta), platform `openai` key | noul (→ predicate), choice; no score, no noul `criteria`, no choice `examples` (400, never translated) | `openai-gpt-6-luna-decisions-tokens-input`, `…-long-context-…` past 272K prompt tokens |
 
-`model` (Jev alias) applies to `jev` only. The response carries `judge`. Live 2026-10-21 on the underdogroofing.com screenshot (phone in the header): Jev answered 0.01 for "no phone" with 3,880 input tokens, Luna 0.48 with 1,656. Cloudflare Clef is NOT wired: our Cloudflare account holds R2 keys only, no Workers AI token.
+`model` (Jev alias) applies to `jev` only. The response carries `judge`. Benchmark 2026-10-21 on one client's 33 roofer homepages ("Is there no clearly visible phone number in the header above the fold?", truth checked by eye): clef 32/32, clef-flash 32/32, jev 31/31, openai-luna 27/28 (the old describe-then-judge path: 14/32). Tokens per screenshot: clef ~1,180, luna ~1,540, jev ~3,900. A prepared PNG over 4 MiB (Clef's limit) is re-encoded as a quality-92 JPEG for every judge.
 
 ### Platform-billed twin — `POST /internal/platform-judgments`
 

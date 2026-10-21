@@ -38,6 +38,15 @@ describe("prepareJudgmentImageBytes — fits every judge's limits", () => {
     expect([tiny.width, tiny.height]).toEqual([JUDGMENT_IMAGE_MIN_SIDE, JUDGMENT_IMAGE_MIN_SIDE]);
   });
 
+  it("a PNG over 4 MiB (Clef's limit) becomes a JPEG, for every judge", async () => {
+    const { randomBytes } = await import("crypto");
+    const noise = randomBytes(1568 * 1568 * 3);
+    const big = await sharp(noise, { raw: { width: 1568, height: 1568, channels: 3 } }).png().toBuffer();
+    const out = await prepareJudgmentImageBytes(big);
+    expect(out.format).toBe("jpeg");
+    expect(Buffer.byteLength(out.base64, "base64")).toBeLessThanOrEqual(4 * 1024 * 1024);
+  });
+
   it("re-encodes a JPEG as PNG", async () => {
     const jpg = await sharp({ create: { width: 600, height: 400, channels: 3, background: "#fff" } }).jpeg().toBuffer();
     const out = await prepareJudgmentImageBytes(jpg);

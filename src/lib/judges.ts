@@ -4,10 +4,10 @@
 // There is no fallback from one judge to another: a judge that fails is a
 // named error carrying that judge's name.
 //
-// Not here: Cloudflare Clef / Clef-flash (Workers AI). Checked 2026-10-21: our
-// Cloudflare account exposes R2 storage keys only, no Workers AI API token, so
-// Clef is not reachable from this service. Adding it = a Workers AI token in
-// key-service, its cost rows in costs-service, then a JUDGES entry here.
+// Benchmark 2026-10-21 (33 roofer homepages, "Is there no clearly visible
+// phone number in the header above the fold?", ground truth checked by eye):
+// jev 31/31, clef 32/32, clef-flash 32/32, openai-luna 27/28. Per screenshot:
+// jev ~3,900 tokens, luna ~1,540, clef ~1,180 (both sizes).
 // ---------------------------------------------------------------------------
 
 import {
@@ -27,13 +27,24 @@ import {
   type TypeSafeQuestion,
 } from "./typesafe.js";
 import {
+  CLEF_FLASH_TOKENS_INPUT_COST_NAME,
+  CLEF_TOKENS_INPUT_COST_NAME,
   OPENAI_DECISIONS_LONG_CONTEXT_TOKENS_INPUT_COST_NAME,
   OPENAI_DECISIONS_TOKENS_INPUT_COST_NAME,
   TYPESAFE_INPUT_TOKENS_COST_NAME,
 } from "./cost-names.js";
 import type { PreparedJudgmentImage } from "./judgment-image.js";
+import {
+  CLOUDFLARE_WORKERS_AI_ACCOUNT_PROVIDER,
+  CLOUDFLARE_WORKERS_AI_PROVIDER,
+  ClefInvalidRequestError,
+  ClefRateLimitError,
+  judgeWithClef,
+  type ClefModel,
+} from "./cloudflare-clef.js";
+import { resolvePlatformKey } from "./key-client.js";
 
-export const JUDGES = ["jev", "openai-luna"] as const;
+export const JUDGES = ["jev", "openai-luna", "cloudflare-clef", "cloudflare-clef-flash"] as const;
 export type Judge = (typeof JUDGES)[number];
 export const DEFAULT_JUDGE: Judge = "jev";
 
@@ -41,17 +52,35 @@ export const DEFAULT_JUDGE: Judge = "jev";
 export const JUDGE_LABELS: Record<Judge, string> = {
   jev: "TypeSafe",
   "openai-luna": "OpenAI Decisions",
+  "cloudflare-clef": "Cloudflare Clef",
+  "cloudflare-clef-flash": "Cloudflare Clef-flash",
+};
+
+const CLEF_MODEL_OF: Partial<Record<Judge, ClefModel>> = {
+  "cloudflare-clef": "clef",
+  "cloudflare-clef-flash": "clef-flash",
 };
 
 /** key-service provider slug per judge. */
 export const JUDGE_PROVIDERS: Record<Judge, string> = {
   jev: TYPESAFE_PROVIDER,
   "openai-luna": OPENAI_DECISIONS_PROVIDER,
+  "cloudflare-clef": CLOUDFLARE_WORKERS_AI_PROVIDER,
+  "cloudflare-clef-flash": CLOUDFLARE_WORKERS_AI_PROVIDER,
 };
 
 /** Cost name the pre-call HOLD is provisioned under (the normal-rate row). */
 export function judgeHoldCostName(judge: Judge): string {
-  return judge === "jev" ? TYPESAFE_INPUT_TOKENS_COST_NAME : OPENAI_DECISIONS_TOKENS_INPUT_COST_NAME;
+  switch (judge) {
+    case "jev":
+      return TYPESAFE_INPUT_TOKENS_COST_NAME;
+    case "openai-luna":
+      return OPENAI_DECISIONS_TOKENS_INPUT_COST_NAME;
+    case "cloudflare-clef":
+      return CLEF_TOKENS_INPUT_COST_NAME;
+    case "cloudflare-clef-flash":
+      return CLEF_FLASH_TOKENS_INPUT_COST_NAME;
+  }
 }
 
 /**
@@ -60,7 +89,7 @@ export function judgeHoldCostName(judge: Judge): string {
  * name follows the reported total; Jev has one rate.
  */
 export function judgeActualCostName(judge: Judge, inputTokens: number): string {
-  if (judge === "jev") return TYPESAFE_INPUT_TOKENS_COST_NAME;
+  if (judge !== "openai-luna") return judgeHoldCostName(judge);
   return inputTokens > OPENAI_DECISIONS_LONG_CONTEXT_THRESHOLD
     ? OPENAI_DECISIONS_LONG_CONTEXT_TOKENS_INPUT_COST_NAME
     : OPENAI_DECISIONS_TOKENS_INPUT_COST_NAME;
@@ -83,7 +112,13 @@ export async function runJudge(args: {
 }): Promise<JudgeResult> {
   const { judge, apiKey, model, state, questions, image } = args;
   if (judge === "jev") return judgeWithTypeSafe({ apiKey, model, state, questions, image });
-  return judgeWithOpenAiDecisions({ apiKey, state, questions, image });
+  if (judge === "openai-luna") return judgeWithOpenAiDecisions({ apiKey, state, questions, image });
+  // The account id is a platform fact (which Cloudflare account runs the model), not a secret.
+  const account = await resolvePlatformKey(CLOUDFLARE_WORKERS_AI_ACCOUNT_PROVIDER, {
+    method: "POST",
+    path: "/judgments",
+  });
+  return judgeWithClef({ apiKey, accountId: account.key, model: CLEF_MODEL_OF[judge]!, state, questions, image });
 }
 
 /**
@@ -93,13 +128,17 @@ export async function runJudge(args: {
  */
 export function judgeErrorResponse(judge: Judge, err: unknown): { status: number; body: Record<string, unknown> } {
   const label = JUDGE_LABELS[judge];
-  if (err instanceof TypeSafeInvalidRequestError || err instanceof OpenAiDecisionsInvalidRequestError) {
+  if (
+    err instanceof TypeSafeInvalidRequestError ||
+    err instanceof OpenAiDecisionsInvalidRequestError ||
+    err instanceof ClefInvalidRequestError
+  ) {
     return {
       status: 400,
       body: { error: `${label} refused the request`, judge, detail: err.vendorMessage, retryable: false },
     };
   }
-  if (err instanceof TypeSafeRateLimitError || err instanceof OpenAiDecisionsRateLimitError) {
+  if (err instanceof TypeSafeRateLimitError || err instanceof OpenAiDecisionsRateLimitError || err instanceof ClefRateLimitError) {
     return {
       status: 429,
       body: {

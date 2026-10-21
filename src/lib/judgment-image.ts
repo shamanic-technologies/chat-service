@@ -26,9 +26,16 @@ const FETCH_TIMEOUT_MS = 20_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Largest prepared file. Clef refuses an image over 4 MiB; a 1568 px PNG of a
+ * photo-heavy page can pass that, so such a file is re-encoded as a high-quality
+ * JPEG for EVERY judge (one file for all, so a benchmark compares judges).
+ */
+export const JUDGMENT_IMAGE_MAX_PREPARED_BYTES = 4 * 1024 * 1024;
+
 export interface PreparedJudgmentImage {
-  /** Always PNG after preparation. */
-  format: "png";
+  /** PNG, unless the PNG was over 4 MiB (then a quality-92 JPEG). */
+  format: "png" | "jpeg";
   base64: string;
   width: number;
   height: number;
@@ -113,13 +120,16 @@ export async function prepareJudgmentImageBytes(bytes: Buffer): Promise<Prepared
     });
   }
 
-  const { data, info } = await pipeline
-    .flatten({ background: { r: 255, g: 255, b: 255 } })
-    .png()
-    .toBuffer({ resolveWithObject: true });
+  const flat = pipeline.flatten({ background: { r: 255, g: 255, b: 255 } });
+  let { data, info } = await flat.clone().png().toBuffer({ resolveWithObject: true });
+  let format: PreparedJudgmentImage["format"] = "png";
+  if (data.length > JUDGMENT_IMAGE_MAX_PREPARED_BYTES) {
+    ({ data, info } = await flat.jpeg({ quality: 92 }).toBuffer({ resolveWithObject: true }));
+    format = "jpeg";
+  }
 
   return {
-    format: "png",
+    format,
     base64: data.toString("base64"),
     width: info.width,
     height: info.height,
