@@ -2404,6 +2404,32 @@ export const MERGE_PEOPLE_TOOL: Anthropic.Tool = {
   },
 };
 
+export const ADD_CONTACT_TOOL: Anthropic.Tool = {
+  name: "add_contact",
+  description:
+    "Add ONE person the user wants to reach to the brand's own contacts (\"add Sarah Lee, Head of Ops at Acme, linkedin.com/in/..., I met her at X\"). Only a person the user named in this chat; one call per person. " +
+    "Pass every detail they gave, in their words where it is free text: put how they know the person and anything said about them in note (the email writer reads it). Needs an email, a LinkedIn URL, or a name with a company. Free: nothing is looked up when added. " +
+    "Answer: added (or alreadyThere: an existing contact got the details) and emailStatus: known = we have their email; unknown = we find it when a campaign reaches them. " +
+    "Confirm in one short message. Then, if no running campaign works the brand's contacts, offer one (read_skill sources). A refusal comes back as {refused, reason, error}: not_enough_to_find = ask for an email, a LinkedIn URL or their company; validation = say what to fix.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      brandId: BRAND_ID_PROP,
+      fullName: { type: "string", description: "Their name as the user wrote it." },
+      firstName: { type: "string" },
+      lastName: { type: "string" },
+      jobTitle: { type: "string" },
+      companyName: { type: "string" },
+      companyDomain: { type: "string", description: "The company's website or domain (ntt.com)." },
+      linkedinUrl: { type: "string", description: "Their LinkedIn profile URL (linkedin.com/in/...)." },
+      email: { type: "string", description: "Only if the user gave it. Never guess one." },
+      phone: { type: "string", description: "Only if the user gave it, international form (+33...)." },
+      note: { type: "string", description: "What the user said about the person: how they know them, why reach them." },
+    },
+    required: ["brandId"],
+  },
+};
+
 export const UNDO_PEOPLE_MERGE_TOOL: Anthropic.Tool = {
   name: "undo_people_merge",
   description:
@@ -3361,6 +3387,7 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   undo_people_correction: UNDO_PEOPLE_CORRECTION_TOOL,
   merge_people: MERGE_PEOPLE_TOOL,
   undo_people_merge: UNDO_PEOPLE_MERGE_TOOL,
+  add_contact: ADD_CONTACT_TOOL,
   present_choices: PRESENT_CHOICES_TOOL,
   open_page: OPEN_PAGE_TOOL,
   read_skill: READ_SKILL_TOOL,

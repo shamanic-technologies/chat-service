@@ -109,6 +109,7 @@ export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> =
   undo_people_correction: ["/v1/orgs/people/corrections/{correctionId}/undo"],
   merge_people: ["POST /v1/orgs/people/merges"],
   undo_people_merge: ["/v1/orgs/people/merges/{mergeId}/undo"],
+  add_contact: ["POST /v1/orgs/contacts"],
 
   // accounts
   list_connected_accounts: ["/v1/orgs/google/accounts"],
