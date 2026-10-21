@@ -320,15 +320,26 @@ import {
 } from "./lib/account-client.js";
 import { PEOPLE_TOOL_HANDLERS } from "./lib/people-client.js";
 import {
-  judgeWithTypeSafe,
-  TypeSafeInvalidRequestError,
-  TypeSafeRateLimitError,
   TYPESAFE_DEFAULT_MODEL,
-  TYPESAFE_PROVIDER,
   type TypeSafeQuestion,
   type TypeSafeModel,
 } from "./lib/typesafe.js";
-import { TYPESAFE_INPUT_TOKENS_COST_NAME } from "./lib/cost-names.js";
+import {
+  DEFAULT_JUDGE,
+  JUDGE_PROVIDERS,
+  judgeActualCostName,
+  judgeErrorResponse,
+  judgeHoldCostName,
+  runJudge,
+  type Judge,
+  type JudgeResult,
+} from "./lib/judges.js";
+import {
+  estimateImageTokens,
+  fetchJudgmentImage,
+  JudgmentImageError,
+  type PreparedJudgmentImage,
+} from "./lib/judgment-image.js";
 import { requireAuth, requireInternalAuth, buildTrackingHeaders, type AuthLocals } from "./middleware/auth.js";
 import { resolveOutputBudget, estimateInputTokens, estimateOutputTokens } from "./lib/provision-estimate.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
@@ -1971,7 +1982,7 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
 // --- Typed judgments (TypeSafe) — org-billed, input tokens only -------------
 
 type OrgJudgmentOutcome =
-  | { ok: true; result: Awaited<ReturnType<typeof judgeWithTypeSafe>> }
+  | { ok: true; result: JudgeResult }
   | { ok: false; status: number; body: Record<string, unknown> };
 
 /**
@@ -1991,8 +2002,14 @@ async function runOrgJudgment(args: {
   state: unknown;
   questions: Record<string, TypeSafeQuestion>;
   model: TypeSafeModel;
+  /** Omitted = the default judge (Jev). */
+  judge?: Judge;
+  image?: PreparedJudgmentImage;
 }): Promise<OrgJudgmentOutcome> {
-  const { orgId, userId, parentRunId, workflowTracking, taskName, callerPath, state, questions, model } = args;
+  const { orgId, userId, parentRunId, workflowTracking, taskName, callerPath, state, questions, model, image } = args;
+  const judge = args.judge ?? DEFAULT_JUDGE;
+  const provider = JUDGE_PROVIDERS[judge];
+  const holdCostName = judgeHoldCostName(judge);
   const trackingHeaders = buildTrackingHeaders(workflowTracking);
 
   let runId: string | null = null;
@@ -2004,7 +2021,14 @@ async function runOrgJudgment(args: {
     );
     runId = run.id;
     traceEvent(runId, "run-created", { orgId, userId }, workflowTracking, {
-      data: { taskName, parentRunId, model, questionCount: Object.keys(questions).length },
+      data: {
+        taskName,
+        parentRunId,
+        judge,
+        model,
+        questionCount: Object.keys(questions).length,
+        ...(image ? { image: { width: image.width, height: image.height } } : {}),
+      },
     });
   } catch (runErr) {
     console.error(`[${taskName}] org="${orgId}" run creation failed:`, runErr);
@@ -2026,7 +2050,7 @@ async function runOrgJudgment(args: {
     let resolvedKey;
     try {
       resolvedKey = await resolveKey({
-        provider: TYPESAFE_PROVIDER,
+        provider,
         orgId,
         userId,
         runId,
@@ -2035,15 +2059,18 @@ async function runOrgJudgment(args: {
       });
     } catch (err) {
       judgmentFailed = true;
-      console.error(`[${taskName}] Failed to resolve ${TYPESAFE_PROVIDER} key for org="${orgId}":`, err);
+      console.error(`[${taskName}] Failed to resolve ${provider} key for org="${orgId}":`, err);
       return {
         ok: false,
         status: 502,
-        body: { error: `Failed to resolve ${TYPESAFE_PROVIDER} API key. Ensure the key is configured in key-service.` },
+        body: { error: `Failed to resolve ${provider} API key. Ensure the key is configured in key-service.`, judge },
       };
     }
 
-    const estimatedInputTokens = estimateRequestTokens({ state, questions });
+    // Text-only: byte-for-byte the pre-image estimate. The image adds its own
+    // pixel-sized share (the base64 itself is never counted as text).
+    const estimatedInputTokens =
+      estimateRequestTokens({ state, questions }) + (image ? estimateImageTokens(image) : 0);
 
     // PROVISION → AUTHORIZE before the vendor call. Output tokens are free at
     // this vendor, so there is exactly one row to reserve.
@@ -2052,7 +2079,7 @@ async function runOrgJudgment(args: {
         runId,
         [
           {
-            costName: TYPESAFE_INPUT_TOKENS_COST_NAME,
+            costName: holdCostName,
             quantity: estimatedInputTokens,
             costSource: resolvedKey.keySource,
             status: "provisioned",
@@ -2068,9 +2095,9 @@ async function runOrgJudgment(args: {
       if (resolvedKey.keySource === "platform") {
         const auth = await authorizeCredits({
           items: [
-            { costName: TYPESAFE_INPUT_TOKENS_COST_NAME, quantity: estimatedInputTokens },
+            { costName: holdCostName, quantity: estimatedInputTokens },
           ],
-          description: `${taskName} — ${model}`,
+          description: judge === "jev" ? `${taskName} — ${model}` : `${taskName} — ${judge}`,
           orgId,
           userId,
           runId,
@@ -2093,11 +2120,13 @@ async function runOrgJudgment(args: {
     }
 
     // EXECUTE
-    const result = await judgeWithTypeSafe({
+    const result = await runJudge({
+      judge,
       apiKey: resolvedKey.key,
       model,
       state,
       questions,
+      image,
     });
 
     // RECONCILE to the vendor's own count: post the real quantity as `actual`,
@@ -2108,7 +2137,7 @@ async function runOrgJudgment(args: {
         runId,
         [
           {
-            costName: TYPESAFE_INPUT_TOKENS_COST_NAME,
+            costName: judgeActualCostName(judge, result.inputTokens),
             quantity: result.inputTokens,
             costSource: resolvedKey.keySource,
             status: "actual",
@@ -2127,6 +2156,7 @@ async function runOrgJudgment(args: {
 
     traceEvent(runId, "judgments-done", { orgId, userId }, workflowTracking, {
       data: {
+        judge,
         model: result.model,
         questionCount: Object.keys(questions).length,
         inputTokens: result.inputTokens,
@@ -2147,35 +2177,14 @@ async function runOrgJudgment(args: {
       traceEvent(runId, "judgments-failed", { orgId, userId }, workflowTracking, {
         level: "error",
         detail: err instanceof Error ? err.message : String(err),
-        data: { model },
+        data: { judge, model },
       });
     }
 
-    // A refused request SHAPE will be refused forever — say so, and say it in
-    // the vendor's own words, rather than advising a retry that cannot work.
-    if (err instanceof TypeSafeInvalidRequestError) {
-      return {
-        ok: false,
-        status: 400,
-        body: { error: "TypeSafe refused the request", detail: err.vendorMessage, retryable: false },
-      };
-    }
-    // A rate limit is not an outage: no model ran, nothing was billed, and it
-    // clears. Surfacing it as a 502 would hide saturation as flakiness.
-    if (err instanceof TypeSafeRateLimitError) {
-      return {
-        ok: false,
-        status: 429,
-        body: {
-          error: "TypeSafe rate limit",
-          detail: err.vendorMessage,
-          attempts: err.attempts,
-          waitedMs: err.waitedMs,
-          retryable: true,
-        },
-      };
-    }
-    return { ok: false, status: 502, body: { error: "Judgment failed. Please try again." } };
+    // A refused SHAPE is refused forever (400, vendor's words); a rate limit
+    // clears and billed nothing (429); anything else is a 502 naming the judge.
+    const r = judgeErrorResponse(judge, err);
+    return { ok: false, status: r.status, body: r.body };
   } finally {
     if (runId) {
       try {
@@ -2202,6 +2211,22 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
   const { state, questions } = parsed.data;
+  const judge = parsed.data.judge ?? DEFAULT_JUDGE;
+
+  // The image is the caller's to fix when it cannot be used: a named 400
+  // BEFORE any run, key or hold exists.
+  let image: PreparedJudgmentImage | undefined;
+  if (parsed.data.image) {
+    try {
+      image = await fetchJudgmentImage(parsed.data.image.url);
+    } catch (err) {
+      if (err instanceof JudgmentImageError) {
+        return res.status(400).json({ error: "Unusable image", detail: err.message, retryable: false });
+      }
+      throw err;
+    }
+  }
+
   const outcome = await runOrgJudgment({
     orgId,
     userId,
@@ -2212,10 +2237,13 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
     state,
     questions: questions as Record<string, TypeSafeQuestion>,
     model: parsed.data.model ?? TYPESAFE_DEFAULT_MODEL,
+    judge,
+    image,
   });
   if (!outcome.ok) return res.status(outcome.status).json(outcome.body);
   const { result } = outcome;
   res.json({
+    judge,
     model: result.model,
     answers: result.answers,
     usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
@@ -2246,10 +2274,24 @@ app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) =
   }
   const { state, questions } = parsed.data;
   const model = parsed.data.model ?? TYPESAFE_DEFAULT_MODEL;
+  const judge = parsed.data.judge ?? DEFAULT_JUDGE;
+  const provider = JUDGE_PROVIDERS[judge];
+
+  let image: PreparedJudgmentImage | undefined;
+  if (parsed.data.image) {
+    try {
+      image = await fetchJudgmentImage(parsed.data.image.url);
+    } catch (err) {
+      if (err instanceof JudgmentImageError) {
+        return res.status(400).json({ error: "Unusable image", detail: err.message, retryable: false });
+      }
+      throw err;
+    }
+  }
 
   let apiKey: string;
   try {
-    const platformKey = await resolvePlatformKey(TYPESAFE_PROVIDER, {
+    const platformKey = await resolvePlatformKey(provider, {
       method: "POST",
       path: "/internal/platform-judgments",
     });
@@ -2259,13 +2301,14 @@ app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) =
     // without opening a log: the platform TypeSafe key is either absent from
     // key-service or undecryptable, and no generic "internal error" says that.
     console.error(
-      `[internal/platform-judgments] Failed to resolve platform ${TYPESAFE_PROVIDER} key:`,
+      `[internal/platform-judgments] Failed to resolve platform ${provider} key:`,
       err,
     );
     return res.status(502).json({
-      error: `Failed to resolve the platform ${TYPESAFE_PROVIDER} API key. Register a platform key for provider "${TYPESAFE_PROVIDER}" in key-service.`,
+      error: `Failed to resolve the platform ${provider} API key. Register a platform key for provider "${provider}" in key-service.`,
       detail: err instanceof Error ? err.message : String(err),
-      provider: TYPESAFE_PROVIDER,
+      provider,
+      judge,
       retryable: false,
     });
   }
@@ -2288,51 +2331,38 @@ app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) =
 
   let platformFailed = false;
   try {
-    const result = await judgeWithTypeSafe({
+    const result = await runJudge({
+      judge,
       apiKey,
       model,
       state,
       questions: questions as Record<string, TypeSafeQuestion>,
+      image,
     });
 
-    // Input tokens are the whole bill at this vendor — output is free, so
+    // Input tokens are the whole bill at every judge — output is free, so
     // nothing declares an output cost. Throws (→ 502) if undeclarable.
     await addPlatformRunCosts(runId, "chat-service", [
       {
-        costName: TYPESAFE_INPUT_TOKENS_COST_NAME,
+        costName: judgeActualCostName(judge, result.inputTokens),
         quantity: result.inputTokens,
         costSource: "platform" as const,
       },
     ]);
 
     res.json({
+      judge,
       model: result.model,
       answers: result.answers,
       usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
     });
   } catch (err) {
     platformFailed = true;
-    console.error(`[internal/platform-judgments] judgment failed runId="${runId}":`, err);
+    console.error(`[internal/platform-judgments] judgment failed runId="${runId}" judge="${judge}":`, err);
 
-    // Same classification as the org route: a refused SHAPE is refused forever,
-    // a rate limit clears and billed nothing.
-    if (err instanceof TypeSafeInvalidRequestError) {
-      return res.status(400).json({
-        error: "TypeSafe refused the request",
-        detail: err.vendorMessage,
-        retryable: false,
-      });
-    }
-    if (err instanceof TypeSafeRateLimitError) {
-      return res.status(429).json({
-        error: "TypeSafe rate limit",
-        detail: err.vendorMessage,
-        attempts: err.attempts,
-        waitedMs: err.waitedMs,
-        retryable: true,
-      });
-    }
-    res.status(502).json({ error: "Judgment failed. Please try again." });
+    // Same classification as the org route.
+    const r = judgeErrorResponse(judge, err);
+    res.status(r.status).json(r.body);
   } finally {
     try {
       await updatePlatformRunStatus(runId, "chat-service", platformFailed ? "failed" : "completed");

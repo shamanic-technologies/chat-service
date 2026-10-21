@@ -4,6 +4,12 @@ import {
   extendZodWithOpenApi,
 } from "@asteasolutions/zod-to-openapi";
 import { TYPESAFE_DEFAULT_MODEL, TYPESAFE_MODELS } from "./lib/typesafe.js";
+import { DEFAULT_JUDGE, JUDGES } from "./lib/judges.js";
+import {
+  JUDGMENT_IMAGE_MAX_SIDE,
+  JUDGMENT_IMAGE_MAX_SOURCE_BYTES,
+  JUDGMENT_IMAGE_MIN_SIDE,
+} from "./lib/judgment-image.js";
 
 extendZodWithOpenApi(z);
 
@@ -2787,15 +2793,30 @@ export const JudgmentQuestionSchema = z
   .discriminatedUnion("type", [NoulQuestionSchema, ChoiceQuestionSchema, ScoreQuestionSchema])
   .openapi("JudgmentQuestion");
 
+export const JudgmentImageSchema = z
+  .object({
+    url: z.string().url().openapi({
+      description: `Public https URL of a PNG or JPEG (any size up to ${JUDGMENT_IMAGE_MAX_SOURCE_BYTES / (1024 * 1024)} MiB). The service fits it to the judges' limits itself: longest side down to ${JUDGMENT_IMAGE_MAX_SIDE} px (aspect kept, no upscaling), a side under ${JUDGMENT_IMAGE_MIN_SIDE} px padded, re-encoded as PNG so small text stays legible. Every judge receives the same prepared pixels.`,
+      example: "https://pub-7f868a7db8b34749ba01c1c1b62f029d.r2.dev/lead-qualification/underdogroofing.com-1792554647790.png",
+    }),
+  })
+  .strict()
+  .openapi("JudgmentImage");
+
 export const JudgmentsRequestSchema = z
   .object({
     state: z
       .union([z.string().min(1), z.record(z.string(), z.unknown()), z.array(z.unknown())])
+      .optional()
       .openapi({
         description:
-          "The content to judge: text, a JSON object, or an array. Read once and evaluated against every question in parallel.",
+          "The content to judge: text, a JSON object, or an array. Read once and evaluated against every question in parallel. Optional when `image` is sent: the image is then the whole state.",
         example: "Help! My payouts have been failing for 3 days.",
       }),
+    image: JudgmentImageSchema.optional().openapi({
+      description:
+        "An image judged against the questions (e.g. a homepage screenshot). Ask the question about what the image shows (\"Is there no clearly visible phone number in the header above the fold?\"). With `state` too, the judge sees both. Billed as input tokens at the judge's input rate, like text.",
+    }),
     questions: z
       .record(z.string(), JudgmentQuestionSchema)
       .refine((q) => Object.keys(q).length >= 1, {
@@ -2805,15 +2826,30 @@ export const JudgmentsRequestSchema = z
         description:
           "Caller-chosen key to question. Every key comes back in `answers` under the same name.",
       }),
+    judge: z
+      .enum(JUDGES)
+      .optional()
+      .openapi({
+        description: `Which judge answers. Defaults to \`${DEFAULT_JUDGE}\`. \`jev\` = TypeSafe Jev 1.13 (images flagged experimental by TypeSafe), every question type. \`openai-luna\` = OpenAI Decisions API on gpt-6-luna (public beta): \`noul\` and \`choice\` only, no noul \`criteria\`, no choice \`examples\` (refused with a 400 rather than translated). No fallback between judges: a failure names the judge that failed. Name the judge explicitly to benchmark them on the same input.`,
+        example: DEFAULT_JUDGE,
+      }),
     model: z
       .enum(TYPESAFE_MODELS)
       .optional()
       .openapi({
-        description: `Judgment model. Defaults to \`${TYPESAFE_DEFAULT_MODEL}\`.`,
+        description: `Jev model, judge \`jev\` only. Defaults to \`${TYPESAFE_DEFAULT_MODEL}\`.`,
         example: TYPESAFE_DEFAULT_MODEL,
       }),
   })
   .strict()
+  .refine((b) => b.state !== undefined || b.image !== undefined, {
+    message: "send a state, an image, or both",
+    path: ["state"],
+  })
+  .refine((b) => b.model === undefined || (b.judge ?? DEFAULT_JUDGE) === "jev", {
+    message: "model applies to judge jev only",
+    path: ["model"],
+  })
   .openapi("JudgmentsRequest");
 
 export const NoulAnswerSchema = z
@@ -2869,9 +2905,13 @@ export const JudgmentAnswerSchema = z
 
 export const JudgmentsResponseSchema = z
   .object({
+    judge: z.enum(JUDGES).openapi({
+      description: "The judge that answered.",
+      example: DEFAULT_JUDGE,
+    }),
     model: z.string().openapi({
       description: "The model that served the judgment.",
-      example: "jev-latest",
+      example: "jev-1.13.0",
     }),
     answers: z.record(z.string(), JudgmentAnswerSchema).openapi({
       description:
@@ -2883,7 +2923,7 @@ export const JudgmentsResponseSchema = z
           description: "Input tokens the vendor counted. The only billable quantity.",
         }),
         outputTokens: z.number().openapi({
-          description: "Output tokens the vendor counted. Free at this vendor, never billed.",
+          description: "Output tokens the vendor counted. Free at every judge, never billed.",
         }),
       })
       .openapi("JudgmentsUsage"),
@@ -2897,19 +2937,21 @@ registry.registerPath({
   method: "post",
   path: "/orgs/judgments",
   tags: ["Judgments"],
-  summary: "Ask typed questions about a piece of text and get calibrated answers",
+  summary: "Ask typed questions about text or an image and get calibrated answers",
   description: `Answers one or more TYPED questions about a piece of state, each with the model's own probability distribution: a yes-probability for a \`noul\`, a picked option plus a full distribution and a \`confidence\` for a \`choice\`, a weighted position on ordered levels for a \`score\`.
 
-Backed by TypeSafe (\`jev\`), which is built for exactly this and does not generate text.
+Backed by a typed JUDGE, never a text generator. \`judge\` picks it: \`jev\` (TypeSafe Jev 1.13, the default) or \`openai-luna\` (OpenAI Decisions API, gpt-6-luna). No fallback between judges.
+
+**Images:** send \`image.url\` (PNG/JPEG over https) with or without \`state\`, and ask the question about what the image shows. The service downloads it once, fits it to the judges' limits (longest side ${JUDGMENT_IMAGE_MAX_SIDE} px, aspect kept; a side under ${JUDGMENT_IMAGE_MIN_SIDE} px padded; source up to ${JUDGMENT_IMAGE_MAX_SOURCE_BYTES / (1024 * 1024)} MiB) and sends every judge the same pixels. Image tokens bill at the judge's input rate. An unusable image (dead URL, not an image, too big) is a 400 before any spend.
 
 **Why this is not \`/complete\`:** that route returns prose the caller parses, and tells it nothing about how sure the model was. A consumer that FREEZES a classification at write time needs the certainty to decide whether to freeze at all — so nothing here reduces an answer to its winning value. Read \`confidence\` (or the \`noul\` probability itself) and route a hesitant answer to your own "unknown" state.
 
 **Pipeline:**
-1. Resolve the org's TypeSafe key via key-service.
+1. Fetch and fit the image, if any. Resolve the judge's key via key-service.
 2. Provision + authorize the input-token spend, then call the vendor.
 3. Reconcile the hold to the EXACT input-token count the vendor reports.
 
-**Billing:** input tokens only. The vendor charges nothing for output, so nothing here declares an output cost.
+**Billing:** input tokens only, at the judge's own rate (Jev: \`typesafe-jev-1.13-tokens-input\`; Luna: \`openai-gpt-6-luna-decisions-tokens-input\`, the long-context row past 272K prompt tokens). Neither judge charges for output, so nothing here declares an output cost.
 
 **Limits:** 64k tokens per request overall, 32k for the state plus the longest single question; at most ${JUDGMENT_CHOICE_OPTIONS_MAX} options per Choice; ${JUDGMENT_SCORE_LEVELS_MIN}-${JUDGMENT_SCORE_LEVELS_MAX} levels per Score. A request over the token budget is refused by the vendor and surfaces as a 400 carrying its words.`,
   request: {
@@ -2947,11 +2989,11 @@ Backed by TypeSafe (\`jev\`), which is built for exactly this and does not gener
     },
     429: {
       description:
-        "TypeSafe rate-limited the request for the whole retry budget. `retryable` is true — nothing ran and nothing was billed.",
+        "The judge rate-limited the request for the whole retry budget. `retryable` is true — nothing ran and nothing was billed.",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     502: {
-      description: "Upstream service unavailable (key-service, runs-service, or TypeSafe)",
+      description: "Upstream service unavailable (key-service, runs-service, or the judge; `judge` names which)",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },
@@ -2966,7 +3008,7 @@ registry.registerPath({
 
 **Identity:** service auth only (\`x-api-key\`). No \`x-org-id\`, no \`x-user-id\`, no \`x-run-id\` — a cron has none of them, and a fabricated run id is rejected by runs-service as a non-existent parent.
 
-**Billing:** the TypeSafe PLATFORM key, declared on a platform run under the same input-token cost name. There is no org balance to gate on, so there is no affordability check and no provisioned hold — the only quantity ever declared is the exact input-token count the vendor reports. Output is free at this vendor, so nothing declares an output cost.
+**Billing:** the judge's PLATFORM key, declared on a platform run under the same input-token cost name as the org route. There is no org balance to gate on, so there is no affordability check and no provisioned hold — the only quantity ever declared is the exact input-token count the vendor reports. Output is free at this vendor, so nothing declares an output cost.
 
 Everything else — the pinned release on the wire, the refusal to flatten an answer to its winning value, the retry schedule — is identical to the org-scoped route.`,
   request: {
@@ -2993,12 +3035,12 @@ Everything else — the pinned release on the wire, the refusal to flatten an an
     },
     429: {
       description:
-        "TypeSafe rate-limited the request for the whole retry budget. `retryable` is true — nothing ran and nothing was billed.",
+        "The judge rate-limited the request for the whole retry budget. `retryable` is true — nothing ran and nothing was billed.",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     502: {
       description:
-        "The platform TypeSafe key could not be resolved (the response names the provider), runs-service was unavailable, or TypeSafe failed",
+        "The judge's platform key could not be resolved (the response names the provider), runs-service was unavailable, or the judge failed (`judge` names which)",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },

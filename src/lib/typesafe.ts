@@ -19,7 +19,9 @@
 // is one number to keep true instead of two.
 // ---------------------------------------------------------------------------
 
+import { randomUUID } from "crypto";
 import { isTransientConnectError, jittered, parseRetryAfterMs } from "./openai-compatible.js";
+import type { PreparedJudgmentImage } from "./judgment-image.js";
 
 const TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone";
 
@@ -206,6 +208,40 @@ export interface TypeSafeJudgeOptions {
   /** Text, JSON object, or array of text — whatever the caller is judging. */
   state: unknown;
   questions: Record<string, TypeSafeQuestion>;
+  /** An image judged with the state (already fitted to the vendor's limits). */
+  image?: PreparedJudgmentImage;
+}
+
+/** Header TypeSafe requires on every request that carries an image (docs.typesafe.ai/images.md). */
+export const TYPESAFE_IMAGES_HEADER = "TypeSafe-Danger-Zone-Images";
+
+/**
+ * The wire body. Without an image it is byte-for-byte the text-only body.
+ *
+ * With one, the image travels in the vendor's top-level `assets` map under a
+ * fresh UUID reference (the vendor matches references as plain text anywhere
+ * in the request, so a guessable key could collide with the caller's words).
+ * The reference IS the state when the caller sent none; beside a caller state
+ * it sits under `image`, the caller's state under `context`.
+ */
+export function buildTypeSafeBody(options: Pick<TypeSafeJudgeOptions, "state" | "questions" | "image">): {
+  body: Record<string, unknown>;
+  headers: Record<string, string>;
+} {
+  const { state, questions, image } = options;
+  if (!image) {
+    return { body: { state, model: TYPESAFE_API_MODEL_ID, questions }, headers: {} };
+  }
+  const ref = `img-${randomUUID()}`;
+  return {
+    body: {
+      state: state === undefined ? ref : { image: ref, context: state },
+      model: TYPESAFE_API_MODEL_ID,
+      questions,
+      assets: { [ref]: { type: "image", format: image.format, data_base64: image.base64 } },
+    },
+    headers: { [TYPESAFE_IMAGES_HEADER]: "true" },
+  };
 }
 
 export interface TypeSafeJudgeResult {
@@ -305,8 +341,9 @@ function parseAnswer(key: string, value: unknown): TypeSafeAnswer {
 export async function judgeWithTypeSafe(
   options: TypeSafeJudgeOptions,
 ): Promise<TypeSafeJudgeResult> {
-  const { apiKey, model, state, questions } = options;
-  const body = JSON.stringify({ state, model: TYPESAFE_API_MODEL_ID, questions });
+  const { apiKey, questions } = options;
+  const wire = buildTypeSafeBody(options);
+  const body = JSON.stringify(wire.body);
 
   let connectAttempt = 0;
   let busyAttempt = 0;
@@ -320,6 +357,7 @@ export async function judgeWithTypeSafe(
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
+          ...wire.headers,
         },
         body,
       });
