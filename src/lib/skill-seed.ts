@@ -126,10 +126,12 @@ An offer is one thing a brand sells. Every campaign, leg, sales path, budget and
 - list_offers(brandId) → GET /v1/brands/{id}/offers: offers with id, name, status.
 - get_offer_performance(brandId, offerId[, windowDays]) → GET /v1/offers/{offerId}/revenue?brandId=: spend, emails, replies, return.
 - get_offer_steps(brandId, offerId) → GET /v1/brands/{id}/offers/{offerId}/steps: the sales steps the client's business has for this offer (conversation, booking call, purchase...).
+- get_offer_settings(brandId, offerId) → GET /v1/brands/{id}/offers/{offerId}/economics: the Brand Settings fields of the offer. bookingUrl = the client's call booking link (where a prospect who replies books a meeting), destinationUrl = where an outreach click lands, lifetimeRevenueUsd = what a paying client is worth; null = never stated. A question about their booking link, calendar or where replies are sent is answered from here, never from mailboxes or a Google connection.
 
 ## Write
 - create_offer(brandId, name) → POST /v1/brands/{id}/offers: data only, starts nothing. Confirm the name first.
 - add_offer_step / remove_offer_step(brandId, offerId, stepKey) → PUT / DELETE /v1/brands/{id}/offers/{offerId}/steps/{stepKey}: record the client's answer about one step. Why and when: \`catalogue-sales-funnels\`.
+- update_offer_settings(brandId, offerId, bookingUrl?, destinationUrl?, lifetimeRevenueUsd?) → PUT /v1/brands/{id}/offers/{offerId}/economics: the client gives a new booking link (or landing page, deal value). Send only what they stated; Brand Settings shows it at once. Say the old and new value.
 
 ## Documents (files to send prospects)
 An offer holds the client's files about it (one-pager, case study, price list; pdf, docx, pptx, images...; 5 MB each, 25 per offer). Each has a description: what the file is and when it helps a prospect ("Price list for UK employers: helps when a prospect asks what a listing costs"). The AI answering picks a file on name + description alone, so each must say what sets it apart from the others.
@@ -138,7 +140,7 @@ An offer holds the client's files about it (one-pager, case study, price list; p
 - From the chat: the user uploads on the offer page (open_page; no API route: an API agent uploads itself). Through the API: GET, POST /v1/brands/{id}/offers/{offerId}/documents (JSON fileName, description, contentBase64), PATCH and DELETE .../documents/{documentId}.
 
 ## Not available from the chat yet
-- Rename, describe, archive an offer, set its economics (deal value): the user does it on the offer page (open_page), or request_staff (POST /v1/staff-requests) if they insist on doing it here. Through the API: POST .../offers/{offerId}/archive, GET, PUT .../offers/{offerId}/economics.
+- Rename, describe, archive an offer: the user does it on the offer page (open_page), or request_staff (POST /v1/staff-requests) if they insist on doing it here. Through the API: POST .../offers/{offerId}/archive.
 - Archiving is refused while a campaign of the offer is running.
 
 ## Articulation
@@ -435,6 +437,7 @@ A channel sends from an account. Owners: google-service (Google mailboxes), crm-
 ## Gaps
 - No route connects a LinkedIn account today. A LinkedIn DM piece needs code: request_staff (POST /v1/staff-requests; repo crm-service for the connection, the sending service for the DMs).
 - Cold-email inboxes are managed by the platform; the user connects nothing for cold email.
+- A call booking link (Calendly, neocal...) is not a connected account: it is an offer setting (get_offer_settings / update_offer_settings → GET / PUT /v1/brands/{id}/offers/{offerId}/economics, \`offers\`). Never answer a booking-link question with mailboxes or a Google connection.
 `),
   },
   {
