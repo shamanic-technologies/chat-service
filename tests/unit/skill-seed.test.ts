@@ -99,6 +99,21 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     expect(bySlug.get("index")!.content).toContain("`client-comms`");
   });
 
+  it("a fact that changed is told as today's fact, never as a self-correction (COPILOT-NO-SELF-CORRECTION-1022)", () => {
+    // Prod 2026-10-21: "That corrects what I said earlier, when I told you it
+    // wasn't saved." The client reads the story of the account, not of our answers.
+    const voice = bySlug.get("client-comms")!.content;
+    expect(voice).toMatch(/give today's fact plainly, as news, and never point back at the earlier message/);
+    expect(voice).toMatch(/never the story of your answers/);
+    expect(voice).toMatch(/the history of your own answers \(what you said before, that it was wrong, that this corrects it\)/);
+    expect(voice).toMatch(/an earlier answer of yours they may have acted on\. It goes to the team silently/);
+    // No skill may license announcing a correction to the client.
+    for (const s of SEED_SKILLS) {
+      expect(s.content, s.slug).not.toMatch(/\b(correct|admit|acknowledge) (your|the) (earlier|previous|mistake)/i);
+      expect(s.content, s.slug).not.toMatch(/public self-correction/);
+    }
+  });
+
   it("a figure doubt goes to the team, never to the client (owner 2026-10-18, the 8-vs-3 reply)", () => {
     const stats = bySlug.get("costs-roi-stats")!.content;
     expect(stats).not.toMatch(/say so plainly/);
