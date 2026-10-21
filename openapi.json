@@ -2636,10 +2636,19 @@
       "JudgmentsResponse": {
         "type": "object",
         "properties": {
+          "judge": {
+            "type": "string",
+            "enum": [
+              "jev",
+              "openai-luna"
+            ],
+            "description": "The judge that answered.",
+            "example": "jev"
+          },
           "model": {
             "type": "string",
             "description": "The model that served the judgment.",
-            "example": "jev-latest"
+            "example": "jev-1.13.0"
           },
           "answers": {
             "type": "object",
@@ -2653,6 +2662,7 @@
           }
         },
         "required": [
+          "judge",
           "model",
           "answers",
           "usage"
@@ -2775,7 +2785,7 @@
           },
           "outputTokens": {
             "type": "number",
-            "description": "Output tokens the vendor counted. Free at this vendor, never billed."
+            "description": "Output tokens the vendor counted. Free at every judge, never billed."
           }
         },
         "required": [
@@ -2805,8 +2815,11 @@
                 }
               }
             ],
-            "description": "The content to judge: text, a JSON object, or an array. Read once and evaluated against every question in parallel.",
+            "description": "The content to judge: text, a JSON object, or an array. Read once and evaluated against every question in parallel. Optional when `image` is sent: the image is then the whole state.",
             "example": "Help! My payouts have been failing for 3 days."
+          },
+          "image": {
+            "$ref": "#/components/schemas/JudgmentImage"
           },
           "questions": {
             "type": "object",
@@ -2815,6 +2828,15 @@
             },
             "description": "Caller-chosen key to question. Every key comes back in `answers` under the same name."
           },
+          "judge": {
+            "type": "string",
+            "enum": [
+              "jev",
+              "openai-luna"
+            ],
+            "description": "Which judge answers. Defaults to `jev`. `jev` = TypeSafe Jev 1.13 (images flagged experimental by TypeSafe), every question type. `openai-luna` = OpenAI Decisions API on gpt-6-luna (public beta): `noul` and `choice` only, no noul `criteria`, no choice `examples` (refused with a 400 rather than translated). No fallback between judges: a failure names the judge that failed. Name the judge explicitly to benchmark them on the same input.",
+            "example": "jev"
+          },
           "model": {
             "type": "string",
             "enum": [
@@ -2822,15 +2844,30 @@
               "jev-preview",
               "jev-1.13.0"
             ],
-            "description": "Judgment model. Defaults to `jev-latest`.",
+            "description": "Jev model, judge `jev` only. Defaults to `jev-latest`.",
             "example": "jev-latest"
           }
         },
         "required": [
-          "state",
           "questions"
         ],
         "additionalProperties": false
+      },
+      "JudgmentImage": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public https URL of a PNG or JPEG (any size up to 16 MiB). The service fits it to the judges' limits itself: longest side down to 1568 px (aspect kept, no upscaling), a side under 280 px padded, re-encoded as PNG so small text stays legible. Every judge receives the same prepared pixels.",
+            "example": "https://pub-7f868a7db8b34749ba01c1c1b62f029d.r2.dev/lead-qualification/underdogroofing.com-1792554647790.png"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false,
+        "description": "An image judged against the questions (e.g. a homepage screenshot). Ask the question about what the image shows (\"Is there no clearly visible phone number in the header above the fold?\"). With `state` too, the judge sees both. Billed as input tokens at the judge's input rate, like text."
       },
       "JudgmentQuestion": {
         "oneOf": [
@@ -5919,8 +5956,8 @@
         "tags": [
           "Judgments"
         ],
-        "summary": "Ask typed questions about a piece of text and get calibrated answers",
-        "description": "Answers one or more TYPED questions about a piece of state, each with the model's own probability distribution: a yes-probability for a `noul`, a picked option plus a full distribution and a `confidence` for a `choice`, a weighted position on ordered levels for a `score`.\n\nBacked by TypeSafe (`jev`), which is built for exactly this and does not generate text.\n\n**Why this is not `/complete`:** that route returns prose the caller parses, and tells it nothing about how sure the model was. A consumer that FREEZES a classification at write time needs the certainty to decide whether to freeze at all — so nothing here reduces an answer to its winning value. Read `confidence` (or the `noul` probability itself) and route a hesitant answer to your own \"unknown\" state.\n\n**Pipeline:**\n1. Resolve the org's TypeSafe key via key-service.\n2. Provision + authorize the input-token spend, then call the vendor.\n3. Reconcile the hold to the EXACT input-token count the vendor reports.\n\n**Billing:** input tokens only. The vendor charges nothing for output, so nothing here declares an output cost.\n\n**Limits:** 64k tokens per request overall, 32k for the state plus the longest single question; at most 255 options per Choice; 2-10 levels per Score. A request over the token budget is refused by the vendor and surfaces as a 400 carrying its words.",
+        "summary": "Ask typed questions about text or an image and get calibrated answers",
+        "description": "Answers one or more TYPED questions about a piece of state, each with the model's own probability distribution: a yes-probability for a `noul`, a picked option plus a full distribution and a `confidence` for a `choice`, a weighted position on ordered levels for a `score`.\n\nBacked by a typed JUDGE, never a text generator. `judge` picks it: `jev` (TypeSafe Jev 1.13, the default) or `openai-luna` (OpenAI Decisions API, gpt-6-luna). No fallback between judges.\n\n**Images:** send `image.url` (PNG/JPEG over https) with or without `state`, and ask the question about what the image shows. The service downloads it once, fits it to the judges' limits (longest side 1568 px, aspect kept; a side under 280 px padded; source up to 16 MiB) and sends every judge the same pixels. Image tokens bill at the judge's input rate. An unusable image (dead URL, not an image, too big) is a 400 before any spend.\n\n**Why this is not `/complete`:** that route returns prose the caller parses, and tells it nothing about how sure the model was. A consumer that FREEZES a classification at write time needs the certainty to decide whether to freeze at all — so nothing here reduces an answer to its winning value. Read `confidence` (or the `noul` probability itself) and route a hesitant answer to your own \"unknown\" state.\n\n**Pipeline:**\n1. Fetch and fit the image, if any. Resolve the judge's key via key-service.\n2. Provision + authorize the input-token spend, then call the vendor.\n3. Reconcile the hold to the EXACT input-token count the vendor reports.\n\n**Billing:** input tokens only, at the judge's own rate (Jev: `typesafe-jev-1.13-tokens-input`; Luna: `openai-gpt-6-luna-decisions-tokens-input`, the long-context row past 272K prompt tokens). Neither judge charges for output, so nothing here declares an output cost.\n\n**Limits:** 64k tokens per request overall, 32k for the state plus the longest single question; at most 255 options per Choice; 2-10 levels per Score. A request over the token budget is refused by the vendor and surfaces as a 400 carrying its words.",
         "parameters": [
           {
             "schema": {
@@ -6066,7 +6103,7 @@
             }
           },
           "429": {
-            "description": "TypeSafe rate-limited the request for the whole retry budget. `retryable` is true — nothing ran and nothing was billed.",
+            "description": "The judge rate-limited the request for the whole retry budget. `retryable` is true — nothing ran and nothing was billed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6076,7 +6113,7 @@
             }
           },
           "502": {
-            "description": "Upstream service unavailable (key-service, runs-service, or TypeSafe)",
+            "description": "Upstream service unavailable (key-service, runs-service, or the judge; `judge` names which)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6094,7 +6131,7 @@
           "Judgments"
         ],
         "summary": "Ask typed questions with the spend billed to the platform (no org)",
-        "description": "The org-less twin of `POST /orgs/judgments`: same body, same typed answers with their probability distributions intact. Use it from a caller that has no org, no user and no run — a cron, a poller, a backfill.\n\n**Identity:** service auth only (`x-api-key`). No `x-org-id`, no `x-user-id`, no `x-run-id` — a cron has none of them, and a fabricated run id is rejected by runs-service as a non-existent parent.\n\n**Billing:** the TypeSafe PLATFORM key, declared on a platform run under the same input-token cost name. There is no org balance to gate on, so there is no affordability check and no provisioned hold — the only quantity ever declared is the exact input-token count the vendor reports. Output is free at this vendor, so nothing declares an output cost.\n\nEverything else — the pinned release on the wire, the refusal to flatten an answer to its winning value, the retry schedule — is identical to the org-scoped route.",
+        "description": "The org-less twin of `POST /orgs/judgments`: same body, same typed answers with their probability distributions intact. Use it from a caller that has no org, no user and no run — a cron, a poller, a backfill.\n\n**Identity:** service auth only (`x-api-key`). No `x-org-id`, no `x-user-id`, no `x-run-id` — a cron has none of them, and a fabricated run id is rejected by runs-service as a non-existent parent.\n\n**Billing:** the judge's PLATFORM key, declared on a platform run under the same input-token cost name as the org route. There is no org balance to gate on, so there is no affordability check and no provisioned hold — the only quantity ever declared is the exact input-token count the vendor reports. Output is free at this vendor, so nothing declares an output cost.\n\nEverything else — the pinned release on the wire, the refusal to flatten an answer to its winning value, the retry schedule — is identical to the org-scoped route.",
         "parameters": [
           {
             "schema": {
@@ -6148,7 +6185,7 @@
             }
           },
           "429": {
-            "description": "TypeSafe rate-limited the request for the whole retry budget. `retryable` is true — nothing ran and nothing was billed.",
+            "description": "The judge rate-limited the request for the whole retry budget. `retryable` is true — nothing ran and nothing was billed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6158,7 +6195,7 @@
             }
           },
           "502": {
-            "description": "The platform TypeSafe key could not be resolved (the response names the provider), runs-service was unavailable, or TypeSafe failed",
+            "description": "The judge's platform key could not be resolved (the response names the provider), runs-service was unavailable, or the judge failed (`judge` names which)",
             "content": {
               "application/json": {
                 "schema": {

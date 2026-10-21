@@ -219,3 +219,17 @@ export function buildLlmCostNames(args: {
 // also why the client always sends the pinned release id on the wire.
 // ---------------------------------------------------------------------------
 export const TYPESAFE_INPUT_TOKENS_COST_NAME = "typesafe-jev-1.13-tokens-input";
+
+// ---------------------------------------------------------------------------
+// OpenAI Decisions (gpt-6-luna) — input tokens only, two RATES by prompt size
+//
+// "Input costs $0.10 per 1M tokens. There are no cache-read, cache-write, or
+// output-token charges" (Decisions guide), and a prompt over 272K tokens is
+// priced at 2x for the whole request (model page). So one name per rate, never
+// an output or cache row. COPIED BYTE-EQUAL from costs-service
+// `SEED_PROVIDERS_COSTS`; distinct from any chat-completions gpt-6-luna row,
+// which prices cache and output.
+// ---------------------------------------------------------------------------
+export const OPENAI_DECISIONS_TOKENS_INPUT_COST_NAME = "openai-gpt-6-luna-decisions-tokens-input";
+export const OPENAI_DECISIONS_LONG_CONTEXT_TOKENS_INPUT_COST_NAME =
+  "openai-gpt-6-luna-decisions-long-context-tokens-input";
