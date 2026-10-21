@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import {
   JudgmentImageError,
+  JudgmentImageUnavailableError,
   JUDGMENT_IMAGE_MAX_SIDE,
   JUDGMENT_IMAGE_MIN_SIDE,
   estimateImageTokens,
@@ -51,8 +52,49 @@ describe("prepareJudgmentImageBytes — fits every judge's limits", () => {
 });
 
 describe("fetchJudgmentImage", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+  const ok = async () => ({ ok: true, status: 200, headers: new Headers(), arrayBuffer: async () => await png(600, 400) });
+
   it("refuses a non-https URL before any fetch", async () => {
     await expect(fetchJudgmentImage("http://localhost:8080/x.png")).rejects.toThrow(/https/);
+  });
+
+  // Prod 2026-10-21: the r2.dev bucket dropped ~10% of parallel downloads with a bare
+  // "fetch failed" and served them fine a second later. Those were answered 400 "bad image".
+  it("retries a dropped download and a 429/5xx, then succeeds", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce({ ok: false, status: 429, headers: new Headers() })
+      .mockResolvedValueOnce({ ok: false, status: 503, headers: new Headers() })
+      .mockImplementationOnce(ok);
+    vi.stubGlobal("fetch", fetchMock);
+    const p = fetchJudgmentImage("https://pub.test.r2.dev/a.png");
+    await vi.runAllTimersAsync();
+    await expect(p).resolves.toMatchObject({ width: 600, height: 400 });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("a host that never answers is a retryable unavailability, not a bad image", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+    const p = fetchJudgmentImage("https://pub.test.r2.dev/a.png");
+    const settled = p.catch((e) => e);
+    await vi.runAllTimersAsync();
+    const err = await settled;
+    expect(err).toBeInstanceOf(JudgmentImageUnavailableError);
+    expect(err).not.toBeInstanceOf(JudgmentImageError);
+  });
+
+  it("a 404 is the caller's URL: refused at once, no retry", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404, headers: new Headers() });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(fetchJudgmentImage("https://pub.test.r2.dev/a.png")).rejects.toBeInstanceOf(JudgmentImageError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
 
