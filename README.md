@@ -1048,6 +1048,19 @@ Question criteria: a `choice` takes 2–255 options (include an `other` option w
 
 **Retry behaviour:** connect-phase failures (3 retries, 250/500/1000ms) and the two statuses the vendor itself says to back off on — `429` and `529` — with a jittered 500/1500/3500/7500ms schedule honouring `Retry-After` up to 10s. Nothing else. A completed `4xx` is a permanent refusal; a completed `5xx` is a real answer.
 
+### Images and the `judge` field (IMAGE-JUDGE-1021)
+
+Both judgment routes accept `image: { url }` (public https PNG/JPEG, source ≤ 16 MiB) beside or instead of `state`: the question is asked about what the image shows ("Is there no clearly visible phone number in the header of the homepage above the fold?"), never about a description of it. The service downloads the image once, applies the EXIF rotation, shrinks the longest side to 1568 px (aspect kept, never upscaled; a 1920x1080 screenshot becomes 1568x882), pads a side under 280 px, re-encodes as PNG, and hands every judge the SAME pixels. An unusable image (dead URL, not an image, too big, not https) is a `400 "Unusable image"` before any key, run or spend.
+
+`judge` names who answers; there is NO fallback between judges and every failure body carries `judge`:
+
+| `judge` | Vendor | Questions | Cost name (input tokens only) |
+|---|---|---|---|
+| `jev` (default) | TypeSafe Jev 1.13 (`TypeSafe-Danger-Zone-Images: true`, images flagged experimental by TypeSafe) | noul, choice, score | `typesafe-jev-1.13-tokens-input` |
+| `openai-luna` | OpenAI Decisions API, `gpt-6-luna` (public beta), platform `openai` key | noul (→ predicate), choice; no score, no noul `criteria`, no choice `examples` (400, never translated) | `openai-gpt-6-luna-decisions-tokens-input`, `…-long-context-…` past 272K prompt tokens |
+
+`model` (Jev alias) applies to `jev` only. The response carries `judge`. Live 2026-10-21 on the underdogroofing.com screenshot (phone in the header): Jev answered 0.01 for "no phone" with 3,880 input tokens, Luna 0.48 with 1,656. Cloudflare Clef is NOT wired: our Cloudflare account holds R2 keys only, no Workers AI token.
+
 ### Platform-billed twin — `POST /internal/platform-judgments`
 
 The org-less half of the same capability, for a caller that has no org, no user and no run: a cron, an IMAP poller, a backfill. Same request body, same typed answers with their distributions intact, same vendor and same pinned release.
