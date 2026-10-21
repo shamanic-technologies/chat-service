@@ -1307,6 +1307,7 @@ The two prompt tools act on the SHARED platform templates (every org's emails ar
 | `undo_people_correction` | Take a correction back. `POST /v1/orgs/people/corrections/:correctionId/undo` |
 | `merge_people` | Two personIds are the same human. `POST /v1/orgs/people/merges` |
 | `undo_people_merge` | Split them back. `POST /v1/orgs/people/merges/:mergeId/undo` |
+| `add_contact` | Add ONE person the user names to the brand's own contacts (name, title, company, LinkedIn, optional email/phone, `note` = how the user knows them). Needs an email, a LinkedIn URL or a name with a company (refused `not_enough_to_find` before any call). Free: no lookup at add; an unknown email is found when a CRM-contacts campaign reaches them, billed to that campaign. Answers `added` / `alreadyThere`, `emailStatus`. `POST /v1/orgs/contacts` (COPILOT-ADD-CONTACT-1021) |
 
 **Copilot tools** (`src/lib/copilot-client.ts`, `skills.ts`, `staff-requests.ts`). One read per platform entity, the data writes whose owner routes exist, a two-step switch-on gate, and the staff escalation. Owner bodies are returned verbatim.
 

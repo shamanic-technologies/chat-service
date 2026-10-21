@@ -185,7 +185,7 @@ describe("people-client: find, correct, undo, merge (PEOPLE-CORRECTIONS-1017)", 
     const { COPILOT_TOOL_API_OPS } = await import("../../src/lib/skill-api-ops.js");
     const names = Object.keys(PEOPLE_TOOL_HANDLERS);
     expect(names.sort()).toEqual(
-      ["correct_person", "find_people", "list_people_corrections", "list_people_organizations", "merge_people", "undo_people_correction", "undo_people_merge"],
+      ["add_contact", "correct_person", "find_people", "list_people_corrections", "list_people_organizations", "merge_people", "undo_people_correction", "undo_people_merge"],
     );
     for (const n of names) {
       expect(TOOL_REGISTRY[n]?.name).toBe(n);
@@ -193,5 +193,80 @@ describe("people-client: find, correct, undo, merge (PEOPLE-CORRECTIONS-1017)", 
     }
     // Writes say they act only on the user's word.
     expect(TOOL_REGISTRY.correct_person.description).toMatch(/only correct what the user explicitly told you/);
+  });
+});
+
+describe("add_contact: one person the client names (COPILOT-ADD-CONTACT-1021)", () => {
+  const CONTACT = "c-9";
+
+  it("posts what the user said, note included, and answers added + emailStatus", async () => {
+    fetchMock().mockResolvedValue(
+      reply(201, {
+        contactId: CONTACT,
+        created: true,
+        matchedOn: null,
+        emailStatus: "unknown",
+        contact: { id: CONTACT, fullName: "Test Person", companyName: "Staff Test Co", primaryEmail: null, rawAttributes: { big: "x".repeat(3000) } },
+      }),
+    );
+    const { addContact } = await loadModule();
+    const out = await addContact(
+      {
+        brandId: BRAND,
+        fullName: " Test Person ",
+        jobTitle: "Head of Automation",
+        companyName: "Staff Test Co",
+        linkedinUrl: "https://linkedin.com/in/staff-test",
+        note: "I met them at a conference",
+        email: "",
+      },
+      params,
+    );
+    expect(sent(0).url).toBe("https://api.test.local/v1/orgs/contacts");
+    expect(sent(0).method).toBe("POST");
+    expect(sent(0).body).toEqual({
+      brandId: BRAND,
+      fullName: "Test Person",
+      jobTitle: "Head of Automation",
+      companyName: "Staff Test Co",
+      linkedinUrl: "https://linkedin.com/in/staff-test",
+      note: "I met them at a conference",
+    });
+    expect(out).toEqual({ contactId: CONTACT, added: true, alreadyThere: undefined, name: "Test Person", company: "Staff Test Co", emailStatus: "unknown" });
+  });
+
+  it("an existing contact matched on LinkedIn is said so, never a second one", async () => {
+    fetchMock().mockResolvedValue(reply(200, { contactId: CONTACT, created: false, matchedOn: "linkedin", emailStatus: "known", contact: { firstName: "Test", lastName: "Person" } }));
+    const { addContact } = await loadModule();
+    const out = await addContact({ brandId: BRAND, linkedinUrl: "https://linkedin.com/in/staff-test" }, params);
+    expect(out).toMatchObject({ added: false, alreadyThere: { matchedOn: "linkedin" }, name: "Test Person", emailStatus: "known" });
+  });
+
+  it("too little to find the person is refused before any call, so the model asks", async () => {
+    const { addContact } = await loadModule();
+    const out = await addContact({ brandId: BRAND, fullName: "Test Person", jobTitle: "CTO" }, params);
+    expect(out).toMatchObject({ refused: true, reason: "not_enough_to_find" });
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("crm-service's validation 400 comes back as a refusal in its words", async () => {
+    fetchMock().mockResolvedValue(reply(400, { type: "validation", error: "linkedinUrl must be a LinkedIn URL (linkedin.com/in/...)" }));
+    const { addContact } = await loadModule();
+    const out = await addContact({ brandId: BRAND, linkedinUrl: "https://example.com/x" }, params);
+    expect(out).toEqual({ refused: true, status: 400, reason: "validation", error: "linkedinUrl must be a LinkedIn URL (linkedin.com/in/...)" });
+  });
+
+  it("any other failure throws", async () => {
+    fetchMock().mockResolvedValue(reply(500, { error: "boom" }));
+    const { addContact } = await loadModule();
+    await expect(addContact({ brandId: BRAND, email: "test@distribute.you" }, params)).rejects.toThrow();
+  });
+
+  it("the sources skill teaches the flow to the Copilot and to API agents", async () => {
+    const { SEED_SKILLS } = await import("../../src/lib/skill-seed.js");
+    const sources = SEED_SKILLS.find((s) => s.slug === "sources")!.content;
+    expect(sources).toContain("add_contact → POST /v1/orgs/contacts");
+    expect(sources).toContain("sourcing-crm-contacts");
+    expect(sources).toMatch(/Never start it without that yes/);
   });
 });

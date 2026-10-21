@@ -321,6 +321,70 @@ export async function undoPeopleMerge(args: { brandId: unknown; mergeId: unknown
   return { merge: mergeRow(out.data.merge), duplicate: out.data.duplicate ?? false, rebuild: out.data.rebuild ?? null };
 }
 
+// ---------------------------------------------------------------------------
+// Add ONE person the client wants to reach (COPILOT-ADD-CONTACT-1021).
+// crm-service stores them in the brand's own contacts ("Contacts added one by
+// one"); nothing is looked up or paid at add time. A campaign on the CRM
+// contacts source reaches them later, and an unknown email is found then,
+// billed to that campaign. The note keeps what the client said about them.
+// ---------------------------------------------------------------------------
+
+const CONTACT_TEXT_FIELDS = [
+  ["email", 320],
+  ["phone", 40],
+  ["firstName", 200],
+  ["lastName", 200],
+  ["fullName", 400],
+  ["companyName", 300],
+  ["companyDomain", 300],
+  ["jobTitle", 300],
+  ["linkedinUrl", 500],
+  ["note", 5000],
+] as const;
+
+/** POST /v1/orgs/contacts : one person into the brand's contacts. */
+export async function addContact(args: Record<string, unknown>, params: ApiCallParams) {
+  const brandId = requireId("brandId", args.brandId);
+  const body: Record<string, unknown> = { brandId };
+  for (const [name, max] of CONTACT_TEXT_FIELDS) {
+    const v = optionalText(name, args[name], max);
+    if (v) body[name] = v;
+  }
+  const named = !!(body.fullName || body.firstName || body.lastName);
+  if (!body.email && !body.linkedinUrl && !(named && (body.companyName || body.companyDomain))) {
+    return {
+      refused: true,
+      status: 400,
+      reason: "not_enough_to_find",
+      error: "Need an email, a LinkedIn URL, or a name with a company: ask the user for one of them.",
+    } satisfies Refused;
+  }
+  const res = await apiServiceFetch("/v1/orgs/contacts", "POST", params, body);
+  const raw = await res.text();
+  if (res.status === 400) {
+    // crm-service's own validation (a LinkedIn URL that is not one, a bad domain): the user can fix it.
+    const b = JSON.parse(raw) as { type?: unknown; error?: unknown };
+    return { refused: true, status: 400, reason: String(b.type ?? "validation"), error: String(b.error ?? raw) } satisfies Refused;
+  }
+  if (!res.ok) {
+    const refused = refusalOf(res.status, raw);
+    if (refused) return refused;
+    throw new FunnelError("add_contact", res.status, raw || "unknown error");
+  }
+  const d = JSON.parse(raw) as Record<string, unknown>;
+  const c = rec(d.contact);
+  return {
+    contactId: d.contactId,
+    added: d.created === true,
+    // Already one of the brand's contacts (same email or LinkedIn): the details were added to it.
+    alreadyThere: d.created === false ? { matchedOn: d.matchedOn ?? null } : undefined,
+    name: c.fullName ?? ([c.firstName, c.lastName].filter(Boolean).join(" ") || null),
+    company: c.companyName ?? c.companyDomain ?? null,
+    // known = we have their email; unknown = found when a campaign reaches them; not_found = a lookup found none.
+    emailStatus: d.emailStatus,
+  };
+}
+
 /** Tool name -> handler, dispatched by the /chat handler (both agentic loops share executeTool). */
 export const PEOPLE_TOOL_HANDLERS: Readonly<
   Record<string, (args: Record<string, unknown>, params: ApiCallParams) => Promise<unknown>>
@@ -332,4 +396,5 @@ export const PEOPLE_TOOL_HANDLERS: Readonly<
   undo_people_correction: (a, p) => undoPeopleCorrection(a as Parameters<typeof undoPeopleCorrection>[0], p),
   merge_people: (a, p) => mergePeople(a as Parameters<typeof mergePeople>[0], p),
   undo_people_merge: (a, p) => undoPeopleMerge(a as Parameters<typeof undoPeopleMerge>[0], p),
+  add_contact: (a, p) => addContact(a, p),
 };
