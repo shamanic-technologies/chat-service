@@ -24,6 +24,8 @@ export const JUDGMENT_IMAGE_MIN_SIDE = 280;
 export const JUDGMENT_IMAGE_MAX_SOURCE_BYTES = 16 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 20_000;
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export interface PreparedJudgmentImage {
   /** Always PNG after preparation. */
   format: "png";
@@ -34,6 +36,23 @@ export interface PreparedJudgmentImage {
   sourceWidth: number;
   sourceHeight: number;
 }
+
+/**
+ * The image host did not answer after every retry (network failure, 429, 5xx).
+ * Not the caller's fault and it usually clears: routes answer 502 with
+ * `retryable: true`, never the 400 that tells the caller its image is bad.
+ * Seen in prod 2026-10-21: the r2.dev public bucket dropped ~10% of 66
+ * parallel downloads with a bare "fetch failed", all fine on the next try.
+ */
+export class JudgmentImageUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "JudgmentImageUnavailableError";
+  }
+}
+
+/** Waits between download attempts; the host's failures clear in about a second. */
+export const IMAGE_FETCH_RETRY_DELAYS_MS = [500, 1500, 3500];
 
 /**
  * The caller's image could not be used. Always the CALLER's to fix (a dead
@@ -121,16 +140,31 @@ export async function fetchJudgmentImage(url: string): Promise<PreparedJudgmentI
     throw new JudgmentImageError("image.url must be an https URL");
   }
 
-  let res: Response;
-  try {
-    res = await fetch(parsed, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-  } catch (err) {
-    throw new JudgmentImageError(
-      `image could not be fetched from ${url} (${err instanceof Error ? err.message : String(err)})`,
-    );
+  // Retry what clears (network failure, 429, 5xx); a 4xx other than 429 is
+  // the caller's URL and is refused at once.
+  let res: Response | null = null;
+  let lastFailure = "";
+  for (let attempt = 0; attempt <= IMAGE_FETCH_RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) await sleep(IMAGE_FETCH_RETRY_DELAYS_MS[attempt - 1]!);
+    try {
+      const r = await fetch(parsed, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      if (r.ok) {
+        res = r;
+        break;
+      }
+      if (r.status !== 429 && r.status < 500) {
+        throw new JudgmentImageError(`image could not be fetched from ${url}: HTTP ${r.status}`);
+      }
+      lastFailure = `HTTP ${r.status}`;
+    } catch (err) {
+      if (err instanceof JudgmentImageError) throw err;
+      lastFailure = err instanceof Error ? err.message : String(err);
+    }
   }
-  if (!res.ok) {
-    throw new JudgmentImageError(`image could not be fetched from ${url}: HTTP ${res.status}`);
+  if (!res) {
+    throw new JudgmentImageUnavailableError(
+      `image host did not answer for ${url} after ${IMAGE_FETCH_RETRY_DELAYS_MS.length + 1} attempts (${lastFailure})`,
+    );
   }
   const declared = Number(res.headers.get("content-length") ?? "0");
   if (declared > JUDGMENT_IMAGE_MAX_SOURCE_BYTES) {

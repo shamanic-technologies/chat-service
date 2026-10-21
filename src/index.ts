@@ -342,6 +342,7 @@ import {
   estimateImageTokens,
   fetchJudgmentImage,
   JudgmentImageError,
+  JudgmentImageUnavailableError,
   type PreparedJudgmentImage,
 } from "./lib/judgment-image.js";
 import { requireAuth, requireInternalAuth, buildTrackingHeaders, type AuthLocals } from "./middleware/auth.js";
@@ -2227,6 +2228,9 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
       if (err instanceof JudgmentImageError) {
         return res.status(400).json({ error: "Unusable image", detail: err.message, retryable: false });
       }
+      if (err instanceof JudgmentImageUnavailableError) {
+        return res.status(502).json({ error: "Image host unavailable", detail: err.message, retryable: true });
+      }
       throw err;
     }
   }
@@ -2288,6 +2292,9 @@ app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) =
     } catch (err) {
       if (err instanceof JudgmentImageError) {
         return res.status(400).json({ error: "Unusable image", detail: err.message, retryable: false });
+      }
+      if (err instanceof JudgmentImageUnavailableError) {
+        return res.status(502).json({ error: "Image host unavailable", detail: err.message, retryable: true });
       }
       throw err;
     }
