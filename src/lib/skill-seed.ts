@@ -202,7 +202,7 @@ Qualification checks run on each found lead BEFORE any paid step, so money is on
     slug: "sources",
     parentSlug: "index",
     title: "Sources (where leads come from)",
-    description: "Lead sourcing. Load when the request says where leads come from (Apollo, LinkedIn engagement, CRM).",
+    description: "Lead sourcing. Load when the request says where leads come from (Apollo, LinkedIn engagement, CRM), or the client names a person to reach.",
     position: 40,
     content: t(`
 # Sources
@@ -216,6 +216,12 @@ A source is where leads come from. Live origins: Apollo cold filters, Apollo buy
 ## Budget and on/off (the funnel campaign's)
 - A source spends inside its funnel campaign's caps: change them with set_funnel_caps → PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps (see \`campaigns\`).
 - It runs and stops with its funnel campaign: propose_switch_on (start_funnel_campaign) then confirm_switch_on after the user's yes; stop_funnel_campaign to stop. API: PATCH /v1/sales-funnel-campaigns/{id} {status: "activate"} or {status: "stop"}. A source has no on/off or budget of its own.
+
+## A person the client names ("add Sarah Lee, Head of Ops at Acme, linkedin..., I met her at X")
+1. add_contact → POST /v1/orgs/contacts {brandId, fullName, jobTitle, companyName or companyDomain, linkedinUrl, email?, phone?, note}: into the brand's own contacts. Needs an email, a LinkedIn URL, or a name with a company. note = how they know the person, in their words (the email writer reads it). One call per person.
+2. Confirm in one short message: added; email known, or "we find their email when your campaign reaches them".
+3. They are reached by a campaign on the CRM contacts source ("We work the contacts you already have"), separate from new-lead sourcing. list_campaigns (GET /v1/sales-funnel-campaigns?brandId=): if none running has it, offer one: find_sales_funnels(offerId, brandId, containsChannels ["sourcing-crm-contacts"]) → GET /v1/offers/{offerId}/sales-funnels?brandId=, then \`campaigns\` (created stopped, a cap from them, their yes before the start). Never start it without that yes; never a people list per campaign.
+Adding is free. Only if asked: the email lookup and lead checks are paid by that campaign when it reaches the person.
 
 ## Articulation
 Leads the client brings (emails they wrote, pushed one person at a time) need no source: see \`emails-you-wrote\`.
