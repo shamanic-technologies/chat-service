@@ -2640,7 +2640,9 @@
             "type": "string",
             "enum": [
               "jev",
-              "openai-luna"
+              "openai-luna",
+              "cloudflare-clef",
+              "cloudflare-clef-flash"
             ],
             "description": "The judge that answered.",
             "example": "jev"
@@ -2832,9 +2834,11 @@
             "type": "string",
             "enum": [
               "jev",
-              "openai-luna"
+              "openai-luna",
+              "cloudflare-clef",
+              "cloudflare-clef-flash"
             ],
-            "description": "Which judge answers. Defaults to `jev`. `jev` = TypeSafe Jev 1.13 (images flagged experimental by TypeSafe), every question type. `openai-luna` = OpenAI Decisions API on gpt-6-luna (public beta): `noul` and `choice` only, no noul `criteria`, no choice `examples` (refused with a 400 rather than translated). No fallback between judges: a failure names the judge that failed. Name the judge explicitly to benchmark them on the same input.",
+            "description": "Which judge answers. Defaults to `jev`. `jev` = TypeSafe Jev 1.13 (images flagged experimental by TypeSafe), every question type. `openai-luna` = OpenAI Decisions API on gpt-6-luna (public beta): `noul` and `choice` only, no noul `criteria`, no choice `examples` (refused with a 400 rather than translated). `cloudflare-clef` / `cloudflare-clef-flash` = Cloudflare Clef 27B / 9B on Workers AI, every question type, cheapest per screenshot (~1,180 tokens; clef-flash $0.038/M input). No fallback between judges: a failure names the judge that failed. Name the judge explicitly to benchmark them on the same input.",
             "example": "jev"
           },
           "model": {
@@ -5957,7 +5961,7 @@
           "Judgments"
         ],
         "summary": "Ask typed questions about text or an image and get calibrated answers",
-        "description": "Answers one or more TYPED questions about a piece of state, each with the model's own probability distribution: a yes-probability for a `noul`, a picked option plus a full distribution and a `confidence` for a `choice`, a weighted position on ordered levels for a `score`.\n\nBacked by a typed JUDGE, never a text generator. `judge` picks it: `jev` (TypeSafe Jev 1.13, the default) or `openai-luna` (OpenAI Decisions API, gpt-6-luna). No fallback between judges.\n\n**Images:** send `image.url` (PNG/JPEG over https) with or without `state`, and ask the question about what the image shows. The service downloads it once, fits it to the judges' limits (longest side 1568 px, aspect kept; a side under 280 px padded; source up to 16 MiB) and sends every judge the same pixels. Image tokens bill at the judge's input rate. An unusable image (dead URL, not an image, too big) is a 400 before any spend.\n\n**Why this is not `/complete`:** that route returns prose the caller parses, and tells it nothing about how sure the model was. A consumer that FREEZES a classification at write time needs the certainty to decide whether to freeze at all — so nothing here reduces an answer to its winning value. Read `confidence` (or the `noul` probability itself) and route a hesitant answer to your own \"unknown\" state.\n\n**Pipeline:**\n1. Fetch and fit the image, if any. Resolve the judge's key via key-service.\n2. Provision + authorize the input-token spend, then call the vendor.\n3. Reconcile the hold to the EXACT input-token count the vendor reports.\n\n**Billing:** input tokens only, at the judge's own rate (Jev: `typesafe-jev-1.13-tokens-input`; Luna: `openai-gpt-6-luna-decisions-tokens-input`, the long-context row past 272K prompt tokens). Neither judge charges for output, so nothing here declares an output cost.\n\n**Limits:** 64k tokens per request overall, 32k for the state plus the longest single question; at most 255 options per Choice; 2-10 levels per Score. A request over the token budget is refused by the vendor and surfaces as a 400 carrying its words.",
+        "description": "Answers one or more TYPED questions about a piece of state, each with the model's own probability distribution: a yes-probability for a `noul`, a picked option plus a full distribution and a `confidence` for a `choice`, a weighted position on ordered levels for a `score`.\n\nBacked by a typed JUDGE, never a text generator. `judge` picks it: `jev` (TypeSafe Jev 1.13, the default), `openai-luna` (OpenAI Decisions API, gpt-6-luna), `cloudflare-clef` or `cloudflare-clef-flash` (Cloudflare Workers AI). No fallback between judges.\n\n**Images:** send `image.url` (PNG/JPEG over https) with or without `state`, and ask the question about what the image shows. The service downloads it once, fits it to the judges' limits (longest side 1568 px, aspect kept; a side under 280 px padded; source up to 16 MiB) and sends every judge the same pixels. Image tokens bill at the judge's input rate. An unusable image (dead URL, not an image, too big) is a 400 before any spend.\n\n**Why this is not `/complete`:** that route returns prose the caller parses, and tells it nothing about how sure the model was. A consumer that FREEZES a classification at write time needs the certainty to decide whether to freeze at all — so nothing here reduces an answer to its winning value. Read `confidence` (or the `noul` probability itself) and route a hesitant answer to your own \"unknown\" state.\n\n**Pipeline:**\n1. Fetch and fit the image, if any. Resolve the judge's key via key-service.\n2. Provision + authorize the input-token spend, then call the vendor.\n3. Reconcile the hold to the EXACT input-token count the vendor reports.\n\n**Billing:** input tokens only, at the judge's own rate (Jev: `typesafe-jev-1.13-tokens-input`; Luna: `openai-gpt-6-luna-decisions-tokens-input`, the long-context row past 272K prompt tokens). Neither judge charges for output, so nothing here declares an output cost.\n\n**Limits:** 64k tokens per request overall, 32k for the state plus the longest single question; at most 255 options per Choice; 2-10 levels per Score. A request over the token budget is refused by the vendor and surfaces as a 400 carrying its words.",
         "parameters": [
           {
             "schema": {

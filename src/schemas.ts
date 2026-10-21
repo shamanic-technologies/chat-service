@@ -2830,7 +2830,7 @@ export const JudgmentsRequestSchema = z
       .enum(JUDGES)
       .optional()
       .openapi({
-        description: `Which judge answers. Defaults to \`${DEFAULT_JUDGE}\`. \`jev\` = TypeSafe Jev 1.13 (images flagged experimental by TypeSafe), every question type. \`openai-luna\` = OpenAI Decisions API on gpt-6-luna (public beta): \`noul\` and \`choice\` only, no noul \`criteria\`, no choice \`examples\` (refused with a 400 rather than translated). No fallback between judges: a failure names the judge that failed. Name the judge explicitly to benchmark them on the same input.`,
+        description: `Which judge answers. Defaults to \`${DEFAULT_JUDGE}\`. \`jev\` = TypeSafe Jev 1.13 (images flagged experimental by TypeSafe), every question type. \`openai-luna\` = OpenAI Decisions API on gpt-6-luna (public beta): \`noul\` and \`choice\` only, no noul \`criteria\`, no choice \`examples\` (refused with a 400 rather than translated). \`cloudflare-clef\` / \`cloudflare-clef-flash\` = Cloudflare Clef 27B / 9B on Workers AI, every question type, cheapest per screenshot (~1,180 tokens; clef-flash $0.038/M input). No fallback between judges: a failure names the judge that failed. Name the judge explicitly to benchmark them on the same input.`,
         example: DEFAULT_JUDGE,
       }),
     model: z
@@ -2940,7 +2940,7 @@ registry.registerPath({
   summary: "Ask typed questions about text or an image and get calibrated answers",
   description: `Answers one or more TYPED questions about a piece of state, each with the model's own probability distribution: a yes-probability for a \`noul\`, a picked option plus a full distribution and a \`confidence\` for a \`choice\`, a weighted position on ordered levels for a \`score\`.
 
-Backed by a typed JUDGE, never a text generator. \`judge\` picks it: \`jev\` (TypeSafe Jev 1.13, the default) or \`openai-luna\` (OpenAI Decisions API, gpt-6-luna). No fallback between judges.
+Backed by a typed JUDGE, never a text generator. \`judge\` picks it: \`jev\` (TypeSafe Jev 1.13, the default), \`openai-luna\` (OpenAI Decisions API, gpt-6-luna), \`cloudflare-clef\` or \`cloudflare-clef-flash\` (Cloudflare Workers AI). No fallback between judges.
 
 **Images:** send \`image.url\` (PNG/JPEG over https) with or without \`state\`, and ask the question about what the image shows. The service downloads it once, fits it to the judges' limits (longest side ${JUDGMENT_IMAGE_MAX_SIDE} px, aspect kept; a side under ${JUDGMENT_IMAGE_MIN_SIDE} px padded; source up to ${JUDGMENT_IMAGE_MAX_SOURCE_BYTES / (1024 * 1024)} MiB) and sends every judge the same pixels. Image tokens bill at the judge's input rate. An unusable image (dead URL, not an image, too big) is a 400 before any spend.
 

@@ -286,9 +286,9 @@ function vendorMessage(raw: string): string {
  * error here, not a degraded object served onward. Unknown EXTRA fields are
  * preserved: the vendor is free to add to its answers.
  */
-function parseAnswer(key: string, value: unknown): TypeSafeAnswer {
+function parseAnswer(key: string, value: unknown, vendor = "typesafe"): TypeSafeAnswer {
   if (!value || typeof value !== "object") {
-    throw new TypeSafeError(`[typesafe] answer "${key}" is not an object`);
+    throw new TypeSafeError(`[${vendor}] answer "${key}" is not an object`);
   }
   const a = value as Record<string, unknown>;
   const isProbability = (v: unknown): v is number =>
@@ -300,14 +300,14 @@ function parseAnswer(key: string, value: unknown): TypeSafeAnswer {
     case "noul":
       if (!isProbability(a.noul)) {
         throw new TypeSafeError(
-          `[typesafe] noul answer "${key}" carries no probability in 0..1 (got ${JSON.stringify(a.noul)})`,
+          `[${vendor}] noul answer "${key}" carries no probability in 0..1 (got ${JSON.stringify(a.noul)})`,
         );
       }
       return a as unknown as TypeSafeNoulAnswer;
     case "choice":
       if (typeof a.choice !== "string" || !isProbability(a.confidence) || !isDistribution(a.probabilities)) {
         throw new TypeSafeError(
-          `[typesafe] choice answer "${key}" is missing choice / confidence / probabilities`,
+          `[${vendor}] choice answer "${key}" is missing choice / confidence / probabilities`,
         );
       }
       return a as unknown as TypeSafeChoiceAnswer;
@@ -320,15 +320,39 @@ function parseAnswer(key: string, value: unknown): TypeSafeAnswer {
         typeof a.legend !== "object"
       ) {
         throw new TypeSafeError(
-          `[typesafe] score answer "${key}" is missing score / confidence / probabilities / legend`,
+          `[${vendor}] score answer "${key}" is missing score / confidence / probabilities / legend`,
         );
       }
       return a as unknown as TypeSafeScoreAnswer;
     default:
       throw new TypeSafeError(
-        `[typesafe] answer "${key}" has unknown type ${JSON.stringify(a.type)}`,
+        `[${vendor}] answer "${key}" has unknown type ${JSON.stringify(a.type)}`,
       );
   }
+}
+
+/**
+ * Validate a System One answer map against the questions asked: one answer per
+ * key, each carrying the fields its type promises. Shared by every judge that
+ * speaks this dialect (Jev, Cloudflare Clef); `vendor` names who answered.
+ */
+export function parseTypeSafeAnswers(
+  questions: Record<string, TypeSafeQuestion>,
+  raw: unknown,
+  vendor = "typesafe",
+): Record<string, TypeSafeAnswer> {
+  if (!raw || typeof raw !== "object") {
+    throw new TypeSafeError(`[${vendor}] response carries no answers`);
+  }
+  const answers: Record<string, TypeSafeAnswer> = {};
+  for (const key of Object.keys(questions)) {
+    const value = (raw as Record<string, unknown>)[key];
+    if (value === undefined) {
+      throw new TypeSafeError(`[${vendor}] response is missing an answer for question "${key}"`);
+    }
+    answers[key] = parseAnswer(key, value, vendor);
+  }
+  return answers;
 }
 
 /**
@@ -414,18 +438,7 @@ export async function judgeWithTypeSafe(
       throw new TypeSafeModelMismatchError(TYPESAFE_API_MODEL_ID, String(served));
     }
 
-    if (!parsed.answers || typeof parsed.answers !== "object") {
-      throw new TypeSafeError("[typesafe] response carries no answers");
-    }
-
-    const answers: Record<string, TypeSafeAnswer> = {};
-    for (const key of Object.keys(questions)) {
-      const value = parsed.answers[key];
-      if (value === undefined) {
-        throw new TypeSafeError(`[typesafe] response is missing an answer for question "${key}"`);
-      }
-      answers[key] = parseAnswer(key, value);
-    }
+    const answers = parseTypeSafeAnswers(questions, parsed.answers);
 
     const inputTokens = parsed.usage?.input_tokens;
     if (typeof inputTokens !== "number" || !Number.isFinite(inputTokens) || inputTokens < 0) {

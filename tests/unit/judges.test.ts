@@ -148,3 +148,28 @@ describe("JudgmentsRequestSchema — image + judge", () => {
     expect(JudgmentsRequestSchema.safeParse({ state: "s", questions: { q: noul }, judge: "clef" }).success).toBe(false);
   });
 });
+
+describe("Cloudflare Clef judges", () => {
+  it("sends the System One body with an empty state when only an image is judged, never words of ours", async () => {
+    const { buildClefBody } = await import("../../src/lib/cloudflare-clef.js");
+    expect(buildClefBody({ model: "clef-flash", state: undefined, questions: { q: noul }, image })).toEqual({
+      model: "clef-flash",
+      state: "",
+      questions: { q: noul },
+      images: [{ content_type: "image/png", base64: image.base64 }],
+    });
+  });
+
+  it("each Clef size has its own cost name", () => {
+    expect(judgeHoldCostName("cloudflare-clef")).toBe("cloudflare-clef-tokens-input");
+    expect(judgeHoldCostName("cloudflare-clef-flash")).toBe("cloudflare-clef-flash-tokens-input");
+    expect(judgeActualCostName("cloudflare-clef-flash", 999_999)).toBe("cloudflare-clef-flash-tokens-input");
+  });
+
+  it("names Clef on a failure", () => {
+    expect(judgeErrorResponse("cloudflare-clef", new Error("boom")).body).toEqual({
+      error: "Judgment failed (Cloudflare Clef). Please try again.",
+      judge: "cloudflare-clef",
+    });
+  });
+});

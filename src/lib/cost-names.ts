@@ -233,3 +233,11 @@ export const TYPESAFE_INPUT_TOKENS_COST_NAME = "typesafe-jev-1.13-tokens-input";
 export const OPENAI_DECISIONS_TOKENS_INPUT_COST_NAME = "openai-gpt-6-luna-decisions-tokens-input";
 export const OPENAI_DECISIONS_LONG_CONTEXT_TOKENS_INPUT_COST_NAME =
   "openai-gpt-6-luna-decisions-long-context-tokens-input";
+
+// ---------------------------------------------------------------------------
+// Cloudflare Clef / Clef-flash (Workers AI) — input tokens only, one rate per
+// model (clef $0.24/M, clef-flash $0.038/M, output $0; account model catalog,
+// read 2026-10-21). COPIED BYTE-EQUAL from costs-service `SEED_PROVIDERS_COSTS`.
+// ---------------------------------------------------------------------------
+export const CLEF_TOKENS_INPUT_COST_NAME = "cloudflare-clef-tokens-input";
+export const CLEF_FLASH_TOKENS_INPUT_COST_NAME = "cloudflare-clef-flash-tokens-input";
