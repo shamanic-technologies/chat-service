@@ -176,6 +176,48 @@ describe("POST /internal/platform-judgments — image", () => {
     ]);
   });
 
+  it("judge cloudflare-clef-flash: same pixels as base64, the Workers AI key + account, cost under the Clef-flash name", async () => {
+    const cap = { costs: [] as PostedCost[][], statuses: [] as string[] };
+    const sent: { url?: string; body?: Record<string, unknown> } = {};
+    routes.push(imageRoute(), keyRoute("cloudflare-workers-ai"), {
+      match: (u) => u.includes("/keys/platform/cloudflare-workers-ai-account-id/decrypt"),
+      respond: () => ({ ok: true, body: { provider: "cloudflare-workers-ai-account-id", key: "acct-123" } }),
+    }, ...platformRuns(cap), {
+      match: (u) => u.startsWith("https://api.cloudflare.com/client/v4/accounts/"),
+      respond: (u, i) => {
+        sent.url = u;
+        sent.body = JSON.parse(i!.body as string);
+        return {
+          ok: true,
+          body: {
+            success: true,
+            result: {
+              model: "clef-flash",
+              answers: { no_phone: { type: "noul", noul: 0.08 } },
+              usage: { input_tokens: 1179, output_tokens: 0 },
+            },
+          },
+        };
+      },
+    });
+
+    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...BODY, judge: "cloudflare-clef-flash" });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      judge: "cloudflare-clef-flash",
+      model: "clef-flash",
+      answers: { no_phone: { type: "noul", noul: 0.08 } },
+      usage: { inputTokens: 1179, outputTokens: 0 },
+    });
+    expect(sent.url).toBe("https://api.cloudflare.com/client/v4/accounts/acct-123/ai/run/@cf/cloudflare/clef-flash");
+    expect(sent.body!.state).toBe("");
+    const images = sent.body!.images as Array<{ content_type: string; base64: string }>;
+    const meta = await sharp(Buffer.from(images[0]!.base64, "base64")).metadata();
+    expect([meta.width, meta.height]).toEqual([1568, 882]);
+    expect(cap.costs).toEqual([[{ costName: "cloudflare-clef-flash-tokens-input", quantity: 1179, costSource: "platform" }]]);
+  });
+
   it("a Luna failure is a named error, never a silent fallback to Jev", async () => {
     const cap = { costs: [] as PostedCost[][], statuses: [] as string[] };
     let jevCalls = 0;
