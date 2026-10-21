@@ -48,6 +48,8 @@ export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> =
   get_offer_steps: ["/v1/brands/{id}/offers/{offerId}/steps"],
   add_offer_step: ["/v1/brands/{id}/offers/{offerId}/steps/{stepKey}"],
   remove_offer_step: ["/v1/brands/{id}/offers/{offerId}/steps/{stepKey}"],
+  get_offer_settings: ["/v1/brands/{id}/offers/{offerId}/economics"],
+  update_offer_settings: ["/v1/brands/{id}/offers/{offerId}/economics"],
   get_leg_rates: ["/v1/brands/{id}/leg-rates"],
   set_leg_rates: ["/v1/brands/{id}/leg-rates"],
   list_sales_paths: ["/v1/offers/{offerId}/sales-paths"],

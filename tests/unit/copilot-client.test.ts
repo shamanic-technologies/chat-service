@@ -56,6 +56,42 @@ describe("copilot entity reads hit the owner routes", () => {
   });
 });
 
+describe("offer settings: the Brand Settings fields, booking link first (COPILOT-BOOKING-LINK-1021)", () => {
+  const settings = { offerId: "o-1", name: "Voice Receptionist", bookingUrl: "https://neocal.com/acme/meeting", destinationUrl: null, lifetimeRevenueUsd: null, lifetimeRevenueStatedAt: null, legRates: [] };
+
+  it("get_offer_settings reads the stored booking link from the route Brand Settings reads", async () => {
+    fetchMock().mockResolvedValue(ok(settings));
+    const { getOfferSettings } = await load();
+    expect(await getOfferSettings({ brandId: "b-1", offerId: "o-1" }, params)).toMatchObject({ bookingUrl: "https://neocal.com/acme/meeting" });
+    expect(call(0)).toEqual({ url: "https://api.test.local/v1/brands/b-1/offers/o-1/economics", method: "GET", body: null });
+  });
+
+  it("update_offer_settings writes ONLY the booking link the client gave, through the route Brand Settings writes", async () => {
+    fetchMock().mockResolvedValue(ok({ ...settings, bookingUrl: "https://example.com/x" }));
+    const { updateOfferSettings } = await load();
+    const r = await updateOfferSettings({ brandId: "b-1", offerId: "o-1", bookingUrl: " https://example.com/x " }, params);
+    expect(r).toMatchObject({ bookingUrl: "https://example.com/x" });
+    expect(call(0)).toEqual({ url: "https://api.test.local/v1/brands/b-1/offers/o-1/economics", method: "PUT", body: { bookingUrl: "https://example.com/x" } });
+  });
+
+  it("null clears a field; several stated fields go in one write", async () => {
+    fetchMock().mockResolvedValue(ok(settings));
+    const { updateOfferSettings } = await load();
+    await updateOfferSettings({ brandId: "b-1", offerId: "o-1", bookingUrl: null, lifetimeRevenueUsd: 1200 }, params);
+    expect(call(0).body).toEqual({ bookingUrl: null, lifetimeRevenueUsd: 1200 });
+  });
+
+  it.each([
+    [{}, /at least one/],
+    [{ bookingUrl: "neocal.com/acme" }, /absolute http\(s\) URL/],
+    [{ lifetimeRevenueUsd: -5 }, /whole number/],
+  ])("refuses %j before any call", async (extra, msg) => {
+    const { updateOfferSettings } = await load();
+    await expect(updateOfferSettings({ brandId: "b-1", offerId: "o-1", ...extra }, params)).rejects.toThrow(msg);
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+});
+
 describe("offer steps and leg rates (owner 2026-10-12: ask before proposing a funnel on an unstated step)", () => {
   it("get_offer_steps reads the offer's stated steps", async () => {
     fetchMock().mockResolvedValue(ok({ offerId: "o-1", stated: true, steps: ["conversation"], statedAt: "t" }));

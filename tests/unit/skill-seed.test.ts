@@ -17,7 +17,7 @@ const CATALOGUE_LEVELS = [
 ];
 
 const COPILOT_TOOLS = [
-  "get_leg_rates", "set_leg_rates", "get_offer_steps", "add_offer_step", "remove_offer_step", "list_sales_paths",
+  "get_leg_rates", "set_leg_rates", "get_offer_steps", "add_offer_step", "remove_offer_step", "get_offer_settings", "update_offer_settings", "list_sales_paths",
   "get_trigger_events", "list_sourcing_origins", "get_offer_sourcing",
   "list_connected_accounts", "create_offer",
   "propose_switch_on", "confirm_switch_on",
