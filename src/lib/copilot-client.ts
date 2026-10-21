@@ -131,6 +131,45 @@ export const addOfferStep = async (a: Record<string, unknown>, p: ApiCallParams)
 export const removeOfferStep = async (a: Record<string, unknown>, p: ApiCallParams) =>
   call("remove_offer_step", `${offerStepsPath(a)}/${id("stepKey", a.stepKey)}`, "DELETE", p);
 
+// --- An offer's settings (the Brand Settings page, COPILOT-BOOKING-LINK-1021) --
+// brand-service stores per offer the booking page a prospect books a meeting
+// on, the page an outreach click lands on, and what a paying client is worth.
+// The Copilot reads them from the same route the page uses, and writes only
+// the fields the client named (omitted = untouched, null = cleared).
+
+const offerEconomicsPath = (a: Record<string, unknown>) =>
+  `/v1/brands/${id("brandId", a.brandId)}/offers/${id("offerId", a.offerId)}/economics`;
+
+/** GET /v1/brands/{id}/offers/{offerId}/economics — bookingUrl, destinationUrl, lifetimeRevenueUsd (null = never stated). */
+export const getOfferSettings = async (a: Record<string, unknown>, p: ApiCallParams) =>
+  call("get_offer_settings", offerEconomicsPath(a), "GET", p);
+
+function settingsUrl(name: string, value: unknown): string | null {
+  if (value === null) return null;
+  if (typeof value !== "string" || !/^https?:\/\/\S+$/i.test(value.trim())) {
+    throw new Error(`[copilot] ${name} must be an absolute http(s) URL, or null to clear it`);
+  }
+  return value.trim();
+}
+
+/** PUT /v1/brands/{id}/offers/{offerId}/economics — only the fields stated; brand-service validates the rest. */
+export async function updateOfferSettings(a: Record<string, unknown>, p: ApiCallParams): Promise<unknown> {
+  const body: Record<string, unknown> = {};
+  if (a.bookingUrl !== undefined) body.bookingUrl = settingsUrl("bookingUrl", a.bookingUrl);
+  if (a.destinationUrl !== undefined) body.destinationUrl = settingsUrl("destinationUrl", a.destinationUrl);
+  if (a.lifetimeRevenueUsd !== undefined) {
+    const v = a.lifetimeRevenueUsd;
+    if (v !== null && (typeof v !== "number" || !Number.isInteger(v) || v < 0)) {
+      throw new Error("[copilot] lifetimeRevenueUsd must be a whole number of USD, or null to clear it");
+    }
+    body.lifetimeRevenueUsd = v;
+  }
+  if (Object.keys(body).length === 0) {
+    throw new Error("[copilot] state at least one of bookingUrl, destinationUrl, lifetimeRevenueUsd");
+  }
+  return call("update_offer_settings", offerEconomicsPath(a), "PUT", p, body);
+}
+
 const STEP_KEY_SHAPE = /^[a-z0-9]+(_[a-z0-9]+)+$/;
 
 function legRatesPatch(value: unknown): Array<{ fromStep: string; toStep: string; ratePct: number | null }> {

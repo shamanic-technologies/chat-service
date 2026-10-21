@@ -2216,7 +2216,7 @@ const WINDOW_PROP = {
 export const LIST_OFFERS_TOOL: Anthropic.Tool = {
   name: "list_offers",
   description:
-    "List a brand's offers (what it sells, each run by its own campaigns), with each offer's id, name and status. Read-only. Use the offer id with get_offer_performance and list_replies_to_handle.",
+    "List a brand's offers (what it sells, each run by its own campaigns), with each offer's id, name and status. Read-only. Use the offer id with get_offer_performance, list_replies_to_handle and get_offer_settings (booking link, landing page, deal value).",
   input_schema: { type: "object" as const, properties: { brandId: BRAND_ID_PROP }, required: ["brandId"] },
 };
 
@@ -2521,6 +2521,29 @@ export const REMOVE_OFFER_STEP_TOOL: Anthropic.Tool = {
     type: "object" as const,
     properties: { ...BRAND_OFFER_PROPS, stepKey: STEP_KEY_PROP },
     required: [...BRAND_OFFER_REQUIRED, "stepKey"],
+  },
+};
+
+export const GET_OFFER_SETTINGS_TOOL: Anthropic.Tool = {
+  name: "get_offer_settings",
+  description:
+    "Read one offer's settings, as the Brand Settings page shows them: bookingUrl (the call booking link: the page where a prospect who replies books a meeting; the AI meeting booking sends people there), destinationUrl (the page on the brand's site an outreach click lands on) and lifetimeRevenueUsd (what a paying client is worth). null = the client never stated it. Read it FIRST whenever the client mentions their booking link, calendar, scheduling page (Calendly, neocal...) or asks where people who reply are sent: the link lives HERE, never in a mailbox or a Google connection. Read-only.",
+  input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
+};
+
+export const UPDATE_OFFER_SETTINGS_TOOL: Anthropic.Tool = {
+  name: "update_offer_settings",
+  description:
+    "Change one offer's settings (the same fields as the Brand Settings page) when the client gives a new value: bookingUrl (their call booking link), destinationUrl, lifetimeRevenueUsd. Send ONLY the fields the client stated; an omitted field is left as it is, null clears it. URLs are absolute http(s). Data only, starts nothing; the change shows on Brand Settings at once. Read get_offer_settings first and tell the client the old and new value.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      ...BRAND_OFFER_PROPS,
+      bookingUrl: { anyOf: [{ type: "string" }, { type: "null" }], description: "The new call booking link (absolute http(s) URL), or null to clear it." },
+      destinationUrl: { anyOf: [{ type: "string" }, { type: "null" }], description: "The new landing page for an outreach click (absolute http(s) URL), or null to clear it." },
+      lifetimeRevenueUsd: { anyOf: [{ type: "integer" }, { type: "null" }], description: "What a paying client of this offer is worth, whole USD, or null to clear it." },
+    },
+    required: BRAND_OFFER_REQUIRED,
   },
 };
 
@@ -3346,6 +3369,8 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   get_offer_steps: GET_OFFER_STEPS_TOOL,
   add_offer_step: ADD_OFFER_STEP_TOOL,
   remove_offer_step: REMOVE_OFFER_STEP_TOOL,
+  get_offer_settings: GET_OFFER_SETTINGS_TOOL,
+  update_offer_settings: UPDATE_OFFER_SETTINGS_TOOL,
   list_sales_paths: LIST_SALES_PATHS_TOOL,
   get_trigger_events: GET_TRIGGER_EVENTS_TOOL,
   list_sourcing_origins: LIST_SOURCING_ORIGINS_TOOL,

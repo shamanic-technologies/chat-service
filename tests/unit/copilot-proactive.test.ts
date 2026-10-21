@@ -34,7 +34,7 @@ const ALL_TOOLS = (
   "discover_service_endpoints discover_services duplicate_persona extract_brand_fields find_channels find_people find_pipes find_plays find_sales_funnels " +
   "find_sales_paths find_steps find_strategies find_tactics find_workflows fire_followup fork_workflow generate_audience_avatar get_billing_account " +
   "get_brand_pause get_brand_profile get_campaign get_campaign_next_steps get_daily_budget get_feature get_feature_inputs get_feature_stats get_funnel_caps " +
-  "get_key_source get_leg_rates get_offer_performance get_offer_sourcing get_offer_steps get_org_usage get_prompt_template get_spend_by_campaign " +
+  "get_key_source get_leg_rates get_offer_performance get_offer_settings get_offer_sourcing get_offer_steps get_org_usage get_prompt_template get_spend_by_campaign " +
   "get_trigger_events get_workflow_details get_workflow_required_providers launch_campaign list_audiences list_brands list_campaigns list_connected_accounts " +
   "list_declared_channels list_declared_legs list_declared_sales_paths list_features list_followups list_funnel_campaigns list_key_sources list_offers " +
   "list_org_keys list_people_corrections list_people_organizations list_personas list_qualification_checks list_qualification_sources list_recent_runs " +
@@ -43,7 +43,7 @@ const ALL_TOOLS = (
   "rename_audience request_skill_upgrade request_staff request_user_input save_brand_profile_version set_audience_status set_brand_pause set_daily_budget " +
   "set_funnel_caps set_leg_rates set_persona_status start_sign_in complete_sign_in stop_campaign stop_funnel_campaign suggest_audiences suggest_qualification_checks " +
   "test_endpoint undo_people_correction undo_people_merge update_campaign_fields update_feature update_followup update_prompt_template " +
-  "update_qualification_check upgrade_workflow validate_workflow"
+  "update_offer_settings update_qualification_check upgrade_workflow validate_workflow"
 ).split(" ");
 
 describe("proactive turn tools", () => {
