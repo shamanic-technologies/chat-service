@@ -16,7 +16,7 @@
 // the same file as a data URL.
 // ---------------------------------------------------------------------------
 
-import sharp from "sharp";
+import sharp, { type Metadata } from "sharp";
 
 export const JUDGMENT_IMAGE_MAX_SIDE = 1568;
 export const JUDGMENT_IMAGE_MIN_SIDE = 280;
@@ -79,7 +79,7 @@ export class JudgmentImageError extends Error {
  * vendor strips EXIF without applying it, so a phone photo would arrive sideways.
  */
 export async function prepareJudgmentImageBytes(bytes: Buffer): Promise<PreparedJudgmentImage> {
-  let meta: sharp.Metadata;
+  let meta: Metadata;
   try {
     meta = await sharp(bytes).metadata();
   } catch (err) {

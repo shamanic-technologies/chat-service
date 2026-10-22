@@ -25,6 +25,16 @@ describe("prepareJudgmentImageBytes — fits every judge's limits", () => {
     expect([meta.width, meta.height]).toEqual([1568, 882]);
   });
 
+  it("applies the EXIF orientation: a sideways phone photo comes out upright (sharp metadata.orientation)", async () => {
+    const sideways = await sharp({ create: { width: 2000, height: 1000, channels: 3, background: { r: 1, g: 2, b: 3 } } })
+      .jpeg()
+      .withMetadata({ orientation: 6 })
+      .toBuffer();
+    expect((await sharp(sideways).metadata()).orientation).toBe(6);
+    const out = await prepareJudgmentImageBytes(sideways);
+    expect(out).toMatchObject({ sourceWidth: 1000, sourceHeight: 2000, width: 784, height: 1568 });
+  });
+
   it("leaves an image already inside the limits at its size (never upscales)", async () => {
     const out = await prepareJudgmentImageBytes(await png(1280, 800));
     expect([out.width, out.height]).toEqual([1280, 800]);
