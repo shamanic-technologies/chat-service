@@ -105,6 +105,11 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     const voice = bySlug.get("client-comms")!.content;
     expect(voice).toMatch(/give today's fact plainly, as news, and never point back at the earlier message/);
     expect(voice).toMatch(/never the story of your answers/);
+    // Staff replay 2026-10-22: with only that rule the Copilot still wrote
+    // "The cal.com address I quoted earlier isn't stored, so please don't rely
+    // on it": a fact they may act on needs no pointer to the old answer.
+    expect(voice).toMatch(/today's fact and the next step replace it by themselves/);
+    expect(voice).toMatch(/never name, quote or warn about what was said before/);
     expect(voice).toMatch(/the history of your own answers \(what you said before, that it was wrong, that this corrects it\)/);
     expect(voice).toMatch(/an earlier answer of yours they may have acted on\. It goes to the team silently/);
     // No skill may license announcing a correction to the client.
