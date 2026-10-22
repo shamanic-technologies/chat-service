@@ -70,25 +70,37 @@ export function parseChoicesArgs(args: Record<string, unknown>): ChoicesRecord {
   return parsed.data;
 }
 
-/** Max length of the intro text written above the cards. */
+/** Max length of the answer text written above the cards or the input field. */
 export const CHOICES_INTRO_MAX = 1200;
 
 /**
- * The REQUIRED intro of a present_choices call: the 2-3 sentences shown above
- * the cards. Some models (Sonnet 5.5, prod 2026-10-10) write no text at all
- * before a tool call, so the answer arrived as bare cards; carrying the text
- * IN the call makes every model write it. Throws when absent (the model gets
- * a tool error and retries with it).
+ * The REQUIRED answer text of a turn-ending client-UI call (present_choices,
+ * request_user_input): the sentences shown above the cards or the field. Some
+ * models (Sonnet 5.5, prod 2026-10-10) write no text at all before a tool call,
+ * and text written beside a tool call is a dropped working note, so the answer
+ * arrived as bare cards, then as a bare input field that never said the fact it
+ * asked about (staff replay 2026-10-22: a booking link told "saved" earlier, read
+ * as empty now, came back as only "What is your booking link?"). Carrying the
+ * text IN the call makes every model write it. Throws when absent (the model
+ * gets a tool error and retries with it).
  */
-export function parseChoicesIntro(args: Record<string, unknown>): string {
+function parseTurnEndingText(toolName: string, args: Record<string, unknown>, what: string): string {
   const text = args.text;
   if (typeof text !== "string" || text.trim() === "") {
-    throw new Error("[present_choices] text is required: 2 or 3 short sentences shown above the cards (what you found, with the figures).");
+    throw new Error(`[${toolName}] text is required: ${what}`);
   }
   if (text.length > CHOICES_INTRO_MAX) {
-    throw new Error(`[present_choices] text must be at most ${CHOICES_INTRO_MAX} characters`);
+    throw new Error(`[${toolName}] text must be at most ${CHOICES_INTRO_MAX} characters`);
   }
   return text.trim();
+}
+
+export function parseChoicesIntro(args: Record<string, unknown>): string {
+  return parseTurnEndingText(PRESENT_CHOICES_TOOL_NAME, args, "2 or 3 short sentences shown above the cards (what you found, with the figures).");
+}
+
+export function parseInputRequestText(args: Record<string, unknown>): string {
+  return parseTurnEndingText("request_user_input", args, "1 to 3 short sentences shown above the field (the account as it stands now, then what you need and why).");
 }
 
 /** Parse the model's open_page arguments. Throws on a malformed call. */

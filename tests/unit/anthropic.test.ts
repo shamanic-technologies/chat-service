@@ -531,7 +531,7 @@ describe("REQUEST_USER_INPUT_TOOL", () => {
     expect(schema.properties).toHaveProperty("field");
     expect(schema.properties).toHaveProperty("placeholder");
     expect(schema.properties).toHaveProperty("value");
-    expect(schema.required).toEqual(["input_type", "label", "field"]);
+    expect(schema.required).toEqual(["text", "input_type", "label", "field"]);
   });
 
   it("description warns against using for confirmations", () => {

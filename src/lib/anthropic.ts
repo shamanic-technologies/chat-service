@@ -743,6 +743,11 @@ export const REQUEST_USER_INPUT_TOOL: Anthropic.Tool = {
   input_schema: {
     type: "object" as const,
     properties: {
+      text: {
+        type: "string",
+        description:
+          "REQUIRED. Your answer, shown above the field: 1 to 3 short sentences telling the account as it stands now (what you found, today's fact plainly), then what you need from them and why. The field alone never answers the question.",
+      },
       input_type: {
         type: "string",
         description: "The type of input widget to render: url, text, or email",
@@ -766,7 +771,7 @@ export const REQUEST_USER_INPUT_TOOL: Anthropic.Tool = {
           "Optional pre-filled value for the input field. When you already have a suggested value (e.g. a description you generated), set this so the user only has to confirm. Omit to leave the field empty.",
       },
     },
-    required: ["input_type", "label", "field"],
+    required: ["text", "input_type", "label", "field"],
   },
 };
 

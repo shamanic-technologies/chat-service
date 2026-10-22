@@ -1414,6 +1414,8 @@ When the AI genuinely needs information it does not have, it emits an input requ
 ```
 data: {"type":"input_request","input_type":"url","label":"What's your brand URL?","placeholder":"https://yourbrand.com","field":"brand_url"}
 ```
+The call carries a REQUIRED `text`: the answer shown above the field (the account as it stands now, then what is needed and why). When the model wrote no text this turn, that `text` is streamed as the turn's `token` before the `input_request` event and stored as the answer, exactly like `present_choices`; a call without it is a tool error the model retries, never a bare field.
+
 The frontend should render an appropriate input widget based on `input_type` (`url`, `text`, or `email`). When the user submits, send the value as a regular `/chat` message. The `field` key identifies what the input is for.
 
 An optional `value` field can pre-fill the input when the AI already has a suggested value:

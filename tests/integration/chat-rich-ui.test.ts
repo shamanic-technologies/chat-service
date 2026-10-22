@@ -29,7 +29,7 @@ vi.mock("../../src/db/index.js", () => {
     orgId: "org-1",
     key: "test-chat",
     systemPrompt: "Be useful.",
-    allowedTools: ["list_workflows", "open_page", "present_choices"],
+    allowedTools: ["list_workflows", "open_page", "present_choices", "request_user_input"],
     provider: "google",
     model: "flash",
     createdAt: new Date(),
@@ -285,6 +285,44 @@ function mockGeminiOpenPageThenChoices(capture: { calls: number }, opts: { leadT
   } satisfies MockRoute;
 }
 
+function mockGeminiInputRequest(capture: { calls: number }, opts: { text?: string | null } = {}) {
+  const text = opts.text === undefined ? "No booking link is saved on your offer yet. Share it and prospects get it right away." : opts.text;
+  return {
+    match: (url: string, init?: RequestInit) => url.includes(":streamGenerateContent") && (init?.method ?? "GET") === "POST",
+    respond: () => {
+      capture.calls += 1;
+      return {
+        ok: true,
+        body: sseResponse([
+          {
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      functionCall: {
+                        name: "request_user_input",
+                        args: {
+                          ...(text ? { text } : {}),
+                          input_type: "url",
+                          label: "Your booking link",
+                          field: "booking_url",
+                        },
+                      },
+                      thoughtSignature: `sig-${capture.calls}`,
+                    },
+                  ],
+                },
+              },
+            ],
+            usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 5, totalTokenCount: 25 },
+          },
+        ]),
+      };
+    },
+  } satisfies MockRoute;
+}
+
 function sseEvents(text: string): Array<Record<string, unknown>> {
   return text
     .split("\n")
@@ -399,5 +437,42 @@ describe("POST /chat — rich UI (open_page + present_choices)", () => {
     expect(events.find((e) => e.type === "choices")).toBeUndefined();
     // The refusal went back to the model (a third provider call).
     expect(gemini.calls).toBeGreaterThanOrEqual(3);
+  });
+  it("request_user_input's text is the answer above the field when the model wrote none (staff replay 2026-10-22: a bare field never said the fact)", async () => {
+    const app = (await import("../../src/index.js")).default;
+    const gemini = { calls: 0 };
+    routes.push(
+      mockKeyDecrypt(), mockRunCreate(), mockRunCosts({ provisionCalls: 0, actualCalls: 0 }), mockCostPatch(),
+      mockRunPatch(), mockTraceEvents(), mockBilling({ calls: 0 }),
+      mockGeminiInputRequest(gemini),
+    );
+    const res = await request(app).post("/chat").set(AUTH).send({ configKey: "test-chat", message: "Can you double check my booking link?" });
+    expect(res.status).toBe(200);
+    expect(gemini.calls).toBe(1);
+    const events = sseEvents(res.text);
+    const tokenAt = events.findIndex((e) => e.type === "token");
+    const fieldAt = events.findIndex((e) => e.type === "input_request");
+    expect(events[tokenAt]).toEqual({
+      type: "token",
+      content: "No booking link is saved on your offer yet. Share it and prospects get it right away.",
+    });
+    expect(tokenAt).toBeLessThan(fieldAt);
+    const assistant = insertedValues.find((v) => v.role === "assistant")!;
+    expect(assistant.content).toBe("No booking link is saved on your offer yet. Share it and prospects get it right away.");
+  });
+
+  it("request_user_input without text is a tool error the model retries, never a bare field", async () => {
+    const app = (await import("../../src/index.js")).default;
+    const gemini = { calls: 0 };
+    routes.push(
+      mockKeyDecrypt(), mockRunCreate(), mockRunCosts({ provisionCalls: 0, actualCalls: 0 }), mockCostPatch(),
+      mockRunPatch(), mockTraceEvents(), mockBilling({ calls: 0 }),
+      mockGeminiInputRequest(gemini, { text: null }),
+    );
+    const res = await request(app).post("/chat").set(AUTH).send({ configKey: "test-chat", message: "Can you double check my booking link?" });
+    expect(res.status).toBe(200);
+    const events = sseEvents(res.text);
+    expect(events.find((e) => e.type === "input_request")).toBeUndefined();
+    expect(gemini.calls).toBeGreaterThanOrEqual(2);
   });
 });
