@@ -563,11 +563,11 @@ describe("resolveModel", () => {
     expect(resolved.provider).toBe("anthropic");
   });
 
-  it("resolves google + flash-lite to gemini-3.1-flash-lite (stable, no -preview)", () => {
+  it("resolves google + flash-lite to the Gemini Flash-Lite head, gemini-3.5-flash-lite (LLM-DYNASTY-1022)", () => {
     const resolved = resolveModel("google", "flash-lite");
-    expect(resolved.apiModelId).toBe("gemini-3.1-flash-lite");
+    expect(resolved.apiModelId).toBe("gemini-3.5-flash-lite");
     expect(resolved.apiModelId).not.toContain("-preview");
-    expect(resolved.costPrefix).toBe("google-flash-lite-3.1");
+    expect(resolved.costPrefix).toBe("google-flash-lite-3.5");
     expect(resolved.provider).toBe("google");
   });
 

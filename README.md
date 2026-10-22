@@ -690,14 +690,33 @@ Error responses: 401 (auth).
 {
   "models": [
     { "modelId": "gemini-3.8-flash", "displayName": "Gemini 3.8 Flash", "provider": "google",
-      "capabilityTier": "cheap", "servedToday": true, "aliases": ["flash-pro"], "formerAliases": [] },
+      "capabilityTier": "cheap", "servedToday": true, "dynasty": "gemini-flash", "aliases": ["flash-pro"], "formerAliases": [] },
     { "modelId": "glm-5.2", "displayName": "GLM-5.2", "provider": "zai",
-      "capabilityTier": "strong", "servedToday": false, "aliases": [], "formerAliases": ["glm-pro"] }
+      "capabilityTier": "strong", "servedToday": false, "dynasty": "glm", "aliases": [], "formerAliases": ["glm-pro"] }
   ]
 }
 ```
 
 Rows served today are derived from `MODEL_MAP` (cannot drift). Retired rows live in `RETIRED_MODELS` (`src/lib/model-ids.ts`): when an alias moves, add the id it left there with its tier; `tests/unit/model-ids.test.ts` fails if an id that ever named a stored generation goes missing, or lacks a display name. A Flash / Pro split reads `cheap` as Flash and `strong` + `frontier` as Pro.
+
+## LLM dynasties (`GET /internal/model-dynasties`)
+
+One dynasty = one vendor line x tier, named as the vendor names it, no version (LLM-DYNASTY-1022). Its versions pool their history, like workflow and template dynasties. `X-API-Key` only.
+
+```json
+{
+  "dynasties": [
+    { "slug": "gemini-flash", "name": "Gemini Flash", "provider": "google", "capabilityTier": "cheap",
+      "headModelId": "gemini-3.8-flash", "servedToday": true,
+      "models": [{ "modelId": "gemini-3.8-flash", "displayName": "Gemini 3.8 Flash", "servedToday": true }, "..."],
+      "legacyAliases": ["flash-pro"] }
+  ]
+}
+```
+
+- `POST /complete` `model` accepts the **dynasty slug** (runs the head), the head's **exact model id** (pins it), or a **legacy alias** (redirect to its dynasty's head). Spend is declared under the concrete model that ran.
+- 16 dynasties: `claude-haiku`, `claude-sonnet`, `claude-opus`, `claude-fable`, `gemini-flash-lite`, `gemini-flash`, `gemini-pro`, `deepseek-flash`, `deepseek-pro` (history only, `deepseek-pro` the NAME redirects to `deepseek-flash`), `glm-flash`, `glm`, `kimi-k2`, `kimi-k3`, `gpt-astra`, `gpt-sol`, `gpt-terra`.
+- Data: `src/lib/llm-dynasties.ts`. Every id on `/internal/model-ids` carries its `dynasty`; `tests/unit/llm-dynasties.test.ts` fails a model with none, or a slug resolving outside its dynasty.
 
 ## Internal Platform Completion
 

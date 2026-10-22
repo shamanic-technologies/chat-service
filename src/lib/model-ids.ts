@@ -5,6 +5,7 @@ import {
   type ModelAlias,
   type Provider,
 } from "./anthropic.js";
+import { LLM_DYNASTIES, dynastyOfModel } from "./llm-dynasties.js";
 
 /**
  * Concrete model id → display name + capability tier, for every id this
@@ -97,6 +98,7 @@ export const RETIRED_MODELS: Record<string, RetiredModel> = {
   "claude-haiku-4-5": { provider: "anthropic", capabilityTier: "cheap", formerAliases: ["haiku"] },
   "claude-sonnet-4-6": { provider: "anthropic", capabilityTier: "strong", formerAliases: ["sonnet"] },
   "claude-opus-4-6": { provider: "anthropic", capabilityTier: "frontier", formerAliases: ["opus"] },
+  "gemini-3.1-flash-lite": { provider: "google", capabilityTier: "cheap", formerAliases: ["flash-lite"] },
   "gemini-3.1-flash-lite-preview": { provider: "google", capabilityTier: "cheap", formerAliases: ["flash-lite"] },
   "gemini-3-flash-preview": { provider: "google", capabilityTier: "cheap", formerAliases: ["flash"] },
   "gemini-3.1-flash-preview": { provider: "google", capabilityTier: "cheap", formerAliases: ["flash"] },
@@ -122,8 +124,20 @@ export interface ModelIdEntry {
   provider: Provider;
   capabilityTier: CapabilityTier;
   servedToday: boolean;
+  /** LLM dynasty slug (LLM-DYNASTY-1022): the vendor line this version belongs to. */
+  dynasty: string;
+  /**
+   * Legacy aliases that run this model today (redirects to its dynasty). The
+   * dynasty slug and the model id itself are callable too; they are not listed here.
+   */
   aliases: ModelAlias[];
   formerAliases: ModelAlias[];
+}
+
+function dynastySlugOf(modelId: string): string {
+  const dynasty = dynastyOfModel(modelId);
+  if (!dynasty) throw new Error(`No LLM dynasty recorded for model id "${modelId}"`);
+  return dynasty.slug;
 }
 
 function displayNameOf(modelId: string): string {
@@ -139,33 +153,29 @@ function displayNameOf(modelId: string): string {
  */
 export function modelIdCatalogue(): ModelIdEntry[] {
   const current = new Map<string, ModelIdEntry>();
-  for (const provider of Object.keys(PROVIDER_MODELS) as Provider[]) {
-    for (const alias of PROVIDER_MODELS[provider]) {
-      const resolved = resolveModel(provider, alias);
-      const existing = current.get(resolved.apiModelId);
-      if (existing) {
-        if (existing.capabilityTier !== resolved.capabilityTier) {
-          throw new Error(
-            `Aliases on "${resolved.apiModelId}" disagree on its tier: ` +
-              `${existing.aliases.join(", ")} = ${existing.capabilityTier}, ${alias} = ${resolved.capabilityTier}`,
-          );
-        }
-        existing.aliases.push(alias);
-        continue;
-      }
-      if (RETIRED_MODELS[resolved.apiModelId]) {
-        throw new Error(`"${resolved.apiModelId}" is served today and also listed as retired`);
-      }
-      current.set(resolved.apiModelId, {
-        modelId: resolved.apiModelId,
-        displayName: displayNameOf(resolved.apiModelId),
-        provider,
-        capabilityTier: resolved.capabilityTier,
-        servedToday: true,
-        aliases: [alias],
-        formerAliases: [],
-      });
+  for (const dynasty of LLM_DYNASTIES) {
+    if (!dynasty.servedToday) continue;
+    const provider = dynasty.provider as Provider;
+    const resolved = resolveModel(provider, dynasty.slug);
+    if (RETIRED_MODELS[resolved.apiModelId]) {
+      throw new Error(`"${resolved.apiModelId}" is served today and also listed as retired`);
     }
+    if (current.has(resolved.apiModelId)) {
+      throw new Error(`"${resolved.apiModelId}" is the head of two dynasties`);
+    }
+    const aliases = PROVIDER_MODELS[provider].filter(
+      (name) => dynasty.legacyAliases.includes(name) && resolveModel(provider, name).apiModelId === resolved.apiModelId,
+    );
+    current.set(resolved.apiModelId, {
+      modelId: resolved.apiModelId,
+      displayName: displayNameOf(resolved.apiModelId),
+      provider,
+      capabilityTier: resolved.capabilityTier,
+      servedToday: true,
+      dynasty: dynastySlugOf(resolved.apiModelId),
+      aliases,
+      formerAliases: [],
+    });
   }
   const retired = Object.entries(RETIRED_MODELS).map(([modelId, r]) => ({
     modelId,
@@ -173,8 +183,53 @@ export function modelIdCatalogue(): ModelIdEntry[] {
     provider: r.provider,
     capabilityTier: r.capabilityTier,
     servedToday: false,
+    dynasty: dynastySlugOf(modelId),
     aliases: [],
     formerAliases: [...r.formerAliases],
   }));
   return [...current.values(), ...retired];
+}
+
+export interface DynastyEntry {
+  slug: string;
+  name: string;
+  provider: Provider;
+  capabilityTier: CapabilityTier;
+  /** The newest version a current name serves (for a line nothing serves, its last version). */
+  headModelId: string;
+  /** True when `slug` answers /complete and runs `headModelId`. */
+  servedToday: boolean;
+  /** Every version, newest first, with its display name. */
+  models: Array<{ modelId: string; displayName: string; servedToday: boolean }>;
+  /** Names workflows wrote before dynasties; each answers /complete as a redirect to this dynasty's head. */
+  legacyAliases: string[];
+}
+
+/**
+ * Every LLM dynasty with its versions, newest first. Throws when a version has
+ * no display name or a served head is not what the slug resolves to: a
+ * consumer pooling per dynasty must never read a guessed fact.
+ */
+export function dynastyCatalogue(): DynastyEntry[] {
+  return LLM_DYNASTIES.map((d) => {
+    const provider = d.provider as Provider;
+    const headModelId = d.models[0];
+    if (d.servedToday && resolveModel(provider, d.slug).apiModelId !== headModelId) {
+      throw new Error(`Dynasty "${d.slug}" resolves outside its head "${headModelId}"`);
+    }
+    return {
+      slug: d.slug,
+      name: d.name,
+      provider,
+      capabilityTier: d.capabilityTier,
+      headModelId,
+      servedToday: d.servedToday,
+      models: d.models.map((modelId) => ({
+        modelId,
+        displayName: displayNameOf(modelId),
+        servedToday: d.servedToday && modelId === headModelId,
+      })),
+      legacyAliases: [...d.legacyAliases],
+    };
+  });
 }

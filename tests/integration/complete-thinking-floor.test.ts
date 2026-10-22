@@ -211,7 +211,7 @@ function thinkingConfigOf(body: Record<string, unknown>): Record<string, unknown
 // resolve to. Floors read from https://ai.google.dev/gemini-api/docs/thinking
 // (2026-08-24) and confirmed against the live API the same day.
 const ALIAS_FLOOR: Array<[string, string]> = [
-  ["flash-lite", "minimal"], // gemini-3.1-flash-lite
+  ["flash-lite", "minimal"], // gemini-3.5-flash-lite (moved from 3.1, LLM-DYNASTY-1022)
   ["flash", "minimal"], // gemini-3.5-flash-lite
   ["flash-pro", "low"], // gemini-3.8-flash — rejects minimal
   ["pro", "low"], // gemini-3.1-pro-preview — rejects minimal
