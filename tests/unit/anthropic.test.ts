@@ -19,11 +19,14 @@ function createMockStream(events: unknown[], finalMsg: unknown) {
 const mockStream = vi.fn();
 
 vi.mock("@anthropic-ai/sdk", () => ({
-  default: vi.fn().mockImplementation(() => ({
-    messages: {
-      stream: mockStream,
-    },
-  })),
+  // `new Anthropic()` — vitest >= 3 cannot construct an arrow implementation
+  default: vi.fn().mockImplementation(function () {
+    return {
+      messages: {
+        stream: mockStream,
+      },
+    };
+  }),
 }));
 
 import {
