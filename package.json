@@ -36,9 +36,19 @@
     "supertest": "^7.2.2",
     "tsx": "^4.0.0",
     "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "vitest": "^4.1.12"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
+  },
+  "overrides": {
+    "form-data": "^4.0.6",
+    "nanoid": "^3.3.18",
+    "path-to-regexp": "^0.1.13",
+    "postcss": "^8.5.18",
+    "proxy-addr": "^2.0.8",
+    "rollup": "^4.59.0",
+    "shell-quote": "^1.9.0",
+    "source-map-js": "^1.2.2"
   }
 }
