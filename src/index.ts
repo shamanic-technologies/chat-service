@@ -310,6 +310,7 @@ import {
   PRESENT_CHOICES_TOOL_NAME,
   parseChoicesArgs,
   parseChoicesIntro,
+  parseInputRequestText,
   parseOpenPageArgs,
 } from "./lib/ui-tools.js";
 import {
@@ -3535,6 +3536,14 @@ app.post("/chat", requireAuth, async (req, res) => {
       // Client-side tool: emit input_request and signal to stop
       if (call.name === "request_user_input") {
         const args = (call.args as Record<string, unknown>) || {};
+        // Same rule as present_choices: the answer above the field is the
+        // call's text when the model wrote none this turn.
+        const intro = parseInputRequestText(args);
+        if (!turnText.streamed) {
+          sendSSE(res, { type: "token", content: intro });
+          turnText.streamed = true;
+          turnText.intro = intro;
+        }
         sendSSE(res, {
           type: "input_request",
           input_type: args.input_type ?? "text",
