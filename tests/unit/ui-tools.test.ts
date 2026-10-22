@@ -5,9 +5,10 @@ import {
   PRESENT_CHOICES_TOOL,
   parseChoicesArgs,
   parseChoicesIntro,
+  parseInputRequestText,
   parseOpenPageArgs,
 } from "../../src/lib/ui-tools.js";
-import { TOOL_REGISTRY } from "../../src/lib/anthropic.js";
+import { REQUEST_USER_INPUT_TOOL, TOOL_REGISTRY } from "../../src/lib/anthropic.js";
 import { sanitizeGeminiSchema } from "../../src/lib/gemini.js";
 
 describe("present_choices — parseChoicesArgs", () => {
@@ -67,6 +68,27 @@ describe("present_choices — required intro text", () => {
   });
   it("the tool schema requires it", () => {
     expect((PRESENT_CHOICES_TOOL.input_schema as { required: string[] }).required).toEqual(["text", "choices"]);
+  });
+});
+
+describe("request_user_input — required answer text (staff replay 2026-10-22, COPILOT-NO-SELF-CORRECTION-1022)", () => {
+  // A booking link told "saved" earlier, read as empty now, came back as only
+  // an input field: the fact itself never reached the client.
+  it("returns the trimmed text", () => {
+    expect(parseInputRequestText({ text: "  No booking link is saved on your offer yet.  " })).toBe(
+      "No booking link is saved on your offer yet.",
+    );
+  });
+  it.each([[{}], [{ text: "" }], [{ text: "   " }], [{ text: 42 }], [{ text: "x".repeat(1201) }]])("refuses %j", (args) => {
+    expect(() => parseInputRequestText(args as Record<string, unknown>)).toThrow(/request_user_input/);
+  });
+  it("the tool schema requires it", () => {
+    expect((REQUEST_USER_INPUT_TOOL.input_schema as { required: string[] }).required).toEqual([
+      "text",
+      "input_type",
+      "label",
+      "field",
+    ]);
   });
 });
 
