@@ -5,6 +5,7 @@ import {
 } from "@asteasolutions/zod-to-openapi";
 import { TYPESAFE_DEFAULT_MODEL, TYPESAFE_MODELS } from "./lib/typesafe.js";
 import { DEFAULT_JUDGE, JUDGES } from "./lib/judges.js";
+import { ALL_CALLABLE_MODEL_NAMES, DYNASTY_PROVIDERS, callableModelNames } from "./lib/llm-dynasties.js";
 import {
   JUDGMENT_IMAGE_MAX_SIDE,
   JUDGMENT_IMAGE_MAX_SOURCE_BYTES,
@@ -454,6 +455,16 @@ registry.registerPath({
 
 // --- Complete (synchronous LLM call) ---
 
+/** Shared `/complete` model doc: the dynasty slugs come first (LLM-DYNASTY-1022). */
+const DYNASTY_MODEL_DOC =
+  "**Preferred: an LLM dynasty slug** (one vendor line, its versions pooled; the full list with " +
+  "versions is `GET /internal/model-dynasties`). The slug always runs the dynasty's head (newest " +
+  "served version): anthropic → claude-haiku|claude-sonnet|claude-opus|claude-fable, google → " +
+  "gemini-flash-lite|gemini-flash|gemini-pro, deepseek → deepseek-flash, zai → glm-flash|glm, " +
+  "moonshot → kimi-k2|kimi-k3, openai → gpt-astra|gpt-sol|gpt-terra. The head's exact model id " +
+  "(e.g. `gemini-3.8-flash`) is also accepted, to pin that version. Spend is declared under the " +
+  "concrete model that ran, whatever name called it.\n\n";
+
 export const CompleteRequestSchema = z
   .object({
     message: z.string().min(1, "message is required").openapi({
@@ -515,23 +526,17 @@ export const CompleteRequestSchema = z
         "under this exact slug.",
       example: "anthropic",
     }),
-    model: z.enum([
-      "haiku", "sonnet", "opus", "fable",
-      "flash-lite", "flash", "flash-pro", "pro",
-      "deepseek-flash", "deepseek-pro",
-      "glm-flash", "glm-pro",
-      "kimi-flash", "kimi-pro",
-      "gpt-pro", "gpt-sol", "gpt-terra",
-    ]).openapi({
+    model: z.enum(ALL_CALLABLE_MODEL_NAMES as [string, ...string[]]).openapi({
       description:
-        "Model alias (version-free). The service resolves the current versioned model internally.\n\n" +
-        "**anthropic:** `haiku` (fast/cheap, Claude Haiku 4.5), `sonnet` \u2192 Claude Sonnet 5.5 (balanced), " +
+        DYNASTY_MODEL_DOC +
+        "Legacy aliases (version-free, each a redirect to its dynasty's head):\n\n" +
+        "**anthropic:** `haiku` → Claude Haiku 5.5 (fast/cheap), `sonnet` \u2192 Claude Sonnet 5.5 (balanced), " +
         "`opus` \u2192 Claude Opus 5.5 (high quality), " +
         "`fable` \u2192 Claude Fable 5.1, the tier above Opus (1M context, always-on reasoning). " +
         "`sonnet`, `opus` and `fable` reject `temperature` with a 400 \u2014 Anthropic removed the sampling " +
         "parameters on its always-thinking models, as OpenAI did on its GPT models. On `sonnet` and `opus`, " +
         "`disableThinking: true` minimizes reasoning (effort `low`); thinking cannot be fully disabled there.\n" +
-        "**google:** `flash-lite` (cheapest, vision), `flash` (balanced, reasoning), `flash-pro` (mid-tier, Gemini 3.8 Flash), `pro` (most powerful).\n" +
+        "**google:** `flash-lite` and `flash` → Gemini 3.5 Flash-Lite (cheapest, vision), `flash-pro` → Gemini 3.8 Flash (mid-tier), `pro` → Gemini 3.1 Pro (most powerful).\n" +
         "**deepseek:** `deepseek-flash` → DeepSeek V4.1 Flash (1M context, 2500 concurrent requests). " +
         "`deepseek-pro` is a **deprecated synonym** resolving to the same model: DeepSeek discontinued " +
         "V4 Pro on 2026-09-14 and routes it to V4.1 Flash at the Flash price. Prefer `deepseek-flash`.\n" +
@@ -625,14 +630,9 @@ export const CompleteRequestSchema = z
     }),
   })
   .superRefine((data, ctx) => {
-    const validModels: Record<string, string[]> = {
-      anthropic: ["haiku", "sonnet", "opus", "fable"],
-      google: ["flash-lite", "flash", "flash-pro", "pro"],
-      deepseek: ["deepseek-flash", "deepseek-pro"],
-      zai: ["glm-flash", "glm-pro"],
-      moonshot: ["kimi-flash", "kimi-pro"],
-      openai: ["gpt-pro", "gpt-sol", "gpt-terra"],
-    };
+    const validModels: Record<string, string[]> = Object.fromEntries(
+      DYNASTY_PROVIDERS.map((p) => [p, callableModelNames(p)]),
+    );
     const allowed = validModels[data.provider];
     if (allowed && !allowed.includes(data.model)) {
       ctx.addIssue({
@@ -920,16 +920,10 @@ export const InternalPlatformCompleteRequestSchema = z
         "key-service under this exact slug.",
       example: "anthropic",
     }),
-    model: z.enum([
-      "haiku", "sonnet", "opus", "fable",
-      "flash-lite", "flash", "flash-pro", "pro",
-      "deepseek-flash", "deepseek-pro",
-      "glm-flash", "glm-pro",
-      "kimi-flash", "kimi-pro",
-      "gpt-pro", "gpt-sol", "gpt-terra",
-    ]).openapi({
+    model: z.enum(ALL_CALLABLE_MODEL_NAMES as [string, ...string[]]).openapi({
       description:
-        "Model alias (version-free). Must match the provider: anthropic → haiku|sonnet|opus|fable " +
+        DYNASTY_MODEL_DOC +
+        "Legacy aliases, each a redirect to its dynasty's head. Must match the provider: anthropic → haiku|sonnet|opus|fable " +
         "(`sonnet` = Claude Sonnet 5.5, `opus` = Claude Opus 5.5, `fable` = Claude Fable 5.1; all three reject `temperature` with a 400), " +
         "google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro " +
         "(both DeepSeek V4.1 Flash; `deepseek-pro` is a deprecated synonym), zai → glm-flash|glm-pro (`glm-5.3-flash` / `glm-5.3`), " +
@@ -981,14 +975,9 @@ export const InternalPlatformCompleteRequestSchema = z
     // Same provider/model pairing check as POST /complete. Without it an
     // invalid pair reaches resolveModel and surfaces as a 500 instead of a 400
     // naming the accepted set.
-    const validModels: Record<string, string[]> = {
-      anthropic: ["haiku", "sonnet", "opus", "fable"],
-      google: ["flash-lite", "flash", "flash-pro", "pro"],
-      deepseek: ["deepseek-flash", "deepseek-pro"],
-      zai: ["glm-flash", "glm-pro"],
-      moonshot: ["kimi-flash", "kimi-pro"],
-      openai: ["gpt-pro", "gpt-sol", "gpt-terra"],
-    };
+    const validModels: Record<string, string[]> = Object.fromEntries(
+      DYNASTY_PROVIDERS.map((p) => [p, callableModelNames(p)]),
+    );
     const allowed = validModels[data.provider];
     if (allowed && !allowed.includes(data.model)) {
       ctx.addIssue({
@@ -1501,10 +1490,14 @@ export const ModelCatalogueEntrySchema = z
       example: "google",
     }),
     model: z.string().openapi({
-      description: "Model alias, as sent to /complete.",
+      description: "A name /complete accepts: an LLM dynasty slug, its head's exact model id, or a legacy alias.",
       example: "flash-pro",
     }),
     capabilityTier: CapabilityTierSchema,
+    dynasty: z.string().openapi({
+      description: "LLM dynasty slug of the model this name runs (see GET /internal/model-dynasties).",
+      example: "gemini-flash",
+    }),
   })
   .openapi("ModelCatalogueEntry");
 
@@ -1568,8 +1561,16 @@ export const ModelIdEntrySchema = z
     servedToday: z.boolean().openapi({
       description: "True when an alias on /complete resolves to this id today; false for a retired id that only names past generations.",
     }),
+    dynasty: z.string().openapi({
+      description:
+        "LLM dynasty slug: the vendor line this version belongs to (served AND retired ids carry one). " +
+        "Pool a model's stats under it; the dynasty list is GET /internal/model-dynasties.",
+      example: "gemini-pro",
+    }),
     aliases: z.array(z.string()).openapi({
-      description: "Aliases that resolve to this id today. Empty when retired.",
+      description:
+        "Legacy aliases that run this id today (each a redirect to its dynasty's head). The dynasty slug and the " +
+        "id itself are callable too and not listed. Empty when retired.",
       example: ["pro"],
     }),
     formerAliases: z.array(z.string()).openapi({
@@ -1606,6 +1607,70 @@ The tier describes the MODEL, never the alias string: \`gemini-3.8-flash\` is \`
     200: {
       description: "Every concrete model id, served today first, then retired",
       content: { "application/json": { schema: ModelIdCatalogueResponseSchema } },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// --- LLM dynasties ---
+
+export const LlmDynastySchema = z
+  .object({
+    slug: z.string().openapi({ description: "Dynasty slug, the name a workflow writes in /complete `model`.", example: "gemini-flash" }),
+    name: z.string().openapi({ description: "The vendor's name for the line, no version.", example: "Gemini Flash" }),
+    provider: z.string().openapi({ description: "Vendor slug, as `provider` on /complete.", example: "google" }),
+    capabilityTier: CapabilityTierSchema,
+    headModelId: z.string().openapi({
+      description: "The newest version a current name serves (the slug runs it). For a line nothing serves any more, its last version.",
+      example: "gemini-3.8-flash",
+    }),
+    servedToday: z.boolean().openapi({
+      description: "True when the slug answers /complete. False for a line kept only for its history (deepseek-pro).",
+    }),
+    models: z
+      .array(
+        z.object({
+          modelId: z.string(),
+          displayName: z.string(),
+          servedToday: z.boolean().openapi({ description: "True only for the served head." }),
+        }),
+      )
+      .openapi({ description: "Every version of the line, newest first (index 0 = head)." }),
+    legacyAliases: z.array(z.string()).openapi({
+      description:
+        "Names workflows wrote before dynasties. Each still answers /complete as a redirect to this dynasty's head; " +
+        "use it to attribute an old workflow to its dynasty. May equal the slug.",
+      example: ["flash-pro"],
+    }),
+  })
+  .openapi("LlmDynasty");
+
+export const LlmDynastyCatalogueResponseSchema = z
+  .object({ dynasties: z.array(LlmDynastySchema) })
+  .openapi("LlmDynastyCatalogueResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/model-dynasties",
+  tags: ["Internal"],
+  summary: "LLM dynasties: one vendor line per row, its versions newest first",
+  description: `Every LLM dynasty (LLM-DYNASTY-1022): one vendor line x tier, named as the vendor names it, without a version. A dynasty pools its versions, like workflow and template dynasties: a new version inherits what the line already proved.
+
+**Auth:** Requires only \`x-api-key\` (no identity headers).
+
+Rules: thinking level is a call parameter (same dynasty); preview and GA are one dynasty; a renamed line joins the old one only when the vendor states it replaces it; Flash and Flash-Lite are separate. The dynasty is a recorded fact on each MODEL, never derived from an alias (an alias has moved across lines). Every id on \`GET /internal/model-ids\` (served and retired) carries its \`dynasty\`.`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Every LLM dynasty",
+      content: { "application/json": { schema: LlmDynastyCatalogueResponseSchema } },
     },
     401: {
       description: "Missing or invalid x-api-key header",

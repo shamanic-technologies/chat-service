@@ -103,10 +103,10 @@ describe("direct-vendor model resolution", () => {
 
   it("fails loud on an unknown model and names the accepted set", () => {
     expect(() => resolveModel("deepseek", "deepseek-ultra" as never)).toThrow(
-      /Unknown model "deepseek-ultra".*Accepted models for "deepseek": deepseek-flash, deepseek-pro/,
+      /Unknown model "deepseek-ultra".*Accepted models for "deepseek": deepseek-flash, deepseek-pro\./,
     );
     expect(() => resolveModel("zai", "pro" as never)).toThrow(
-      /Accepted models for "zai": glm-flash, glm-pro/,
+      /Accepted models for "zai": glm-flash, glm-5.3-flash, glm, glm-5.3, glm-pro\./,
     );
   });
 
@@ -125,9 +125,10 @@ describe("direct-vendor model resolution", () => {
   });
 
   it("exposes exactly the declared aliases per vendor for Zod validation", () => {
+    // Dynasty slug, head model id (version pin), then legacy aliases (LLM-DYNASTY-1022).
     expect(PROVIDER_MODELS.deepseek).toEqual(["deepseek-flash", "deepseek-pro"]);
-    expect(PROVIDER_MODELS.zai).toEqual(["glm-flash", "glm-pro"]);
-    expect(PROVIDER_MODELS.moonshot).toEqual(["kimi-flash", "kimi-pro"]);
+    expect(PROVIDER_MODELS.zai).toEqual(["glm-flash", "glm-5.3-flash", "glm", "glm-5.3", "glm-pro"]);
+    expect(PROVIDER_MODELS.moonshot).toEqual(["kimi-k2", "kimi-k2.6", "kimi-flash", "kimi-k3", "kimi-pro"]);
   });
 
   it("maps every vendor model id back to its cost prefix", () => {
@@ -229,7 +230,7 @@ describe("vendor aliases on the request schemas", () => {
     expect(parsed.success).toBe(false);
     if (!parsed.success) {
       expect(parsed.error.issues.map((i) => i.message).join(" ")).toMatch(
-        /not valid for provider "zai".*glm-flash, glm-pro/s,
+        /not valid for provider "zai".*glm-flash, glm-5.3-flash, glm, glm-5.3, glm-pro/s,
       );
     }
   });
@@ -243,7 +244,7 @@ describe("vendor aliases on the request schemas", () => {
     expect(parsed.success).toBe(false);
     if (!parsed.success) {
       expect(parsed.error.issues.map((i) => i.message).join(" ")).toMatch(
-        /not valid for provider "google".*flash-lite, flash, flash-pro, pro/s,
+        /not valid for provider "google".*gemini-flash-lite.*flash-pro, gemini-pro, gemini-3.1-pro-preview, pro/s,
       );
     }
   });

@@ -118,25 +118,16 @@ export function prepareAnthropicSchema<T>(schema: T): T {
 // the latest versioned model ID internally.
 // ---------------------------------------------------------------------------
 
+import { LLM_DYNASTIES, callableModelNames, dynastyOfModel } from "./llm-dynasties.js";
+
 export type Provider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai";
-export type ModelAlias =
-  | "haiku"
-  | "sonnet"
-  | "opus"
-  | "fable"
-  | "flash-lite"
-  | "flash"
-  | "flash-pro"
-  | "pro"
-  | "deepseek-flash"
-  | "deepseek-pro"
-  | "glm-flash"
-  | "glm-pro"
-  | "kimi-flash"
-  | "kimi-pro"
-  | "gpt-pro"
-  | "gpt-sol"
-  | "gpt-terra";
+/**
+ * A name `/complete` accepts as `model`: an LLM dynasty slug (`gemini-flash`,
+ * runs the dynasty's head), the head's exact model id (pins that version), or a
+ * legacy alias (`flash-pro`, a redirect to its dynasty). The accepted set is
+ * `PROVIDER_MODELS`, built from `LLM_DYNASTIES` (src/lib/llm-dynasties.ts).
+ */
+export type ModelAlias = string;
 
 /**
  * How capable the model behind an alias is, in three levels.
@@ -188,7 +179,7 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     // /chat stream shape (adaptive thinking + compaction + context edits) each
     // → 200; `temperature` → 400 like the other 5.5 models. Before the move the
     // alias served 2 calls in 30 days.
-    haiku: { apiModelId: "claude-haiku-5-5", costPrefix: "anthropic-haiku-5.5", provider: "anthropic", capabilityTier: "cheap" },
+    "claude-haiku": { apiModelId: "claude-haiku-5-5", costPrefix: "anthropic-haiku-5.5", provider: "anthropic", capabilityTier: "cheap" },
     // `sonnet` / `opus` are version-free aliases, so they follow the current
     // generation: repointed 2026-09-29 from Sonnet 4.6 / Opus 4.6 to Claude
     // Sonnet 5.5 ($2 / $10 per 1M, cache hit $0.20) and Claude Opus 5.5
@@ -208,8 +199,8 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     // Before the move, `opus` served 11 runs in 30 days and `sonnet` none; no
     // chat config row names either. The 4.6 cost prefixes stay priced so past
     // spend keeps resolving (SUPPORTED_MODELS keeps mapping them).
-    sonnet: { apiModelId: "claude-sonnet-5-5", costPrefix: "anthropic-sonnet-5.5", provider: "anthropic", capabilityTier: "strong" },
-    opus: { apiModelId: "claude-opus-5-5", costPrefix: "anthropic-opus-5.5", provider: "anthropic", capabilityTier: "frontier" },
+    "claude-sonnet": { apiModelId: "claude-sonnet-5-5", costPrefix: "anthropic-sonnet-5.5", provider: "anthropic", capabilityTier: "strong" },
+    "claude-opus": { apiModelId: "claude-opus-5-5", costPrefix: "anthropic-opus-5.5", provider: "anthropic", capabilityTier: "frontier" },
     // Claude Fable 5.1 — Anthropic's most capable widely released model, a tier
     // ABOVE Opus and priced there ($10 / $50 per 1M against Opus 4.6's rates).
     // Added 2026-09-09 for a cold-email template A/B; no existing alias moves.
@@ -225,12 +216,12 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     //     `temperature` is refused before any spend rather than after.
     //   • Forced tool use and assistant prefill are removed. Neither is on the
     //     `/complete` path, which sends no tools and no prefill.
-    fable: { apiModelId: "claude-fable-5-1", costPrefix: "anthropic-fable-5.1", provider: "anthropic", capabilityTier: "frontier" },
+    "claude-fable": { apiModelId: "claude-fable-5-1", costPrefix: "anthropic-fable-5.1", provider: "anthropic", capabilityTier: "frontier" },
   },
   google: {
-    "flash-lite": { apiModelId: "gemini-3.1-flash-lite", costPrefix: "google-flash-lite-3.1", provider: "google", capabilityTier: "cheap" },
-    // "flash" alias → Gemini 3.5 Flash-Lite (GA, cheaper than the retired Flash-3 preview). 2026-07-24.
-    "flash": { apiModelId: "gemini-3.5-flash-lite", costPrefix: "google-flash-lite-3.5", provider: "google", capabilityTier: "cheap" },
+    // Gemini Flash-Lite → 3.5 Flash-Lite (GA). The `flash` alias moved here 2026-07-24; `flash-lite`
+    // left 3.1 Flash-Lite for it 2026-10-22 when both became redirects to this dynasty (owner).
+    "gemini-flash-lite": { apiModelId: "gemini-3.5-flash-lite", costPrefix: "google-flash-lite-3.5", provider: "google", capabilityTier: "cheap" },
     // "flash-pro" alias → Gemini 3.8 Flash (GA mid-tier). Same list price as the 3.7 Flash it
     // replaces ($1.50/$7.50 per MTok from 2027-01-01, both on the same promo until then), with
     // upgraded long-horizon / agentic quality. Verified before the swap on all three axes the
@@ -243,8 +234,8 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     // for where it sits among the Gemini aliases (above `flash`), while the tier
     // describes the MODEL, which is a Flash. Do not "correct" this to "strong",
     // and do not derive any tier from an alias string.
-    "flash-pro": { apiModelId: "gemini-3.8-flash", costPrefix: "google-flash-3.8", provider: "google", capabilityTier: "cheap" },
-    "pro": { apiModelId: "gemini-3.1-pro-preview", costPrefix: "google-pro-3.1", provider: "google", capabilityTier: "strong" },
+    "gemini-flash": { apiModelId: "gemini-3.8-flash", costPrefix: "google-flash-3.8", provider: "google", capabilityTier: "cheap" },
+    "gemini-pro": { apiModelId: "gemini-3.1-pro-preview", costPrefix: "google-pro-3.1", provider: "google", capabilityTier: "strong" },
   },
   // ---------------------------------------------------------------------
   // Direct-vendor models — one OpenAI-compatible adapter, three vendors.
@@ -329,12 +320,6 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       provider: "deepseek",
       capabilityTier: "cheap",
     },
-    "deepseek-pro": {
-      apiModelId: "deepseek-flash",
-      costPrefix: "deepseek-v4.1-flash",
-      provider: "deepseek",
-      capabilityTier: "cheap",
-    },
   },
   zai: {
     // https://docs.z.ai/guides/overview/pricing — read 2026-08-15.
@@ -394,7 +379,7 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     // of three. A model is reachable here when its price, its published
     // concurrency AND its reasoning control have each been checked, and a
     // regression test fails the build if an alias lands on a one-slot model.
-    "glm-pro": {
+    glm: {
       apiModelId: "glm-5.3",
       costPrefix: "zai-glm-5.3",
       provider: "zai",
@@ -403,13 +388,13 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   },
   moonshot: {
     // https://platform.kimi.ai/docs/pricing/chat — read 2026-08-15.
-    "kimi-flash": {
+    "kimi-k2": {
       apiModelId: "kimi-k2.6",
       costPrefix: "moonshot-kimi-k2.6",
       provider: "moonshot",
       capabilityTier: "cheap",
     },
-    "kimi-pro": {
+    "kimi-k3": {
       apiModelId: "kimi-k3",
       costPrefix: "moonshot-kimi-k3",
       provider: "moonshot",
@@ -428,7 +413,7 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     // `kimi-pro`. There is deliberately no `gpt-flash`: an alias costs three
     // catalog rows and exists only when someone wants it, so the vendor's
     // catalog never becomes ours by default.
-    "gpt-pro": {
+    "gpt-astra": {
       apiModelId: "gpt-6-astra",
       costPrefix: "openai-gpt-6-astra",
       provider: "openai",
@@ -462,20 +447,29 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
   },
 };
 
-/** Valid model aliases per provider — used for Zod validation. */
+/**
+ * Every name `/complete` accepts per provider (dynasty slug, head model id,
+ * legacy aliases), derived from LLM_DYNASTIES. Used for Zod validation.
+ */
 export const PROVIDER_MODELS: Record<Provider, readonly ModelAlias[]> = {
-  anthropic: ["haiku", "sonnet", "opus", "fable"],
-  google: ["flash-lite", "flash", "flash-pro", "pro"],
-  deepseek: ["deepseek-flash", "deepseek-pro"],
-  zai: ["glm-flash", "glm-pro"],
-  moonshot: ["kimi-flash", "kimi-pro"],
-  openai: ["gpt-pro", "gpt-sol", "gpt-terra"],
+  anthropic: callableModelNames("anthropic"),
+  google: callableModelNames("google"),
+  deepseek: callableModelNames("deepseek"),
+  zai: callableModelNames("zai"),
+  moonshot: callableModelNames("moonshot"),
+  openai: callableModelNames("openai"),
 };
 
 /**
- * Resolve a (provider, model alias) pair to the versioned API model ID,
- * cost prefix, and provider string.
- * Throws if the combination is invalid.
+ * Resolve a (provider, model name) pair to the versioned API model ID, cost
+ * prefix, provider and dynasty. Throws if the combination is invalid.
+ *
+ * Order: a served dynasty slug (MODEL_MAP key) → its head; else the head's
+ * exact model id → that head (a version pin; only heads are callable, an older
+ * version has no live price or probed capabilities here); else a legacy alias →
+ * its dynasty's head. A dynasty slug therefore never resolves outside its
+ * dynasty; the one name shared by a slug and an alias, `deepseek-pro`, names a
+ * line nothing serves, so it answers as the legacy redirect to `deepseek-flash`.
  */
 export function resolveModel(provider: Provider, modelAlias: ModelAlias): ResolvedModel {
   const providerMap = MODEL_MAP[provider];
@@ -484,20 +478,39 @@ export function resolveModel(provider: Provider, modelAlias: ModelAlias): Resolv
       `Unknown provider: ${provider}. Accepted providers: ${Object.keys(MODEL_MAP).join(", ")}`,
     );
   }
-  const resolved = providerMap[modelAlias];
+  const resolved = resolveInProvider(provider, modelAlias);
   if (!resolved) {
-    // Name the accepted set. An alias that is real but sent under the wrong
+    // Name the accepted set. A name that is real but sent under the wrong
     // provider is the common mistake, so say where it does live.
     const elsewhere = (Object.keys(MODEL_MAP) as Provider[]).find(
-      (p) => p !== provider && MODEL_MAP[p][modelAlias],
+      (p) => p !== provider && resolveInProvider(p, modelAlias),
     );
     throw new Error(
       `Unknown model "${modelAlias}" for provider "${provider}". ` +
-        `Accepted models for "${provider}": ${Object.keys(providerMap).join(", ")}.` +
+        `Accepted models for "${provider}": ${PROVIDER_MODELS[provider].join(", ")}.` +
         (elsewhere ? ` "${modelAlias}" belongs to provider "${elsewhere}".` : ""),
     );
   }
   return resolved;
+}
+
+function resolveInProvider(provider: Provider, name: string): ResolvedModel | undefined {
+  const providerMap = MODEL_MAP[provider];
+  if (providerMap[name]) return providerMap[name];
+  const byId = Object.values(providerMap).find((r) => r.apiModelId === name);
+  if (byId) return byId;
+  const dynasty = LLM_DYNASTIES.find(
+    (d) => d.provider === provider && d.servedToday && d.legacyAliases.includes(name),
+  );
+  return dynasty ? providerMap[dynasty.slug] : undefined;
+}
+
+/** The dynasty slug of the model a (provider, name) pair runs. */
+export function dynastyFor(provider: Provider, modelAlias: ModelAlias): string {
+  const { apiModelId } = resolveModel(provider, modelAlias);
+  const dynasty = dynastyOfModel(apiModelId);
+  if (!dynasty) throw new Error(`Model "${apiModelId}" has no LLM dynasty recorded`);
+  return dynasty.slug;
 }
 
 /**
@@ -514,6 +527,8 @@ export interface ModelCatalogueEntry {
   provider: Provider;
   model: ModelAlias;
   capabilityTier: CapabilityTier;
+  /** LLM dynasty slug of the model this name runs (LLM-DYNASTY-1022). */
+  dynasty: string;
 }
 
 /**
@@ -531,6 +546,7 @@ export function modelCatalogue(): ModelCatalogueEntry[] {
       provider,
       model,
       capabilityTier: capabilityTierFor(provider, model),
+      dynasty: dynastyFor(provider, model),
     })),
   );
 }

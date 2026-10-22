@@ -43,3 +43,29 @@ describe("GET /internal/models", () => {
     expect(flashPro?.capabilityTier).toBe("cheap");
   });
 });
+
+describe("GET /internal/model-dynasties", () => {
+  it("requires the service API key", async () => {
+    const { default: app } = await import("../../src/index.js");
+    const res = await request(app).get("/internal/model-dynasties");
+    expect(res.status).toBe(401);
+  });
+
+  it("serves every LLM dynasty with its head, versions and legacy aliases", async () => {
+    const { default: app } = await import("../../src/index.js");
+    const res = await request(app).get("/internal/model-dynasties").set("x-api-key", "test-key");
+    expect(res.status).toBe(200);
+    const dynasties = res.body.dynasties as Array<Record<string, unknown>>;
+    expect(dynasties).toHaveLength(16);
+    const lite = dynasties.find((d) => d.slug === "gemini-flash-lite")!;
+    expect(lite).toMatchObject({ headModelId: "gemini-3.5-flash-lite", servedToday: true, legacyAliases: ["flash", "flash-lite"] });
+  });
+
+  it("stamps the dynasty on every model id, served and retired", async () => {
+    const { default: app } = await import("../../src/index.js");
+    const res = await request(app).get("/internal/model-ids").set("x-api-key", "test-key");
+    const rows = res.body.models as Array<{ modelId: string; dynasty: string }>;
+    for (const r of rows) expect(r.dynasty, r.modelId).toMatch(/^[a-z0-9-]+$/);
+    expect(rows.find((r) => r.modelId === "gemini-3.1-flash-lite")).toMatchObject({ dynasty: "gemini-flash-lite", servedToday: false });
+  });
+});

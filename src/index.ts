@@ -23,7 +23,7 @@ import {
 import { readTranscription, runTranscriptionJob, toTranscriptionBody } from "./lib/transcription-job.js";
 import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions, channelInboundMessages, copilotProactiveTurns } from "./db/schema.js";
 import { transferBrand } from "./lib/transfer-brand.js";
-import { modelIdCatalogue } from "./lib/model-ids.js";
+import { dynastyCatalogue, modelIdCatalogue } from "./lib/model-ids.js";
 import { eq, and, desc, sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import {
@@ -532,6 +532,14 @@ app.get("/internal/models", requireInternalAuth, (_req, res) => {
  */
 app.get("/internal/model-ids", requireInternalAuth, (_req, res) => {
   res.json({ models: modelIdCatalogue() });
+});
+
+/**
+ * LLM dynasties (one vendor line, its versions newest first). Consumers pool a
+ * model's stats per dynasty; `legacyAliases` attributes old workflows.
+ */
+app.get("/internal/model-dynasties", requireInternalAuth, (_req, res) => {
+  res.json({ dynasties: dynastyCatalogue() });
 });
 
 // --- App Config Registration ---

@@ -58,7 +58,7 @@ describe("alias resolution", () => {
     expect(resolveModel(provider, alias)).toMatchObject({ apiModelId, costPrefix, provider });
     expect(costPrefixForModel(apiModelId)).toBe(costPrefix);
     expect(capabilityTierFor(provider, alias)).toBe(tier);
-    expect(modelCatalogue()).toContainEqual({ provider, model: alias, capabilityTier: tier });
+    expect(modelCatalogue()).toContainEqual(expect.objectContaining({ provider, model: alias, capabilityTier: tier }));
   });
 
   it("keeps the retired 4.6 model ids priced so past spend still resolves", () => {
