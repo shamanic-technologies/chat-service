@@ -81,7 +81,8 @@ describe("alias resolution", () => {
       ["anthropic", "haiku", "claude-haiku-5-5", "anthropic-haiku-5.5"],
       ["anthropic", "sonnet", "claude-sonnet-5-5", "anthropic-sonnet-5.5"],
       ["anthropic", "opus", "claude-opus-5-5", "anthropic-opus-5.5"],
-      ["google", "flash-lite", "gemini-3.1-flash-lite", "google-flash-lite-3.1"],
+      // flash-lite moved 3.1 → 3.5 Flash-Lite with LLM dynasties (owner 2026-10-22).
+      ["google", "flash-lite", "gemini-3.5-flash-lite", "google-flash-lite-3.5"],
       ["google", "flash", "gemini-3.5-flash-lite", "google-flash-lite-3.5"],
       ["google", "flash-pro", "gemini-3.8-flash", "google-flash-3.8"],
       ["google", "pro", "gemini-3.1-pro-preview", "google-pro-3.1"],

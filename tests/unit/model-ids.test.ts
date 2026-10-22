@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { modelIdCatalogue, RETIRED_MODELS } from "../../src/lib/model-ids.js";
 import { PROVIDER_MODELS, resolveModel, type Provider } from "../../src/lib/anthropic.js";
+import { LLM_DYNASTIES } from "../../src/lib/llm-dynasties.js";
+
+const LEGACY = new Set(LLM_DYNASTIES.flatMap((d) => d.legacyAliases));
 
 // Every model id content-generation-service had stored on an email generation
 // in prod on 2026-10-18 (SELECT DISTINCT model FROM email_generations). Each
@@ -32,7 +35,8 @@ describe("modelIdCatalogue", () => {
         const r = resolveModel(provider, alias);
         const row = byId.get(r.apiModelId)!;
         expect(row.servedToday).toBe(true);
-        expect(row.aliases).toContain(alias);
+        // A legacy alias is listed on the model it runs; slugs and ids are callable, not listed.
+        if (LEGACY.has(alias)) expect(row.aliases, alias).toContain(alias);
         expect(row.capabilityTier).toBe(r.capabilityTier);
       }
     }
