@@ -718,11 +718,15 @@ One dynasty = one vendor line x tier, named as the vendor names it, no version (
 - 16 dynasties: `claude-haiku`, `claude-sonnet`, `claude-opus`, `claude-fable`, `gemini-flash-lite`, `gemini-flash`, `gemini-pro`, `deepseek-flash`, `deepseek-pro` (history only, `deepseek-pro` the NAME redirects to `deepseek-flash`), `glm-flash`, `glm`, `kimi-k2`, `kimi-k3`, `gpt-astra`, `gpt-sol`, `gpt-terra`.
 - Data: `src/lib/llm-dynasties.ts`. Every id on `/internal/model-ids` carries its `dynasty`; `tests/unit/llm-dynasties.test.ts` fails a model with none, or a slug resolving outside its dynasty.
 
+## Platform calls on behalf of a caller's run (COST-ACCOUNTING-1023)
+
+`POST /internal/platform-complete` and `POST /internal/platform-judgments` take an optional `x-run-id`: the CALLER's run the call is made for. The platform run chat-service opens becomes that run's child in runs-service, so its spend lands in the caller's run subtree and rolls into the caller's nearest run that declares an outcome (runs-service's rule). Who pays does not change: the run stays platform-billed, no org identity is sent. Both responses carry `runId`, the platform run that carried the call. No header = a root platform run, as before. A malformed id is `400` before any spend; a run runs-service refuses as parent is `400` naming it (`retryable: false`). chat-service produces no outcome here and declares none (`src/lib/platform-parent-run.ts`).
+
 ## Internal Platform Completion
 
 `POST /internal/platform-complete` — platform-level LLM completion for internal service-to-service calls.
 
-**Auth:** `X-API-Key` only — no `x-org-id`, `x-user-id`, or `x-run-id` headers required.
+**Auth:** `X-API-Key` only — no `x-org-id` or `x-user-id`. `x-run-id` is optional, see "On behalf of a caller's run" below.
 
 ```json
 {
@@ -1085,7 +1089,7 @@ Both judgment routes accept `image: { url }` (public https PNG/JPEG, source ≤ 
 
 The org-less half of the same capability, for a caller that has no org, no user and no run: a cron, an IMAP poller, a backfill. Same request body, same typed answers with their distributions intact, same vendor and same pinned release.
 
-**Auth:** `x-api-key` only. No `x-org-id`, no `x-user-id`, no `x-run-id` — a cron has none of them, and a fabricated run id is rejected by runs-service as a non-existent parent. That is why this is a second route rather than relaxed identity on the org-scoped one: weakening that route's requirements would put the org-billed path at risk to serve an org-less caller.
+**Auth:** `x-api-key` only. No `x-org-id`, no `x-user-id`. `x-run-id` is optional, see "On behalf of a caller's run" below; never fabricate one. That is why this is a second route rather than relaxed identity on the org-scoped one: weakening that route's requirements would put the org-billed path at risk to serve an org-less caller.
 
 **Key:** the **platform** TypeSafe key (`GET /keys/platform/typesafe/decrypt`). When it is absent, the request fails `502` with a body that NAMES the credential — `Failed to resolve the platform typesafe API key. Register a platform key for provider "typesafe" in key-service.` plus `provider` and `retryable: false` — never a generic internal error. No run is created and the vendor is never called, so a missing key costs nothing.
 

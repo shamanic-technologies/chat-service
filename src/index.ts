@@ -87,6 +87,7 @@ import {
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { hasStaffOnlyTool, lookupRequester, toolsForRequester, type Requester } from "./lib/staff-only-tools.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
+import { readPlatformParentRunId, platformRunCreateFailure } from "./lib/platform-parent-run.js";
 import { createRun, updateRunStatus, addRunCosts, updateRunCostStatus, createPlatformRun, addPlatformRunCosts, updatePlatformRunStatus, type CostItem, type RunIdentityHeaders } from "./lib/runs-client.js";
 import { traceEvent } from "./lib/trace-event.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
@@ -2293,6 +2294,9 @@ app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) =
   const model = parsed.data.model ?? TYPESAFE_DEFAULT_MODEL;
   const judge = parsed.data.judge ?? DEFAULT_JUDGE;
   const provider = JUDGE_PROVIDERS[judge];
+  const parentRead = readPlatformParentRunId(req);
+  if (!parentRead.ok) return res.status(parentRead.status).json(parentRead.body);
+  const { parentRunId } = parentRead;
 
   let image: PreparedJudgmentImage | undefined;
   if (parsed.data.image) {
@@ -2340,13 +2344,13 @@ app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) =
     const run = await createPlatformRun({
       serviceName: "chat-service",
       taskName: "platform-judgments",
+      parentRunId,
     });
     runId = run.id;
   } catch (runErr) {
     console.error(`[internal/platform-judgments] platform-run creation failed:`, runErr);
-    return res.status(502).json({
-      error: "Service temporarily unavailable (run tracking). Please try again.",
-    });
+    const r = platformRunCreateFailure(runErr, parentRunId);
+    return res.status(r.status).json(r.body);
   }
 
   let platformFailed = false;
@@ -2375,6 +2379,7 @@ app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) =
       model: result.model,
       answers: result.answers,
       usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+      runId,
     });
   } catch (err) {
     platformFailed = true;
@@ -2407,6 +2412,9 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
 
   const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, webSearch: webSearchRaw, disableThinking: disableThinkingRaw, thinkingLevel, effort } = parsed.data;
   const webSearch = webSearchRaw === true;
+  const parentRead = readPlatformParentRunId(req);
+  if (!parentRead.ok) return res.status(parentRead.status).json(parentRead.body);
+  const { parentRunId } = parentRead;
   const disableThinking = disableThinkingRaw === true;
 
   const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
@@ -2490,13 +2498,12 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   // loud — a cost that can't be tracked must block the op, not silently spend.
   let runId: string;
   try {
-    const run = await createPlatformRun({ serviceName: "chat-service", taskName: "platform-complete" });
+    const run = await createPlatformRun({ serviceName: "chat-service", taskName: "platform-complete", parentRunId });
     runId = run.id;
   } catch (runErr) {
     console.error(`[internal/platform-complete] platform-run creation failed:`, runErr);
-    return res.status(502).json({
-      error: "Service temporarily unavailable (run tracking). Please try again.",
-    });
+    const r = platformRunCreateFailure(runErr, parentRunId);
+    return res.status(r.status).json(r.body);
   }
 
   let platformFailed = false;
@@ -2580,6 +2587,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       tokensInput: result.tokensInput,
       tokensOutput: result.tokensOutput,
       model: result.model,
+      runId,
     };
 
     // Same JSON parsing contract as /complete.
