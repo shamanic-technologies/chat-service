@@ -1005,6 +1005,18 @@ export const InternalPlatformCompleteRequestSchema = z
 
 export type InternalPlatformCompleteRequest = z.infer<typeof InternalPlatformCompleteRequestSchema>;
 
+export const PLATFORM_PARENT_RUN_HEADER_DESCRIPTION =
+  "Optional. The CALLER's run this platform call is made on behalf of. The platform run opened here becomes its child, so the spend rolls into the caller's run subtree in runs-service (a child that declares no outcome rolls into its nearest declaring ancestor) and reaches the outcome the caller declares. Who pays does not change: the spend stays platform-billed. Omit it (a cron, a poller) and the platform run is a root, as before. A malformed id, or one runs-service refuses as a parent, is a 400.";
+
+export const PlatformRunIdSchema = z.string().openapi({
+  description:
+    "The platform run that carried this call in runs-service (the child of `x-run-id` when sent). Its cost is this call's whole spend.",
+});
+
+export const InternalPlatformCompleteResponseSchema = CompleteResponseSchema.extend({
+  runId: PlatformRunIdSchema,
+}).openapi("InternalPlatformCompleteResponse");
+
 registry.registerPath({
   method: "post",
   path: "/internal/platform-complete",
@@ -1012,11 +1024,13 @@ registry.registerPath({
   summary: "Platform-level LLM completion (no billing, no run tracking)",
   description: `Internal endpoint for platform-level LLM calls that do not belong to a specific org or user.
 
-**Auth:** Requires only \`x-api-key\` (no \`x-org-id\`, \`x-user-id\`, or \`x-run-id\`).
+**Auth:** Requires only \`x-api-key\` (no \`x-org-id\` or \`x-user-id\`).
+
+**On behalf of a caller's run:** send that run's id in \`x-run-id\` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. The response's \`runId\` names the run that carried the call.
 
 **Key resolution:** Uses the platform key directly via \`GET /keys/platform/{provider}/decrypt\` — no org-level key lookup.
 
-**No billing, no run tracking.** This endpoint is for internal service-to-service calls (e.g. workflow upgrades at startup) where there is no org to bill and no user-initiated run to track.
+**No org billing.** Spend is declared on a platform run (platform-billed). This endpoint is for internal service-to-service calls (e.g. workflow upgrades at startup) where there is no org to bill and no user-initiated run to track.
 
 Does not support \`imageUrl\` or \`imageContext\` — use \`POST /complete\` for vision tasks.`,
   request: {
@@ -1024,6 +1038,7 @@ Does not support \`imageUrl\` or \`imageContext\` — use \`POST /complete\` for
       "x-api-key": z.string().openapi({
         description: "Service-to-service API key",
       }),
+      "x-run-id": z.string().uuid().optional().openapi({ description: PLATFORM_PARENT_RUN_HEADER_DESCRIPTION }),
     }),
     body: {
       content: { "application/json": { schema: InternalPlatformCompleteRequestSchema } },
@@ -1033,7 +1048,7 @@ Does not support \`imageUrl\` or \`imageContext\` — use \`POST /complete\` for
     200: {
       description: "LLM completion result",
       content: {
-        "application/json": { schema: CompleteResponseSchema },
+        "application/json": { schema: InternalPlatformCompleteResponseSchema },
       },
     },
     400: {
@@ -1427,7 +1442,9 @@ registry.registerPath({
   summary: "Platform-level image generation (no org, no billing authorize)",
   description: `Internal endpoint for platform-level Gemini image generation that does not belong to a specific org or user. Platform twin of \`POST /orgs/images/generate\`.
 
-**Auth:** Requires only \`x-api-key\` (no \`x-org-id\`, \`x-user-id\`, or \`x-run-id\`).
+**Auth:** Requires only \`x-api-key\` (no \`x-org-id\` or \`x-user-id\`).
+
+**On behalf of a caller's run:** send that run's id in \`x-run-id\` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. The response's \`runId\` names the run that carried the call.
 
 **Key resolution:** Uses the platform Google key directly via \`GET /keys/platform/google/decrypt\` — no org-level key lookup.
 
@@ -1514,7 +1531,9 @@ registry.registerPath({
   summary: "Model alias \u2192 capability tier catalogue",
   description: `Every (provider, model) pair \`POST /complete\` can resolve, with the capability tier recorded for it.
 
-**Auth:** Requires only \`x-api-key\` (no \`x-org-id\`, \`x-user-id\`, or \`x-run-id\`).
+**Auth:** Requires only \`x-api-key\` (no \`x-org-id\` or \`x-user-id\`).
+
+**On behalf of a caller's run:** send that run's id in \`x-run-id\` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. The response's \`runId\` names the run that carried the call.
 
 For a caller that must decide WHICH model a piece of work should run on before it has a model in hand \u2014 features-service ranks the workflows a campaign can run, and the tier of the model writing the email decides the outcome.
 
@@ -2998,6 +3017,10 @@ export const JudgmentsResponseSchema = z
 export type JudgmentsRequest = z.infer<typeof JudgmentsRequestSchema>;
 export type JudgmentsResponse = z.infer<typeof JudgmentsResponseSchema>;
 
+export const PlatformJudgmentsResponseSchema = JudgmentsResponseSchema.extend({
+  runId: PlatformRunIdSchema,
+}).openapi("PlatformJudgmentsResponse");
+
 registry.registerPath({
   method: "post",
   path: "/orgs/judgments",
@@ -3069,9 +3092,11 @@ registry.registerPath({
   path: "/internal/platform-judgments",
   tags: ["Judgments"],
   summary: "Ask typed questions with the spend billed to the platform (no org)",
-  description: `The org-less twin of \`POST /orgs/judgments\`: same body, same typed answers with their probability distributions intact. Use it from a caller that has no org, no user and no run — a cron, a poller, a backfill.
+  description: `The org-less twin of \`POST /orgs/judgments\`: same body, same typed answers with their probability distributions intact. Use it from a caller that has no org to bill — a cron, a poller, a backfill, a platform classifier.
 
-**Identity:** service auth only (\`x-api-key\`). No \`x-org-id\`, no \`x-user-id\`, no \`x-run-id\` — a cron has none of them, and a fabricated run id is rejected by runs-service as a non-existent parent.
+**Identity:** service auth only (\`x-api-key\`). No \`x-org-id\`, no \`x-user-id\`.
+
+**On behalf of a caller's run:** send that run's id in \`x-run-id\` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. Never fabricate one: an unknown run is refused (400). The response's \`runId\` names the run that carried the call.
 
 **Billing:** the judge's PLATFORM key, declared on a platform run under the same input-token cost name as the org route. There is no org balance to gate on, so there is no affordability check and no provisioned hold — the only quantity ever declared is the exact input-token count the vendor reports. Output is free at this vendor, so nothing declares an output cost.
 
@@ -3079,6 +3104,7 @@ Everything else — the pinned release on the wire, the refusal to flatten an an
   request: {
     headers: z.object({
       "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+      "x-run-id": z.string().uuid().optional().openapi({ description: PLATFORM_PARENT_RUN_HEADER_DESCRIPTION }),
     }),
     body: {
       content: { "application/json": { schema: JudgmentsRequestSchema } },
@@ -3087,7 +3113,7 @@ Everything else — the pinned release on the wire, the refusal to flatten an an
   responses: {
     200: {
       description: "One typed answer per question, distributions intact",
-      content: { "application/json": { schema: JudgmentsResponseSchema } },
+      content: { "application/json": { schema: PlatformJudgmentsResponseSchema } },
     },
     400: {
       description:
