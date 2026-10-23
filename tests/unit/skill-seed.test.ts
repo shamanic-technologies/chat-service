@@ -513,6 +513,16 @@ describe("campaign next steps: the reply-timing line is always said (CAMPAIGN-NE
     expect(c).toContain("402 payment_required");
   });
 
+  // Gaps found by the MCP role-play on the staff org (2026-10-23): the offer's price never
+  // reached the estimates, and the preview promised a free trial the client never offered.
+  it("the setup skill records what a client is worth and checks the preview for invented claims", () => {
+    const c = SEED_SKILLS.find((s) => s.slug === "new-account")!.content;
+    expect(c).toContain("PUT /v1/brands/{id}/offers/{offerId}/economics");
+    expect(c).toContain("lifetimeRevenueUsd");
+    expect(c).toMatch(/claim your user never made/);
+    expect(c.indexOf("economics")).toBeLessThan(c.indexOf("POST /v1/content/preview-email {"));
+  });
+
   it("the setup skill never pays or starts without the user's yes", () => {
     const c = SEED_SKILLS.find((s) => s.slug === "new-account")!.content;
     expect(c).toMatch(/Prepay, after their yes/);
