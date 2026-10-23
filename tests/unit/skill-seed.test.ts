@@ -6,7 +6,7 @@ import { MERGED_SKILL_SLUGS } from "../../src/lib/skill-seed.js";
 import { COPILOT_TOOL_API_OPS, skillApiGaps } from "../../src/lib/skill-api-ops.js";
 
 const TOPICS = [
-  "offers", "client-profiles", "qualification", "sources", "legs", "triggers",
+  "new-account", "offers", "client-profiles", "qualification", "sources", "legs", "triggers",
   "campaigns", "workflows-and-templates", "connected-accounts", "budget-and-billing",
   "costs-roi-stats", "staff-requests", "catalogue", "infra",
 ];
@@ -56,7 +56,7 @@ describe("seeded skill tree", () => {
     // Names the skills mention as RETIRED or as data values (leg keys, trigger types) are not tools.
     const notTools = new Set([
       // MCP tool names (the skill is served to API agents too), not Copilot tools.
-      "distribute_list_triggers", "distribute_call_api", "distribute_find_api", "distribute_describe_api", "distribute_prepay",
+      "distribute_list_triggers", "distribute_call_api", "distribute_find_api", "distribute_describe_api", "distribute_prepay", "distribute_prepaid_status",
       "list_personas", "create_persona", "get_brand_profile", "lead_requested", "positive_reply_received",
       "website_visited", "meeting_booked", "meeting_attended", "signed_up", "form_submitted",
       "start_to_lead_found", "lead_found_to_positive_reply", "start_campaign", "activate_campaign",
@@ -64,7 +64,8 @@ describe("seeded skill tree", () => {
       "customer_time", "created_on_hold", "paid_client", "website_visit", "meeting_booked", "step_not_found", "linkedin_post", "one_off", "start_funnel_campaign",
       "email_pushed_via_api", "push_email", "campaign_off",
       // Data values and path segments (an API reader needs them verbatim).
-      "prepaid_checkout", "positive_reply", "skill_upgrade", "reactive_pipe_from_lead_found", "pipe_in_use",
+      "prepaid_checkout", "prepaid_status", "payment_required", "not_built_yet", "topup_amount_cents",
+      "auto_topup_amount_cents", "auto_topup_threshold_cents", "positive_reply", "skill_upgrade", "reactive_pipe_from_lead_found", "pipe_in_use",
     ]);
     const named = new Set(all.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []);
     const unknown = [...named].filter((n) => !notTools.has(n) && !TOOL_REGISTRY[n] && !n.startsWith("lead_found_to") && !n.startsWith("start_to"));
@@ -468,5 +469,64 @@ describe("campaign next steps: the reply-timing line is always said (CAMPAIGN-NE
     const tool = TOOL_REGISTRY.get_campaign_next_steps;
     expect(tool.description).toContain("never skip the reply-timing line");
     expect(tool.description).not.toMatch(/about \d+ days/);
+  });
+
+  // API-ONBOARD-SKILL-1023: an API agent on a new account (prod 2026-10-22, walletwallet.dev) read
+  // index, offers, client-profiles, campaigns and found no setup path; it created the brand and
+  // offer by trial and error, then its user finished on the dashboard and never paid.
+  it("the index sends a new account to the setup skill before the catalogue walk", () => {
+    const index = SEED_SKILLS[0].content;
+    expect(index).not.toMatch(/^You are the distribute\.you Copilot/);
+    expect(index.indexOf("`new-account`")).toBeGreaterThan(-1);
+    expect(index.indexOf("`new-account`")).toBeLessThan(index.indexOf("find_steps"));
+  });
+
+  it("the setup skill walks brand, offer, target, audiences, preview, payment, start in order", () => {
+    const c = SEED_SKILLS.find((s) => s.slug === "new-account")!.content;
+    const order = [
+      "POST /v1/agent-signups/start",
+      "POST /v1/brands with",
+      "POST /v1/brands/{id}/offers/proposals",
+      "POST /v1/brands/{id}/offers/confirm",
+      "POST /v1/content/preview-email/prepare",
+      "POST /v1/brands/{id}/icp/suggest",
+      "POST /v1/orgs/audiences/split ",
+      "POST /v1/orgs/audiences/split/confirm",
+      "GET /v1/orgs/audiences/{id}/preview",
+      "POST /v1/content/preview-email {",
+      "GET /v1/offers/{offerId}/sales-funnels",
+      "POST /v1/billing/accounts/prepaid_checkout",
+      "POST /v1/orgs/audiences/portfolio",
+      "`campaigns`",
+    ];
+    const at = order.map((w) => c.indexOf(w));
+    for (const [i, pos] of at.entries()) expect(pos, order[i]).toBeGreaterThan(-1);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+  });
+
+  it("the setup skill states the refusals the first agent hit, and keeps the ids it needs", () => {
+    const c = SEED_SKILLS.find((s) => s.slug === "new-account")!.content;
+    expect(c).toMatch(/\{url\}.*OR \{name\}.*never both/);
+    expect(c).toContain("chosenIndex");
+    expect(c).toContain("chosenOfferId");
+    expect(c).toContain("Never a placeholder in a path");
+    expect(c).toContain("402 payment_required");
+  });
+
+  it("the setup skill never pays or starts without the user's yes", () => {
+    const c = SEED_SKILLS.find((s) => s.slug === "new-account")!.content;
+    expect(c).toMatch(/Prepay, after their yes/);
+    expect(c).toMatch(/Start, after their yes/);
+    expect(c).toContain("Never pay or start on your own");
+    expect(c.indexOf("Before 7, stop")).toBeGreaterThan(c.indexOf("POST /v1/billing/accounts/prepaid_checkout"));
+    expect(c).not.toMatch(/agency/i);
+  });
+
+  it("campaigns and client-profiles point a new account to the setup skill", () => {
+    for (const slug of ["campaigns", "client-profiles"]) {
+      expect(SEED_SKILLS.find((s) => s.slug === slug)!.content, slug).toContain("`new-account`");
+    }
+    const cp = SEED_SKILLS.find((s) => s.slug === "client-profiles")!.content;
+    expect(cp).toContain("POST /v1/orgs/audiences/split/confirm");
   });
 });
