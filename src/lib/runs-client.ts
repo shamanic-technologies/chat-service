@@ -168,7 +168,7 @@ export async function updateRunCostStatus(
 // cost-status PATCH on platform runs, so callers declare costs as `actual`
 // after the call rather than provision→cancel.
 
-function buildPlatformHeaders(serviceName: string, parentRunId?: string): Record<string, string> {
+function buildPlatformHeaders(serviceName: string): Record<string, string> {
   if (!RUNS_SERVICE_API_KEY) {
     throw new Error("[runs-client] RUNS_SERVICE_API_KEY is required");
   }
@@ -176,7 +176,6 @@ function buildPlatformHeaders(serviceName: string, parentRunId?: string): Record
     "Content-Type": "application/json",
     "x-api-key": RUNS_SERVICE_API_KEY,
     "x-service-name": serviceName,
-    ...(parentRunId ? { "x-run-id": parentRunId } : {}),
   };
 }
 
@@ -185,11 +184,10 @@ async function platformRunsRequest<T>(
   path: string,
   serviceName: string,
   body?: unknown,
-  parentRunId?: string,
 ): Promise<T> {
   const res = await fetch(`${RUNS_SERVICE_URL}${path}`, {
     method,
-    headers: buildPlatformHeaders(serviceName, parentRunId),
+    headers: buildPlatformHeaders(serviceName),
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) {
@@ -219,8 +217,13 @@ export async function createPlatformRun(
     "POST",
     "/v1/platform-runs",
     params.serviceName,
-    { serviceName: params.serviceName, taskName: params.taskName },
-    params.parentRunId,
+    {
+      serviceName: params.serviceName,
+      taskName: params.taskName,
+      // runs-service reads the parent from the BODY on this route; it ignores
+      // x-run-id there on purpose (other services forward a stale one).
+      ...(params.parentRunId ? { parentRunId: params.parentRunId } : {}),
+    },
   );
 }
 
