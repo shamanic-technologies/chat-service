@@ -23,6 +23,17 @@ export interface CreateRunParams {
   taskName: string;
 }
 
+export interface CreatePlatformRunParams extends CreateRunParams {
+  /**
+   * The CALLER's run this platform call is made on behalf of. The platform run
+   * becomes its child, so the spend rolls into the caller's subtree (runs-service:
+   * a child that declares no outcome rolls into its nearest declaring ancestor).
+   * Who pays does not change: the run stays platform-billed. Omitted = a root
+   * platform run, exactly as before.
+   */
+  parentRunId?: string;
+}
+
 export interface CostItem {
   costName: string;
   quantity: number;
@@ -157,7 +168,7 @@ export async function updateRunCostStatus(
 // cost-status PATCH on platform runs, so callers declare costs as `actual`
 // after the call rather than provision→cancel.
 
-function buildPlatformHeaders(serviceName: string): Record<string, string> {
+function buildPlatformHeaders(serviceName: string, parentRunId?: string): Record<string, string> {
   if (!RUNS_SERVICE_API_KEY) {
     throw new Error("[runs-client] RUNS_SERVICE_API_KEY is required");
   }
@@ -165,6 +176,7 @@ function buildPlatformHeaders(serviceName: string): Record<string, string> {
     "Content-Type": "application/json",
     "x-api-key": RUNS_SERVICE_API_KEY,
     "x-service-name": serviceName,
+    ...(parentRunId ? { "x-run-id": parentRunId } : {}),
   };
 }
 
@@ -173,29 +185,42 @@ async function platformRunsRequest<T>(
   path: string,
   serviceName: string,
   body?: unknown,
+  parentRunId?: string,
 ): Promise<T> {
   const res = await fetch(`${RUNS_SERVICE_URL}${path}`, {
     method,
-    headers: buildPlatformHeaders(serviceName),
+    headers: buildPlatformHeaders(serviceName, parentRunId),
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `[runs-client] ${method} ${path} returned ${res.status}: ${text}`,
-    );
+    throw new RunsServiceError(method, path, res.status, text);
   }
   return (await res.json()) as T;
 }
 
+/** A platform-run call runs-service answered with a non-2xx status. */
+export class RunsServiceError extends Error {
+  constructor(
+    method: string,
+    path: string,
+    readonly status: number,
+    readonly body: string,
+  ) {
+    super(`[runs-client] ${method} ${path} returned ${status}: ${body}`);
+    this.name = "RunsServiceError";
+  }
+}
+
 export async function createPlatformRun(
-  params: CreateRunParams,
+  params: CreatePlatformRunParams,
 ): Promise<RunsRun> {
   return platformRunsRequest<RunsRun>(
     "POST",
     "/v1/platform-runs",
     params.serviceName,
     { serviceName: params.serviceName, taskName: params.taskName },
+    params.parentRunId,
   );
 }
 
