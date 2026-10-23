@@ -55,11 +55,15 @@ function platformKey(provider: string): MockRoute {
   };
 }
 
-function runCreate(cap: { headers: Array<Record<string, string>> }, refuse?: { status: number; body: unknown }): MockRoute {
+function runCreate(
+  cap: { headers: Array<Record<string, string>>; bodies?: Array<Record<string, unknown>> },
+  refuse?: { status: number; body: unknown },
+): MockRoute {
   return {
     match: (url, init) => url.endsWith("/v1/platform-runs") && init?.method === "POST",
     respond: (_url, init) => {
       cap.headers.push((init?.headers ?? {}) as Record<string, string>);
+      cap.bodies?.push(JSON.parse(init!.body as string) as Record<string, unknown>);
       if (refuse) return { ok: false, status: refuse.status, body: refuse.body };
       return { ok: true, status: 201, body: { id: PLATFORM_RUN, status: "running" } };
     },
@@ -129,15 +133,17 @@ describe("platform calls on behalf of a caller's run", () => {
   for (const r of ROUTES) {
     describe(r.path, () => {
       it("opens the platform run as the CHILD of the caller's run and returns the run that carried the call", async () => {
-        const cap = { headers: [] as Array<Record<string, string>> };
+        const cap = { headers: [] as Array<Record<string, string>>, bodies: [] as Array<Record<string, unknown>> };
         routes.push(platformKey(r.provider), runCreate(cap), runCosts, runStatus, r.vendor);
 
         const res = await request(app).post(r.path).set({ "x-api-key": "k", "x-run-id": CALLER_RUN }).send(r.body);
 
         expect(res.status).toBe(200);
         expect(res.body.runId).toBe(PLATFORM_RUN);
-        expect(cap.headers).toHaveLength(1);
-        expect(cap.headers[0]["x-run-id"]).toBe(CALLER_RUN);
+        expect(cap.bodies).toHaveLength(1);
+        // runs-service's contract: the parent travels in the BODY (x-run-id is
+        // ignored on /v1/platform-runs).
+        expect(cap.bodies[0]).toMatchObject({ serviceName: "chat-service", taskName: r.taskName, parentRunId: CALLER_RUN });
         // Still a PLATFORM run: no org identity travels, so no org is charged.
         expect(cap.headers[0]["x-org-id"]).toBeUndefined();
         expect(cap.headers[0]["x-user-id"]).toBeUndefined();
@@ -147,14 +153,14 @@ describe("platform calls on behalf of a caller's run", () => {
       });
 
       it("without x-run-id opens a root platform run, exactly as before", async () => {
-        const cap = { headers: [] as Array<Record<string, string>> };
+        const cap = { headers: [] as Array<Record<string, string>>, bodies: [] as Array<Record<string, unknown>> };
         routes.push(platformKey(r.provider), runCreate(cap), runCosts, runStatus, r.vendor);
 
         const res = await request(app).post(r.path).set({ "x-api-key": "k" }).send(r.body);
 
         expect(res.status).toBe(200);
         expect(res.body.runId).toBe(PLATFORM_RUN);
-        expect("x-run-id" in cap.headers[0]).toBe(false);
+        expect("parentRunId" in cap.bodies[0]).toBe(false);
       });
 
       it("refuses a malformed x-run-id with a 400 before any spend", async () => {
@@ -172,7 +178,7 @@ describe("platform calls on behalf of a caller's run", () => {
         const cap = { headers: [] as Array<Record<string, string>> };
         routes.push(
           platformKey(r.provider),
-          runCreate(cap, { status: 404, body: { error: "Parent run not found" } }),
+          runCreate(cap, { status: 422, body: { error: "parent_run_not_found", parentRunId: CALLER_RUN } }),
           runCosts,
           runStatus,
           r.vendor,
@@ -182,7 +188,7 @@ describe("platform calls on behalf of a caller's run", () => {
 
         expect(res.status).toBe(400);
         expect(res.body.error).toContain(CALLER_RUN);
-        expect(res.body.detail).toContain("Parent run not found");
+        expect(res.body.detail).toContain("parent_run_not_found");
         expect(res.body.retryable).toBe(false);
       });
 
