@@ -18,11 +18,11 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.80.0",
+    "@anthropic-ai/sdk": "^0.137.0",
     "@asteasolutions/zod-to-openapi": "^8.4.0",
     "cors": "^2.8.5",
     "drizzle-orm": "^0.45.4",
-    "express": "^4.21.0",
+    "express": "^4.22.3",
     "postgres": "^3.4.0",
     "sharp": "^0.35.5",
     "zod": "^4.3.6"
@@ -34,7 +34,7 @@
     "@types/supertest": "^7.2.0",
     "drizzle-kit": "^0.31.11",
     "supertest": "^7.2.2",
-    "tsx": "^4.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.5.0",
     "vitest": "^4.1.12"
   },
@@ -49,6 +49,9 @@
     "proxy-addr": "^2.0.8",
     "rollup": "^4.59.0",
     "shell-quote": "^1.9.0",
-    "source-map-js": "^1.2.2"
+    "source-map-js": "^1.2.2",
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.28.2"
+    }
   }
 }
