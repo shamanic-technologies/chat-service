@@ -125,6 +125,7 @@ describe("POST /internal/platform-judgments — image", () => {
       model: "jev-1.13.0",
       answers: { no_phone: { type: "noul", noul: 0.01 } },
       usage: { inputTokens: 3880, outputTokens: 20 },
+      runId: "prun-img-1",
     });
     expect(sent.headers!["TypeSafe-Danger-Zone-Images"]).toBe("true");
     const ref = sent.body!.state as string;
@@ -165,6 +166,7 @@ describe("POST /internal/platform-judgments — image", () => {
       model: "gpt-6-luna",
       answers: { no_phone: { type: "noul", noul: 0.48 } },
       usage: { inputTokens: 1656, outputTokens: 0 },
+      runId: "prun-img-1",
     });
     expect(sent.body!.model).toBe("gpt-6-luna");
     expect(sent.body!.questions).toEqual([{ type: "predicate", name: "no_phone", instructions: QUESTION }]);
@@ -209,6 +211,7 @@ describe("POST /internal/platform-judgments — image", () => {
       model: "clef-flash",
       answers: { no_phone: { type: "noul", noul: 0.08 } },
       usage: { inputTokens: 1179, outputTokens: 0 },
+      runId: "prun-img-1",
     });
     expect(sent.url).toBe("https://api.cloudflare.com/client/v4/accounts/acct-123/ai/run/@cf/cloudflare/clef-flash");
     expect(sent.body!.state).toBe("");
