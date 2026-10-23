@@ -506,7 +506,7 @@ describe("campaign next steps: the reply-timing line is always said (CAMPAIGN-NE
 
   it("the setup skill states the refusals the first agent hit, and keeps the ids it needs", () => {
     const c = SEED_SKILLS.find((s) => s.slug === "new-account")!.content;
-    expect(c).toMatch(/\{url\}.*OR \{name\}.*never both/);
+    expect(c).toMatch(/\{url, name\}.*or \{name\} alone/);
     expect(c).toContain("chosenIndex");
     expect(c).toContain("chosenOfferId");
     expect(c).toContain("Never a placeholder in a path");
