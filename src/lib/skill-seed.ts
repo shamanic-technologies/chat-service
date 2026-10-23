@@ -34,9 +34,12 @@ export const MERGED_SKILL_SLUGS: Readonly<Record<string, string>> = {
 
 const INDEX = `# How to handle any request
 
-You are the distribute.you Copilot. Our promise: revenue made easy. The user says what they want in their own words ("post on LinkedIn every day"). You organize it on the platform, one level at a time, then move it forward.
+The method of the distribute.you Copilot, and of any agent working an account through our API or MCP. Our promise: revenue made easy. The user says what they want in their own words ("post on LinkedIn every day"). You organize it on the platform, one level at a time, then move it forward.
 
 Reading this through the API or the MCP? Each Copilot tool is followed by the operation that does the same act (MCP: distribute_call_api), or "no API route yet". Where the Copilot waits for the user's yes, you wait for your user's.
+
+## New account first
+No brand yet (GET /v1/brands lists none), or you just signed up: load \`new-account\` and follow it (brand, offer, audiences, preview email, payment, first campaign). The walk below is for an account that already has them.
 
 ## The walk (always, in this order)
 At each level, show a SHORT list (name, one line, cost, return) and let the user pick, or pick the obvious one and say why. Load the \`catalogue\` skill first.
@@ -112,6 +115,30 @@ They want revenue made easy. A message wins when they finish it reassured, knowi
 `),
   },
   {
+    slug: "new-account",
+    parentSlug: "index",
+    title: "Set up a new account",
+    description: "A new client, or an agent that just signed up: brand, offer, who to reach, audiences, a preview email, payment, first campaign. Load first when the account has no brand yet.",
+    position: 5,
+    content: t(`
+# Set up a new account
+
+For an account with no brand yet (GET /v1/brands lists none). In order; each step says what to keep. Steps 1 to 6 send nothing and cost cents: pick the obvious answer, tell your user what you picked, change it if they ask. Steps 7 and 8 wait for their explicit yes. (MCP: each call through distribute_call_api.)
+
+0. **Account** (agents): POST /v1/agent-signups/start {email, phone}, read the 6-digit code in that inbox, POST /v1/agent-signups/complete {email, code} → apiKey (Authorization: Bearer). No free credit.
+1. **Brand**: POST /v1/brands with {url} for a company with a website, OR {name} without one, never both → brandId. No website: PUT /v1/brands/{id}/business-context {content: what it does}.
+2. **Offer**: POST /v1/brands/{id}/offers/proposals {description: what they sell} (up to a minute) → offers + mainOfferIndex. POST /v1/brands/{id}/offers/confirm {offers: those you keep, as returned; chosenIndex: the one to start with, 0 if one} → chosenOfferId = the offerId of every next call. Lost: GET /v1/brands/{id}/offers. Never a placeholder in a path. Then POST /v1/content/preview-email/prepare {brandId, offerId} (202, readies step 5).
+3. **Who to reach**: POST /v1/brands/{id}/icp/suggest {offerId} → icp, one sentence. It is the targetAudience below; your user's own words win.
+4. **Audiences**: POST /v1/orgs/audiences/split {brandId, targetAudience} (up to a minute, saves nothing) → segments. POST /v1/orgs/audiences/split/confirm {brandId, offerId, targetAudience, segments: those you keep, as returned} → audiences with their id. 409 = the name exists: GET /v1/orgs/audiences?brandId= and reuse it.
+5. **Show who and what**: GET /v1/orgs/audiences/{id}/preview → real companies and people, free, no email (unavailable + not_built_yet: ask again in a minute). POST /v1/content/preview-email {brandId, offerId, audience: targetAudience, recipient: {firstName, lastName, title, companyName}} from one sample person (lastName as served) → subject + bodyText: show it as written. Billed: 402 payment_required = step 7 first.
+6. **Campaign to propose**: GET /v1/offers/{offerId}/sales-funnels?brandId= → the first proactive row: name and figure as served ("Estimated: $X per paying client").
+7. **Prepay, after their yes on the amount**: GET /v1/billing/accounts/prepaid_status (active = already paid; MCP: distribute_prepaid_status). Else POST /v1/billing/accounts/prepaid_checkout {topup_amount_cents ≥ 1000, auto_topup_amount_cents ≥ 1500, auto_topup_threshold_cents ≥ 500} (MCP: distribute_prepay) → url. Only your user pays it: give the url, read prepaid_status until active.
+8. **Start, after their yes on the campaign and a cap**: POST /v1/orgs/audiences/portfolio {brandId, offerId, targetAudience} (turns the audiences on with buying-signal lists; call again until status ready, nothing re-spent), then the launch in \`campaigns\`.
+
+Before 7, stop and show your user what is ready: brand, offer, who you will reach (a few company names), the email, the campaign and its estimate. Never pay or start on your own.
+`),
+  },
+  {
     slug: "offers",
     parentSlug: "index",
     title: "Offers",
@@ -163,6 +190,8 @@ An audience is a described group of people to reach (job titles, company size, i
 - list_audiences → GET /v1/orgs/audiences?brandId=: the brand's audiences with status (works on the brand open in the dashboard).
 
 ## Write
+- From one sentence saying who to reach (POST /v1/brands/{id}/icp/suggest writes one): POST /v1/orgs/audiences/split {brandId, targetAudience} proposes segments (saves nothing), POST /v1/orgs/audiences/split/confirm {brandId, offerId, targetAudience, segments} creates the kept ones. No Copilot tool yet; the order for a new account: \`new-account\`.
+- GET /v1/orgs/audiences/{id}/preview: a free sample of the companies and people an audience reaches (no email).
 - suggest_audiences(nlPrompt) → POST /v1/orgs/audiences/suggest: proposes audiences from a description. May spend (LLM); say so.
 - set_audience_status (active / paused / archived) → PATCH /v1/orgs/audiences/{id}/status.
 - rename_audience → PATCH /v1/orgs/audiences/{id}. refresh_audience_count → POST /v1/orgs/audiences/{id}/refresh-count.
@@ -320,6 +349,7 @@ A campaign needs a max budget, a max volume, or both. Either alone is valid; onl
 - **Leads only** (a source, then Your Team): we find leads, no email goes out; say so.
 
 ## Launch (always this order)
+A new account first has its brand, offer, audiences, preview email and payment: \`new-account\`.
 1. Know the offer (list_offers → GET /v1/brands/{id}/offers) and the funnel (find_sales_funnels → GET /v1/offers/{offerId}/sales-funnels?brandId=).
 2. create_funnel_campaign → POST /v1/sales-funnel-campaigns {brandId, offerId, salesFunnelId, status: "stopped"}: created STOPPED, starts nothing.
 3. Ask the caps the user has not stated (max budget and/or max volume); set_funnel_caps with both keys (null = no such cap) → PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps.
@@ -470,7 +500,7 @@ Owner: billing-service. Amounts are in cents where the field says so.
 
 ## Rules
 - Every switch-on has at least one cap the user stated (budget and/or volume). Never propose one without it.
-- Adding money (top-up, card) happens on the billing page: open_page (no API route for a page). Never in the chat. An API agent prepays with POST /v1/billing/accounts/prepaid_checkout (MCP: distribute_prepay).
+- Adding money (top-up, card) happens on the billing page: open_page (no API route for a page). Never in the chat. An API agent prepays with POST /v1/billing/accounts/prepaid_checkout (MCP: distribute_prepay), only after its user's yes on the amount, gives the url to its user, then reads GET /v1/billing/accounts/prepaid_status until active.
 `),
   },
   {
