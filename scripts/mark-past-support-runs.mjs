@@ -21,13 +21,13 @@ if (!URL_BASE || !KEY) throw new Error("RUNS_SERVICE_URL and RUNS_SERVICE_API_KE
 const MARKED_BY = "chat-service COST-SUPPORT-1024 backfill";
 const START = "2026-02-02T00:00:00Z";
 
-// Monthly windows keep each apply under runs-service's per-apply cap.
-function monthWindows(fromIso, toIso) {
+// Weekly windows keep each apply under runs-service's per-apply cap
+// (October 2026 alone holds more platform judgments than one apply takes).
+function weekWindows(fromIso, toIso) {
   const out = [];
-  let d = new Date(fromIso);
   const end = new Date(toIso);
-  while (d < end) {
-    const next = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+  for (let d = new Date(fromIso); d < end; ) {
+    const next = new Date(d.getTime() + 7 * 24 * 3600 * 1000);
     out.push([d.toISOString(), (next < end ? next : end).toISOString()]);
     d = next;
   }
@@ -72,22 +72,31 @@ function add(kind, r) {
 }
 
 const now = new Date().toISOString();
-for (const sel of SELECTIONS) {
-  for (const [startedAfter, startedBefore] of monthWindows(START, now)) {
-    const body = {
-      kind: sel.kind,
-      reason: sel.reason,
-      markedBy: MARKED_BY,
-      taskNames: sel.taskNames,
-      startedAfter,
-      startedBefore,
-      ...(sel.topLevelOnly ? { topLevelOnly: true } : {}),
-    };
-    const preview = await post("preview", body);
-    if (preview.tooMany) throw new Error(`${sel.kind} ${startedAfter}: too many runs for one apply, narrow the window`);
-    add(sel.kind, preview);
-    if (MODE === "apply" && preview.toMarkCount > 0) add(sel.kind, { markedCount: (await post("apply", body)).markedCount });
+// A window holding more than one apply takes is halved until it fits.
+async function markWindow(sel, startedAfter, startedBefore) {
+  const body = {
+    kind: sel.kind,
+    reason: sel.reason,
+    markedBy: MARKED_BY,
+    taskNames: sel.taskNames,
+    startedAfter,
+    startedBefore,
+    ...(sel.topLevelOnly ? { topLevelOnly: true } : {}),
+  };
+  const preview = await post("preview", body);
+  if (preview.tooMany) {
+    const mid = new Date((new Date(startedAfter).getTime() + new Date(startedBefore).getTime()) / 2).toISOString();
+    if (mid === startedAfter) throw new Error(`${sel.kind} ${startedAfter}: window cannot be narrowed further`);
+    await markWindow(sel, startedAfter, mid);
+    await markWindow(sel, mid, startedBefore);
+    return;
   }
+  add(sel.kind, preview);
+  if (MODE === "apply" && preview.toMarkCount > 0) add(sel.kind, { markedCount: (await post("apply", body)).markedCount });
+}
+
+for (const sel of SELECTIONS) {
+  for (const [startedAfter, startedBefore] of weekWindows(START, now)) await markWindow(sel, startedAfter, startedBefore);
 }
 
 if (RUN_IDS_FILE) {
