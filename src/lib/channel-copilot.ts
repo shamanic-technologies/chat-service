@@ -19,6 +19,7 @@
  */
 import { and, desc, eq, gt, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { COPILOT_SUPPORT } from "./support-marks.js";
 import type { db as Db } from "../db/index.js";
 import { channelInboundMessages, sessions } from "../db/schema.js";
 import type { ChannelMessageRequest } from "../schemas.js";
@@ -446,7 +447,7 @@ export async function createChannelRootRun(identity: { orgId: string; userId: st
       "x-org-id": identity.orgId,
       "x-user-id": identity.userId,
     },
-    body: JSON.stringify({ serviceName: "chat-service", taskName: CHANNEL_TASK_NAME }),
+    body: JSON.stringify({ serviceName: "chat-service", taskName: CHANNEL_TASK_NAME, support: COPILOT_SUPPORT }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`runs-service create run ${res.status}: ${await res.text().catch(() => "")}`);

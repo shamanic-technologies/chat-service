@@ -160,6 +160,7 @@ import {
 } from "./lib/staff-requests.js";
 import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
 import { stripNul } from "./lib/strip-nul.js";
+import { chatTurnSupport, COPILOT_SUPPORT, platformCallSupport, type RunSupport } from "./lib/support-marks.js";
 import { COPILOT_CONFIG_KEY, pushCopilotTurnInBackground, type CopilotTurnMessage } from "./lib/copilot-unibox.js";
 import {
   ChatChannelContextSchema,
@@ -2020,6 +2021,8 @@ async function runOrgJudgment(args: {
   /** Omitted = the default judge (Jev). */
   judge?: Judge;
   image?: PreparedJudgmentImage;
+  /** The judgment serves a support function (the Copilot nudge); omitted = the caller's production. */
+  support?: RunSupport;
 }): Promise<OrgJudgmentOutcome> {
   const { orgId, userId, parentRunId, workflowTracking, taskName, callerPath, state, questions, model, image } = args;
   const judge = args.judge ?? DEFAULT_JUDGE;
@@ -2030,7 +2033,7 @@ async function runOrgJudgment(args: {
   let runId: string | null = null;
   try {
     const run = await createRun(
-      { serviceName: "chat-service", taskName },
+      { serviceName: "chat-service", taskName, support: args.support },
       { orgId, userId, runId: parentRunId },
       trackingHeaders,
     );
@@ -2345,6 +2348,7 @@ app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) =
       serviceName: "chat-service",
       taskName: "platform-judgments",
       parentRunId,
+      support: platformCallSupport(parentRunId),
     });
     runId = run.id;
   } catch (runErr) {
@@ -2498,7 +2502,12 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
   // loud — a cost that can't be tracked must block the op, not silently spend.
   let runId: string;
   try {
-    const run = await createPlatformRun({ serviceName: "chat-service", taskName: "platform-complete", parentRunId });
+    const run = await createPlatformRun({
+      serviceName: "chat-service",
+      taskName: "platform-complete",
+      parentRunId,
+      support: platformCallSupport(parentRunId),
+    });
     runId = run.id;
   } catch (runErr) {
     console.error(`[internal/platform-complete] platform-run creation failed:`, runErr);
@@ -2662,7 +2671,7 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
   // — a cost that can't be tracked must block the op, not silently spend.
   let runId: string;
   try {
-    const run = await createPlatformRun({ serviceName: "chat-service", taskName: "generate-image" });
+    const run = await createPlatformRun({ serviceName: "chat-service", taskName: "generate-image", support: platformCallSupport(undefined) });
     runId = run.id;
   } catch (runErr) {
     console.error(`[internal/platform-images/generate] platform-run creation failed:`, runErr);
@@ -2767,7 +2776,7 @@ app.post("/internal/platform-transcriptions", requireInternalAuth, async (req, r
 
   let runId: string;
   try {
-    runId = (await createPlatformRun({ serviceName: "chat-service", taskName: "transcribe-media" })).id;
+    runId = (await createPlatformRun({ serviceName: "chat-service", taskName: "transcribe-media", support: platformCallSupport(undefined) })).id;
   } catch (runErr) {
     console.error(`[internal/platform-transcriptions] platform-run creation failed:`, runErr);
     return res.status(502).json({ error: "Service temporarily unavailable (run tracking). Please try again." });
@@ -3139,6 +3148,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       parentRunId,
       workflowTracking,
       taskName: "copilot-nudge",
+      support: COPILOT_SUPPORT,
       callerPath: "/chat",
       state: buildNudgeState(context, turns, new Date()),
       questions: { [NUDGE_QUESTION_KEY]: NUDGE_QUESTION },
@@ -3306,7 +3316,11 @@ app.post("/chat", requireAuth, async (req, res) => {
     // Register run in RunsService (mandatory — fail request if unavailable)
     try {
       const run = await createRun(
-        { serviceName: "chat-service", taskName: "chat" },
+        {
+          serviceName: "chat-service",
+          taskName: "chat",
+          support: chatTurnSupport({ configKey, copilotConfigKey: COPILOT_CONFIG_KEY, proactiveTurnId: parsed.data.proactiveTurnId }),
+        },
         { orgId, userId, runId: parentRunId },
         trackingHeaders,
       );

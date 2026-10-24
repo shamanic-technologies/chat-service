@@ -1,5 +1,6 @@
 import { TYPESAFE_INPUT_TOKENS_COST_NAME } from "./cost-names.js";
 import { resolvePlatformKey } from "./key-client.js";
+import type { RunSupport } from "./support-marks.js";
 import { addPlatformRunCosts, createPlatformRun, updatePlatformRunStatus } from "./runs-client.js";
 import {
   judgeWithTypeSafe,
@@ -18,9 +19,10 @@ export async function judgeOnPlatform(
   taskName: string,
   state: unknown,
   questions: Record<string, TypeSafeQuestion>,
+  support: RunSupport,
 ): Promise<Record<string, TypeSafeAnswer>> {
   const { key } = await resolvePlatformKey(TYPESAFE_PROVIDER, { method: "POST", path: `/internal/${taskName}` });
-  const run = await createPlatformRun({ serviceName: "chat-service", taskName });
+  const run = await createPlatformRun({ serviceName: "chat-service", taskName, support });
   let failed = true;
   try {
     const result = await judgeWithTypeSafe({ apiKey: key, model: TYPESAFE_DEFAULT_MODEL, state, questions });

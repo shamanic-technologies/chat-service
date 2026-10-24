@@ -722,6 +722,15 @@ One dynasty = one vendor line x tier, named as the vendor names it, no version (
 
 `POST /internal/platform-complete` and `POST /internal/platform-judgments` take an optional `x-run-id`: the CALLER's run the call is made for. The platform run chat-service opens becomes that run's child in runs-service, so its spend lands in the caller's run subtree and rolls into the caller's nearest run that declares an outcome (runs-service's rule). Who pays does not change: the run stays platform-billed, no org identity is sent. Both responses carry `runId`, the platform run that carried the call. No header = a root platform run, as before. A malformed id is `400` before any spend; a run runs-service refuses as parent is `400` naming it (`retryable: false`). chat-service produces no outcome here and declares none (`src/lib/platform-parent-run.ts`).
 
+## Support runs, reported apart (COST-SUPPORT-1024)
+
+Spend that produces no outcome by design is marked SUPPORT on its run at creation (runs-service `support: {kind, reason}` on `POST /v1/runs` / `/v1/platform-runs`), so the production-cost ledger reports it apart per function and never lets it ride an outcome (`src/lib/support-marks.ts`):
+
+- `platform_llm`: `/internal/platform-complete` and `/internal/platform-judgments` called WITHOUT `x-run-id`, every `/internal/platform-images/generate` and `/internal/platform-transcriptions` run. A call made for a caller run is never marked: the caller may be producing an outcome.
+- `copilot`: `/chat` turns under the `copilot` config (a proactive turn is not marked: a campaign step asked for it), the Copilot nudge judgment, the WhatsApp Copilot root run (`copilot-whatsapp`), the follow-up "already told" judgment.
+
+Past runs since 2026-02-02 were marked once through runs-service's owner door by `scripts/mark-past-support-runs.mjs` (preview / apply, idempotent).
+
 ## Internal Platform Completion
 
 `POST /internal/platform-complete` — platform-level LLM completion for internal service-to-service calls.
