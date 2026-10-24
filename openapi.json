@@ -643,6 +643,21 @@
             "nullable": true,
             "description": "Model alias. Null means provider default (sonnet for anthropic, flash-pro for google)."
           },
+          "supportKind": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "payment_fees",
+              "brand_setup",
+              "copilot",
+              "platform_llm",
+              "staff_experiment",
+              "product_feature",
+              "retired_product",
+              null
+            ],
+            "description": "Support function every /chat turn under this config serves. Null means the turn rides its caller's run."
+          },
           "createdAt": {
             "type": "string"
           },
@@ -657,6 +672,7 @@
           "allowedTools",
           "provider",
           "model",
+          "supportKind",
           "createdAt",
           "updatedAt"
         ]
@@ -733,6 +749,20 @@
             ],
             "description": "Model alias (version-free). Omit to use the provider's default (sonnet for anthropic, flash-pro for google). Must match the provider:\n\n- anthropic → haiku, sonnet, opus\n- google → flash-lite, flash, flash-pro, pro",
             "example": "pro"
+          },
+          "supportKind": {
+            "type": "string",
+            "enum": [
+              "payment_fees",
+              "brand_setup",
+              "copilot",
+              "platform_llm",
+              "staff_experiment",
+              "product_feature",
+              "retired_product"
+            ],
+            "description": "Support function every /chat turn under this config serves (runs-service support functions): the turn's run is marked at creation, its spend reported apart and never on an outcome. Omit when the turn is the caller's work (it rides the caller's run). Omitting on a re-register preserves the stored value.",
+            "example": "product_feature"
           }
         },
         "required": [
@@ -797,6 +827,21 @@
             ],
             "description": "Per-config Anthropic thinking effort for /chat. Null means the model's own default."
           },
+          "supportKind": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "payment_fees",
+              "brand_setup",
+              "copilot",
+              "platform_llm",
+              "staff_experiment",
+              "product_feature",
+              "retired_product",
+              null
+            ],
+            "description": "Support function every /chat turn under this config serves. Null means the turn rides its caller's run."
+          },
           "createdAt": {
             "type": "string"
           },
@@ -812,6 +857,7 @@
           "model",
           "thinkingLevel",
           "effort",
+          "supportKind",
           "createdAt",
           "updatedAt"
         ]
@@ -894,6 +940,20 @@
             ],
             "description": "Per-config Anthropic thinking effort applied ONLY on the /chat path (`output_config.effort`). Omit to keep the model's own default (Sonnet 5.5: `high`). Only valid on an `anthropic` config: a Gemini config uses `thinkingLevel`. Never applied on /complete. Omitting on a re-register preserves the stored value.",
             "example": "max"
+          },
+          "supportKind": {
+            "type": "string",
+            "enum": [
+              "payment_fees",
+              "brand_setup",
+              "copilot",
+              "platform_llm",
+              "staff_experiment",
+              "product_feature",
+              "retired_product"
+            ],
+            "description": "Support function every /chat turn under this config serves (runs-service support functions): the turn's run is marked at creation, its spend reported apart and never on an outcome. Omit when the turn is the caller's work (it rides the caller's run). Omitting on a re-register preserves the stored value.",
+            "example": "product_feature"
           }
         },
         "required": [

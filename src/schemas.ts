@@ -5,6 +5,7 @@ import {
 } from "@asteasolutions/zod-to-openapi";
 import { TYPESAFE_DEFAULT_MODEL, TYPESAFE_MODELS } from "./lib/typesafe.js";
 import { DEFAULT_JUDGE, JUDGES } from "./lib/judges.js";
+import { SUPPORT_FUNCTIONS } from "./lib/support-marks.js";
 import { ALL_CALLABLE_MODEL_NAMES, DYNASTY_PROVIDERS, callableModelNames } from "./lib/llm-dynasties.js";
 import {
   JUDGMENT_IMAGE_MAX_SIDE,
@@ -178,6 +179,13 @@ export const AppConfigRequestSchema = z
         "- google → flash-lite, flash, flash-pro, pro",
       example: "pro",
     }),
+    supportKind: z.enum(SUPPORT_FUNCTIONS).optional().openapi({
+      description:
+        "Support function every /chat turn under this config serves (runs-service support functions): the turn's run is " +
+        "marked at creation, its spend reported apart and never on an outcome. Omit when the turn is the caller's work " +
+        "(it rides the caller's run). Omitting on a re-register preserves the stored value.",
+      example: "product_feature",
+    }),
   })
   .strict()
   .refine(
@@ -207,6 +215,9 @@ export const AppConfigResponseSchema = z
     }),
     model: z.string().nullable().openapi({
       description: "Model alias. Null means provider default (sonnet for anthropic, flash-pro for google).",
+    }),
+    supportKind: z.enum(SUPPORT_FUNCTIONS).nullable().openapi({
+      description: "Support function every /chat turn under this config serves. Null means the turn rides its caller's run.",
     }),
     createdAt: z.string(),
     updatedAt: z.string(),
@@ -364,6 +375,13 @@ export const PlatformConfigRequestSchema = z
         "preserves the stored value.",
       example: "max",
     }),
+    supportKind: z.enum(SUPPORT_FUNCTIONS).optional().openapi({
+      description:
+        "Support function every /chat turn under this config serves (runs-service support functions): the turn's run is " +
+        "marked at creation, its spend reported apart and never on an outcome. Omit when the turn is the caller's work " +
+        "(it rides the caller's run). Omitting on a re-register preserves the stored value.",
+      example: "product_feature",
+    }),
   })
   .strict()
   .refine(
@@ -402,6 +420,9 @@ export const PlatformConfigResponseSchema = z
     }),
     effort: z.enum(ANTHROPIC_EFFORTS).nullable().openapi({
       description: "Per-config Anthropic thinking effort for /chat. Null means the model's own default.",
+    }),
+    supportKind: z.enum(SUPPORT_FUNCTIONS).nullable().openapi({
+      description: "Support function every /chat turn under this config serves. Null means the turn rides its caller's run.",
     }),
     createdAt: z.string(),
     updatedAt: z.string(),
