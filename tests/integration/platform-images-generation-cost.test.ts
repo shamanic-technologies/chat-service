@@ -169,6 +169,30 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it("opens its platform run as the caller run's child, or marked with the caller's declared support", async () => {
+    const CALLER = "5f0c2a8e-1b3d-4c6e-9f70-a1b2c3d4e5f6";
+    const runCap = { headers: [] as Array<Record<string, unknown>>, bodies: [] as unknown[] };
+    routes.push(
+      mockPlatformKey(),
+      mockPlatformRunCreate(runCap),
+      mockPlatformRunCosts({ postedItems: [] }),
+      mockPlatformRunStatus({ patchedStatuses: [] }),
+      mockGeminiImage({ calls: 0, bodies: [] }),
+      mockCloudflarePlatformUpload({ calls: 0, bodies: [], headers: [] }),
+    );
+    const support = { kind: "product_feature", reason: "audience avatar" };
+
+    const a = await request(app).post("/internal/platform-images/generate").set({ ...AUTH, "x-run-id": CALLER }).send({ prompt: "Avatar" });
+    const b = await request(app).post("/internal/platform-images/generate").set(AUTH).send({ prompt: "Avatar", support });
+
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(runCap.bodies[0]).toMatchObject({ parentRunId: CALLER });
+    expect("support" in (runCap.bodies[0] as object)).toBe(false);
+    expect(runCap.bodies[1]).toMatchObject({ support });
+    expect("parentRunId" in (runCap.bodies[1] as object)).toBe(false);
+  });
+
   it("creates a platform run, declares actual image token costs, uploads the image, and returns a Cloudflare URL", async () => {
     const runCap = { headers: [] as Array<Record<string, unknown>>, bodies: [] as unknown[] };
     const costCap = { postedItems: [] as Array<Array<{ costName: string; quantity: number; status?: string; costSource?: string }>> };

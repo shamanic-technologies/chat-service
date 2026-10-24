@@ -154,7 +154,7 @@ describe("platform calls on behalf of a caller's run", () => {
         expect("support" in cap.bodies[0]).toBe(false);
       });
 
-      it("without x-run-id opens a root platform run, exactly as before", async () => {
+      it("without x-run-id or support opens an UNCLASSIFIED root platform run (never guessed)", async () => {
         const cap = { headers: [] as Array<Record<string, string>>, bodies: [] as Array<Record<string, unknown>> };
         routes.push(platformKey(r.provider), runCreate(cap), runCosts, runStatus, r.vendor);
 
@@ -163,8 +163,44 @@ describe("platform calls on behalf of a caller's run", () => {
         expect(res.status).toBe(200);
         expect(res.body.runId).toBe(PLATFORM_RUN);
         expect("parentRunId" in cap.bodies[0]).toBe(false);
-        // Made for no caller run: a support run, reported apart as platform LLM.
-        expect(cap.bodies[0]).toMatchObject({ support: { kind: "platform_llm" } });
+        // chat-service never guesses whose work this is: only the caller can say.
+        expect("support" in cap.bodies[0]).toBe(false);
+      });
+
+      it("a caller with no run declares its support function: the root run is marked with it", async () => {
+        const cap = { headers: [] as Array<Record<string, string>>, bodies: [] as Array<Record<string, unknown>> };
+        routes.push(platformKey(r.provider), runCreate(cap), runCosts, runStatus, r.vendor);
+        const support = { kind: "staff_experiment", reason: "nightly staff probe" };
+
+        const res = await request(app).post(r.path).set({ "x-api-key": "k" }).send({ ...r.body, support });
+
+        expect(res.status).toBe(200);
+        expect(cap.bodies[0]).toMatchObject({ support });
+        expect("parentRunId" in cap.bodies[0]).toBe(false);
+      });
+
+      it("refuses x-run-id AND support together (work for a run is never support), before any spend", async () => {
+        const cap = { headers: [] as Array<Record<string, string>> };
+        routes.push(platformKey(r.provider), runCreate(cap), runCosts, runStatus, r.vendor);
+
+        const res = await request(app)
+          .post(r.path)
+          .set({ "x-api-key": "k", "x-run-id": CALLER_RUN })
+          .send({ ...r.body, support: { kind: "platform_llm", reason: "x" } });
+
+        expect(res.status).toBe(400);
+        expect(res.body.retryable).toBe(false);
+        expect(cap.headers).toHaveLength(0);
+      });
+
+      it("refuses an unknown support function with a 400 before any spend", async () => {
+        const cap = { headers: [] as Array<Record<string, string>> };
+        routes.push(platformKey(r.provider), runCreate(cap), runCosts, runStatus, r.vendor);
+
+        const res = await request(app).post(r.path).set({ "x-api-key": "k" }).send({ ...r.body, support: { kind: "marketing", reason: "x" } });
+
+        expect(res.status).toBe(400);
+        expect(cap.headers).toHaveLength(0);
       });
 
       it("refuses a malformed x-run-id with a 400 before any spend", async () => {

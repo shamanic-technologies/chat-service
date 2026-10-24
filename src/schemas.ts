@@ -1028,6 +1028,8 @@ registry.registerPath({
 
 **On behalf of a caller's run:** send that run's id in \`x-run-id\` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. The response's \`runId\` names the run that carried the call.
 
+**Whose work (required soon):** send the caller's run in \`x-run-id\` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither is still served while callers conform, then refused (400).
+
 **Key resolution:** Uses the platform key directly via \`GET /keys/platform/{provider}/decrypt\` — no org-level key lookup.
 
 **No org billing.** Spend is declared on a platform run (platform-billed). This endpoint is for internal service-to-service calls (e.g. workflow upgrades at startup) where there is no org to bill and no user-initiated run to track.
@@ -1160,7 +1162,9 @@ registry.registerPath({
   path: "/internal/platform-transcriptions",
   tags: ["Internal"],
   summary: "Start transcribing a video/audio file behind a URL (platform, async)",
-  description: `Starts a verbatim speech transcription of the video or audio file at \`url\` and answers **202** with the job (\`status: "processing"\`). Poll \`GET /internal/platform-transcriptions/{id}\` (every 10-30 s) until \`status\` is \`completed\` or \`failed\`: a 5 min phone video takes ~1-2 min, a 1 GB / 15 min one a few minutes.
+  description: `Starts a verbatim speech transcription of the video or audio file at \`url\` and answers **202** with the job (\`status: "processing"\`).
+
+**Whose work (required soon):** send the caller's run in \`x-run-id\` (the platform run becomes its child: the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither is still served while callers conform, then refused (400). Poll \`GET /internal/platform-transcriptions/{id}\` (every 10-30 s) until \`status\` is \`completed\` or \`failed\`: a 5 min phone video takes ~1-2 min, a 1 GB / 15 min one a few minutes.
 
 **What comes back:** the words spoken, verbatim (no translation, summary or cleanup), in the language spoken; mixed languages keep each part in its own. One segment per sentence or short group of sentences, each with its start time.
 
@@ -1446,6 +1450,8 @@ registry.registerPath({
 
 **On behalf of a caller's run:** send that run's id in \`x-run-id\` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. The response's \`runId\` names the run that carried the call.
 
+**Whose work (required soon):** send the caller's run in \`x-run-id\` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither is still served while callers conform, then refused (400).
+
 **Key resolution:** Uses the platform Google key directly via \`GET /keys/platform/google/decrypt\` — no org-level key lookup.
 
 **Spend tracking:** Image-generation token spend is declared on a platform run (\`POST /v1/platform-runs\` → \`POST /v1/platform-runs/:id/costs\` with \`costSource: "platform"\`). No org affordability authorize and no provision/cancel — costs are posted as \`actual\` post-call. Fail loud (502) if spend cannot be declared.
@@ -1532,8 +1538,6 @@ registry.registerPath({
   description: `Every (provider, model) pair \`POST /complete\` can resolve, with the capability tier recorded for it.
 
 **Auth:** Requires only \`x-api-key\` (no \`x-org-id\` or \`x-user-id\`).
-
-**On behalf of a caller's run:** send that run's id in \`x-run-id\` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. The response's \`runId\` names the run that carried the call.
 
 For a caller that must decide WHICH model a piece of work should run on before it has a model in hand \u2014 features-service ranks the workflows a campaign can run, and the tier of the model writing the email decides the outcome.
 
@@ -3097,6 +3101,8 @@ registry.registerPath({
 **Identity:** service auth only (\`x-api-key\`). No \`x-org-id\`, no \`x-user-id\`.
 
 **On behalf of a caller's run:** send that run's id in \`x-run-id\` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. Never fabricate one: an unknown run is refused (400). The response's \`runId\` names the run that carried the call.
+
+**Whose work (required soon):** send the caller's run in \`x-run-id\` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither is still served while callers conform, then refused (400).
 
 **Billing:** the judge's PLATFORM key, declared on a platform run under the same input-token cost name as the org route. There is no org balance to gate on, so there is no affordability check and no provisioned hold — the only quantity ever declared is the exact input-token count the vendor reports. Output is free at this vendor, so nothing declares an output cost.
 
