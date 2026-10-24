@@ -556,7 +556,7 @@ app.put("/config", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { key, systemPrompt, allowedTools, provider, model } = parsed.data;
+  const { key, systemPrompt, allowedTools, provider, model, supportKind } = parsed.data;
 
   // Validate all tool names
   const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t) && !RETIRED_TOOL_NAMES.includes(t));
@@ -575,13 +575,14 @@ app.put("/config", requireAuth, async (req, res) => {
       allowedTools,
       provider: provider ?? null,
       model: model ?? null,
+      supportKind: supportKind ?? null,
     })
     .onConflictDoUpdate({
       target: [appConfigs.orgId, appConfigs.key],
       // Omitted provider/model are left out of the SET so a re-registering app
       // doesn't clobber an explicit stored override back to NULL.
       set: {
-        ...buildConfigConflictSet({ systemPrompt, allowedTools, provider, model }),
+        ...buildConfigConflictSet({ systemPrompt, allowedTools, provider, model, supportKind }),
         updatedAt: new Date(),
       },
     })
@@ -594,6 +595,7 @@ app.put("/config", requireAuth, async (req, res) => {
     allowedTools: config.allowedTools,
     provider: config.provider,
     model: config.model,
+    supportKind: config.supportKind,
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString(),
   });
@@ -624,7 +626,7 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { key, systemPrompt, allowedTools, provider, model, thinkingLevel, effort } = parsed.data;
+  const { key, systemPrompt, allowedTools, provider, model, thinkingLevel, effort, supportKind } = parsed.data;
 
   // Validate all tool names
   const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t) && !RETIRED_TOOL_NAMES.includes(t));
@@ -644,13 +646,14 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
       model: model ?? null,
       thinkingLevel: thinkingLevel ?? null,
       effort: effort ?? null,
+      supportKind: supportKind ?? null,
     })
     .onConflictDoUpdate({
       target: [platformConfigs.key],
       // Omitted provider/model/thinkingLevel are left out of the SET so a
       // re-registering app doesn't clobber an explicit stored override back to NULL.
       set: {
-        ...buildConfigConflictSet({ systemPrompt, allowedTools, provider, model, thinkingLevel, effort }),
+        ...buildConfigConflictSet({ systemPrompt, allowedTools, provider, model, thinkingLevel, effort, supportKind }),
         updatedAt: new Date(),
       },
     })
@@ -664,6 +667,7 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
     model: config.model,
     thinkingLevel: config.thinkingLevel,
     effort: config.effort,
+    supportKind: config.supportKind,
     createdAt: config.createdAt.toISOString(),
     updatedAt: config.updatedAt.toISOString(),
   });
@@ -3325,7 +3329,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         {
           serviceName: "chat-service",
           taskName: "chat",
-          support: chatTurnSupport({ configKey, copilotConfigKey: COPILOT_CONFIG_KEY, proactiveTurnId: parsed.data.proactiveTurnId }),
+          support: chatTurnSupport({ configKey, supportKind: appConfig.supportKind, proactiveTurnId: parsed.data.proactiveTurnId }),
         },
         { orgId, userId, runId: parentRunId },
         trackingHeaders,

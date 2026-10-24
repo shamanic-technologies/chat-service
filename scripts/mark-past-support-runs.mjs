@@ -7,6 +7,8 @@
 // Run inside the chat-service container (it holds RUNS_SERVICE_URL/_API_KEY):
 //   node scripts/mark-past-support-runs.mjs preview [runIdsFile.json]
 //   node scripts/mark-past-support-runs.mjs apply   [runIdsFile.json]
+// SINCE=<ISO> narrows the selections to runs started after it (a re-run after
+// the first pass only needs the days since; the full history is ~40 weekly windows).
 // runIdsFile = [{ kind, reason, runIds: [...] }]: runs no selection can name
 // (e.g. dashboard chats, picked by their parent run), resolved read-only.
 
@@ -19,7 +21,7 @@ const KEY = process.env.RUNS_SERVICE_API_KEY;
 if (!URL_BASE || !KEY) throw new Error("RUNS_SERVICE_URL and RUNS_SERVICE_API_KEY are required");
 
 const MARKED_BY = "chat-service COST-SUPPORT-1024 backfill";
-const START = "2026-02-02T00:00:00Z";
+const START = process.env.SINCE ?? "2026-02-02T00:00:00Z";
 
 // Weekly windows keep each apply under runs-service's per-apply cap
 // (October 2026 alone holds more platform judgments than one apply takes).
