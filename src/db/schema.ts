@@ -1,5 +1,6 @@
 import { pgTable, uuid, text, timestamp, jsonb, integer, unique, uniqueIndex, index, boolean, bigint, real } from "drizzle-orm/pg-core";
 import type { AnthropicEffort, ChoicesRecord, OpenPageRecord } from "../schemas.js";
+import type { SupportFunction } from "../lib/support-marks.js";
 
 export const sessions = pgTable(
   "sessions",
@@ -75,6 +76,9 @@ export const appConfigs = pgTable(
     // Per-config Anthropic thinking effort for the /chat path (migration 0021).
     // NULL = the model's own default (Sonnet 5.5: high). See anthropic.ts createStream.
     effort: text("effort").$type<AnthropicEffort>(),
+    // Support function every /chat turn under this config serves (migration 0026,
+    // LEDGER-HISTORY-1024). NULL = the turn rides its caller's run.
+    supportKind: text("support_kind").$type<SupportFunction>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -124,6 +128,9 @@ export const platformConfigs = pgTable("platform_configs", {
   // Per-config Anthropic thinking effort for the /chat path (migration 0021).
   // NULL = the model's own default (Sonnet 5.5: high). See anthropic.ts createStream.
   effort: text("effort").$type<AnthropicEffort>(),
+  // Support function every /chat turn under this config serves (migration 0026,
+  // LEDGER-HISTORY-1024). NULL = the turn rides its caller's run.
+  supportKind: text("support_kind").$type<SupportFunction>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

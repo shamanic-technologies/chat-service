@@ -10,18 +10,37 @@ const PLATFORM_LLM_SUPPORT = { kind: "platform_llm" as const, reason: "test" };
 const originalEnv = { ...process.env };
 
 describe("chatTurnSupport", () => {
-  it("marks a Copilot turn as copilot", () => {
-    expect(chatTurnSupport({ configKey: "copilot", copilotConfigKey: "copilot", proactiveTurnId: undefined })).toEqual(COPILOT_SUPPORT);
+  it("marks a turn under a config stating copilot as the Copilot", () => {
+    expect(chatTurnSupport({ configKey: "copilot", supportKind: "copilot", proactiveTurnId: undefined })).toEqual(COPILOT_SUPPORT);
     expect(COPILOT_SUPPORT.kind).toBe("copilot");
   });
 
-  it("leaves a proactive turn to the campaign step that asked for it", () => {
-    expect(chatTurnSupport({ configKey: "copilot", copilotConfigKey: "copilot", proactiveTurnId: "turn-1" })).toBeUndefined();
+  it("marks a product chat with the function its config states (LEDGER-HISTORY-1024)", () => {
+    const support = chatTurnSupport({ configKey: "qualification-editor", supportKind: "product_feature", proactiveTurnId: undefined });
+    expect(support?.kind).toBe("product_feature");
+    expect(support?.reason).toContain("qualification-editor");
   });
 
-  it("leaves every other config to its caller", () => {
-    expect(chatTurnSupport({ configKey: "workflow", copilotConfigKey: "copilot", proactiveTurnId: undefined })).toBeUndefined();
-    expect(chatTurnSupport({ configKey: null, copilotConfigKey: "copilot", proactiveTurnId: undefined })).toBeUndefined();
+  it("leaves a proactive turn to the campaign step that asked for it", () => {
+    expect(chatTurnSupport({ configKey: "copilot", supportKind: "copilot", proactiveTurnId: "turn-1" })).toBeUndefined();
+  });
+
+  it("leaves a config stating no function to its caller", () => {
+    expect(chatTurnSupport({ configKey: "default", supportKind: null, proactiveTurnId: undefined })).toBeUndefined();
+    expect(chatTurnSupport({ configKey: "copilot", supportKind: undefined, proactiveTurnId: undefined })).toBeUndefined();
+  });
+});
+
+describe("config supportKind registration", () => {
+  it("is preserved on a re-register that omits it, written when stated", async () => {
+    const { buildConfigConflictSet } = await import("../../src/lib/config-defaults.js");
+    expect(buildConfigConflictSet({ systemPrompt: "s", allowedTools: [] })).not.toHaveProperty("supportKind");
+    expect(buildConfigConflictSet({ systemPrompt: "s", allowedTools: [], supportKind: "product_feature" }).supportKind).toBe("product_feature");
+  });
+
+  it("every self-seeded config states its support function", async () => {
+    const { SELF_SEEDED_CONFIGS } = await import("../../src/lib/seed-platform-configs.js");
+    for (const c of SELF_SEEDED_CONFIGS) expect(c.supportKind, c.key).toBeTruthy();
   });
 });
 

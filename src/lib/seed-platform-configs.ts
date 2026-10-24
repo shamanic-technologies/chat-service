@@ -204,6 +204,8 @@ ${VOICE_AND_GROUND_TRUTH_RULES}`;
 // These self-owned editor chats run at `medium` Gemini-3 thinking (the global
 // /chat default is "low") — richer tool-calling reasoning for the curation
 // flows. Only the /chat path reads this; /complete is untouched (stays "low").
+// `supportKind`: every turn of these chats is support by design (editors =
+// product_feature, the WhatsApp assistant = copilot), marked on its run.
 const EDITOR_THINKING_LEVEL = "medium" as const;
 
 export const AUDIENCE_EDITOR_CONFIG = {
@@ -220,6 +222,7 @@ export const AUDIENCE_EDITOR_CONFIG = {
   ],
   provider: "google" as const,
   model: "flash-pro",
+  supportKind: "product_feature" as const,
   thinkingLevel: EDITOR_THINKING_LEVEL,
 };
 
@@ -237,6 +240,7 @@ export const QUALIFICATION_EDITOR_CONFIG = {
   ],
   provider: "google" as const,
   model: "flash-pro",
+  supportKind: "product_feature" as const,
   thinkingLevel: EDITOR_THINKING_LEVEL,
   // Gemini writes the confirmation in the same reply as the tool call, before the
   // tool ran, then again after it (prod, v0.63.10 to v0.63.13; prompt rules did
@@ -256,6 +260,7 @@ export const PERSONA_EDITOR_CONFIG = {
   ],
   provider: "google" as const,
   model: "flash-pro",
+  supportKind: "product_feature" as const,
   thinkingLevel: EDITOR_THINKING_LEVEL,
 };
 
@@ -270,6 +275,7 @@ export const BRAND_PROFILE_EDITOR_CONFIG = {
   ],
   provider: "google" as const,
   model: "flash-pro",
+  supportKind: "product_feature" as const,
   thinkingLevel: EDITOR_THINKING_LEVEL,
 };
 
@@ -317,6 +323,7 @@ export const WHATSAPP_CONFIG = {
   ],
   provider: "google" as const,
   model: "flash-pro",
+  supportKind: "copilot" as const,
   thinkingLevel: EDITOR_THINKING_LEVEL,
 };
 
@@ -346,6 +353,7 @@ export async function seedPlatformConfigs(database: typeof db): Promise<void> {
         provider: config.provider,
         model: config.model,
         thinkingLevel: config.thinkingLevel,
+        supportKind: config.supportKind,
       })
       .onConflictDoUpdate({
         target: [platformConfigs.key],
@@ -355,6 +363,7 @@ export async function seedPlatformConfigs(database: typeof db): Promise<void> {
           provider: config.provider,
           model: config.model,
           thinkingLevel: config.thinkingLevel,
+          supportKind: config.supportKind,
           updatedAt: new Date(),
         },
       });

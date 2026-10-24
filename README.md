@@ -728,9 +728,9 @@ Spend that produces no outcome by design is marked SUPPORT on its run at creatio
 
 **Every platform call states whose work it is** (`/internal/platform-complete`, `/internal/platform-judgments`, `/internal/platform-images/generate`, `/internal/platform-transcriptions`; `readPlatformCaller` in `src/lib/platform-parent-run.ts`): the caller's run in `x-run-id` (the platform run becomes its child, the spend rides that run's outcome), OR, when no run stands behind the call, `support: {kind, reason}` in the body (kind one of `payment_fees`, `brand_setup`, `copilot`, `platform_llm`, `staff_experiment`, `product_feature`, `retired_product`). Both = 400. chat-service never guesses: a call stating neither is refused with a 400 before any spend.
 
-chat-service's own support runs: `copilot` for `/chat` turns under the `copilot` config (not proactive turns: a campaign step asked for them), the Copilot nudge judgment, the WhatsApp Copilot root run (`copilot-whatsapp`), the follow-up "already told" judgment.
+chat-service's own support runs: a `/chat` turn is marked with the function its CONFIG states (`supportKind` on `PUT /config` / `PUT /platform-config`, column `support_kind`, preserved when a re-register omits it; migration 0026): `copilot` (Copilot, WhatsApp assistant), `product_feature` (dashboard builder and editor chats: workflow, feature, press-kit, campaign-prefill, the four editors). A config stating none (`default`) and every proactive turn (a campaign step asked for it) ride the caller's run. Also `copilot`: the Copilot nudge judgment, the WhatsApp Copilot root run (`copilot-whatsapp`), the follow-up "already told" judgment.
 
-Past runs since 2026-02-02 were marked once through runs-service's owner door by `scripts/mark-past-support-runs.mjs` (preview / apply, idempotent).
+Past runs since 2026-02-02 were marked once through runs-service's owner door by `scripts/mark-past-support-runs.mjs` (preview / apply, idempotent; `SINCE=<ISO>` narrows the selections, a run-ids file names runs no selection can). chat-service produces no outcome occurrence of its own: every other run is a child riding its caller's run (LEDGER-HISTORY-1024). Platform roots made between 2026-10-24 ~13:00 UTC and v0.63.112 stated no caller run on the record and were marked `platform_llm` like every earlier root (2,601 runs, $1.32).
 
 ## Internal Platform Completion
 

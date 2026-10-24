@@ -31,15 +31,21 @@ export const COPILOT_SUPPORT: RunSupport = {
 };
 
 /**
- * A `/chat` turn is support when it is the Copilot speaking with the customer.
- * A proactive turn is asked by a campaign step (its run may declare an outcome),
- * so it rides that step; any other config is left to its caller.
+ * A `/chat` turn is support when its config states the support function it
+ * serves (`support_kind`, LEDGER-HISTORY-1024: the Copilot, the dashboard's
+ * editor and builder chats). A proactive turn is asked by a campaign step (its
+ * run may declare an outcome), so it rides that step; a config stating no
+ * function leaves the turn to its caller's run.
  */
 export function chatTurnSupport(args: {
-  configKey: string | null | undefined;
-  copilotConfigKey: string;
+  configKey: string;
+  supportKind: SupportFunction | null | undefined;
   proactiveTurnId: string | undefined;
 }): RunSupport | undefined {
-  if (args.proactiveTurnId) return undefined;
-  return args.configKey === args.copilotConfigKey ? COPILOT_SUPPORT : undefined;
+  if (args.proactiveTurnId || !args.supportKind) return undefined;
+  if (args.supportKind === "copilot") return COPILOT_SUPPORT;
+  return {
+    kind: args.supportKind,
+    reason: `chat-service /chat turn under config "${args.configKey}": a product chat, produces no outcome`,
+  };
 }

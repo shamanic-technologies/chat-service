@@ -1,5 +1,6 @@
 import type { AnthropicEffort } from "../schemas.js";
 import type { Provider, ModelAlias } from "./anthropic.js";
+import type { SupportFunction } from "./support-marks.js";
 
 // ---------------------------------------------------------------------------
 // Chat config default resolution + registration merge semantics.
@@ -48,6 +49,8 @@ export interface ConfigConflictSetInput {
   thinkingLevel?: "minimal" | "low" | "medium" | "high";
   /** Omitted (undefined) means "leave the stored value unchanged". */
   effort?: AnthropicEffort;
+  /** Omitted (undefined) means "leave the stored value unchanged". */
+  supportKind?: SupportFunction;
 }
 
 export interface ConfigConflictSet {
@@ -57,6 +60,7 @@ export interface ConfigConflictSet {
   model?: string;
   thinkingLevel?: "minimal" | "low" | "medium" | "high";
   effort?: AnthropicEffort;
+  supportKind?: SupportFunction;
 }
 
 /**
@@ -76,5 +80,6 @@ export function buildConfigConflictSet(input: ConfigConflictSetInput): ConfigCon
   if (input.model !== undefined) set.model = input.model;
   if (input.thinkingLevel !== undefined) set.thinkingLevel = input.thinkingLevel;
   if (input.effort !== undefined) set.effort = input.effort;
+  if (input.supportKind !== undefined) set.supportKind = input.supportKind;
   return set;
 }
