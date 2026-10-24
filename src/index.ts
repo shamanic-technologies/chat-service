@@ -87,7 +87,7 @@ import {
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { hasStaffOnlyTool, lookupRequester, toolsForRequester, type Requester } from "./lib/staff-only-tools.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
-import { readPlatformParentRunId, platformRunCreateFailure } from "./lib/platform-parent-run.js";
+import { readPlatformCaller, platformRunCreateFailure } from "./lib/platform-parent-run.js";
 import { createRun, updateRunStatus, addRunCosts, updateRunCostStatus, createPlatformRun, addPlatformRunCosts, updatePlatformRunStatus, type CostItem, type RunIdentityHeaders } from "./lib/runs-client.js";
 import { traceEvent } from "./lib/trace-event.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
@@ -160,7 +160,7 @@ import {
 } from "./lib/staff-requests.js";
 import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
 import { stripNul } from "./lib/strip-nul.js";
-import { chatTurnSupport, COPILOT_SUPPORT, platformCallSupport, type RunSupport } from "./lib/support-marks.js";
+import { chatTurnSupport, COPILOT_SUPPORT, type RunSupport } from "./lib/support-marks.js";
 import { COPILOT_CONFIG_KEY, pushCopilotTurnInBackground, type CopilotTurnMessage } from "./lib/copilot-unibox.js";
 import {
   ChatChannelContextSchema,
@@ -2287,7 +2287,10 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
 // handler.
 
 app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) => {
-  const parsed = JudgmentsRequestSchema.safeParse(req.body);
+  const caller = readPlatformCaller(req, "/internal/platform-judgments");
+  if (!caller.ok) return res.status(caller.status).json(caller.body);
+  const { parentRunId, support } = caller;
+  const parsed = JudgmentsRequestSchema.safeParse(caller.body);
   if (!parsed.success) {
     return res
       .status(400)
@@ -2297,9 +2300,6 @@ app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) =
   const model = parsed.data.model ?? TYPESAFE_DEFAULT_MODEL;
   const judge = parsed.data.judge ?? DEFAULT_JUDGE;
   const provider = JUDGE_PROVIDERS[judge];
-  const parentRead = readPlatformParentRunId(req);
-  if (!parentRead.ok) return res.status(parentRead.status).json(parentRead.body);
-  const { parentRunId } = parentRead;
 
   let image: PreparedJudgmentImage | undefined;
   if (parsed.data.image) {
@@ -2348,7 +2348,7 @@ app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) =
       serviceName: "chat-service",
       taskName: "platform-judgments",
       parentRunId,
-      support: platformCallSupport(parentRunId),
+      support,
     });
     runId = run.id;
   } catch (runErr) {
@@ -2407,7 +2407,10 @@ app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) =
 // --- Internal Platform Complete (platform run tracking + cost, no org billing) ---
 
 app.post("/internal/platform-complete", requireInternalAuth, async (req, res) => {
-  const parsed = InternalPlatformCompleteRequestSchema.safeParse(req.body);
+  const caller = readPlatformCaller(req, "/internal/platform-complete");
+  if (!caller.ok) return res.status(caller.status).json(caller.body);
+  const { parentRunId, support } = caller;
+  const parsed = InternalPlatformCompleteRequestSchema.safeParse(caller.body);
   if (!parsed.success) {
     return res
       .status(400)
@@ -2416,9 +2419,6 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
 
   const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, webSearch: webSearchRaw, disableThinking: disableThinkingRaw, thinkingLevel, effort } = parsed.data;
   const webSearch = webSearchRaw === true;
-  const parentRead = readPlatformParentRunId(req);
-  if (!parentRead.ok) return res.status(parentRead.status).json(parentRead.body);
-  const { parentRunId } = parentRead;
   const disableThinking = disableThinkingRaw === true;
 
   const resolved = resolveModel(requestedProvider as Provider, requestedModel as ModelAlias);
@@ -2506,7 +2506,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
       serviceName: "chat-service",
       taskName: "platform-complete",
       parentRunId,
-      support: platformCallSupport(parentRunId),
+      support,
     });
     runId = run.id;
   } catch (runErr) {
@@ -2640,7 +2640,10 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
 // --- Internal Platform Image Generation ---
 
 app.post("/internal/platform-images/generate", requireInternalAuth, async (req, res) => {
-  const parsed = GenerateImageRequestSchema.safeParse(req.body);
+  const caller = readPlatformCaller(req, "/internal/platform-images/generate");
+  if (!caller.ok) return res.status(caller.status).json(caller.body);
+  const { parentRunId, support } = caller;
+  const parsed = GenerateImageRequestSchema.safeParse(caller.body);
   if (!parsed.success) {
     return res
       .status(400)
@@ -2671,13 +2674,12 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
   // — a cost that can't be tracked must block the op, not silently spend.
   let runId: string;
   try {
-    const run = await createPlatformRun({ serviceName: "chat-service", taskName: "generate-image", support: platformCallSupport(undefined) });
+    const run = await createPlatformRun({ serviceName: "chat-service", taskName: "generate-image", parentRunId, support });
     runId = run.id;
   } catch (runErr) {
     console.error(`[internal/platform-images/generate] platform-run creation failed:`, runErr);
-    return res.status(502).json({
-      error: "Service temporarily unavailable (run tracking). Please try again.",
-    });
+    const r = platformRunCreateFailure(runErr, parentRunId);
+    return res.status(r.status).json(r.body);
   }
 
   const estimatedInputTokens = estimateInputTokens(prompt);
@@ -2757,7 +2759,10 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
 // `processing` row on a platform run and answers 202; the job runs in the
 // background (src/lib/transcription-job.ts). GET reads it back.
 app.post("/internal/platform-transcriptions", requireInternalAuth, async (req, res) => {
-  const parsed = StartTranscriptionRequestSchema.safeParse(req.body);
+  const caller = readPlatformCaller(req, "/internal/platform-transcriptions");
+  if (!caller.ok) return res.status(caller.status).json(caller.body);
+  const { parentRunId, support } = caller;
+  const parsed = StartTranscriptionRequestSchema.safeParse(caller.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
   }
@@ -2776,10 +2781,11 @@ app.post("/internal/platform-transcriptions", requireInternalAuth, async (req, r
 
   let runId: string;
   try {
-    runId = (await createPlatformRun({ serviceName: "chat-service", taskName: "transcribe-media", support: platformCallSupport(undefined) })).id;
+    runId = (await createPlatformRun({ serviceName: "chat-service", taskName: "transcribe-media", parentRunId, support })).id;
   } catch (runErr) {
     console.error(`[internal/platform-transcriptions] platform-run creation failed:`, runErr);
-    return res.status(502).json({ error: "Service temporarily unavailable (run tracking). Please try again." });
+    const r = platformRunCreateFailure(runErr, parentRunId);
+    return res.status(r.status).json(r.body);
   }
 
   const [row] = await db

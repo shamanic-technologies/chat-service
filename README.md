@@ -724,10 +724,11 @@ One dynasty = one vendor line x tier, named as the vendor names it, no version (
 
 ## Support runs, reported apart (COST-SUPPORT-1024)
 
-Spend that produces no outcome by design is marked SUPPORT on its run at creation (runs-service `support: {kind, reason}` on `POST /v1/runs` / `/v1/platform-runs`), so the production-cost ledger reports it apart per function and never lets it ride an outcome (`src/lib/support-marks.ts`):
+Spend that produces no outcome by design is marked SUPPORT on its run at creation (runs-service `support: {kind, reason}` on `POST /v1/runs` / `/v1/platform-runs`), so the production-cost ledger reports it apart per function and never lets it ride an outcome (`src/lib/support-marks.ts`).
 
-- `platform_llm`: `/internal/platform-complete` and `/internal/platform-judgments` called WITHOUT `x-run-id`, every `/internal/platform-images/generate` and `/internal/platform-transcriptions` run. A call made for a caller run is never marked: the caller may be producing an outcome.
-- `copilot`: `/chat` turns under the `copilot` config (a proactive turn is not marked: a campaign step asked for it), the Copilot nudge judgment, the WhatsApp Copilot root run (`copilot-whatsapp`), the follow-up "already told" judgment.
+**Every platform call states whose work it is** (`/internal/platform-complete`, `/internal/platform-judgments`, `/internal/platform-images/generate`, `/internal/platform-transcriptions`; `readPlatformCaller` in `src/lib/platform-parent-run.ts`): the caller's run in `x-run-id` (the platform run becomes its child, the spend rides that run's outcome), OR, when no run stands behind the call, `support: {kind, reason}` in the body (kind one of `payment_fees`, `brand_setup`, `copilot`, `platform_llm`, `staff_experiment`, `product_feature`, `retired_product`). Both = 400. chat-service never guesses: a call stating neither is served while callers conform (logged, its run left unclassified, so it shows in runs-service coverage), then refused with a 400.
+
+chat-service's own support runs: `copilot` for `/chat` turns under the `copilot` config (not proactive turns: a campaign step asked for them), the Copilot nudge judgment, the WhatsApp Copilot root run (`copilot-whatsapp`), the follow-up "already told" judgment.
 
 Past runs since 2026-02-02 were marked once through runs-service's owner door by `scripts/mark-past-support-runs.mjs` (preview / apply, idempotent).
 

@@ -4,38 +4,31 @@
 // lets it ride an outcome. Names copied byte-equal from runs-service
 // `SUPPORT_FUNCTIONS` (src/schemas.ts).
 //
-// The rule that decides: a run made ON BEHALF of a caller run (a parent) is
-// never marked here. That caller may be producing an outcome (writing an email,
-// judging a reply) and the spend belongs to it; only the caller knows.
+// A platform call is marked only when its CALLER declares the function
+// (`readPlatformCaller`): chat-service never guesses, a run made for a caller
+// run is that caller's work (it may be writing an email, judging a reply).
 
-export type SupportFunction =
-  | "payment_fees"
-  | "brand_setup"
-  | "copilot"
-  | "platform_llm"
-  | "staff_experiment"
-  | "product_feature"
-  | "retired_product";
+export const SUPPORT_FUNCTIONS = [
+  "payment_fees",
+  "brand_setup",
+  "copilot",
+  "platform_llm",
+  "staff_experiment",
+  "product_feature",
+  "retired_product",
+] as const;
+
+export type SupportFunction = (typeof SUPPORT_FUNCTIONS)[number];
 
 export interface RunSupport {
   kind: SupportFunction;
   reason: string;
 }
 
-export const PLATFORM_LLM_SUPPORT: RunSupport = {
-  kind: "platform_llm",
-  reason: "chat-service platform LLM / judgment / image / transcription call made for no caller run",
-};
-
 export const COPILOT_SUPPORT: RunSupport = {
   kind: "copilot",
   reason: "chat-service Copilot turn (web or WhatsApp): talks with the customer, produces no outcome",
 };
-
-/** A platform call is support only when no caller run stands behind it. */
-export function platformCallSupport(parentRunId: string | undefined): RunSupport | undefined {
-  return parentRunId ? undefined : PLATFORM_LLM_SUPPORT;
-}
 
 /**
  * A `/chat` turn is support when it is the Copilot speaking with the customer.

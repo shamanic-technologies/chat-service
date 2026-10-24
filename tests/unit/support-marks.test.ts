@@ -2,23 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   chatTurnSupport,
   COPILOT_SUPPORT,
-  PLATFORM_LLM_SUPPORT,
-  platformCallSupport,
 } from "../../src/lib/support-marks.js";
 import { createChannelRootRun } from "../../src/lib/channel-copilot.js";
 
+const PLATFORM_LLM_SUPPORT = { kind: "platform_llm" as const, reason: "test" };
+
 const originalEnv = { ...process.env };
-
-describe("platformCallSupport", () => {
-  it("marks a platform call made for no caller run as platform_llm", () => {
-    expect(platformCallSupport(undefined)).toEqual(PLATFORM_LLM_SUPPORT);
-    expect(PLATFORM_LLM_SUPPORT.kind).toBe("platform_llm");
-  });
-
-  it("never marks a call made on behalf of a caller run (the caller may be producing an outcome)", () => {
-    expect(platformCallSupport("11111111-1111-4111-8111-111111111111")).toBeUndefined();
-  });
-});
 
 describe("chatTurnSupport", () => {
   it("marks a Copilot turn as copilot", () => {
@@ -66,7 +55,7 @@ describe("runs-client support body", () => {
   it("createPlatformRun sends no support field for a child of a caller run", async () => {
     const { createPlatformRun } = await load();
     const parentRunId = "11111111-1111-4111-8111-111111111111";
-    await createPlatformRun({ serviceName: "chat-service", taskName: "platform-complete", parentRunId, support: platformCallSupport(parentRunId) });
+    await createPlatformRun({ serviceName: "chat-service", taskName: "platform-complete", parentRunId, support: undefined });
     expect(sentBody()).toEqual({ serviceName: "chat-service", taskName: "platform-complete", parentRunId });
   });
 
