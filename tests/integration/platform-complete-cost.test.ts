@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 
+// Every platform call states whose work it is (COST-SUPPORT-1024): these tests are support calls.
+const TEST_PLATFORM_SUPPORT = { kind: "staff_experiment", reason: "chat-service test" };
+
 // /internal/platform-complete now declares its LLM (and web-search) spend on a
 // platform run: create platform-run → execute → POST actual costs → PATCH status.
 // Platform key spend, no org → costSource "platform", no affordability authorize,
@@ -153,7 +156,7 @@ describe("POST /internal/platform-complete — platform run tracking + cost", ()
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(AUTH)
-      .send({ message: "hi", systemPrompt: "be brief", provider: "google", model: "flash" });
+      .send({ ...({ message: "hi", systemPrompt: "be brief", provider: "google", model: "flash" }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(200);
     expect(gemini.calls).toBe(1);
@@ -190,7 +193,7 @@ describe("POST /internal/platform-complete — platform run tracking + cost", ()
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(AUTH)
-      .send({ message: "who won?", systemPrompt: "be brief", provider: "google", model: "flash", webSearch: true });
+      .send({ ...({ message: "who won?", systemPrompt: "be brief", provider: "google", model: "flash", webSearch: true }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(200);
     const actual = costCap.postedItems[0];
@@ -213,7 +216,7 @@ describe("POST /internal/platform-complete — platform run tracking + cost", ()
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(AUTH)
-      .send({ message: "hi", systemPrompt: "be brief", provider: "google", model: "flash" });
+      .send({ ...({ message: "hi", systemPrompt: "be brief", provider: "google", model: "flash" }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(502);
     expect(gemini.calls).toBe(0);

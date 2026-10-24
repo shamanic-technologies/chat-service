@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import type { Request } from "express";
 import { readPlatformCaller } from "../../src/lib/platform-parent-run.js";
 
@@ -7,8 +7,6 @@ import { readPlatformCaller } from "../../src/lib/platform-parent-run.js";
 
 const RUN = "5f0c2a8e-1b3d-4c6e-9f70-a1b2c3d4e5f6";
 const req = (headers: Record<string, string>, body: unknown) => ({ headers, body }) as unknown as Request;
-
-afterEach(() => vi.restoreAllMocks());
 
 describe("readPlatformCaller", () => {
   it("a caller run: parent set, no support, body untouched", () => {
@@ -22,11 +20,14 @@ describe("readPlatformCaller", () => {
     expect(r).toEqual({ ok: true, parentRunId: undefined, support, body: { message: "hi" } });
   });
 
-  it("neither: served (for now) but logged loudly, and nothing is guessed", () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("neither: refused before any spend, chat-service never guesses whose work it is", () => {
     const r = readPlatformCaller(req({}, { message: "hi" }), "/internal/platform-complete");
-    expect(r).toEqual({ ok: true, parentRunId: undefined, support: undefined, body: { message: "hi" } });
-    expect(warn.mock.calls[0][0]).toContain("/internal/platform-complete");
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.status).toBe(400);
+      expect(r.body.error).toContain("/internal/platform-complete");
+      expect(r.body.retryable).toBe(false);
+    }
   });
 
   it("both: refused, work for a run is never support", () => {
