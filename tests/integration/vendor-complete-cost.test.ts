@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 
+// Every platform call states whose work it is (COST-SUPPORT-1024): these tests are support calls.
+const TEST_PLATFORM_SUPPORT = { kind: "staff_experiment", reason: "chat-service test" };
+
 // Direct-vendor completions (deepseek / zai / moonshot) end-to-end on both
 // completion routes: the right vendor is reached at the right URL with the
 // right model id, and the spend is declared under catalog names that match the
@@ -933,7 +936,7 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(INTERNAL_AUTH)
-      .send({ message: "hi", systemPrompt: "", provider: "deepseek", model: "deepseek-pro" });
+      .send({ ...({ message: "hi", systemPrompt: "", provider: "deepseek", model: "deepseek-pro" }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(400);
     expect(res.body.retryable).toBe(false);
@@ -958,7 +961,7 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(INTERNAL_AUTH)
-      .send({ message: "hi", systemPrompt: "be brief", provider: "deepseek", model: "deepseek-flash" });
+      .send({ ...({ message: "hi", systemPrompt: "be brief", provider: "deepseek", model: "deepseek-flash" }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(200);
     expect(vendor.calls).toBe(1);
@@ -993,7 +996,7 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(INTERNAL_AUTH)
-      .send({ message: "hi", systemPrompt: "be brief", provider: "zai", model: "glm-pro" });
+      .send({ ...({ message: "hi", systemPrompt: "be brief", provider: "zai", model: "glm-pro" }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(200);
     const actual = costCap.postedItems[0];
@@ -1020,7 +1023,7 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(INTERNAL_AUTH)
-      .send({ message: "hi", systemPrompt: "be brief", provider: "moonshot", model: "kimi-flash" });
+      .send({ ...({ message: "hi", systemPrompt: "be brief", provider: "moonshot", model: "kimi-flash" }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(200);
     expect(vendor.bodies[0].model).toBe("kimi-k2.6");
@@ -1039,7 +1042,7 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(INTERNAL_AUTH)
-      .send({ message: "hi", systemPrompt: "", provider: "deepseek", model: "deepseek-pro" });
+      .send({ ...({ message: "hi", systemPrompt: "", provider: "deepseek", model: "deepseek-pro" }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(502);
     expect(res.body.error).toMatch(/DeepSeek API key \(key-service provider "deepseek"\)/);
@@ -1049,7 +1052,7 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(INTERNAL_AUTH)
-      .send({ message: "hi", systemPrompt: "", provider: "deepseek", model: "deepseek-pro", webSearch: true });
+      .send({ ...({ message: "hi", systemPrompt: "", provider: "deepseek", model: "deepseek-pro", webSearch: true }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/provider "deepseek" \(DeepSeek\) does not support webSearch/);

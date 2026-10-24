@@ -154,17 +154,16 @@ describe("platform calls on behalf of a caller's run", () => {
         expect("support" in cap.bodies[0]).toBe(false);
       });
 
-      it("without x-run-id or support opens an UNCLASSIFIED root platform run (never guessed)", async () => {
-        const cap = { headers: [] as Array<Record<string, string>>, bodies: [] as Array<Record<string, unknown>> };
+      it("refuses a call stating neither a caller run nor a support function, before any spend", async () => {
+        const cap = { headers: [] as Array<Record<string, string>> };
         routes.push(platformKey(r.provider), runCreate(cap), runCosts, runStatus, r.vendor);
 
         const res = await request(app).post(r.path).set({ "x-api-key": "k" }).send(r.body);
 
-        expect(res.status).toBe(200);
-        expect(res.body.runId).toBe(PLATFORM_RUN);
-        expect("parentRunId" in cap.bodies[0]).toBe(false);
-        // chat-service never guesses whose work this is: only the caller can say.
-        expect("support" in cap.bodies[0]).toBe(false);
+        expect(res.status).toBe(400);
+        expect(res.body.retryable).toBe(false);
+        expect(cap.headers).toHaveLength(0);
+        expect(fetchCalls.some((c) => c.url.includes(":generateContent") || c.url.includes("typesafe"))).toBe(false);
       });
 
       it("a caller with no run declares its support function: the root run is marked with it", async () => {
@@ -236,7 +235,10 @@ describe("platform calls on behalf of a caller's run", () => {
         const cap = { headers: [] as Array<Record<string, string>> };
         routes.push(platformKey(r.provider), runCreate(cap, { status: 503, body: "down" }), r.vendor);
 
-        const res = await request(app).post(r.path).set({ "x-api-key": "k" }).send(r.body);
+        const res = await request(app)
+          .post(r.path)
+          .set({ "x-api-key": "k" })
+          .send({ ...r.body, support: { kind: "staff_experiment", reason: "test" } });
 
         expect(res.status).toBe(502);
       });

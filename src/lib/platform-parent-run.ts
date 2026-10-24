@@ -78,9 +78,8 @@ export type PlatformCallerRead =
  * for a run is that run's, never support. `body` is the request body without
  * `support`, ready for the route's own schema.
  *
- * A call stating NEITHER is still served while the callers conform (logged, and
- * its run is left unclassified so it shows in runs-service's coverage);
- * it will be refused once none remains.
+ * A call stating NEITHER is refused (400) before any spend: chat-service never
+ * guesses whose work it is (owner 2026-10-24 « make sure ça n'arrive plus »).
  */
 export function readPlatformCaller(req: Request, path: string): PlatformCallerRead {
   const parent = readPlatformParentRunId(req);
@@ -89,7 +88,14 @@ export function readPlatformCaller(req: Request, path: string): PlatformCallerRe
   const { support: rawSupport, ...body } = raw;
   if (rawSupport === undefined) {
     if (!parent.parentRunId) {
-      console.warn(`[chat-service] ${path}: platform call with neither a caller run (x-run-id) nor a declared support function`);
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: `${path}: say whose work this call is: x-run-id (your run doing the work) or body support {kind, reason} (a support function no run stands behind)`,
+          retryable: false,
+        },
+      };
     }
     return { ok: true, parentRunId: parent.parentRunId, support: undefined, body };
   }

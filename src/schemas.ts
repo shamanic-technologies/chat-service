@@ -1028,7 +1028,7 @@ registry.registerPath({
 
 **On behalf of a caller's run:** send that run's id in \`x-run-id\` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. The response's \`runId\` names the run that carried the call.
 
-**Whose work (required soon):** send the caller's run in \`x-run-id\` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither is still served while callers conform, then refused (400).
+**Whose work (required):** send the caller's run in \`x-run-id\` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither = 400, before any spend.
 
 **Key resolution:** Uses the platform key directly via \`GET /keys/platform/{provider}/decrypt\` — no org-level key lookup.
 
@@ -1164,7 +1164,7 @@ registry.registerPath({
   summary: "Start transcribing a video/audio file behind a URL (platform, async)",
   description: `Starts a verbatim speech transcription of the video or audio file at \`url\` and answers **202** with the job (\`status: "processing"\`).
 
-**Whose work (required soon):** send the caller's run in \`x-run-id\` (the platform run becomes its child: the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither is still served while callers conform, then refused (400). Poll \`GET /internal/platform-transcriptions/{id}\` (every 10-30 s) until \`status\` is \`completed\` or \`failed\`: a 5 min phone video takes ~1-2 min, a 1 GB / 15 min one a few minutes.
+**Whose work (required):** send the caller's run in \`x-run-id\` (the platform run becomes its child: the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither = 400, before any spend. Poll \`GET /internal/platform-transcriptions/{id}\` (every 10-30 s) until \`status\` is \`completed\` or \`failed\`: a 5 min phone video takes ~1-2 min, a 1 GB / 15 min one a few minutes.
 
 **What comes back:** the words spoken, verbatim (no translation, summary or cleanup), in the language spoken; mixed languages keep each part in its own. One segment per sentence or short group of sentences, each with its start time.
 
@@ -1450,7 +1450,7 @@ registry.registerPath({
 
 **On behalf of a caller's run:** send that run's id in \`x-run-id\` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. The response's \`runId\` names the run that carried the call.
 
-**Whose work (required soon):** send the caller's run in \`x-run-id\` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither is still served while callers conform, then refused (400).
+**Whose work (required):** send the caller's run in \`x-run-id\` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither = 400, before any spend.
 
 **Key resolution:** Uses the platform Google key directly via \`GET /keys/platform/google/decrypt\` — no org-level key lookup.
 
@@ -3102,7 +3102,7 @@ registry.registerPath({
 
 **On behalf of a caller's run:** send that run's id in \`x-run-id\` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. Never fabricate one: an unknown run is refused (400). The response's \`runId\` names the run that carried the call.
 
-**Whose work (required soon):** send the caller's run in \`x-run-id\` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither is still served while callers conform, then refused (400).
+**Whose work (required):** send the caller's run in \`x-run-id\` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither = 400, before any spend.
 
 **Billing:** the judge's PLATFORM key, declared on a platform run under the same input-token cost name as the org route. There is no org balance to gate on, so there is no affordability check and no provisioned hold — the only quantity ever declared is the exact input-token count the vendor reports. Output is free at this vendor, so nothing declares an output cost.
 

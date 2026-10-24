@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 
+// Every platform call states whose work it is (COST-SUPPORT-1024): these tests are support calls.
+const TEST_PLATFORM_SUPPORT = { kind: "staff_experiment", reason: "chat-service test" };
+
 // Regression: /complete and /internal/platform-complete must reject Anthropic
 // JSON mode without `responseSchema` with a 400 — Anthropic API has no native
 // standalone JSON mode, so enforcement requires `output_config.format`. The
@@ -49,13 +52,13 @@ describe("POST /internal/platform-complete — Anthropic JSON mode requires resp
     const res = await request(app)
       .post("/internal/platform-complete")
       .set("x-api-key", "test-internal-key")
-      .send({
+      .send({ ...({
         message: "Hello",
         systemPrompt: "You are helpful.",
         provider: "anthropic",
         model: "sonnet",
         responseFormat: "json",
-      });
+      }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("Anthropic JSON mode requires responseSchema");

@@ -1,6 +1,9 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 
+// Every platform call states whose work it is (COST-SUPPORT-1024): these tests are support calls.
+const TEST_PLATFORM_SUPPORT = { kind: "staff_experiment", reason: "chat-service test" };
+
 // /internal/platform-images/generate is the platform (no-org) twin of
 // /orgs/images/generate: service-auth, platform key, platform-run cost tracking.
 // Spend is declared on a platform run (create → execute → POST actual costs →
@@ -211,7 +214,7 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
     const res = await request(app)
       .post("/internal/platform-images/generate")
       .set(AUTH)
-      .send({ prompt: "Generate a square avatar, no text." });
+      .send({ ...({ prompt: "Generate a square avatar, no text." }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(200);
     expect(gemini.calls).toBe(1);
@@ -279,7 +282,7 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
     const res = await request(app)
       .post("/internal/platform-images/generate")
       .set(AUTH)
-      .send({ prompt: "Generate a detailed poster.", size: "xlarge" });
+      .send({ ...({ prompt: "Generate a detailed poster.", size: "xlarge" }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(200);
     expect(res.body.url).toBe("https://cdn.test.local/generated/platform-avatar.png");
@@ -309,7 +312,7 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
     const res = await request(app)
       .post("/internal/platform-images/generate")
       .set(AUTH)
-      .send({ prompt: "Generate a square avatar, no text." });
+      .send({ ...({ prompt: "Generate a square avatar, no text." }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(502);
     expect(gemini.calls).toBe(0);
@@ -331,7 +334,7 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
     const res = await request(app)
       .post("/internal/platform-images/generate")
       .set(AUTH)
-      .send({ prompt: "Generate a square avatar, no text." });
+      .send({ ...({ prompt: "Generate a square avatar, no text." }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(502);
     expect(res.body.error).toContain("provider status 400");

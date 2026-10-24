@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 
+// Every platform call states whose work it is (COST-SUPPORT-1024): these tests are support calls.
+const TEST_PLATFORM_SUPPORT = { kind: "staff_experiment", reason: "chat-service test" };
+
 // Regression — production outage 2026-08-14 → 2026-08-24.
 //
 // `POST /complete` and `POST /internal/platform-complete` with
@@ -290,13 +293,13 @@ describe("disableThinking resolves a level the model accepts — POST /internal/
       const res = await request(app)
         .post("/internal/platform-complete")
         .set(PLATFORM_AUTH)
-        .send({
+        .send({ ...({
           message: "give me this JSON fast",
           systemPrompt: "be brief",
           provider: "google",
           model: alias,
           disableThinking: true,
-        });
+        }), support: TEST_PLATFORM_SUPPORT });
 
       expect(res.status).toBe(200);
       expect(res.body.content).toBe("answer text");
@@ -310,7 +313,7 @@ describe("disableThinking resolves a level the model accepts — POST /internal/
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(PLATFORM_AUTH)
-      .send({ message: "hi", systemPrompt: "be brief", provider: "google", model: "flash-pro" });
+      .send({ ...({ message: "hi", systemPrompt: "be brief", provider: "google", model: "flash-pro" }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(200);
     expect(thinkingConfigOf(geminiBodies[0])).toEqual({ thinkingLevel: "low" });

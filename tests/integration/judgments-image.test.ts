@@ -2,6 +2,9 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import request from "supertest";
 import sharp from "sharp";
 
+// Every platform call states whose work it is (COST-SUPPORT-1024): these tests are support calls.
+const TEST_PLATFORM_SUPPORT = { kind: "staff_experiment", reason: "chat-service test" };
+
 // IMAGE-JUDGE-1021: the judgments door judges an IMAGE against the caller's
 // own question, through the judge the caller names (Jev by default, or OpenAI
 // Decisions gpt-6-luna), with the spend declared under that judge's cost name.
@@ -117,7 +120,7 @@ describe("POST /internal/platform-judgments — image", () => {
       },
     });
 
-    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send(BODY);
+    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...(BODY), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -158,7 +161,7 @@ describe("POST /internal/platform-judgments — image", () => {
     const res = await request(app)
       .post("/internal/platform-judgments")
       .set(AUTH)
-      .send({ ...BODY, judge: "openai-luna" });
+      .send({ ...({ ...BODY, judge: "openai-luna" }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -203,7 +206,7 @@ describe("POST /internal/platform-judgments — image", () => {
       },
     });
 
-    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...BODY, judge: "cloudflare-clef-flash" });
+    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...({ ...BODY, judge: "cloudflare-clef-flash" }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -232,7 +235,7 @@ describe("POST /internal/platform-judgments — image", () => {
       { match: (u) => u.startsWith("https://api.typesafe.ai"), respond: () => { jevCalls += 1; return { ok: true, body: {} }; } },
     );
 
-    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...BODY, judge: "openai-luna" });
+    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...({ ...BODY, judge: "openai-luna" }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(502);
     expect(res.body.judge).toBe("openai-luna");
@@ -246,7 +249,7 @@ describe("POST /internal/platform-judgments — image", () => {
     let otherCalls = 0;
     routes.push(imageRoute(404), { match: () => true, respond: () => { otherCalls += 1; return { ok: true, body: {} }; } });
 
-    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send(BODY);
+    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...(BODY), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("Unusable image");
