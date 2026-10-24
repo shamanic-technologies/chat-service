@@ -32,11 +32,12 @@ const AUTH_HEADERS = {
 };
 
 const ROUTES = [
-  { path: "/complete", headers: AUTH_HEADERS },
-  { path: "/internal/platform-complete", headers: { "x-api-key": "test-internal-key" } },
+  { path: "/complete", headers: AUTH_HEADERS, extra: {} },
+  // A platform call states whose work it is (COST-SUPPORT-1024).
+  { path: "/internal/platform-complete", headers: { "x-api-key": "test-internal-key" }, extra: { support: { kind: "staff_experiment", reason: "chat-service test" } } },
 ] as const;
 
-for (const { path, headers } of ROUTES) {
+for (const { path, headers, extra } of ROUTES) {
   describe(`POST ${path} — Claude Fable 5.1 rejects sampling parameters`, () => {
     it("returns 400, not retryable, naming the field and the aliases that accept it", async () => {
       const { default: app } = await import("../../src/index.js");
@@ -44,6 +45,7 @@ for (const { path, headers } of ROUTES) {
         .post(path)
         .set(headers)
         .send({
+          ...extra,
           message: "Write three cold emails.",
           systemPrompt: "You are a cold-email writer.",
           provider: "anthropic",
@@ -71,6 +73,7 @@ for (const { path, headers } of ROUTES) {
         .post(path)
         .set(headers)
         .send({
+          ...extra,
           message: "Write three cold emails.",
           systemPrompt: "You are a cold-email writer.",
           provider: "openai",

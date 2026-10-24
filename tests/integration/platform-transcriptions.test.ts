@@ -1,6 +1,9 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 
+// Every platform call states whose work it is (COST-SUPPORT-1024): these tests are support calls.
+const TEST_PLATFORM_SUPPORT = { kind: "staff_experiment", reason: "chat-service test" };
+
 // POST /internal/platform-transcriptions checks the source, starts a platform
 // run, answers 202, and transcribes in the background; GET reads the job back.
 
@@ -111,7 +114,7 @@ async function waitDone(id: string) {
 
 describe("POST /internal/platform-transcriptions", { timeout: 30000 }, () => {
   it("transcribes in the background and declares the cost on a platform run", async () => {
-    const start = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ url: SOURCE });
+    const start = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ ...({ url: SOURCE }), support: TEST_PLATFORM_SUPPORT });
     expect(start.status).toBe(202);
     expect(start.body).toMatchObject({ status: "processing", model: "gemini-3.8-flash" });
     // The presigned signature is never stored or served back.
@@ -141,7 +144,7 @@ describe("POST /internal/platform-transcriptions", { timeout: 30000 }, () => {
 
   it("still bills a transcript it then refuses, and names why", async () => {
     transcriptText = "Sorry, here is a summary instead.";
-    const start = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ url: SOURCE });
+    const start = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ ...({ url: SOURCE }), support: TEST_PLATFORM_SUPPORT });
     const done = await waitDone(start.body.id);
     expect(done.body.status).toBe("failed");
     expect(done.body.error.code).toBe("unparseable_transcript");
@@ -152,7 +155,7 @@ describe("POST /internal/platform-transcriptions", { timeout: 30000 }, () => {
 
   it("answers a 404 URL with a named 422 and starts nothing", async () => {
     sourceStatus = 404;
-    const res = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ url: SOURCE });
+    const res = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ ...({ url: SOURCE }), support: TEST_PLATFORM_SUPPORT });
     expect(res.status).toBe(422);
     expect(res.body).toMatchObject({ code: "source_unreachable" });
     expect(res.body.error).toContain("404");
@@ -175,8 +178,8 @@ describe("POST /internal/platform-transcriptions", { timeout: 30000 }, () => {
   });
 
   it("refuses a non-https URL and requires the service key", async () => {
-    expect((await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ url: "http://x.test/a.mp4" })).status).toBe(400);
-    expect((await request(app).post("/internal/platform-transcriptions").send({ url: SOURCE })).status).toBe(401);
+    expect((await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ ...({ url: "http://x.test/a.mp4" }), support: TEST_PLATFORM_SUPPORT })).status).toBe(400);
+    expect((await request(app).post("/internal/platform-transcriptions").send({ ...({ url: SOURCE }), support: TEST_PLATFORM_SUPPORT })).status).toBe(401);
   });
 
   it("404s an unknown job", async () => {

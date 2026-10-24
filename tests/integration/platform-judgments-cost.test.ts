@@ -1,6 +1,9 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 
+// Every platform call states whose work it is (COST-SUPPORT-1024): these tests are support calls.
+const TEST_PLATFORM_SUPPORT = { kind: "staff_experiment", reason: "chat-service test" };
+
 // /internal/platform-judgments is the platform (no-org) twin of /orgs/judgments:
 // service auth only, the platform TypeSafe key, and spend declared on a platform
 // run (create → execute → POST the actual cost → PATCH status). No org identity,
@@ -190,7 +193,7 @@ describe("POST /internal/platform-judgments — platform run tracking + cost", (
       mockTypeSafe(vendor),
     );
 
-    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send(BODY);
+    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...(BODY), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(200);
     expect(Object.keys(res.body.answers).sort()).toEqual(["severity", "team", "urgent"]);
@@ -229,7 +232,7 @@ describe("POST /internal/platform-judgments — platform run tracking + cost", (
       mockTypeSafe({ calls: 0, bodies: [] }),
     );
 
-    await request(app).post("/internal/platform-judgments").set(AUTH).send(BODY);
+    await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...(BODY), support: TEST_PLATFORM_SUPPORT });
 
     const names = costCap.postedItems.flat().map((c) => c.costName);
     expect(names).toEqual(["typesafe-jev-1.13-tokens-input"]);
@@ -239,7 +242,7 @@ describe("POST /internal/platform-judgments — platform run tracking + cost", (
   it("names the missing credential when the platform TypeSafe key cannot be resolved", async () => {
     routes.push(mockPlatformKey(undefined, { status: 404, body: { error: "No platform key for provider" } }));
 
-    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send(BODY);
+    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...(BODY), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(502);
     expect(res.body.provider).toBe("typesafe");
@@ -258,7 +261,7 @@ describe("POST /internal/platform-judgments — platform run tracking + cost", (
       mockTypeSafe(vendor),
     );
 
-    await request(app).post("/internal/platform-judgments").set(AUTH).send(BODY);
+    await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...(BODY), support: TEST_PLATFORM_SUPPORT });
 
     expect(runCap.bodies).toHaveLength(0);
     expect(vendor.calls).toBe(0);
@@ -274,7 +277,7 @@ describe("POST /internal/platform-judgments — platform run tracking + cost", (
       mockTypeSafe({ calls: 0, bodies: [] }),
     );
 
-    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send(BODY);
+    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...(BODY), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(502);
     expect(statusCap.patchedStatuses).toEqual(["failed"]);
@@ -295,7 +298,7 @@ describe("POST /internal/platform-judgments — platform run tracking + cost", (
       }),
     );
 
-    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send(BODY);
+    const res = await request(app).post("/internal/platform-judgments").set(AUTH).send({ ...(BODY), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(400);
     expect(res.body.detail).toBe("state exceeds the token budget");
@@ -310,14 +313,14 @@ describe("POST /internal/platform-judgments — platform run tracking + cost", (
     const res = await request(app)
       .post("/internal/platform-judgments")
       .set(AUTH)
-      .send({ state: "hello", questions: {} });
+      .send({ ...({ state: "hello", questions: {} }), support: TEST_PLATFORM_SUPPORT });
 
     expect(res.status).toBe(400);
     expect(vendor.calls).toBe(0);
   });
 
   it("requires service auth", async () => {
-    const res = await request(app).post("/internal/platform-judgments").send(BODY);
+    const res = await request(app).post("/internal/platform-judgments").send({ ...(BODY), support: TEST_PLATFORM_SUPPORT });
     expect(res.status).toBe(401);
   });
 });
