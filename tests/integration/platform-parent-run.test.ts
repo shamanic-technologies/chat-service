@@ -150,6 +150,8 @@ describe("platform calls on behalf of a caller's run", () => {
         expect(cap.headers[0]["x-service-name"]).toBe("chat-service");
         // chat-service produces no outcome: it never declares one.
         expect(fetchCalls.some((c) => c.url.includes("/outcomes"))).toBe(false);
+        // Made for a caller run: never marked support (the caller may be producing an outcome).
+        expect("support" in cap.bodies[0]).toBe(false);
       });
 
       it("without x-run-id opens a root platform run, exactly as before", async () => {
@@ -161,6 +163,8 @@ describe("platform calls on behalf of a caller's run", () => {
         expect(res.status).toBe(200);
         expect(res.body.runId).toBe(PLATFORM_RUN);
         expect("parentRunId" in cap.bodies[0]).toBe(false);
+        // Made for no caller run: a support run, reported apart as platform LLM.
+        expect(cap.bodies[0]).toMatchObject({ support: { kind: "platform_llm" } });
       });
 
       it("refuses a malformed x-run-id with a 400 before any spend", async () => {
