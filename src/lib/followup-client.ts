@@ -1,5 +1,6 @@
 import { judgeOnPlatform } from "./platform-judge.js";
 import { createPlatformRun } from "./runs-client.js";
+import { COPILOT_SUPPORT } from "./support-marks.js";
 import { fetchRequesterEmail } from "./staff-requests.js";
 import type { TypeSafeAnswer, TypeSafeQuestion } from "./typesafe.js";
 
@@ -99,7 +100,7 @@ export const defaultFollowupDeps: FollowupDeps = {
   fetchEmail: fetchRequesterEmail,
   newRunId: async () => (await createPlatformRun({ serviceName: "chat-service", taskName: "copilot-followup" })).id,
   fetchImpl: (...args) => fetch(...args),
-  judge: (state, questions) => judgeOnPlatform("copilot-followup-already-kept", state, questions),
+  judge: (state, questions) => judgeOnPlatform("copilot-followup-already-kept", state, questions, COPILOT_SUPPORT),
 };
 
 class RefusedError extends FollowupError {

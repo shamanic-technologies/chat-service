@@ -1,3 +1,5 @@
+import type { RunSupport } from "./support-marks.js";
+
 const RUNS_SERVICE_URL =
   process.env.RUNS_SERVICE_URL || "https://runs.mcpfactory.org";
 const RUNS_SERVICE_API_KEY = process.env.RUNS_SERVICE_API_KEY;
@@ -21,6 +23,12 @@ export interface RunIdentityHeaders {
 export interface CreateRunParams {
   serviceName: string;
   taskName: string;
+  /**
+   * The run serves a SUPPORT function (no outcome by design): runs-service marks
+   * it at creation so its cost is reported apart, never on an outcome
+   * (`support-marks.ts` decides which runs). Omitted = not marked.
+   */
+  support?: RunSupport;
 }
 
 export interface CreatePlatformRunParams extends CreateRunParams {
@@ -223,6 +231,7 @@ export async function createPlatformRun(
       // runs-service reads the parent from the BODY on this route; it ignores
       // x-run-id there on purpose (other services forward a stale one).
       ...(params.parentRunId ? { parentRunId: params.parentRunId } : {}),
+      ...(params.support ? { support: params.support } : {}),
     },
   );
 }
