@@ -15,6 +15,7 @@ const VIDEO_BYTES = "fake-mp4-bytes";
 
 interface Captured {
   runsCreated: number;
+  runBodies?: Array<Record<string, unknown>>;
   costs: Array<Array<{ costName: string; quantity: number; costSource?: string }>>;
   runStatuses: string[];
   generateBodies: Array<Record<string, unknown>>;
@@ -47,6 +48,7 @@ function installFetchMock() {
       if (url.includes("/keys/platform/google/decrypt")) return Response.json({ provider: "google", key: "fake-google-key" });
       if (url.endsWith("/v1/platform-runs") && method === "POST") {
         cap.runsCreated += 1;
+        (cap.runBodies ??= []).push(JSON.parse(init!.body as string));
         return Response.json({ id: "11111111-1111-4111-8111-111111111111", status: "running" }, { status: 201 });
       }
       if (/\/v1\/platform-runs\/[^/]+\/costs$/.test(url)) {
@@ -155,6 +157,21 @@ describe("POST /internal/platform-transcriptions", { timeout: 30000 }, () => {
     expect(res.body).toMatchObject({ code: "source_unreachable" });
     expect(res.body.error).toContain("404");
     expect(cap.runsCreated).toBe(0);
+  });
+
+  it("opens its platform run as the caller run's child, or marked with the caller's declared support", async () => {
+    const CALLER = "5f0c2a8e-1b3d-4c6e-9f70-a1b2c3d4e5f6";
+    const a = await request(app).post("/internal/platform-transcriptions").set({ "x-api-key": "k", "x-run-id": CALLER }).send({ url: SOURCE });
+    expect(a.status).toBe(202);
+    await waitDone(a.body.id);
+    const support = { kind: "product_feature", reason: "teaching video transcript" };
+    const b = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ url: SOURCE, support });
+    expect(b.status).toBe(202);
+    await waitDone(b.body.id);
+    expect(cap.runBodies![0]).toMatchObject({ parentRunId: CALLER });
+    expect("support" in cap.runBodies![0]).toBe(false);
+    expect(cap.runBodies![1]).toMatchObject({ support });
+    expect("parentRunId" in cap.runBodies![1]).toBe(false);
   });
 
   it("refuses a non-https URL and requires the service key", async () => {

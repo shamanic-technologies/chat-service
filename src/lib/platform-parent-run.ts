@@ -1,5 +1,7 @@
 import type { Request } from "express";
 import { RunsServiceError } from "./runs-client.js";
+import { z } from "zod";
+import { SUPPORT_FUNCTIONS, type RunSupport } from "./support-marks.js";
 
 /**
  * A platform call (`/internal/platform-complete`, `/internal/platform-judgments`)
@@ -55,4 +57,56 @@ export function platformRunCreateFailure(
     status: 502,
     body: { error: "Service temporarily unavailable (run tracking). Please try again." },
   };
+}
+
+export const PlatformCallerSupportSchema = z
+  .object({
+    kind: z.enum(SUPPORT_FUNCTIONS),
+    reason: z.string().min(1).max(2000),
+  })
+  .strict();
+
+export type PlatformCallerRead =
+  | { ok: true; parentRunId: string | undefined; support: RunSupport | undefined; body: unknown }
+  | { ok: false; status: 400; body: { error: string; detail?: unknown; retryable: false } };
+
+/**
+ * Every platform call states WHOSE work it is (COST-SUPPORT-1024): the caller's
+ * run in `x-run-id` (the spend rides that run's outcome), or, for a call no run
+ * stands behind, the support function it serves in the body `support` field
+ * (reported apart, never on an outcome). Both at once is refused: work done
+ * for a run is that run's, never support. `body` is the request body without
+ * `support`, ready for the route's own schema.
+ *
+ * A call stating NEITHER is still served while the callers conform (logged, and
+ * its run is left unclassified so it shows in runs-service's coverage);
+ * it will be refused once none remains.
+ */
+export function readPlatformCaller(req: Request, path: string): PlatformCallerRead {
+  const parent = readPlatformParentRunId(req);
+  if (!parent.ok) return parent;
+  const raw = (req.body ?? {}) as Record<string, unknown>;
+  const { support: rawSupport, ...body } = raw;
+  if (rawSupport === undefined) {
+    if (!parent.parentRunId) {
+      console.warn(`[chat-service] ${path}: platform call with neither a caller run (x-run-id) nor a declared support function`);
+    }
+    return { ok: true, parentRunId: parent.parentRunId, support: undefined, body };
+  }
+  const support = PlatformCallerSupportSchema.safeParse(rawSupport);
+  if (!support.success) {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: "support must be {kind, reason}, kind one of the support functions", detail: support.error.flatten(), retryable: false },
+    };
+  }
+  if (parent.parentRunId) {
+    return {
+      ok: false,
+      status: 400,
+      body: { error: "Send x-run-id OR support, never both: a call made for a caller run is that run's work", retryable: false },
+    };
+  }
+  return { ok: true, parentRunId: undefined, support: support.data, body };
 }
