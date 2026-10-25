@@ -25,7 +25,7 @@
     "express": "^4.22.3",
     "postgres": "^3.4.0",
     "sharp": "^0.35.5",
-    "zod": "^4.3.6"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
