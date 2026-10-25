@@ -17,7 +17,15 @@ export type CloudflareUploadScope =
       runId: string;
       trackingHeaders?: Record<string, string>;
     }
-  | { type: "platform" };
+  | {
+      type: "platform";
+      /**
+       * The platform run that produced the file (LEDGER-RESIDUAL-1025): sent as
+       * x-run-id so cloudflare-service files its upload run as that run's child
+       * and the storage spend rides that run's outcome or support mark.
+       */
+      runId: string;
+    };
 
 export interface UploadGeneratedImageParams {
   imageBase64: string;
@@ -54,6 +62,7 @@ function uploadHeaders(apiKey: string, scope: CloudflareUploadScope): Record<str
 
   if (scope.type === "platform") {
     headers["x-service-name"] = SERVICE_NAME;
+    headers["x-run-id"] = scope.runId;
     return headers;
   }
 

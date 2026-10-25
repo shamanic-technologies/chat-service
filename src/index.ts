@@ -2724,7 +2724,7 @@ app.post("/internal/platform-images/generate", requireInternalAuth, async (req, 
       imageBase64: result.imageBase64,
       mimeType: result.mimeType,
       folder: "chat-service/images/platform",
-      scope: { type: "platform" },
+      scope: { type: "platform", runId },
     });
 
     res.json({

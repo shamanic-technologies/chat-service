@@ -236,6 +236,8 @@ describe("POST /internal/platform-images/generate — platform run tracking + co
     expect(cloudflare.headers[0]).toMatchObject({
       "x-api-key": "test-cloudflare-key",
       "x-service-name": "chat-service",
+      // LEDGER-RESIDUAL-1025: the upload run becomes the generate-image run's child.
+      "x-run-id": "prun-img-1",
     });
     expect(gemini.bodies[0]).toMatchObject({
       generationConfig: {
