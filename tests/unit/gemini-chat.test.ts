@@ -5,6 +5,7 @@ import {
   type ToolDefinition,
 } from "../../src/lib/gemini-chat.js";
 import { buildThinkingConfig } from "../../src/lib/gemini.js";
+import { EMPTY_ANSWER_NOTE } from "../../src/lib/tool-budget.js";
 
 describe("toGeminiFunctionDeclarations", () => {
   it("converts Anthropic-style tool definitions to Gemini format", () => {
@@ -292,11 +293,8 @@ describe("streamGeminiChat tool-then-empty guard", () => {
     expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "medium" });
   });
 
-  it("emits a fallback summary when the post-tool turn returns no text", async () => {
-    // Turn 0: the model calls list_audiences. Turn 1: empty (MAX_TOKENS during
-    // thinking) — no text parts. Without the guard this returns fullResponse:""
-    // and the dashboard freezes on the tool card.
-    const fetchMock = vi
+  const toolCallThenEmpty = () =>
+    vi
       .fn()
       .mockResolvedValueOnce(
         sseResponse({
@@ -318,20 +316,51 @@ describe("streamGeminiChat tool-then-empty guard", () => {
           usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 0 },
         }),
       );
+
+  // SOPHIE-NO-ANSWER-1028 (prod 2026-10-27): tools ran, the model ended
+  // silent, the person got "did not finish writing the answer". Re-ask once,
+  // tools off, and the person gets the answer.
+  it("re-asks once, tools off, when the post-tool turn returns no text", async () => {
+    const fetchMock = toolCallThenEmpty().mockResolvedValueOnce(
+      sseResponse({
+        candidates: [{ content: { parts: [{ text: "Here are your audiences." }] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 30, candidatesTokenCount: 6 },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { opts } = baseOptions();
+    const result = await streamGeminiChat(opts);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result.fullResponse).toBe("Here are your audiences.");
+    const reAsk = JSON.parse(fetchMock.mock.calls[2][1].body as string);
+    expect(reAsk.toolConfig).toEqual({ functionCallingConfig: { mode: "NONE" } });
+    const lastTurn = reAsk.contents[reAsk.contents.length - 1];
+    expect(lastTurn.role).toBe("user");
+    expect(lastTurn.parts[lastTurn.parts.length - 1]).toEqual({ text: EMPTY_ANSWER_NOTE });
+    // The re-asked round itself kept tools on (only the re-ask turns them off).
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).not.toHaveProperty("toolConfig");
+  });
+
+  it("emits a plain fallback only when the model stays silent after the re-ask", async () => {
+    const fetchMock = toolCallThenEmpty().mockResolvedValueOnce(
+      sseResponse({
+        candidates: [{ content: { parts: [] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 30, candidatesTokenCount: 0 },
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const { opts, events } = baseOptions();
     const result = await streamGeminiChat(opts);
 
-    // Tool ran...
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(result.toolCalls).toHaveLength(1);
-    expect(result.toolCalls[0].name).toBe("list_audiences");
-    // ...and the response is NOT silently empty — it summarizes the tool result.
     expect(result.fullResponse).not.toBe("");
-    expect(result.fullResponse).toContain("list_audiences");
-    // Names what was looked up; never pastes the raw results (prod 2026-10-12).
+    // Never names our tools nor pastes their results (prod 2026-10-12, 2026-10-27).
+    expect(result.fullResponse).not.toContain("list_audiences");
     expect(result.fullResponse).not.toContain("Founders");
-    // The fallback text was streamed to the client as a token event.
     const tokenText = events
       .filter((e): e is { type: string; content: string } =>
         typeof e === "object" && e !== null && (e as { type?: string }).type === "token",

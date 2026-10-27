@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  THREAD_MESSAGE_MAX_CHARS,
   buildChannelBlock,
   VOICE_NOTE_PREFIX,
   VOICE_NOTE_UNREADABLE,
@@ -86,6 +87,20 @@ describe("buildChannelBlock", () => {
     expect(block).toContain("never as a header");
     expect(block).toContain("us: Hi from our campaign");
     expect(block).toContain("exactly this person's access");
+  });
+
+  // SOPHIE-NO-ANSWER-1028: 5 Threads drafts we sent (~1,700 chars) were cut at
+  // 600, the Copilot saw 1.3 of them and hunted through 15 tools.
+  it("shows a whole message we sent, not its first lines", () => {
+    const drafts = Array.from({ length: 5 }, (_, i) => `*${i + 1}/* ${"draft words ".repeat(28)}Get started: distribute.you`).join("\n\n");
+    expect(drafts.length).toBeGreaterThan(1500);
+    const block = buildChannelBlock({ ...channel, thread: [{ at: "2026-10-27T19:37:20.146Z", direction: "outbound", text: drafts }] }, false);
+    expect(block).toContain("*5/*");
+    expect(block.match(/Get started: distribute\.you/g)).toHaveLength(5);
+    const huge = "x".repeat(THREAD_MESSAGE_MAX_CHARS + 500);
+    const capped = buildChannelBlock({ ...channel, thread: [{ at: "2026-10-27T19:37:20.146Z", direction: "outbound", text: huge }] }, false);
+    expect(capped).toContain("x".repeat(THREAD_MESSAGE_MAX_CHARS));
+    expect(capped).not.toContain("x".repeat(THREAD_MESSAGE_MAX_CHARS + 1));
   });
 
   it("reads a transcribed voice note as their message, an unreadable one as a request to write, and always answers in text (SOPHIE-VOICE-1019)", () => {
