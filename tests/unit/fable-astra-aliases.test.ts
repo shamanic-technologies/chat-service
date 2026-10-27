@@ -91,7 +91,7 @@ describe("alias resolution", () => {
       ["zai", "glm-flash", "glm-5.3-flash", "zai-glm-5.3-flash"],
       ["zai", "glm-pro", "glm-5.3", "zai-glm-5.3"],
       ["moonshot", "kimi-flash", "kimi-k2.6", "moonshot-kimi-k2.6"],
-      ["moonshot", "kimi-pro", "kimi-k3.1-pro", "moonshot-kimi-k3.1-pro"],
+      ["moonshot", "kimi-pro", "kimi-k3", "moonshot-kimi-k3"],
     ];
     for (const [provider, alias, apiModelId, costPrefix] of before) {
       expect(resolveModel(provider, alias)).toMatchObject({ apiModelId, costPrefix, provider });
