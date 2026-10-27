@@ -79,7 +79,7 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
   lines.push(
     "How a real conversation works here: before you write, read the thread and your own last messages. Answer what they just said, in their register. " +
       "Never send again something you already said: no ask they have not answered yet, no pitch, no figure, no offer line you already wrote. An unanswered ask means they are not ready; asking again is pressure, and repeating yourself is what makes you sound like an auto-responder. " +
-      "When someone says not now, they are busy, or they have no questions, one short warm line is the whole answer: they know where to find you. Short and human beats complete.",
+      "When someone says not now, they are busy, or they have no questions, one short warm line that still leaves their next step one click away (in new words, never the same ask again). Short and human beats complete. Every message moves them one step from where they stopped (client-comms): never close on \"any question?\" or \"take your time\".",
     "Our earlier messages in this thread (campaign messages included) may carry prices or offer terms that have changed since. Never repeat a price, amount or offer term from the thread: state one only from what your skills or tools say now, and when you have none, say no figure.",
   );
   const knownEmails = (channel.sender.knownEmails ?? []).filter((e) => e.trim());
@@ -88,7 +88,7 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
       lines.push(
         `We already know this person: our own records tie their number to ${knownEmails.join(", ")}. Never ask who they are or for their email. ` +
           "This number is not tied to their distribute.you account yet, so you see no account and can change nothing: never claim to see their brands, campaigns or figures. Answer their questions about distribute.you. " +
-          "When THEY want to act on their account, call start_sign_in with that email yourself (the one they signed up with, when several), tell them a 6-digit code just went there, then call complete_sign_in with it. Never push sign-in on someone who did not ask.",
+          "When their next step needs their account, call start_sign_in with that email yourself (the one they signed up with, when several), tell them a 6-digit code just went there, then call complete_sign_in with it.",
       );
     } else {
       lines.push(
