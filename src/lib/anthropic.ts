@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { START_SIGN_IN_TOOL, COMPLETE_SIGN_IN_TOOL } from "./channel-sign-in.js";
+import { withBrandIdArg } from "./turn-brand.js";
 import {
   anthropicPromptTokens,
   readAnthropicBilledTokens,
@@ -1614,7 +1615,7 @@ export const BROWSE_URL_TOOL: Anthropic.Tool = {
 export const LIST_PERSONAS_TOOL: Anthropic.Tool = {
   name: "list_personas",
   description:
-    "List the customer personas for the current brand (the brand from context.brandId — no brandId parameter needed). Optionally filter by lifecycle status. Read-only — never modifies anything. Use this to summarize personas, and to look up a persona's id before duplicating it or changing its status.",
+    "List the customer personas for the current brand (the brand open in the chat, else the account's brand: see brandId). Optionally filter by lifecycle status. Read-only — never modifies anything. Use this to summarize personas, and to look up a persona's id before duplicating it or changing its status.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -1714,7 +1715,7 @@ export const SET_PERSONA_STATUS_TOOL: Anthropic.Tool = {
 export const GET_BRAND_PROFILE_TOOL: Anthropic.Tool = {
   name: "get_brand_profile",
   description:
-    "Get the current brand profile (the latest saved version's fields) plus the list of saved versions for the current brand (from context.brandId — no brandId parameter needed). Read-only. ALWAYS call this before save_brand_profile_version so you edit from the current field values.",
+    "Get the current brand profile (the latest saved version's fields) plus the list of saved versions for the current brand (the brand open in the chat, else the account's brand: see brandId). Read-only. ALWAYS call this before save_brand_profile_version so you edit from the current field values.",
   input_schema: {
     type: "object" as const,
     properties: {},
@@ -1806,7 +1807,7 @@ export const REFRESH_BRAND_PROFILE_FROM_WEBSITE_TOOL: Anthropic.Tool = {
 export const LIST_AUDIENCES_TOOL: Anthropic.Tool = {
   name: "list_audiences",
   description:
-    "List the customer audiences for the current brand (the brand from context.brandId — no brandId parameter needed), 15 per page: id, name, status, offerId, size, channels, and who it targets in one line. Optionally filter by lifecycle status. Read-only — never modifies anything. Use this to summarize audiences, and to look up an audience's id before renaming it, changing its status, or refreshing its counts. When nextOffset is not null, more audiences exist: call again with that offset only if you need them.",
+    "List the customer audiences for the current brand (the brand open in the chat, else the account's brand: see brandId), 15 per page: id, name, status, offerId, size, channels, and who it targets in one line. Optionally filter by lifecycle status. Read-only — never modifies anything. Use this to summarize audiences, and to look up an audience's id before renaming it, changing its status, or refreshing its counts. When nextOffset is not null, more audiences exist: call again with that offset only if you need them.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -3509,7 +3510,9 @@ export function resolveToolSet(allowedTools: string[]): Anthropic.Tool[] {
   for (const name of allowedTools) {
     const tool = TOOL_REGISTRY[name];
     if (tool) {
-      tools.push(tool);
+      // A brand-scoped tool takes an optional brandId for a chat with no brand
+      // open (turn-brand.ts); added here so both loops declare it.
+      tools.push(withBrandIdArg(tool));
     } else if (!RETIRED_TOOL_NAMES.includes(name)) {
       console.warn(`[chat-service] Unknown tool in allowedTools: "${name}" — skipping`);
     }

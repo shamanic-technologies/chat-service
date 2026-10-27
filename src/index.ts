@@ -305,6 +305,7 @@ import {
   setBrandPauseState,
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
+import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
 import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelMessageRequestSchema, ProactiveTurnRequestSchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
@@ -3524,26 +3525,24 @@ app.post("/chat", requireAuth, async (req, res) => {
       configKey === "brand-profile-editor" &&
       isBrandProfileWebsiteRefreshIntent(message);
 
-    // Persona-editor + brand-profile-editor tools act on a SINGLE brand from
-    // context.brandId — require exactly one resolved brandId.
-    const requireSingleBrandId = (toolName: string): string => {
-      if (brandIds.length === 0) {
-        throw new Error(
-          `[chat] ${toolName} requires a brand — provide context.brandId`,
-        );
-      }
-      if (brandIds.length > 1) {
-        throw new Error(
-          `[chat] ${toolName} operates on a single brand, but ${brandIds.length} were provided`,
-        );
-      }
-      return brandIds[0];
-    };
+    // Brand-scoped tools act on ONE brand: the turn's (context.brandId / header)
+    // when it carries one, else the org's (one brand, or the brandId the model
+    // passed after asking the person). Shared by every brand-scoped tool
+    // (src/lib/turn-brand.ts, COPILOT-WA-BRAND-1027).
+    const turnBrand = createTurnBrandResolver({
+      contextBrandIds: brandIds,
+      listOrgBrands: async () => toOrgBrands(await listBrands(featureCallParams)),
+    });
+    const requireSingleBrandId = (toolName: string, args?: Record<string, unknown>): Promise<string> =>
+      turnBrand.require(toolName, args);
 
     // Qualification-editor tools act on ONE offer: the brand from
     // requireSingleBrandId + context.offerId. Never guessed — absent fails loud.
-    const requireOffer = (toolName: string): { brandId: string; offerId: string } => {
-      const brandId = requireSingleBrandId(toolName);
+    const requireOffer = async (
+      toolName: string,
+      args?: Record<string, unknown>,
+    ): Promise<{ brandId: string; offerId: string }> => {
+      const brandId = await requireSingleBrandId(toolName, args);
       if (!offerId) {
         throw new Error(
           `[chat] ${toolName} requires an offer — provide context.offerId`,
@@ -3582,7 +3581,17 @@ app.post("/chat", requireAuth, async (req, res) => {
           return { name: call.name, result: REPEATED_QUALIFICATION_MUTATION_RESULT };
         }
       }
-      const outcome = await executeToolOnce(call);
+      let outcome: Awaited<ReturnType<typeof executeToolOnce>>;
+      try {
+        outcome = await executeToolOnce(call);
+      } catch (err) {
+        // Several brands, none open, none named: the model asks the person.
+        // A result it reads, never an internal error string.
+        if (!(err instanceof BrandChoiceRequired)) throw err;
+        const result = err.toResult();
+        toolCalls.push({ name: call.name, args: call.args ?? {}, result });
+        return { name: call.name, result };
+      }
       if (dedupeKey && outcome && outcome !== "input_request") {
         qualificationTurnResults.set(dedupeKey, outcome);
       }
@@ -4306,7 +4315,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "list_personas") {
         const args = (call.args as Record<string, unknown>) || {};
-        const brandId = requireSingleBrandId("list_personas");
+        const brandId = await requireSingleBrandId("list_personas", call.args);
         const result = await listPersonas(
           brandId,
           args.status as PersonaStatus | undefined,
@@ -4318,7 +4327,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "create_persona") {
         const args = (call.args as Record<string, unknown>) || {};
-        const brandId = requireSingleBrandId("create_persona");
+        const brandId = await requireSingleBrandId("create_persona", call.args);
         const result = await createPersona(
           brandId,
           String(args.name ?? ""),
@@ -4333,7 +4342,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "duplicate_persona") {
         const args = (call.args as Record<string, unknown>) || {};
-        const brandId = requireSingleBrandId("duplicate_persona");
+        const brandId = await requireSingleBrandId("duplicate_persona", call.args);
         const result = await duplicatePersona(
           brandId,
           String(args.personaId ?? ""),
@@ -4346,7 +4355,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "set_persona_status") {
         const args = (call.args as Record<string, unknown>) || {};
-        const brandId = requireSingleBrandId("set_persona_status");
+        const brandId = await requireSingleBrandId("set_persona_status", call.args);
         const result = await setPersonaStatus(
           brandId,
           String(args.personaId ?? ""),
@@ -4359,7 +4368,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "get_brand_profile") {
         const args = (call.args as Record<string, unknown>) || {};
-        const brandId = requireSingleBrandId("get_brand_profile");
+        const brandId = await requireSingleBrandId("get_brand_profile", call.args);
         const result = await getBrandProfile(brandId, featureCallParams);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
@@ -4367,7 +4376,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "save_brand_profile_version") {
         const args = (call.args as Record<string, unknown>) || {};
-        const brandId = requireSingleBrandId("save_brand_profile_version");
+        const brandId = await requireSingleBrandId("save_brand_profile_version", call.args);
         const changes = (args.changes as BrandProfileChange[] | undefined) ?? [];
         // Read current → apply changes → save the FULL merged map as a new
         // immutable version (brand-service replaces the whole map per version,
@@ -4388,7 +4397,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "refresh_brand_profile_from_website") {
         const args = (call.args as Record<string, unknown>) || {};
-        const brandId = requireSingleBrandId("refresh_brand_profile_from_website");
+        const brandId = await requireSingleBrandId("refresh_brand_profile_from_website", call.args);
         const result = await refreshBrandProfileFromWebsite(
           brandId,
           context,
@@ -4401,7 +4410,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "list_audiences") {
         const args = (call.args as Record<string, unknown>) || {};
-        const brandId = requireSingleBrandId("list_audiences");
+        const brandId = await requireSingleBrandId("list_audiences", call.args);
         const { audiences } = await listAudiences(
           brandId,
           args.status as AudienceStatus | undefined,
@@ -4414,7 +4423,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "suggest_audiences") {
         const args = (call.args as Record<string, unknown>) || {};
-        const brandId = requireSingleBrandId("suggest_audiences");
+        const brandId = await requireSingleBrandId("suggest_audiences", call.args);
         const result = await suggestAudiences(
           brandId,
           String(args.nlPrompt ?? ""),
@@ -4474,21 +4483,21 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
 
       if (call.name === "list_qualification_checks") {
-        const { brandId, offerId: oid } = requireOffer(call.name);
+        const { brandId, offerId: oid } = await requireOffer(call.name, call.args);
         const result = await listChecks(brandId, oid, featureCallParams);
         toolCalls.push({ name: call.name, args: {}, result });
         return { name: call.name, result };
       }
 
       if (call.name === "list_qualification_sources") {
-        requireOffer(call.name);
+        await requireOffer(call.name, call.args);
         const result = await listCheckSources(featureCallParams);
         toolCalls.push({ name: call.name, args: {}, result });
         return { name: call.name, result };
       }
 
       if (call.name === "suggest_qualification_checks") {
-        const { brandId, offerId: oid } = requireOffer(call.name);
+        const { brandId, offerId: oid } = await requireOffer(call.name, call.args);
         const result = await suggestChecks(brandId, oid, featureCallParams);
         toolCalls.push({ name: call.name, args: {}, result });
         return { name: call.name, result };
@@ -4496,7 +4505,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "create_qualification_check") {
         const args = (call.args as Record<string, unknown>) || {};
-        const { brandId, offerId: oid } = requireOffer(call.name);
+        const { brandId, offerId: oid } = await requireOffer(call.name, call.args);
         const result = await createCheck(
           brandId,
           oid,
@@ -4514,7 +4523,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "update_qualification_check") {
         const args = (call.args as Record<string, unknown>) || {};
-        const { brandId, offerId: oid } = requireOffer(call.name);
+        const { brandId, offerId: oid } = await requireOffer(call.name, call.args);
         const result = await updateCheck(
           brandId,
           oid,
@@ -4531,7 +4540,7 @@ app.post("/chat", requireAuth, async (req, res) => {
 
       if (call.name === "archive_qualification_check") {
         const args = (call.args as Record<string, unknown>) || {};
-        const { brandId, offerId: oid } = requireOffer(call.name);
+        const { brandId, offerId: oid } = await requireOffer(call.name, call.args);
         const result = await archiveCheck(
           brandId,
           oid,
@@ -4637,7 +4646,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       });
 
       try {
-        const brandId = requireSingleBrandId("refresh_brand_profile_from_website");
+        const brandId = await requireSingleBrandId("refresh_brand_profile_from_website");
         const result = await refreshBrandProfileFromWebsite(
           brandId,
           context,

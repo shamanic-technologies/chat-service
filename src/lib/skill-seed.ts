@@ -188,7 +188,7 @@ Before building anything, know WHICH offer the request is about. If the brand ha
 An audience is a described group of people to reach (job titles, company size, industry, location). It replaced personas. Owner: human-service. The brand's own facts (what it does, its site) live in brand-service.
 
 ## Read
-- list_audiences → GET /v1/orgs/audiences?brandId=: the brand's audiences with status (works on the brand open in the dashboard).
+- list_audiences → GET /v1/orgs/audiences?brandId=: the brand's audiences with status. Works on the brand open in the dashboard; with no brand open (WhatsApp, no brand page) on the account's brand, or, when it has several, on the brandId you pass after asking the person which one. Never send them to the dashboard for this.
 
 ## Write
 - From one sentence saying who to reach (POST /v1/brands/{id}/icp/suggest writes one): POST /v1/orgs/audiences/split {brandId, targetAudience} proposes segments (saves nothing), POST /v1/orgs/audiences/split/confirm {brandId, offerId, targetAudience, segments} creates the kept ones. No Copilot tool yet; the order for a new account: \`new-account\`.
