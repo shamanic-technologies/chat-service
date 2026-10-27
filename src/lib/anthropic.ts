@@ -398,12 +398,14 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       provider: "moonshot",
       capabilityTier: "cheap",
     },
-    // Kimi K3.1 Pro (LLM-HEADS-1027): Moonshot lists it as its flagship and K3 as the
-    // previous generation, so it is the K3 line's new head. $2 / $0.20 / $10 per MTok vs
-    // K3's $3 / $0.30 / $15. Probed live 2026-10-27: json_schema, thinking disabled.
+    // Kimi K3.1 Pro is the K3 line's successor (Moonshot: flagship, K3 "previous
+    // generation") and is priced (`moonshot-kimi-k3.1-pro-*`), but it is NOT the head:
+    // 2026-10-27 Moonshot answered 429 "engine overloaded" to 8 of 8 calls while K3
+    // answered 8 of 8. Concurrency is part of the model choice: move the head only once
+    // K3.1 Pro serves a burst without refusals (re-probe; K3.1 Pro = 3 days old).
     "kimi-k3": {
-      apiModelId: "kimi-k3.1-pro",
-      costPrefix: "moonshot-kimi-k3.1-pro",
+      apiModelId: "kimi-k3",
+      costPrefix: "moonshot-kimi-k3",
       provider: "moonshot",
       capabilityTier: "strong",
     },

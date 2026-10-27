@@ -193,7 +193,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "Kimi K3",
     provider: "moonshot",
     capabilityTier: "strong",
-    models: ["kimi-k3.1-pro", "kimi-k3"],
+    models: ["kimi-k3"],
     servedToday: true,
     legacyAliases: ["kimi-pro"],
   },
