@@ -120,6 +120,15 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     }
   });
 
+  it("every message moves the person one step from where they stopped, never a stalling open question (COPILOT-WA-REPEAT-1027)", () => {
+    // Prod 2026-10-27 (Joshua, stopped at the card step): "Take your time... ask me here", "Any question about the site?".
+    const voice = bySlug.get("client-comms")!.content;
+    expect(voice).toMatch(/take the person one step down their path from where they stopped/);
+    expect(voice).toMatch(/end on that next step, concrete and one click away, with its link/);
+    expect(voice).toMatch(/an ask or a line they have not answered is not sent again/);
+    for (const sk of SEED_SKILLS) expect(sk.content, sk.slug).not.toMatch(/Any other question\?/);
+  });
+
   it("a figure doubt goes to the team, never to the client (owner 2026-10-18, the 8-vs-3 reply)", () => {
     const stats = bySlug.get("costs-roi-stats")!.content;
     expect(stats).not.toMatch(/say so plainly/);

@@ -119,6 +119,7 @@ describe("buildChannelBlock", () => {
     expect(block).toContain("our own records tie their number to staff-test@distribute.you");
     expect(block).toContain("Never ask who they are or for their email");
     expect(block).toContain("call start_sign_in with that email yourself");
+    expect(block).toContain("When their next step needs their account");
     expect(block).not.toContain("ask for their email (once)");
   });
 
@@ -136,7 +137,8 @@ describe("buildChannelBlock", () => {
   it("explains the strategy against repeating itself, and never licenses an offer term from the thread", () => {
     const block = buildChannelBlock(known, true);
     expect(block).toContain("Never send again something you already said");
-    expect(block).toContain("one short warm line is the whole answer");
+    expect(block).toContain("one short warm line that still leaves their next step one click away");
+    expect(block).toContain("Every message moves them one step from where they stopped");
     expect(block).toContain("Never repeat a price, amount or offer term from the thread");
   });
 
