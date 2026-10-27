@@ -466,7 +466,7 @@ describe("POST /complete — direct vendor routing", () => {
       mockBilling(),
       mockVendor(vendor, {
         host: MOONSHOT_URL,
-        model: "kimi-k3.1-pro",
+        model: "kimi-k3",
         usage: { prompt_tokens: 700, completion_tokens: 18, cached_tokens: 640 },
       }),
       ...mockRunsCostRoutes(cap),
@@ -482,9 +482,9 @@ describe("POST /complete — direct vendor routing", () => {
     expect(vendor.calls).toBe(1);
 
     const actual = actualItems(cap.postedItems);
-    expect(quantityOf(actual, "moonshot-kimi-k3.1-pro-tokens-input")).toBe(60);
-    expect(quantityOf(actual, "moonshot-kimi-k3.1-pro-tokens-cached-input")).toBe(640);
-    expect(quantityOf(actual, "moonshot-kimi-k3.1-pro-tokens-output")).toBe(18);
+    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-input")).toBe(60);
+    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-cached-input")).toBe(640);
+    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-output")).toBe(18);
     // No regime segment — that belongs to DeepSeek alone.
     expect(actual.every((i) => !/-(peak|off-peak)-tokens-/.test(i.costName))).toBe(true);
   });
@@ -691,7 +691,7 @@ describe("POST /complete — direct vendor routing", () => {
   it("still sends Z.ai and Moonshot the full json_schema form — only DeepSeek differs", async () => {
     for (const c of [
       { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.3" },
-      { provider: "moonshot", model: "kimi-pro", host: MOONSHOT_URL, wire: "kimi-k3.1-pro" },
+      { provider: "moonshot", model: "kimi-pro", host: MOONSHOT_URL, wire: "kimi-k3" },
     ] as const) {
       routes = [];
       fetchCalls = [];
@@ -1122,7 +1122,7 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     expect(items.some((i) => i.costName === "openai-gpt-6.1-terra-tokens-input")).toBe(false);
   });
 
-  it("refuses a temperature for Kimi before any spend — K3.1 Pro only takes 0.6", async () => {
+  it("refuses a temperature for Kimi before any spend — K3 and K3.1 Pro only take 0.6", async () => {
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(INTERNAL_AUTH)

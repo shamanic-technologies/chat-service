@@ -209,7 +209,7 @@ Request body:
   - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.8 Flash), `pro` (most powerful, Gemini 3.1 Pro), `gemini-argon` (Gemini 4 Argon, its own dynasty since 2026-10-27; floor `low`). All require a Google API key in key-service.
   - **deepseek**: `deepseek-flash` (DeepSeek V4.1 Flash — 1M context, 2500 concurrent requests). `deepseek-pro` is a **deprecated synonym** for the same model: DeepSeek discontinued V4 Pro on 2026-09-14 and routes it to V4.1 Flash at the Flash price (see [The 2026-09-10 DeepSeek collapse](#the-2026-09-10-deepseek-collapse))
   - **zai**: `glm-flash` (`glm-5.3-flash` — fast and cheap, 50 concurrent requests), `glm-pro` (`glm-5.3` — Z.ai's flagship, 15 concurrent requests)
-  - **moonshot**: `kimi-flash` (`kimi-k2.6` — value tier), `kimi-pro` (`kimi-k3.1-pro` — flagship, 1M context; K3 before 2026-10-27). **Every `moonshot` alias rejects `temperature`** (Kimi K3 / K3.1 Pro fix it at 0.6)
+  - **moonshot**: `kimi-flash` (`kimi-k2.6` — value tier), `kimi-pro` (`kimi-k3` — flagship, 1M context; K3.1 Pro is priced but not the head while Moonshot refuses it as overloaded). **Every `moonshot` alias rejects `temperature`** (Kimi K3 / K3.1 Pro fix it at 0.6)
   - **openai**: `gpt-pro` (`gpt-6-astra` — OpenAI's flagship; 1.05M context, 128k output, always-on reasoning floored at `low`), `gpt-sol` (`gpt-6.1-sol`), `gpt-terra` (`gpt-6.1-terra`) — both moved to GPT-6.1 on 2026-10-27
 
   The four direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400 on every one of their models. Each needs its OWN key in key-service, stored under its provider slug.
@@ -341,7 +341,7 @@ OpenAI joined on 2026-09-09 and is the interesting case, because it is the vendo
 | `zai` | `glm-flash` | `glm-5.3-flash` | `zai-glm-5.3-flash` | cache | `https://api.z.ai/api/paas/v4` |
 | `zai` | `glm-pro` | `glm-5.3` | `zai-glm-5.3` | cache | `https://api.z.ai/api/paas/v4` |
 | `moonshot` | `kimi-flash` | `kimi-k2.6` | `moonshot-kimi-k2.6` | cache | `https://api.moonshot.ai/v1` |
-| `moonshot` | `kimi-pro` | `kimi-k3.1-pro` | `moonshot-kimi-k3.1-pro` | cache | `https://api.moonshot.ai/v1` |
+| `moonshot` | `kimi-pro` | `kimi-k3` | `moonshot-kimi-k3` | cache | `https://api.moonshot.ai/v1` |
 | `openai` | `gpt-pro` | `gpt-6-astra` | `openai-gpt-6-astra` | cache + cache write + long context | `https://api.openai.com/v1` |
 | `openai` | `gpt-sol` | `gpt-6.1-sol` | `openai-gpt-6.1-sol` | cache + cache write + long context | `https://api.openai.com/v1` |
 | `openai` | `gpt-terra` | `gpt-6.1-terra` | `openai-gpt-6.1-terra` | cache + cache write + long context | `https://api.openai.com/v1` |
