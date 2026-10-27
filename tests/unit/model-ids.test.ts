@@ -40,7 +40,13 @@ describe("modelIdCatalogue", () => {
         expect(row.capabilityTier).toBe(r.capabilityTier);
       }
     }
-    for (const row of rows.filter((x) => x.servedToday)) expect(row.aliases.length).toBeGreaterThan(0);
+    // A served head lists its dynasty's legacy aliases; a dynasty born after the alias era
+    // (Gemini Argon, LLM-HEADS-1027) has none and is called by its slug.
+    for (const row of rows.filter((x) => x.servedToday)) {
+      const legacy = LLM_DYNASTIES.find((d) => d.models[0] === row.modelId)!.legacyAliases;
+      if (legacy.length === 0) expect(row.aliases, row.modelId).toEqual([]);
+      else expect(row.aliases.length, row.modelId).toBeGreaterThan(0);
+    }
   });
 
   it("groups the two DeepSeek aliases on the one model they resolve to", () => {

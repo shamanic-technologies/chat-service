@@ -178,7 +178,7 @@ export interface VendorUsage {
    * its Responses API uses `input_tokens_details` instead, which this adapter
    * never calls.
    */
-  prompt_tokens_details?: { cached_tokens?: number };
+  prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
 }
 
 /**
@@ -237,6 +237,17 @@ export type VendorPricing =
       cachedInput: boolean;
       /** Non-null when the catalog splits prices by time of day. */
       regime: PricingRegimeSchedule | null;
+      /**
+       * True when the vendor bills the prompt tokens it WRITES to its cache at
+       * their own rate (`-tokens-cache-write`), reported by `readCacheWriteTokens`.
+       * Absent = a write is billed as plain input (or the vendor reports none).
+       */
+      cacheWrite?: true;
+      /**
+       * A request whose prompt exceeds this many tokens is billed at the
+       * `-long-context-` rows for EVERY token of that request. Absent = one tier.
+       */
+      longContextAboveInputTokens?: number;
     }
   | {
       kind: "unpriced";
@@ -426,6 +437,12 @@ export interface VendorConfig {
    * number is used for.
    */
   readCachedTokens: (usage: VendorUsage) => number;
+  /**
+   * Where THIS vendor reports prompt tokens it WROTE to its cache. Present only
+   * on a vendor whose `pricing.cacheWrite` is set: a write it does not price
+   * stays billed as plain input.
+   */
+  readCacheWriteTokens?: (usage: VendorUsage) => number;
   /**
    * The priced dimensions THIS vendor's catalog rows carry. Read at cost
    * declaration; see `VendorPricing`.
@@ -797,9 +814,15 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
       observedOn: "2026-08-25",
     },
     // json_schema accepted — probed 2026-08-25 against kimi-k2.6 (200).
+    // Temperature: kimi-k3 AND kimi-k3.1-pro answer `400 "invalid temperature:
+    // only 0.6 is allowed for this model"` to 0.3 (probed live 2026-10-27), so a
+    // caller's temperature is refused at the route, before any hold, rather than
+    // forwarded into a certain vendor 400.
     sampling: {
-      accepted: true,
-      note: "GLM takes temperature; it has been forwarded on this path since 2026-08-15.",
+      accepted: false,
+      note:
+        "Kimi K3 and K3.1 Pro fix temperature at 0.6: any other value answers 400 \"invalid " +
+        "temperature: only 0.6 is allowed for this model\" (probed live 2026-10-27).",
     },
     maxOutputTokensField: "max_tokens",
     structuredOutput: "json_schema",
@@ -848,12 +871,27 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // instead — a different endpoint this adapter never calls, and not a
     // fallback to reach for.)
     readCachedTokens: (usage) => usage.prompt_tokens_details?.cached_tokens ?? 0,
+    // OpenAI bills the prompt tokens it WRITES to its cache at 1.25x input, and
+    // says how many: `prompt_tokens_details.cache_write_tokens` (probed live
+    // 2026-10-27 on gpt-6-sol, gpt-6.1-sol and gpt-6.1-terra: 4,204 of a
+    // 4,207-token prompt written on the first call, the same 4,204 read back as
+    // `cached_tokens` on the second). Until LLM-HEADS-1027 these were declared at
+    // the plain input rate, 20% under the invoice on every first write.
+    readCacheWriteTokens: (usage) => usage.prompt_tokens_details?.cache_write_tokens ?? 0,
     // Cached input is its own catalog row — OpenAI prices it at $1 per 1M
     // against $10 fresh, a 10x discount on the dimension our workload sits on
     // (a large stable prompt with a small per-lead block). No time-of-day
     // schedule, so the names carry no regime segment, same shape as Z.ai and
     // Moonshot.
-    pricing: { kind: "priced", cachedInput: true, regime: null },
+    pricing: {
+      kind: "priced",
+      cachedInput: true,
+      regime: null,
+      cacheWrite: true,
+      // "Prompts with >272K input tokens are priced at 2x input and 1.5x output
+      // for the full request" — every OpenAI model page, read 2026-10-27.
+      longContextAboveInputTokens: 272_000,
+    },
     // OpenAI publishes NO in-flight concurrency limit for this or any model —
     // what it publishes is a REQUEST and TOKEN RATE per account tier, per
     // model. That is a different quantity, so it is recorded as one rather
@@ -962,6 +1000,11 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
       perModel: {
         "gpt-6-sol": { reasoning_effort: "none" },
         "gpt-5.6-terra": { reasoning_effort: "none" },
+        // GPT-6.1 Terra keeps the full-off (probed live 2026-10-27: 'none' → 200,
+        // 0 reasoning tokens). GPT-6.1 Sol LOST it: 'none' and 'minimal' answer 400
+        // naming 'low' | 'medium' | 'high' | 'xhigh', so it takes the vendor
+        // default `low` (0 reasoning tokens measured on a structured call).
+        "gpt-6.1-terra": { reasoning_effort: "none" },
       },
       refusedBy: {},
       source: "https://developers.openai.com/api/docs/guides/reasoning",
@@ -1165,6 +1208,12 @@ export interface VendorCompleteResult {
    * directly is exactly what makes the discount real on our invoice.)
    */
   cachedInputTokens: number;
+  /**
+   * Prompt tokens the vendor WROTE to its cache, a SUBSET of `tokensInput`
+   * disjoint from `cachedInputTokens`. Non-zero only on a vendor that prices
+   * the write (`pricing.cacheWrite`); declared under `-tokens-cache-write`.
+   */
+  cacheWriteTokens: number;
   /** Which vendor served the request — for logs and cost reconciliation. */
   vendor: VendorId;
 }
@@ -1412,6 +1461,8 @@ export function mapVendorResponse(
   // declaration, failing a call that actually succeeded.
   const rawCached = vendorConfig(vendor).readCachedTokens(usage);
   const cachedInputTokens = Math.max(0, Math.min(rawCached, tokensInput));
+  const rawWrites = vendorConfig(vendor).readCacheWriteTokens?.(usage) ?? 0;
+  const cacheWriteTokens = Math.max(0, Math.min(rawWrites, tokensInput - cachedInputTokens));
 
   return {
     content,
@@ -1421,6 +1472,7 @@ export function mapVendorResponse(
     searchCount: 0,
     sources: [],
     cachedInputTokens,
+    cacheWriteTokens,
     vendor,
   };
 }

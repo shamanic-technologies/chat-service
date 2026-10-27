@@ -35,7 +35,7 @@ const ALIASES = [
   { provider: "zai", alias: "glm-flash", modelId: "glm-5.3-flash", prefix: "zai-glm-5.3-flash" },
   { provider: "zai", alias: "glm-pro", modelId: "glm-5.3", prefix: "zai-glm-5.3" },
   { provider: "moonshot", alias: "kimi-flash", modelId: "kimi-k2.6", prefix: "moonshot-kimi-k2.6" },
-  { provider: "moonshot", alias: "kimi-pro", modelId: "kimi-k3", prefix: "moonshot-kimi-k3" },
+  { provider: "moonshot", alias: "kimi-pro", modelId: "kimi-k3.1-pro", prefix: "moonshot-kimi-k3.1-pro" },
   { provider: "openai", alias: "gpt-pro", modelId: "gpt-6-astra", prefix: "openai-gpt-6-astra" },
 ] as const;
 
@@ -128,7 +128,7 @@ describe("direct-vendor model resolution", () => {
     // Dynasty slug, head model id (version pin), then legacy aliases (LLM-DYNASTY-1022).
     expect(PROVIDER_MODELS.deepseek).toEqual(["deepseek-flash", "deepseek-pro"]);
     expect(PROVIDER_MODELS.zai).toEqual(["glm-flash", "glm-5.3-flash", "glm", "glm-5.3", "glm-pro"]);
-    expect(PROVIDER_MODELS.moonshot).toEqual(["kimi-k2", "kimi-k2.6", "kimi-flash", "kimi-k3", "kimi-pro"]);
+    expect(PROVIDER_MODELS.moonshot).toEqual(["kimi-k2", "kimi-k2.6", "kimi-flash", "kimi-k3", "kimi-k3.1-pro", "kimi-pro"]);
   });
 
   it("maps every vendor model id back to its cost prefix", () => {

@@ -91,7 +91,7 @@ describe("alias resolution", () => {
       ["zai", "glm-flash", "glm-5.3-flash", "zai-glm-5.3-flash"],
       ["zai", "glm-pro", "glm-5.3", "zai-glm-5.3"],
       ["moonshot", "kimi-flash", "kimi-k2.6", "moonshot-kimi-k2.6"],
-      ["moonshot", "kimi-pro", "kimi-k3", "moonshot-kimi-k3"],
+      ["moonshot", "kimi-pro", "kimi-k3.1-pro", "moonshot-kimi-k3.1-pro"],
     ];
     for (const [provider, alias, apiModelId, costPrefix] of before) {
       expect(resolveModel(provider, alias)).toMatchObject({ apiModelId, costPrefix, provider });
@@ -171,7 +171,13 @@ describe("OpenAI vendor entry", () => {
     expect(VENDOR_IDS).toContain("openai");
     const config = vendorConfig("openai");
     expect(config.baseUrl).toBe("https://api.openai.com/v1");
-    expect(config.pricing).toEqual({ kind: "priced", cachedInput: true, regime: null });
+    expect(config.pricing).toEqual({
+      kind: "priced",
+      cachedInput: true,
+      regime: null,
+      cacheWrite: true,
+      longContextAboveInputTokens: 272_000,
+    });
     expect(config.structuredOutput).toBe("json_schema");
   });
 
@@ -210,13 +216,15 @@ describe("OpenAI vendor entry", () => {
 });
 
 describe("sampling support — the reasoning-first models that removed it", () => {
-  it("records OpenAI as refusing sampling and the three incumbents as accepting it", () => {
+  it("records OpenAI and Moonshot as refusing sampling, DeepSeek and Z.ai as accepting it", () => {
     // Probed live 2026-09-09: gpt-6-astra answers `400 unsupported_value` to
     // temperature ("Only the default (1) value is supported") and
     // `400 unsupported_parameter` to top_p. The other three have had
     // temperature forwarded to them in production since 2026-08-15.
     expect(vendorRejectsSampling("openai")).toBe(true);
-    for (const vendor of ["deepseek", "zai", "moonshot"] as const) {
+    // Kimi K3 and K3.1 Pro fix temperature at 0.6 (400 on 0.3, probed 2026-10-27).
+    expect(vendorRejectsSampling("moonshot")).toBe(true);
+    for (const vendor of ["deepseek", "zai"] as const) {
       expect(vendorRejectsSampling(vendor)).toBe(false);
     }
   });
