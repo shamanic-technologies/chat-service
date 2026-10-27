@@ -24,7 +24,7 @@ export const START_SIGN_IN_TOOL: Anthropic.Tool = {
   description:
     "Sign the person you are talking to on WhatsApp up, or in, to distribute.you: emails a 6-digit code to the address they give you. " +
     "Works for a new person (their account is created when they give the code back) and for someone who already has an account (they get into it). " +
-    "Ask for their email first, then call this, then ask them for the code from that email and call complete_sign_in.",
+    "Use the email we already know for them when the channel names one (never ask a known person for it); otherwise ask for their email once. Then call this, ask them for the code from that email and call complete_sign_in.",
   input_schema: {
     type: "object" as const,
     properties: { email: { type: "string", description: "The email the person gave you." } },

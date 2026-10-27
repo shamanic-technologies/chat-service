@@ -46,8 +46,14 @@ export const ChatChannelContextSchema = z.object({
     role: z.string().nullable(),
     instructions: z.string().nullable(),
   }),
-  sender: z.object({ phone: z.string(), name: z.string().nullable().optional() }),
-  thread: z.array(z.object({ at: z.string(), direction: z.enum(["inbound", "outbound"]), text: z.string() })),
+  sender: z.object({
+    phone: z.string(),
+    name: z.string().nullable().optional(),
+    knownEmails: z.array(z.string()).optional(),
+  }),
+  thread: z.array(
+    z.object({ at: z.string(), direction: z.enum(["inbound", "outbound"]), text: z.string(), kind: z.enum(["message", "call"]).optional() }),
+  ),
 });
 export type ChatChannelContext = z.infer<typeof ChatChannelContextSchema>;
 
@@ -68,21 +74,44 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
     `People may send voice notes. ${VOICE_NOTE_PREFIX} followed by words is what they SAID in a voice note, transcribed: treat it as their message and answer it like any written one. ${VOICE_NOTE_UNREADABLE} means a voice note we could not understand: say you could not listen to it and ask them to write it or send it again. Always answer in text: you cannot send voice notes.`,
   ];
   if (channel.assistant.instructions?.trim()) lines.push(`How you speak on this number: ${channel.assistant.instructions.trim()}`);
+  // COPILOT-WA-REPEAT-1027 (owner 2026-10-27: « ça fait vraiment répondeur
+  // automatique »): the STRATEGY of a conversation, never canned replies.
+  lines.push(
+    "How a real conversation works here: before you write, read the thread and your own last messages. Answer what they just said, in their register. " +
+      "Never send again something you already said: no ask they have not answered yet, no pitch, no figure, no offer line you already wrote. An unanswered ask means they are not ready; asking again is pressure, and repeating yourself is what makes you sound like an auto-responder. " +
+      "When someone says not now, they are busy, or they have no questions, one short warm line is the whole answer: they know where to find you. Short and human beats complete.",
+    "Our earlier messages in this thread (campaign messages included) may carry prices or offer terms that have changed since. Never repeat a price, amount or offer term from the thread: state one only from what your skills or tools say now, and when you have none, say no figure.",
+  );
+  const knownEmails = (channel.sender.knownEmails ?? []).filter((e) => e.trim());
   if (guest) {
-    lines.push(
-      "This WhatsApp number is NOT tied to any distribute.you account yet. You see no account and can change nothing: never claim to see their brands, campaigns or figures. " +
-        "Answer their questions about distribute.you. When they want to use it, or say they already have an account, sign them up or in: ask for their email, call start_sign_in, ask for the 6-digit code from that email, call complete_sign_in. From their next message you act with that account.",
-    );
+    if (knownEmails.length > 0) {
+      lines.push(
+        `We already know this person: our own records tie their number to ${knownEmails.join(", ")}. Never ask who they are or for their email. ` +
+          "This number is not tied to their distribute.you account yet, so you see no account and can change nothing: never claim to see their brands, campaigns or figures. Answer their questions about distribute.you. " +
+          "When THEY want to act on their account, call start_sign_in with that email yourself (the one they signed up with, when several), tell them a 6-digit code just went there, then call complete_sign_in with it. Never push sign-in on someone who did not ask.",
+      );
+    } else {
+      lines.push(
+        "This WhatsApp number is NOT tied to any distribute.you account yet. You see no account and can change nothing: never claim to see their brands, campaigns or figures. " +
+          "Answer their questions about distribute.you. When THEY want to use it, or say they already have an account, sign them up or in: ask for their email (once), call start_sign_in, ask for the 6-digit code from that email, call complete_sign_in. From their next message you act with that account.",
+      );
+    }
   } else {
     lines.push(
-      "This WhatsApp number is tied to the distribute.you account you act for: you have exactly this person's access, nothing more. " +
+      "This WhatsApp number is tied to the distribute.you account you act for: you have exactly this person's access, nothing more. You know who they are: never ask for their email or name. " +
         "If they say it is not their account, or want another one, sign them in with start_sign_in then complete_sign_in.",
     );
   }
+  lines.push(
+    "WhatsApp calls happen on this number too: our team may call the person from it. A call line in the thread is a call (us = we called them, them = they called us). " +
+      "When the person mentions a call (they missed it, cannot take calls now), it is about a call from our team, even when the thread shows none: some calls do not reach the thread. Acknowledge it simply (no problem, we can talk here), never say no call was needed or that we did not call.",
+  );
   if (channel.thread.length > 0) {
     lines.push(
-      "Their latest WhatsApp messages with this number, before this one (oldest first; ours include campaign messages):",
-      ...channel.thread.map((m) => `- ${m.at} ${m.direction === "inbound" ? "them" : "us"}: ${m.text.replace(/\s+/g, " ").slice(0, 600)}`),
+      "Their latest WhatsApp messages and calls with this number, before this one (oldest first; ours include campaign messages):",
+      ...channel.thread.map(
+        (m) => `- ${m.at} ${m.direction === "inbound" ? "them" : "us"}${m.kind === "call" ? " [call]" : ""}: ${m.text.replace(/\s+/g, " ").slice(0, 600)}`,
+      ),
     );
   }
   return lines.join("\n");
