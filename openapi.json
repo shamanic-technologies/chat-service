@@ -1901,6 +1901,15 @@
                   "userId"
                 ],
                 "description": "Present when the sender's number is a WhatsApp account a user LINKED in Integrations (crm): that user and the link's org. Wins over client-service users.phone (owner 2026-10-18: a number linked in Integrations is that user's identity)."
+              },
+              "knownEmails": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "email"
+                },
+                "maxItems": 10,
+                "description": "Emails our own records tie to this number (a send we made to it naming that person, the person's record). A person we know is never asked who they are (COPILOT-WA-REPEAT-1027)."
               }
             },
             "required": [
@@ -1934,6 +1943,14 @@
                 "text": {
                   "type": "string",
                   "maxLength": 5000
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "message",
+                    "call"
+                  ],
+                  "description": "\"call\" = a WhatsApp call on this thread (outbound = we called them, inbound = they called us), its text says what happened (\"Missed voice call\"). Absent = a message."
                 }
               },
               "required": [
@@ -1943,7 +1960,7 @@
               ]
             },
             "maxItems": 30,
-            "description": "The conversation's last messages BEFORE this one, oldest first, campaign sends included."
+            "description": "The conversation's last messages and calls BEFORE this one, oldest first, campaign sends included."
           }
         },
         "required": [

@@ -104,6 +104,42 @@ describe("buildChannelBlock", () => {
     expect(block).toContain("start_sign_in");
   });
 
+  // COPILOT-WA-REPEAT-1027: the prod thread of 2026-10-27 (a signup we wrote to first, then called).
+  const known: ChatChannelContext = {
+    ...channel,
+    sender: { phone: "+15550001111", name: "Staff Test", knownEmails: ["staff-test@distribute.you"] },
+    thread: [
+      { at: "2026-10-27T13:58:29.658Z", direction: "outbound", text: "You can start from $1 a day if you want to test the water." },
+      { at: "2026-10-27T14:20:00.000Z", direction: "outbound", text: "Missed voice call", kind: "call" },
+    ],
+  };
+
+  it("a guest we already know is never asked for their email: the Copilot signs in with the email we hold", () => {
+    const block = buildChannelBlock(known, true);
+    expect(block).toContain("our own records tie their number to staff-test@distribute.you");
+    expect(block).toContain("Never ask who they are or for their email");
+    expect(block).toContain("call start_sign_in with that email yourself");
+    expect(block).not.toContain("ask for their email (once)");
+  });
+
+  it("a known account is told it knows who they are", () => {
+    expect(buildChannelBlock(known, false)).toContain("never ask for their email or name");
+  });
+
+  it("shows a call as a call and reads a person's call remark as about OUR call", () => {
+    const block = buildChannelBlock(known, true);
+    expect(block).toContain("us [call]: Missed voice call");
+    expect(block).toContain("it is about a call from our team, even when the thread shows none");
+    expect(block).toContain("never say no call was needed");
+  });
+
+  it("explains the strategy against repeating itself, and never licenses an offer term from the thread", () => {
+    const block = buildChannelBlock(known, true);
+    expect(block).toContain("Never send again something you already said");
+    expect(block).toContain("one short warm line is the whole answer");
+    expect(block).toContain("Never repeat a price, amount or offer term from the thread");
+  });
+
   it("carries no hard-coded assistant name", () => {
     const block = buildChannelBlock({ ...channel, assistant: { name: "Ada", role: null, instructions: null } }, false);
     expect(block).toContain("as Ada.");
@@ -115,6 +151,17 @@ describe("ChannelMessageRequestSchema", () => {
   it("accepts crm's body and refuses a number that is not E.164", () => {
     expect(ChannelMessageRequestSchema.safeParse(MSG).success).toBe(true);
     expect(ChannelMessageRequestSchema.safeParse({ ...MSG, sender: { phone: "0680478702" } }).success).toBe(false);
+  });
+
+  it("keeps the sender's known emails and call lines crm sends (COPILOT-WA-REPEAT-1027)", () => {
+    const parsed = ChannelMessageRequestSchema.parse({
+      ...MSG,
+      sender: { ...MSG.sender, knownEmails: ["staff-test@distribute.you"] },
+      thread: [...MSG.thread, { at: "2026-10-27T14:20:00.000Z", direction: "outbound", text: "Missed voice call", kind: "call" }],
+    });
+    expect(parsed.sender.knownEmails).toEqual(["staff-test@distribute.you"]);
+    expect(parsed.thread[parsed.thread.length - 1].kind).toBe("call");
+    expect(ChannelMessageRequestSchema.safeParse({ ...MSG, sender: { ...MSG.sender, knownEmails: ["not-an-email"] } }).success).toBe(false);
   });
 });
 

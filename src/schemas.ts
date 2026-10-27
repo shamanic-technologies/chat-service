@@ -1321,13 +1321,30 @@ export const ChannelMessageRequestSchema = z
           description:
             "Present when the sender's number is a WhatsApp account a user LINKED in Integrations (crm): that user and the link's org. Wins over client-service users.phone (owner 2026-10-18: a number linked in Integrations is that user's identity).",
         }),
+      knownEmails: z
+        .array(z.string().email())
+        .max(10)
+        .optional()
+        .openapi({
+          description:
+            "Emails our own records tie to this number (a send we made to it naming that person, the person's record). A person we know is never asked who they are (COPILOT-WA-REPEAT-1027).",
+        }),
     }),
     text: z.string().min(1).max(20_000),
     at: z.string().datetime({ offset: true }),
     thread: z
-      .array(z.object({ at: z.string(), direction: z.enum(["inbound", "outbound"]), text: z.string().max(5000) }))
+      .array(
+        z.object({
+          at: z.string(),
+          direction: z.enum(["inbound", "outbound"]),
+          text: z.string().max(5000),
+          kind: z.enum(["message", "call"]).optional().openapi({
+            description: "\"call\" = a WhatsApp call on this thread (outbound = we called them, inbound = they called us), its text says what happened (\"Missed voice call\"). Absent = a message.",
+          }),
+        }),
+      )
       .max(30)
-      .openapi({ description: "The conversation's last messages BEFORE this one, oldest first, campaign sends included." }),
+      .openapi({ description: "The conversation's last messages and calls BEFORE this one, oldest first, campaign sends included." }),
   })
   .openapi("ChannelMessageRequest");
 export type ChannelMessageRequest = z.infer<typeof ChannelMessageRequestSchema>;
