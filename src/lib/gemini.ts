@@ -61,6 +61,7 @@ export const GEMINI_MODELS: Record<string, string> = {
   "gemini-3.8-flash": "google-flash-3.8",
   "gemini-3-flash-preview": "google-flash-3",
   "gemini-3.1-pro-preview": "google-pro-3.1",
+  "gemini-4-argon": "google-argon-4",
   "gemini-2.5-pro": "google-pro-2.5",
   "gemini-2.5-flash": "google-flash-2.5",
 };
@@ -68,6 +69,7 @@ export const GEMINI_MODELS: Record<string, string> = {
 /** Model-specific API timeouts in milliseconds. */
 const GEMINI_TIMEOUT_MS: Record<string, number> = {
   "gemini-3.1-pro-preview": 15 * 60_000,       // 15 min — Pro
+  "gemini-4-argon": 15 * 60_000,               // 15 min — Gemini 4 Argon
   "gemini-3.8-flash": 10 * 60_000,              // 10 min — Flash (flash-pro alias)
   "gemini-3.7-flash": 10 * 60_000,              // 10 min — Flash 3.7 (previous flash-pro)
   "gemini-3.6-flash": 10 * 60_000,              // 10 min — Flash 3.6
@@ -166,6 +168,9 @@ const GEMINI_3_THINKING_FLOOR: Record<string, GeminiThinkingLevel> = {
   "gemini-3.7-flash": "low",
   "gemini-3.1-pro-preview": "low",
   "gemini-3-pro-preview": "low",
+  // Gemini 4 Argon: docs table "On (medium)", levels low | medium | high; the live
+  // API refuses MINIMAL with 400 (probed 2026-10-27).
+  "gemini-4-argon": "low",
 };
 const GEMINI_25_THINKING_OFF = 0;
 
@@ -224,7 +229,8 @@ export function buildThinkingConfig(
   disableThinking = false,
   level?: GeminiThinkingLevel,
 ): Record<string, unknown> {
-  const isGemini3 = model.startsWith("gemini-3");
+  // Gemini 3 and newer take `thinkingLevel`; only Gemini 2.5 takes a token budget.
+  const isGemini3 = !model.startsWith("gemini-2.");
   if (disableThinking) {
     if (isGemini3) {
       // Per-model floor, read from the recorded table. Never derived from the id.

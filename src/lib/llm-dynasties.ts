@@ -123,6 +123,17 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     servedToday: true,
     legacyAliases: ["pro"],
   },
+  // Gemini 4 Argon (LLM-HEADS-1027): a new line. Google does not say it replaces Pro
+  // (`gemini-pro-latest` still answers 3.1 Pro), so it is its own dynasty.
+  {
+    slug: "gemini-argon",
+    name: "Gemini Argon",
+    provider: "google",
+    capabilityTier: "strong",
+    models: ["gemini-4-argon"],
+    servedToday: true,
+    legacyAliases: [],
+  },
   // DeepSeek
   {
     slug: "deepseek-flash",
@@ -182,7 +193,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "Kimi K3",
     provider: "moonshot",
     capabilityTier: "strong",
-    models: ["kimi-k3"],
+    models: ["kimi-k3.1-pro", "kimi-k3"],
     servedToday: true,
     legacyAliases: ["kimi-pro"],
   },
@@ -201,7 +212,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "GPT Sol",
     provider: "openai",
     capabilityTier: "strong",
-    models: ["gpt-6-sol"],
+    models: ["gpt-6.1-sol", "gpt-6-sol"],
     servedToday: true,
     legacyAliases: ["gpt-sol"],
   },
@@ -210,7 +221,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "GPT Terra",
     provider: "openai",
     capabilityTier: "strong",
-    models: ["gpt-5.6-terra"],
+    models: ["gpt-6.1-terra", "gpt-5.6-terra"],
     servedToday: true,
     legacyAliases: ["gpt-terra"],
   },

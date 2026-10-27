@@ -201,6 +201,52 @@ export function buildLlmCostNames(args: {
   };
 }
 
+/** One billed dimension of a direct-vendor completion, declared verbatim. */
+export interface VendorCostLine {
+  costName: string;
+  quantity: number;
+}
+
+/**
+ * The exact lines a direct-vendor completion is billed under (LLM-HEADS-1027).
+ *
+ * Splits the prompt into fresh input, cache hit and cache write, then picks the
+ * tier: a vendor with `longContextAboveInputTokens` bills EVERY token of a
+ * request over that prompt size at its `-long-context-` rows. A vendor that
+ * does not price a dimension keeps those tokens in fresh input, which is what
+ * it invoices. Zero quantities are dropped.
+ */
+export function vendorCostLines(args: {
+  provider: string;
+  costPrefix: string;
+  at: Date;
+  tokensInput: number;
+  cachedInputTokens: number;
+  cacheWriteTokens: number;
+  tokensOutput: number;
+}): VendorCostLine[] {
+  const { provider, costPrefix, at, tokensInput, tokensOutput } = args;
+  if (!isVendorProvider(provider)) {
+    throw new Error(`[cost] vendorCostLines called for non-vendor provider "${provider}"`);
+  }
+  const { pricing } = VENDORS[provider];
+  const longContext =
+    pricing.kind === "priced" &&
+    pricing.longContextAboveInputTokens !== undefined &&
+    tokensInput > pricing.longContextAboveInputTokens;
+  const names = buildLlmCostNames({ provider, costPrefix: longContext ? `${costPrefix}-long-context` : costPrefix, at });
+  const cached = names.cachedInput ? Math.min(args.cachedInputTokens, tokensInput) : 0;
+  const writes =
+    pricing.kind === "priced" && pricing.cacheWrite ? Math.min(args.cacheWriteTokens, tokensInput - cached) : 0;
+  const lines: VendorCostLine[] = [
+    { costName: names.input, quantity: tokensInput - cached - writes },
+    ...(names.cachedInput ? [{ costName: names.cachedInput, quantity: cached }] : []),
+    { costName: names.input.replace(/-tokens-input$/, "-tokens-cache-write"), quantity: writes },
+    { costName: names.output, quantity: tokensOutput },
+  ];
+  return lines.filter((l) => l.quantity > 0);
+}
+
 // ---------------------------------------------------------------------------
 // TypeSafe — ONE name, because the vendor prices ONE dimension
 //

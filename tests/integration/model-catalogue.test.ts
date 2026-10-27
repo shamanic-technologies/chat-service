@@ -56,7 +56,8 @@ describe("GET /internal/model-dynasties", () => {
     const res = await request(app).get("/internal/model-dynasties").set("x-api-key", "test-key");
     expect(res.status).toBe(200);
     const dynasties = res.body.dynasties as Array<Record<string, unknown>>;
-    expect(dynasties).toHaveLength(16);
+    expect(dynasties).toHaveLength(17);
+    expect(dynasties.find((d) => d.slug === "gemini-argon")).toMatchObject({ headModelId: "gemini-4-argon", servedToday: true });
     const lite = dynasties.find((d) => d.slug === "gemini-flash-lite")!;
     expect(lite).toMatchObject({ headModelId: "gemini-3.5-flash-lite", servedToday: true, legacyAliases: ["flash", "flash-lite"] });
   });

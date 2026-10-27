@@ -71,6 +71,7 @@ import {
 } from "./lib/openai-compatible.js";
 import {
   buildLlmCostNames,
+  vendorCostLines,
   flatCostNames,
   UnpricedModelError,
   type LlmCostNames,
@@ -848,7 +849,7 @@ app.post("/complete", requireAuth, async (req, res) => {
       return res.status(r.status).json(r.body);
     }
 
-    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }>; cachedInputTokens?: number; costLines?: GeminiCostLine[] };
+    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }>; cachedInputTokens?: number; cacheWriteTokens?: number; costLines?: GeminiCostLine[] };
 
     if (runId) {
       traceEvent(runId, "llm-call-start", { orgId, userId }, workflowTracking, {
@@ -875,6 +876,20 @@ app.post("/complete", requireAuth, async (req, res) => {
         // org-scoped. Never reaches the vendor.
         identity: { orgId, userId, runId: runId ?? undefined },
       });
+      // Every billed dimension (fresh / cache hit / cache write, long-context
+      // tier), declared verbatim like the Gemini and Anthropic lines.
+      result = {
+        ...result,
+        costLines: vendorCostLines({
+          provider,
+          costPrefix: resolved.costPrefix,
+          at: costClock,
+          tokensInput: result.tokensInput,
+          cachedInputTokens: result.cachedInputTokens ?? 0,
+          cacheWriteTokens: result.cacheWriteTokens ?? 0,
+          tokensOutput: result.tokensOutput,
+        }),
+      };
     } else if (isGemini) {
       result = await completeWithGemini({
         apiKey: resolvedKey.key,
@@ -2476,9 +2491,10 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
 
   // Catalog names, resolved before any fetch — same one-timestamp rule as
   // /complete: the regime is picked once, from the UTC clock at declaration.
+  const costClock = new Date();
   let costNames: LlmCostNames;
   try {
-    costNames = buildLlmCostNames({ provider, costPrefix: resolved.costPrefix, at: new Date() });
+    costNames = buildLlmCostNames({ provider, costPrefix: resolved.costPrefix, at: costClock });
   } catch (err) {
     if (err instanceof UnpricedModelError) {
       console.error(`[internal/platform-complete] model has no catalog price:`, err.message);
@@ -2521,7 +2537,7 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
 
   let platformFailed = false;
   try {
-    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }>; cachedInputTokens?: number; costLines?: GeminiCostLine[] };
+    let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }>; cachedInputTokens?: number; cacheWriteTokens?: number; costLines?: GeminiCostLine[] };
 
     if (isVendor) {
       result = await completeWithVendor({
@@ -2536,6 +2552,18 @@ app.post("/internal/platform-complete", requireInternalAuth, async (req, res) =>
         // Tri-state — see the same call on POST /complete.
         disableThinking: disableThinkingRaw,
       });
+      result = {
+        ...result,
+        costLines: vendorCostLines({
+          provider,
+          costPrefix: resolved.costPrefix,
+          at: costClock,
+          tokensInput: result.tokensInput,
+          cachedInputTokens: result.cachedInputTokens ?? 0,
+          cacheWriteTokens: result.cacheWriteTokens ?? 0,
+          tokensOutput: result.tokensOutput,
+        }),
+      };
     } else if (isGemini) {
       result = await completeWithGemini({
         apiKey,
