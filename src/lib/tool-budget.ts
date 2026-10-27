@@ -20,3 +20,20 @@ export function isFinalToolRound(depth: number): boolean {
 export const FINAL_ROUND_NOTE =
   "Tool budget for this turn is used up: no more tool calls. Answer the user now " +
   "with what you already have, and say plainly what is still missing.";
+
+/**
+ * A turn whose tools ran but whose model then ended with NO text gets ONE more
+ * round, tools off, with this note beside the last tool results (both loops).
+ * Prod 2026-10-27 (SOPHIE-NO-ANSWER-1028): the Copilot ran 15 tools, the final
+ * round came back empty, and the person got "did not finish writing the
+ * answer" on WhatsApp. The person always gets an answer; the canned fallback
+ * is only for a model that stays silent twice.
+ */
+export const EMPTY_ANSWER_NOTE =
+  "You ended your turn without writing anything to the person. Write your answer now, " +
+  "from the conversation and what you already found: no more tool calls.";
+
+/** True when a turn that ran tools ended silent and has not been re-asked yet. */
+export function needsAnswerNudge(opts: { toolsRan: boolean; answerText: string; alreadyNudged: boolean }): boolean {
+  return opts.toolsRan && !opts.alreadyNudged && opts.answerText.trim() === "";
+}

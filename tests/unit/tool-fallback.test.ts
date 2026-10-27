@@ -6,14 +6,16 @@ describe("buildToolResultFallback", () => {
     expect(buildToolResultFallback([])).toBe("");
   });
 
-  it("names what was looked up, once per tool", () => {
+  // Prod 2026-10-27 (SOPHIE-NO-ANSWER-1028): the WhatsApp Copilot sent "I looked
+  // this up (list_staff_requests, discover_services, ...)". A person never sees
+  // our tool names.
+  it("speaks plainly, never naming a tool", () => {
     const out = buildToolResultFallback([
       { name: "read_skill", result: {} },
-      { name: "list_audiences", result: { audiences: [] } },
-      { name: "read_skill", result: {} },
+      { name: "list_staff_requests", result: {} },
     ]);
-    expect(out).toContain("read_skill, list_audiences");
-    expect(out.match(/read_skill/g)).toHaveLength(1);
+    expect(out).not.toMatch(/read_skill|list_staff_requests|looked this up|did not finish/);
+    expect(out).toMatch(/send your message again/);
   });
 
   // Prod 2026-10-12: the fallback pasted 22 raw results, the answer weighed
