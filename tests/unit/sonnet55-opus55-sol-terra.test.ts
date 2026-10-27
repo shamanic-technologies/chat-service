@@ -52,8 +52,8 @@ describe("alias resolution", () => {
   it.each([
     ["anthropic", "sonnet", "claude-sonnet-5-5", "anthropic-sonnet-5.5", "strong"],
     ["anthropic", "opus", "claude-opus-5-5", "anthropic-opus-5.5", "frontier"],
-    ["openai", "gpt-sol", "gpt-6-sol", "openai-gpt-6-sol", "strong"],
-    ["openai", "gpt-terra", "gpt-5.6-terra", "openai-gpt-5.6-terra", "strong"],
+    ["openai", "gpt-sol", "gpt-6.1-sol", "openai-gpt-6.1-sol", "strong"],
+    ["openai", "gpt-terra", "gpt-6.1-terra", "openai-gpt-6.1-terra", "strong"],
   ] as const)("%s/%s → %s under %s, tier %s", (provider, alias, apiModelId, costPrefix, tier) => {
     expect(resolveModel(provider, alias)).toMatchObject({ apiModelId, costPrefix, provider });
     expect(costPrefixForModel(apiModelId)).toBe(costPrefix);
@@ -139,7 +139,7 @@ describe("Anthropic 5.5 — disableThinking lowers effort, never disables thinki
 
 describe("GPT-6 Sol / GPT-5.6 Terra — request body", () => {
   const schema = { type: "object", properties: { city: { type: "string" } } };
-  for (const model of ["gpt-6-sol", "gpt-5.6-terra"]) {
+  for (const model of ["gpt-6-sol", "gpt-5.6-terra", "gpt-6.1-terra"]) {
     it(`${model}: reasoning fully OFF for a structured request (it has a 'none')`, () => {
       const body = buildVendorRequestBody({ vendor: "openai", apiKey: "k", model, message: "m", responseSchema: schema });
       expect(body.reasoning_effort).toBe("none");
@@ -152,6 +152,11 @@ describe("GPT-6 Sol / GPT-5.6 Terra — request body", () => {
       expect(body.max_tokens).toBeUndefined();
     });
   }
+
+  it("keeps GPT-6.1 Sol on the vendor `low` floor — it refuses 'none' (probed 2026-10-27)", () => {
+    const body = buildVendorRequestBody({ vendor: "openai", apiKey: "k", model: "gpt-6.1-sol", message: "m", responseSchema: schema });
+    expect(body.reasoning_effort).toBe("low");
+  });
 
   it("keeps Astra on its `low` floor — it refuses 'none'", () => {
     const body = buildVendorRequestBody({ vendor: "openai", apiKey: "k", model: "gpt-6-astra", message: "m", responseSchema: schema });

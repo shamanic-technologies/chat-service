@@ -187,6 +187,7 @@ function mockVendor(
 const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
 const ZAI_URL = "https://api.z.ai/api/paas/v4/chat/completions";
 const MOONSHOT_URL = "https://api.moonshot.ai/v1/chat/completions";
+const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 
 const AUTH = { "x-api-key": "test-key", "x-org-id": "org-1", "x-user-id": "user-1", "x-run-id": "parent-run-1" };
 const INTERNAL_AUTH = { "x-api-key": "test-key" };
@@ -465,7 +466,7 @@ describe("POST /complete — direct vendor routing", () => {
       mockBilling(),
       mockVendor(vendor, {
         host: MOONSHOT_URL,
-        model: "kimi-k3",
+        model: "kimi-k3.1-pro",
         usage: { prompt_tokens: 700, completion_tokens: 18, cached_tokens: 640 },
       }),
       ...mockRunsCostRoutes(cap),
@@ -481,9 +482,9 @@ describe("POST /complete — direct vendor routing", () => {
     expect(vendor.calls).toBe(1);
 
     const actual = actualItems(cap.postedItems);
-    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-input")).toBe(60);
-    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-cached-input")).toBe(640);
-    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-output")).toBe(18);
+    expect(quantityOf(actual, "moonshot-kimi-k3.1-pro-tokens-input")).toBe(60);
+    expect(quantityOf(actual, "moonshot-kimi-k3.1-pro-tokens-cached-input")).toBe(640);
+    expect(quantityOf(actual, "moonshot-kimi-k3.1-pro-tokens-output")).toBe(18);
     // No regime segment — that belongs to DeepSeek alone.
     expect(actual.every((i) => !/-(peak|off-peak)-tokens-/.test(i.costName))).toBe(true);
   });
@@ -690,7 +691,7 @@ describe("POST /complete — direct vendor routing", () => {
   it("still sends Z.ai and Moonshot the full json_schema form — only DeepSeek differs", async () => {
     for (const c of [
       { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.3" },
-      { provider: "moonshot", model: "kimi-pro", host: MOONSHOT_URL, wire: "kimi-k3" },
+      { provider: "moonshot", model: "kimi-pro", host: MOONSHOT_URL, wire: "kimi-k3.1-pro" },
     ] as const) {
       routes = [];
       fetchCalls = [];
@@ -1057,5 +1058,77 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/provider "deepseek" \(DeepSeek\) does not support webSearch/);
     expect(fetchCalls).toHaveLength(0);
+  });
+
+  // LLM-HEADS-1027: OpenAI bills cache WRITES at 1.25x input and a >272K-token prompt at
+  // its long-context rows for the whole request. Both were declared at plain input before.
+  it("declares OpenAI cache writes under their own name, apart from fresh input and cache hits", async () => {
+    const costCap = { postedItems: [] as CostItem[][] };
+    const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+    routes.push(
+      mockVendorPlatformKey("openai"),
+      mockPlatformRunCreate(),
+      mockPlatformRunCosts(costCap),
+      mockPlatformRunStatus(),
+      mockVendor(vendor, {
+        host: OPENAI_URL,
+        model: "gpt-6.1-sol",
+        usage: {
+          prompt_tokens: 5000,
+          completion_tokens: 40,
+          prompt_tokens_details: { cached_tokens: 1000, cache_write_tokens: 3900 },
+        },
+      }),
+    );
+
+    const res = await request(app)
+      .post("/internal/platform-complete")
+      .set(INTERNAL_AUTH)
+      .send({ message: "hi", systemPrompt: "big", provider: "openai", model: "gpt-sol", support: TEST_PLATFORM_SUPPORT });
+
+    expect(res.status).toBe(200);
+    expect(vendor.bodies[0].model).toBe("gpt-6.1-sol");
+    const items = costCap.postedItems.flat();
+    expect(quantityOf(items, "openai-gpt-6.1-sol-tokens-input")).toBe(100);
+    expect(quantityOf(items, "openai-gpt-6.1-sol-tokens-cached-input")).toBe(1000);
+    expect(quantityOf(items, "openai-gpt-6.1-sol-tokens-cache-write")).toBe(3900);
+    expect(quantityOf(items, "openai-gpt-6.1-sol-tokens-output")).toBe(40);
+  });
+
+  it("bills EVERY token of an OpenAI request over 272K prompt tokens at the long-context rows", async () => {
+    const costCap = { postedItems: [] as CostItem[][] };
+    const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+    routes.push(
+      mockVendorPlatformKey("openai"),
+      mockPlatformRunCreate(),
+      mockPlatformRunCosts(costCap),
+      mockPlatformRunStatus(),
+      mockVendor(vendor, {
+        host: OPENAI_URL,
+        model: "gpt-6.1-terra",
+        usage: { prompt_tokens: 300_000, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 0 } },
+      }),
+    );
+
+    const res = await request(app)
+      .post("/internal/platform-complete")
+      .set(INTERNAL_AUTH)
+      .send({ message: "hi", systemPrompt: "huge", provider: "openai", model: "gpt-terra", support: TEST_PLATFORM_SUPPORT });
+
+    expect(res.status).toBe(200);
+    const items = costCap.postedItems.flat();
+    expect(quantityOf(items, "openai-gpt-6.1-terra-long-context-tokens-input")).toBe(300_000);
+    expect(quantityOf(items, "openai-gpt-6.1-terra-long-context-tokens-output")).toBe(10);
+    expect(items.some((i) => i.costName === "openai-gpt-6.1-terra-tokens-input")).toBe(false);
+  });
+
+  it("refuses a temperature for Kimi before any spend — K3.1 Pro only takes 0.6", async () => {
+    const res = await request(app)
+      .post("/internal/platform-complete")
+      .set(INTERNAL_AUTH)
+      .send({ message: "hi", systemPrompt: "", provider: "moonshot", model: "kimi-pro", temperature: 0.3, support: TEST_PLATFORM_SUPPORT });
+
+    expect(res.status).toBe(400);
+    expect(fetchCalls.some((c) => c.url.startsWith(MOONSHOT_URL))).toBe(false);
   });
 });

@@ -236,6 +236,10 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     // and do not derive any tier from an alias string.
     "gemini-flash": { apiModelId: "gemini-3.8-flash", costPrefix: "google-flash-3.8", provider: "google", capabilityTier: "cheap" },
     "gemini-pro": { apiModelId: "gemini-3.1-pro-preview", costPrefix: "google-pro-3.1", provider: "google", capabilityTier: "strong" },
+    // Gemini 4 Argon (LLM-HEADS-1027): its own line, Google keeps `gemini-pro-latest` on
+    // 3.1 Pro. Priced at the full $4 / $0.20 / $20 per MTok (the $2/$10 until 2026-11-30 is
+    // an intro rate, never declared). Thinking floor `low` (Google refuses `minimal`).
+    "gemini-argon": { apiModelId: "gemini-4-argon", costPrefix: "google-argon-4", provider: "google", capabilityTier: "strong" },
   },
   // ---------------------------------------------------------------------
   // Direct-vendor models — one OpenAI-compatible adapter, three vendors.
@@ -394,9 +398,12 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       provider: "moonshot",
       capabilityTier: "cheap",
     },
+    // Kimi K3.1 Pro (LLM-HEADS-1027): Moonshot lists it as its flagship and K3 as the
+    // previous generation, so it is the K3 line's new head. $2 / $0.20 / $10 per MTok vs
+    // K3's $3 / $0.30 / $15. Probed live 2026-10-27: json_schema, thinking disabled.
     "kimi-k3": {
-      apiModelId: "kimi-k3",
-      costPrefix: "moonshot-kimi-k3",
+      apiModelId: "kimi-k3.1-pro",
+      costPrefix: "moonshot-kimi-k3.1-pro",
       provider: "moonshot",
       capabilityTier: "strong",
     },
@@ -432,15 +439,17 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     // Both "strong": same price band as Sonnet 5.5, well below Astra's $10/$50.
     // Capabilities were probed live, not inherited from Astra — they differ on
     // reasoning (see the `perModel` entry in openai-compatible.ts).
+    // LLM-HEADS-1027: both lines moved to GPT-6.1. Sol keeps its price ($2 / $0.10 cached /
+    // $10) but lost the reasoning full-off (floor `low`); Terra drops to $1 / $0.05 / $5.
     "gpt-sol": {
-      apiModelId: "gpt-6-sol",
-      costPrefix: "openai-gpt-6-sol",
+      apiModelId: "gpt-6.1-sol",
+      costPrefix: "openai-gpt-6.1-sol",
       provider: "openai",
       capabilityTier: "strong",
     },
     "gpt-terra": {
-      apiModelId: "gpt-5.6-terra",
-      costPrefix: "openai-gpt-5.6-terra",
+      apiModelId: "gpt-6.1-terra",
+      costPrefix: "openai-gpt-6.1-terra",
       provider: "openai",
       capabilityTier: "strong",
     },
@@ -721,6 +730,7 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "gemini-3.7-flash": "google-flash-3.7",
   "gemini-3.8-flash": "google-flash-3.8",
   "gemini-3.1-pro-preview": "google-pro-3.1",
+  "gemini-4-argon": "google-argon-4",
   "gemini-2.5-pro": "google-pro-2.5",
   "gemini-2.5-flash": "google-flash-2.5",
   // Direct-vendor models: the cost prefix IS the vendor model id.
@@ -738,9 +748,12 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "glm-5.3": "zai-glm-5.3",
   "kimi-k2.6": "moonshot-kimi-k2.6",
   "kimi-k3": "moonshot-kimi-k3",
+  "kimi-k3.1-pro": "moonshot-kimi-k3.1-pro",
   "gpt-6-astra": "openai-gpt-6-astra",
   "gpt-6-sol": "openai-gpt-6-sol",
   "gpt-5.6-terra": "openai-gpt-5.6-terra",
+  "gpt-6.1-sol": "openai-gpt-6.1-sol",
+  "gpt-6.1-terra": "openai-gpt-6.1-terra",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */

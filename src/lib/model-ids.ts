@@ -41,6 +41,7 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "gemini-3.5-flash-lite": "Gemini 3.5 Flash-Lite",
   "gemini-3.8-flash": "Gemini 3.8 Flash",
   "gemini-3.1-pro-preview": "Gemini 3.1 Pro",
+  "gemini-4-argon": "Gemini 4 Argon",
   "gemini-3.1-flash-lite-preview": "Gemini 3.1 Flash-Lite (preview)",
   "gemini-3-flash-preview": "Gemini 3 Flash",
   "gemini-3.1-flash-preview": "Gemini 3.1 Flash (preview)",
@@ -62,10 +63,13 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   // Moonshot
   "kimi-k2.6": "Kimi K2.6",
   "kimi-k3": "Kimi K3",
+  "kimi-k3.1-pro": "Kimi K3.1 Pro",
   // OpenAI
   "gpt-6-astra": "GPT-6 Astra",
   "gpt-6-sol": "GPT-6 Sol",
   "gpt-5.6-terra": "GPT-5.6 Terra",
+  "gpt-6.1-sol": "GPT-6.1 Sol",
+  "gpt-6.1-terra": "GPT-6.1 Terra",
 };
 
 interface RetiredModel {
@@ -116,6 +120,10 @@ export const RETIRED_MODELS: Record<string, RetiredModel> = {
   "deepseek-v4-pro": { provider: "deepseek", capabilityTier: "strong", formerAliases: ["deepseek-pro"] },
   "glm-5.2": { provider: "zai", capabilityTier: "strong", formerAliases: ["glm-pro"] },
   "glm-4.7-flashx": { provider: "zai", capabilityTier: "cheap", formerAliases: ["glm-flash"] },
+  // LLM-HEADS-1027 (2026-10-27): heads moved to kimi-k3.1-pro, gpt-6.1-sol, gpt-6.1-terra.
+  "kimi-k3": { provider: "moonshot", capabilityTier: "strong", formerAliases: ["kimi-pro"] },
+  "gpt-6-sol": { provider: "openai", capabilityTier: "strong", formerAliases: ["gpt-sol"] },
+  "gpt-5.6-terra": { provider: "openai", capabilityTier: "strong", formerAliases: ["gpt-terra"] },
 };
 
 export interface ModelIdEntry {
