@@ -61,6 +61,9 @@ export type ChatChannelContext = z.infer<typeof ChatChannelContextSchema>;
 // System prompt block (only for a session the internal route tied to a number)
 // ---------------------------------------------------------------------------
 
+/** Per-message cap of the thread shown to the model: a whole message, bounded. */
+export const THREAD_MESSAGE_MAX_CHARS = 4000;
+
 export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): string {
   const name = channel.assistant.name?.trim();
   const role = channel.assistant.role?.trim();
@@ -107,10 +110,14 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
       "When the person mentions a call (they missed it, cannot take calls now), it is about a call from our team, even when the thread shows none: some calls do not reach the thread. Acknowledge it simply (no problem, we can talk here), never say no call was needed or that we did not call.",
   );
   if (channel.thread.length > 0) {
+    // A whole message, never its first lines: a message WE sent (the daily
+    // Threads drafts, ~1,700 chars) is what the person asks about next. At 600
+    // chars the Copilot saw 1.3 of 5 drafts and went hunting through tools
+    // instead of answering (SOPHIE-NO-ANSWER-1028, prod 2026-10-27).
     lines.push(
       "Their latest WhatsApp messages and calls with this number, before this one (oldest first; ours include campaign messages):",
       ...channel.thread.map(
-        (m) => `- ${m.at} ${m.direction === "inbound" ? "them" : "us"}${m.kind === "call" ? " [call]" : ""}: ${m.text.replace(/\s+/g, " ").slice(0, 600)}`,
+        (m) => `- ${m.at} ${m.direction === "inbound" ? "them" : "us"}${m.kind === "call" ? " [call]" : ""}: ${m.text.replace(/\s+/g, " ").slice(0, THREAD_MESSAGE_MAX_CHARS)}`,
       ),
     );
   }

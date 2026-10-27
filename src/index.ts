@@ -376,7 +376,7 @@ import {
   type AnthropicCostLine,
 } from "./lib/anthropic-usage.js";
 import { buildToolResultFallback } from "./lib/tool-fallback.js";
-import { FINAL_ROUND_NOTE, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH } from "./lib/tool-budget.js";
+import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH, needsAnswerNudge } from "./lib/tool-budget.js";
 import { SESSION_NOT_FOUND_EVENT, SESSION_NOT_FOUND_MESSAGE, isSessionOwner } from "./lib/session-errors.js";
 import { serializeSessionHistory } from "./lib/session-history.js";
 import { buildContextUsageEvent } from "./lib/context-usage.js";
@@ -4789,6 +4789,9 @@ app.post("/chat", requireAuth, async (req, res) => {
     // iteration calls a tool, flushed when it answers.
     const holdTextBesideTools = holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices");
 
+    // Set once the model ended silent after tools and was re-asked (tools off).
+    let answerNudged = false;
+
     agenticLoop:
     while (depth <= MAX_TOOL_CHAIN_DEPTH) {
       // Abort early if client already disconnected
@@ -4821,7 +4824,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           cache: anthropicCachePriced(resolvedModelInfo.costPrefix),
           // Per-config thinking effort (NULL → the model's own default).
           effort: appConfig.effort ?? undefined,
-          ...(isFinalToolRound(depth) ? { toolChoice: "none" as const } : {}),
+          ...(isFinalToolRound(depth) || answerNudged ? { toolChoice: "none" as const } : {}),
         });
 
         try {
@@ -4837,9 +4840,8 @@ app.post("/chat", requireAuth, async (req, res) => {
                 sendSSE(res, { type: "thinking_delta", thinking: event.delta.thinking });
                 tokensEmitted = true;
               } else if (event.delta.type === "text_delta") {
-                if (holdTextBesideTools) {
-                  iterText += event.delta.text;
-                } else {
+                iterText += event.delta.text;
+                if (!holdTextBesideTools) {
                   bufferToken(event.delta.text);
                   tokensEmitted = true;
                 }
@@ -4896,8 +4898,26 @@ app.post("/chat", requireAuth, async (req, res) => {
         }
       }
 
-      // If no tool calls, we're done
-      if (finalMessage.stop_reason !== "tool_use") break;
+      // If no tool calls, we're done, unless tools ran and the model wrote
+      // nothing: re-ask ONCE, tools off (SOPHIE-NO-ANSWER-1028, prod
+      // 2026-10-27: 15 tools, an empty final round, "did not finish" sent).
+      if (finalMessage.stop_reason !== "tool_use") {
+        const lastTurn = turnMessages[turnMessages.length - 1];
+        if (
+          lastTurn?.role === "user" &&
+          Array.isArray(lastTurn.content) &&
+          needsAnswerNudge({ toolsRan: depth > 0, answerText: iterText, alreadyNudged: answerNudged })
+        ) {
+          console.warn(
+            `[chat] session="${currentSessionId}" ended silent after ${toolCalls.length} tool(s) ` +
+              `(stop_reason=${finalMessage.stop_reason}); asking the model to answer now`,
+          );
+          answerNudged = true;
+          lastTurn.content = [...lastTurn.content, { type: "text", text: EMPTY_ANSWER_NOTE }];
+          continue;
+        }
+        break;
+      }
 
       // Extract tool_use blocks from the response
       const toolUseBlocks = finalMessage.content.filter(
