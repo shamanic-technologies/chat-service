@@ -460,13 +460,15 @@ describe("channelReplyDays", () => {
         { createdAt: new Date("2026-10-29T09:00:00Z"), status: "failed", sentAt: null },
         { createdAt: new Date("2026-10-29T10:00:00Z"), status: "processing", sentAt: null },
         { createdAt: new Date("2026-10-27T10:00:00Z"), status: "failed", sentAt: new Date("2026-10-27T10:01:00Z") },
+        // The team already wrote by hand: crm refused the send, nothing is broken.
+        { createdAt: new Date("2026-10-28T10:00:00Z"), status: "failed", sentAt: null, error: 'send: crm-service whatsapp send 422: {"type":"refused","code":"human_in_conversation","error":"..."}' },
       ]],
       inserts: [],
     });
     const days = await channelReplyDays(db as unknown as ChannelDeps["db"], 3, new Date("2026-10-29T12:00:00Z"));
     expect(days).toEqual([
       { day: "2026-10-27", received: 1, delivered: 1, notDelivered: 0 },
-      { day: "2026-10-28", received: 0, delivered: 0, notDelivered: 0 },
+      { day: "2026-10-28", received: 1, delivered: 0, notDelivered: 0 },
       { day: "2026-10-29", received: 3, delivered: 1, notDelivered: 1 },
     ]);
   });

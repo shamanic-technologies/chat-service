@@ -528,6 +528,9 @@ export async function recoverChannelMessages(deps: ChannelDeps, now = new Date()
 // Delivery series (Monitoring: replies written vs delivered, per UTC day)
 // ---------------------------------------------------------------------------
 
+/** crm-service's refusal when the brand's team already took the conversation by hand. */
+export const HUMAN_TAKEOVER_CODE = '"code":"human_in_conversation"';
+
 export interface ChannelReplyDay {
   day: string;
   received: number;
@@ -539,13 +542,16 @@ export interface ChannelReplyDay {
  * One row per UTC day, oldest first, zeros included, recomputed from the stored
  * rows (SOPHIE-WA-SIGNED-IN-1029: a refused send was silent for two days).
  * delivered = crm-service accepted the reply; notDelivered = the turn ended but
- * nothing left; a message still in flight counts in received only.
+ * nothing left; a message still in flight counts in received only. A send crm
+ * refused because a person of the brand already wrote by hand
+ * (`human_in_conversation`) is the team answering, not a break: it never counts
+ * as not delivered (red only when broken).
  */
 export async function channelReplyDays(database: typeof Db, days: number, now = new Date()): Promise<ChannelReplyDay[]> {
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const from = new Date(today - (days - 1) * 86_400_000);
   const rows = await database
-    .select({ createdAt: channelInboundMessages.createdAt, status: channelInboundMessages.status, sentAt: channelInboundMessages.sentAt })
+    .select({ createdAt: channelInboundMessages.createdAt, status: channelInboundMessages.status, sentAt: channelInboundMessages.sentAt, error: channelInboundMessages.error })
     .from(channelInboundMessages)
     .where(gte(channelInboundMessages.createdAt, from));
   const byDay = new Map<string, ChannelReplyDay>();
@@ -558,7 +564,7 @@ export async function channelReplyDays(database: typeof Db, days: number, now = 
     if (!bucket) continue;
     bucket.received++;
     if (r.sentAt) bucket.delivered++;
-    else if (r.status === "answered" || r.status === "failed") bucket.notDelivered++;
+    else if ((r.status === "answered" || r.status === "failed") && !r.error?.includes(HUMAN_TAKEOVER_CODE)) bucket.notDelivered++;
   }
   return [...byDay.values()];
 }
