@@ -37,3 +37,18 @@ export const EMPTY_ANSWER_NOTE =
 export function needsAnswerNudge(opts: { toolsRan: boolean; answerText: string; alreadyNudged: boolean }): boolean {
   return opts.toolsRan && !opts.alreadyNudged && opts.answerText.trim() === "";
 }
+
+/**
+ * A turn that must END by calling one tool (ONE-AI-CONVERSES-1029: a Lead event
+ * turn answers its caller through `answer_person`). Tools are never switched
+ * off for it (the answer IS a tool call): the final round and the re-ask say
+ * to call that tool now instead, in both loops.
+ */
+export function endToolFinalNote(toolName: string): string {
+  return `Tool budget for this turn is used up: call ${toolName} now with what you already have. No other tool.`;
+}
+
+/** Sent once when a turn that must end on `toolName` stopped without calling it. */
+export function endToolNudgeNote(toolName: string): string {
+  return `You ended your turn without calling ${toolName}. Your turn only counts once you call it: call ${toolName} now, from the conversation and what you already found.`;
+}

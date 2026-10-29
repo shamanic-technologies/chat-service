@@ -640,7 +640,11 @@ export async function sendWhatsappReply(
   if (!res.ok) throw new WhatsappSendError(res.status, await res.text().catch(() => ""));
 }
 
-export async function createChannelRootRun(identity: { orgId: string; userId: string }, fetchImpl: typeof fetch = fetch): Promise<string> {
+export async function createChannelRootRun(
+  identity: { orgId: string; userId: string },
+  fetchImpl: typeof fetch = fetch,
+  taskName: string = CHANNEL_TASK_NAME,
+): Promise<string> {
   const res = await fetchImpl(`${process.env.RUNS_SERVICE_URL || "https://runs.mcpfactory.org"}/v1/runs`, {
     method: "POST",
     headers: {
@@ -649,7 +653,7 @@ export async function createChannelRootRun(identity: { orgId: string; userId: st
       "x-org-id": identity.orgId,
       "x-user-id": identity.userId,
     },
-    body: JSON.stringify({ serviceName: "chat-service", taskName: CHANNEL_TASK_NAME, support: COPILOT_SUPPORT }),
+    body: JSON.stringify({ serviceName: "chat-service", taskName, support: COPILOT_SUPPORT }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`runs-service create run ${res.status}: ${await res.text().catch(() => "")}`);

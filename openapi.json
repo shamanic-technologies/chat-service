@@ -2047,6 +2047,180 @@
           "days"
         ]
       },
+      "LeadTurnResponse": {
+        "type": "object",
+        "properties": {
+          "json": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "The answer, in the writer's `responseSchema` (like `/complete` `json`)."
+          },
+          "content": {
+            "type": "string",
+            "description": "`json` serialized."
+          },
+          "model": {
+            "type": "string",
+            "nullable": true,
+            "description": "The model that answered (the Copilot's)."
+          },
+          "sessionId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "The Copilot conversation the turn ran in (the person's own when they have an account)."
+          },
+          "account": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "orgId": {
+                "type": "string"
+              },
+              "userId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "orgId",
+              "userId"
+            ],
+            "description": "The person's account the turn acted as, null for a guest."
+          },
+          "signedIn": {
+            "type": "boolean",
+            "description": "The person signed in during this exchange (email code): the answer was written with their account."
+          },
+          "duplicate": {
+            "type": "boolean",
+            "description": "true when this idempotency key was already answered: nothing ran again."
+          }
+        },
+        "required": [
+          "json",
+          "content",
+          "model",
+          "sessionId",
+          "account",
+          "signedIn",
+          "duplicate"
+        ]
+      },
+      "LeadTurnRequest": {
+        "type": "object",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "Stable id of this occurrence (e.g. the writer node's run). A retry with the same key (same org) runs nothing again and answers the stored answer."
+          },
+          "brandId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The brand writing to the person (the campaign's brand)."
+          },
+          "medium": {
+            "type": "string",
+            "enum": [
+              "whatsapp",
+              "email"
+            ],
+            "description": "Where the answer goes out (the workflow's channel plan decided it)."
+          },
+          "recipient": {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "string",
+                "nullable": true,
+                "maxLength": 320
+              },
+              "phone": {
+                "type": "string",
+                "nullable": true,
+                "pattern": "^\\+[1-9]\\d{6,14}$"
+              },
+              "name": {
+                "type": "string",
+                "nullable": true,
+                "maxLength": 300
+              }
+            },
+            "required": [
+              "email",
+              "phone",
+              "name"
+            ],
+            "description": "The person the answer goes to: their WhatsApp number and email are their identity (the number wins)."
+          },
+          "assistant": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "name": {
+                "type": "string",
+                "nullable": true,
+                "maxLength": 200
+              },
+              "role": {
+                "type": "string",
+                "nullable": true,
+                "maxLength": 200
+              },
+              "instructions": {
+                "type": "string",
+                "nullable": true,
+                "maxLength": 4000
+              }
+            },
+            "required": [
+              "name",
+              "role",
+              "instructions"
+            ],
+            "description": "The sending line's persona (name, role, voice), null when the sender has none."
+          },
+          "systemPrompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100000,
+            "description": "The writer's prompt: how to decide (the game). Joins the Copilot's own prompt as context, never replaces it."
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200000,
+            "description": "The writer's message: the thread on every channel, who they are, our facts."
+          },
+          "responseSchema": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "The writer's answer shape (JSON Schema object): the Copilot answers in it."
+          },
+          "messageField": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "The top-level string property of `responseSchema` holding the text the person receives (empty = nothing written now). Stored as the Copilot's message in the person's conversation."
+          }
+        },
+        "required": [
+          "idempotencyKey",
+          "brandId",
+          "medium",
+          "recipient",
+          "assistant",
+          "systemPrompt",
+          "message",
+          "responseSchema",
+          "messageField"
+        ]
+      },
       "ProactiveTurnResponse": {
         "type": "object",
         "properties": {
@@ -2467,6 +2641,11 @@
             "type": "string",
             "format": "uuid",
             "description": "Internal: set only by chat-service itself when running a proactive turn (POST /internal/copilot/proactive-turns). Must name a turn in progress for this org, user and session, or the request is refused (400). The turn then gets read tools only and its trigger is stored hidden."
+          },
+          "leadTurnId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Internal: set only by chat-service itself when running a Lead event turn (POST /internal/copilot/lead-turns). Must name a lead turn in progress for this session, or the request is refused (400). The turn then ends on answer_person (streamed as a `lead_answer` event) and its trigger is stored hidden."
           }
         },
         "required": [
@@ -5154,6 +5333,160 @@
           },
           "401": {
             "description": "Missing x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/copilot/lead-turns": {
+      "post": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "The Copilot writes a Lead event answer (one AI for every lead and client)",
+        "description": "Called by a Lead event workflow's writer node instead of `/complete` (ONE-AI-CONVERSES-1029). The Copilot (same config, prompt, skills, model and tools as on the web and WhatsApp) reads the writer's `systemPrompt` and `message` as context, decides, and answers in `responseSchema`. Synchronous; nothing is sent from here (the workflow sends).\n\n**The person's account:** when `brandId` is distribute.you's own and their number (first) or email resolves to an account, the turn runs as them in their Copilot conversation with their tools. A guest with a number can sign in by email code; the answer is then written with the account. Another brand's lead: no account of ours is read, no sign-in.\n\n**Billing:** a turn in the caller's org is a child of `x-run-id`; a turn in the person's own org runs as Copilot support (runs-service refuses a cross-org child).\n\n**Idempotent** on (`x-org-id`, `idempotencyKey`): a retry of an answered key answers 200 with `duplicate: true`; a key still running answers 409.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The writing brand's org (internal UUID)."
+            },
+            "required": true,
+            "description": "The writing brand's org (internal UUID).",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The user the caller's run is under."
+            },
+            "required": true,
+            "description": "The user the caller's run is under.",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The writer's run."
+            },
+            "required": true,
+            "description": "The writer's run.",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-feature-slug",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeadTurnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The answer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadTurnResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid request fields or headers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "The org the turn runs in has no credit left (`error: out_of_credits`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This idempotency key is still running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The turn failed (named in `error`); nothing was answered",
             "content": {
               "application/json": {
                 "schema": {
