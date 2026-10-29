@@ -6,7 +6,8 @@
  * Copilot sees no account and gets these two tools only. The person proves an
  * email with the existing agent-signup code (client-service: the email's
  * account is returned, created on first sight, and the number is tied to it in
- * the same call), so the next message resolves to it directly.
+ * the same call): the answer that follows at once, and every next message,
+ * act with that account.
  *
  * The number always comes from the session row (written only by
  * POST /internal/copilot/channel-messages from a delivered message), never
@@ -35,8 +36,9 @@ export const START_SIGN_IN_TOOL: Anthropic.Tool = {
 export const COMPLETE_SIGN_IN_TOOL: Anthropic.Tool = {
   name: COMPLETE_SIGN_IN_TOOL_NAME,
   description:
-    "Finish the sign-in with the 6-digit code the person received by email. On success their WhatsApp number is tied to that account: " +
-    "from their NEXT message you act with that account's access (campaigns, brands, everything they can do on the web). Tell them so.",
+    "Finish the sign-in with the 6-digit code the person received by email. On success their WhatsApp number is tied to that account, " +
+    "and right after your reply you answer again, automatically, with that account's access (campaigns, brands, everything they can do on the web): " +
+    "so in this reply just say in a few words that they are in. Never ask them to send anything to continue.",
   input_schema: {
     type: "object" as const,
     properties: {

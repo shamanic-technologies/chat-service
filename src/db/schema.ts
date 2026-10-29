@@ -265,6 +265,9 @@ export const channelInboundMessages = pgTable(
     replyText: text("reply_text"),
     error: text("error"),
     payload: jsonb("payload").notNull(),
+    // When crm-service accepted the reply (migration 0027, SOPHIE-WA-SIGNED-IN-1029):
+    // NULL = the reply never left. Feeds the Monitoring chart (written vs delivered).
+    sentAt: timestamp("sent_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

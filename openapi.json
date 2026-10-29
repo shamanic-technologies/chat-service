@@ -1977,6 +1977,45 @@
           "thread"
         ]
       },
+      "ChannelReplyDaysResponse": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "string",
+                  "description": "UTC day, YYYY-MM-DD."
+                },
+                "received": {
+                  "type": "integer",
+                  "description": "Inbound WhatsApp messages the Copilot handled that day."
+                },
+                "delivered": {
+                  "type": "integer",
+                  "description": "Of those, replies crm-service accepted (left from the line)."
+                },
+                "notDelivered": {
+                  "type": "integer",
+                  "description": "Replies written (or the apology text) that never left: the send was refused. Broken when above zero."
+                }
+              },
+              "required": [
+                "day",
+                "received",
+                "delivered",
+                "notDelivered"
+              ]
+            },
+            "description": "One row per UTC day, oldest first, days with no message at zero."
+          }
+        },
+        "required": [
+          "days"
+        ]
+      },
       "ProactiveTurnResponse": {
         "type": "object",
         "properties": {
@@ -5008,6 +5047,72 @@
           },
           "400": {
             "description": "Missing or invalid request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/copilot/channel-replies/daily": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "The Copilot's WhatsApp replies per day: received, delivered, not delivered (Monitoring)",
+        "description": "Recomputed from the stored inbound rows, so the whole history is served. A day with `notDelivered` above zero is broken: a reply the person never got.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90,
+              "default": 30,
+              "description": "How many UTC days, today included (1..90, default 30)."
+            },
+            "required": false,
+            "description": "How many UTC days, today included (1..90, default 30).",
+            "name": "days",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The daily series",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelReplyDaysResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid days",
             "content": {
               "application/json": {
                 "schema": {
