@@ -1420,6 +1420,95 @@ registry.registerPath({
   },
 });
 
+// --- Internal: the Copilot writes the Lead event answer (ONE-AI-CONVERSES-1029) ---
+
+export const LeadTurnRequestSchema = z
+  .object({
+    idempotencyKey: z.string().min(1).max(300).openapi({
+      description: "Stable id of this occurrence (e.g. the writer node's run). A retry with the same key (same org) runs nothing again and answers the stored answer.",
+    }),
+    brandId: z.string().uuid().openapi({ description: "The brand writing to the person (the campaign's brand)." }),
+    medium: z.enum(["whatsapp", "email"]).openapi({ description: "Where the answer goes out (the workflow's channel plan decided it)." }),
+    recipient: z
+      .object({
+        email: z.string().max(320).nullable(),
+        phone: E164.nullable(),
+        name: z.string().max(300).nullable(),
+      })
+      .openapi({ description: "The person the answer goes to: their WhatsApp number and email are their identity (the number wins)." }),
+    assistant: z
+      .object({
+        name: z.string().max(200).nullable(),
+        role: z.string().max(200).nullable(),
+        instructions: z.string().max(4000).nullable(),
+      })
+      .nullable()
+      .openapi({ description: "The sending line's persona (name, role, voice), null when the sender has none." }),
+    systemPrompt: z.string().min(1).max(100_000).openapi({ description: "The writer's prompt: how to decide (the game). Joins the Copilot's own prompt as context, never replaces it." }),
+    message: z.string().min(1).max(200_000).openapi({ description: "The writer's message: the thread on every channel, who they are, our facts." }),
+    responseSchema: z
+      .record(z.string(), z.unknown())
+      .refine((s) => s.type === "object" && typeof s.properties === "object" && s.properties !== null, { message: "responseSchema must be a JSON Schema object with properties" })
+      .openapi({ description: "The writer's answer shape (JSON Schema object): the Copilot answers in it." }),
+    messageField: z.string().min(1).max(100).openapi({
+      description: "The top-level string property of `responseSchema` holding the text the person receives (empty = nothing written now). Stored as the Copilot's message in the person's conversation.",
+    }),
+  })
+  .refine((b) => Boolean(b.recipient.email || b.recipient.phone), { message: "recipient needs an email or a phone", path: ["recipient"] })
+  .refine((b) => {
+    const prop = (b.responseSchema.properties as Record<string, { type?: unknown }>)[b.messageField];
+    return Boolean(prop) && (prop.type === "string" || (Array.isArray(prop.type) && prop.type.includes("string")));
+  }, { message: "messageField must name a string property of responseSchema", path: ["messageField"] })
+  .openapi("LeadTurnRequest");
+export type LeadTurnRequest = z.infer<typeof LeadTurnRequestSchema>;
+
+export const LeadTurnResponseSchema = z
+  .object({
+    json: z.record(z.string(), z.unknown()).openapi({ description: "The answer, in the writer's `responseSchema` (like `/complete` `json`)." }),
+    content: z.string().openapi({ description: "`json` serialized." }),
+    model: z.string().nullable().openapi({ description: "The model that answered (the Copilot's)." }),
+    sessionId: z.string().uuid().nullable().openapi({ description: "The Copilot conversation the turn ran in (the person's own when they have an account)." }),
+    account: z.object({ orgId: z.string(), userId: z.string() }).nullable().openapi({ description: "The person's account the turn acted as, null for a guest." }),
+    signedIn: z.boolean().openapi({ description: "The person signed in during this exchange (email code): the answer was written with their account." }),
+    duplicate: z.boolean().openapi({ description: "true when this idempotency key was already answered: nothing ran again." }),
+  })
+  .openapi("LeadTurnResponse");
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/copilot/lead-turns",
+  tags: ["Internal"],
+  summary: "The Copilot writes a Lead event answer (one AI for every lead and client)",
+  description: `Called by a Lead event workflow's writer node instead of \`/complete\` (ONE-AI-CONVERSES-1029). The Copilot (same config, prompt, skills, model and tools as on the web and WhatsApp) reads the writer's \`systemPrompt\` and \`message\` as context, decides, and answers in \`responseSchema\`. Synchronous; nothing is sent from here (the workflow sends).
+
+**The person's account:** when \`brandId\` is distribute.you's own and their number (first) or email resolves to an account, the turn runs as them in their Copilot conversation with their tools. A guest with a number can sign in by email code; the answer is then written with the account. Another brand's lead: no account of ours is read, no sign-in.
+
+**Billing:** a turn in the caller's org is a child of \`x-run-id\`; a turn in the person's own org runs as Copilot support (runs-service refuses a cross-org child).
+
+**Idempotent** on (\`x-org-id\`, \`idempotencyKey\`): a retry of an answered key answers 200 with \`duplicate: true\`; a key still running answers 409.`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+      "x-org-id": z.string().openapi({ description: "The writing brand's org (internal UUID)." }),
+      "x-user-id": z.string().openapi({ description: "The user the caller's run is under." }),
+      "x-run-id": z.string().openapi({ description: "The writer's run." }),
+      "x-campaign-id": z.string().optional(),
+      "x-brand-id": z.string().optional(),
+      "x-workflow-slug": z.string().optional(),
+      "x-feature-slug": z.string().optional(),
+    }),
+    body: { content: { "application/json": { schema: LeadTurnRequestSchema } } },
+  },
+  responses: {
+    200: { description: "The answer", content: { "application/json": { schema: LeadTurnResponseSchema } } },
+    400: { description: "Missing or invalid request fields or headers", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing x-api-key header", content: { "application/json": { schema: ErrorResponseSchema } } },
+    402: { description: "The org the turn runs in has no credit left (`error: out_of_credits`)", content: { "application/json": { schema: ErrorResponseSchema } } },
+    409: { description: "This idempotency key is still running", content: { "application/json": { schema: ErrorResponseSchema } } },
+    502: { description: "The turn failed (named in `error`); nothing was answered", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 // --- Internal: proactive Copilot turn toward the brand's team ---
 
 export const ProactiveTurnRequestSchema = z
@@ -1847,6 +1936,12 @@ export const ChatRequestSchema = z
         "Internal: set only by chat-service itself when running a proactive turn (POST /internal/copilot/proactive-turns). " +
         "Must name a turn in progress for this org, user and session, or the request is refused (400). " +
         "The turn then gets read tools only and its trigger is stored hidden.",
+    }),
+    leadTurnId: z.string().uuid().optional().openapi({
+      description:
+        "Internal: set only by chat-service itself when running a Lead event turn (POST /internal/copilot/lead-turns). " +
+        "Must name a lead turn in progress for this session, or the request is refused (400). " +
+        "The turn then ends on answer_person (streamed as a `lead_answer` event) and its trigger is stored hidden.",
     }),
   })
   .openapi("ChatRequest");

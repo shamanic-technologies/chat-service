@@ -21,7 +21,7 @@ import {
   type SourceInfo,
 } from "./lib/transcription.js";
 import { readTranscription, runTranscriptionJob, toTranscriptionBody } from "./lib/transcription-job.js";
-import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions, channelInboundMessages, copilotProactiveTurns } from "./db/schema.js";
+import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions, channelInboundMessages, copilotProactiveTurns, copilotLeadTurns } from "./db/schema.js";
 import { transferBrand } from "./lib/transfer-brand.js";
 import { dynastyCatalogue, modelIdCatalogue } from "./lib/model-ids.js";
 import { eq, and, desc, sql } from "drizzle-orm";
@@ -307,7 +307,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelMessageRequestSchema, ChannelReplyDaysQuerySchema, ProactiveTurnRequestSchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelMessageRequestSchema, ChannelReplyDaysQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -351,7 +351,7 @@ import {
   JudgmentImageUnavailableError,
   type PreparedJudgmentImage,
 } from "./lib/judgment-image.js";
-import { requireAuth, requireInternalAuth, buildTrackingHeaders, type AuthLocals } from "./middleware/auth.js";
+import { requireAuth, requireInternalAuth, buildTrackingHeaders, extractWorkflowTracking, type AuthLocals } from "./middleware/auth.js";
 import { resolveOutputBudget, estimateInputTokens, estimateOutputTokens } from "./lib/provision-estimate.js";
 import type { ButtonRecord, ToolCallRecord } from "./db/schema.js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -377,7 +377,21 @@ import {
   type AnthropicCostLine,
 } from "./lib/anthropic-usage.js";
 import { buildToolResultFallback } from "./lib/tool-fallback.js";
-import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH, needsAnswerNudge } from "./lib/tool-budget.js";
+import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, endToolFinalNote, endToolNudgeNote, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH, needsAnswerNudge } from "./lib/tool-budget.js";
+import {
+  LEAD_ANSWER_TOOL_NAME,
+  LEAD_TURN_TRIGGER,
+  buildLeadAnswerTool,
+  buildLeadTurnBlock,
+  copilotOwnBrandId,
+  LEAD_TURN_TASK_NAME,
+  leadTurnBody,
+  leadTurnToolNames,
+  resolveEmailAccount,
+  processLeadTurn,
+  type LeadTurnDeps,
+  type LeadTurnFrame,
+} from "./lib/lead-turn.js";
 import { SESSION_NOT_FOUND_EVENT, SESSION_NOT_FOUND_MESSAGE, isSessionOwner } from "./lib/session-errors.js";
 import { serializeSessionHistory } from "./lib/session-history.js";
 import { buildContextUsageEvent } from "./lib/context-usage.js";
@@ -3101,14 +3115,39 @@ app.post("/chat", requireAuth, async (req, res) => {
   // (never settable by a caller): a GUEST (no account behind the number) gets
   // the sign-in tools only; a known person keeps every tool plus sign-in.
   let channelSession: { channelPhone: string; guest: boolean } | null = null;
+  let sessionIsGuest = false;
   if (sessionId) {
     const [s] = await db
       .select({ orgId: sessions.orgId, userId: sessions.userId, channelPhone: sessions.channelPhone, guest: sessions.guest })
       .from(sessions)
       .where(eq(sessions.id, sessionId));
+    if (s && isSessionOwner(s, { orgId, userId })) sessionIsGuest = s.guest;
     if (s?.channelPhone && isSessionOwner(s, { orgId, userId })) {
       channelSession = { channelPhone: s.channelPhone, guest: s.guest };
     }
+  }
+  // A Lead event turn (POST /internal/copilot/lead-turns, on this process,
+  // ONE-AI-CONVERSES-1029): only a lead turn in progress for this session
+  // unlocks it. It ends on answer_person, in the writer's schema.
+  let leadTurn: LeadTurnFrame | null = null;
+  let leadTurnOrgId: string | null = null;
+  if (parsed.data.leadTurnId) {
+    const [t] = await db
+      .select({ orgId: copilotLeadTurns.orgId, sessionId: copilotLeadTurns.sessionId, status: copilotLeadTurns.status, signedIn: copilotLeadTurns.signedIn, payload: copilotLeadTurns.payload })
+      .from(copilotLeadTurns)
+      .where(eq(copilotLeadTurns.id, parsed.data.leadTurnId));
+    if (nudge || parsed.data.proactiveTurnId || !t || t.status !== "processing" || !sessionId || t.sessionId !== sessionId) {
+      return res.status(400).json({ error: "leadTurnId names no lead turn in progress for this session." });
+    }
+    const payload = t.payload as LeadTurnRequest;
+    leadTurnOrgId = t.orgId;
+    leadTurn = {
+      payload,
+      ownBrand: copilotOwnBrandId() === payload.brandId,
+      guest: sessionIsGuest,
+      phoneBound: channelSession !== null,
+      afterSignIn: t.signedIn && !sessionIsGuest,
+    };
   }
   // A proactive turn (POST /internal/copilot/proactive-turns, on this process):
   // only a turn in progress for this org, user and session unlocks it, and it
@@ -3139,10 +3178,19 @@ app.post("/chat", requireAuth, async (req, res) => {
     : channelSession
       ? [...configAllowedToolNames, ...SIGN_IN_TOOL_NAMES]
       : configAllowedToolNames;
-  const allowedToolNames: string[] = proactiveTurn ? proactiveToolNames(sessionToolNames) : sessionToolNames;
+  // A lead turn: the person's own tools only on our brand with their account;
+  // a guest on our brand with a number can sign in; anything else, the answer only.
+  const leadSessionToolNames: string[] = !leadTurn || !leadTurn.ownBrand
+    ? []
+    : leadTurn.guest
+      ? channelSession ? [...SIGN_IN_TOOL_NAMES] : []
+      : [...configAllowedToolNames, ...(channelSession ? SIGN_IN_TOOL_NAMES : [])];
+  const allowedToolNames: string[] = leadTurn
+    ? leadTurnToolNames(leadSessionToolNames, CLIENT_UI_TOOL_NAMES)
+    : proactiveTurn ? proactiveToolNames(sessionToolNames) : sessionToolNames;
   // This turn came in on WhatsApp: the channel block joins the prompt and the
   // turn is not re-filed in the staff Unibox (crm already holds the thread).
-  const channelContext = channelSession && context?.channel !== undefined
+  const channelContext = channelSession && !leadTurn && context?.channel !== undefined
     ? ChatChannelContextSchema.safeParse(context.channel)
     : null;
   if (channelContext && !channelContext.success) {
@@ -3152,7 +3200,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   // A trigger the user did not write (nudge, proactive turn, the answer right
   // after a WhatsApp sign-in): stored hidden, never filed in the staff Unibox
   // as the user's words.
-  const hiddenTrigger = nudge === true || proactiveTurn || channelTurn?.afterSignIn === true;
+  const hiddenTrigger = nudge === true || proactiveTurn || leadTurn !== null || channelTurn?.afterSignIn === true;
   const promptContext = context && "channel" in context
     ? Object.fromEntries(Object.entries(context).filter(([k]) => k !== "channel"))
     : context;
@@ -3266,7 +3314,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   // sub-skills) appended; sub-skills are loaded on demand with read_skill.
   let skillIndexBlock = "";
   // A WhatsApp guest has no read_skill: it still gets the voice (client-comms) and the public offer (our-offer).
-  const wantsVoiceOnly = channelSession?.guest === true && configAllowedToolNames.includes("read_skill");
+  const wantsVoiceOnly = (channelSession?.guest === true || (leadTurn?.guest === true && leadTurn.ownBrand)) && configAllowedToolNames.includes("read_skill");
   if (allowedToolNames.includes("read_skill") || wantsVoiceOnly) {
     try {
       skillIndexBlock = wantsVoiceOnly ? await buildGuestSkillsBlock(db) : await buildSkillIndexBlock(db);
@@ -3284,7 +3332,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   }
   const systemPrompt =
     buildSystemPrompt(appConfig.systemPrompt + skillIndexBlock, promptContext, campaignFeatureInputs) +
-    (channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
+    (leadTurn ? buildLeadTurnBlock(leadTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
   const isGeminiChat = chatProvider === "google";
   const claude = isGeminiChat ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
 
@@ -3360,7 +3408,11 @@ app.post("/chat", requireAuth, async (req, res) => {
         {
           serviceName: "chat-service",
           taskName: "chat",
-          support: chatTurnSupport({ configKey, supportKind: appConfig.supportKind, proactiveTurnId: parsed.data.proactiveTurnId }),
+          // A lead turn in the caller's org is the caller's work (its outcome's
+          // spend, child of its run); in the person's own org it is Copilot support.
+          support: leadTurn && orgId === leadTurnOrgId
+            ? undefined
+            : chatTurnSupport({ configKey, supportKind: appConfig.supportKind, proactiveTurnId: parsed.data.proactiveTurnId }),
         },
         { orgId, userId, runId: parentRunId },
         trackingHeaders,
@@ -3497,7 +3549,10 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
 
-    const allTools = resolveToolSet(allowedToolNames);
+    const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME));
+    if (leadTurn) allTools.push(buildLeadAnswerTool(leadTurn.payload.responseSchema, leadTurn.payload.messageField));
+    // The answer a lead turn ended on (answer_person), in the writer's schema.
+    const leadAnswer: { json: Record<string, unknown> | null } = { json: null };
     const allowedToolSet = new Set(allowedToolNames);
     const downstreamTrackingHeaders = Object.keys(trackingHeaders).length > 0
       ? trackingHeaders as Record<string, string>
@@ -3610,6 +3665,20 @@ app.post("/chat", requireAuth, async (req, res) => {
           name: call.name,
           result: { error: `Tool "${call.name}" is not available in this chat mode.` },
         };
+      }
+
+      // A lead turn's answer: recorded, streamed to the route, and the turn ends.
+      if (call.name === LEAD_ANSWER_TOOL_NAME && leadTurn) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const text = args[leadTurn.payload.messageField];
+        if (text !== undefined && text !== null && typeof text !== "string") {
+          throw new Error(`${LEAD_ANSWER_TOOL_NAME}: ${leadTurn.payload.messageField} must be the text they receive (a string, empty when you write nothing now).`);
+        }
+        leadAnswer.json = args;
+        sendSSE(res, { type: "lead_answer", answer: args, model: resolvedModelInfo.apiModelId });
+        emittedInputRequest = true;
+        // Not replayed as a tool call: the stored answer is the text they got.
+        return "input_request";
       }
 
       // Client-side tool: emit input_request and signal to stop
@@ -4740,6 +4809,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         // the /chat path reads this; /complete never raises thinking.
         thinkingLevel: appConfig.thinkingLevel ?? undefined,
         holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),
+        ...(leadTurn ? { endToolName: LEAD_ANSWER_TOOL_NAME } : {}),
         beforeProviderCall: async ({ requestBody }) => {
           await authorizeChatProviderCall(estimateRequestTokens(requestBody));
         },
@@ -4753,7 +4823,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       // "I called X twice" (prod: update_qualification_check x2 per message).
       // Keep the loop's signed copy, plus the turn-ending present_choices call
       // the loop never feeds back to the model.
-      const turnEnding = toolCalls.filter((tc) => tc.name === PRESENT_CHOICES_TOOL_NAME);
+      const turnEnding = toolCalls.filter((tc) => tc.name === PRESENT_CHOICES_TOOL_NAME || tc.name === LEAD_ANSWER_TOOL_NAME);
       toolCalls.length = 0;
       toolCalls.push(...geminiResult.toolCalls, ...turnEnding);
       totalPromptTokens = geminiResult.tokensInput;
@@ -4827,7 +4897,8 @@ app.post("/chat", requireAuth, async (req, res) => {
           cache: anthropicCachePriced(resolvedModelInfo.costPrefix),
           // Per-config thinking effort (NULL → the model's own default).
           effort: appConfig.effort ?? undefined,
-          ...(isFinalToolRound(depth) || answerNudged ? { toolChoice: "none" as const } : {}),
+          // A lead turn ends on a tool call: tools never go off for it.
+          ...((isFinalToolRound(depth) || answerNudged) && !leadTurn ? { toolChoice: "none" as const } : {}),
         });
 
         try {
@@ -4906,6 +4977,19 @@ app.post("/chat", requireAuth, async (req, res) => {
       // 2026-10-27: 15 tools, an empty final round, "did not finish" sent).
       if (finalMessage.stop_reason !== "tool_use") {
         const lastTurn = turnMessages[turnMessages.length - 1];
+        // A lead turn that stopped without its answer is re-asked once to call it.
+        if (leadTurn && !leadAnswer.json && !answerNudged) {
+          console.warn(`[chat] session="${currentSessionId}" lead turn stopped without ${LEAD_ANSWER_TOOL_NAME}; asking for it`);
+          answerNudged = true;
+          const note = { type: "text" as const, text: endToolNudgeNote(LEAD_ANSWER_TOOL_NAME) };
+          if (finalMessage.content.length > 0) {
+            turnMessages.push({ role: "assistant", content: finalMessage.content });
+            turnMessages.push({ role: "user", content: [note] });
+          } else if (lastTurn?.role === "user") {
+            lastTurn.content = Array.isArray(lastTurn.content) ? [...lastTurn.content, note] : [{ type: "text", text: lastTurn.content }, note];
+          }
+          continue;
+        }
         if (
           lastTurn?.role === "user" &&
           Array.isArray(lastTurn.content) &&
@@ -4996,7 +5080,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       turnMessages.push({
         role: "user",
         content: isFinalToolRound(depth)
-          ? [...toolResultBlocks, { type: "text", text: FINAL_ROUND_NOTE }]
+          ? [...toolResultBlocks, { type: "text", text: leadTurn ? endToolFinalNote(LEAD_ANSWER_TOOL_NAME) : FINAL_ROUND_NOTE }]
           : toolResultBlocks,
       });
     }
@@ -5045,6 +5129,20 @@ app.post("/chat", requireAuth, async (req, res) => {
       : [];
     if (buttons.length > 0) {
       sendSSE(res, { type: "buttons", buttons });
+    }
+
+    // A lead turn answers its caller through answer_person, never in chat text.
+    // Its stored message is the text the person receives (empty = nothing now).
+    if (leadTurn) {
+      if (!leadAnswer.json) {
+        chatFailed = true;
+        console.error(`[chat] session="${currentSessionId}" lead turn ended without ${LEAD_ANSWER_TOOL_NAME}`);
+        sendSSE(res, { type: "error", code: "model_error", message: `The turn ended without ${LEAD_ANSWER_TOOL_NAME}.` });
+        sendSSE(res, "[DONE]");
+        return;
+      }
+      const sent = leadAnswer.json[leadTurn.payload.messageField];
+      fullResponse = typeof sent === "string" ? sent : "";
     }
 
     // Tool(s) ran but the model produced no summary text. This must never leave
@@ -5099,10 +5197,12 @@ app.post("/chat", requireAuth, async (req, res) => {
       choices: turnUi.choices,
       openPages: openedPages.length > 0 ? openedPages : null,
       tokenCount: totalPromptTokens + totalOutputTokens || null,
+      // A lead turn that wrote nothing now leaves nothing to show.
+      ...(leadTurn && !cleanedResponse.trim() ? { proactiveTrigger: true } : {}),
     })).returning({ id: messages.id, createdAt: messages.createdAt });
     // The Copilot is staff: the turn also lands in distribute.you's Unibox (crm-service).
     // A WhatsApp turn is already in crm's WhatsApp thread: never filed twice.
-    if (!channelTurn) pushCopilotTurnInBackground(configKey, {
+    if (!channelTurn && !leadTurn) pushCopilotTurnInBackground(configKey, {
       orgId, userId, sessionId: currentSessionId,
       messages: [...(hiddenTrigger ? [] : [userTurnMessage]), { messageId: savedAnswer.id, role: "assistant", text: cleanedResponse, at: savedAnswer.createdAt }],
     });
@@ -5170,7 +5270,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           // Stored so a reload draws the "Add credits" button again.
           creditsRequired,
         })).returning({ id: messages.id, createdAt: messages.createdAt });
-        if (!channelTurn) pushCopilotTurnInBackground(configKey, {
+        if (!channelTurn && !leadTurn) pushCopilotTurnInBackground(configKey, {
           orgId, userId, sessionId: creditsTurn.sessionId,
           messages: [
             ...(creditsTurn.userMessage ? [creditsTurn.userMessage] : []),
@@ -5314,6 +5414,71 @@ app.get("/internal/copilot/channel-replies/daily", requireInternalAuth, async (r
     return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
   }
   res.json({ days: await channelReplyDays(db, parsed.data.days) });
+});
+
+const leadTurnDeps: LeadTurnDeps = {
+  db,
+  resolvePhone: (phone) => resolvePhoneAccount(phone),
+  resolveEmail: (email) => resolveEmailAccount(db, email),
+  listBrandIds: (identity) => listOrgBrandIds(identity),
+  createRootRun: (identity) => createChannelRootRun(identity, fetch, LEAD_TURN_TASK_NAME),
+  runChat: async (args) => {
+    const res = await fetch(`http://127.0.0.1:${PORT}/chat`, {
+      method: "POST",
+      headers: {
+        ...args.trackingHeaders,
+        "content-type": "application/json",
+        "x-api-key": process.env.CHAT_SERVICE_API_KEY || "chat-service-self",
+        "x-org-id": args.orgId,
+        "x-user-id": args.userId,
+        "x-run-id": args.runId,
+      },
+      body: JSON.stringify({ configKey: COPILOT_CONFIG_KEY, message: LEAD_TURN_TRIGGER, sessionId: args.sessionId, leadTurnId: args.leadTurnId }),
+      signal: AbortSignal.timeout(15 * 60_000),
+    });
+    return { status: res.status, body: await res.text() };
+  },
+};
+
+app.post("/internal/copilot/lead-turns", requireInternalAuth, async (req, res) => {
+  const parsed = LeadTurnRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const orgId = req.headers["x-org-id"];
+  const userId = req.headers["x-user-id"];
+  const runId = req.headers["x-run-id"];
+  if (typeof orgId !== "string" || !orgId || typeof userId !== "string" || !userId || typeof runId !== "string" || !runId) {
+    return res.status(400).json({ error: "x-org-id, x-user-id and x-run-id headers are required (the writer's run)" });
+  }
+  const turn = parsed.data;
+  const [existing] = await db
+    .select()
+    .from(copilotLeadTurns)
+    .where(and(eq(copilotLeadTurns.orgId, orgId), eq(copilotLeadTurns.idempotencyKey, turn.idempotencyKey)));
+  if (existing?.status === "answered") return res.status(200).json(leadTurnBody(existing, true));
+  if (existing?.status === "processing") return res.status(409).json({ error: "This idempotency key is still running." });
+  let rowId: string;
+  if (existing) {
+    // A failed key runs again: the caller's retry is the recovery.
+    await db.update(copilotLeadTurns).set({ status: "processing", error: null, payload: turn, updatedAt: new Date() }).where(eq(copilotLeadTurns.id, existing.id));
+    rowId = existing.id;
+  } else {
+    const [row] = await db
+      .insert(copilotLeadTurns)
+      .values({ idempotencyKey: turn.idempotencyKey, orgId, brandId: turn.brandId, status: "processing", payload: turn })
+      .onConflictDoNothing({ target: [copilotLeadTurns.orgId, copilotLeadTurns.idempotencyKey] })
+      .returning({ id: copilotLeadTurns.id });
+    if (!row) return res.status(409).json({ error: "This idempotency key is still running." });
+    rowId = row.id;
+  }
+  const outcome = await processLeadTurn(leadTurnDeps, rowId, {
+    orgId,
+    userId,
+    runId,
+    trackingHeaders: buildTrackingHeaders(extractWorkflowTracking(req)),
+  });
+  res.status(outcome.status).json(outcome.body);
 });
 
 const proactiveDeps: ProactiveDeps = {
