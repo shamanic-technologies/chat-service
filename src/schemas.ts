@@ -1375,6 +1375,40 @@ registry.registerPath({
   },
 });
 
+// --- Internal: delivery series of the Copilot's WhatsApp replies (SOPHIE-WA-SIGNED-IN-1029) ---
+
+export const ChannelReplyDaysQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(30).openapi({ description: "How many UTC days, today included (1..90, default 30)." }),
+});
+
+const ChannelReplyDaySchema = z.object({
+  day: z.string().openapi({ description: "UTC day, YYYY-MM-DD." }),
+  received: z.number().int().openapi({ description: "Inbound WhatsApp messages the Copilot handled that day." }),
+  delivered: z.number().int().openapi({ description: "Of those, replies crm-service accepted (left from the line)." }),
+  notDelivered: z.number().int().openapi({ description: "Replies written (or the apology text) that never left: the send was refused. Broken when above zero." }),
+});
+
+const ChannelReplyDaysResponseSchema = z
+  .object({ days: z.array(ChannelReplyDaySchema).openapi({ description: "One row per UTC day, oldest first, days with no message at zero." }) })
+  .openapi("ChannelReplyDaysResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/copilot/channel-replies/daily",
+  tags: ["Internal"],
+  summary: "The Copilot's WhatsApp replies per day: received, delivered, not delivered (Monitoring)",
+  description: "Recomputed from the stored inbound rows, so the whole history is served. A day with `notDelivered` above zero is broken: a reply the person never got.",
+  request: {
+    headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
+    query: ChannelReplyDaysQuerySchema,
+  },
+  responses: {
+    200: { description: "The daily series", content: { "application/json": { schema: ChannelReplyDaysResponseSchema } } },
+    400: { description: "Invalid days", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing x-api-key header", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 // --- Internal: proactive Copilot turn toward the brand's team ---
 
 export const ProactiveTurnRequestSchema = z

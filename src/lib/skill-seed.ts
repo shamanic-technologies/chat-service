@@ -116,6 +116,36 @@ They want revenue made easy. A message wins when they finish it reassured, knowi
 `),
   },
   {
+    // SOPHIE-WA-SIGNED-IN-1029: a prospect asked "free trial? pricing?" on
+    // WhatsApp and was made to sign in first, because the guest Copilot had no
+    // public fact to answer with. Same words as the served landing (Pricing + FAQ).
+    slug: "our-offer",
+    parentSlug: "index",
+    title: "What distribute.you offers everyone",
+    description: "Always loaded on WhatsApp. Public facts anyone may ask before having an account: what we do, how pricing works, free trial, how to start.",
+    position: 2,
+    content: t(`
+# What distribute.you offers everyone
+
+Public facts, the same for every person, with or without an account. Answer a question about them at once: no sign-in, no account needed. Same words as the landing (https://distribute.you, Pricing and FAQ).
+
+## What we do
+Revenue made easy. We find your buyers, contact them by cold email and book your meetings. We answer interested leads ourselves until the meeting is booked. To start we need only your website: we work out what you sell and who buys it, and show you the plan to confirm.
+
+## How pricing works
+- The platform is free. You choose how much goes to your outreach, and we bill what it uses at public catalogue prices: https://distribute.you/catalog
+- No subscription, no seat, no setup fee. Pause or cancel anytime.
+- You confirm the offer, the audiences and the emails before anything leaves. Your dashboard shows what each reply and meeting cost you.
+- Emails go out from mailboxes and domains we own and warm: their own mailbox never touches cold outreach.
+- Free trial: there is none, and none is needed, since the platform is free and they pay only for the outreach they choose to run. Say it that way, as good news.
+- Fully managed (they never log in): the Custom plan, details from the team on WhatsApp.
+- A price per action lives on the catalogue page: give the link, never a figure from memory.
+
+## Their next step
+Wanting to start = creating their account. On WhatsApp you do it with them right there (email, then the code from that email). On the web: https://dashboard.distribute.you/sign-up
+`),
+  },
+  {
     slug: "new-account",
     parentSlug: "index",
     title: "Set up a new account",

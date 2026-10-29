@@ -17,7 +17,7 @@
  * The assistant's name and voice come from the linked account's persona
  * (crm data), never from this code.
  */
-import { and, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { COPILOT_SUPPORT } from "./support-marks.js";
 import type { db as Db } from "../db/index.js";
@@ -54,6 +54,12 @@ export const ChatChannelContextSchema = z.object({
   thread: z.array(
     z.object({ at: z.string(), direction: z.enum(["inbound", "outbound"]), text: z.string(), kind: z.enum(["message", "call"]).optional() }),
   ),
+  /**
+   * Set by processChannelMessage only, on the turn it runs right after a guest
+   * turn that signed the person in (SOPHIE-WA-SIGNED-IN-1029): that turn's
+   * message is our trigger, not their words, so it is stored hidden.
+   */
+  afterSignIn: z.literal(true).optional(),
 });
 export type ChatChannelContext = z.infer<typeof ChatChannelContextSchema>;
 
@@ -63,6 +69,14 @@ export type ChatChannelContext = z.infer<typeof ChatChannelContextSchema>;
 
 /** Per-message cap of the thread shown to the model: a whole message, bounded. */
 export const THREAD_MESSAGE_MAX_CHARS = 4000;
+
+/** A public question is answered at once: sign-in is never put in front of it (SOPHIE-WA-SIGNED-IN-1029). */
+const PUBLIC_FIRST =
+  "Answer every question about distribute.you at once, from what we offer everyone (what we do, how pricing works, free trial, how to start): those answers need no account, so never put a sign-in in front of them. ";
+
+/** The account takes effect in the same exchange: no extra round for the person. */
+const SIGN_IN_ANSWERS_AT_ONCE =
+  "Signing in never costs them a message: right after complete_sign_in succeeds, you answer again with their account's access, so in that reply just say in a few words that they are in, and never ask them to send anything (\"ok\", a question) to continue.";
 
 export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): string {
   const name = channel.assistant.name?.trim();
@@ -90,13 +104,17 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
     if (knownEmails.length > 0) {
       lines.push(
         `We already know this person: our own records tie their number to ${knownEmails.join(", ")}. Never ask who they are or for their email. ` +
-          "This number is not tied to their distribute.you account yet, so you see no account and can change nothing: never claim to see their brands, campaigns or figures. Answer their questions about distribute.you. " +
-          "When their next step needs their account, call start_sign_in with that email yourself (the one they signed up with, when several), tell them a 6-digit code just went there, then call complete_sign_in with it.",
+          "This number is not tied to their distribute.you account yet, so you see no account and can change nothing: never claim to see their brands, campaigns or figures. " +
+          PUBLIC_FIRST +
+          "When their next step needs their account (their campaigns, their figures, starting or changing something), call start_sign_in with that email yourself (the one they signed up with, when several), tell them a 6-digit code just went there, then call complete_sign_in with it. " +
+          SIGN_IN_ANSWERS_AT_ONCE,
       );
     } else {
       lines.push(
         "This WhatsApp number is NOT tied to any distribute.you account yet. You see no account and can change nothing: never claim to see their brands, campaigns or figures. " +
-          "Answer their questions about distribute.you. When THEY want to use it, or say they already have an account, sign them up or in: ask for their email (once), call start_sign_in, ask for the 6-digit code from that email, call complete_sign_in. From their next message you act with that account.",
+          PUBLIC_FIRST +
+          "When THEY want to start, or say they already have an account and their next step needs it, sign them up or in: ask for their email (once), call start_sign_in, ask for the 6-digit code from that email, call complete_sign_in. " +
+          SIGN_IN_ANSWERS_AT_ONCE,
       );
     }
   } else {
@@ -104,6 +122,12 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
       "This WhatsApp number is tied to the distribute.you account you act for: you have exactly this person's access, nothing more. You know who they are: never ask for their email or name. " +
         "If they say it is not their account, or want another one, sign them in with start_sign_in then complete_sign_in.",
     );
+    if (channel.afterSignIn) {
+      lines.push(
+        "They signed in a moment ago, in this same exchange: you now act with their account. Answer now, with that access, what they asked before signing in (the thread and this conversation tell you what). " +
+          "Do not greet them again, do not repeat that they are signed in, and never ask them to send anything to continue.",
+      );
+    }
   }
   lines.push(
     "WhatsApp calls happen on this number too: our team may call the person from it. A call line in the thread is a call (us = we called them, them = they called us). " +
@@ -299,6 +323,31 @@ export async function pickChannelSession(
 // One inbound message, end to end
 // ---------------------------------------------------------------------------
 
+/** The hidden message of the turn that answers right after a sign-in (stored, never shown, never the person's words). */
+export const AFTER_SIGN_IN_TRIGGER =
+  "(Not the person's words.) They just signed in: answer now, with their account, what they asked before signing in.";
+
+type TurnOutcome = { replyText: string; failure: string | null };
+
+function turnOutcome(status: number, body: string): TurnOutcome {
+  if (status === 200) {
+    const turn = parseChatStream(body);
+    if (turn.error && !turn.text) return { replyText: CHANNEL_FAILURE_TEXT, failure: `chat stream error: ${turn.error}` };
+    return { replyText: renderChannelReply(turn), failure: null };
+  }
+  if (status === 402) {
+    // An org opened by the API agent signup is refused with a 402 JSON: still an answer.
+    const json = JSON.parse(body || "{}") as Record<string, unknown>;
+    return {
+      replyText: renderChannelReply(
+        { text: "", choices: null, inputLabel: null, error: null, creditsRequired: { message: String(json.message ?? json.error ?? "You're out of credits. Add credits to keep going."), label: "Add credits" } },
+      ),
+      failure: null,
+    };
+  }
+  return { replyText: CHANNEL_FAILURE_TEXT, failure: `POST /chat ${status}: ${body.slice(0, 500)}` };
+}
+
 export async function processChannelMessage(deps: ChannelDeps, rowId: string): Promise<void> {
   const { db } = deps;
   const [row] = await db.select().from(channelInboundMessages).where(eq(channelInboundMessages.id, rowId));
@@ -306,10 +355,12 @@ export async function processChannelMessage(deps: ChannelDeps, rowId: string): P
   await db.update(channelInboundMessages).set({ status: "processing", updatedAt: new Date() }).where(eq(channelInboundMessages.id, rowId));
   const msg = row.payload as ChannelMessageRequest;
   const phone = msg.sender.phone;
+  // The line's owner sends the reply: its org, its user, a run of ITS org.
+  const lineOwner = { orgId: msg.orgId, userId: msg.accountUserId };
   let replyText = CHANNEL_FAILURE_TEXT;
   let failure: string | null = null;
   let turnRunId: string | null = null;
-  let identity: { orgId: string; userId: string } = { orgId: msg.orgId, userId: msg.accountUserId };
+  let identity: { orgId: string; userId: string } = lineOwner;
   try {
     // A number the person linked in Integrations is their identity, and a
     // stronger fact than users.phone (which can name an old empty shell).
@@ -330,37 +381,65 @@ export async function processChannelMessage(deps: ChannelDeps, rowId: string): P
       message: msg.text,
       context: { channel },
     });
-    if (status === 200) {
-      const turn = parseChatStream(body);
-      if (turn.error && !turn.text) failure = `chat stream error: ${turn.error}`;
-      else replyText = renderChannelReply(turn);
-    } else if (status === 402) {
-      // An org opened by the API agent signup is refused with a 402 JSON: still an answer.
-      const json = JSON.parse(body || "{}") as Record<string, unknown>;
-      replyText = renderChannelReply(
-        { text: "", choices: null, inputLabel: null, error: null, creditsRequired: { message: String(json.message ?? json.error ?? "You're out of credits. Add credits to keep going."), label: "Add credits" } },
-      );
-    } else {
-      failure = `POST /chat ${status}: ${body.slice(0, 500)}`;
+    ({ replyText, failure } = turnOutcome(status, body));
+
+    // SOPHIE-WA-SIGNED-IN-1029: a guest who signed in during this turn gets the
+    // answer to their pending question NOW, with their account, in the same
+    // reply. Never "send me ok": the account takes effect in this exchange.
+    if (!failure && picked.guest) {
+      const [after] = await db
+        .select({ orgId: sessions.orgId, userId: sessions.userId, guest: sessions.guest })
+        .from(sessions)
+        .where(eq(sessions.id, picked.sessionId));
+      if (after && !after.guest && after.userId) {
+        identity = { orgId: after.orgId, userId: after.userId };
+        await db
+          .update(channelInboundMessages)
+          .set({ orgId: identity.orgId, userId: identity.userId, updatedAt: new Date() })
+          .where(eq(channelInboundMessages.id, rowId));
+        const signedInText = replyText;
+        try {
+          const runId = await deps.createRootRun(identity);
+          const next = await deps.runChat({
+            ...identity,
+            runId,
+            sessionId: picked.sessionId,
+            message: AFTER_SIGN_IN_TRIGGER,
+            context: { channel: { ...channel, afterSignIn: true } },
+          });
+          const outcome = turnOutcome(next.status, next.body);
+          if (outcome.failure) failure = `after sign-in: ${outcome.failure}`;
+          else replyText = [signedInText, outcome.replyText].filter(Boolean).join("\n\n").slice(0, 4096);
+        } catch (err) {
+          failure = `after sign-in: ${err instanceof Error ? err.message : String(err)}`;
+        }
+        // The sign-in itself went through: that reply still leaves.
+        if (failure) replyText = signedInText;
+      }
     }
   } catch (err) {
     failure = err instanceof Error ? err.message : String(err);
+    replyText = CHANNEL_FAILURE_TEXT;
   }
-  if (failure) {
-    console.error(`[chat-service] whatsapp message "${row.messageId}" from ${phone}: turn failed: ${failure}`);
-    replyText = renderChannelReply({ text: CHANNEL_FAILURE_TEXT, choices: null, inputLabel: null, creditsRequired: null, error: null });
-  }
+  if (failure) console.error(`[chat-service] whatsapp message "${row.messageId}" from ${phone}: turn failed: ${failure}`);
+  let sentAt: Date | null = null;
   try {
+    // runs-service refuses a child under another org's run (409 "Parent-child
+    // field conflict"): a turn run under the PERSON's account never rides the
+    // line owner's send (prod 2026-10-27 / 2026-10-29: every reply to a
+    // signed-in person dropped). The send then gets its own run, under the line.
+    const sendRunId = turnRunId && identity.orgId === lineOwner.orgId ? turnRunId : await deps.createRootRun(lineOwner);
     await deps.sendReply({
       orgId: msg.orgId,
       brandId: msg.brandId,
       userId: msg.accountUserId,
-      runId: turnRunId,
+      runId: sendRunId,
       phone,
       fromAccount: msg.fromAccount,
       text: replyText,
       idempotencyKey: `copilot:${row.messageId}`,
     });
+    sentAt = new Date();
   } catch (err) {
     const sendError = err instanceof Error ? err.message : String(err);
     console.error(`[chat-service] whatsapp message "${row.messageId}" from ${phone}: reply not sent: ${sendError}`);
@@ -368,7 +447,7 @@ export async function processChannelMessage(deps: ChannelDeps, rowId: string): P
   }
   await db
     .update(channelInboundMessages)
-    .set({ status: failure ? "failed" : "answered", replyText, error: failure, updatedAt: new Date() })
+    .set({ status: failure ? "failed" : "answered", replyText, error: failure, sentAt, updatedAt: new Date() })
     .where(eq(channelInboundMessages.id, rowId));
 }
 
@@ -401,6 +480,45 @@ export async function recoverChannelMessages(deps: ChannelDeps, now = new Date()
     .returning({ id: channelInboundMessages.id, phone: channelInboundMessages.senderPhone });
   for (const r of rows) void enqueueChannelMessage(deps, r.phone, r.id);
   return rows.length;
+}
+
+// ---------------------------------------------------------------------------
+// Delivery series (Monitoring: replies written vs delivered, per UTC day)
+// ---------------------------------------------------------------------------
+
+export interface ChannelReplyDay {
+  day: string;
+  received: number;
+  delivered: number;
+  notDelivered: number;
+}
+
+/**
+ * One row per UTC day, oldest first, zeros included, recomputed from the stored
+ * rows (SOPHIE-WA-SIGNED-IN-1029: a refused send was silent for two days).
+ * delivered = crm-service accepted the reply; notDelivered = the turn ended but
+ * nothing left; a message still in flight counts in received only.
+ */
+export async function channelReplyDays(database: typeof Db, days: number, now = new Date()): Promise<ChannelReplyDay[]> {
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const from = new Date(today - (days - 1) * 86_400_000);
+  const rows = await database
+    .select({ createdAt: channelInboundMessages.createdAt, status: channelInboundMessages.status, sentAt: channelInboundMessages.sentAt })
+    .from(channelInboundMessages)
+    .where(gte(channelInboundMessages.createdAt, from));
+  const byDay = new Map<string, ChannelReplyDay>();
+  for (let i = 0; i < days; i++) {
+    const day = new Date(from.getTime() + i * 86_400_000).toISOString().slice(0, 10);
+    byDay.set(day, { day, received: 0, delivered: 0, notDelivered: 0 });
+  }
+  for (const r of rows) {
+    const bucket = byDay.get(r.createdAt.toISOString().slice(0, 10));
+    if (!bucket) continue;
+    bucket.received++;
+    if (r.sentAt) bucket.delivered++;
+    else if (r.status === "answered" || r.status === "failed") bucket.notDelivered++;
+  }
+  return [...byDay.values()];
 }
 
 // ---------------------------------------------------------------------------
