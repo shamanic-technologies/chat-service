@@ -1330,6 +1330,14 @@ export const ChannelMessageRequestSchema = z
             "Emails our own records tie to this number (a send we made to it naming that person, the person's record). A person we know is never asked who they are (COPILOT-WA-REPEAT-1027).",
         }),
     }),
+    receivedOn: z
+      .object({ account: E164, name: z.string().max(200).nullable(), role: z.string().max(200).nullable() })
+      .nullable()
+      .optional()
+      .openapi({
+        description:
+          "The brand's line the person actually wrote to, when it is NOT `fromAccount` (they answered the founder's hello; the assistant answers from its own number). Absent = they wrote to `fromAccount`. The reply never goes out from this number (SOPHIE-INTRODUCES-HERSELF-ON-HER-LINE-1029).",
+      }),
     text: z.string().min(1).max(20_000),
     at: z.string().datetime({ offset: true }),
     thread: z
@@ -1340,6 +1348,9 @@ export const ChannelMessageRequestSchema = z
           text: z.string().max(5000),
           kind: z.enum(["message", "call"]).optional().openapi({
             description: "\"call\" = a WhatsApp call on this thread (outbound = we called them, inbound = they called us), its text says what happened (\"Missed voice call\"). Absent = a message.",
+          }),
+          account: E164.optional().openapi({
+            description: "The brand's number this line happened on, present only when it is NOT `fromAccount` (e.g. the founder's hello on the founder's own line). Absent = on `fromAccount`.",
           }),
         }),
       )

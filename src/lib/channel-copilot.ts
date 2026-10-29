@@ -51,8 +51,17 @@ export const ChatChannelContextSchema = z.object({
     name: z.string().nullable().optional(),
     knownEmails: z.array(z.string()).optional(),
   }),
+  /** The brand's line the person wrote to, when the answer goes out from another one (SOPHIE-INTRODUCES-HERSELF-ON-HER-LINE-1029). */
+  receivedOn: z.object({ account: z.string(), name: z.string().nullable(), role: z.string().nullable() }).nullable().optional(),
   thread: z.array(
-    z.object({ at: z.string(), direction: z.enum(["inbound", "outbound"]), text: z.string(), kind: z.enum(["message", "call"]).optional() }),
+    z.object({
+      at: z.string(),
+      direction: z.enum(["inbound", "outbound"]),
+      text: z.string(),
+      kind: z.enum(["message", "call"]).optional(),
+      /** The brand's number the line happened on, only when it is not the answering one. */
+      account: z.string().optional(),
+    }),
   ),
   /**
    * Set by processChannelMessage only, on the turn it runs right after a guest
@@ -133,6 +142,33 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
     "WhatsApp calls happen on this number too: our team may call the person from it. A call line in the thread is a call (us = we called them, them = they called us). " +
       "When the person mentions a call (they missed it, cannot take calls now), it is about a call from our team, even when the thread shows none: some calls do not reach the thread. Acknowledge it simply (no problem, we can talk here), never say no call was needed or that we did not call.",
   );
+  // SOPHIE-INTRODUCES-HERSELF-ON-HER-LINE-1029 (owner 2026-10-29: « ok to have a
+  // hello message from the founder, but the Sophie talk must be from her
+  // number »): the person wrote to another of the brand's lines; we answer from
+  // ours, so they see a NEW number and must learn who writes and why.
+  const received = channel.receivedOn;
+  const receivedOwner = received?.name?.trim() || null;
+  const lineLabel = (account: string): string => {
+    if (!received || received.account !== account || !receivedOwner) return account;
+    const ownerRole = received.role?.trim();
+    return `${receivedOwner}${ownerRole ? ` (${ownerRole})` : ""}'s number ${account}`;
+  };
+  if (received) {
+    const me = name ?? "the assistant";
+    const them = receivedOwner ?? "the person who wrote from that number";
+    lines.push(
+      `The person wrote to ${lineLabel(received.account)}, not to yours: they answered a message sent from that number. You answer from YOUR own number, which is new to them. ` +
+        `So on your number you introduce yourself once, before you answer: who you are${receivedOwner ? `, ${receivedOwner}'s assistant` : ""}, following up on the message from ${receivedOwner ?? "that number"} ` +
+        `(for example: "Hi, ${me} here${receivedOwner ? `, ${receivedOwner}'s assistant` : ""}, following up on the message from ${receivedOwner ?? "our team"}"). ` +
+        "Only once: when a message of yours on your number is already in the thread, you have introduced yourself, just answer. " +
+        `Never pretend to be ${them}: you are ${me}. What was said from that number was said by ${them}, not by you.`,
+    );
+  }
+  if (channel.thread.some((m) => m.account)) {
+    lines.push(
+      'A thread line marked "on <number>" happened on another of our numbers, not yours: "us" there means whoever owns that number wrote it, never you. Lines with no number happened on your number.',
+    );
+  }
   if (channel.thread.length > 0) {
     // A whole message, never its first lines: a message WE sent (the daily
     // Threads drafts, ~1,700 chars) is what the person asks about next. At 600
@@ -141,7 +177,7 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
     lines.push(
       "Their latest WhatsApp messages and calls with this number, before this one (oldest first; ours include campaign messages):",
       ...channel.thread.map(
-        (m) => `- ${m.at} ${m.direction === "inbound" ? "them" : "us"}${m.kind === "call" ? " [call]" : ""}: ${m.text.replace(/\s+/g, " ").slice(0, THREAD_MESSAGE_MAX_CHARS)}`,
+        (m) => `- ${m.at} ${m.direction === "inbound" ? "them" : "us"}${m.account ? ` on ${lineLabel(m.account)}` : ""}${m.kind === "call" ? " [call]" : ""}: ${m.text.replace(/\s+/g, " ").slice(0, THREAD_MESSAGE_MAX_CHARS)}`,
       ),
     );
   }
@@ -373,7 +409,13 @@ export async function processChannelMessage(deps: ChannelDeps, rowId: string): P
       .update(channelInboundMessages)
       .set({ orgId: picked.orgId, userId: picked.userId, sessionId: picked.sessionId, updatedAt: new Date() })
       .where(eq(channelInboundMessages.id, rowId));
-    const channel: ChatChannelContext = { kind: "whatsapp", assistant: msg.assistant, sender: msg.sender, thread: msg.thread };
+    const channel: ChatChannelContext = {
+      kind: "whatsapp",
+      assistant: msg.assistant,
+      sender: msg.sender,
+      ...(msg.receivedOn ? { receivedOn: msg.receivedOn } : {}),
+      thread: msg.thread,
+    };
     const { status, body } = await deps.runChat({
       ...identity,
       runId: turnRunId,

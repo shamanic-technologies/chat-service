@@ -1916,6 +1916,32 @@
               "phone"
             ]
           },
+          "receivedOn": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "account": {
+                "type": "string",
+                "pattern": "^\\+[1-9]\\d{6,14}$"
+              },
+              "name": {
+                "type": "string",
+                "nullable": true,
+                "maxLength": 200
+              },
+              "role": {
+                "type": "string",
+                "nullable": true,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "account",
+              "name",
+              "role"
+            ],
+            "description": "The brand's line the person actually wrote to, when it is NOT `fromAccount` (they answered the founder's hello; the assistant answers from its own number). Absent = they wrote to `fromAccount`. The reply never goes out from this number (SOPHIE-INTRODUCES-HERSELF-ON-HER-LINE-1029)."
+          },
           "text": {
             "type": "string",
             "minLength": 1,
@@ -1951,6 +1977,11 @@
                     "call"
                   ],
                   "description": "\"call\" = a WhatsApp call on this thread (outbound = we called them, inbound = they called us), its text says what happened (\"Missed voice call\"). Absent = a message."
+                },
+                "account": {
+                  "type": "string",
+                  "pattern": "^\\+[1-9]\\d{6,14}$",
+                  "description": "The brand's number this line happened on, present only when it is NOT `fromAccount` (e.g. the founder's hello on the founder's own line). Absent = on `fromAccount`."
                 }
               },
               "required": [

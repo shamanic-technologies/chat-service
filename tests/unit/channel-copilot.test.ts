@@ -177,6 +177,54 @@ describe("buildChannelBlock", () => {
     expect(block).toContain("Never repeat a price, amount or offer term from the thread");
   });
 
+  // SOPHIE-INTRODUCES-HERSELF-ON-HER-LINE-1029: the person answered the founder's
+  // hello on the founder's own number; the Copilot answers from its own line.
+  const FOUNDER = "+15550002222";
+  const founderLine: ChatChannelContext = {
+    ...channel,
+    sender: { phone: "+15550001111", name: "Staff Test" },
+    receivedOn: { account: FOUNDER, name: "Kevin", role: "Founder" },
+    thread: [
+      { at: "2026-10-29T09:00:00.000Z", direction: "outbound", text: "Hi, Kevin from distribute.you here", account: FOUNDER },
+      { at: "2026-10-29T09:05:00.000Z", direction: "inbound", text: "Hi Kevin, tell me more", account: FOUNDER },
+    ],
+  };
+
+  it("names the founder line, the switch to its own number, and asks for one introduction", () => {
+    const block = buildChannelBlock(founderLine, true);
+    expect(block).toContain(`The person wrote to Kevin (Founder)'s number ${FOUNDER}, not to yours`);
+    expect(block).toContain("You answer from YOUR own number, which is new to them");
+    expect(block).toContain("you introduce yourself once, before you answer: who you are, Kevin's assistant");
+    expect(block).toContain('"Hi, Sophie here, Kevin\'s assistant, following up on the message from Kevin"');
+    expect(block).toContain("Never pretend to be Kevin: you are Sophie");
+    expect(block).toContain(`us on Kevin (Founder)'s number ${FOUNDER}: Hi, Kevin from distribute.you here`);
+    expect(block).toContain(`them on Kevin (Founder)'s number ${FOUNDER}: Hi Kevin, tell me more`);
+    expect(block).toContain("never you. Lines with no number happened on your number.");
+  });
+
+  it("a line on another number without receivedOn is still not ours", () => {
+    const block = buildChannelBlock({ ...founderLine, receivedOn: undefined }, false);
+    expect(block).not.toContain("introduce yourself once");
+    expect(block).toContain(`us on ${FOUNDER}: Hi, Kevin from distribute.you here`);
+    expect(block).toContain('A thread line marked "on <number>" happened on another of our numbers');
+  });
+
+  it("without the two facts the block is byte-identical to before (sha256 of the pre-change output)", async () => {
+    const { createHash } = await import("node:crypto");
+    const legacy: ChatChannelContext = {
+      ...channel,
+      sender: { phone: "+33680478702", name: "Kevin" },
+      thread: [
+        { at: "2026-10-17T10:00:00.000Z", direction: "outbound", text: "Hi from our campaign" },
+        { at: "2026-10-27T14:20:00.000Z", direction: "outbound", text: "Missed voice call", kind: "call" },
+      ],
+    };
+    const sha = (g: boolean, c: ChatChannelContext) => createHash("sha256").update(buildChannelBlock(c, g)).digest("hex");
+    expect(sha(false, legacy)).toBe("f1b1438200cff1fcde0c4c1006e590150dc6d3565fa19dc88d33068d1469eec9");
+    expect(sha(true, legacy)).toBe("cab705574c507f363b38b861955aeb55d502be40960a41ddfb54883feee7599d");
+    expect(sha(true, { ...legacy, receivedOn: null })).toBe("cab705574c507f363b38b861955aeb55d502be40960a41ddfb54883feee7599d");
+  });
+
   it("carries no hard-coded assistant name", () => {
     const block = buildChannelBlock({ ...channel, assistant: { name: "Ada", role: null, instructions: null } }, false);
     expect(block).toContain("as Ada.");
@@ -199,6 +247,18 @@ describe("ChannelMessageRequestSchema", () => {
     expect(parsed.sender.knownEmails).toEqual(["staff-test@distribute.you"]);
     expect(parsed.thread[parsed.thread.length - 1].kind).toBe("call");
     expect(ChannelMessageRequestSchema.safeParse({ ...MSG, sender: { ...MSG.sender, knownEmails: ["not-an-email"] } }).success).toBe(false);
+  });
+
+  it("keeps the line the person wrote to and each thread line's number (SOPHIE-INTRODUCES-HERSELF-ON-HER-LINE-1029)", () => {
+    const parsed = ChannelMessageRequestSchema.parse({
+      ...MSG,
+      receivedOn: { account: "+15550002222", name: "Kevin", role: "Founder" },
+      thread: [{ at: "2026-10-29T09:00:00.000Z", direction: "outbound", text: "Hi", account: "+15550002222" }],
+    });
+    expect(parsed.receivedOn).toEqual({ account: "+15550002222", name: "Kevin", role: "Founder" });
+    expect(parsed.thread[0].account).toBe("+15550002222");
+    expect(ChannelMessageRequestSchema.parse(MSG).receivedOn).toBeUndefined();
+    expect(ChannelMessageRequestSchema.safeParse({ ...MSG, receivedOn: { account: "0680", name: null, role: null } }).success).toBe(false);
   });
 });
 
@@ -321,6 +381,34 @@ describe("processChannelMessage", () => {
     const { d, chats } = deps(db, { resolvePhone: vi.fn(async () => null) });
     await processChannelMessage(d, "row-1");
     expect(chats).toHaveLength(1);
+  });
+
+  it("passes the founder line to the turn and still answers from fromAccount, never from the line written to", async () => {
+    const payload = {
+      ...MSG,
+      receivedOn: { account: "+15550002222", name: "Kevin", role: "Founder" },
+      thread: [{ at: "2026-10-29T09:00:00.000Z", direction: "outbound", text: "Hi", account: "+15550002222" }],
+    };
+    const { db } = fakeDb({ selects: [[{ ...ROW, payload }], [{ id: "sess-web", brandIds: ["brand-a"] }]], inserts: [] });
+    const { d, sent, chats } = deps(db);
+    await processChannelMessage(d, "row-1");
+    const ch = (chats[0].context as { channel: ChatChannelContext }).channel;
+    expect(ch.receivedOn).toEqual(payload.receivedOn);
+    expect(ch.thread[0].account).toBe("+15550002222");
+    expect(sent[0].fromAccount).toBe("+77776879632");
+  });
+
+  it("a refused send from fromAccount stays loud and never retries from the line written to", async () => {
+    const payload = { ...MSG, receivedOn: { account: "+15550002222", name: "Kevin", role: "Founder" } };
+    const { db, updates } = fakeDb({ selects: [[{ ...ROW, payload }], [{ id: "sess-web", brandIds: ["brand-a"] }]], inserts: [] });
+    const sendReply = vi.fn(async () => {
+      throw new Error("422 whatsapp_not_connected");
+    });
+    const { d } = deps(db, { sendReply });
+    await processChannelMessage(d, "row-1");
+    expect(sendReply).toHaveBeenCalledTimes(1);
+    expect(sendReply.mock.calls[0][0]).toMatchObject({ fromAccount: "+77776879632" });
+    expect(String(updates.at(-1)?.error)).toContain("422 whatsapp_not_connected");
   });
 
   it("a number linked in Integrations acts as the user who linked it, over users.phone", async () => {
