@@ -108,7 +108,7 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
     `Nothing you write as chat text reaches anyone: you end this turn by calling ${LEAD_ANSWER_TOOL_NAME} ONCE, with the text they receive in \`${payload.messageField}\` (empty when you write nothing now).`,
     payload.medium === "whatsapp"
       ? "That text goes out on WhatsApp: plain text, short, WhatsApp markup only (*bold*, _italic_), URLs written out, never the long dash characters."
-      : "That text goes out as an email reply in their thread: plain text, short paragraphs, URLs written out, never the long dash characters.",
+      : `That text goes out as an email reply in their thread, in the format \`${payload.messageField}\` and the campaign's instructions ask for (HTML when the field is HTML): short paragraphs, never the long dash characters.`,
   ];
   if (!ownBrand) {
     lines.push(
