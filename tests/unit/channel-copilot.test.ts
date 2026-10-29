@@ -9,6 +9,8 @@ import {
   renderChannelReply,
   toWhatsappText,
   CHANNEL_FAILURE_TEXT,
+  AFTER_SIGN_IN_TRIGGER,
+  channelReplyDays,
   type ChannelDeps,
   type ChatChannelContext,
 } from "../../src/lib/channel-copilot.js";
@@ -119,6 +121,24 @@ describe("buildChannelBlock", () => {
     expect(block).toContain("start_sign_in");
   });
 
+  // SOPHIE-WA-SIGNED-IN-1029: "free trial? pricing?" was put behind a sign-in,
+  // then "send me a quick ok and I'll come back".
+  it("a guest answers a public question at once, and a sign-in never costs the person a message", () => {
+    for (const block of [buildChannelBlock(channel, true), buildChannelBlock({ ...channel, sender: { ...channel.sender, knownEmails: ["a@b.co"] } }, true)]) {
+      expect(block).toContain("Answer every question about distribute.you at once");
+      expect(block).toContain("never put a sign-in in front of them");
+      expect(block).toContain("right after complete_sign_in succeeds, you answer again with their account's access");
+      expect(block).toContain("never ask them to send anything");
+      expect(block).not.toContain("From their next message");
+    }
+  });
+
+  it("the turn right after a sign-in answers the pending question, without a new greeting", () => {
+    const block = buildChannelBlock({ ...channel, afterSignIn: true }, false);
+    expect(block).toContain("Answer now, with that access, what they asked before signing in");
+    expect(buildChannelBlock(channel, false)).not.toContain("what they asked before signing in");
+  });
+
   // COPILOT-WA-REPEAT-1027: the prod thread of 2026-10-27 (a signup we wrote to first, then called).
   const known: ChatChannelContext = {
     ...channel,
@@ -218,7 +238,7 @@ function deps(db: unknown, over: Partial<ChannelDeps> = {}) {
     db: db as ChannelDeps["db"],
     resolvePhone: vi.fn(async () => ({ orgId: "org-kevin", userId: "user-kevin" })),
     listBrandIds: vi.fn(async () => ["brand-a"]),
-    createRootRun: vi.fn(async () => "run-1"),
+    createRootRun: vi.fn(async (identity: { orgId: string }) => (identity.orgId === MSG.orgId ? "run-line" : `run-${identity.orgId}`)),
     runChat: vi.fn(async (args) => {
       chats.push(args);
       return { status: 200, body: sse({ type: "token", content: "You have **2** campaigns — Alpha and Beta." }, "[DONE]") };
@@ -239,13 +259,68 @@ describe("processChannelMessage", () => {
     const { d, sent, chats } = deps(db);
     await processChannelMessage(d, "row-1");
     expect(chats).toHaveLength(1);
-    expect(chats[0]).toMatchObject({ orgId: "org-kevin", userId: "user-kevin", runId: "run-1", sessionId: "sess-web", message: "list my campaigns" });
+    expect(chats[0]).toMatchObject({ orgId: "org-kevin", userId: "user-kevin", runId: "run-org-kevin", sessionId: "sess-web", message: "list my campaigns" });
     expect((chats[0].context as { channel: ChatChannelContext }).channel.assistant.name).toBe("Sophie");
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ orgId: MSG.orgId, brandId: MSG.brandId, phone: "+33680478702", fromAccount: "+77776879632", idempotencyKey: "copilot:$evt-1" });
     expect(sent[0].text).toBe("You have *2* campaigns, Alpha and Beta.");
     expect(updates.at(-1)).toMatchObject({ status: "answered", error: null });
+    expect(updates.at(-1)!.sentAt).toBeInstanceOf(Date);
     expect(d.listBrandIds).not.toHaveBeenCalled();
+  });
+
+  // SOPHIE-WA-SIGNED-IN-1029 (prod 2026-10-27 + 2026-10-29): the turn ran under
+  // the PERSON's org, the send rode that run under the LINE owner's org, and
+  // runs-service 409'd every reply to a signed-in person.
+  it("a reply to a signed-in person is sent under a run of the line owner's org, never the person's", async () => {
+    const { db } = fakeDb({ selects: [[ROW], [{ id: "sess-web", brandIds: ["brand-a"] }]], inserts: [] });
+    const { d, sent } = deps(db);
+    await processChannelMessage(d, "row-1");
+    expect(sent[0]).toMatchObject({ orgId: MSG.orgId, userId: MSG.accountUserId, runId: "run-line" });
+    expect(d.createRootRun).toHaveBeenCalledWith({ orgId: MSG.orgId, userId: MSG.accountUserId });
+  });
+
+  it("a guest turn (line owner's org) reuses its own run for the send", async () => {
+    const { db } = fakeDb({ selects: [[ROW], [], []], inserts: [[{ id: "sess-guest" }]] });
+    const { d, sent } = deps(db, { resolvePhone: vi.fn(async () => null) });
+    await processChannelMessage(d, "row-1");
+    expect(sent[0].runId).toBe("run-line");
+    expect(d.createRootRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("a refused send is recorded as not delivered (sentAt null), never silent", async () => {
+    const { db, updates } = fakeDb({ selects: [[ROW], [{ id: "sess-web", brandIds: ["b"] }]], inserts: [] });
+    const { d } = deps(db, { sendReply: vi.fn(async () => { throw new Error("crm-service whatsapp send 502: boom"); }) });
+    await processChannelMessage(d, "row-1");
+    expect(updates.at(-1)).toMatchObject({ status: "failed", sentAt: null });
+    expect(String(updates.at(-1)!.error)).toContain("send: crm-service whatsapp send 502");
+  });
+
+  it("a guest who signs in during the turn gets the answer to their pending question in the same reply, with their account", async () => {
+    const { db } = fakeDb({ selects: [[ROW], [], [{ orgId: "org-new", userId: "user-new", guest: false }]], inserts: [[{ id: "sess-guest" }]] });
+    let call = 0;
+    const { d, sent, chats } = deps(db, {
+      resolvePhone: vi.fn(async () => null),
+      runChat: vi.fn(async (args) => {
+        chats.push(args);
+        call++;
+        return { status: 200, body: sse({ type: "token", content: call === 1 ? "You're in." : "No free trial needed: the platform is free." }, "[DONE]") };
+      }),
+    });
+    await processChannelMessage(d, "row-1");
+    expect(chats).toHaveLength(2);
+    expect(chats[1]).toMatchObject({ orgId: "org-new", userId: "user-new", runId: "run-org-new", sessionId: "sess-guest", message: AFTER_SIGN_IN_TRIGGER });
+    expect((chats[1].context as { channel: ChatChannelContext }).channel.afterSignIn).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].text).toBe("You're in.\n\nNo free trial needed: the platform is free.");
+    expect(sent[0]).toMatchObject({ orgId: MSG.orgId, runId: "run-line" });
+  });
+
+  it("a guest turn with no sign-in runs once", async () => {
+    const { db } = fakeDb({ selects: [[ROW], [], [{ orgId: MSG.orgId, userId: MSG.accountUserId, guest: true }]], inserts: [[{ id: "sess-guest" }]] });
+    const { d, chats } = deps(db, { resolvePhone: vi.fn(async () => null) });
+    await processChannelMessage(d, "row-1");
+    expect(chats).toHaveLength(1);
   });
 
   it("a number linked in Integrations acts as the user who linked it, over users.phone", async () => {
@@ -286,5 +361,25 @@ describe("processChannelMessage", () => {
     const { d, sent } = deps(db, { runChat: vi.fn(async () => ({ status: 402, body: JSON.stringify({ message: "You're out of credits. Add credits to keep going." }) })) });
     await processChannelMessage(d, "row-1");
     expect(sent[0].text).toContain("Add credits: https://dashboard.distribute.you");
+  });
+});
+
+describe("channelReplyDays", () => {
+  it("one row per UTC day, zeros included; delivered = sent, not delivered = ended without a send", async () => {
+    const { db } = fakeDb({
+      selects: [[
+        { createdAt: new Date("2026-10-29T08:00:00Z"), status: "answered", sentAt: new Date("2026-10-29T08:01:00Z") },
+        { createdAt: new Date("2026-10-29T09:00:00Z"), status: "failed", sentAt: null },
+        { createdAt: new Date("2026-10-29T10:00:00Z"), status: "processing", sentAt: null },
+        { createdAt: new Date("2026-10-27T10:00:00Z"), status: "failed", sentAt: new Date("2026-10-27T10:01:00Z") },
+      ]],
+      inserts: [],
+    });
+    const days = await channelReplyDays(db as unknown as ChannelDeps["db"], 3, new Date("2026-10-29T12:00:00Z"));
+    expect(days).toEqual([
+      { day: "2026-10-27", received: 1, delivered: 1, notDelivered: 0 },
+      { day: "2026-10-28", received: 0, delivered: 0, notDelivered: 0 },
+      { day: "2026-10-29", received: 3, delivered: 1, notDelivered: 1 },
+    ]);
   });
 });

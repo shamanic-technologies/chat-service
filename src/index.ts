@@ -139,7 +139,7 @@ import {
   SkillNotFoundError,
   SkillValidationError,
   buildSkillIndexBlock,
-  buildClientCommsBlock,
+  buildGuestSkillsBlock,
   getSkill,
   listSkillVersions,
   listSkills,
@@ -170,6 +170,7 @@ import {
   enqueueChannelMessage,
   listOrgBrandIds,
   recoverChannelMessages,
+  channelReplyDays,
   resolvePhoneAccount,
   runChatOnSelf,
   sendWhatsappReply,
@@ -306,7 +307,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelMessageRequestSchema, ProactiveTurnRequestSchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelMessageRequestSchema, ChannelReplyDaysQuerySchema, ProactiveTurnRequestSchema, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -3133,9 +3134,6 @@ app.post("/chat", requireAuth, async (req, res) => {
       return res.status(502).json({ error: `The campaign that asked for this proactive turn could not be read: ${err instanceof Error ? err.message : String(err)}` });
     }
   }
-  // A trigger the user did not write (nudge, proactive turn): stored hidden,
-  // never filed in the staff Unibox as the user's words.
-  const hiddenTrigger = nudge === true || proactiveTurn;
   const sessionToolNames: string[] = channelSession?.guest
     ? [...SIGN_IN_TOOL_NAMES]
     : channelSession
@@ -3151,6 +3149,10 @@ app.post("/chat", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Invalid context.channel", details: channelContext.error.flatten() });
   }
   const channelTurn = channelContext?.success ? channelContext.data : null;
+  // A trigger the user did not write (nudge, proactive turn, the answer right
+  // after a WhatsApp sign-in): stored hidden, never filed in the staff Unibox
+  // as the user's words.
+  const hiddenTrigger = nudge === true || proactiveTurn || channelTurn?.afterSignIn === true;
   const promptContext = context && "channel" in context
     ? Object.fromEntries(Object.entries(context).filter(([k]) => k !== "channel"))
     : context;
@@ -3263,11 +3265,11 @@ app.post("/chat", requireAuth, async (req, res) => {
   // A config that allows read_skill gets the skill INDEX (method + map of
   // sub-skills) appended; sub-skills are loaded on demand with read_skill.
   let skillIndexBlock = "";
-  // A WhatsApp guest has no read_skill: it still gets the voice (client-comms).
+  // A WhatsApp guest has no read_skill: it still gets the voice (client-comms) and the public offer (our-offer).
   const wantsVoiceOnly = channelSession?.guest === true && configAllowedToolNames.includes("read_skill");
   if (allowedToolNames.includes("read_skill") || wantsVoiceOnly) {
     try {
-      skillIndexBlock = wantsVoiceOnly ? await buildClientCommsBlock(db) : await buildSkillIndexBlock(db);
+      skillIndexBlock = wantsVoiceOnly ? await buildGuestSkillsBlock(db) : await buildSkillIndexBlock(db);
     } catch (err) {
       console.error(`[chat] skill index unavailable for configKey="${configKey}":`, err);
       sendSSE(res, {
@@ -3680,8 +3682,9 @@ app.post("/chat", requireAuth, async (req, res) => {
           toolCalls.push({ name: call.name, args: { email: args.email }, result: signed });
           return { name: call.name, result: signed };
         }
-        // The thread now belongs to that account: its next message (and the web
-        // Copilot) continue this same session with the account's access.
+        // The thread now belongs to that account: the answer that follows at once
+        // (processChannelMessage), the next message and the web Copilot continue
+        // this same session with the account's access.
         const brandIds = await listOrgBrandIds({ orgId: signed.account.orgId, userId: signed.account.userId, runId: runId! });
         await db
           .update(sessions)
@@ -3697,7 +3700,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           ok: true,
           signedIn: signed.account.email,
           accountCreated: signed.account.created,
-          note: "This WhatsApp number is now tied to this account. From their next message you act with its access.",
+          note: "This WhatsApp number is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue.",
         };
         toolCalls.push({ name: call.name, args: { email: args.email }, result });
         return { name: call.name, result };
@@ -5303,6 +5306,14 @@ app.post("/internal/copilot/channel-messages", requireInternalAuth, async (req, 
   if (!row) return res.status(200).json({ status: "duplicate" });
   res.status(202).json({ status: "accepted" });
   void enqueueChannelMessage(channelDeps, msg.sender.phone, row.id);
+});
+
+app.get("/internal/copilot/channel-replies/daily", requireInternalAuth, async (req, res) => {
+  const parsed = ChannelReplyDaysQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  res.json({ days: await channelReplyDays(db, parsed.data.days) });
 });
 
 const proactiveDeps: ProactiveDeps = {
