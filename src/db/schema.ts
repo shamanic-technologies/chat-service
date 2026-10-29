@@ -299,6 +299,31 @@ export const copilotProactiveTurns = pgTable(
   (table) => [uniqueIndex("copilot_proactive_turns_org_key_idx").on(table.orgId, table.idempotencyKey)],
 );
 
+// One Copilot answer per Lead event occurrence (migration 0028,
+// ONE-AI-CONVERSES-1029): the Lead event writer asks the Copilot; a retried
+// writer node (same org, same key) gets the stored answer, never a second turn.
+export const copilotLeadTurns = pgTable(
+  "copilot_lead_turns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    orgId: text("org_id").notNull(),
+    brandId: text("brand_id").notNull(),
+    status: text("status").notNull().$type<"processing" | "answered" | "failed">(),
+    sessionId: uuid("session_id"),
+    accountOrgId: text("account_org_id"),
+    accountUserId: text("account_user_id"),
+    signedIn: boolean("signed_in").notNull().default(false),
+    answer: jsonb("answer"),
+    model: text("model"),
+    error: text("error"),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("copilot_lead_turns_org_key_idx").on(table.orgId, table.idempotencyKey)],
+);
+
 export interface ToolCallRecord {
   name: string;
   args: Record<string, unknown>;

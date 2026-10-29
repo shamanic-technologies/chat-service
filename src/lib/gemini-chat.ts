@@ -8,7 +8,7 @@ import type { ToolCallRecord } from "../db/schema.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
 import { sanitizeGeminiSchema, buildThinkingConfig, geminiCostPrefix, type GeminiThinkingLevel } from "./gemini.js";
 import { buildToolResultFallback } from "./tool-fallback.js";
-import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH, needsAnswerNudge } from "./tool-budget.js";
+import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, endToolFinalNote, endToolNudgeNote, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH, needsAnswerNudge } from "./tool-budget.js";
 import { mergeGeminiCostLines, readGeminiBilledTokens, type GeminiCostLine, type GeminiUsageMetadata } from "./gemini-usage.js";
 import { formatToolError } from "./tool-errors.js";
 import { CLIENT_UI_TOOL_NAMES } from "./ui-tools.js";
@@ -154,6 +154,12 @@ export interface StreamGeminiChatOptions {
    * text as it arrives.
    */
   holdTextBesideToolCalls?: boolean;
+  /**
+   * A turn that must END by calling this tool (a Lead event turn's
+   * answer_person, ONE-AI-CONVERSES-1029): tools never go off, and a reply
+   * without it is re-asked once to call it.
+   */
+  endToolName?: string;
 }
 
 export interface StreamGeminiChatResult {
@@ -400,6 +406,7 @@ export async function streamGeminiChat(
     beforeProviderCall,
     thinkingLevel,
     holdTextBesideToolCalls = false,
+    endToolName,
   } = options;
 
   let totalTokensInput = 0;
@@ -455,7 +462,7 @@ export async function streamGeminiChat(
         : {}),
       // Final round of the tool budget: tools stay declared (history holds
       // function calls) but the model cannot call one, so it answers in text.
-      ...(functionDeclarations.length > 0 && (isFinalToolRound(depth) || answerNudged)
+      ...(functionDeclarations.length > 0 && (isFinalToolRound(depth) || answerNudged) && !endToolName
         ? { toolConfig: { functionCallingConfig: { mode: "NONE" } } }
         : {}),
     };
@@ -595,6 +602,16 @@ export async function streamGeminiChat(
     // nothing: re-ask ONCE, tools off (SOPHIE-NO-ANSWER-1028).
     if (functionCalls.length === 0) {
       const lastTurn = turnMessages[turnMessages.length - 1];
+      if (endToolName && !signal.aborted && !answerNudged) {
+        console.warn(`[gemini-chat] model=${model} stopped without ${endToolName}; asking for it`);
+        answerNudged = true;
+        if (iterText.trim()) turnMessages.push({ role: "model", parts: [{ text: iterText }] });
+        const note = { text: endToolNudgeNote(endToolName) };
+        if (iterText.trim() || lastTurn?.role !== "user") turnMessages.push({ role: "user", parts: [note] });
+        else lastTurn.parts = [...lastTurn.parts, note];
+        depth--; // the re-ask is not a tool round
+        continue;
+      }
       if (
         !signal.aborted &&
         lastTurn?.role === "user" &&
@@ -703,7 +720,9 @@ export async function streamGeminiChat(
     turnMessages.push({ role: "model", parts: modelParts });
     turnMessages.push({
       role: "user",
-      parts: isFinalToolRound(depth + 1) ? [...responseParts, { text: FINAL_ROUND_NOTE }] : responseParts,
+      parts: isFinalToolRound(depth + 1)
+        ? [...responseParts, { text: endToolName ? endToolFinalNote(endToolName) : FINAL_ROUND_NOTE }]
+        : responseParts,
     });
   }
 

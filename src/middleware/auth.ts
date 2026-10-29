@@ -76,7 +76,7 @@ export function requireAuth(
   next();
 }
 
-function extractWorkflowTracking(req: Request): WorkflowTrackingHeaders {
+export function extractWorkflowTracking(req: Request): WorkflowTrackingHeaders {
   const tracking: WorkflowTrackingHeaders = {};
   const campaignId = req.headers["x-campaign-id"];
   if (typeof campaignId === "string") tracking.campaignId = campaignId;
