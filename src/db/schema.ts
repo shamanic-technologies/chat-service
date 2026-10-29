@@ -19,7 +19,7 @@ export const sessions = pgTable(
     // NULL on sessions created before 2026-10-09. Read by GET /sessions/latest.
     configKey: text("config_key"),
     // The WhatsApp number this session talks to (migration 0024): set only by
-    // POST /internal/copilot/channel-messages, from a message WhatsApp delivered.
+    // chat-service itself (lead turns), from the number the Lead event names.
     channelPhone: text("channel_phone"),
     // A number with no distribute.you account yet: the turn sees no account and
     // gets the sign-in tools only. Never served by GET /sessions/latest.
