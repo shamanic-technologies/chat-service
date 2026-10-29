@@ -167,14 +167,11 @@ import {
   ChatChannelContextSchema,
   buildChannelBlock,
   createChannelRootRun,
-  enqueueChannelMessage,
   listOrgBrandIds,
-  recoverChannelMessages,
   channelReplyDays,
   resolvePhoneAccount,
-  runChatOnSelf,
   sendWhatsappReply,
-  type ChannelDeps,
+  reachWhatsapp,
 } from "./lib/channel-copilot.js";
 import {
   COMPLETE_SIGN_IN_TOOL_NAME,
@@ -192,6 +189,7 @@ import {
   type NudgeTurn,
 } from "./lib/copilot-nudge.js";
 import {
+  copilotLineFromEnv,
   failInterruptedProactiveTurns,
   pickProactiveRecipient,
   processProactiveTurn,
@@ -307,7 +305,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelMessageRequestSchema, ChannelReplyDaysQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -3111,7 +3109,7 @@ app.post("/chat", requireAuth, async (req, res) => {
     ? toolsForRequester(configToolNames, await getRequester())
     : configToolNames;
 
-  // A session POST /internal/copilot/channel-messages tied to a WhatsApp number
+  // A session chat-service tied to a WhatsApp number (a lead turn)
   // (never settable by a caller): a GUEST (no account behind the number) gets
   // the sign-in tools only; a known person keeps every tool plus sign-in.
   let channelSession: { channelPhone: string; guest: boolean } | null = null;
@@ -5383,31 +5381,6 @@ function stripButtons(text: string): string {
 
 // --- Internal: Transfer Brand ---
 
-const channelDeps: ChannelDeps = {
-  db,
-  resolvePhone: (phone) => resolvePhoneAccount(phone),
-  listBrandIds: (identity) => listOrgBrandIds(identity),
-  createRootRun: (identity) => createChannelRootRun(identity),
-  runChat: (args) => runChatOnSelf(PORT, args),
-  sendReply: (args) => sendWhatsappReply(args),
-};
-
-app.post("/internal/copilot/channel-messages", requireInternalAuth, async (req, res) => {
-  const parsed = ChannelMessageRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
-  }
-  const msg = parsed.data;
-  const [row] = await db
-    .insert(channelInboundMessages)
-    .values({ messageId: msg.messageId, channel: msg.channel, senderPhone: msg.sender.phone, status: "received", payload: msg })
-    .onConflictDoNothing({ target: channelInboundMessages.messageId })
-    .returning({ id: channelInboundMessages.id });
-  if (!row) return res.status(200).json({ status: "duplicate" });
-  res.status(202).json({ status: "accepted" });
-  void enqueueChannelMessage(channelDeps, msg.sender.phone, row.id);
-});
-
 app.get("/internal/copilot/channel-replies/daily", requireInternalAuth, async (req, res) => {
   const parsed = ChannelReplyDaysQuerySchema.safeParse(req.query);
   if (!parsed.success) {
@@ -5502,6 +5475,9 @@ const proactiveDeps: ProactiveDeps = {
     return { status: res.status, body: await res.text() };
   },
   sendWhatsapp: (args) => sendWhatsappReply(args),
+  reachWhatsapp: (args) => reachWhatsapp(args),
+  createLineRun: (line) => createChannelRootRun(line),
+  copilotLine: () => copilotLineFromEnv(),
   readThread: (args) => readPersonThread(args),
   resolveAskingCampaign: ({ campaignId, ...p }) => resolveAskingCampaign(campaignId, p),
 };
@@ -5749,12 +5725,6 @@ if (process.env.NODE_ENV !== "test") {
       failInterruptedProactiveTurns(db, bootedAt)
         .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
         .catch((err) => console.error("[chat-service] proactive turn recovery failed:", err));
-      // WhatsApp messages a restart cut off mid-turn: answered once the port is up.
-      setTimeout(() => {
-        recoverChannelMessages(channelDeps)
-          .then((n) => { if (n > 0) console.log(`[chat-service] re-running ${n} WhatsApp message(s) cut off by a restart`); })
-          .catch((err) => console.error("[chat-service] WhatsApp recovery failed:", err));
-      }, 60_000).unref();
 
       // Node 20 defaults requestTimeout to 300s (5 min). SSE chat streams
       // can run for 30–60 min when the LLM makes many tool calls, so we

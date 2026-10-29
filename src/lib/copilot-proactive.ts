@@ -23,8 +23,8 @@
  */
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import type { db as Db } from "../db/index.js";
-import { channelInboundMessages, copilotProactiveTurns, sessions } from "../db/schema.js";
-import type { ChannelMessageRequest, ProactiveTurnRequest } from "../schemas.js";
+import { copilotProactiveTurns, sessions } from "../db/schema.js";
+import type { ProactiveTurnRequest } from "../schemas.js";
 import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
 import { WhatsappSendError, parseChatStream, renderChannelReply, type ChatChannelContext } from "./channel-copilot.js";
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
@@ -211,6 +211,15 @@ export interface ProactiveDeps {
   }) => Promise<{ status: number; body: string }>;
   /** crm-service POST /orgs/whatsapp/messages. */
   sendWhatsapp: (args: { orgId: string; brandId: string; userId: string; runId: string | null; phone: string; fromAccount: string; text: string; idempotencyKey: string }) => Promise<void>;
+  /**
+   * crm-service POST /orgs/whatsapp/reach on the Copilot's own line (its pro_ai
+   * account): the number it writes from and its persona, or why it cannot.
+   */
+  reachWhatsapp: (args: { line: CopilotLine; runId: string; phone: string }) => Promise<WhatsappReach>;
+  /** runs-service: a root run under the line's org (the send is the line's, never a child of the client org's run). */
+  createLineRun: (line: CopilotLine) => Promise<string>;
+  /** The Copilot's own WhatsApp line (distribute.you's brand). */
+  copilotLine: () => CopilotLine;
   /** The person's thread with the brand (readPersonThread). */
   readThread: (args: { orgId: string; userId: string; runId: string; brandId: string; lead: ProactiveTurnRequest["lead"] }) => Promise<PersonThreadMessage[]>;
   /** campaign-service: the campaign whose step asked (resolveAskingCampaign). */
@@ -219,11 +228,30 @@ export interface ProactiveDeps {
   sleep?: (ms: number) => Promise<void>;
 }
 
+export interface CopilotLine {
+  orgId: string;
+  brandId: string;
+  userId: string;
+}
+
+export type WhatsappReach =
+  | { reachable: true; fromAccount: string; persona: { name: string | null; role: string | null; instructions: string | null } | null }
+  | { reachable: false; code: string; error: string };
+
+/** The Copilot's line: distribute.you's org, brand and the user its work runs under (`COPILOT_FOLLOWUP_*`). */
+export function copilotLineFromEnv(): CopilotLine {
+  const orgId = process.env.COPILOT_FOLLOWUP_ORG_ID;
+  const brandId = process.env.COPILOT_FOLLOWUP_BRAND_ID;
+  const userId = process.env.COPILOT_FOLLOWUP_USER_ID;
+  if (!orgId || !brandId || !userId) throw new Error("COPILOT_FOLLOWUP_ORG_ID / COPILOT_FOLLOWUP_BRAND_ID / COPILOT_FOLLOWUP_USER_ID not configured");
+  return { orgId, brandId, userId };
+}
+
 export interface ProactiveRecipient {
   userId: string;
   sessionId: string;
   /** The WhatsApp hop when this person's thread is tied to a number, else null (web thread). */
-  whatsapp: { phone: string; inbound: ChannelMessageRequest } | null;
+  whatsapp: { phone: string } | null;
 }
 
 const MAX_CANDIDATES = 10;
@@ -259,22 +287,12 @@ export async function pickProactiveRecipient(
   const known = latestPerUser.filter((_, i) => Boolean(emails[i]));
   const pick = latestPerUser.find((_, i) => Boolean(emails[i]) && !deps.isStaffEmail(emails[i])) ?? known[0] ?? latestPerUser[0];
 
-  let whatsapp: ProactiveRecipient["whatsapp"] = null;
-  if (pick.channelPhone) {
-    const [inbound] = await deps.db
-      .select({ payload: channelInboundMessages.payload })
-      .from(channelInboundMessages)
-      .where(and(eq(channelInboundMessages.sessionId, pick.id), eq(channelInboundMessages.status, "answered")))
-      .orderBy(desc(channelInboundMessages.createdAt))
-      .limit(1);
-    if (inbound) whatsapp = { phone: pick.channelPhone, inbound: inbound.payload as ChannelMessageRequest };
-  }
-  return { userId: pick.userId, sessionId: pick.id, whatsapp };
+  return { userId: pick.userId, sessionId: pick.id, whatsapp: pick.channelPhone ? { phone: pick.channelPhone } : null };
 }
 
-/** The `context.channel` block for a WhatsApp delivery: the persona of the account that answers them. */
-export function proactiveChannelContext(w: NonNullable<ProactiveRecipient["whatsapp"]>): ChatChannelContext {
-  return { kind: "whatsapp", assistant: w.inbound.assistant, sender: { phone: w.phone, name: w.inbound.sender.name ?? null }, thread: [] };
+/** The `context.channel` block for a WhatsApp delivery: the persona of the line that writes to them. */
+export function proactiveChannelContext(phone: string, persona: Extract<WhatsappReach, { reachable: true }>["persona"]): ChatChannelContext {
+  return { kind: "whatsapp", assistant: { name: persona?.name ?? null, role: persona?.role ?? null, instructions: persona?.instructions ?? null }, sender: { phone, name: null }, thread: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -311,13 +329,28 @@ export async function processProactiveTurn(
     const asking = askingId
       ? await deps.resolveAskingCampaign({ orgId: row.orgId, userId: recipient.userId, runId: row.parentRunId, campaignId: askingId })
       : null;
+    // The Copilot's line answers on WhatsApp (its pro_ai account): asked BEFORE
+    // the turn so the message is written in that line's voice. Unreachable = the
+    // message stays in the web thread, and the row says why.
+    let line: { line: CopilotLine; runId: string; fromAccount: string } | null = null;
+    let notReachable: string | null = null;
+    let persona: Extract<WhatsappReach, { reachable: true }>["persona"] = null;
+    if (recipient.whatsapp) {
+      const copilotLine = deps.copilotLine();
+      const lineRunId = await deps.createLineRun(copilotLine);
+      const reach = await deps.reachWhatsapp({ line: copilotLine, runId: lineRunId, phone: recipient.whatsapp.phone });
+      if (reach.reachable) {
+        line = { line: copilotLine, runId: lineRunId, fromAccount: reach.fromAccount };
+        persona = reach.persona;
+      } else notReachable = `${reach.code}: ${reach.error}`;
+    }
     const { status: http, body } = await deps.runChat({
       orgId: row.orgId,
       userId: recipient.userId,
       runId: row.parentRunId,
       sessionId: recipient.sessionId,
       message: buildProactiveTriggerMessage(req, { thread, asking }),
-      context: { brandId: row.brandId, ...(recipient.whatsapp ? { channel: proactiveChannelContext(recipient.whatsapp) } : {}) },
+      context: { brandId: row.brandId, ...(recipient.whatsapp && line ? { channel: proactiveChannelContext(recipient.whatsapp.phone, persona) } : {}) },
       proactiveTurnId: row.id,
       trackingHeaders,
     });
@@ -332,16 +365,19 @@ export async function processProactiveTurn(
     } else {
       if (!turn.text.trim()) throw new Error("the turn ended with no answer");
       replyText = turn.text;
-      if (recipient.whatsapp) {
+      if (recipient.whatsapp && notReachable) {
+        throw new Error(`whatsapp not reachable, the message waits in the web Copilot thread: ${notReachable}`);
+      }
+      if (recipient.whatsapp && line) {
         const w = recipient.whatsapp;
         replyText = renderChannelReply(turn);
         const send = {
-          orgId: w.inbound.orgId,
-          brandId: w.inbound.brandId,
-          userId: w.inbound.accountUserId,
-          runId: row.parentRunId,
+          orgId: line.line.orgId,
+          brandId: line.line.brandId,
+          userId: line.line.userId,
+          runId: line.runId,
           phone: w.phone,
-          fromAccount: w.inbound.fromAccount,
+          fromAccount: line.fromAccount,
           text: replyText,
           idempotencyKey: `copilot-proactive:${row.id}`,
         };

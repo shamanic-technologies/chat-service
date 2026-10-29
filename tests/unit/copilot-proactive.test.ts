@@ -13,7 +13,7 @@ import {
   type ProactiveDeps,
   type ProactiveRecipient,
 } from "../../src/lib/copilot-proactive.js";
-import type { ChannelMessageRequest, ProactiveTurnRequest } from "../../src/schemas.js";
+import type { ProactiveTurnRequest } from "../../src/schemas.js";
 import type { AskingCampaign } from "../../src/lib/funnel-campaign-client.js";
 
 // The prod case (2026-10-19, org f0420eb5): the header named the STEP e81d3018,
@@ -223,19 +223,14 @@ function fakeDb(selects: unknown[][]) {
   return { db: db as unknown as ProactiveDeps["db"], updates };
 }
 
-const INBOUND: ChannelMessageRequest = {
-  channel: "whatsapp",
-  messageId: "$e",
-  orgId: "99999999-9999-4999-8999-999999999999",
-  brandId: "88888888-8888-4888-8888-888888888888",
-  accountUserId: "77777777-7777-4777-8777-777777777777",
-  fromAccount: "+77776879632",
-  assistant: { name: "Ava", role: null, instructions: null },
-  sender: { phone: "+33600000000", name: "Owner" },
-  text: "hi",
-  at: "2026-10-19T09:00:00Z",
-  thread: [],
-};
+const LINE = { orgId: "99999999-9999-4999-8999-999999999999", brandId: "88888888-8888-4888-8888-888888888888", userId: "77777777-7777-4777-8777-777777777777" };
+const FROM = "+77776879632";
+// The Copilot's own line: reached from its pro_ai account, in its own run.
+const lineDeps = (reach: Awaited<ReturnType<ProactiveDeps["reachWhatsapp"]>> = { reachable: true, fromAccount: FROM, persona: { name: "Ava", role: null, instructions: null } }) => ({
+  copilotLine: () => LINE,
+  createLineRun: vi.fn(async () => "run-line"),
+  reachWhatsapp: vi.fn(async () => reach),
+});
 
 describe("pickProactiveRecipient", () => {
   it("picks the latest customer member over a more recent staff member, with the WhatsApp hop of their thread", async () => {
@@ -245,13 +240,12 @@ describe("pickProactiveRecipient", () => {
         { id: "s-owner", userId: "u-owner", channelPhone: "+33600000000" },
         { id: "s-owner-old", userId: "u-owner", channelPhone: null },
       ],
-      [{ payload: INBOUND }],
     ]);
     const r = await pickProactiveRecipient(
       { db, fetchEmail: async (u) => (u === "u-staff" ? "kevin@distribute.you" : "owner@acme.example"), isStaffEmail: (e) => e === "kevin@distribute.you" },
       REQ.orgId,
     );
-    expect(r).toEqual({ userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000", inbound: INBOUND } });
+    expect(r).toEqual({ userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000" } });
   });
 
   it("a user with no known email never outranks a known team member (prod population, distribute.you org 2026-10-19)", async () => {
@@ -261,14 +255,13 @@ describe("pickProactiveRecipient", () => {
         { id: "s-dy", userId: "7b417d70", channelPhone: null },
         { id: "s-null", userId: "d2317462", channelPhone: null },
       ],
-      [{ payload: INBOUND }],
     ]);
     const emails: Record<string, string | null> = { cfe148ed: "kevin.lourd@gmail.com", "7b417d70": "kevin@distribute.you", d2317462: null };
     const r = await pickProactiveRecipient(
       { db, fetchEmail: async (u) => emails[u], isStaffEmail: (e) => e === "kevin.lourd@gmail.com" || e === "kevin@distribute.you" },
       REQ.orgId,
     );
-    expect(r).toEqual({ userId: "cfe148ed", sessionId: "s-gmail", whatsapp: { phone: "+33680478702", inbound: INBOUND } });
+    expect(r).toEqual({ userId: "cfe148ed", sessionId: "s-gmail", whatsapp: { phone: "+33680478702" } });
   });
 
   it("on an org where everyone is staff, the latest staff member; nobody ever used the Copilot → null", async () => {
@@ -284,19 +277,19 @@ const sse = (...events: unknown[]) => events.map((e) => `data: ${JSON.stringify(
 const ROW = { id: "turn-1", kind: "hot_lead", orgId: REQ.orgId, brandId: REQ.brandId, parentRunId: "run-1", status: "processing", payload: REQ };
 
 describe("processProactiveTurn", () => {
-  const whatsappRecipient: ProactiveRecipient = { userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000", inbound: INBOUND } };
+  const whatsappRecipient: ProactiveRecipient = { userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000" } };
 
   it("sends the answer once on WhatsApp from the linked account, keyed on the turn", async () => {
     const { db, updates } = fakeDb([[ROW]]);
     const runChat = vi.fn(async () => ({ status: 200, body: sse({ type: "token", content: "Marie from Acme wants outbound. Start the Outbound offer at $10/day? Go?" }) }));
     const sendWhatsapp = vi.fn(async () => {});
-    await processProactiveTurn({ db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
     expect(runChat).toHaveBeenCalledTimes(1);
     const args = (runChat.mock.calls[0] as unknown as [Parameters<ProactiveDeps["runChat"]>[0]])[0];
     expect(args).toMatchObject({ orgId: REQ.orgId, userId: "u-owner", runId: "run-1", sessionId: "s-owner", proactiveTurnId: "turn-1", trackingHeaders: { "x-campaign-id": "c-1" } });
     expect((args.context.channel as { assistant: { name: string } }).assistant.name).toBe("Ava");
     expect(sendWhatsapp).toHaveBeenCalledWith(expect.objectContaining({
-      orgId: INBOUND.orgId, brandId: INBOUND.brandId, userId: INBOUND.accountUserId, phone: "+33600000000", fromAccount: INBOUND.fromAccount,
+      orgId: LINE.orgId, brandId: LINE.brandId, userId: LINE.userId, runId: "run-line", phone: "+33600000000", fromAccount: FROM,
       idempotencyKey: "copilot-proactive:turn-1",
     }));
     expect(updates.at(-1)).toMatchObject({ status: "delivered", error: null });
@@ -307,7 +300,7 @@ describe("processProactiveTurn", () => {
     const runChat = vi.fn(async () => ({ status: 200, body: sse({ type: "token", content: "ok" }) }));
     const readThread = vi.fn(async () => [{ at: null, direction: "inbound" as const, channel: "email", text: "Do you do LinkedIn?" }]);
     const resolve = vi.fn(resolveAskingCampaign);
-    await processProactiveTurn({ db, fetchEmail: async () => null, isStaffEmail: () => false, runChat, sendWhatsapp: vi.fn(async () => {}), readThread, resolveAskingCampaign: resolve }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, runChat, sendWhatsapp: vi.fn(async () => {}), readThread, resolveAskingCampaign: resolve }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
     expect(resolve).toHaveBeenCalledWith({ orgId: REQ.orgId, userId: "u-owner", runId: "run-1", campaignId: "c-1" });
     expect(readThread).toHaveBeenCalledWith(expect.objectContaining({ userId: "u-owner", runId: "run-1", brandId: REQ.brandId }));
     const msg = (runChat.mock.calls[0] as unknown as [{ message: string }])[0].message;
@@ -321,7 +314,7 @@ describe("processProactiveTurn", () => {
     const refusal = new WhatsappSendError(422, JSON.stringify({ type: "refused", code: "whatsapp_not_connected" }));
     const sendWhatsapp = vi.fn().mockRejectedValueOnce(refusal).mockResolvedValueOnce(undefined);
     const sleep = vi.fn(async () => {});
-    await processProactiveTurn({ db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], runChat, sendWhatsapp, sleep }, "turn-1", whatsappRecipient, {});
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], runChat, sendWhatsapp, sleep }, "turn-1", whatsappRecipient, {});
     expect(runChat).toHaveBeenCalledTimes(1);
     expect(sendWhatsapp).toHaveBeenCalledTimes(2);
     expect(sendWhatsapp.mock.calls[0][0]).toEqual(sendWhatsapp.mock.calls[1][0]);
@@ -333,7 +326,7 @@ describe("processProactiveTurn", () => {
     const { db, updates } = fakeDb([[ROW]]);
     const sendWhatsapp = vi.fn(async () => { throw new WhatsappSendError(422, JSON.stringify({ type: "refused", code: "whatsapp_not_connected" })); });
     await processProactiveTurn(
-      { db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, sleep: async () => {},
+      { ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, sleep: async () => {},
         runChat: async () => ({ status: 200, body: sse({ type: "token", content: "Hot lead. Go?" }) }) },
       "turn-1", whatsappRecipient, {},
     );
@@ -349,7 +342,7 @@ describe("processProactiveTurn", () => {
     const sendWhatsapp = vi.fn(async () => { throw new WhatsappSendError(400, "bad phone"); });
     const sleep = vi.fn(async () => {});
     await processProactiveTurn(
-      { db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, sleep,
+      { ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, sleep,
         runChat: async () => ({ status: 200, body: sse({ type: "token", content: "Go?" }) }) },
       "turn-1", whatsappRecipient, {},
     );
@@ -362,7 +355,7 @@ describe("processProactiveTurn", () => {
     const { db, updates } = fakeDb([[ROW]]);
     const sendWhatsapp = vi.fn(async () => {});
     await processProactiveTurn(
-      { db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp,
+      { ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp,
         runChat: async () => ({ status: 200, body: sse({ type: "token", content: "You're out of credits." }, { type: "credits_required", message: "You're out of credits.", label: "Add credits" }) }) },
       "turn-1", whatsappRecipient, {},
     );
@@ -373,14 +366,27 @@ describe("processProactiveTurn", () => {
   it("a row no longer processing runs nothing (never twice)", async () => {
     const { db } = fakeDb([[{ ...ROW, status: "delivered" }]]);
     const runChat = vi.fn();
-    await processProactiveTurn({ db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], runChat, sendWhatsapp: vi.fn() }, "turn-1", whatsappRecipient, {});
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], runChat, sendWhatsapp: vi.fn() }, "turn-1", whatsappRecipient, {});
     expect(runChat).not.toHaveBeenCalled();
+  });
+
+  it("the Copilot's line cannot reach them: the message stays in the web thread, the row says why, nothing sent", async () => {
+    const { db, updates } = fakeDb([[ROW]]);
+    const sendWhatsapp = vi.fn();
+    const runChat = vi.fn(async () => ({ status: 200, body: sse({ type: "token", content: "Marie wants outbound. Go?" }) }));
+    const deps = lineDeps({ reachable: false, code: "not_on_whatsapp", error: "no WhatsApp on this number" });
+    await processProactiveTurn({ ...deps, db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
+    expect(deps.reachWhatsapp).toHaveBeenCalledWith({ line: LINE, runId: "run-line", phone: "+33600000000" });
+    expect(runChat).toHaveBeenCalledTimes(1);
+    expect(sendWhatsapp).not.toHaveBeenCalled();
+    expect(updates.at(-1)).toMatchObject({ status: "failed" });
+    expect(String(updates.at(-1)!.error)).toContain("not_on_whatsapp");
   });
 
   it("a failed turn is recorded failed with its reason, nothing sent", async () => {
     const { db, updates } = fakeDb([[ROW]]);
     const sendWhatsapp = vi.fn();
-    await processProactiveTurn({ db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, runChat: async () => ({ status: 502, body: "boom" }) }, "turn-1", whatsappRecipient, {});
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, runChat: async () => ({ status: 502, body: "boom" }) }, "turn-1", whatsappRecipient, {});
     expect(sendWhatsapp).not.toHaveBeenCalled();
     expect(updates.at(-1)).toMatchObject({ status: "failed", error: "POST /chat 502: boom" });
   });

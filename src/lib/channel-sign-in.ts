@@ -10,7 +10,7 @@
  * act with that account.
  *
  * The number always comes from the session row (written only by
- * POST /internal/copilot/channel-messages from a delivered message), never
+ * POST /internal/copilot/lead-turns from the person the workflow writes to), never
  * from the model or the request: a web caller cannot tie a number it does not
  * hold.
  */
