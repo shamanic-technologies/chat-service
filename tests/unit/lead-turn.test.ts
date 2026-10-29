@@ -72,8 +72,12 @@ describe("buildLeadTurnBlock", () => {
     expect(block).toContain("not as distribute.you");
     expect(block).toContain("How you speak here: warm");
   });
-  it("email: written as an email reply", () => {
-    expect(buildLeadTurnBlock(frame({ payload: { ...PAYLOAD, medium: "email" }, phoneBound: false }))).toContain("email reply");
+  it("email: written as an email reply, in the format of the field the writer reads (bodyHtml = HTML)", () => {
+    const schema = { type: "object", properties: { bodyHtml: { type: "string" } } };
+    const block = buildLeadTurnBlock(frame({ payload: { ...PAYLOAD, medium: "email", responseSchema: schema, messageField: "bodyHtml" }, phoneBound: false }));
+    expect(block).toContain("email reply");
+    expect(block).toContain("`bodyHtml`");
+    expect(block).not.toContain("plain text");
   });
   it("after a sign-in: the whole message, nothing before reached them", () => {
     expect(buildLeadTurnBlock(frame({ afterSignIn: true }))).toContain("write the WHOLE message now");

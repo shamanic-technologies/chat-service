@@ -5,19 +5,14 @@ import {
   VOICE_NOTE_PREFIX,
   VOICE_NOTE_UNREADABLE,
   parseChatStream,
-  processChannelMessage,
   renderChannelReply,
   toWhatsappText,
   CHANNEL_FAILURE_TEXT,
-  AFTER_SIGN_IN_TRIGGER,
   channelReplyDays,
-  type ChannelDeps,
   type ChatChannelContext,
 } from "../../src/lib/channel-copilot.js";
-import type { ChannelMessageRequest } from "../../src/schemas.js";
-import { ChannelMessageRequestSchema } from "../../src/schemas.js";
 
-const MSG: ChannelMessageRequest = {
+const MSG = {
   channel: "whatsapp",
   messageId: "$evt-1",
   orgId: "11111111-1111-4111-8111-111111111111",
@@ -28,7 +23,7 @@ const MSG: ChannelMessageRequest = {
   sender: { phone: "+33680478702", name: "Kevin" },
   text: "list my campaigns",
   at: "2026-10-18T10:00:00.000Z",
-  thread: [{ at: "2026-10-17T10:00:00.000Z", direction: "outbound", text: "Hi from our campaign" }],
+  thread: [{ at: "2026-10-17T10:00:00.000Z", direction: "outbound" as const, text: "Hi from our campaign" }],
 };
 
 const sse = (...events: unknown[]) => events.map((e) => `data: ${typeof e === "string" ? e : JSON.stringify(e)}\n\n`).join("");
@@ -232,225 +227,14 @@ describe("buildChannelBlock", () => {
   });
 });
 
-describe("ChannelMessageRequestSchema", () => {
-  it("accepts crm's body and refuses a number that is not E.164", () => {
-    expect(ChannelMessageRequestSchema.safeParse(MSG).success).toBe(true);
-    expect(ChannelMessageRequestSchema.safeParse({ ...MSG, sender: { phone: "0680478702" } }).success).toBe(false);
-  });
-
-  it("keeps the sender's known emails and call lines crm sends (COPILOT-WA-REPEAT-1027)", () => {
-    const parsed = ChannelMessageRequestSchema.parse({
-      ...MSG,
-      sender: { ...MSG.sender, knownEmails: ["staff-test@distribute.you"] },
-      thread: [...MSG.thread, { at: "2026-10-27T14:20:00.000Z", direction: "outbound", text: "Missed voice call", kind: "call" }],
-    });
-    expect(parsed.sender.knownEmails).toEqual(["staff-test@distribute.you"]);
-    expect(parsed.thread[parsed.thread.length - 1].kind).toBe("call");
-    expect(ChannelMessageRequestSchema.safeParse({ ...MSG, sender: { ...MSG.sender, knownEmails: ["not-an-email"] } }).success).toBe(false);
-  });
-
-  it("keeps the line the person wrote to and each thread line's number (SOPHIE-INTRODUCES-HERSELF-ON-HER-LINE-1029)", () => {
-    const parsed = ChannelMessageRequestSchema.parse({
-      ...MSG,
-      receivedOn: { account: "+15550002222", name: "Kevin", role: "Founder" },
-      thread: [{ at: "2026-10-29T09:00:00.000Z", direction: "outbound", text: "Hi", account: "+15550002222" }],
-    });
-    expect(parsed.receivedOn).toEqual({ account: "+15550002222", name: "Kevin", role: "Founder" });
-    expect(parsed.thread[0].account).toBe("+15550002222");
-    expect(ChannelMessageRequestSchema.parse(MSG).receivedOn).toBeUndefined();
-    expect(ChannelMessageRequestSchema.safeParse({ ...MSG, receivedOn: { account: "0680", name: null, role: null } }).success).toBe(false);
-  });
-});
-
-// A scripted db: each select/update/insert answers the next scripted result.
+// A scripted db: each select answers the next scripted result.
 function fakeDb(script: { selects: unknown[][]; inserts: unknown[][] }) {
-  const updates: Array<Record<string, unknown>> = [];
-  const inserted: Array<Record<string, unknown>> = [];
-  const chain = (result: unknown[]) => {
-    const p: Record<string, unknown> = {};
-    for (const k of ["from", "where", "orderBy", "limit"]) p[k] = () => p;
-    p.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => Promise.resolve(result).then(res, rej);
-    return p;
+  return {
+    db: {
+      select: () => ({ from: () => ({ where: () => Promise.resolve(script.selects.shift() ?? []) }) }),
+    },
   };
-  const db = {
-    select: vi.fn(() => chain(script.selects.shift() ?? [])),
-    update: vi.fn(() => ({
-      set: (values: Record<string, unknown>) => {
-        updates.push(values);
-        const w = { where: () => Object.assign(Promise.resolve([]), { returning: () => Promise.resolve([]) }) };
-        return w;
-      },
-    })),
-    insert: vi.fn(() => ({
-      values: (values: Record<string, unknown>) => {
-        inserted.push(values);
-        return { returning: () => Promise.resolve(script.inserts.shift() ?? []) };
-      },
-    })),
-  };
-  return { db, updates, inserted };
 }
-
-function deps(db: unknown, over: Partial<ChannelDeps> = {}) {
-  const sent: Array<Parameters<ChannelDeps["sendReply"]>[0]> = [];
-  const chats: Array<Parameters<ChannelDeps["runChat"]>[0]> = [];
-  const d: ChannelDeps = {
-    db: db as ChannelDeps["db"],
-    resolvePhone: vi.fn(async () => ({ orgId: "org-kevin", userId: "user-kevin" })),
-    listBrandIds: vi.fn(async () => ["brand-a"]),
-    createRootRun: vi.fn(async (identity: { orgId: string }) => (identity.orgId === MSG.orgId ? "run-line" : `run-${identity.orgId}`)),
-    runChat: vi.fn(async (args) => {
-      chats.push(args);
-      return { status: 200, body: sse({ type: "token", content: "You have **2** campaigns — Alpha and Beta." }, "[DONE]") };
-    }),
-    sendReply: vi.fn(async (args) => {
-      sent.push(args);
-    }),
-    ...over,
-  };
-  return { d, sent, chats };
-}
-
-const ROW = { id: "row-1", messageId: MSG.messageId, status: "received", payload: MSG };
-
-describe("processChannelMessage", () => {
-  it("a known number continues that user's latest Copilot session and answers once, signed", async () => {
-    const { db, updates } = fakeDb({ selects: [[ROW], [{ id: "sess-web", brandIds: ["brand-a"] }]], inserts: [] });
-    const { d, sent, chats } = deps(db);
-    await processChannelMessage(d, "row-1");
-    expect(chats).toHaveLength(1);
-    expect(chats[0]).toMatchObject({ orgId: "org-kevin", userId: "user-kevin", runId: "run-org-kevin", sessionId: "sess-web", message: "list my campaigns" });
-    expect((chats[0].context as { channel: ChatChannelContext }).channel.assistant.name).toBe("Sophie");
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toMatchObject({ orgId: MSG.orgId, brandId: MSG.brandId, phone: "+33680478702", fromAccount: "+77776879632", idempotencyKey: "copilot:$evt-1" });
-    expect(sent[0].text).toBe("You have *2* campaigns, Alpha and Beta.");
-    expect(updates.at(-1)).toMatchObject({ status: "answered", error: null });
-    expect(updates.at(-1)!.sentAt).toBeInstanceOf(Date);
-    expect(d.listBrandIds).not.toHaveBeenCalled();
-  });
-
-  // SOPHIE-WA-SIGNED-IN-1029 (prod 2026-10-27 + 2026-10-29): the turn ran under
-  // the PERSON's org, the send rode that run under the LINE owner's org, and
-  // runs-service 409'd every reply to a signed-in person.
-  it("a reply to a signed-in person is sent under a run of the line owner's org, never the person's", async () => {
-    const { db } = fakeDb({ selects: [[ROW], [{ id: "sess-web", brandIds: ["brand-a"] }]], inserts: [] });
-    const { d, sent } = deps(db);
-    await processChannelMessage(d, "row-1");
-    expect(sent[0]).toMatchObject({ orgId: MSG.orgId, userId: MSG.accountUserId, runId: "run-line" });
-    expect(d.createRootRun).toHaveBeenCalledWith({ orgId: MSG.orgId, userId: MSG.accountUserId });
-  });
-
-  it("a guest turn (line owner's org) reuses its own run for the send", async () => {
-    const { db } = fakeDb({ selects: [[ROW], [], []], inserts: [[{ id: "sess-guest" }]] });
-    const { d, sent } = deps(db, { resolvePhone: vi.fn(async () => null) });
-    await processChannelMessage(d, "row-1");
-    expect(sent[0].runId).toBe("run-line");
-    expect(d.createRootRun).toHaveBeenCalledTimes(1);
-  });
-
-  it("a refused send is recorded as not delivered (sentAt null), never silent", async () => {
-    const { db, updates } = fakeDb({ selects: [[ROW], [{ id: "sess-web", brandIds: ["b"] }]], inserts: [] });
-    const { d } = deps(db, { sendReply: vi.fn(async () => { throw new Error("crm-service whatsapp send 502: boom"); }) });
-    await processChannelMessage(d, "row-1");
-    expect(updates.at(-1)).toMatchObject({ status: "failed", sentAt: null });
-    expect(String(updates.at(-1)!.error)).toContain("send: crm-service whatsapp send 502");
-  });
-
-  it("a guest who signs in during the turn gets the answer to their pending question in the same reply, with their account", async () => {
-    const { db } = fakeDb({ selects: [[ROW], [], [{ orgId: "org-new", userId: "user-new", guest: false }]], inserts: [[{ id: "sess-guest" }]] });
-    let call = 0;
-    const { d, sent, chats } = deps(db, {
-      resolvePhone: vi.fn(async () => null),
-      runChat: vi.fn(async (args) => {
-        chats.push(args);
-        call++;
-        return { status: 200, body: sse({ type: "token", content: call === 1 ? "You're in." : "No free trial needed: the platform is free." }, "[DONE]") };
-      }),
-    });
-    await processChannelMessage(d, "row-1");
-    expect(chats).toHaveLength(2);
-    expect(chats[1]).toMatchObject({ orgId: "org-new", userId: "user-new", runId: "run-org-new", sessionId: "sess-guest", message: AFTER_SIGN_IN_TRIGGER });
-    expect((chats[1].context as { channel: ChatChannelContext }).channel.afterSignIn).toBe(true);
-    expect(sent).toHaveLength(1);
-    expect(sent[0].text).toBe("You're in.\n\nNo free trial needed: the platform is free.");
-    expect(sent[0]).toMatchObject({ orgId: MSG.orgId, runId: "run-line" });
-  });
-
-  it("a guest turn with no sign-in runs once", async () => {
-    const { db } = fakeDb({ selects: [[ROW], [], [{ orgId: MSG.orgId, userId: MSG.accountUserId, guest: true }]], inserts: [[{ id: "sess-guest" }]] });
-    const { d, chats } = deps(db, { resolvePhone: vi.fn(async () => null) });
-    await processChannelMessage(d, "row-1");
-    expect(chats).toHaveLength(1);
-  });
-
-  it("passes the founder line to the turn and still answers from fromAccount, never from the line written to", async () => {
-    const payload = {
-      ...MSG,
-      receivedOn: { account: "+15550002222", name: "Kevin", role: "Founder" },
-      thread: [{ at: "2026-10-29T09:00:00.000Z", direction: "outbound", text: "Hi", account: "+15550002222" }],
-    };
-    const { db } = fakeDb({ selects: [[{ ...ROW, payload }], [{ id: "sess-web", brandIds: ["brand-a"] }]], inserts: [] });
-    const { d, sent, chats } = deps(db);
-    await processChannelMessage(d, "row-1");
-    const ch = (chats[0].context as { channel: ChatChannelContext }).channel;
-    expect(ch.receivedOn).toEqual(payload.receivedOn);
-    expect(ch.thread[0].account).toBe("+15550002222");
-    expect(sent[0].fromAccount).toBe("+77776879632");
-  });
-
-  it("a refused send from fromAccount stays loud and never retries from the line written to", async () => {
-    const payload = { ...MSG, receivedOn: { account: "+15550002222", name: "Kevin", role: "Founder" } };
-    const { db, updates } = fakeDb({ selects: [[{ ...ROW, payload }], [{ id: "sess-web", brandIds: ["brand-a"] }]], inserts: [] });
-    const sendReply = vi.fn(async () => {
-      throw new Error("422 whatsapp_not_connected");
-    });
-    const { d } = deps(db, { sendReply });
-    await processChannelMessage(d, "row-1");
-    expect(sendReply).toHaveBeenCalledTimes(1);
-    expect(sendReply.mock.calls[0][0]).toMatchObject({ fromAccount: "+77776879632" });
-    expect(String(updates.at(-1)?.error)).toContain("422 whatsapp_not_connected");
-  });
-
-  it("a number linked in Integrations acts as the user who linked it, over users.phone", async () => {
-    const { db } = fakeDb({ selects: [[{ ...ROW, payload: { ...MSG, sender: { ...MSG.sender, linkedBy: { orgId: "org-linked", userId: "user-linked" } } } }], [{ id: "sess-l", brandIds: ["b"] }]], inserts: [] });
-    const { d, chats } = deps(db);
-    await processChannelMessage(d, "row-1");
-    expect(d.resolvePhone).not.toHaveBeenCalled();
-    expect(chats[0]).toMatchObject({ orgId: "org-linked", userId: "user-linked", sessionId: "sess-l" });
-  });
-
-  it("an unknown number gets a guest session under the number owner's org", async () => {
-    const { db, inserted } = fakeDb({ selects: [[ROW], []], inserts: [[{ id: "sess-guest" }]] });
-    const { d, chats, sent } = deps(db, { resolvePhone: vi.fn(async () => null) });
-    await processChannelMessage(d, "row-1");
-    expect(inserted[0]).toMatchObject({ orgId: MSG.orgId, userId: MSG.accountUserId, guest: true, channelPhone: "+33680478702", configKey: "copilot" });
-    expect(chats[0]).toMatchObject({ orgId: MSG.orgId, userId: MSG.accountUserId, sessionId: "sess-guest" });
-    expect(sent).toHaveLength(1);
-  });
-
-  it("an already handled row runs nothing", async () => {
-    const { db } = fakeDb({ selects: [[{ ...ROW, status: "answered" }]], inserts: [] });
-    const { d } = deps(db);
-    await processChannelMessage(d, "row-1");
-    expect(d.runChat).not.toHaveBeenCalled();
-    expect(d.sendReply).not.toHaveBeenCalled();
-  });
-
-  it("a failed turn still answers the person and records the failure", async () => {
-    const { db, updates } = fakeDb({ selects: [[ROW], [{ id: "sess-web", brandIds: ["b"] }]], inserts: [] });
-    const { d, sent } = deps(db, { runChat: vi.fn(async () => ({ status: 500, body: "boom" })) });
-    await processChannelMessage(d, "row-1");
-    expect(sent[0].text).toBe(CHANNEL_FAILURE_TEXT);
-    expect(updates.at(-1)).toMatchObject({ status: "failed" });
-  });
-
-  it("an agent-signup org refused for credits (HTTP 402) gets the add-credits answer", async () => {
-    const { db } = fakeDb({ selects: [[ROW], [{ id: "sess-web", brandIds: ["b"] }]], inserts: [] });
-    const { d, sent } = deps(db, { runChat: vi.fn(async () => ({ status: 402, body: JSON.stringify({ message: "You're out of credits. Add credits to keep going." }) })) });
-    await processChannelMessage(d, "row-1");
-    expect(sent[0].text).toContain("Add credits: https://dashboard.distribute.you");
-  });
-});
 
 describe("channelReplyDays", () => {
   it("one row per UTC day, zeros included; delivered = sent, not delivered = ended without a send", async () => {
@@ -465,7 +249,7 @@ describe("channelReplyDays", () => {
       ]],
       inserts: [],
     });
-    const days = await channelReplyDays(db as unknown as ChannelDeps["db"], 3, new Date("2026-10-29T12:00:00Z"));
+    const days = await channelReplyDays(db as unknown as Parameters<typeof channelReplyDays>[0], 3, new Date("2026-10-29T12:00:00Z"));
     expect(days).toEqual([
       { day: "2026-10-27", received: 1, delivered: 1, notDelivered: 0 },
       { day: "2026-10-28", received: 1, delivered: 0, notDelivered: 0 },

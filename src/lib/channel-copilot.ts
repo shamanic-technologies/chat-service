@@ -3,8 +3,12 @@
  * devient Sophie, une continuation Web, mais même accès, même règles, même
  * esprit, même personnalité").
  *
- * crm-service hands every inbound message of the assistant's linked account to
- * POST /internal/copilot/channel-messages and sends nothing itself. Here:
+ * Since ONE-AI-CONVERSES-1029 every message a person writes is a Lead event and
+ * the Copilot answers it through POST /internal/copilot/lead-turns (lead-turn.ts);
+ * crm-service no longer hands messages here. What stays: the WhatsApp channel
+ * block (also used by lead and proactive turns), the reply rendering, the
+ * delivery series of the past hand-offs, and the crm / client-service clients.
+ * The hand-off design it replaced:
  *  1. the sender's number IS their identity (client-service users.phone):
  *     a known number continues that user's latest Copilot session (the same
  *     thread the web shows), an unknown one is a GUEST session that sees no
@@ -17,13 +21,11 @@
  * The assistant's name and voice come from the linked account's persona
  * (crm data), never from this code.
  */
-import { and, desc, eq, gt, gte, inArray } from "drizzle-orm";
+import { gte } from "drizzle-orm";
 import { z } from "zod";
 import { COPILOT_SUPPORT } from "./support-marks.js";
 import type { db as Db } from "../db/index.js";
-import { channelInboundMessages, sessions } from "../db/schema.js";
-import type { ChannelMessageRequest } from "../schemas.js";
-import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
+import { channelInboundMessages } from "../db/schema.js";
 import { listBrands } from "./funnel-client.js";
 
 export const CHANNEL_TASK_NAME = "copilot-whatsapp";
@@ -268,262 +270,6 @@ export interface PhoneAccount {
   userId: string;
 }
 
-export interface ChannelDeps {
-  db: typeof Db;
-  /** client-service: the account a WhatsApp number resolves to, null when none. */
-  resolvePhone: (phone: string) => Promise<PhoneAccount | null>;
-  /** The org's brand ids, so the web Copilot shows this thread on each brand page. */
-  listBrandIds: (identity: { orgId: string; userId: string; runId: string }) => Promise<string[]>;
-  /** runs-service: a root run for the turn (POST /chat needs an x-run-id). */
-  createRootRun: (identity: { orgId: string; userId: string }) => Promise<string>;
-  /** POST /chat on this process: status + raw body. */
-  runChat: (args: { orgId: string; userId: string; runId: string; sessionId: string; message: string; context: Record<string, unknown> }) => Promise<{ status: number; body: string }>;
-  /** crm-service POST /orgs/whatsapp/messages. */
-  sendReply: (args: { orgId: string; brandId: string; userId: string; runId: string | null; phone: string; fromAccount: string; text: string; idempotencyKey: string }) => Promise<void>;
-}
-
-// ---------------------------------------------------------------------------
-// Session pick: one thread per person across web and WhatsApp
-// ---------------------------------------------------------------------------
-
-export async function pickChannelSession(
-  deps: Pick<ChannelDeps, "db" | "listBrandIds">,
-  msg: ChannelMessageRequest,
-  account: PhoneAccount | null,
-  runId: string,
-): Promise<{ sessionId: string; orgId: string; userId: string; guest: boolean }> {
-  const { db } = deps;
-  const phone = msg.sender.phone;
-  if (account) {
-    const [latest] = await db
-      .select()
-      .from(sessions)
-      .where(
-        and(
-          eq(sessions.orgId, account.orgId),
-          eq(sessions.userId, account.userId),
-          eq(sessions.configKey, COPILOT_CONFIG_KEY),
-          eq(sessions.guest, false),
-        ),
-      )
-      .orderBy(desc(sessions.updatedAt))
-      .limit(1);
-    const brandIds = latest?.brandIds && latest.brandIds.length > 0
-      ? null
-      : await deps.listBrandIds({ orgId: account.orgId, userId: account.userId, runId });
-    if (latest) {
-      await db
-        .update(sessions)
-        .set({ channelPhone: phone, ...(brandIds && brandIds.length > 0 ? { brandIds } : {}), updatedAt: new Date() })
-        .where(eq(sessions.id, latest.id));
-      return { sessionId: latest.id, orgId: account.orgId, userId: account.userId, guest: false };
-    }
-    const [created] = await db
-      .insert(sessions)
-      .values({
-        orgId: account.orgId,
-        userId: account.userId,
-        parentRunId: runId,
-        configKey: COPILOT_CONFIG_KEY,
-        channelPhone: phone,
-        guest: false,
-        brandIds: brandIds && brandIds.length > 0 ? brandIds : null,
-      })
-      .returning({ id: sessions.id });
-    return { sessionId: created.id, orgId: account.orgId, userId: account.userId, guest: false };
-  }
-
-  // Guest: billed to the org whose number they wrote to, under the account's user.
-  const [guestSession] = await db
-    .select()
-    .from(sessions)
-    .where(and(eq(sessions.channelPhone, phone), eq(sessions.guest, true), eq(sessions.configKey, COPILOT_CONFIG_KEY)))
-    .orderBy(desc(sessions.updatedAt))
-    .limit(1);
-  if (guestSession) return { sessionId: guestSession.id, orgId: guestSession.orgId, userId: guestSession.userId!, guest: true };
-  const [created] = await db
-    .insert(sessions)
-    .values({
-      orgId: msg.orgId,
-      userId: msg.accountUserId,
-      parentRunId: runId,
-      configKey: COPILOT_CONFIG_KEY,
-      channelPhone: phone,
-      guest: true,
-    })
-    .returning({ id: sessions.id });
-  return { sessionId: created.id, orgId: msg.orgId, userId: msg.accountUserId, guest: true };
-}
-
-// ---------------------------------------------------------------------------
-// One inbound message, end to end
-// ---------------------------------------------------------------------------
-
-/** The hidden message of the turn that answers right after a sign-in (stored, never shown, never the person's words). */
-export const AFTER_SIGN_IN_TRIGGER =
-  "(Not the person's words.) They just signed in: answer now, with their account, what they asked before signing in.";
-
-type TurnOutcome = { replyText: string; failure: string | null };
-
-function turnOutcome(status: number, body: string): TurnOutcome {
-  if (status === 200) {
-    const turn = parseChatStream(body);
-    if (turn.error && !turn.text) return { replyText: CHANNEL_FAILURE_TEXT, failure: `chat stream error: ${turn.error}` };
-    return { replyText: renderChannelReply(turn), failure: null };
-  }
-  if (status === 402) {
-    // An org opened by the API agent signup is refused with a 402 JSON: still an answer.
-    const json = JSON.parse(body || "{}") as Record<string, unknown>;
-    return {
-      replyText: renderChannelReply(
-        { text: "", choices: null, inputLabel: null, error: null, creditsRequired: { message: String(json.message ?? json.error ?? "You're out of credits. Add credits to keep going."), label: "Add credits" } },
-      ),
-      failure: null,
-    };
-  }
-  return { replyText: CHANNEL_FAILURE_TEXT, failure: `POST /chat ${status}: ${body.slice(0, 500)}` };
-}
-
-export async function processChannelMessage(deps: ChannelDeps, rowId: string): Promise<void> {
-  const { db } = deps;
-  const [row] = await db.select().from(channelInboundMessages).where(eq(channelInboundMessages.id, rowId));
-  if (!row || row.status !== "received") return;
-  await db.update(channelInboundMessages).set({ status: "processing", updatedAt: new Date() }).where(eq(channelInboundMessages.id, rowId));
-  const msg = row.payload as ChannelMessageRequest;
-  const phone = msg.sender.phone;
-  // The line's owner sends the reply: its org, its user, a run of ITS org.
-  const lineOwner = { orgId: msg.orgId, userId: msg.accountUserId };
-  let replyText = CHANNEL_FAILURE_TEXT;
-  let failure: string | null = null;
-  let turnRunId: string | null = null;
-  let identity: { orgId: string; userId: string } = lineOwner;
-  try {
-    // A number the person linked in Integrations is their identity, and a
-    // stronger fact than users.phone (which can name an old empty shell).
-    const account = msg.sender.linkedBy ?? (await deps.resolvePhone(phone));
-    identity = account ?? identity;
-    turnRunId = await deps.createRootRun(identity);
-    const picked = await pickChannelSession(deps, msg, account, turnRunId);
-    identity = { orgId: picked.orgId, userId: picked.userId };
-    await db
-      .update(channelInboundMessages)
-      .set({ orgId: picked.orgId, userId: picked.userId, sessionId: picked.sessionId, updatedAt: new Date() })
-      .where(eq(channelInboundMessages.id, rowId));
-    const channel: ChatChannelContext = {
-      kind: "whatsapp",
-      assistant: msg.assistant,
-      sender: msg.sender,
-      ...(msg.receivedOn ? { receivedOn: msg.receivedOn } : {}),
-      thread: msg.thread,
-    };
-    const { status, body } = await deps.runChat({
-      ...identity,
-      runId: turnRunId,
-      sessionId: picked.sessionId,
-      message: msg.text,
-      context: { channel },
-    });
-    ({ replyText, failure } = turnOutcome(status, body));
-
-    // SOPHIE-WA-SIGNED-IN-1029: a guest who signed in during this turn gets the
-    // answer to their pending question NOW, with their account, in the same
-    // reply. Never "send me ok": the account takes effect in this exchange.
-    if (!failure && picked.guest) {
-      const [after] = await db
-        .select({ orgId: sessions.orgId, userId: sessions.userId, guest: sessions.guest })
-        .from(sessions)
-        .where(eq(sessions.id, picked.sessionId));
-      if (after && !after.guest && after.userId) {
-        identity = { orgId: after.orgId, userId: after.userId };
-        await db
-          .update(channelInboundMessages)
-          .set({ orgId: identity.orgId, userId: identity.userId, updatedAt: new Date() })
-          .where(eq(channelInboundMessages.id, rowId));
-        const signedInText = replyText;
-        try {
-          const runId = await deps.createRootRun(identity);
-          const next = await deps.runChat({
-            ...identity,
-            runId,
-            sessionId: picked.sessionId,
-            message: AFTER_SIGN_IN_TRIGGER,
-            context: { channel: { ...channel, afterSignIn: true } },
-          });
-          const outcome = turnOutcome(next.status, next.body);
-          if (outcome.failure) failure = `after sign-in: ${outcome.failure}`;
-          else replyText = [signedInText, outcome.replyText].filter(Boolean).join("\n\n").slice(0, 4096);
-        } catch (err) {
-          failure = `after sign-in: ${err instanceof Error ? err.message : String(err)}`;
-        }
-        // The sign-in itself went through: that reply still leaves.
-        if (failure) replyText = signedInText;
-      }
-    }
-  } catch (err) {
-    failure = err instanceof Error ? err.message : String(err);
-    replyText = CHANNEL_FAILURE_TEXT;
-  }
-  if (failure) console.error(`[chat-service] whatsapp message "${row.messageId}" from ${phone}: turn failed: ${failure}`);
-  let sentAt: Date | null = null;
-  try {
-    // runs-service refuses a child under another org's run (409 "Parent-child
-    // field conflict"): a turn run under the PERSON's account never rides the
-    // line owner's send (prod 2026-10-27 / 2026-10-29: every reply to a
-    // signed-in person dropped). The send then gets its own run, under the line.
-    const sendRunId = turnRunId && identity.orgId === lineOwner.orgId ? turnRunId : await deps.createRootRun(lineOwner);
-    await deps.sendReply({
-      orgId: msg.orgId,
-      brandId: msg.brandId,
-      userId: msg.accountUserId,
-      runId: sendRunId,
-      phone,
-      fromAccount: msg.fromAccount,
-      text: replyText,
-      idempotencyKey: `copilot:${row.messageId}`,
-    });
-    sentAt = new Date();
-  } catch (err) {
-    const sendError = err instanceof Error ? err.message : String(err);
-    console.error(`[chat-service] whatsapp message "${row.messageId}" from ${phone}: reply not sent: ${sendError}`);
-    failure = failure ? `${failure}; send: ${sendError}` : `send: ${sendError}`;
-  }
-  await db
-    .update(channelInboundMessages)
-    .set({ status: failure ? "failed" : "answered", replyText, error: failure, sentAt, updatedAt: new Date() })
-    .where(eq(channelInboundMessages.id, rowId));
-}
-
-/** One turn at a time per number: a second message waits for the first answer. */
-const queues = new Map<string, Promise<void>>();
-
-export function enqueueChannelMessage(deps: ChannelDeps, phone: string, rowId: string): Promise<void> {
-  const previous = queues.get(phone) ?? Promise.resolve();
-  const next = previous
-    .then(() => processChannelMessage(deps, rowId))
-    .catch((err) => console.error(`[chat-service] whatsapp message row "${rowId}" crashed:`, err))
-    .finally(() => {
-      if (queues.get(phone) === next) queues.delete(phone);
-    });
-  queues.set(phone, next);
-  return next;
-}
-
-/**
- * A deploy recreates the container mid-turn: messages of the last 30 minutes
- * never answered run again (crm's send idempotency key stops a second send if
- * the first one left). Older ones stay failed: an answer an hour late is noise.
- */
-export async function recoverChannelMessages(deps: ChannelDeps, now = new Date()): Promise<number> {
-  const since = new Date(now.getTime() - 30 * 60_000);
-  const rows = await deps.db
-    .update(channelInboundMessages)
-    .set({ status: "received", updatedAt: now })
-    .where(and(inArray(channelInboundMessages.status, ["received", "processing"]), gt(channelInboundMessages.createdAt, since)))
-    .returning({ id: channelInboundMessages.id, phone: channelInboundMessages.senderPhone });
-  for (const r of rows) void enqueueChannelMessage(deps, r.phone, r.id);
-  return rows.length;
-}
-
 // ---------------------------------------------------------------------------
 // Delivery series (Monitoring: replies written vs delivered, per UTC day)
 // ---------------------------------------------------------------------------
@@ -613,7 +359,7 @@ export class WhatsappSendError extends Error {
 }
 
 export async function sendWhatsappReply(
-  args: Parameters<ChannelDeps["sendReply"]>[0],
+  args: { orgId: string; brandId: string; userId: string; runId: string | null; phone: string; fromAccount: string; text: string; idempotencyKey: string },
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
   const headers: Record<string, string> = {
@@ -638,6 +384,37 @@ export async function sendWhatsappReply(
     signal: AbortSignal.timeout(90_000),
   });
   if (!res.ok) throw new WhatsappSendError(res.status, await res.text().catch(() => ""));
+}
+
+/** crm-service POST /orgs/whatsapp/reach from the line's pro_ai account: who would write, or why nobody can. */
+export async function reachWhatsapp(
+  args: { line: { orgId: string; brandId: string; userId: string }; runId: string; phone: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<
+  | { reachable: true; fromAccount: string; persona: { name: string | null; role: string | null; instructions: string | null } | null }
+  | { reachable: false; code: string; error: string }
+> {
+  const res = await fetchImpl(`${env("CRM_SERVICE_URL")}/orgs/whatsapp/reach`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": env("CRM_SERVICE_API_KEY"),
+      "x-org-id": args.line.orgId,
+      "x-user-id": args.line.userId,
+      "x-brand-id": args.line.brandId,
+      "x-run-id": args.runId,
+    },
+    body: JSON.stringify({ brandId: args.line.brandId, phone: args.phone, fromAccountType: "pro_ai" }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const text = await res.text().catch(() => "");
+  if (!res.ok) throw new Error(`crm-service whatsapp reach ${res.status}: ${text.slice(0, 500)}`);
+  const json = JSON.parse(text) as Record<string, unknown>;
+  if (json.reachable === true && typeof json.fromAccount === "string") {
+    return { reachable: true, fromAccount: json.fromAccount, persona: (json.persona as { name: string | null; role: string | null; instructions: string | null } | null) ?? null };
+  }
+  if (json.reachable === false) return { reachable: false, code: String(json.code ?? "unknown"), error: String(json.error ?? "") };
+  throw new Error(`crm-service whatsapp reach answered an unknown shape: ${text.slice(0, 300)}`);
 }
 
 export async function createChannelRootRun(
@@ -666,25 +443,4 @@ export async function listOrgBrandIds(identity: { orgId: string; userId: string;
   const body = (await listBrands(identity)) as { brands?: Array<{ id?: unknown }> } | Array<{ id?: unknown }>;
   const rows = Array.isArray(body) ? body : body.brands ?? [];
   return rows.map((b) => b.id).filter((id): id is string => typeof id === "string");
-}
-
-/** POST /chat on this same process, with the person's identity (the web path, minus the gateway). */
-export async function runChatOnSelf(
-  port: number,
-  args: Parameters<ChannelDeps["runChat"]>[0],
-  fetchImpl: typeof fetch = fetch,
-): Promise<{ status: number; body: string }> {
-  const res = await fetchImpl(`http://127.0.0.1:${port}/chat`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": process.env.CHAT_SERVICE_API_KEY || "chat-service-self",
-      "x-org-id": args.orgId,
-      "x-user-id": args.userId,
-      "x-run-id": args.runId,
-    },
-    body: JSON.stringify({ configKey: COPILOT_CONFIG_KEY, message: args.message, sessionId: args.sessionId, context: args.context }),
-    signal: AbortSignal.timeout(15 * 60_000),
-  });
-  return { status: res.status, body: await res.text() };
 }
