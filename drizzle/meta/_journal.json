@@ -204,6 +204,13 @@
       "when": 1792454400000,
       "tag": "0028_copilot_lead_turns",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792540800000,
+      "tag": "0029_vendor_credit",
+      "breakpoints": true
     }
   ]
 }
