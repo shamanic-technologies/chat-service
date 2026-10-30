@@ -1001,6 +1001,30 @@
             "type": "string",
             "description": "Versioned model ID actually used for the completion (resolved by the service from the provider+model alias)",
             "example": "claude-sonnet-4-6"
+          },
+          "fallback": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "Versioned model ID the caller asked for (its provider is out of credit)."
+              },
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "out_of_credit"
+                ]
+              }
+            },
+            "required": [
+              "from",
+              "reason"
+            ],
+            "description": "Present only when the requested model's provider has no credit and the call was served by the declared fallback (VENDOR-CREDIT-1030). `model` is then the fallback that ran, and the run declares the fallback's own cost names.",
+            "example": {
+              "from": "deepseek-flash",
+              "reason": "out_of_credit"
+            }
           }
         },
         "required": [
@@ -1832,6 +1856,137 @@
           }
         },
         "required": [
+          "days"
+        ]
+      },
+      "VendorCreditResponse": {
+        "type": "object",
+        "properties": {
+          "vendors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "enum": [
+                    "deepseek",
+                    "zai",
+                    "moonshot",
+                    "openai",
+                    "anthropic",
+                    "google"
+                  ]
+                },
+                "label": {
+                  "type": "string",
+                  "description": "The vendor's name.",
+                  "example": "DeepSeek"
+                },
+                "outOfCredit": {
+                  "type": "boolean",
+                  "description": "True while the vendor refuses our platform key for an empty balance: broken (red). Turns false on the first call that succeeds."
+                },
+                "since": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "ISO time of the first refused call of the open outage; null when serving."
+                },
+                "lastSeenAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "ISO time of the last refused call of the latest outage; null if never."
+                },
+                "recoveredAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "ISO time the latest outage ended (a call succeeded); null if open or never."
+                },
+                "fallbackModel": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Model ID calls go to while this vendor is out of credit; null = none declared, its calls fail.",
+                  "example": "glm-5.3-flash"
+                },
+                "fallbackLabel": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Display name of fallbackModel.",
+                  "example": "GLM-5.3 Flash"
+                },
+                "refusedCalls": {
+                  "type": "integer",
+                  "description": "Calls refused for an empty balance during the latest outage."
+                },
+                "reroutedCalls": {
+                  "type": "integer",
+                  "description": "Calls the fallback served during the latest outage."
+                },
+                "sentence": {
+                  "type": "string",
+                  "description": "One plain sentence to print as is."
+                }
+              },
+              "required": [
+                "provider",
+                "label",
+                "outOfCredit",
+                "since",
+                "lastSeenAt",
+                "recoveredAt",
+                "fallbackModel",
+                "fallbackLabel",
+                "refusedCalls",
+                "reroutedCalls",
+                "sentence"
+              ]
+            },
+            "description": "One row per provider chat-service calls, out-of-credit ones first."
+          },
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "string",
+                  "description": "UTC day, YYYY-MM-DD."
+                },
+                "provider": {
+                  "type": "string",
+                  "enum": [
+                    "deepseek",
+                    "zai",
+                    "moonshot",
+                    "openai",
+                    "anthropic",
+                    "google"
+                  ]
+                },
+                "outOfCredit": {
+                  "type": "boolean",
+                  "description": "True when the vendor was out of credit at any moment of that day (broken)."
+                },
+                "refusedCalls": {
+                  "type": "integer"
+                },
+                "reroutedCalls": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "day",
+                "provider",
+                "outOfCredit",
+                "refusedCalls",
+                "reroutedCalls"
+              ]
+            },
+            "description": "Every UTC day of the window x every provider, oldest first, quiet days at zero."
+          }
+        },
+        "required": [
+          "vendors",
           "days"
         ]
       },
@@ -5033,6 +5188,72 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChannelReplyDaysResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid days",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/vendor-credit": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "AI vendors out of credit: verdict per vendor and a daily series (Monitoring)",
+        "description": "Stored from every call refused on our platform key in the vendor's own out-of-credit words, any caller. A vendor stays out of credit until a call on it succeeds. While out, calls on a model with a declared fallback are served by that fallback.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90,
+              "default": 30,
+              "description": "How many UTC days, today included (1..90, default 30)."
+            },
+            "required": false,
+            "description": "How many UTC days, today included (1..90, default 30).",
+            "name": "days",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verdicts and the daily series",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorCreditResponse"
                 }
               }
             }

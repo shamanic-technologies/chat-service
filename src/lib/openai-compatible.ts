@@ -21,11 +21,6 @@
 // tool calling, no web search, no images, no embeddings.
 // ---------------------------------------------------------------------------
 
-import {
-  markVendorServing,
-  notifyVendorOutOfCredit,
-  type VendorAlertIdentity,
-} from "./vendor-credit-alert.js";
 
 /** Request timeout. Matches the Gemini Flash-tier budget. */
 const VENDOR_TIMEOUT_MS = 10 * 60_000;
@@ -94,6 +89,25 @@ export class VendorProviderError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "VendorProviderError";
+  }
+}
+
+/**
+ * The vendor refused because the account's prepaid balance is empty, in its
+ * own out-of-credit words (`VENDORS[...].isOutOfCreditRefusal`). A subclass of
+ * `VendorProviderError`, so a route that does not look for it still answers the
+ * same 502; the completion routes read it to store the fact and reroute
+ * (src/lib/vendor-credit.ts, VENDOR-CREDIT-1030).
+ */
+export class VendorOutOfCreditError extends VendorProviderError {
+  constructor(
+    message: string,
+    readonly vendor: VendorId,
+    readonly status: number,
+    readonly vendorMessage: string,
+  ) {
+    super(message);
+    this.name = "VendorOutOfCreditError";
   }
 }
 
@@ -1172,15 +1186,6 @@ export interface VendorCompleteOptions {
    * `disableThinking` on Anthropic.
    */
   disableThinking?: boolean;
-  /**
-   * Identity of the inbound request, forwarded ONLY to the out-of-credit staff
-   * alert — never to the vendor (see the egress guardrail in CLAUDE.md).
-   *
-   * The staff alert path is org-scoped, so without this the alert cannot be
-   * raised at all; `/complete` supplies it and `/internal/platform-complete`
-   * has no org to supply.
-   */
-  identity?: VendorAlertIdentity;
 }
 
 export interface VendorCompleteResult {
@@ -1486,10 +1491,9 @@ export function mapVendorResponse(
  * is never replayed. This is intentionally stricter than gemini.ts, which
  * retries 429/5xx status codes.
  *
- * A vendor being down fails loud. There is no cross-vendor fallback: silently
- * answering from a different model would bill spend under a catalog name that
- * does not describe what ran, and hand the caller an answer from a model it did
- * not choose.
+ * A vendor being down fails loud. The ONE detour is an empty balance: this
+ * throws `VendorOutOfCreditError` and the route retries on the declared
+ * fallback, declaring that model's own cost names (src/lib/vendor-credit.ts).
  */
 export async function completeWithVendor(
   options: VendorCompleteOptions,
@@ -1546,19 +1550,17 @@ export async function completeWithVendor(
       const refusal = parseVendorRefusal(res.status, text);
       const outOfCredit = config.isOutOfCreditRefusal(refusal);
 
-      // Out-of-credit stops the whole model tier until a human tops the account
-      // up, so the owner is emailed — once per outage, detached from this
-      // request. Everything else about this failure is unchanged: no fallback,
-      // no retry, same error to the caller. A rate-limit 429 alerts nothing.
+      // Out-of-credit stops the whole model tier until someone tops the
+      // account up. Thrown as its own class, never retried here: the route
+      // stores the fact (red on Monitoring) and reroutes to the declared
+      // fallback (src/lib/vendor-credit.ts). A rate-limit 429 is not this.
       if (outOfCredit) {
-        notifyVendorOutOfCredit({
+        throw new VendorOutOfCreditError(
+          `[vendor:${vendor}] ${config.label} is out of credit (${res.status} from ${model}): ${text.slice(0, 500)}`,
           vendor,
-          vendorLabel: config.label,
-          model,
-          status: res.status,
-          vendorMessage: text.slice(0, 500),
-          identity: options.identity,
-        });
+          res.status,
+          text.slice(0, 500),
+        );
       }
 
       // A rate limit is the one completed response worth replaying: the vendor
@@ -1639,9 +1641,6 @@ export async function completeWithVendor(
 
     const json = (await res.json()) as VendorResponseBody;
     const result = mapVendorResponse(vendor, model, json);
-
-    // The vendor answered, so its balance is not empty — re-arm the alert.
-    markVendorServing(vendor);
 
     // Reconciliation breadcrumb: the cache split drives what we declare, so log
     // it next to the totals rather than only the totals.
