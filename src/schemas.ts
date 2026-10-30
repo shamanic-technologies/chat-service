@@ -701,6 +701,18 @@ export const CompleteResponseSchema = z
       description: "Versioned model ID actually used for the completion (resolved by the service from the provider+model alias)",
       example: "claude-sonnet-4-6",
     }),
+    fallback: z
+      .object({
+        from: z.string().openapi({ description: "Versioned model ID the caller asked for (its provider is out of credit)." }),
+        reason: z.literal("out_of_credit"),
+      })
+      .optional()
+      .openapi({
+        description:
+          "Present only when the requested model's provider has no credit and the call was served by the declared fallback " +
+          "(VENDOR-CREDIT-1030). `model` is then the fallback that ran, and the run declares the fallback's own cost names.",
+        example: { from: "deepseek-flash", reason: "out_of_credit" },
+      }),
   })
   .openapi("CompleteResponse");
 
@@ -1325,6 +1337,60 @@ registry.registerPath({
   },
   responses: {
     200: { description: "The daily series", content: { "application/json": { schema: ChannelReplyDaysResponseSchema } } },
+    400: { description: "Invalid days", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing x-api-key header", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+// --- Internal: AI vendors out of credit (VENDOR-CREDIT-1030) ---
+
+export const VendorCreditQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(30).openapi({ description: "How many UTC days, today included (1..90, default 30)." }),
+});
+
+const VendorCreditVendorSchema = z.object({
+  provider: z.enum(["deepseek", "zai", "moonshot", "openai", "anthropic", "google"]),
+  label: z.string().openapi({ description: "The vendor's name.", example: "DeepSeek" }),
+  outOfCredit: z.boolean().openapi({ description: "True while the vendor refuses our platform key for an empty balance: broken (red). Turns false on the first call that succeeds." }),
+  since: z.string().nullable().openapi({ description: "ISO time of the first refused call of the open outage; null when serving." }),
+  lastSeenAt: z.string().nullable().openapi({ description: "ISO time of the last refused call of the latest outage; null if never." }),
+  recoveredAt: z.string().nullable().openapi({ description: "ISO time the latest outage ended (a call succeeded); null if open or never." }),
+  fallbackModel: z.string().nullable().openapi({ description: "Model ID calls go to while this vendor is out of credit; null = none declared, its calls fail.", example: "glm-5.3-flash" }),
+  fallbackLabel: z.string().nullable().openapi({ description: "Display name of fallbackModel.", example: "GLM-5.3 Flash" }),
+  refusedCalls: z.number().int().openapi({ description: "Calls refused for an empty balance during the latest outage." }),
+  reroutedCalls: z.number().int().openapi({ description: "Calls the fallback served during the latest outage." }),
+  sentence: z.string().openapi({ description: "One plain sentence to print as is." }),
+});
+
+const VendorCreditDaySchema = z.object({
+  day: z.string().openapi({ description: "UTC day, YYYY-MM-DD." }),
+  provider: z.enum(["deepseek", "zai", "moonshot", "openai", "anthropic", "google"]),
+  outOfCredit: z.boolean().openapi({ description: "True when the vendor was out of credit at any moment of that day (broken)." }),
+  refusedCalls: z.number().int(),
+  reroutedCalls: z.number().int(),
+});
+
+const VendorCreditResponseSchema = z
+  .object({
+    vendors: z.array(VendorCreditVendorSchema).openapi({ description: "One row per provider chat-service calls, out-of-credit ones first." }),
+    days: z.array(VendorCreditDaySchema).openapi({ description: "Every UTC day of the window x every provider, oldest first, quiet days at zero." }),
+  })
+  .openapi("VendorCreditResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/vendor-credit",
+  tags: ["Internal"],
+  summary: "AI vendors out of credit: verdict per vendor and a daily series (Monitoring)",
+  description:
+    "Stored from every call refused on our platform key in the vendor's own out-of-credit words, any caller. A vendor stays out of credit " +
+    "until a call on it succeeds. While out, calls on a model with a declared fallback are served by that fallback.",
+  request: {
+    headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
+    query: VendorCreditQuerySchema,
+  },
+  responses: {
+    200: { description: "Verdicts and the daily series", content: { "application/json": { schema: VendorCreditResponseSchema } } },
     400: { description: "Invalid days", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
     401: { description: "Missing x-api-key header", content: { "application/json": { schema: ErrorResponseSchema } } },
   },

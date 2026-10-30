@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, unique, uniqueIndex, index, boolean, bigint, real } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, unique, uniqueIndex, index, boolean, bigint, real, date, primaryKey } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import type { AnthropicEffort, ChoicesRecord, OpenPageRecord } from "../schemas.js";
 import type { SupportFunction } from "../lib/support-marks.js";
 
@@ -322,6 +323,40 @@ export const copilotLeadTurns = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("copilot_lead_turns_org_key_idx").on(table.orgId, table.idempotencyKey)],
+);
+
+// VENDOR-CREDIT-1030 (migration 0029): a vendor out of credit is a stored fact.
+// One OPEN outage per provider (partial unique index), closed by the first call
+// that succeeds; a per-UTC-day counter of refused and rerouted calls.
+export const vendorCreditOutages = pgTable(
+  "vendor_credit_outages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+    recoveredAt: timestamp("recovered_at", { withTimezone: true }),
+    refusedCalls: integer("refused_calls").notNull().default(0),
+    reroutedCalls: integer("rerouted_calls").notNull().default(0),
+    lastMessage: text("last_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("vendor_credit_outages_open_idx").on(table.provider).where(sql`recovered_at IS NULL`),
+    index("vendor_credit_outages_provider_seen_idx").on(table.provider, table.firstSeenAt),
+  ],
+);
+
+export const vendorCreditDays = pgTable(
+  "vendor_credit_days",
+  {
+    day: date("day").notNull(),
+    provider: text("provider").notNull(),
+    refusedCalls: integer("refused_calls").notNull().default(0),
+    reroutedCalls: integer("rerouted_calls").notNull().default(0),
+  },
+  (table) => [primaryKey({ name: "vendor_credit_days_pk", columns: [table.day, table.provider] })],
 );
 
 export interface ToolCallRecord {
