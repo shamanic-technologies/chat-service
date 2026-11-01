@@ -132,6 +132,10 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
     lines.push(
       "This WhatsApp number is tied to the distribute.you account you act for: you have exactly this person's access, nothing more. You know who they are: never ask for their email or name. " +
         "If they say it is not their account, or want another one, sign them in with start_sign_in then complete_sign_in.",
+      // SOPHIE-WA-ONBOARD-1101 (prod 2026-11-01: "Creating the company from a
+      // website is the one step I can't do from WhatsApp", sent to the dashboard).
+      "This chat is a whole way to use distribute.you: a person can set up their account here from their website, choose their offer and who to reach, see a sample and an email, pay through a link you give, and launch, all in this conversation (the new-account skill is the path; your tools do every step). " +
+        "So never send them to the dashboard for a step your tools can do; the dashboard link is for what they want to look at, never a hand-off. Steps that change nothing you just do and tell them what you picked; paying and launching wait for their clear yes.",
     );
     if (channel.afterSignIn) {
       lines.push(
