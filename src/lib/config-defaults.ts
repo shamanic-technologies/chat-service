@@ -1,4 +1,4 @@
-import type { AnthropicEffort } from "../schemas.js";
+import type { AnthropicEffort, ChatConfigProvider } from "../schemas.js";
 import type { Provider, ModelAlias } from "./anthropic.js";
 import type { SupportFunction } from "./support-marks.js";
 
@@ -21,7 +21,9 @@ export const DEFAULT_CHAT_PROVIDER: Provider = "google";
 
 /** Per-provider model alias used when a chat config row leaves `model` NULL. */
 export function defaultModelAliasFor(provider: Provider): ModelAlias {
-  return provider === "anthropic" ? "sonnet" : "flash-pro";
+  if (provider === "anthropic") return "sonnet";
+  if (provider === "deepseek") return "deepseek-flash";
+  return "flash-pro";
 }
 
 /**
@@ -42,7 +44,7 @@ export interface ConfigConflictSetInput {
   systemPrompt: string;
   allowedTools: string[];
   /** Omitted (undefined) means "leave the stored value unchanged". */
-  provider?: "anthropic" | "google";
+  provider?: ChatConfigProvider;
   /** Omitted (undefined) means "leave the stored value unchanged". */
   model?: string;
   /** Omitted (undefined) means "leave the stored value unchanged". */
@@ -56,10 +58,11 @@ export interface ConfigConflictSetInput {
 export interface ConfigConflictSet {
   systemPrompt: string;
   allowedTools: string[];
-  provider?: "anthropic" | "google";
+  provider?: ChatConfigProvider;
   model?: string;
   thinkingLevel?: "minimal" | "low" | "medium" | "high";
-  effort?: AnthropicEffort;
+  /** null = cleared: a config moved off Anthropic drops its Anthropic-only effort. */
+  effort?: AnthropicEffort | null;
   supportKind?: SupportFunction;
 }
 
@@ -80,6 +83,10 @@ export function buildConfigConflictSet(input: ConfigConflictSetInput): ConfigCon
   if (input.model !== undefined) set.model = input.model;
   if (input.thinkingLevel !== undefined) set.thinkingLevel = input.thinkingLevel;
   if (input.effort !== undefined) set.effort = input.effort;
+  // effort is Anthropic-only (/chat refuses a non-Anthropic config carrying
+  // one): a re-register that moves the config to another provider without
+  // stating effort clears the stored one instead of preserving it.
+  else if (input.provider !== undefined && input.provider !== "anthropic") set.effort = null;
   if (input.supportKind !== undefined) set.supportKind = input.supportKind;
   return set;
 }

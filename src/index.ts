@@ -91,6 +91,7 @@ import {
   flatCostNames,
   UnpricedModelError,
   type LlmCostNames,
+  type VendorCostLine,
 } from "./lib/cost-names.js";
 import {
   createWorkflow,
@@ -384,6 +385,7 @@ import {
 import { buildAnthropicTurnMessages, lastUserMessage } from "./lib/anthropic-turn.js";
 import { reconcileProvisionedCosts } from "./lib/cost-reconcile.js";
 import { streamGeminiChat, type ToolDefinition } from "./lib/gemini-chat.js";
+import { streamVendorChat } from "./lib/vendor-chat.js";
 import type { GeminiCostLine } from "./lib/gemini-usage.js";
 import {
   anthropicCachePriced,
@@ -3432,12 +3434,14 @@ app.post("/chat", requireAuth, async (req, res) => {
     (leadTurn ? buildLeadTurnBlock(leadTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
   const systemPrompt = stableSystemPrompt + turnContextBlock;
   const isGeminiChat = chatProvider === "google";
+  // A direct OpenAI-compatible vendor (DeepSeek, CHAT-DEEPSEEK-FLASH-1101): its own loop, vendor-chat.ts.
+  const chatVendor: VendorId | null = isVendorProvider(chatProvider) ? chatProvider : null;
   // Only the cache-priced models (all accept a mid-conversation system message)
   // split the prompt; an older model keeps it whole, as before.
-  const anthropicCache = !isGeminiChat && anthropicCachePriced(resolvedModelInfo.costPrefix);
+  const anthropicCache = !isGeminiChat && !chatVendor && anthropicCachePriced(resolvedModelInfo.costPrefix);
   const anthropicSystemPrompt = anthropicCache ? stableSystemPrompt : systemPrompt;
   const anthropicTurnContext = anthropicCache ? turnContextBlock : "";
-  const claude = isGeminiChat ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
+  const claude = isGeminiChat || chatVendor ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
 
   let runId: string | null = null;
   let chatFailed = false;
@@ -3450,6 +3454,8 @@ app.post("/chat", requireAuth, async (req, res) => {
   // Anthropic: billed lines merged per request (each request picks its own
   // prompt-length tier, so a summed token total cannot be priced).
   let anthropicChatCostLines: AnthropicCostLine[] = [];
+  // Direct vendor: billed lines per request (each priced at its own clock), merged.
+  let vendorChatCostLines: VendorCostLine[] | null = null;
   let provisionedCostIds: string[] = [];
   // What the out-of-credits answer needs from inside the try (set once known).
   const creditsTurn: { sessionId: string | null; text: () => string; userMessage: CopilotTurnMessage | null } = { sessionId: null, text: () => "", userMessage: null };
@@ -3547,13 +3553,14 @@ app.post("/chat", requireAuth, async (req, res) => {
       return;
     }
 
-    const authorizeChatProviderCall = async (estimatedInputTokens: number): Promise<void> => {
+    // `at`: the clock this request is held AND billed at. Only a direct vendor
+    // prices by time of day (DeepSeek peak / off-peak); Anthropic and Google
+    // keep their flat names.
+    const authorizeChatProviderCall = async (estimatedInputTokens: number, at: Date = new Date()): Promise<void> => {
       try {
         const costIds = await provisionAndAuthorizeLlmCost({
           runId: runId!,
-          // /chat is not wired to the direct-vendor providers, so the flat
-          // Anthropic/Google names apply — unchanged from before.
-          costNames: flatCostNames(resolvedModelInfo.costPrefix),
+          costNames: buildLlmCostNames({ provider: chatProvider, costPrefix: resolvedModelInfo.costPrefix, at }),
           inputTokens: estimatedInputTokens,
           // Right-sized affordability hold (not the provider streaming cap, which
           // stays at MAX_TOKENS via createStream). A flat 64k hold per agentic
@@ -4884,6 +4891,47 @@ app.post("/chat", requireAuth, async (req, res) => {
     if (handledBrandProfileRefresh) {
       // The deterministic brand-profile refresh already streamed its concise
       // confirmation and populated fullResponse/toolCalls for persistence.
+    } else if (chatVendor) {
+      // --- Direct vendor path (DeepSeek): one non-streaming request per round ---
+      const vendorResult = await streamVendorChat({
+        vendor: chatVendor,
+        apiKey: resolvedKey.key,
+        model: resolvedModelInfo.apiModelId,
+        costPrefix: resolvedModelInfo.costPrefix,
+        systemPrompt: stableSystemPrompt,
+        turnContext: turnContextBlock,
+        history: history
+          .filter((m) => m.role !== "tool")
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as string, toolCalls: m.toolCalls })),
+        userMessage: message.trim(),
+        tools: allTools.map((t) => ({
+          name: t.name,
+          description: t.description ?? "",
+          input_schema: t.input_schema as ToolDefinition["input_schema"],
+        })),
+        res,
+        // Tracks whether the model wrote answer text, so a present_choices
+        // intro is not written twice (same as the Gemini path).
+        sendSSE: (r: express.Response, data: unknown) => {
+          const d = data as { type?: string; content?: unknown };
+          if (d && d.type === "token" && typeof d.content === "string" && d.content.trim()) turnText.streamed = true;
+          sendSSE(r, data);
+        },
+        executeTool,
+        signal: abortController.signal,
+        holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),
+        ...(leadTurn ? { endToolName: LEAD_ANSWER_TOOL_NAME } : {}),
+        beforeProviderCall: async ({ requestBody, at }) => {
+          await authorizeChatProviderCall(estimateRequestTokens(requestBody), at);
+        },
+      });
+      fullResponse = vendorResult.fullResponse;
+      emittedInputRequest = vendorResult.emittedInputRequest;
+      // executeTool already recorded every call (toolCalls), as on the Anthropic path.
+      totalPromptTokens = vendorResult.tokensInput;
+      lastPromptTokens = vendorResult.lastRequestTokensInput;
+      totalOutputTokens = vendorResult.tokensOutput;
+      vendorChatCostLines = vendorResult.costLines;
     } else if (isGeminiChat) {
       // --- Gemini streaming path ---
       const geminiToolDefs: ToolDefinition[] = allTools.map((t) => ({
@@ -5445,7 +5493,8 @@ app.post("/chat", requireAuth, async (req, res) => {
       // Gemini: the exact lines Google billed, summed over every turn.
       // Anthropic: the four billed dimensions per request (input / cache read /
       // cache write / output, at that request's prompt-length tier), merged.
-      const actualItems = (geminiChatCostLines ?? anthropicChatCostLines).map((l) => ({ ...l, costSource }));
+      // Direct vendor: the billed lines of each request at its own clock, merged.
+      const actualItems = (vendorChatCostLines ?? geminiChatCostLines ?? anthropicChatCostLines).map((l) => ({ ...l, costSource }));
       const runIdentity = { orgId, userId, runId };
       try {
         await updateRunStatus(runId, chatFailed ? "failed" : "completed", runIdentity, trackingHeaders);
