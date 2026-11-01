@@ -26,6 +26,7 @@ import { transferBrand } from "./lib/transfer-brand.js";
 import { dynastyCatalogue, modelDisplayName, modelIdCatalogue } from "./lib/model-ids.js";
 import { readOurWebsite } from "./lib/our-website.js";
 import { aboutYouBlock, withOurWebsite } from "./lib/person-facing.js";
+import { ACCOUNT_SETUP_HANDLERS, withAccountSetup } from "./lib/account-setup.js";
 import { eq, and, desc, sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import {
@@ -286,6 +287,8 @@ const COPILOT_ENTITY_TOOLS: Record<string, (args: Record<string, unknown>, p: Ap
   get_campaign: getCampaign,
   list_connected_accounts: listConnectedAccounts,
   create_offer: createOffer,
+  // Setting up a new account in the chat (SOPHIE-WA-ONBOARD-1101).
+  ...ACCOUNT_SETUP_HANDLERS,
 };
 import {
   embedText,
@@ -407,6 +410,7 @@ import {
   leadTurnBody,
   leadTurnToolNames,
   resolveEmailAccount,
+  emailHasAccount,
   processLeadTurn,
   type LeadTurnDeps,
   type LeadTurnFrame,
@@ -3193,9 +3197,12 @@ app.post("/chat", requireAuth, async (req, res) => {
   const configToolNames = appConfig.allowedTools as string[];
   let requesterLookup: Promise<Requester> | null = null;
   const getRequester = (): Promise<Requester> => (requesterLookup ??= lookupRequester(userId));
-  const configAllowedToolNames: string[] = hasStaffOnlyTool(configToolNames)
-    ? toolsForRequester(configToolNames, await getRequester())
-    : configToolNames;
+  // A chat acting for a signed-in person on our behalf can also set up their
+  // account end to end (brand, offer, audiences, preview, payment link, launch:
+  // SOPHIE-WA-ONBOARD-1101); guests and proactive turns filter these out below.
+  const configAllowedToolNames: string[] = withAccountSetup(
+    hasStaffOnlyTool(configToolNames) ? toolsForRequester(configToolNames, await getRequester()) : configToolNames,
+  );
 
   // A session chat-service tied to a WhatsApp number (a lead turn)
   // (never settable by a caller): a GUEST (no account behind the number) gets
@@ -3234,6 +3241,16 @@ app.post("/chat", requireAuth, async (req, res) => {
       phoneBound: channelSession !== null,
       afterSignIn: t.signedIn && !sessionIsGuest,
     };
+    // A guest crm knows by an email: that email is a sign-in email only when an
+    // account has it (else signing in would open a new account on an address the
+    // person never gave us). A failed read is "no": the model asks for their email.
+    const recipientEmail = payload.recipient.email;
+    if (leadTurn.ownBrand && sessionIsGuest && channelSession && recipientEmail) {
+      leadTurn.recipientEmailIsAccount = await emailHasAccount(recipientEmail).catch((err) => {
+        console.error(`[chat] lead turn ${parsed.data.leadTurnId}: could not read whether ${recipientEmail} has an account: ${err instanceof Error ? err.message : String(err)}`);
+        return false;
+      });
+    }
   }
   // A proactive turn (POST /internal/copilot/proactive-turns, on this process):
   // only a turn in progress for this org, user and session unlocks it, and it
@@ -4752,7 +4769,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       // ---------------------------------------------------------------------
       if (call.name === "create_brand_from_url") {
         const args = (call.args as Record<string, unknown>) || {};
-        const result = await createBrandFromUrl(String(args.url ?? ""), featureCallParams);
+        const result = await createBrandFromUrl(String(args.url ?? ""), featureCallParams, typeof args.name === "string" ? args.name : undefined);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }

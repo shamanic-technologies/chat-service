@@ -7,6 +7,7 @@ import {
   type AnthropicBilledTokens,
 } from "./anthropic-usage.js";
 import { OPEN_PAGE_TOOL, PRESENT_CHOICES_TOOL } from "./ui-tools.js";
+import { ACCOUNT_SETUP_TOOLS } from "./account-setup.js";
 import type { AnthropicEffort } from "../schemas.js";
 import { STAFF_REQUEST_REPOS } from "./staff-requests.js";
 
@@ -3513,6 +3514,7 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   list_trigger_types: withStaffBuild(LIST_TRIGGER_TYPES_TOOL),
   list_declared_sales_paths: withStaffBuild(LIST_DECLARED_SALES_PATHS_TOOL),
   declare_sales_path: withStaffBuild(DECLARE_SALES_PATH_TOOL),
+  ...ACCOUNT_SETUP_TOOLS,
 };
 
 /** All tool names available for use in allowedTools config. */
