@@ -251,7 +251,7 @@ function mockDeepSeekToolThenText(capture: { calls: number; bodies: Array<Record
         ok: true,
         body: {
           model: "deepseek-flash",
-          choices: [{ finish_reason: "stop", message: { role: "assistant", content: "You have one workflow.", reasoning_content: "" } }],
+          choices: [{ finish_reason: "stop", message: { role: "assistant", content: "You have one workflow — Workflow.", reasoning_content: "" } }],
           usage: { prompt_tokens: 1100, completion_tokens: 10, prompt_cache_hit_tokens: 1000, prompt_cache_miss_tokens: 100 },
         },
       };
@@ -326,7 +326,9 @@ describe("POST /chat on a DeepSeek config", () => {
     expect(events.filter((e) => e.type === "error")).toEqual([]);
     expect(events.find((e) => e.type === "tool_call")).toMatchObject({ name: "list_workflows" });
     expect(events.find((e) => e.type === "tool_result")).toMatchObject({ name: "list_workflows" });
-    expect(events.filter((e) => e.type === "token").map((e) => e.content).join("")).toContain("You have one workflow.");
+    expect(events.filter((e) => e.type === "token").map((e) => e.content).join("")).toContain("You have one workflow, Workflow.");
+    // No long dash reaches the person (owner rule: stripped before send).
+    expect(res.text).not.toMatch(/[\u2013\u2014]/);
 
     // PROVISION + AUTHORIZE before each of the two requests, under DeepSeek names.
     expect(costs.provisionCalls).toBe(2);
@@ -342,7 +344,7 @@ describe("POST /chat on a DeepSeek config", () => {
     expect(sum("-tokens-output")).toBe(40 + 10);
 
     const assistant = [...inserted].reverse().find((v) => v.role === "assistant")!;
-    expect(assistant.content).toContain("You have one workflow.");
+    expect(assistant.content).toContain("You have one workflow, Workflow.");
     expect(assistant.toolCalls).toEqual([{ name: "list_workflows", args: {}, result: { workflows: [{ id: "wf-1", name: "Workflow" }] } }]);
   });
 
