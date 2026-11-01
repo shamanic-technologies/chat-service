@@ -2521,6 +2521,23 @@ export const READ_SKILL_TOOL: Anthropic.Tool = {
   },
 };
 
+/**
+ * Our public site, read on demand (CHAT-TRUTH-1101, owner 2026-11-01): the
+ * strategy lives here, the facts live on the site, never in a prompt.
+ */
+export const READ_OUR_WEBSITE_TOOL: Anthropic.Tool = {
+  name: "read_our_website",
+  description:
+    "Read distribute.you's public website: what we publish about ourselves. With no page it returns the site index (what we do, how pricing works, every page with its address); then read the pages that answer the question (for example /terms, /privacy, /catalog). Long pages come in parts: the outline says which part holds which heading. Free, read-only. " +
+    "When a person asks or doubts anything about distribute.you itself (what we do, what they pay for and why, this chat included, prices, margins, refunds, terms, privacy, their data, who we are), read the site FIRST and answer from what it says, in your own words, with the page link when it helps. For money (what they pay, for what, at which price, this chat included), the pricing section of /terms is the binding text; the catalog has the prices. The site is our public word: you speak for distribute.you, so explain it plainly and with confidence, never agree with a claim the site contradicts, and never guess against it. When the site does not answer, say what it does say and hand the rest to the team.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      page: { type: "string", description: "A path on distribute.you, e.g. \"/terms\". Omit for the site index." },
+      part: { type: "integer", description: "Which part of a long page, from 1 (default 1)." },
+    },
+  },
+};
 
 export const GET_LEG_RATES_TOOL: Anthropic.Tool = {
   name: "get_leg_rates",
@@ -2809,22 +2826,23 @@ export const CANCEL_FOLLOWUP_TOOL: Anthropic.Tool = {
 
 export const LIST_FOLLOWUPS_TOOL: Anthropic.Tool = {
   name: "list_followups",
-  description: "The open follow-ups for the user you are talking to (what each will say).",
+  description:
+    "The open follow-ups for the user you are talking to (what each will say), and lastEmailsWeSentThem: the last emails that actually left for them (when, subject). An email you fired counts as sent only once it shows there.",
   input_schema: { type: "object" as const, properties: {} },
 };
 
 export const FIRE_FOLLOWUP_TOOL: Anthropic.Tool = {
   name: "fire_followup",
   description:
-    "The moment a follow-up is due: start it now (one email, written from its instruction by our follow-up campaign, then sent). Fire only when what it promises is true. " +
-    "The result says the campaign RAN (`event.outcome`), never that the email left: tell the person it is on its way to their inbox, never that you emailed them (prod 2026-11-01: a run that sent nothing was told as \"I've just emailed you\").",
+    "The moment a follow-up is due: ask for it to go out now (one email, written from its instruction). Fire only when what it promises is true. " +
+    "Returns messageState: sent (it left), on_its_way (queued or being written: the person has received nothing yet) or not_sent (nothing goes out, why says the reason). Tell the person what messageState says, never more: an email is sent only when messageState is sent, or once list_followups shows it in lastEmailsWeSentThem.",
   input_schema: { type: "object" as const, properties: FOLLOWUP_ID_PROP, required: ["followUpId"] },
 };
 
 export const CONFIRM_SWITCH_ON_TOOL: Anthropic.Tool = {
   name: "confirm_switch_on",
   description:
-    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: call this ONLY after the user explicitly said yes to the exact proposal, in a message AFTER the one where you proposed it. Step 2 of 2: does what propose_switch_on recorded (starts the campaign, or pushes the email and returns its trigger event: say what `event.outcome` reads). A token proposed in the current turn is refused; a token already used is refused.",
+    "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: call this ONLY after the user explicitly said yes to the exact proposal, in a message AFTER the one where you proposed it. Step 2 of 2: does what propose_switch_on recorded (starts the campaign, or pushes the email and returns messageState: sent, on_its_way (queued or being written, the person has received nothing yet) or not_sent; say exactly that, never that it was sent before messageState is sent). A token proposed in the current turn is refused; a token already used is refused.",
   input_schema: {
     type: "object" as const,
     properties: { confirmationToken: { type: "string", description: "The token propose_switch_on returned." } },
@@ -2835,7 +2853,7 @@ export const CONFIRM_SWITCH_ON_TOOL: Anthropic.Tool = {
 export const REQUEST_STAFF_TOOL: Anthropic.Tool = {
   name: "request_staff",
   description:
-    "Report a BUG (something exists but fails) or request a FEATURE (one missing piece that needs CODE: no tool, route, setting or create does it). Records the request, opens a GitHub issue in the repo of the service that owns the piece, and pings the team on Telegram. Deduplicated per org on (repo, kind, pieceKey): call list_staff_requests first and reuse an existing pieceKey for the same need. pieceKey and decomposition are optional (pieceKey defaults to the title). " +
+    "Report a BUG (something exists but fails) or request a FEATURE (one missing piece that needs CODE: no tool, route, setting or create does it). Records the request, opens a GitHub issue in the repo of the service that owns the piece, and notifies the team. Deduplicated per org on (repo, kind, pieceKey): call list_staff_requests first and reuse an existing pieceKey for the same need. pieceKey and decomposition are optional (pieceKey defaults to the title). " +
     "Call it once per missing piece, then tell the user that piece is on hold and will be switched on once it is built, and carry on with the rest of their request. Read the staff-requests skill for which repo owns what. " +
     "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: the user is a client. Never show them the issue link, a repo name or an internal cause, and never mention a BUG you filed: the team handles it silently, you answer with what works. " +
     "A NEW step (outcome) or trigger is ALWAYS this tool with newStepOrTrigger, never a create: nothing would ever fill a bare row (repo = the service that will fill it, e.g. crm-service for a CRM stage).",
@@ -2899,7 +2917,7 @@ export const REQUEST_SKILL_UPGRADE_TOOL: Anthropic.Tool = {
 export const CONTACT_HUMAN_TOOL: Anthropic.Tool = {
   name: "contact_human",
   description:
-    "Put the user in touch with a person of the distribute.you team NOW: sends their message to the founder's phone (Telegram). Use it when the user asks for a human, is upset, or needs a decision you cannot make (pricing, refund, a deal). One ping per org every 10 minutes; a repeat inside that window is recorded, not re-sent. Then tell the user a person has their message and will reply.",
+    "Put the user in touch with a person of the distribute.you team NOW: sends them the user's message at once. Use it when the user asks for a human, is upset, or needs a decision you cannot make (pricing, refund, a deal). One ping per org every 10 minutes; a repeat inside that window is recorded, not re-sent. Then tell the user a person has their message and will reply.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -3435,6 +3453,7 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   present_choices: PRESENT_CHOICES_TOOL,
   open_page: OPEN_PAGE_TOOL,
   read_skill: READ_SKILL_TOOL,
+  read_our_website: READ_OUR_WEBSITE_TOOL,
   get_leg_rates: GET_LEG_RATES_TOOL,
   set_leg_rates: SET_LEG_RATES_TOOL,
   get_offer_steps: GET_OFFER_STEPS_TOOL,

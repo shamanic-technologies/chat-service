@@ -23,7 +23,9 @@ import {
 import { readTranscription, runTranscriptionJob, toTranscriptionBody } from "./lib/transcription-job.js";
 import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions, channelInboundMessages, copilotProactiveTurns, copilotLeadTurns } from "./db/schema.js";
 import { transferBrand } from "./lib/transfer-brand.js";
-import { dynastyCatalogue, modelIdCatalogue } from "./lib/model-ids.js";
+import { dynastyCatalogue, modelDisplayName, modelIdCatalogue } from "./lib/model-ids.js";
+import { readOurWebsite } from "./lib/our-website.js";
+import { aboutYouBlock, withOurWebsite } from "./lib/person-facing.js";
 import { eq, and, desc, sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import {
@@ -167,6 +169,7 @@ import {
 import {
   listStaffRequests,
   listStaffRequestsForModel,
+  staffRequestResultForModel,
   StaffRequestValidationError,
   fetchRequesterEmail,
   isStaffEmail,
@@ -3266,9 +3269,15 @@ app.post("/chat", requireAuth, async (req, res) => {
     : leadTurn.guest
       ? channelSession ? [...SIGN_IN_TOOL_NAMES] : []
       : [...configAllowedToolNames, ...(channelSession ? SIGN_IN_TOOL_NAMES : [])];
-  const allowedToolNames: string[] = leadTurn
-    ? leadTurnToolNames(leadSessionToolNames, CLIENT_UI_TOOL_NAMES)
-    : proactiveTurn ? proactiveToolNames(sessionToolNames) : sessionToolNames;
+  // A config that speaks to a person (it reads our skills) also reads our public
+  // site, guests included; another brand's lead turn does not speak for us.
+  const speaksForUs = configAllowedToolNames.includes("read_skill") && (!leadTurn || leadTurn.ownBrand);
+  const allowedToolNames: string[] = withOurWebsite(
+    leadTurn
+      ? leadTurnToolNames(leadSessionToolNames, CLIENT_UI_TOOL_NAMES)
+      : proactiveTurn ? proactiveToolNames(sessionToolNames) : sessionToolNames,
+    speaksForUs,
+  );
   // This turn came in on WhatsApp: the channel block joins the prompt and the
   // turn is not re-filed in the staff Unibox (crm already holds the thread).
   const channelContext = channelSession && !leadTurn && context?.channel !== undefined
@@ -3411,12 +3420,13 @@ app.post("/chat", requireAuth, async (req, res) => {
       return;
     }
   }
-  // What stays the same across turns (the config's prompt + skills) vs what
-  // this turn alone carries (page context, campaign inputs, the WhatsApp or
-  // Lead event block). Gemini reads them joined, as before; Anthropic caches
-  // the first and sends the second after the user's message
+  // What stays the same across turns (the config's prompt + skills + who it
+  // is) vs what this turn alone carries (page context, campaign inputs, the
+  // WhatsApp or Lead event block). Gemini reads them joined, as before;
+  // Anthropic caches the first and sends the second after the user's message
   // (anthropic-turn.ts, CHAT-COST-1101).
-  const stableSystemPrompt = appConfig.systemPrompt + skillIndexBlock;
+  const stableSystemPrompt =
+    appConfig.systemPrompt + skillIndexBlock + (speaksForUs ? aboutYouBlock(modelDisplayName(resolvedModelInfo.apiModelId)) : "");
   const turnContextBlock =
     buildSystemPrompt("", promptContext, campaignFeatureInputs) +
     (leadTurn ? buildLeadTurnBlock(leadTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
@@ -3948,6 +3958,14 @@ app.post("/chat", requireAuth, async (req, res) => {
         return { name: call.name, result };
       }
 
+      // --- Copilot: our public website (CHAT-TRUTH-1101) ---------------------
+      if (call.name === "read_our_website") {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await readOurWebsite(args);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
       // --- Copilot: one read per entity, data writes (owner routes, verbatim) ---
       const copilotArgsTool = COPILOT_ENTITY_TOOLS[call.name];
       if (copilotArgsTool) {
@@ -4077,12 +4095,13 @@ app.post("/chat", requireAuth, async (req, res) => {
       if (call.name === "request_staff" || call.name === "request_skill_upgrade" || call.name === "contact_human") {
         const args = (call.args as Record<string, unknown>) || {};
         const ctx = { orgId, userId, brandId: brandIds.length === 1 ? brandIds[0] : null, sessionId: currentSessionId ?? null };
-        const result =
+        const result = staffRequestResultForModel(
           call.name === "request_staff"
             ? await fileStaffRequest(db, ctx, args)
             : call.name === "request_skill_upgrade"
               ? await fileSkillUpgrade(db, ctx, args)
-              : await fileContactHuman(db, ctx, args);
+              : await fileContactHuman(db, ctx, args),
+        );
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }

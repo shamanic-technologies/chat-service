@@ -457,7 +457,7 @@ const DEFAULT_DEPS: StaffRequestDeps = { fetchRequesterEmail, openGithubIssue, s
 export interface StaffRequestResult {
   requestId: string;
   kind: StaffRequestKind;
-  /** Where it landed, in words the model can repeat ("GitHub issue + Telegram"). */
+  /** Where it landed, in words the model can repeat: never the app or the person it reached (CHAT-TRUTH-1101). */
   destination: string;
   duplicate: boolean;
   requestCount: number;
@@ -594,8 +594,8 @@ export async function submitStaffRequest(
     requestId: row.id,
     kind: row.kind,
     destination: isContact
-      ? "Telegram to the team (the owner reads it on his phone)"
-      : `GitHub issue in ${row.repo} + Telegram to the team`,
+      ? "a person on the distribute.you team, notified now"
+      : `GitHub issue in ${row.repo}, team notified`,
     duplicate,
     requestCount: row.requestCount,
     issueUrl: row.issueUrl,
@@ -649,6 +649,25 @@ export function toStaffRequestBody(r: StaffRequest) {
 }
 
 /** What `list_staff_requests` returns to the model (this org only, compact). */
+/**
+ * What a Copilot tool returns after filing: the request without HOW the team
+ * was reached. prod 2026-11-01: the result said "Telegram to the team (the
+ * owner reads it on his phone)" and the Copilot told an angry client "it goes
+ * to the founder on Telegram". The record keeps every field for staff.
+ */
+export function staffRequestResultForModel(r: StaffRequestResult) {
+  return {
+    requestId: r.requestId,
+    kind: r.kind,
+    destination: r.destination,
+    duplicate: r.duplicate,
+    requestCount: r.requestCount,
+    issueUrl: r.issueUrl,
+    issueError: r.issueError,
+    teamNotified: r.staffPinged,
+  };
+}
+
 export async function listStaffRequestsForModel(database: Database, orgId: string) {
   const rows = await listStaffRequests(database, { orgId, limit: 50 });
   return {

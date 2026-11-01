@@ -1,3 +1,4 @@
+import { messageVerdict, type ServedEvent } from "./delivery-truth.js";
 import { judgeOnPlatform } from "./platform-judge.js";
 import { createPlatformRun } from "./runs-client.js";
 import { COPILOT_SUPPORT } from "./support-marks.js";
@@ -349,10 +350,33 @@ export async function cancelFollowup(a: Record<string, unknown>, ctx: FollowupCo
   return { ...view(row), status: "stopped" };
 }
 
+/**
+ * The last emails we sent this person, newest first: what list_followups
+ * shows so the Copilot can say an email LEFT only once one is here
+ * (CHAT-TRUTH-1101). A source crm cannot read is said, never read as "none".
+ */
+async function emailsWeSentThem(email: string, s: Scope, deps: FollowupDeps) {
+  try {
+    const sent = await messagesWeSent(email, s, await deps.newRunId(), deps);
+    return sent
+      .filter((m) => m.channel === "email")
+      .slice(-3)
+      .reverse()
+      .map((m) => ({ at: m.at, subject: m.subject }));
+  } catch (e) {
+    if (e instanceof FollowupError) return { unreadable: e.message };
+    throw e;
+  }
+}
+
 export async function listFollowups(_a: Record<string, unknown>, ctx: FollowupContext, deps = defaultFollowupDeps) {
   const s = scope();
-  const rows = await ownRows(await personEmail(ctx.userId, deps), s, deps, "ongoing");
-  return { followUps: rows.slice(0, 15).map(view) };
+  const email = await personEmail(ctx.userId, deps);
+  const rows = await ownRows(email, s, deps, "ongoing");
+  return {
+    followUps: rows.slice(0, 15).map(view),
+    lastEmailsWeSentThem: await emailsWeSentThem(email, s, deps),
+  };
 }
 
 export async function fireFollowup(a: Record<string, unknown>, ctx: FollowupContext, deps = defaultFollowupDeps) {
@@ -362,13 +386,16 @@ export async function fireFollowup(a: Record<string, unknown>, ctx: FollowupCont
   const leadId = row.people?.[0]?.leadId;
   if (!leadId) throw new FollowupError("this follow-up has no lead id yet, so it cannot fire.");
   if (!row.offerId) throw new FollowupError(`campaign-service served follow-up ${row.id} without its offer id, so it cannot fire.`);
-  const event = await send(deps, "CAMPAIGN_SERVICE", "POST", "/internal/trigger-events", s, null, {
+  const answer = await send(deps, "CAMPAIGN_SERVICE", "POST", "/internal/trigger-events", s, null, {
     triggerId: FOLLOWUP_TRIGGER_ID,
     brandId: s.brandId,
     offerId: row.offerId,
     leadId,
   });
-  return { followUpId: row.id, event };
+  const event = answer.event as ServedEvent | undefined;
+  if (!event || typeof event !== "object") throw new FollowupError(`campaign-service answered the fire without an event: ${JSON.stringify(answer).slice(0, 300)}`);
+  // Never the raw event: its `outcome: "ran"` reads as "sent" and is not (CHAT-TRUTH-1101).
+  return { followUpId: row.id, eventId: event.id ?? null, ...messageVerdict(event) };
 }
 
 export const FOLLOWUP_TOOLS: Record<string, (a: Record<string, unknown>, ctx: FollowupContext) => Promise<unknown>> = {
