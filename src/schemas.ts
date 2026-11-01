@@ -129,6 +129,20 @@ registry.registerPath({
 
 // --- App Config ---
 
+/**
+ * Providers and model aliases a /chat config may run on. `deepseek` is the
+ * direct-vendor tool loop (src/lib/vendor-chat.ts, CHAT-DEEPSEEK-FLASH-1101);
+ * the other direct vendors were never probed with tools on /chat.
+ */
+export const CHAT_CONFIG_MODELS_BY_PROVIDER = {
+  anthropic: ["haiku", "sonnet", "opus"],
+  google: ["flash-lite", "flash", "flash-pro", "pro"],
+  deepseek: ["deepseek-flash"],
+} as const;
+export const CHAT_CONFIG_PROVIDERS = ["anthropic", "google", "deepseek"] as const;
+export type ChatConfigProvider = (typeof CHAT_CONFIG_PROVIDERS)[number];
+export const CHAT_CONFIG_MODELS = ["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro", "deepseek-flash"] as const;
+
 export const AppConfigRequestSchema = z
   .object({
     key: z.string().min(1, "key is required").openapi({
@@ -164,14 +178,15 @@ export const AppConfigRequestSchema = z
         "list_workflows",
       ],
     }),
-    provider: z.enum(["anthropic", "google"]).optional().openapi({
+    provider: z.enum(CHAT_CONFIG_PROVIDERS).optional().openapi({
       description:
         "LLM provider for this chat mode. Omit to use the default (google).\n\n" +
         "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
-        "- `google` — Gemini models (flash-lite, flash, flash-pro, pro)",
+        "- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n" +
+        "- `deepseek` — DeepSeek V4.1 Flash (deepseek-flash), tools included",
       example: "google",
     }),
-    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro"]).optional().openapi({
+    model: z.enum(CHAT_CONFIG_MODELS).optional().openapi({
       description:
         "Model alias (version-free). Omit to use the provider's default " +
         "(sonnet for anthropic, flash-pro for google). Must match the provider:\n\n" +
@@ -189,16 +204,9 @@ export const AppConfigRequestSchema = z
   })
   .strict()
   .refine(
-    (data) => {
-      if (!data.provider || !data.model) return true;
-      const anthropicModels = ["haiku", "sonnet", "opus"];
-      const googleModels = ["flash-lite", "flash", "flash-pro", "pro"];
-      if (data.provider === "anthropic") return anthropicModels.includes(data.model);
-      if (data.provider === "google") return googleModels.includes(data.model);
-      return false;
-    },
+    (data) => !data.provider || !data.model || (CHAT_CONFIG_MODELS_BY_PROVIDER[data.provider] as readonly string[]).includes(data.model),
     {
-      message: "Model must match provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro",
+      message: "Model must match provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash",
       path: ["model"],
     },
   )
@@ -210,7 +218,7 @@ export const AppConfigResponseSchema = z
     key: z.string(),
     systemPrompt: z.string(),
     allowedTools: z.array(z.string()),
-    provider: z.enum(["anthropic", "google"]).nullable().openapi({
+    provider: z.enum(CHAT_CONFIG_PROVIDERS).nullable().openapi({
       description: "LLM provider. Null means default (google).",
     }),
     model: z.string().nullable().openapi({
@@ -345,14 +353,15 @@ export const PlatformConfigRequestSchema = z
         "list_workflows",
       ],
     }),
-    provider: z.enum(["anthropic", "google"]).optional().openapi({
+    provider: z.enum(CHAT_CONFIG_PROVIDERS).optional().openapi({
       description:
         "LLM provider for this chat mode. Omit to use the default (google).\n\n" +
         "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
-        "- `google` — Gemini models (flash-lite, flash, flash-pro, pro)",
+        "- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n" +
+        "- `deepseek` — DeepSeek V4.1 Flash (deepseek-flash), tools included",
       example: "google",
     }),
-    model: z.enum(["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro"]).optional().openapi({
+    model: z.enum(CHAT_CONFIG_MODELS).optional().openapi({
       description:
         "Model alias (version-free). Omit to use the provider's default " +
         "(sonnet for anthropic, flash-pro for google). Must match the provider.",
@@ -385,21 +394,14 @@ export const PlatformConfigRequestSchema = z
   })
   .strict()
   .refine(
-    (data) => {
-      if (!data.provider || !data.model) return true;
-      const anthropicModels = ["haiku", "sonnet", "opus"];
-      const googleModels = ["flash-lite", "flash", "flash-pro", "pro"];
-      if (data.provider === "anthropic") return anthropicModels.includes(data.model);
-      if (data.provider === "google") return googleModels.includes(data.model);
-      return false;
-    },
+    (data) => !data.provider || !data.model || (CHAT_CONFIG_MODELS_BY_PROVIDER[data.provider] as readonly string[]).includes(data.model),
     {
-      message: "Model must match provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro",
+      message: "Model must match provider: anthropic → haiku|sonnet|opus, google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash",
       path: ["model"],
     },
   )
   .refine((data) => data.effort === undefined || data.provider === undefined || data.provider === "anthropic", {
-    message: "effort applies to Anthropic configs only; a Gemini config uses thinkingLevel",
+    message: "effort applies to Anthropic configs only; a Gemini config uses thinkingLevel, a DeepSeek config neither",
     path: ["effort"],
   })
   .openapi("PlatformConfigRequest");
@@ -409,7 +411,7 @@ export const PlatformConfigResponseSchema = z
     key: z.string(),
     systemPrompt: z.string(),
     allowedTools: z.array(z.string()),
-    provider: z.enum(["anthropic", "google"]).nullable().openapi({
+    provider: z.enum(CHAT_CONFIG_PROVIDERS).nullable().openapi({
       description: "LLM provider. Null means default (google).",
     }),
     model: z.string().nullable().openapi({
