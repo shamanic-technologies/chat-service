@@ -215,7 +215,8 @@ describe("buildChannelBlock", () => {
       ],
     };
     const sha = (g: boolean, c: ChatChannelContext) => createHash("sha256").update(buildChannelBlock(c, g)).digest("hex");
-    expect(sha(false, legacy)).toBe("f1b1438200cff1fcde0c4c1006e590150dc6d3565fa19dc88d33068d1469eec9");
+    // Signed-in block re-pinned by SOPHIE-WA-ONBOARD-1101 (the chat sets up an account end to end, never a dashboard hand-off).
+    expect(sha(false, legacy)).toBe("f17091d7090595511372cb3db731e47e3d19905de9bd39796a1e0ffab714cc42");
     expect(sha(true, legacy)).toBe("cab705574c507f363b38b861955aeb55d502be40960a41ddfb54883feee7599d");
     expect(sha(true, { ...legacy, receivedOn: null })).toBe("cab705574c507f363b38b861955aeb55d502be40960a41ddfb54883feee7599d");
   });

@@ -525,7 +525,7 @@ describe("campaign next steps: the reply-timing line is always said (CAMPAIGN-NE
     expect(c).toMatch(/\{url, name\}.*or \{name\} alone/);
     expect(c).toContain("chosenIndex");
     expect(c).toContain("chosenOfferId");
-    expect(c).toContain("Never a placeholder in a path");
+    expect(c).toContain("never a placeholder in a path");
     expect(c).toContain("402 payment_required");
   });
 

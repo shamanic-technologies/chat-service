@@ -127,6 +127,19 @@ export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> =
   test_endpoint: ["distribute_call_api"],
   read_skill: ["/v1/skills/{slug}"],
 
+  // setting up a new account in the chat (SOPHIE-WA-ONBOARD-1101)
+  create_brand_from_url: ["POST /v1/brands"],
+  propose_offers: ["/v1/brands/{id}/offers/proposals"],
+  confirm_offers: ["/v1/brands/{id}/offers/confirm"],
+  suggest_icp: ["/v1/brands/{id}/icp/suggest"],
+  split_audiences: ["POST /v1/orgs/audiences/split"],
+  confirm_audiences: ["/v1/orgs/audiences/split/confirm"],
+  preview_audience: ["/v1/orgs/audiences/{id}/preview"],
+  preview_email: ["POST /v1/content/preview-email"],
+  get_prepaid_status: ["/v1/billing/accounts/prepaid_status"],
+  create_prepaid_checkout: ["/v1/billing/accounts/prepaid_checkout"],
+  build_audience_portfolio: ["/v1/orgs/audiences/portfolio"],
+
   // chat UI: an outside agent talks to its user in its own words
   present_choices: [NO_API_ROUTE],
   open_page: [NO_API_ROUTE],

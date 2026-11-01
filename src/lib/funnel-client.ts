@@ -51,12 +51,13 @@ async function requestJson(
 
 // --- Brand creation from a URL (onboarding-equivalent) ---------------------
 
-/** POST /v1/brands { url } — upsert a brand from its website URL. Returns the brandId. */
+/** POST /v1/brands { url, name? } — upsert a brand from its website URL (name omitted = read from the site). Returns the brandId. */
 export function createBrandFromUrl(
   url: string,
   params: FunnelCallParams,
+  name?: string,
 ): Promise<unknown> {
-  return requestJson("create_brand_from_url", `/v1/brands`, "POST", params, { url });
+  return requestJson("create_brand_from_url", `/v1/brands`, "POST", params, name?.trim() ? { url, name: name.trim() } : { url });
 }
 
 /** GET /v1/brands — list every brand in the caller's org. */
