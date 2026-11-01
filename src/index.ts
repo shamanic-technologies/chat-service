@@ -26,6 +26,7 @@ import { transferBrand } from "./lib/transfer-brand.js";
 import { dynastyCatalogue, modelDisplayName, modelIdCatalogue } from "./lib/model-ids.js";
 import { readOurWebsite } from "./lib/our-website.js";
 import { aboutYouBlock, withOurWebsite } from "./lib/person-facing.js";
+import { stripLongDashes } from "./lib/long-dash.js";
 import { eq, and, desc, sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import {
@@ -3784,6 +3785,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         if (text !== undefined && text !== null && typeof text !== "string") {
           throw new Error(`${LEAD_ANSWER_TOOL_NAME}: ${leadTurn.payload.messageField} must be the text they receive (a string, empty when you write nothing now).`);
         }
+        if (typeof text === "string") args[leadTurn.payload.messageField] = stripLongDashes(text);
         leadAnswer.json = args;
         sendSSE(res, { type: "lead_answer", answer: args, model: resolvedModelInfo.apiModelId });
         emittedInputRequest = true;

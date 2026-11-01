@@ -24,6 +24,7 @@ import type { ToolCallRecord } from "../db/schema.js";
 import { vendorCostLines, type VendorCostLine } from "./cost-names.js";
 import type { ToolDefinition, ToolExecutor, GeminiHistoryInput } from "./gemini-chat.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
+import { stripLongDashes } from "./long-dash.js";
 import {
   assertModelMatches,
   inBandError,
@@ -279,7 +280,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
 
     const choice = json.choices?.[0];
     const reply = choice?.message ?? {};
-    const text = typeof reply.content === "string" ? reply.content : "";
+    const text = stripLongDashes(typeof reply.content === "string" ? reply.content : "");
     const reasoning = typeof reply.reasoning_content === "string" ? reply.reasoning_content : "";
     const calls = reply.tool_calls ?? [];
 
