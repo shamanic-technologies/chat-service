@@ -418,13 +418,13 @@ list_campaigns(brandId, offerId): a running campaign whose runsWhen is "Each tim
 ## From the chat (a test, or a few people)
 1. propose_switch_on(action push_email, brandId, offerId, email, name?, subject, bodyText or bodyHtml, exactly as written).
 2. Show its preview: recipient, the email, the campaign sending it and its caps, the cost of one send (costOfOneSend, as written), the sender line (the inbox is picked when it goes out: never name one). Ask yes or no.
-3. After their yes, in their next message: confirm_switch_on. Say what event.outcome reads: ran = sending; skipped = say why (skipReason: campaign_off, unfunded...); pending = fires within minutes.
+3. After their yes, in their next message: confirm_switch_on. Say what its messageState says: only sent means it left; any other state = the person has received nothing yet, never call it sent (when nothing will go out, say why plainly).
 A test to the user themselves is the same push, to their own address. Never push a whole list from the chat.
 
 ## A list, a CSV, ongoing volume (e.g. 1,800 a month)
 The client pushes from their own system with their API key, one call per person: POST /v1/trigger-events
 \`{triggerId: "email_pushed_via_api", brandId, offerId, person: {email, name?, timezone?}, item: {subject, bodyText | bodyHtml}, idempotencyKey}\`
-- The answer's event.outcome says ran or skipped (skipReason). Read back: GET /v1/offers/{offerId}/trigger-events. The operation's own description (POST /v1/trigger-events) is the reference.
+- The answer's event.delivery.state says what became of the email: delivered = sent, refused = not sent (code + reason), any other state = not sent yet. event.outcome "ran" only means a run started. Read back: GET /v1/offers/{offerId}/trigger-events. The operation's own description (POST /v1/trigger-events) is the reference.
 - No CSV upload: the client's script loops over the rows, one call per person; a retry with the same idempotencyKey sends nothing twice.
 - Every send counts against the campaign's caps, the dollar one first: size "Up to $X" (what one push cost: GET /v1/runs/{runId}, runId in the event's detail.triggered) and "Up to N prospects handled" to the volume.
 - A reply goes on to the campaign's next steps, like any campaign.
