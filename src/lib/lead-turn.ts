@@ -74,6 +74,13 @@ export interface LeadTurnFrame {
   /** The session is tied to the person's WhatsApp number (sign-in possible). */
   phoneBound: boolean;
   afterSignIn: boolean;
+  /**
+   * The recipient's email (crm's record) is the email of a distribute.you
+   * account. Only then is it a sign-in email the model may use by itself; an
+   * email crm merely knows would sign a stranger UP on an address they never
+   * gave us (prod 2026-11-01: a code went unasked to an old school address).
+   */
+  recipientEmailIsAccount?: boolean;
 }
 
 /** The system-prompt block of a lead turn: who you write to and for, how you answer, then the writer's context. */
@@ -90,7 +97,7 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
           sender: {
             phone: payload.recipient.phone,
             name: payload.recipient.name ?? null,
-            ...(payload.recipient.email ? { knownEmails: [payload.recipient.email] } : {}),
+            ...(payload.recipient.email && (!guest || frame.recipientEmailIsAccount) ? { knownEmails: [payload.recipient.email] } : {}),
           },
           thread: [],
           ...(frame.afterSignIn ? { afterSignIn: true as const } : {}),
@@ -119,6 +126,11 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
   }
   if (assistant.instructions?.trim() && !(ownBrand && payload.medium === "whatsapp" && phoneBound)) {
     lines.push(`How you speak here: ${assistant.instructions.trim()}`);
+  }
+  if (ownBrand && guest && phoneBound && payload.recipient.email && !frame.recipientEmailIsAccount) {
+    lines.push(
+      `Our records hold an email for them (${payload.recipient.email}), but no distribute.you account uses it: it may be old or not the one they want. Never start a sign-in with it on your own; when they want to start, ask which email their account should use.`,
+    );
   }
   if (ownBrand && guest && !phoneBound) {
     lines.push("We host no account for this person that you can read: you see no account and can change nothing; never claim to see their brands, campaigns or figures.");
@@ -369,6 +381,12 @@ async function clientServiceGet(path: string, fetchImpl: typeof fetch): Promise<
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (res.status !== 404 && !res.ok) throw new Error(`client-service GET ${path.split("?")[0]} ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
   return { status: res.status, json };
+}
+
+/** Whether any distribute.you user has this email (client-service), whatever its organizations. */
+export async function emailHasAccount(email: string, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  const { json } = await clientServiceGet(`/internal/users?email=${encodeURIComponent(email.trim().toLowerCase())}`, fetchImpl);
+  return Array.isArray(json.users) && json.users.length > 0;
 }
 
 /**
