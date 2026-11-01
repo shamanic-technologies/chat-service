@@ -274,6 +274,14 @@ describe("Copilot follow-ups", () => {
     expect(TOOL_REGISTRY.list_followups.description).toContain("lastEmailsWeSentThem");
   });
 
+  // WF-SILENT-FOLLOWUP-1101 (prod 2026-11-01, Martian DBB, a paying client): the follow-up pipe (Signup -> Paid
+  // client) claimed nobody, nothing was sent. The tool says who it writes to, so a client is answered in the chat.
+  it("create_followup tells the agent its pipe does not write to a paying client", () => {
+    const d = TOOL_REGISTRY.create_followup.description ?? "";
+    expect(d).toContain("does not write to someone who already pays us");
+    expect(d).toContain("answer here in the conversation");
+  });
+
   it("fails loud when the follow-up scope is not configured", async () => {
     delete process.env.COPILOT_FOLLOWUP_BRAND_ID;
     const { deps } = fakeDeps(() => ({ status: 200, body: {} }));

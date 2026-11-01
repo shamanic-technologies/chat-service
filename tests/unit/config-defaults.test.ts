@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { PlatformConfigRequestSchema } from "../../src/schemas.js";
 import {
   resolveChatProviderModel,
   buildConfigConflictSet,
@@ -84,5 +85,31 @@ describe("buildConfigConflictSet — re-registration keep-existing", () => {
   it("includes thinkingLevel when supplied", () => {
     const set = buildConfigConflictSet({ ...base, thinkingLevel: "medium" });
     expect(set.thinkingLevel).toBe("medium");
+  });
+
+  // CHAT-DEEPSEEK-FLASH-1101: effort is Anthropic-only, so moving a config to
+  // DeepSeek without stating effort clears the stored one (else /chat refuses it).
+  it("clears effort when the config moves to a non-Anthropic provider", () => {
+    const set = buildConfigConflictSet({ ...base, provider: "deepseek", model: "deepseek-flash" });
+    expect(set.provider).toBe("deepseek");
+    expect(set.effort).toBeNull();
+  });
+
+  it("keeps the stored effort when an Anthropic config omits it", () => {
+    const set = buildConfigConflictSet({ ...base, provider: "anthropic", model: "sonnet" });
+    expect(set).not.toHaveProperty("effort");
+  });
+});
+
+describe("DeepSeek chat configs (CHAT-DEEPSEEK-FLASH-1101)", () => {
+  it("resolves a deepseek config with no model to deepseek-flash", () => {
+    expect(resolveChatProviderModel({ provider: "deepseek", model: null })).toEqual({ provider: "deepseek", modelAlias: "deepseek-flash" });
+  });
+
+  it("accepts provider deepseek + model deepseek-flash, refuses a Claude alias under it", () => {
+    const base2 = { key: "copilot", systemPrompt: "x", allowedTools: ["request_user_input"] };
+    expect(PlatformConfigRequestSchema.safeParse({ ...base2, provider: "deepseek", model: "deepseek-flash" }).success).toBe(true);
+    expect(PlatformConfigRequestSchema.safeParse({ ...base2, provider: "deepseek", model: "sonnet" }).success).toBe(false);
+    expect(PlatformConfigRequestSchema.safeParse({ ...base2, provider: "deepseek", model: "deepseek-flash", effort: "xhigh" }).success).toBe(false);
   });
 });

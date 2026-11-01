@@ -155,6 +155,10 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     expect(e.parentSlug).toBe("index");
     for (const w of ["email_pushed_via_api", "POST /v1/trigger-events", "push_email", "confirm_switch_on", "Never request_staff", "The client brings them"]) expect(e.content).toContain(w);
     expect(bySlug.get("index")!.content).toContain("emails-you-wrote");
+    // WF-SILENT-FOLLOWUP-1101: outcome "ran" is a run that started, never a sent email; only delivered says sent.
+    expect(e.content).not.toContain("ran = sending");
+    expect(e.content).toContain("messageState");
+    expect(e.content).toContain("delivered = sent");
     const r = bySlug.get("staff-requests")!.content;
     expect(r).toContain("## Before filing");
     expect(r.indexOf("list_campaigns")).toBeLessThan(r.indexOf("Only then request_staff"));

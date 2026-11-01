@@ -17,8 +17,10 @@
 // entry; adding a fourth vendor is a VENDORS entry. Neither is a new client.
 //
 // Scope is deliberately narrow (see README "Direct vendor models"):
-// non-streaming `/complete` + `/internal/platform-complete` only. No /chat, no
-// tool calling, no web search, no images, no embeddings.
+// non-streaming `/complete` + `/internal/platform-complete`, and the /chat tool
+// loop on DeepSeek (`vendor-chat.ts`, CHAT-DEEPSEEK-FLASH-1101: one
+// non-streaming request per round, through `postVendorChatCompletion` below).
+// No web search, no images, no embeddings.
 // ---------------------------------------------------------------------------
 
 
@@ -1223,12 +1225,24 @@ export interface VendorCompleteResult {
   vendor: VendorId;
 }
 
-interface VendorChoice {
-  message?: { content?: string | null };
+/** One tool call as an OpenAI-compatible vendor returns it (`arguments` is a JSON string). */
+export interface VendorToolCall {
+  id: string;
+  type?: "function";
+  function: { name: string; arguments: string };
+}
+
+export interface VendorChoice {
+  message?: {
+    content?: string | null;
+    /** DeepSeek's thinking text. Sent back within one /chat turn's tool loop. */
+    reasoning_content?: string | null;
+    tool_calls?: VendorToolCall[];
+  };
   finish_reason?: string;
 }
 
-interface VendorResponseBody {
+export interface VendorResponseBody {
   id?: string;
   model?: string;
   choices?: VendorChoice[];
@@ -1420,7 +1434,7 @@ export function assertModelMatches(requested: string, returned: string | undefin
 }
 
 /** Extract an in-band error message from a 200-status body, if present. */
-function inBandError(body: VendorResponseBody): string | null {
+export function inBandError(body: VendorResponseBody): string | null {
   if (!body.error) return null;
   if (typeof body.error === "string") return body.error;
   return body.error.message ?? JSON.stringify(body.error);
@@ -1499,8 +1513,47 @@ export async function completeWithVendor(
   options: VendorCompleteOptions,
 ): Promise<VendorCompleteResult> {
   const { apiKey, model, vendor } = options;
-  const config = vendorConfig(vendor);
   const body = buildVendorRequestBody(options);
+  const json = await postVendorChatCompletion({
+    vendor,
+    apiKey,
+    model,
+    body,
+    reasoningDisabled: shouldDisableVendorReasoning(options),
+  });
+  const result = mapVendorResponse(vendor, model, json);
+
+  // Reconciliation breadcrumb: the cache split drives what we declare, so log
+  // it next to the totals rather than only the totals.
+  console.log(
+    `[chat-service] [vendor:${vendor}] model="${result.model}" ` +
+      `in=${result.tokensInput} cached=${result.cachedInputTokens} out=${result.tokensOutput}`,
+  );
+
+  return result;
+}
+
+/**
+ * POST one request body to a vendor's `/chat/completions` and return the parsed
+ * 200 body. The retry and refusal contract of every direct-vendor call lives
+ * here, shared by `/complete` and the /chat tool loop (`vendor-chat.ts`): only
+ * connect-phase failures and 429s are replayed (nothing ran, nothing billed);
+ * an empty balance throws `VendorOutOfCreditError`, a refused shape
+ * `VendorUnsupportedOptionError`, anything else `VendorProviderError`.
+ *
+ * `reasoningDisabled` only words the refusal (a model recorded as refusing the
+ * reasoning-off field says so); the body already carries the field or not.
+ */
+export async function postVendorChatCompletion(args: {
+  vendor: VendorId;
+  apiKey: string;
+  model: string;
+  body: Record<string, unknown>;
+  reasoningDisabled: boolean;
+  signal?: AbortSignal;
+}): Promise<VendorResponseBody> {
+  const { vendor, apiKey, model, body, reasoningDisabled, signal } = args;
+  const config = vendorConfig(vendor);
 
   let lastConnectError: unknown = null;
   let connectAttempt = 0;
@@ -1525,7 +1578,7 @@ export async function completeWithVendor(
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       });
     } catch (err) {
       clearTimeout(timeout);
@@ -1621,7 +1674,7 @@ export async function completeWithVendor(
         const reasoningNote =
           config.reasoning.kind === "disablable" &&
           config.reasoning.refusedBy[model] &&
-          shouldDisableVendorReasoning(options)
+          reasoningDisabled
             ? ` This request asked ${config.label} to disable reasoning, which this model refuses: ` +
               `${config.reasoning.refusedBy[model]}`
             : "";
@@ -1639,17 +1692,7 @@ export async function completeWithVendor(
       );
     }
 
-    const json = (await res.json()) as VendorResponseBody;
-    const result = mapVendorResponse(vendor, model, json);
-
-    // Reconciliation breadcrumb: the cache split drives what we declare, so log
-    // it next to the totals rather than only the totals.
-    console.log(
-      `[chat-service] [vendor:${vendor}] model="${result.model}" ` +
-        `in=${result.tokensInput} cached=${result.cachedInputTokens} out=${result.tokensOutput}`,
-    );
-
-    return result;
+    return (await res.json()) as VendorResponseBody;
   }
 }
 
