@@ -378,6 +378,8 @@ import {
   stripToolUseBlocks,
   type RebuildableMessage,
 } from "./lib/merge-messages.js";
+import { buildAnthropicTurnMessages, lastUserMessage } from "./lib/anthropic-turn.js";
+import { reconcileProvisionedCosts } from "./lib/cost-reconcile.js";
 import { streamGeminiChat, type ToolDefinition } from "./lib/gemini-chat.js";
 import type { GeminiCostLine } from "./lib/gemini-usage.js";
 import {
@@ -1119,10 +1121,10 @@ async function handleComplete(req: express.Request, res: express.Response, retry
       }
       if (provisionedCostIds.length > 0) {
         try {
-          if (actualItems.length > 0) {
-            await addRunCosts(runId, actualItems, runIdentity, trackingHeaders);
-          }
-          await cancelProvisionedCosts(runId, provisionedCostIds, runIdentity, trackingHeaders);
+          await reconcileProvisionedCosts({
+            postActual: () => addRunCosts(runId, actualItems, runIdentity, trackingHeaders),
+            releaseHolds: () => cancelProvisionedCosts(runId, provisionedCostIds, runIdentity, trackingHeaders),
+          });
         } catch (costErr) {
           console.error(`[complete] cost reconcile failed runId="${runId}" — provisioned-max kept as fallback:`, costErr);
         }
@@ -1304,10 +1306,10 @@ app.post("/orgs/images/generate", requireAuth, async (req, res) => {
       }
       if (provisionedCostIds.length > 0) {
         try {
-          if (actualItems.length > 0) {
-            await addRunCosts(runId, actualItems, runIdentity, trackingHeaders);
-          }
-          await cancelProvisionedCosts(runId, provisionedCostIds, runIdentity, trackingHeaders);
+          await reconcileProvisionedCosts({
+            postActual: () => addRunCosts(runId, actualItems, runIdentity, trackingHeaders),
+            releaseHolds: () => cancelProvisionedCosts(runId, provisionedCostIds, runIdentity, trackingHeaders),
+          });
         } catch (costErr) {
           console.error(`[images/generate] cost reconcile failed runId="${runId}" — provisioned-max kept as fallback:`, costErr);
         }
@@ -3409,11 +3411,23 @@ app.post("/chat", requireAuth, async (req, res) => {
       return;
     }
   }
-  const systemPrompt =
-    buildSystemPrompt(appConfig.systemPrompt + skillIndexBlock, promptContext, campaignFeatureInputs) +
+  // What stays the same across turns (the config's prompt + skills) vs what
+  // this turn alone carries (page context, campaign inputs, the WhatsApp or
+  // Lead event block). Gemini reads them joined, as before; Anthropic caches
+  // the first and sends the second after the user's message
+  // (anthropic-turn.ts, CHAT-COST-1101).
+  const stableSystemPrompt = appConfig.systemPrompt + skillIndexBlock;
+  const turnContextBlock =
+    buildSystemPrompt("", promptContext, campaignFeatureInputs) +
     (leadTurn ? buildLeadTurnBlock(leadTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
+  const systemPrompt = stableSystemPrompt + turnContextBlock;
   const isGeminiChat = chatProvider === "google";
-  const claude = isGeminiChat ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt });
+  // Only the cache-priced models (all accept a mid-conversation system message)
+  // split the prompt; an older model keeps it whole, as before.
+  const anthropicCache = !isGeminiChat && anthropicCachePriced(resolvedModelInfo.costPrefix);
+  const anthropicSystemPrompt = anthropicCache ? stableSystemPrompt : systemPrompt;
+  const anthropicTurnContext = anthropicCache ? turnContextBlock : "";
+  const claude = isGeminiChat ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
 
   let runId: string | null = null;
   let chatFailed = false;
@@ -4927,10 +4941,12 @@ app.post("/chat", requireAuth, async (req, res) => {
       rebuildAnthropicHistory(rebuildable),
     );
 
-    const turnMessages: Anthropic.MessageParam[] = [
-      ...anthropicHistory,
-      { role: "user", content: message.trim() },
-    ];
+    const turnMessages: Anthropic.MessageParam[] = buildAnthropicTurnMessages(
+      anthropicHistory,
+      message.trim(),
+      anthropicTurnContext,
+      anthropicCache,
+    );
 
     let depth = 0;
 
@@ -4966,7 +4982,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         await authorizeChatProviderCall(
           estimateRequestTokens({
             model: resolvedModelInfo.apiModelId,
-            systemPrompt,
+            systemPrompt: anthropicSystemPrompt,
             messages: turnMessages,
             tools: allTools,
           }),
@@ -5064,8 +5080,10 @@ app.post("/chat", requireAuth, async (req, res) => {
           if (finalMessage.content.length > 0) {
             turnMessages.push({ role: "assistant", content: finalMessage.content });
             turnMessages.push({ role: "user", content: [note] });
-          } else if (lastTurn?.role === "user") {
-            lastTurn.content = Array.isArray(lastTurn.content) ? [...lastTurn.content, note] : [{ type: "text", text: lastTurn.content }, note];
+          } else {
+            // The turn's context message may sit last: the note joins the user's side.
+            const lastUser = lastUserMessage(turnMessages);
+            if (lastUser) lastUser.content = Array.isArray(lastUser.content) ? [...lastUser.content, note] : [{ type: "text", text: lastUser.content }, note];
           }
           continue;
         }
@@ -5417,10 +5435,11 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
       if (provisionedCostIds.length > 0) {
         try {
-          if (actualItems.length > 0) {
-            await addRunCosts(runId, actualItems, runIdentity, trackingHeaders);
-          }
-          await cancelProvisionedCosts(runId, provisionedCostIds, runIdentity, trackingHeaders);
+          const chatRunId = runId;
+          await reconcileProvisionedCosts({
+            postActual: () => addRunCosts(chatRunId, actualItems, runIdentity, trackingHeaders),
+            releaseHolds: () => cancelProvisionedCosts(chatRunId, provisionedCostIds, runIdentity, trackingHeaders),
+          });
         } catch (costErr) {
           console.error(`[chat] cost reconcile failed runId="${runId}" — provisioned-max kept as fallback:`, costErr);
         }

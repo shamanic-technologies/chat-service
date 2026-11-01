@@ -241,6 +241,19 @@ describe("createAnthropicClient", () => {
     ]);
   });
 
+  it("never clears context early: every clearing rewrites the cached prefix (CHAT-COST-1101)", () => {
+    // Prod 2026-11-01: thinking cleared after 2 rounds and tool results above
+    // 50k fired on nearly every Copilot call; cache writes outgrew cache reads.
+    const client = createAnthropicClient({ apiKey: "test-key", systemPrompt: TEST_PROMPT });
+    client.createStream([{ role: "user", content: "hello" }]);
+    const [thinking, compact, tools] = mockStream.mock.calls.at(-1)?.[0].context_management.edits;
+    expect(thinking.keep).toBe("all");
+    expect(compact.trigger).toEqual({ type: "input_tokens", value: 160_000 });
+    expect(tools.trigger).toEqual({ type: "input_tokens", value: 120_000 });
+    expect(tools.clear_at_least).toEqual({ type: "input_tokens", value: 40_000 });
+    expect(tools.keep).toEqual({ type: "tool_uses", value: 5 });
+  });
+
   it("passes beta headers for compaction", () => {
     const client = createAnthropicClient({
       apiKey: "test-key",

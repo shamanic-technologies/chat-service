@@ -15,6 +15,11 @@ export const MODEL = "claude-sonnet-4-6";
 export const COST_PREFIX = "anthropic-sonnet-4.6";
 const MAX_TOKENS = 64_000;
 
+/** /chat context editing thresholds (see createStream): each firing rewrites the cached prefix. */
+export const TOOL_RESULT_CLEAR_TRIGGER_TOKENS = 120_000;
+export const TOOL_RESULT_CLEAR_AT_LEAST_TOKENS = 40_000;
+export const COMPACTION_TRIGGER_TOKENS = 160_000;
+
 /** Model-specific API timeouts in milliseconds. */
 const ANTHROPIC_TIMEOUT_MS: Record<string, number> = {
   // Fable 5.1 reasons on every request and Anthropic's own guidance is that a
@@ -2810,7 +2815,9 @@ export const LIST_FOLLOWUPS_TOOL: Anthropic.Tool = {
 
 export const FIRE_FOLLOWUP_TOOL: Anthropic.Tool = {
   name: "fire_followup",
-  description: "The moment a follow-up is due: send it now (one email, written from its instruction). Fire only when what it promises is true.",
+  description:
+    "The moment a follow-up is due: start it now (one email, written from its instruction by our follow-up campaign, then sent). Fire only when what it promises is true. " +
+    "The result says the campaign RAN (`event.outcome`), never that the email left: tell the person it is on its way to their inbox, never that you emailed them (prod 2026-11-01: a run that sent nothing was told as \"I've just emailed you\").",
   input_schema: { type: "object" as const, properties: FOLLOWUP_ID_PROP, required: ["followUpId"] },
 };
 
@@ -3645,21 +3652,29 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
           block_binding: { prefix_mismatch_behavior: "drop_block" as const },
         },
         ...(opts?.effort ? { output_config: { effort: opts.effort } } : {}),
-        // Beta: context management for automatic compaction
+        // Beta: context management. Every edit that fires REWRITES the prompt
+        // prefix, so the cache is written again from that point (CHAT-COST-1101,
+        // prod 2026-11-01: clearing thinking after 2 rounds and tool results
+        // above 50k fired on nearly every call; we paid more to write the cache
+        // than we ever read back). A cached token costs a tenth of an uncached
+        // one, so carrying context is cheap and clearing it is what costs:
+        // thinking is never cleared (keep all), tool results only past 120k
+        // and then by at least 40k at once, compaction past 160k.
         context_management: {
           edits: [
             {
               type: "clear_thinking_20251015",
-              keep: { type: "thinking_turns", value: 2 },
+              keep: "all",
             },
             {
               type: "compact_20260112",
-              trigger: { type: "input_tokens", value: 100_000 },
+              trigger: { type: "input_tokens", value: COMPACTION_TRIGGER_TOKENS },
               pause_after_compaction: false,
             },
             {
               type: "clear_tool_uses_20250919",
-              trigger: { type: "input_tokens", value: 50_000 },
+              trigger: { type: "input_tokens", value: TOOL_RESULT_CLEAR_TRIGGER_TOKENS },
+              clear_at_least: { type: "input_tokens", value: TOOL_RESULT_CLEAR_AT_LEAST_TOKENS },
               keep: { type: "tool_uses", value: 5 },
               exclude_tools: ["request_user_input", "present_choices", "open_page"],
               clear_tool_inputs: false,
