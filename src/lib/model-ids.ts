@@ -146,6 +146,11 @@ function dynastySlugOf(modelId: string): string {
   return dynasty.slug;
 }
 
+/** The vendor's public name of a concrete model id ("Claude Sonnet 5.5"); throws on an unrecorded id. */
+export function modelDisplayName(modelId: string): string {
+  return displayNameOf(modelId);
+}
+
 function displayNameOf(modelId: string): string {
   const name = MODEL_DISPLAY_NAMES[modelId];
   if (!name) throw new Error(`No display name recorded for model id "${modelId}"`);

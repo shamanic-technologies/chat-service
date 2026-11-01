@@ -153,7 +153,7 @@ describe("agent requests: skill upgrade and contact a human", { timeout: 30000 }
       missingPiece: "No step means a demo happened; checked GET /v1/catalogue/steps.",
       newStepOrTrigger: { kind: "step", name: "Demo done", tool: "HubSpot", event: "Deal stage moves to Demo done", example: "Jane at Acme" },
     }, d);
-    expect(r).toMatchObject({ kind: "feature", duplicate: false, staffPinged: true, destination: "GitHub issue in crm-service + Telegram to the team" });
+    expect(r).toMatchObject({ kind: "feature", duplicate: false, staffPinged: true, destination: "GitHub issue in crm-service, team notified" });
     const [repo, title, body] = d.openGithubIssue.mock.calls[0] as unknown as [string, string, string];
     expect(repo).toBe("crm-service");
     expect(title).toBe("[Copilot feature] New step: Demo done");
