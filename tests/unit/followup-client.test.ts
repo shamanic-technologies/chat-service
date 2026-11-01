@@ -186,8 +186,9 @@ describe("Copilot follow-ups", () => {
   });
 
   it("list: only this user's open follow-ups, by their email", async () => {
-    const { deps, calls } = fakeDeps(() => listing([marieRow]));
+    const { deps, calls } = fakeDeps((c) => (c.url.startsWith("http://crm") ? NOBODY : listing([marieRow])));
     const out = await listFollowups({}, { userId: "u" }, deps);
+    expect(out.lastEmailsWeSentThem).toEqual([]);
     expect(calls[0].url).toBe("http://campaign/sales-funnel-campaigns?personEmail=marie%40example.com&status=ongoing");
     expect(out.followUps).toEqual([{ followUpId: "fu-1", status: "ongoing", instruction: marieRow.instruction, salesFunnelId: FOLLOWUP_FUNNEL_ID }]);
   });
@@ -210,15 +211,67 @@ describe("Copilot follow-ups", () => {
     expect(b.calls[1]).toMatchObject({ method: "PATCH", body: { status: "stop" } });
   });
 
+  // The two prod answers of 2026-11-01 (CHAT-TRUTH-1101), trimmed to the served fields.
+  const RAN_NO_DELIVERY = { event: { id: "eda9cb51", status: "done", outcome: "ran", skipReason: null, delivery: null, ranCampaignIds: ["3b19055d"] }, replayed: false };
+  const SKIPPED = { event: { id: "51f1e9a2", status: "done", outcome: "skipped", skipReason: "cohort_run_in_flight", delivery: null, ranCampaignIds: [] }, replayed: false };
+
   it("fire reports follow_up_due for the person's lead on our brand", async () => {
-    const { deps, calls } = fakeDeps((c) => (c.method === "GET" ? listing([marieRow]) : { status: 200, body: { outcome: "ran" } }));
-    const out = await fireFollowup({ followUpId: "fu-1" }, { userId: "u" }, deps);
+    const { deps, calls } = fakeDeps((c) => (c.method === "GET" ? listing([marieRow]) : { status: 200, body: RAN_NO_DELIVERY }));
+    await fireFollowup({ followUpId: "fu-1" }, { userId: "u" }, deps);
     expect(calls[1]).toMatchObject({
       method: "POST",
       url: "http://campaign/internal/trigger-events",
       body: { triggerId: "follow_up_due", brandId: "our-brand", offerId: "live-offer", leadId: "lead-marie" },
     });
-    expect(out.event).toEqual({ outcome: "ran" });
+  });
+
+  it("fire: outcome ran with no delivery is on its way, never sent (prod 12:54)", async () => {
+    const { deps } = fakeDeps((c) => (c.method === "GET" ? listing([marieRow]) : { status: 200, body: RAN_NO_DELIVERY }));
+    const out = await fireFollowup({ followUpId: "fu-1" }, { userId: "u" }, deps);
+    expect(out).toMatchObject({ followUpId: "fu-1", eventId: "eda9cb51", messageState: "on_its_way", sent: false });
+    expect(out.meaning).toContain("never say it was sent");
+    // The raw event (whose `outcome: "ran"` read as sent) never reaches the model.
+    expect(JSON.stringify(out)).not.toContain('"outcome"');
+  });
+
+  it("fire: a skipped fire is not sent, with campaign-service's reason (prod 12:42)", async () => {
+    const { deps } = fakeDeps((c) => (c.method === "GET" ? listing([marieRow]) : { status: 200, body: SKIPPED }));
+    const out = await fireFollowup({ followUpId: "fu-1" }, { userId: "u" }, deps);
+    expect(out).toMatchObject({ messageState: "not_sent", sent: false, why: "cohort_run_in_flight" });
+  });
+
+  it("fire: an answer without an event fails loud", async () => {
+    const { deps } = fakeDeps((c) => (c.method === "GET" ? listing([marieRow]) : { status: 200, body: { replayed: false } }));
+    await expect(fireFollowup({ followUpId: "fu-1" }, { userId: "u" }, deps)).rejects.toThrow("without an event");
+  });
+
+  it("list: shows the last emails that actually left for this person, newest first", async () => {
+    const timeline = {
+      status: 200,
+      body: {
+        sources: [{ source: "gmail", status: "ok" }],
+        items: [
+          { at: "2026-11-01T12:10:00Z", channel: "email", kind: "message", direction: "outbound", subject: "Welcome", text: "Hi" },
+          { at: "2026-11-01T12:20:00Z", channel: "email", kind: "message", direction: "inbound", subject: "Re: Welcome", text: "?" },
+          { at: "2026-11-01T12:30:00Z", channel: "whatsapp", kind: "message", direction: "outbound", subject: null, text: "Hey" },
+        ],
+      },
+    };
+    const { deps } = fakeDeps((c) => (c.url.startsWith("http://crm") ? timeline : listing([marieRow])));
+    const out = await listFollowups({}, { userId: "u" }, deps);
+    expect(out.lastEmailsWeSentThem).toEqual([{ at: "2026-11-01T12:10:00Z", subject: "Welcome" }]);
+  });
+
+  it("list: an unreadable mailbox is said, never read as no email", async () => {
+    const broken = { status: 200, body: { sources: [{ source: "gmail", status: "error", error: "token expired" }], items: [] } };
+    const { deps } = fakeDeps((c) => (c.url.startsWith("http://crm") ? broken : listing([marieRow])));
+    const out = await listFollowups({}, { userId: "u" }, deps);
+    expect(out.lastEmailsWeSentThem).toMatchObject({ unreadable: expect.stringContaining("gmail: token expired") });
+  });
+
+  it("fire_followup and list_followups tell the agent what counts as sent", () => {
+    expect(TOOL_REGISTRY.fire_followup.description).toContain("messageState");
+    expect(TOOL_REGISTRY.list_followups.description).toContain("lastEmailsWeSentThem");
   });
 
   it("fails loud when the follow-up scope is not configured", async () => {
