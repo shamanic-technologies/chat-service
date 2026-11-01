@@ -242,10 +242,13 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
       messages,
       stream: false,
       max_tokens: VENDOR_CHAT_MAX_OUTPUT_TOKENS,
+      // Tools are ALWAYS declared, `tool_choice: "none"` is never sent: with it
+      // DeepSeek drops the tool definitions and the model writes fake tool-call
+      // markup (`<｜DSML｜ invoke ...>`) into the text the person receives
+      // (probed live 2026-11-01, CHAT-COST-1101). The final round and the
+      // silent-turn re-ask say to answer now (their notes), and a call the model
+      // makes anyway is not run.
       ...(vendorTools.length > 0 ? { tools: vendorTools } : {}),
-      // The final round (and the silent-turn re-ask) answers with tools off; a
-      // turn that must end on a tool keeps them.
-      ...(vendorTools.length > 0 && (isFinalToolRound(depth) || answerNudged) && !endToolName ? { tool_choice: "none" } : {}),
     };
 
     const at = new Date();
@@ -281,7 +284,10 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
     const reply = choice?.message ?? {};
     const text = typeof reply.content === "string" ? reply.content : "";
     const reasoning = typeof reply.reasoning_content === "string" ? reply.reasoning_content : "";
-    const calls = reply.tool_calls ?? [];
+    // The final round and the re-ask run no tool (a turn that must end on a
+    // tool, a Lead event's answer_person, keeps calling it).
+    const toolsOff = (isFinalToolRound(depth) || answerNudged) && !endToolName;
+    const calls = toolsOff ? [] : (reply.tool_calls ?? []);
 
     if (reasoning.trim()) {
       sse(res, { type: "thinking_start" });
