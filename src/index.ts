@@ -5392,6 +5392,10 @@ app.post("/chat", requireAuth, async (req, res) => {
           buttonCount: buttons.length,
           choiceCount: turnUi.choices?.choices.length ?? 0,
           openPageCount: openedPages.length,
+          // The exact billed lines of the turn, kept with the run: if posting
+          // the actual fails, this is what the hold is reconciled to
+          // (CHAT-COST-1101: 6 Martian DBB holds had to be cancelled, the split was lost).
+          costLines: vendorChatCostLines ?? geminiChatCostLines ?? anthropicChatCostLines,
         },
       });
     }
