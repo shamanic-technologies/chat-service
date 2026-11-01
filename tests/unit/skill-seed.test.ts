@@ -163,7 +163,10 @@ describe("chat-first walk (owner 2026-10-10)", () => {
 
   it("the request skill states where each kind lands", () => {
     const c = bySlug.get("staff-requests")!.content;
-    for (const w of ["GitHub issue", "Telegram", "chat-service", "No issue"]) expect(c).toContain(w);
+    for (const w of ["GitHub issue", "team notified", "chat-service", "No issue"]) expect(c).toContain(w);
+    // CHAT-TRUTH-1101: the Copilot repeated "it goes to the founder on Telegram" to a client.
+    expect(c).not.toContain("Telegram");
+    expect(c).not.toContain("founder");
   });
 });
 

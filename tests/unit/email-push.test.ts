@@ -136,7 +136,7 @@ describe("confirm_switch_on push_email: one push through POST /v1/trigger-events
       idempotencyKey: `copilot-email-push-${proposal.confirmationToken}`,
     });
     expect((push[1] as RequestInit).headers).toMatchObject({ "x-org-id": "org-1", "x-user-id": "user-1" });
-    expect(out).toMatchObject({ pushed: true, action: "push_email", result: { event: { outcome: "ran" } } });
+    expect(out).toMatchObject({ pushed: true, action: "push_email", result: { eventId: "ev-1", messageState: "on_its_way", sent: false } });
 
     const used = [...history, { role: "user", toolCalls: null }, { role: "assistant", toolCalls: [{ name: "confirm_switch_on", args: { confirmationToken: proposal.confirmationToken }, result: out }] }];
     expect(() => resolveSwitchOnProposal(proposal.confirmationToken, used)).toThrow(/already used/);

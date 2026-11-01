@@ -1,3 +1,4 @@
+import { messageVerdict } from "./delivery-truth.js";
 import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
 import { features } from "./declarations-client.js";
 import { FunnelError } from "./funnel-client.js";
@@ -174,9 +175,6 @@ export async function pushEmail(t: EmailPushTarget, token: string, p: ApiCallPar
   const raw = await res.text();
   if (!res.ok) throw new FunnelError("confirm_switch_on:push_email", res.status, raw || "unknown error");
   const answer = JSON.parse(raw) as { event?: { id?: string; status?: string; outcome?: string | null; skipReason?: string | null } };
-  return {
-    ...answer,
-    tellUser:
-      "Say what the event reads: outcome 'ran' = the campaign is sending it; 'skipped' + skipReason = why nothing went out (say it plainly); status 'pending' = still being filed, it fires within minutes (get_trigger_events shows it later).",
-  };
+  // `outcome: "ran"` is a run that started, not an email that left (CHAT-TRUTH-1101).
+  return { eventId: answer.event?.id ?? null, ...messageVerdict(answer.event) };
 }
