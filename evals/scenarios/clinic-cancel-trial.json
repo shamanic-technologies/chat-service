@@ -4691,6 +4691,36 @@
       {
         "requests": []
       }
+    ],
+    "list_brands": [
+      {
+        "brands": [
+          {
+            "id": "96c1014f-5f6a-4924-bd14-1831c58a6b26",
+            "name": "LBVisible",
+            "domain": "lbvisible.com",
+            "brandUrl": "https://lbvisible.com",
+            "createdAt": "2026-10-20 17:40:08.862929+00",
+            "updatedAt": "2026-10-20 18:09:01.884868+00"
+          }
+        ]
+      }
+    ],
+    "list_offers": [
+      {
+        "offers": [
+          {
+            "icon": "code",
+            "name": "Web Development",
+            "status": "active",
+            "brandId": "96c1014f-5f6a-4924-bd14-1831c58a6b26",
+            "offerId": "85848d97-3c12-4833-a059-b1aeb745b09e",
+            "imageUrl": null,
+            "createdAt": "2026-10-20 18:07:13.211139+00",
+            "updatedAt": "2026-10-20 18:07:13.211139+00"
+          }
+        ]
+      }
     ]
   },
   "facts": [

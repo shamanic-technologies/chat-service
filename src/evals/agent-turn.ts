@@ -94,7 +94,7 @@ export interface AssembledTurn {
 function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string): AssembledTurn {
   const lead = scenario.lead!;
   const payload = lead.payload as unknown as LeadTurnRequest;
-  const frame: LeadTurnFrame = { payload, ownBrand: true, guest: lead.guest, phoneBound: lead.phoneBound, afterSignIn: false };
+  const frame: LeadTurnFrame = { payload, ownBrand: true, guest: lead.guest, phoneBound: lead.phoneBound, afterSignIn: false, now: scenarioDay(scenario) };
   const sessionTools = lead.guest ? [] : withOurWebsite(def.allowedTools, def.allowedTools.includes("read_skill"));
   const toolNames = leadTurnToolNames(sessionTools, CLIENT_UI_TOOL_NAMES);
   const skillBlock = !lead.guest && toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
@@ -229,9 +229,9 @@ export async function replayTurn(args: {
   const ui = uiText();
   return {
     reply: [result.fullResponse.trim(), ui && !result.fullResponse.includes(ui) ? ui : ""].filter(Boolean).join("\n\n"),
-    // The judge reads what the model was told about the account AND about
-    // itself (its model name lives in the prompt's "## You" line).
-    turnContext: brief + aboutYouBlock(modelDisplay),
+    // The judge reads the turn's whole context as the model read it (briefs,
+    // channel or Lead event block, page context) and its "## You" line.
+    turnContext: turn.turnContext + aboutYouBlock(modelDisplay),
     toolCalls: result.toolCalls.map((c) => ({ name: c.name, args: (c.args ?? {}) as Record<string, unknown>, result: c.result })),
     llmCalls,
     tokensInput: result.tokensInput,
