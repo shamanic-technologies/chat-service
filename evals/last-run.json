@@ -1,142 +1,161 @@
 {
-  "note": "The eval run the current Sophie code was merged on (SOPHIE-REFONTE-1102). Replace it with the run of any change to Sophie's prompt, tools, model or briefs (sophieCodeHash).",
-  "at": "2026-11-02T06:12:15.282Z",
+  "note": "The eval runs the current Sophie code was merged on (SOPHIE-REFONTE-1102 P2+P3: skills by client job + the gateway's API catalogue). Gate: pooled pass rate over >=120 replays a side >= the baseline's. Replace with fresh runs on any change to Sophie's prompt, tools, model or briefs (sophieCodeHash).",
   "model": "deepseek/deepseek-flash",
   "judge": "jev/jev-latest",
-  "codeHash": "c71e18133d1f6325",
-  "summary": {
-    "scenarios": 20,
-    "scenariosPassed": 7,
-    "replays": 60,
-    "criterionRate": {
-      "true": 0.6166666666666667,
-      "respectful": 0.7666666666666667,
-      "proactive": 0.8666666666666667,
-      "answers": 0.9,
-      "nextAction": 0.7666666666666667,
-      "form": 0.9833333333333333
+  "codeHash": "2b79ca17f4bb7ca4",
+  "runs": [
+    {
+      "at": "2026-11-02T08:07:41.403Z",
+      "scenariosPassed": 9
     },
-    "medianCostPerReplyUsd": 0.00392,
-    "medianLlmCalls": 3,
-    "medianInputTokens": 126675.5,
-    "medianLatencyMs": 12011.5,
-    "passed": false
+    {
+      "at": "2026-11-02T08:12:30.803Z",
+      "scenariosPassed": 7
+    }
+  ],
+  "pooled": {
+    "replays": 120,
+    "passRate": 0.3833,
+    "criterionRate": {
+      "true": 0.6917,
+      "respectful": 0.9083,
+      "proactive": 0.8667,
+      "answers": 0.8583,
+      "nextAction": 0.8583,
+      "form": 0.9583
+    },
+    "medianCostPerReplyUsd": 0.00504,
+    "medianLlmCalls": 4.0,
+    "medianLatencyMs": 13240.5
   },
   "baseline": {
-    "definition": "prod-2026-11-02-client-brief",
-    "at": "2026-11-02T06:12:12.525Z",
-    "scenariosPassed": 4,
-    "criterionRate": {
-      "true": 0.5833333333333334,
-      "respectful": 0.75,
-      "proactive": 0.8833333333333333,
-      "answers": 0.85,
-      "nextAction": 0.6833333333333333,
-      "form": 0.9833333333333333
-    },
-    "medianCostPerReplyUsd": 0.00461,
-    "medianLatencyMs": 14606.5
+    "definition": "sophie-code P1 (role + situation brief, the 97 dashboard tools, the old skill tree), live 2026-11-02",
+    "runs": [
+      {
+        "at": "2026-11-02T06:12:15.282Z",
+        "scenariosPassed": 7
+      },
+      {
+        "at": "2026-11-02T08:07:07.312Z",
+        "scenariosPassed": 8
+      }
+    ],
+    "pooled": {
+      "replays": 120,
+      "passRate": 0.3667,
+      "criterionRate": {
+        "true": 0.6583,
+        "respectful": 0.825,
+        "proactive": 0.9083,
+        "answers": 0.9167,
+        "nextAction": 0.8,
+        "form": 0.9917
+      },
+      "medianCostPerReplyUsd": 0.00396,
+      "medianLlmCalls": 3.0,
+      "medianLatencyMs": 12871.0
+    }
   },
   "scenarios": [
     {
       "id": "aba-diagnose-results",
-      "baseline": "TFF",
-      "sophie": "FTT"
+      "baseline": "FTTFFT",
+      "sophie": "TTFFFF"
     },
     {
       "id": "clinic-cancel-trial",
-      "baseline": "TTT",
-      "sophie": "FFF"
+      "baseline": "FFFFFF",
+      "sophie": "FFFFFF"
     },
     {
       "id": "clinic-find-me-clients",
-      "baseline": "TTF",
-      "sophie": "FFF"
+      "baseline": "FFFTTF",
+      "sophie": "FFFFFF"
     },
     {
       "id": "jarygo-cost-at-7am",
-      "baseline": "FFF",
-      "sophie": "TFT"
+      "baseline": "TFTTFT",
+      "sophie": "FFTTFT"
     },
     {
       "id": "jarygo-when-booked-leads",
-      "baseline": "FFF",
-      "sophie": "FFF"
+      "baseline": "FFFFTF",
+      "sophie": "FFFTFF"
     },
     {
       "id": "jcurve-new-chat-empty-profile",
-      "baseline": "FFF",
-      "sophie": "TFF"
+      "baseline": "TFFFFF",
+      "sophie": "FFFFFF"
     },
     {
       "id": "martian-angry-no-list",
-      "baseline": "FFF",
-      "sophie": "FFF"
+      "baseline": "FFFFFT",
+      "sophie": "FTFFFT"
     },
     {
       "id": "martian-close-account",
-      "baseline": "FFT",
-      "sophie": "TTF"
+      "baseline": "TTFFFT",
+      "sophie": "FFTFTT"
     },
     {
       "id": "martian-cost-per-email",
-      "baseline": "FFF",
-      "sophie": "FFF"
+      "baseline": "FFFFFF",
+      "sophie": "TTFFFT"
     },
     {
       "id": "martian-exclude-leads",
-      "baseline": "TTT",
-      "sophie": "TFT"
+      "baseline": "TFTTTT",
+      "sophie": "TTTFTT"
     },
     {
       "id": "martian-force-send",
-      "baseline": "FFF",
-      "sophie": "FFF"
+      "baseline": "FFFFFT",
+      "sophie": "TTTFTT"
     },
     {
       "id": "martian-give-me-the-list",
-      "baseline": "FFF",
-      "sophie": "FFT"
+      "baseline": "FFTFTF",
+      "sophie": "FTFFFF"
     },
     {
       "id": "martian-how-many-left",
-      "baseline": "FTT",
-      "sophie": "TTF"
+      "baseline": "TTFTFT",
+      "sophie": "TFTTFF"
     },
     {
       "id": "martian-refund",
-      "baseline": "FFF",
-      "sophie": "FFF"
+      "baseline": "FFFFFF",
+      "sophie": "FTFFFF"
     },
     {
       "id": "martian-scam",
-      "baseline": "FFF",
-      "sophie": "TFT"
+      "baseline": "TFTTFF",
+      "sophie": "FTTFFF"
     },
     {
       "id": "martian-which-ai",
-      "baseline": "TFF",
-      "sophie": "FFF"
+      "baseline": "FFFTFT",
+      "sophie": "TTFTTT"
     },
     {
       "id": "martian-why-3-dollars",
-      "baseline": "FFF",
-      "sophie": "FFF"
+      "baseline": "FFFFFF",
+      "sophie": "TFTFTF"
     },
     {
       "id": "martian-zero-balance",
-      "baseline": "FFF",
-      "sophie": "FFF"
+      "baseline": "FFFTTT",
+      "sophie": "FTTFTT"
     },
     {
       "id": "novemiq-explain-campaigns",
-      "baseline": "FFT",
-      "sophie": "TTT"
+      "baseline": "TTTFTT",
+      "sophie": "FFFFTF"
     },
     {
       "id": "prospect-free-trial-pricing",
-      "baseline": "TFF",
-      "sophie": "TFF"
+      "baseline": "TFFTTT",
+      "sophie": "FFFFTT"
     }
   ]
 }

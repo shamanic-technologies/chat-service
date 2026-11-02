@@ -1637,7 +1637,7 @@ Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token st
 
 The `copilot` config (web Copilot, WhatsApp) is owned by chat-service: role, tools and model in `src/agent/sophie.ts`, seeded at boot. `PUT /platform-config` on a self-seeded key (`copilot`, the editors, `whatsapp`) answers the stored row with `ownedByChatService: true` and writes nothing. Each web or signed-in WhatsApp turn starts with a situation brief (`src/agent/situation.ts`): the account read through the gateway (business and what it sells, offer, campaigns, results, replies waiting, money), placed in the turn's context.
 
-`src/agent/catalogue*.ts` (P2, not yet in Sophie's tool list): `find_operation` / `describe_operation` / `run_operation` over the gateway's public API document, called as the person; an operation the gateway marks as needing their yes answers a proposal whose token runs it from a later turn.
+Her tools are `find_operation` / `describe_operation` / `run_operation` over the gateway's public API document (`src/agent/catalogue*.ts`), called as the person, plus a small core (cards, pages, skills, requests to our team, follow-ups). An operation the gateway marks `x-needs-user-yes` answers a proposal whose token runs it from a later turn; a proactive turn only reads. Her skills are the client's jobs (setup, campaigns, offers, who we reach, results, money, emails, accounts, our team), each naming the API operations it uses; staff work sits under the `staff` skill. After a release, `node scripts/sophie-skills-staff-rows.mjs --apply` (inside the container) brings the staff-edited skill rows in line.
 
 ## Sophie evals (`evals/`, `src/evals/`)
 

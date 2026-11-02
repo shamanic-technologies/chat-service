@@ -5,28 +5,23 @@ import { TOOL_REGISTRY } from "../../src/lib/anthropic.js";
 import { MERGED_SKILL_SLUGS } from "../../src/lib/skill-seed.js";
 import { COPILOT_TOOL_API_OPS, skillApiGaps } from "../../src/lib/skill-api-ops.js";
 
+// The client's jobs, one level under the index (SOPHIE-REFONTE-1102); staff work sits under `staff`.
 const TOPICS = [
-  "new-account", "offers", "client-profiles", "qualification", "sources", "legs", "triggers",
-  "campaigns", "workflows-and-templates", "connected-accounts", "budget-and-billing",
-  "costs-roi-stats", "staff-requests", "catalogue", "infra",
+  "new-account", "offers", "client-profiles", "campaigns", "emails-you-wrote", "connected-accounts",
+  "budget-and-billing", "costs-roi-stats", "staff-requests", "choices", "staff",
 ];
+const STAFF_TOPICS = ["catalogue", "infra", "workflows-and-templates", "legs", "triggers"];
 
 const CATALOGUE_LEVELS = [
   "catalogue-steps", "catalogue-sales-paths", "catalogue-channels", "catalogue-pipes", "catalogue-plays",
   "catalogue-sales-funnels", "catalogue-workflows",
 ];
 
+// Sophie's own tools beside the API (SOPHIE-REFONTE-1102): every act on the account is an API operation the skills name.
 const COPILOT_TOOLS = [
-  "get_leg_rates", "set_leg_rates", "get_offer_steps", "add_offer_step", "remove_offer_step", "get_offer_settings", "update_offer_settings", "list_sales_paths",
-  "get_trigger_events", "list_sourcing_origins", "get_offer_sourcing",
-  "list_connected_accounts", "create_offer",
-  "propose_switch_on", "confirm_switch_on",
+  "find_operation", "describe_operation", "run_operation",
   "request_staff", "list_staff_requests", "request_skill_upgrade", "contact_human",
   "find_steps", "find_sales_paths", "find_channels", "find_pipes", "find_sales_funnels", "find_workflows",
-  "find_plays", "find_strategies", "find_tactics", "create_tactic", "create_strategy", "create_play",
-  "create_pipe", "create_sales_path", "create_sales_funnel",
-  "discover_services", "discover_service_endpoints", "discover_endpoint", "test_endpoint",
-  "list_funnel_campaigns", "get_funnel_caps", "set_funnel_caps", "create_funnel_campaign", "stop_funnel_campaign",
 ];
 
 describe("seeded skill tree", () => {
@@ -40,6 +35,7 @@ describe("seeded skill tree", () => {
       expect(s, topic).toBeDefined();
       expect(s!.parentSlug).toBe(INDEX_SKILL_SLUG);
     }
+    for (const topic of STAFF_TOPICS) expect(SEED_SKILLS.find((x) => x.slug === topic)?.parentSlug, topic).toBe("staff");
     for (const s of SEED_SKILLS) expect(s.slug).toMatch(SKILL_SLUG_RE);
   });
 
@@ -66,6 +62,7 @@ describe("seeded skill tree", () => {
       // Data values and path segments (an API reader needs them verbatim).
       "prepaid_checkout", "prepaid_status", "payment_required", "not_built_yet", "topup_amount_cents",
       "auto_topup_amount_cents", "auto_topup_threshold_cents", "positive_reply", "skill_upgrade", "reactive_pipe_from_lead_found", "pipe_in_use",
+      "sales_interest", "not_built_yet", "not_prepaid",
     ]);
     const named = new Set(all.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []);
     const unknown = [...named].filter((n) => !notTools.has(n) && !TOOL_REGISTRY[n] && !n.startsWith("lead_found_to") && !n.startsWith("start_to"));
@@ -81,8 +78,8 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     expect(bySlug.get("infra-build-workflow")?.parentSlug).toBe("infra");
   });
 
-  it("the index walks the levels in the owner's order", () => {
-    const index = bySlug.get("index")!.content;
+  it("the staff skill walks the levels in the owner's order", () => {
+    const index = bySlug.get("staff")!.content;
     const order = ["find_steps", "find_sales_paths", "find_channels", "find_pipes", "find_sales_funnels", "find_workflows", "campaigns"];
     const at = order.map((t) => index.indexOf(t));
     for (const [i, pos] of at.entries()) expect(pos, order[i]).toBeGreaterThan(-1);
@@ -153,16 +150,16 @@ describe("chat-first walk (owner 2026-10-10)", () => {
   it("an email the user wrote is pushed through their live campaign, never a feature request (COPILOT-PUSH-EMAIL-1014)", () => {
     const e = bySlug.get("emails-you-wrote")!;
     expect(e.parentSlug).toBe("index");
-    for (const w of ["email_pushed_via_api", "POST /v1/trigger-events", "push_email", "confirm_switch_on", "Never request_staff", "The client brings them"]) expect(e.content).toContain(w);
+    for (const w of ["email_pushed_via_api", "POST /v1/trigger-events", "needs their yes", "Never request_staff", "The client brings them"]) expect(e.content).toContain(w);
     expect(bySlug.get("index")!.content).toContain("emails-you-wrote");
     // WF-SILENT-FOLLOWUP-1101: outcome "ran" is a run that started, never a sent email; only delivered says sent.
     expect(e.content).not.toContain("ran = sending");
-    expect(e.content).toContain("messageState");
+    expect(e.content).toContain("never call that sent");
     expect(e.content).toContain("delivered = sent");
     const r = bySlug.get("staff-requests")!.content;
     expect(r).toContain("## Before filing");
-    expect(r.indexOf("list_campaigns")).toBeLessThan(r.indexOf("Only then request_staff"));
-    expect(r).toContain("discover_service_endpoints");
+    expect(r.indexOf("GET /v1/sales-funnel-campaigns")).toBeLessThan(r.indexOf("Only then request_staff"));
+    expect(r).toContain("find_operation");
   });
 
   it("the request skill states where each kind lands", () => {
@@ -176,11 +173,11 @@ describe("chat-first walk (owner 2026-10-10)", () => {
 
 describe("funnel campaigns (owner 2026-10-10)", () => {
   const c = SEED_SKILLS.find((s) => s.slug === "campaigns")!.content;
-  it("asks max budget AND max volume, creates stopped, launches only through the gate", () => {
-    for (const w of ["Max budget", "Max volume", "create_funnel_campaign", "STOPPED", "set_funnel_caps", "start_funnel_campaign", "confirm_switch_on"]) {
+  it("asks max budget AND max volume, creates stopped, starts only after the client's yes", () => {
+    for (const w of ["Max budget", "Max volume", "POST /v1/sales-funnel-campaigns", "STOPPED", "/caps", "activate", "their yes"]) {
       expect(c).toContain(w);
     }
-    const order = ["create_funnel_campaign", "set_funnel_caps", "propose_switch_on", "confirm_switch_on only"].map((w) => c.indexOf(w));
+    const order = ["POST /v1/sales-funnel-campaigns {", "/caps with both keys", "ask yes or no", "Only after their yes"].map((w) => c.indexOf(w));
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 });
@@ -222,7 +219,7 @@ describe("costs keep their unit", () => {
   it("the catalogue skill says a channel or pipe cost is never per paying client", () => {
     const cat = SEED_SKILLS.find((s) => s.slug === "catalogue")!.content;
     expect(cat).toMatch(/never per paying client/);
-    expect(SEED_SKILLS.find((s) => s.slug === "index")!.content).toMatch(/with the unit and basis the tool gives/);
+    expect(SEED_SKILLS.find((s) => s.slug === "index")!.content).toMatch(/with the unit and basis the API gives/);
   });
 });
 
@@ -261,11 +258,11 @@ describe("the offer's ticked list, legs and accepted channels are retired (owner
 });
 
 describe("a campaign IS a funnel campaign in every skill (owner rule)", () => {
-  it("campaigns and budgets are answered from list_campaigns; steps are never campaigns", () => {
+  it("campaigns and budgets are answered from the campaign list; steps are never campaigns", () => {
     const c = SEED_SKILLS.find((s) => s.slug === "campaigns")!.content;
     expect(c).toMatch(/Count and name only campaigns: a step .* is part of a campaign, never a campaign/);
     const b = SEED_SKILLS.find((s) => s.slug === "budget-and-billing")!.content;
-    expect(b).toMatch(/Each campaign's budget: list_campaigns/);
+    expect(b).toMatch(/Each campaign's budget: GET \/v1\/sales-funnel-campaigns/);
     expect(b).not.toMatch(/get_campaign_budgets/);
   });
 });
@@ -273,7 +270,7 @@ describe("a campaign IS a funnel campaign in every skill (owner rule)", () => {
 describe("no per-step writes in the Copilot's skills (owner 2026-10-10)", () => {
   it("budgets are set_funnel_caps and on/off is the funnel campaign; a source has no budget of its own", () => {
     for (const sk of SEED_SKILLS) expect(sk.content, sk.slug).not.toMatch(/set_campaign_budget|stop_campaign\b|start_campaign\b|activate_campaign/);
-    const src = SEED_SKILLS.find((s) => s.slug === "sources")!.content;
+    const src = SEED_SKILLS.find((s) => s.slug === "client-profiles")!.content;
     expect(src).toMatch(/A source has no on\/off or budget of its own/);
   });
 });
@@ -319,7 +316,7 @@ describe("ask before proposing a funnel on a step the business may lack (owner 2
     expect(f.indexOf("get_offer_steps")).toBeLessThan(f.indexOf("## Propose"));
     expect(f).toContain("find_sales_funnels(offerId, brandId)");
     expect(f).toContain("setAside");
-    expect(bySlug.get("index")!).toContain("find_sales_funnels(offerId, brandId)");
+    expect(bySlug.get("staff")!).toContain("find_sales_funnels(offerId, brandId)");
   });
 
   it("the legs skill writes a stated rate as a percent", () => {
@@ -440,7 +437,12 @@ describe("one skill text, two readers (standard vocabulary, owner 2026-10-16)", 
 
   it("one skill per topic: channels and sales paths live under the catalogue; the old slugs answer the merged skill", () => {
     const slugs = new Set(SEED_SKILLS.map((s) => s.slug));
-    expect(MERGED_SKILL_SLUGS).toEqual({ channels: "catalogue-channels", "sales-paths": "catalogue-sales-paths" });
+    expect(MERGED_SKILL_SLUGS).toEqual({
+      channels: "catalogue-channels",
+      "sales-paths": "catalogue-sales-paths",
+      qualification: "client-profiles",
+      sources: "client-profiles",
+    });
     for (const [old, into] of Object.entries(MERGED_SKILL_SLUGS)) {
       expect(slugs.has(old), old).toBe(false);
       expect(slugs.has(into), into).toBe(true);
@@ -452,7 +454,7 @@ describe("one skill text, two readers (standard vocabulary, owner 2026-10-16)", 
   });
 
   it("workflow ranking is named a multi-armed bandit (best ROI runs, the others are still explored)", () => {
-    for (const slug of ["index", "catalogue-workflows", "catalogue-plays", "workflows-and-templates"]) {
+    for (const slug of ["staff", "catalogue-workflows", "catalogue-plays", "workflows-and-templates"]) {
       const c = SEED_SKILLS.find((s) => s.slug === slug)!.content;
       expect(c, slug).toContain("multi-armed bandit");
       expect(c, slug).toMatch(/explor/);
@@ -490,11 +492,12 @@ describe("campaign next steps: the reply-timing line is always said (CAMPAIGN-NE
   // API-ONBOARD-SKILL-1023: an API agent on a new account (prod 2026-10-22, walletwallet.dev) read
   // index, offers, client-profiles, campaigns and found no setup path; it created the brand and
   // offer by trial and error, then its user finished on the dashboard and never paid.
-  it("the index sends a new account to the setup skill before the catalogue walk", () => {
+  it("the index sends a new account to the setup skill before any other job", () => {
     const index = SEED_SKILLS[0].content;
     expect(index).not.toMatch(/^You are the distribute\.you Copilot/);
     expect(index.indexOf("`new-account`")).toBeGreaterThan(-1);
-    expect(index.indexOf("`new-account`")).toBeLessThan(index.indexOf("find_steps"));
+    expect(index.indexOf("`new-account`")).toBeLessThan(index.indexOf("`campaigns`"));
+    expect(index).not.toContain("find_steps");
   });
 
   it("the setup skill walks brand, offer, target, audiences, preview, payment, start in order", () => {

@@ -4110,7 +4110,7 @@ app.post("/chat", requireAuth, async (req, res) => {
             ? await findApi(args)
             : call.name === DESCRIBE_API_TOOL_NAME
               ? await describeApi(args)
-              : await callApi(args, featureCallParams, history);
+              : await callApi(args, featureCallParams, history, { readOnly: proactiveTurn });
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }

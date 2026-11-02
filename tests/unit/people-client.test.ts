@@ -264,9 +264,10 @@ describe("add_contact: one person the client names (COPILOT-ADD-CONTACT-1021)", 
 
   it("the sources skill teaches the flow to the Copilot and to API agents", async () => {
     const { SEED_SKILLS } = await import("../../src/lib/skill-seed.js");
-    const sources = SEED_SKILLS.find((s) => s.slug === "sources")!.content;
-    expect(sources).toContain("add_contact → POST /v1/orgs/contacts");
+    // SOPHIE-REFONTE-1102: sources merged into the who-we-reach job skill.
+    const sources = SEED_SKILLS.find((s) => s.slug === "client-profiles")!.content;
+    expect(sources).toContain("POST /v1/orgs/contacts");
     expect(sources).toContain("sourcing-crm-contacts");
-    expect(sources).toMatch(/Never start it without that yes/);
+    expect(sources).toMatch(/Never start it without their yes/);
   });
 });
