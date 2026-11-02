@@ -101,6 +101,11 @@ function moneyLine(billing: unknown): string {
   return parts.length ? parts.join(", ") : "not read";
 }
 
+/** "Today: Sunday 1 November 2026 (UTC)." A reply that guessed the day promised a Sunday send (2026-11-01). */
+export function todayLine(now: Date): string {
+  return `Today: ${now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).replace(",", "")} (UTC).`;
+}
+
 /**
  * The brief: one block, a few hundred words, read in one pass. `brandId` /
  * `offerId` narrow it to what the person has open; without them, the org's
@@ -114,7 +119,7 @@ export async function buildSituationBrief(
   const brands = asArr(asObj(await settle("brands", () => reader.listBrands(), failed)).brands);
   const lines: string[] = [
     "\n\n---\n## Where their account stands (read just now, before this message)",
-    `Today: ${(opts.now ?? new Date()).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).replace(",", "")} (UTC).`,
+    todayLine(opts.now ?? new Date()),
   ];
   if (brands.length === 0) {
     lines.push(failed.length ? "The account could not be read this turn: use your tools." : "Nothing set up yet: no brand, no campaign.");
