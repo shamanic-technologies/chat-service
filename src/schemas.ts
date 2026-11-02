@@ -428,6 +428,9 @@ export const PlatformConfigResponseSchema = z
     }),
     createdAt: z.string(),
     updatedAt: z.string(),
+    ownedByChatService: z.literal(true).optional().openapi({
+      description: "Present when the key is seeded by chat-service itself (Sophie's `copilot`, the editors, `whatsapp`): the registration was NOT written, the body is the stored config.",
+    }),
   })
   .openapi("PlatformConfigResponse");
 

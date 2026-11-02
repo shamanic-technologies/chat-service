@@ -1,6 +1,6 @@
 {
   "kind": "calibration",
-  "at": "2026-11-02T05:13:49.501Z",
+  "at": "2026-11-02T06:08:46.786Z",
   "judge": "jev/jev-latest",
   "cases": 25,
   "agree": 25,
@@ -94,7 +94,6 @@
       "expected": "fail",
       "got": "fail",
       "failed": [
-        "true",
         "respectful",
         "proactive",
         "answers"
@@ -143,9 +142,7 @@
       "expected": "fail",
       "got": "fail",
       "failed": [
-        "true",
-        "respectful",
-        "answers"
+        "respectful"
       ]
     },
     {
@@ -162,8 +159,7 @@
       "got": "fail",
       "failed": [
         "true",
-        "respectful",
-        "answers"
+        "respectful"
       ]
     },
     {

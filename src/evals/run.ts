@@ -14,11 +14,12 @@
 // ---------------------------------------------------------------------------
 
 import { writeFileSync } from "node:fs";
+import { sophieCodeHash } from "../agent/sophie.js";
 import { resolvePlatformKey } from "../lib/key-client.js";
 import { judgeActualCostName, runJudge } from "../lib/judges.js";
 import { addPlatformRunCosts, createPlatformRun, updatePlatformRunStatus, type RunCost } from "../lib/runs-client.js";
 import { TYPESAFE_DEFAULT_MODEL, TYPESAFE_PROVIDER } from "../lib/typesafe.js";
-import { definitionHash, loadDefinition, replayTurn, type AgentDefinition } from "./agent-turn.js";
+import { definitionHash, loadDefinition, replayTurn, sophieDefinition, type AgentDefinition } from "./agent-turn.js";
 import { fixtureExecutor } from "./fixture-tools.js";
 import { CRITERIA, QUESTIONS, describeAction, judgeState, verdictFrom, type Criterion, type Verdict } from "./judge.js";
 import { loadScenarios, type Scenario } from "./scenario.js";
@@ -34,8 +35,8 @@ function arg(name: string): string | undefined {
 
 const cents = (costs: RunCost[]) => costs.reduce((s, c) => s + Number(c.totalCostInUsdCents), 0);
 
-async function judge(runId: string, typesafeKey: string, scenario: Scenario, reply: string, actions: readonly string[]): Promise<{ verdict: Verdict; cents: number }> {
-  const result = await runJudge({ judge: "jev", apiKey: typesafeKey, model: TYPESAFE_DEFAULT_MODEL, state: judgeState(scenario, reply, actions), questions: QUESTIONS });
+async function judge(runId: string, typesafeKey: string, scenario: Scenario, reply: string, actions: readonly string[], contextGiven = ""): Promise<{ verdict: Verdict; cents: number }> {
+  const result = await runJudge({ judge: "jev", apiKey: typesafeKey, model: TYPESAFE_DEFAULT_MODEL, state: judgeState(scenario, reply, actions, contextGiven), questions: QUESTIONS });
   const costs = await addPlatformRunCosts(runId, SERVICE, [
     { costName: judgeActualCostName("jev", result.inputTokens), quantity: result.inputTokens, costSource: "platform" },
   ]);
@@ -88,10 +89,13 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
         const fixtures = fixtureExecutor(def, scenario);
         const turn = await replayTurn({ def, scenario, provider, model, apiKey: modelKey, executeTool: fixtures.executeTool, uiText: fixtures.uiText });
         const modelCosts = await addPlatformRunCosts(runId, SERVICE, turn.costLines.map((l) => ({ costName: l.costName, quantity: l.quantity, costSource: "platform" as const })));
-        const judged = await judge(runId, typesafeKey, scenario, turn.reply, turn.toolCalls.map((c) => describeAction(c.name, c.args, c.result)));
+        const actions = turn.toolCalls.map((c) => describeAction(c.name, c.args, c.result));
+        const judged = await judge(runId, typesafeKey, scenario, turn.reply, actions, turn.turnContext);
         return {
           reply: turn.reply,
           tools: turn.toolCalls.map((c) => c.name),
+          actions,
+          turnContext: turn.turnContext,
           missingFixtures: fixtures.missing(),
           llmCalls: turn.llmCalls,
           tokensInput: turn.tokensInput,
@@ -112,10 +116,19 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
   return results.sort((a, b) => a.id.localeCompare(b.id));
 }
 
+/** Sophie from the code, with the skills table as production serves it. */
+async function codeDefinition(candidate: "current" | "p2" = "current"): Promise<AgentDefinition> {
+  const { db } = await import("../db/index.js");
+  const { listSkills } = await import("../lib/skills.js");
+  const rows = await listSkills(db);
+  return sophieDefinition(rows.map((r) => ({ slug: r.slug, parentSlug: r.parentSlug, title: r.title, description: r.description, content: r.content })), candidate);
+}
+
 async function main() {
   const definitionPath = arg("definition");
   if (!definitionPath) throw new Error("--definition <file> is required");
-  const def = loadDefinition(definitionPath);
+  const def =
+    definitionPath === "code" ? await codeDefinition() : definitionPath === "code-p2" ? await codeDefinition("p2") : loadDefinition(definitionPath);
   const only = arg("only")?.split(",").map((s) => s.trim()).filter(Boolean);
   const scenarios = loadScenarios(arg("scenarios") ?? "evals/scenarios").filter((s) => !only || only.includes(s.id));
   if (scenarios.length === 0) throw new Error("[evals] no scenario selected");
@@ -140,6 +153,7 @@ async function main() {
     kind: "replay",
     at: new Date().toISOString(),
     definition: def.id,
+    ...(def.id.startsWith("sophie-code") ? { codeHash: sophieCodeHash(), definitionSnapshot: def } : {}),
     definitionHash: definitionHash(def, `${provider}/${model}`),
     model: `${provider}/${model}`,
     judge: `jev/${TYPESAFE_DEFAULT_MODEL}`,

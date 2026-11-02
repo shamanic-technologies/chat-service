@@ -9,6 +9,8 @@ import type { ToolExecutor } from "../lib/gemini-chat.js";
 import { readOurWebsite } from "../lib/our-website.js";
 import { readSkillFrom } from "../lib/skills.js";
 import { parseChoicesArgs, parseChoicesIntro, OPEN_PAGE_TOOL_NAME, PRESENT_CHOICES_TOOL_NAME } from "../lib/ui-tools.js";
+import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, YES_MARKER, describeApi, findApi, operationsForTool, toolsForOperation } from "../agent/catalogue-tools.js";
+import { findOperation, getCatalog, matchPath } from "../agent/catalogue.js";
 import type { AgentDefinition } from "./agent-turn.js";
 import type { Scenario } from "./scenario.js";
 
@@ -39,6 +41,9 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
       return "input_request";
     }
     if (name === OPEN_PAGE_TOOL_NAME) return { name, result: { opened: true, page: a.page } };
+    if (name === FIND_API_TOOL_NAME) return { name, result: await findApi(a) };
+    if (name === DESCRIBE_API_TOOL_NAME) return { name, result: await describeApi(a) };
+    if (name === CALL_API_TOOL_NAME) return { name, result: await replayCallApi(a) };
     const recorded = scenario.fixtures[name];
     if (!recorded) {
       missing.add(name);
@@ -48,6 +53,34 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
     served.set(name, i + 1);
     return { name, result: recorded[Math.min(i, recorded.length - 1)] };
   };
+
+  /**
+   * A gateway call in a replay is answered with what the account answered the
+   * chat tool doing the same act (COPILOT_TOOL_API_OPS): same source of truth,
+   * the chat tool's projection of it. Nothing is sent; an operation needing
+   * the person's yes answers its proposal, as in production.
+   */
+  async function replayCallApi(a: Record<string, unknown>): Promise<unknown> {
+    if (typeof a.confirmationToken === "string" && a.confirmationToken.trim()) return { ok: true, status: 200, data: { done: true } };
+    const { operations } = await getCatalog();
+    const concretePath = typeof a.path === "string" ? a.path.split("?")[0] : null;
+    const op =
+      findOperation(operations, { operationId: String(a.operationId ?? "") }) ??
+      (concretePath ? (matchPath(operations, String(a.method ?? "GET"), concretePath)?.operation ?? null) : null);
+    if (!op) {
+      const known = operationsForTool(String(a.operationId ?? ""), operations);
+      throw new Error(`[run_operation] no operation "${String(a.operationId ?? concretePath)}" in the client API: ${known.length ? `that act is ${known.map((o) => `${o.operationId} (${o.method} ${o.path})`).join(" or ")}` : "use find_operation"}`);
+    }
+    if (op.extensions?.[YES_MARKER] === true) {
+      return { yesRequired: true, confirmationToken: `replay-${op.operationId}`, request: { operationId: op.operationId }, instruction: "Nothing ran. Ask the person yes or no first." };
+    }
+    for (const tool of toolsForOperation(op.method, op.path)) {
+      const recorded = scenario.fixtures[tool];
+      if (recorded) return { ok: true, status: 200, data: recorded[0] };
+    }
+    missing.add(`run_operation ${op.method} ${op.path}`);
+    return { ok: false, status: 404, error: "No data for this request in this account right now." };
+  }
 
   return { executeTool, uiText: () => choicesText, missing: () => [...missing] };
 }

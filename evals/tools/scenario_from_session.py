@@ -55,7 +55,7 @@ def build(session, spec):
             call = c["name"] if a == "{}" else f'{c["name"]} {a[:300]}'
             if "result" in c:
                 r = json.dumps(c["result"], ensure_ascii=False)
-                call += " → " + (r[:4000] + "..." if len(r) > 4000 else r)
+                call += " → " + (r[:20000] + "..." if len(r) > 20000 else r)
             prod_actions.append(call)
     ordered = reply_msgs + list(reversed(msgs[:t])) + msgs[t + 1:]
     fixtures = {}

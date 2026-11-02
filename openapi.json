@@ -851,6 +851,13 @@
           },
           "updatedAt": {
             "type": "string"
+          },
+          "ownedByChatService": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "Present when the key is seeded by chat-service itself (Sophie's `copilot`, the editors, `whatsapp`): the registration was NOT written, the body is the stored config."
           }
         },
         "required": [

@@ -1,0 +1,142 @@
+{
+  "note": "The eval run the current Sophie code was merged on (SOPHIE-REFONTE-1102). Replace it with the run of any change to Sophie's prompt, tools, model or briefs (sophieCodeHash).",
+  "at": "2026-11-02T06:12:15.282Z",
+  "model": "deepseek/deepseek-flash",
+  "judge": "jev/jev-latest",
+  "codeHash": "c71e18133d1f6325",
+  "summary": {
+    "scenarios": 20,
+    "scenariosPassed": 7,
+    "replays": 60,
+    "criterionRate": {
+      "true": 0.6166666666666667,
+      "respectful": 0.7666666666666667,
+      "proactive": 0.8666666666666667,
+      "answers": 0.9,
+      "nextAction": 0.7666666666666667,
+      "form": 0.9833333333333333
+    },
+    "medianCostPerReplyUsd": 0.00392,
+    "medianLlmCalls": 3,
+    "medianInputTokens": 126675.5,
+    "medianLatencyMs": 12011.5,
+    "passed": false
+  },
+  "baseline": {
+    "definition": "prod-2026-11-02-client-brief",
+    "at": "2026-11-02T06:12:12.525Z",
+    "scenariosPassed": 4,
+    "criterionRate": {
+      "true": 0.5833333333333334,
+      "respectful": 0.75,
+      "proactive": 0.8833333333333333,
+      "answers": 0.85,
+      "nextAction": 0.6833333333333333,
+      "form": 0.9833333333333333
+    },
+    "medianCostPerReplyUsd": 0.00461,
+    "medianLatencyMs": 14606.5
+  },
+  "scenarios": [
+    {
+      "id": "aba-diagnose-results",
+      "baseline": "TFF",
+      "sophie": "FTT"
+    },
+    {
+      "id": "clinic-cancel-trial",
+      "baseline": "TTT",
+      "sophie": "FFF"
+    },
+    {
+      "id": "clinic-find-me-clients",
+      "baseline": "TTF",
+      "sophie": "FFF"
+    },
+    {
+      "id": "jarygo-cost-at-7am",
+      "baseline": "FFF",
+      "sophie": "TFT"
+    },
+    {
+      "id": "jarygo-when-booked-leads",
+      "baseline": "FFF",
+      "sophie": "FFF"
+    },
+    {
+      "id": "jcurve-new-chat-empty-profile",
+      "baseline": "FFF",
+      "sophie": "TFF"
+    },
+    {
+      "id": "martian-angry-no-list",
+      "baseline": "FFF",
+      "sophie": "FFF"
+    },
+    {
+      "id": "martian-close-account",
+      "baseline": "FFT",
+      "sophie": "TTF"
+    },
+    {
+      "id": "martian-cost-per-email",
+      "baseline": "FFF",
+      "sophie": "FFF"
+    },
+    {
+      "id": "martian-exclude-leads",
+      "baseline": "TTT",
+      "sophie": "TFT"
+    },
+    {
+      "id": "martian-force-send",
+      "baseline": "FFF",
+      "sophie": "FFF"
+    },
+    {
+      "id": "martian-give-me-the-list",
+      "baseline": "FFF",
+      "sophie": "FFT"
+    },
+    {
+      "id": "martian-how-many-left",
+      "baseline": "FTT",
+      "sophie": "TTF"
+    },
+    {
+      "id": "martian-refund",
+      "baseline": "FFF",
+      "sophie": "FFF"
+    },
+    {
+      "id": "martian-scam",
+      "baseline": "FFF",
+      "sophie": "TFT"
+    },
+    {
+      "id": "martian-which-ai",
+      "baseline": "TFF",
+      "sophie": "FFF"
+    },
+    {
+      "id": "martian-why-3-dollars",
+      "baseline": "FFF",
+      "sophie": "FFF"
+    },
+    {
+      "id": "martian-zero-balance",
+      "baseline": "FFF",
+      "sophie": "FFF"
+    },
+    {
+      "id": "novemiq-explain-campaigns",
+      "baseline": "FFT",
+      "sophie": "TTT"
+    },
+    {
+      "id": "prospect-free-trial-pricing",
+      "baseline": "TFF",
+      "sophie": "TFF"
+    }
+  ]
+}
