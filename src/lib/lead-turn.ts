@@ -33,6 +33,7 @@ import { copilotLeadTurns, sessions } from "../db/schema.js";
 import type { LeadTurnRequest } from "../schemas.js";
 import { buildChannelBlock, type PhoneAccount } from "./channel-copilot.js";
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
+import { REACH_ELSEWHERE_TOOL_NAME, forgetLeadTurnCaller, registerLeadTurnCaller } from "./lead-contact.js";
 
 export const LEAD_ANSWER_TOOL_NAME = "answer_person";
 export const LEAD_TURN_TASK_NAME = "copilot-lead-turn";
@@ -60,9 +61,13 @@ export function buildLeadAnswerTool(responseSchema: Record<string, unknown>, mes
   };
 }
 
-/** The tools a lead turn may use: never a client-UI tool (no screen to show cards on), always the answer. */
+/**
+ * The tools a lead turn may use: never a client-UI tool (no screen to show cards
+ * on); always the answer, and the move to another handle the person asks for
+ * (CONTACT-REDIRECT-1101, any brand: it is the writing brand's statement).
+ */
 export function leadTurnToolNames(sessionToolNames: readonly string[], clientUiToolNames: ReadonlySet<string>): string[] {
-  return [...sessionToolNames.filter((t) => !clientUiToolNames.has(t)), LEAD_ANSWER_TOOL_NAME];
+  return [...sessionToolNames.filter((t) => !clientUiToolNames.has(t)), REACH_ELSEWHERE_TOOL_NAME, LEAD_ANSWER_TOOL_NAME];
 }
 
 export interface LeadTurnFrame {
@@ -210,14 +215,32 @@ export interface Caller {
   trackingHeaders: Record<string, string>;
 }
 
-/** The account this person IS for the writing brand: only ours can be read, and the WhatsApp number wins over an email. */
-export async function resolveLeadAccount(deps: Pick<LeadTurnDeps, "resolvePhone" | "resolveEmail">, payload: LeadTurnRequest, ownBrand: boolean): Promise<PhoneAccount | null> {
+/**
+ * The account this person IS for the writing brand: only ours can be read, and
+ * the WhatsApp number wins over an email. A number no account holds may still
+ * be the one an account holder moved to (CONTACT-REDIRECT-1101): their Copilot
+ * conversation is bound to it (`channel_phone`, written only by chat-service,
+ * from a turn that was theirs), so the move keeps their account and history.
+ */
+export async function resolveLeadAccount(deps: Pick<LeadTurnDeps, "resolvePhone" | "resolveEmail"> & Partial<Pick<LeadTurnDeps, "db">>, payload: LeadTurnRequest, ownBrand: boolean): Promise<PhoneAccount | null> {
   if (!ownBrand) return null;
   if (payload.recipient.phone) {
     const byPhone = await deps.resolvePhone(payload.recipient.phone);
     if (byPhone) return byPhone;
   }
-  if (payload.recipient.email) return deps.resolveEmail(payload.recipient.email);
+  if (payload.recipient.email) {
+    const byEmail = await deps.resolveEmail(payload.recipient.email);
+    if (byEmail) return byEmail;
+  }
+  if (payload.recipient.phone && deps.db) {
+    const [bound] = await deps.db
+      .select({ orgId: sessions.orgId, userId: sessions.userId })
+      .from(sessions)
+      .where(and(eq(sessions.channelPhone, payload.recipient.phone), eq(sessions.guest, false), eq(sessions.configKey, COPILOT_CONFIG_KEY)))
+      .orderBy(desc(sessions.updatedAt))
+      .limit(1);
+    if (bound?.userId) return { orgId: bound.orgId, userId: bound.userId };
+  }
   return null;
 }
 
@@ -296,6 +319,8 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
     console.error(`[chat-service] lead turn "${row.idempotencyKey}" org="${row.orgId}" failed: ${error}`);
     return { status, body: error === "out_of_credits" ? { error: "out_of_credits", detail: "The org that runs this turn has no credit left." } : { error } };
   };
+  // The turn's tools state a new handle as the caller (the writing brand), whatever org the turn runs in.
+  registerLeadTurnCaller(rowId, { orgId: caller.orgId, userId: caller.userId, runId: caller.runId });
   try {
     const account = await resolveLeadAccount(deps, payload, ownBrand);
     // In the caller's org the turn is the caller's work (child of its run); in
@@ -346,6 +371,8 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
     return { status: 200, body: leadTurnBody(done!, false) };
   } catch (err) {
     return fail(502, err instanceof Error ? err.message : String(err));
+  } finally {
+    forgetLeadTurnCaller(rowId);
   }
 }
 

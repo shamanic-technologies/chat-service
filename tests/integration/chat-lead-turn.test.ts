@@ -232,7 +232,7 @@ describe("POST /internal/copilot/lead-turns: the Copilot writes the Lead event a
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ json: ANSWER, account: null, signedIn: false, duplicate: false });
     expect(gemini.bodies).toHaveLength(2);
-    expect(declaredNames(gemini.bodies[0])).toEqual(["answer_person"]);
+    expect(declaredNames(gemini.bodies[0])).toEqual(["reach_person_elsewhere", "answer_person"]);
     const system = JSON.stringify(gemini.bodies[0].systemInstruction);
     expect(system).toContain("THE GAME: answer what they said");
     expect(system).toContain("is there a free trial?");
@@ -263,7 +263,7 @@ describe("POST /internal/copilot/lead-turns: the Copilot writes the Lead event a
     const res = await request(app).post("/internal/copilot/lead-turns").set(HEADERS).send(BODY);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ json: ANSWER, account: { orgId: ORG, userId: USER } });
-    expect(declaredNames(gemini.bodies[0])).toEqual(["list_workflows", "launch_campaign", "propose_switch_on", "confirm_switch_on", "create_followup", "answer_person"]);
+    expect(declaredNames(gemini.bodies[0])).toEqual(["list_workflows", "launch_campaign", "propose_switch_on", "confirm_switch_on", "create_followup", "reach_person_elsewhere", "answer_person"]);
   }, 30_000);
 
   it("a turn that never answers fails loud (502), the key can run again", async () => {
