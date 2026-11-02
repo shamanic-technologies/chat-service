@@ -1,161 +1,224 @@
 {
-  "note": "The eval runs the current Sophie code was merged on (SOPHIE-REFONTE-1102 P2+P3: skills by client job + the gateway's API catalogue). Gate: pooled pass rate over >=120 replays a side >= the baseline's. Replace with fresh runs on any change to Sophie's prompt, tools, model or briefs (sophieCodeHash).",
-  "model": "deepseek/deepseek-flash",
+  "note": "The eval runs the current Sophie code was merged on (SOPHIE-REFONTE-1102). Gate: pooled pass rate over >=3 replies per scenario (100+) a side >= the baseline's, same day, same judge. Replace with fresh runs on any change to Sophie's prompt, tools, model, reasoning or briefs (sophieCodeHash).",
+  "model": "deepseek/deepseek-flash (reasoning off)",
   "judge": "jev/jev-latest",
-  "codeHash": "2b79ca17f4bb7ca4",
+  "codeHash": "797f405c8d1acc12",
   "runs": [
     {
-      "at": "2026-11-02T08:07:41.403Z",
-      "scenariosPassed": 9
-    },
-    {
-      "at": "2026-11-02T08:12:30.803Z",
+      "at": "2026-11-02T09:11:30.039Z",
+      "runsPerScenario": 4,
       "scenariosPassed": 7
     }
   ],
   "pooled": {
-    "replays": 120,
-    "passRate": 0.3833,
+    "replays": 112,
+    "passRate": 0.4018,
     "criterionRate": {
-      "true": 0.6917,
-      "respectful": 0.9083,
-      "proactive": 0.8667,
-      "answers": 0.8583,
-      "nextAction": 0.8583,
-      "form": 0.9583
+      "true": 0.6875,
+      "respectful": 0.9196,
+      "proactive": 0.8661,
+      "answers": 0.9107,
+      "nextAction": 0.9464,
+      "form": 0.9821
     },
-    "medianCostPerReplyUsd": 0.00504,
-    "medianLlmCalls": 4.0,
-    "medianLatencyMs": 13240.5
+    "failedReplies": 0,
+    "medianCostPerReplyUsd": 0.00329,
+    "medianLlmCalls": 3.0,
+    "medianLatencyMs": 12902.0
   },
   "baseline": {
-    "definition": "sophie-code P1 (role + situation brief, the 97 dashboard tools, the old skill tree), live 2026-11-02",
+    "definition": "sophie-code with DeepSeek reasoning on (live before this change)",
     "runs": [
       {
-        "at": "2026-11-02T06:12:15.282Z",
-        "scenariosPassed": 7
-      },
-      {
-        "at": "2026-11-02T08:07:07.312Z",
-        "scenariosPassed": 8
+        "at": "2026-11-02T09:11:36.469Z",
+        "runsPerScenario": 4
       }
     ],
     "pooled": {
-      "replays": 120,
-      "passRate": 0.3667,
+      "replays": 112,
+      "passRate": 0.3393,
       "criterionRate": {
-        "true": 0.6583,
-        "respectful": 0.825,
-        "proactive": 0.9083,
-        "answers": 0.9167,
-        "nextAction": 0.8,
-        "form": 0.9917
+        "true": 0.5893,
+        "respectful": 0.9196,
+        "proactive": 0.8036,
+        "answers": 0.9375,
+        "nextAction": 0.9196,
+        "form": 0.9732
       },
-      "medianCostPerReplyUsd": 0.00396,
+      "failedReplies": 0,
+      "medianCostPerReplyUsd": 0.00388,
       "medianLlmCalls": 3.0,
-      "medianLatencyMs": 12871.0
+      "medianLatencyMs": 13143.5
     }
   },
   "scenarios": [
     {
       "id": "aba-diagnose-results",
-      "baseline": "FTTFFT",
-      "sophie": "TTFFFF"
+      "surface": "whatsapp",
+      "baseline": "TFFT",
+      "sophie": "FFFT"
     },
     {
       "id": "clinic-cancel-trial",
-      "baseline": "FFFFFF",
-      "sophie": "FFFFFF"
+      "surface": "web",
+      "baseline": "FFFF",
+      "sophie": "TFFF"
     },
     {
       "id": "clinic-find-me-clients",
-      "baseline": "FFFTTF",
-      "sophie": "FFFFFF"
+      "surface": "web",
+      "baseline": "FFFF",
+      "sophie": "FFFF"
     },
     {
       "id": "jarygo-cost-at-7am",
-      "baseline": "TFTTFT",
-      "sophie": "FFTTFT"
+      "surface": "web",
+      "baseline": "TTTT",
+      "sophie": "TTTF"
     },
     {
       "id": "jarygo-when-booked-leads",
-      "baseline": "FFFFTF",
-      "sophie": "FFFTFF"
+      "surface": "web",
+      "baseline": "FFFF",
+      "sophie": "TFFF"
     },
     {
       "id": "jcurve-new-chat-empty-profile",
-      "baseline": "TFFFFF",
-      "sophie": "FFFFFF"
+      "surface": "web",
+      "baseline": "FFFT",
+      "sophie": "FFFF"
+    },
+    {
+      "id": "lead-autoreply-then-visit",
+      "surface": "lead",
+      "baseline": "TFFF",
+      "sophie": "TTTT"
+    },
+    {
+      "id": "lead-cold-newsletter-click",
+      "surface": "lead",
+      "baseline": "FFFF",
+      "sophie": "FFFF"
+    },
+    {
+      "id": "lead-newsletter-reader-old-autoreply",
+      "surface": "lead",
+      "baseline": "FFFF",
+      "sophie": "FFFF"
+    },
+    {
+      "id": "lead-reply-partnership-ask",
+      "surface": "lead",
+      "baseline": "TTFF",
+      "sophie": "FTTF"
+    },
+    {
+      "id": "lead-signup-card-declined",
+      "surface": "lead",
+      "baseline": "TTFT",
+      "sophie": "TTTT"
+    },
+    {
+      "id": "lead-student-first-client",
+      "surface": "lead",
+      "baseline": "TFTF",
+      "sophie": "FFFT"
+    },
+    {
+      "id": "lead-whatsapp-signed-up-live",
+      "surface": "lead",
+      "baseline": "FTFF",
+      "sophie": "FFFT"
+    },
+    {
+      "id": "lead-whatsapp-unanswered-asks",
+      "surface": "lead",
+      "baseline": "TFFF",
+      "sophie": "FFFT"
     },
     {
       "id": "martian-angry-no-list",
-      "baseline": "FFFFFT",
-      "sophie": "FTFFFT"
+      "surface": "web",
+      "baseline": "FFTT",
+      "sophie": "FTFT"
     },
     {
       "id": "martian-close-account",
-      "baseline": "TTFFFT",
-      "sophie": "FFTFTT"
+      "surface": "web",
+      "baseline": "TTTF",
+      "sophie": "TFTT"
     },
     {
       "id": "martian-cost-per-email",
-      "baseline": "FFFFFF",
-      "sophie": "TTFFFT"
+      "surface": "web",
+      "baseline": "FFFF",
+      "sophie": "FFTF"
     },
     {
       "id": "martian-exclude-leads",
-      "baseline": "TFTTTT",
-      "sophie": "TTTFTT"
+      "surface": "web",
+      "baseline": "TTTT",
+      "sophie": "TTTT"
     },
     {
       "id": "martian-force-send",
-      "baseline": "FFFFFT",
-      "sophie": "TTTFTT"
+      "surface": "web",
+      "baseline": "FFFF",
+      "sophie": "FTTT"
     },
     {
       "id": "martian-give-me-the-list",
-      "baseline": "FFTFTF",
-      "sophie": "FTFFFF"
+      "surface": "web",
+      "baseline": "FFTT",
+      "sophie": "FTTT"
     },
     {
       "id": "martian-how-many-left",
-      "baseline": "TTFTFT",
-      "sophie": "TFTTFF"
+      "surface": "web",
+      "baseline": "TFTF",
+      "sophie": "TFTF"
     },
     {
       "id": "martian-refund",
-      "baseline": "FFFFFF",
-      "sophie": "FTFFFF"
+      "surface": "web",
+      "baseline": "FFFF",
+      "sophie": "TFFF"
     },
     {
       "id": "martian-scam",
-      "baseline": "TFTTFF",
-      "sophie": "FTTFFF"
+      "surface": "web",
+      "baseline": "TTTT",
+      "sophie": "FTFF"
     },
     {
       "id": "martian-which-ai",
-      "baseline": "FFFTFT",
-      "sophie": "TTFTTT"
+      "surface": "web",
+      "baseline": "FTFT",
+      "sophie": "FFTT"
     },
     {
       "id": "martian-why-3-dollars",
-      "baseline": "FFFFFF",
-      "sophie": "TFTFTF"
+      "surface": "web",
+      "baseline": "FFFF",
+      "sophie": "FFFF"
     },
     {
       "id": "martian-zero-balance",
-      "baseline": "FFFTTT",
-      "sophie": "FTTFTT"
+      "surface": "web",
+      "baseline": "FFFF",
+      "sophie": "FFFF"
     },
     {
       "id": "novemiq-explain-campaigns",
-      "baseline": "TTTFTT",
-      "sophie": "FFFFTF"
+      "surface": "web",
+      "baseline": "TTFF",
+      "sophie": "TFTF"
     },
     {
       "id": "prospect-free-trial-pricing",
-      "baseline": "TFFTTT",
-      "sophie": "FFFFTT"
+      "surface": "whatsapp",
+      "baseline": "FFFF",
+      "sophie": "FTFT"
     }
   ]
 }
