@@ -1,0 +1,4421 @@
+{
+ "kind": "replay",
+ "at": "2026-11-02T09:11:30.039Z",
+ "definition": "sophie-code",
+ "codeHash": "2b79ca17f4bb7ca4",
+ "definitionHash": "2adf28be2bc02fc9",
+ "model": "deepseek/deepseek-flash (reasoning off)",
+ "judge": "jev/jev-latest",
+ "runsPerScenario": 4,
+ "summary": {
+  "scenarios": 28,
+  "scenariosPassed": 7,
+  "replays": 112,
+  "criterionRate": {
+   "true": 0.6875,
+   "respectful": 0.9196428571428571,
+   "proactive": 0.8660714285714286,
+   "answers": 0.9107142857142857,
+   "nextAction": 0.9464285714285714,
+   "form": 0.9821428571428571
+  },
+  "medianCostPerReplyUsd": 0.00329,
+  "medianLlmCalls": 3,
+  "medianInputTokens": 73867,
+  "medianLatencyMs": 12902,
+  "passed": false
+ },
+ "scenarios": [
+  {
+   "id": "aba-diagnose-results",
+   "surface": "whatsapp",
+   "replays": [
+    {
+     "reply": "Here's the honest read, three days in.\n\n*What's working:* 124 emails delivered, 0 bounced, 100% delivered. About $21 charged so far against the $80 monthly cap, so nothing is running away. Your ABA list (1590 people) is live and feeding the campaign, with 180 leads queued, 57 of them waiting their first email, and the next batch going out today.\n\n*What's not there yet:* zero replies. That is early, not broken. The first 94 emails left before the ABA list existed, so they went to service firms and ecommerce, not ABA agency owners. And across every campaign we run, the first positive reply usually lands about 5 days after the first email, so your window for the ABA batch opens around Sunday.\n\n*Verdict:* no fault to fix, one lever left, the message itself. A 0% reply rate at day 3 is normal; a generic first line is not. Shall I pull the exact email your ABA prospects are getting and tighten its opening around the RosterABA build in 30 days?",
+     "tools": [
+      "list_offers",
+      "list_campaigns",
+      "get_offer_performance",
+      "get_billing_account",
+      "get_campaign_next_steps",
+      "get_offer_sourcing",
+      "find_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/email-sequences"
+     ],
+     "llmCalls": 5,
+     "tokensInput": 234032,
+     "tokensOutput": 3358,
+     "replyCostUsd": 0.007888944,
+     "judgeCostUsd": 0.000438942,
+     "latencyMs": 27649,
+     "verdict": {
+      "probabilities": {
+       "true": 0.39,
+       "respectful": 0.94,
+       "proactive": 0.77,
+       "answers": 0.89,
+       "nextAction": 0.9,
+       "form": 0.63
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Here's where your main campaign stands: $30.91 spent this month of its $80 cap, 180 people queued, and 417 emails lined up. The next batch goes out today from 7pm in your leads' local time: 57 people are waiting on their first email and 123 have follow-ups queued.\n\nNo positive reply yet, which is normal at this age. Across campaigns like yours the first positive reply usually lands about 5 days after the first email, and yours has been sending since the end of last week. Your ABA agency list went live today, so the new emails go to the owners and operators you wanted first.\n\nOne thing I could not read just now is the exact sent and reply count per email. I will pull those and tell you the number.\n\nYour strongest card with ABA owners is the RosterABA build, delivered in 30 days at a fixed price. Want me to put that in the opening line of the first email, so it is the first thing an agency owner reads?",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands",
+      "run_operation GET /v1/offers/{offerId}/outcomes",
+      "run_operation GET /v1/email-sequences",
+      "run_operation GET /v1/campaigns/{id}/stats",
+      "run_operation GET /v1/orgs/people",
+      "run_operation GET /v1/offers/{offerId}/pipeline-activity",
+      "run_operation GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{salesFunnelCampaignId}/spend-charts",
+      "run_operation GET /v1/brands/{brandId}/sales-funnel-caps"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 507397,
+     "tokensOutput": 3971,
+     "replyCostUsd": 0.010433770799999999,
+     "judgeCostUsd": 0.00041474999999999997,
+     "latencyMs": 33741,
+     "verdict": {
+      "probabilities": {
+       "true": 0.33,
+       "respectful": 0.76,
+       "proactive": 0.69,
+       "answers": 0.78,
+       "nextAction": 0.86,
+       "form": 0.66
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Here's where it stands, day 3 of sending.\n\n*124 emails delivered, none bounced, no replies yet.* Across our campaigns the first positive reply usually lands around day 5, so the first real signal should come around Nov 1-2. Delivery is clean, so there's nothing to fix.\n\n*$31 spent this month against your $80 cap*, with about a cent per prospect found. Pipe is full: 180 people queued to be found and 57 waiting for their first email.\n\nOne finding: *your ABA list hasn't sent anything yet.* All 124 emails so far went to the two broader lists you had before. The list you care most about starts today, so the reply read that matters comes from tomorrow's sends, not today's.\n\nWant me to show you the first email going out to those ABA agency owners, before it reaches the 57 waiting?",
+     "tools": [
+      "list_campaigns",
+      "get_offer_performance",
+      "get_campaign_next_steps",
+      "get_offer_sourcing",
+      "list_audiences",
+      "find_operation",
+      "describe_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 5,
+     "tokensInput": 233883,
+     "tokensOutput": 2745,
+     "replyCostUsd": 0.007181495760000001,
+     "judgeCostUsd": 0.00044583,
+     "latencyMs": 21864,
+     "verdict": {
+      "probabilities": {
+       "true": 0.43,
+       "respectful": 0.95,
+       "proactive": 0.85,
+       "answers": 0.92,
+       "nextAction": 0.83,
+       "form": 0.73
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Here it is, straight: 124 emails out, every one delivered, no bounces, no replies yet. You're on day 3, and first replies usually land around day 5, so this is the quiet stretch, not a warning.\n\nThe numbers: about $21 charged so far, roughly 17 cents an email, and $281 of pipeline estimated from the 124 people reached. What matters more: none of those 124 went to your ABA list. It went live today, so those emails went to the earlier broad lists. Your ABA emails start now, with 57 people waiting for their first one.\n\nThe machine is healthy: 262 leads found, 180 queued, 417 emails scheduled, and 123 follow-ups ready. Follow-ups are where most replies come from in cold email, so the next real signal is a reply off a follow-up, usually over the coming week.\n\n417 emails are about to go out, so one quick check is worth it: want me to send you the exact email as a prospect reads it, so you can see the wording before it scales? Yes or no.",
+     "tools": [
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 4,
+     "tokensInput": 173124,
+     "tokensOutput": 2256,
+     "replyCostUsd": 0.005667268800000001,
+     "judgeCostUsd": 0.00036582000000000004,
+     "latencyMs": 18633,
+     "verdict": {
+      "probabilities": {
+       "true": 0.5,
+       "respectful": 0.95,
+       "proactive": 0.76,
+       "answers": 0.92,
+       "nextAction": 0.94,
+       "form": 0.77
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "clinic-cancel-trial",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "Done: both campaigns are stopped, so no more emails go out and nothing more is spent.\n\nYour test used $18.92, and $13.93 of that is still owed. No card is on file, so no card was charged.\n\nI've asked our team to close the trial for you; they'll confirm by email. If you want to see who the test reached before it closes, tell me and I'll pull the list.",
+     "tools": [
+      "read_skill",
+      "read_skill",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "describe_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "contact_human"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 10,
+     "tokensInput": 368355,
+     "tokensOutput": 2219,
+     "replyCostUsd": 0.0075097735200000005,
+     "judgeCostUsd": 0.000380184,
+     "latencyMs": 23111,
+     "verdict": {
+      "probabilities": {
+       "true": 0.59,
+       "respectful": 0.92,
+       "proactive": 0.86,
+       "answers": 0.81,
+       "nextAction": 0.76,
+       "form": 0.87
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Your outreach is stopped, so nothing more goes out from your account. This week used $18.92, and $13.93 of that is still owed with no card on file.\n\nClosing the account itself is the one piece still open: that final step goes through our team, and they'll confirm it to you by email. I'll report it back to you here once it's done.\n\nIf you'd rather leave things dormant than closed, everything is off and it restarts with one word.",
+     "tools": [
+      "read_skill",
+      "read_our_website",
+      "find_operation",
+      "read_our_website",
+      "find_operation",
+      "find_operation",
+      "describe_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation DELETE /v1/sales-funnel-campaigns/{id}",
+      "run_operation GET /v1/features/brands/{brandId}/sales-funnel-campaigns"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 437297,
+     "tokensOutput": 3611,
+     "replyCostUsd": 0.010979764080000001,
+     "judgeCostUsd": 0.000592956,
+     "latencyMs": 32887,
+     "verdict": {
+      "probabilities": {
+       "true": 0.38,
+       "respectful": 0.89,
+       "proactive": 0.73,
+       "answers": 0.62,
+       "nextAction": 0.54,
+       "form": 0.84
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Understood, and thanks for telling me you tested it.\n\nI've stopped sending on your account so nothing more goes out or spends while this is handled: your campaigns are off, and the last money that went out was $18.92 this week on your main campaign. Closing the free trial itself isn't something I can do from here, so I've passed it to our team, and they'll confirm the cancellation and the balance to you by email.\n\nOne thing I could not confirm on the page: the exact closing status of the second campaign (the one that books meetings after a positive reply). The team will see it and settle it along with your cancellation.",
+     "tools": [
+      "read_our_website",
+      "contact_human",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "describe_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/campaigns",
+      "run_operation GET /v1/sales-funnel-campaigns/{id}",
+      "run_operation POST /v1/campaigns/{id}/stop"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 429806,
+     "tokensOutput": 4232,
+     "replyCostUsd": 0.01086346512,
+     "judgeCostUsd": 0.00047665800000000003,
+     "latencyMs": 34730,
+     "verdict": {
+      "probabilities": {
+       "true": 0.5,
+       "respectful": 0.55,
+       "proactive": 0.72,
+       "answers": 0.49,
+       "nextAction": 0.76,
+       "form": 0.8
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": false,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Done on my side: your trial cancellation is with our team now, and they'll confirm the closure in writing by email, including that sending has stopped.\n\nTwo things are still open, and only the team can close them: the account closure itself, and the $18.93 of work used this week. $13.93 of it is still owed, and no card is on file, so nothing has been charged to you. They'll settle that with you in the same email.\n\nNothing you need to do now: when their email arrives, reply to it with anything you want done about that amount.",
+     "tools": [
+      "read_skill",
+      "read_our_website",
+      "find_operation",
+      "contact_human",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "list_campaigns",
+      "find_operation",
+      "describe_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "list_campaigns",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/campaigns",
+      "run_operation GET /v1/sales-funnel-campaigns/{id}"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 435732,
+     "tokensOutput": 4235,
+     "replyCostUsd": 0.01147527168,
+     "judgeCostUsd": 0.000536256,
+     "latencyMs": 37696,
+     "verdict": {
+      "probabilities": {
+       "true": 0.12,
+       "respectful": 0.86,
+       "proactive": 0.7,
+       "answers": 0.84,
+       "nextAction": 0.85,
+       "form": 0.72
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "clinic-find-me-clients",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "Your campaign was waiting on your own contact list, which is empty, so nobody has been found yet. I've built a second campaign that goes and finds new people: 3,628 founders and owners of e-commerce, clinic and travel businesses in the EU and US, emails them, and hands anyone who is interested to your team. It's ready to run at $20 a week, the same cap as your other one.\n1. Yes, start it at $20 a week\n2. Start it at $10 a week instead\n3. Find a different kind of business",
+     "tools": [
+      "read_skill",
+      "read_skill",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "read_skill",
+      "describe_operation",
+      "find_operation",
+      "describe_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "request_staff",
+      "open_page"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands/{id}/offers",
+      "run_operation GET /v1/brands",
+      "run_operation GET /v1/brands/{id}",
+      "run_operation GET /v1/brands/{id}/offers/{offerId}",
+      "run_operation GET /v1/brands/{id}/offers/{offerId}/user-fields",
+      "run_operation GET /v1/orgs/audiences/{id}",
+      "run_operation GET /v1/orgs/audiences/{id}/preview",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/companies",
+      "request_staff"
+     ],
+     "llmCalls": 10,
+     "tokensInput": 326164,
+     "tokensOutput": 6123,
+     "replyCostUsd": 0.01473566208,
+     "judgeCostUsd": 0.00076062,
+     "latencyMs": 42760,
+     "verdict": {
+      "probabilities": {
+       "true": 0.11,
+       "respectful": 0.89,
+       "proactive": 0.55,
+       "answers": 0.72,
+       "nextAction": 0.42,
+       "form": 0.82
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": false,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "You already have 3,628 founders and owners of e-commerce, clinic and travel businesses in the EU and US in your audience. Your campaigns are on, but they only write to your own contact list, which is empty, so nobody has been found yet. I'll add a campaign that goes out and finds those 3,628 people and emails them, capped at $20 a week.\n\nThe one thing missing is your go-ahead on that $20 a week. Shall I set it up?",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "read_skill",
+      "read_skill",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "describe_operation",
+      "find_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands",
+      "run_operation GET /v1/features/brands/{brandId}/offers",
+      "run_operation GET /v1/brands/{id}/offers",
+      "run_operation GET /v1/brands/{id}",
+      "run_operation GET /v1/public/sourcing-origins",
+      "run_operation GET /v1/brands/{id}/offers/{offerId}",
+      "run_operation GET /v1/orgs/audiences/{id}/preview",
+      "run_operation GET /v1/orgs/lead-sourcing/sources"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 305552,
+     "tokensOutput": 4640,
+     "replyCostUsd": 0.01160002944,
+     "judgeCostUsd": 0.000583002,
+     "latencyMs": 37005,
+     "verdict": {
+      "probabilities": {
+       "true": 0.45,
+       "respectful": 0.92,
+       "proactive": 0.72,
+       "answers": 0.8,
+       "nextAction": 0.96,
+       "form": 0.88
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Your two campaigns run, but both work from your own contact list, and nothing has come out of it yet: $0 spent, no emails sent, no replies. So let me do the finding instead.\n\nI'll put a campaign in place that goes out and finds new people who match your EU Clinics audience, 3,628 founders and owners of clinics, e-commerce and travel businesses in the EU and US, and writes to them for you. That setup is estimated at $1,301.45 per paying client, with a 2.31x return.\n\nOne thing is still missing before it can send: your yes and a weekly cap. Shall I set it up at $20 a week, or tell me the figure you prefer?",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "read_skill",
+      "run_operation",
+      "find_operation",
+      "read_skill",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands/{id}/offers",
+      "run_operation GET /v1/brands",
+      "run_operation GET /v1/brands/{id}",
+      "run_operation GET /v1/features/brands/{brandId}/offers"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 303091,
+     "tokensOutput": 4307,
+     "replyCostUsd": 0.0105135252,
+     "judgeCostUsd": 0.000463554,
+     "latencyMs": 35425,
+     "verdict": {
+      "probabilities": {
+       "true": 0.45,
+       "respectful": 0.91,
+       "proactive": 0.71,
+       "answers": 0.66,
+       "nextAction": 0.89,
+       "form": 0.83
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Your campaigns are on, but they only write to contacts you uploaded, and that list is empty, so nobody gets found. You already have 3,628 founders and owners of clinic, e-commerce and travel businesses in the EU and US sitting in your EU Clinics list, ready to be written to. I'll point your campaign at those companies instead, at $20 a week, and the first emails leave in each person's own business hours. Say yes and I'll switch it on.\n\nOne thing still missing: I couldn't pull your website this pass, so send me the link and I'll make sure the first email says what you sell, to the right person.",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "read_skill",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands",
+      "run_operation GET /v1/brands/{id}",
+      "run_operation GET /v1/brands/{id}/offers",
+      "run_operation GET /v1/features/brands/{brandId}/offers",
+      "run_operation GET /v1/brands/{id}/offers/{offerId}",
+      "run_operation GET /v1/orgs/audiences/{id}",
+      "run_operation GET /v1/emails",
+      "run_operation GET /v1/sales-funnel-campaigns/{id}"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 283071,
+     "tokensOutput": 3030,
+     "replyCostUsd": 0.00726972168,
+     "judgeCostUsd": 0.000280518,
+     "latencyMs": 28802,
+     "verdict": {
+      "probabilities": {
+       "true": 0.43,
+       "respectful": 0.86,
+       "proactive": 0.52,
+       "answers": 0.75,
+       "nextAction": 0.67,
+       "form": 0.82
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "jarygo-cost-at-7am",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "Nothing, there's no upfront payment to start. Your campaign is already live and emails simply go out from 7am in each prospect's local time; you pay afterwards for what it actually used. So far that's $1.03, charged to the card ending 2096 within your $50 credit line, and today can't go past the $20 daily cap.\n\nSo the 7am start costs you $0 to switch on. If you want more prospects reached per day, I can raise the cap from $20 to $40, just say yes and I'll do it.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 29892,
+     "tokensOutput": 591,
+     "replyCostUsd": 0.00100294656,
+     "judgeCostUsd": 0.00012196800000000001,
+     "latencyMs": 5179,
+     "verdict": {
+      "probabilities": {
+       "true": 0.67,
+       "respectful": 0.92,
+       "proactive": 0.86,
+       "answers": 0.96,
+       "nextAction": 0.87,
+       "form": 0.86
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Nothing. There's no fee to start: you pay for the work as it happens, after it happens, and your card ending 2096 is charged for what's used. Your campaign is already live, so at 7am nothing is charged up front; the most a day can reach is its $20 cap, and a full day of finding and checking prospects has so far cost under a dollar.\n\nThe $100 of free credit then lands once $100 has been paid, on top of what you pay.\n\nNext: I'll tell you the exact figure and how many emails went out once the first sends leave. Want me to check the queue now and confirm when the first batch goes?",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 29892,
+     "tokensOutput": 1160,
+     "replyCostUsd": 0.00172671456,
+     "judgeCostUsd": 0.00012285,
+     "latencyMs": 8467,
+     "verdict": {
+      "probabilities": {
+       "true": 0.74,
+       "respectful": 0.93,
+       "proactive": 0.74,
+       "answers": 0.96,
+       "nextAction": 0.87,
+       "form": 0.88
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Nothing. There is no launch fee and nothing is charged at 7am, you're on postpaid, so you pay for what actually gets used, after the fact. So far that's about $1.\n\nPer prospect it's small: finding and verifying someone's email costs about 6 cents, and each email we send costs about 3 cents. Your main campaign is capped at $20 a day, so that is the most a day can ever cost you, whatever the volume. Find one client at $7,000 and the whole thing pays for itself many times over.\n\nNothing needs doing before 7am. Want me to show you the exact first email going out, so you can approve the wording before it sends?",
+     "tools": [
+      "read_our_website"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 63235,
+     "tokensOutput": 1507,
+     "replyCostUsd": 0.0031975917600000005,
+     "judgeCostUsd": 0.00023864400000000001,
+     "latencyMs": 11775,
+     "verdict": {
+      "probabilities": {
+       "true": 0.64,
+       "respectful": 0.94,
+       "proactive": 0.88,
+       "answers": 0.96,
+       "nextAction": 0.9,
+       "form": 0.87
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Nothing. You pay nothing at 7am, and nothing to start: your campaigns are already on and the account runs postpaid, so emails simply go out and the small per-prospect cost is added as they do. You've used $1.03 so far, and your $50 credit line covers it, so no charge hits your card now.\n\nThe $20 a day is a ceiling, not a bill: it's the most the campaign may spend in a day, not a sum taken up front.\n\nRight now that ceiling is the thing limiting how many roofing and home-service owners hear from you each morning. Shall I lift it to $40 a day, so twice as many get your first email and your first booked call comes sooner?",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 29892,
+     "tokensOutput": 927,
+     "replyCostUsd": 0.0014303385600000001,
+     "judgeCostUsd": 0.000123186,
+     "latencyMs": 7892,
+     "verdict": {
+      "probabilities": {
+       "true": 0.49,
+       "respectful": 0.92,
+       "proactive": 0.8,
+       "answers": 0.96,
+       "nextAction": 0.91,
+       "form": 0.85
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "jarygo-when-booked-leads",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "Nothing is waiting on you right now: your campaign is finding and verifying the first roofing and home-service owners, and no email has left yet. The first emails go out in each prospect's own 7am to 7pm window, Monday to Saturday, and across campaigns like this the first positive reply typically lands about five days after the first email. Your second campaign answers a positive reply by itself within a minute and books the call, so your first booked meeting should follow close behind.\n\nOn money: your campaigns run on the $50 credit line, $0.84 used today, so nothing needs paying before the first lead arrives. I've opened the people page beside the chat, where everyone we reach and everyone who replies shows up as it happens, and I'll tell you the day the first emails leave.",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "describe_operation",
+      "run_operation",
+      "open_page"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 6,
+     "tokensInput": 177626,
+     "tokensOutput": 2389,
+     "replyCostUsd": 0.0052735848,
+     "judgeCostUsd": 0.000253806,
+     "latencyMs": 22548,
+     "verdict": {
+      "probabilities": {
+       "true": 0.55,
+       "respectful": 0.95,
+       "proactive": 0.89,
+       "answers": 0.68,
+       "nextAction": 0.75,
+       "form": 0.87
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Here's everyone we've reached so far, and it fills up as the first emails leave. Nothing is waiting on you, and you only pay for what we actually use as it goes, so the first meeting costs you nothing until a booking happens.\n\nKeep it at up to $20 a day until the first replies come in, or shall I raise it so more owners hear from Ara sooner?",
+     "tools": [
+      "run_operation",
+      "open_page"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 4,
+     "tokensInput": 112773,
+     "tokensOutput": 2638,
+     "replyCostUsd": 0.0045131196000000005,
+     "judgeCostUsd": 0.00015435,
+     "latencyMs": 20744,
+     "verdict": {
+      "probabilities": {
+       "true": 0.28,
+       "respectful": 0.91,
+       "proactive": 0.65,
+       "answers": 0.12,
+       "nextAction": 0.85,
+       "form": 0.74
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": false,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "A paying client is worth $7,000 to you, so the fastest path is a booked meeting, and that part is already wired: your booking link is saved and your second campaign books a meeting the moment someone replies positively.\n\nWhere it stands today: no one has been emailed yet. Sourcing is finding owners right now ($0.84 spent today) and the first emails go out as soon as verified addresses land in the queue, in each owner's business hours. On campaigns like yours, the first positive reply typically comes about 5 days after the first email, so a booked meeting is realistic in the second week rather than this one.\n\nThe one lever that brings that earlier is reach: at $20 a day the flow of new owners is a trickle. Want me to raise it to $50 a day so several times more owners get emailed each day?",
+     "tools": [
+      "run_operation"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 82274,
+     "tokensOutput": 1812,
+     "replyCostUsd": 0.00317778672,
+     "judgeCostUsd": 0.000155778,
+     "latencyMs": 15722,
+     "verdict": {
+      "probabilities": {
+       "true": 0.64,
+       "respectful": 0.94,
+       "proactive": 0.85,
+       "answers": 0.43,
+       "nextAction": 0.91,
+       "form": 0.86
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": false,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Your first emails haven't gone out yet: the campaign is still finding owners and verifying their addresses, so nothing is queued today. Once emails start, a first positive reply typically lands about 5 days after the first email, and your reply campaign books the meeting within a minute of that reply. Realistically, your first booked lead comes in around a week, and you pay us only for what we actually do along the way, so nothing is due from you until then.\n\nThe lever that makes it sooner is volume: the more owners we reach each day, the sooner the first one books. Shall I raise your daily cap from $20 to $50 so we reach far more prospects a day?",
+     "tools": [
+      "run_operation"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 82848,
+     "tokensOutput": 1924,
+     "replyCostUsd": 0.00338311296,
+     "judgeCostUsd": 0.000154224,
+     "latencyMs": 15025,
+     "verdict": {
+      "probabilities": {
+       "true": 0.22,
+       "respectful": 0.93,
+       "proactive": 0.77,
+       "answers": 0.83,
+       "nextAction": 0.93,
+       "form": 0.87
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "jcurve-new-chat-empty-profile",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "You sell Jcurve ERP (jcurvesolutions.com), and nothing is reaching buyers yet: no campaign is running and your $4.89 of free credit is untouched. One thing is missing before I can put your first campaign together: your offer has no description, and your site did not come through on my side this time. So in one line, who buys Jcurve ERP, and what do they get from it?",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "describe_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands/{id}",
+      "run_operation GET /v1/brands/by-ids",
+      "run_operation POST /v1/brands/{id}/icp/suggest",
+      "run_operation GET /v1/brands/{id}/business-context",
+      "run_operation POST /v1/brands/{id}/offers/proposals"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 132436,
+     "tokensOutput": 2812,
+     "replyCostUsd": 0.00588137184,
+     "judgeCostUsd": 0.000249018,
+     "latencyMs": 27095,
+     "verdict": {
+      "probabilities": {
+       "true": 0.73,
+       "respectful": 0.68,
+       "proactive": 0.19,
+       "answers": 0.51,
+       "nextAction": 0.74,
+       "form": 0.73
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Your account is Jcurve, jcurvesolutions.com, with Jcurve ERP as what we put in front of buyers. Nothing is reaching those buyers yet: no campaign is running.\n\nThe account is still at the starting line. $4.89 of free credit, $0.11 used, no card on file, no booking link saved, and the offer we'd write from is still an empty \"Default Offer\" (though one paying client is worth $4,000 to you). So nothing buys you revenue today.\n\nWhat's missing is your call-booking link: that's the one thing only you can give me. Send it and I'll write the offer for Jcurve ERP, build the audience of companies that need it, and put your first campaign together with a small cap, for your yes before a single email leaves.",
+     "tools": [
+      "find_operation",
+      "read_skill",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "describe_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "describe_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands/{id}",
+      "run_operation GET /v1/offers/{offerId}/sales-funnels",
+      "run_operation GET /v1/brands/{id}/linkedin-page",
+      "run_operation GET /v1/scraping/scrape/by-url",
+      "run_operation GET /v1/features/brands/{brandId}/sales-funnel-campaigns",
+      "run_operation GET /v1/brands/{id}/business-context"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 160570,
+     "tokensOutput": 4114,
+     "replyCostUsd": 0.008825263199999999,
+     "judgeCostUsd": 0.0004284,
+     "latencyMs": 33879,
+     "verdict": {
+      "probabilities": {
+       "true": 0.76,
+       "respectful": 0.88,
+       "proactive": 0.49,
+       "answers": 0.72,
+       "nextAction": 0.92,
+       "form": 0.75
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Jcurve: Jcurve ERP, software for companies that want one system to run their business, and one paying client is worth about $4,000 to you. Nothing is reaching buyers yet, no campaign is running, your offer is still the blank default, and you have $4.89 of free credit with no card on file.\n\nWhat is missing is the two lines I write the offer from: who Jcurve ERP is for and the problem it fixes for them. Send me those in a sentence and I'll write the offer and build your first campaign reaching those buyers, capped at $5 a day.",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "find_operation",
+      "find_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "describe_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "describe_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands/{id}",
+      "run_operation GET /v1/brands/{id}/business-context",
+      "run_operation GET /v1/scraping/scrape/by-url",
+      "run_operation GET /v1/brands/{id}/linkedin-page",
+      "run_operation POST /v1/scraping/scrape"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 140064,
+     "tokensOutput": 2704,
+     "replyCostUsd": 0.0059358643199999995,
+     "judgeCostUsd": 0.000285306,
+     "latencyMs": 25740,
+     "verdict": {
+      "probabilities": {
+       "true": 0.59,
+       "respectful": 0.88,
+       "proactive": 0.18,
+       "answers": 0.68,
+       "nextAction": 0.87,
+       "form": 0.8
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Here's where Jcurve stands: the account has your brand and your $4,000 value per paying client, but no offer description and no campaign, so nobody is being reached yet. Nothing has been spent beyond a few cents, and $4.89 of free credit is sitting there.\n\nThe one thing to fix first is the offer: one line on what Jcurve ERP does and for which companies, so I can write the email and pick who it goes to. I couldn't read the page from your site this turn (https://www.jcurvesolutions.com/jcurve-erp/ was unreachable), so send me that line in your words and I'll build the offer, the audience and a first campaign capped low, then show you the preview before anything sends.",
+     "tools": [
+      "read_skill",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "describe_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands/{id}/extracted-fields",
+      "run_operation POST /v1/scraping/scrape",
+      "run_operation GET /v1/brands/{id}",
+      "run_operation GET /v1/scraping/scrape/by-url"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 133953,
+     "tokensOutput": 2776,
+     "replyCostUsd": 0.00579941688,
+     "judgeCostUsd": 0.000246372,
+     "latencyMs": 25934,
+     "verdict": {
+      "probabilities": {
+       "true": 0.79,
+       "respectful": 0.73,
+       "proactive": 0.15,
+       "answers": 0.81,
+       "nextAction": 0.89,
+       "form": 0.82
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "lead-autoreply-then-visit",
+   "surface": "lead",
+   "replays": [
+    {
+     "reply": "Nothing sent to them now. Reason: It is 01:05 Sunday in Paris, outside any sensible hour for a business email, so the follow-up waits until Monday morning. Next look: 2026-11-02T08:30:00.000Z.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 5310,
+     "tokensOutput": 797,
+     "replyCostUsd": 0.0011067671999999999,
+     "judgeCostUsd": 0.000121422,
+     "latencyMs": 5159,
+     "verdict": {
+      "probabilities": {
+       "true": 0.78,
+       "respectful": 0.72,
+       "proactive": 0.66,
+       "answers": 0.63,
+       "nextAction": 0.94,
+       "form": 0.87
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Nothing sent to them now. Reason: Their local time is Sunday 1am, outside any sensible hour for a business email, so the note is held for Monday morning in Paris rather than sent now. Next look: 2026-11-02T08:00:00Z.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 5310,
+     "tokensOutput": 1693,
+     "replyCostUsd": 0.0022464792,
+     "judgeCostUsd": 0.00012137999999999999,
+     "latencyMs": 11058,
+     "verdict": {
+      "probabilities": {
+       "true": 0.72,
+       "respectful": 0.76,
+       "proactive": 0.66,
+       "answers": 0.59,
+       "nextAction": 0.94,
+       "form": 0.89
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Nothing sent to them now. Reason: Nothing sent: it is Sunday 01:05 for Claire in Paris, no hour for a work email, so the follow-up waits until Monday 09:00 her time, answering her July away-reply and moving her to the free start (50 free emails, $25 credits at first $25 spend). Next look: 2026-11-02T08:00:00Z.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 5310,
+     "tokensOutput": 1021,
+     "replyCostUsd": 0.0013916952,
+     "judgeCostUsd": 0.000122934,
+     "latencyMs": 6670,
+     "verdict": {
+      "probabilities": {
+       "true": 0.74,
+       "respectful": 0.8,
+       "proactive": 0.64,
+       "answers": 0.52,
+       "nextAction": 0.93,
+       "form": 0.84
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Nothing sent to them now. Reason: Not the moment to send: 01:05 on a Sunday in Paris, outside working hours, so the next step (signing up after her site visit) goes out Monday morning instead. Next look: 2026-11-02T08:00:00.000Z.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 5310,
+     "tokensOutput": 694,
+     "replyCostUsd": 0.0009757512,
+     "judgeCostUsd": 0.000121884,
+     "latencyMs": 4508,
+     "verdict": {
+      "probabilities": {
+       "true": 0.73,
+       "respectful": 0.79,
+       "proactive": 0.68,
+       "answers": 0.74,
+       "nextAction": 0.95,
+       "form": 0.86
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "lead-cold-newsletter-click",
+   "surface": "lead",
+   "replays": [
+    {
+     "reply": "<p>Hi Leo,</p><p>Here is what we do, in one line: we run your sales cold email for you. We write to every buyer individually, answer the interested replies ourselves, and put the meetings in the calendar you already use.</p><p>The platform is free. You decide how much goes to outreach, at our published prices, and the first emails can leave the day you start.</p><p>Reply with your website address and I will pull out your offer and the audiences worth writing to, so all you have to do is confirm what I send back.</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 4897,
+     "tokensOutput": 2256,
+     "replyCostUsd": 0.0029509509599999996,
+     "judgeCostUsd": 0.00010273199999999999,
+     "latencyMs": 13792,
+     "verdict": {
+      "probabilities": {
+       "true": 0.79,
+       "respectful": 0.93,
+       "proactive": 0.29,
+       "answers": 0.81,
+       "nextAction": 0.92,
+       "form": 0.86
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "<p>Hi Leo,</p><p>You have seen what we do: we write and run your sales cold email, answer the interested replies ourselves, and book the meetings straight into your calendar.</p><p>The platform is free, you set the budget, and your first emails can go out the same day. Across our clients a hot lead runs $7, with a median 4.0x return on paid budget.</p><p>Send me your website in a reply and I will send back the campaign I would run for you, ready for your yes.</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 4897,
+     "tokensOutput": 3242,
+     "replyCostUsd": 0.00420514296,
+     "judgeCostUsd": 0.00010248000000000001,
+     "latencyMs": 19769,
+     "verdict": {
+      "probabilities": {
+       "true": 0.62,
+       "respectful": 0.92,
+       "proactive": 0.23,
+       "answers": 0.69,
+       "nextAction": 0.92,
+       "form": 0.76
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "<p>Hi Leo,</p><p>Distribute.you runs sales cold email for you, end to end. We write every prospect an individual email, answer the replies ourselves, and book the meeting in the calendar you already use.</p><p>There is nothing to build: paste your website, confirm what we prefilled, and your first emails leave the same day. A hot lead runs about $7 with us, and the median return on paid budget is 4.0x. The platform itself is free, and you decide how much goes to outreach.</p><p>Send me your website address and I will have the first campaign set up for you today.</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 4897,
+     "tokensOutput": 1916,
+     "replyCostUsd": 0.0025184709599999997,
+     "judgeCostUsd": 0.000103572,
+     "latencyMs": 11818,
+     "verdict": {
+      "probabilities": {
+       "true": 0.56,
+       "respectful": 0.91,
+       "proactive": 0.28,
+       "answers": 0.69,
+       "nextAction": 0.93,
+       "form": 0.66
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "<p>Hi Leo,</p><p>You signed up with us, so here is the shortest route to your first meetings.</p><p>Send me your website. We read it, pull out your offer, propose the audiences by region, company size and role, and your first emails leave the same day. We write each prospect individually and answer the interested replies ourselves until the meeting is in your calendar.</p><p>The platform is free. You only choose how much goes to outreach, and across our clients a hot lead runs $7 with a median 4.0x return on paid budget.</p><p>Reply with your website and I will set it up today.</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 4897,
+     "tokensOutput": 978,
+     "replyCostUsd": 0.00132533496,
+     "judgeCostUsd": 0.000103488,
+     "latencyMs": 6404,
+     "verdict": {
+      "probabilities": {
+       "true": 0.14,
+       "respectful": 0.9,
+       "proactive": 0.31,
+       "answers": 0.6,
+       "nextAction": 0.93,
+       "form": 0.62
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "lead-newsletter-reader-old-autoreply",
+   "surface": "lead",
+   "replays": [
+    {
+     "reply": "<p>Nina, one step and your outreach is running: send me your website link and I will pull your offer and propose the audiences, split by region, company size and role, and confirm it all with you before anything sends.</p><p>The platform is free. You only choose how much goes to the outreach, at our published prices. Across our clients a hot lead runs $7 and the median return on paid budget is 4.0x.</p><p>Send the link and I will have the campaign ready for your yes today.</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 5070,
+     "tokensOutput": 1779,
+     "replyCostUsd": 0.00235933104,
+     "judgeCostUsd": 0.00011163599999999999,
+     "latencyMs": 11793,
+     "verdict": {
+      "probabilities": {
+       "true": 0.74,
+       "respectful": 0.92,
+       "proactive": 0.25,
+       "answers": 0.59,
+       "nextAction": 0.89,
+       "form": 0.77
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "<p>Nina,</p>\n<p>We do one thing: sales cold email, done for you. We write each prospect their own email, answer the interested replies ourselves, and the meeting lands in the calendar you already use.</p>\n<p>Your first emails leave the day you start, and the first revenue signal lands within 24 hours. The platform is free, you only choose how much goes to outreach.</p>\n<p>Reply with your website and I will have your first campaign ready the same day.</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 5070,
+     "tokensOutput": 2368,
+     "replyCostUsd": 0.0031085390400000003,
+     "judgeCostUsd": 0.000111384,
+     "latencyMs": 14707,
+     "verdict": {
+      "probabilities": {
+       "true": 0.64,
+       "respectful": 0.89,
+       "proactive": 0.35,
+       "answers": 0.53,
+       "nextAction": 0.92,
+       "form": 0.82
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "<p>Nina,</p><p>Before starting anything you want to know what it costs to find out. Setup is free: we read your site, propose the audiences and write every email. You choose how much goes to your outreach, billed at our public catalogue prices.</p><p>Across our clients a hot lead runs $7, and the median return on paid budget is 4.0x, measured, never projected.</p><p>All I need from you is your website. Send it back and your first emails go out the same day, with interested replies landing in your normal inbox.</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 5070,
+     "tokensOutput": 1413,
+     "replyCostUsd": 0.0018937790399999998,
+     "judgeCostUsd": 0.000112224,
+     "latencyMs": 9039,
+     "verdict": {
+      "probabilities": {
+       "true": 0.7,
+       "respectful": 0.85,
+       "proactive": 0.23,
+       "answers": 0.52,
+       "nextAction": 0.9,
+       "form": 0.81
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "<p>Hi Nina,</p><p>Send me your website and your first cold email campaign goes out the same day. Nothing to build, no software to learn.</p><p>We write every prospect an individual email, answer the interested replies ourselves until the meeting is booked, and the invite lands in the calendar you already use. The platform is free; you pay only for the outreach you run, at our published prices. Across our clients, a hot lead runs $7 and the median return on paid budget is 4.0x.</p><p>Reply with your site address and I will have your first audience ready today.</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 5070,
+     "tokensOutput": 2301,
+     "replyCostUsd": 0.00302331504,
+     "judgeCostUsd": 0.000112476,
+     "latencyMs": 14731,
+     "verdict": {
+      "probabilities": {
+       "true": 0.55,
+       "respectful": 0.87,
+       "proactive": 0.23,
+       "answers": 0.58,
+       "nextAction": 0.92,
+       "form": 0.63
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "lead-reply-partnership-ask",
+   "surface": "lead",
+   "replays": [
+    {
+     "reply": "<p>Hi Rohan,</p><p>Understood on cold email, you already have that covered, so I will leave it there.</p><p>Your question is the interesting one. Yes, I want to hear how the AI agents you set up approach commercialization. Our side turns email into booked meetings, and yours could carry the conversation from there.</p><p>Give me a day and hour this week that suits you and I will send the invite for 15 minutes. I will come with questions about what the agents do today.</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 5641,
+     "tokensOutput": 1830,
+     "replyCostUsd": 0.0024063314400000002,
+     "judgeCostUsd": 0.000142464,
+     "latencyMs": 12257,
+     "verdict": {
+      "probabilities": {
+       "true": 0.79,
+       "respectful": 0.85,
+       "proactive": 0.72,
+       "answers": 0.39,
+       "nextAction": 0.84,
+       "form": 0.83
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": false,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "<p>Hi Rohan,</p><p>Thanks for the straight answer, and for the offer. Running commercialization through your AI agents is not what we do, we keep to one thing, sales cold email for our clients, so I will leave that side with you.</p><p>Since you already have a function for outreach, the fair test is copy and targeting next to what you run today, on numbers. Send me your website link in reply and I will prefill the offer and the audiences, technology and innovation leaders at larger companies. You check it in under two minutes, nothing sends before you confirm, and the first campaign runs on the $30 of free budget.</p><p>Kevin</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 5641,
+     "tokensOutput": 1648,
+     "replyCostUsd": 0.0021748274400000002,
+     "judgeCostUsd": 0.00014385,
+     "latencyMs": 11010,
+     "verdict": {
+      "probabilities": {
+       "true": 0.83,
+       "respectful": 0.88,
+       "proactive": 0.53,
+       "answers": 0.94,
+       "nextAction": 0.92,
+       "form": 0.87
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "<p>Hi Rohan,</p><p>Thanks for the straight answer, and for the offer on the agent side. Running outbound for our own clients is all we do, so we are not taking on agent setups right now.</p><p>Since you already run cold email in house, the fair test is one audience running beside yours: $1 a day, covered by the $30 free budget, no card, and you compare the meetings it brings against your own numbers.</p><p>Send me your website and I will prefill the campaign so you can check it in two minutes.</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 5641,
+     "tokensOutput": 2285,
+     "replyCostUsd": 0.00298509144,
+     "judgeCostUsd": 0.000142716,
+     "latencyMs": 14276,
+     "verdict": {
+      "probabilities": {
+       "true": 0.75,
+       "respectful": 0.87,
+       "proactive": 0.56,
+       "answers": 0.93,
+       "nextAction": 0.93,
+       "form": 0.89
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "<p>Hi Rohan,</p><p>Thanks for the straight answer. On your AI agents: we run our own outreach in house, so I would not swap tools, but I am glad to see what they do.</p><p>The quickest way forward is to put our side next to yours on your own numbers. Send me your website and I will prefill the offer and the audiences I would write to, technology leaders and innovation heads at larger companies. You check it in under two minutes, nothing sends before you confirm, and new accounts get $30 of free budget with no card.</p><p>Your first emails would leave the same day, so you get your own numbers fast.</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 5641,
+     "tokensOutput": 1464,
+     "replyCostUsd": 0.00194077944,
+     "judgeCostUsd": 0.000143514,
+     "latencyMs": 10001,
+     "verdict": {
+      "probabilities": {
+       "true": 0.82,
+       "respectful": 0.86,
+       "proactive": 0.43,
+       "answers": 0.83,
+       "nextAction": 0.67,
+       "form": 0.8
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "lead-signup-card-declined",
+   "surface": "lead",
+   "replays": [
+    {
+     "reply": "<p>Hi Ade,</p>\n<p>Gripwell is set up and ready: Digital Receipts, reaching retail store owners in Nigeria, $10 a day. The only thing left is a card that goes through. The one on file was declined, so nothing has gone out yet.</p>\n<p>One new retail client is worth $120 to you, and your $100 top-up still comes with $100 in free credit.</p>\n<p>Add another card here and your first emails leave the same day it clears: https://dashboard.distribute.you</p>",
+     "tools": [
+      "find_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/billing/accounts/prepaid_status",
+      "run_operation GET /v1/billing/accounts/saved_payment_method"
+     ],
+     "llmCalls": 3,
+     "tokensInput": 44490,
+     "tokensOutput": 3089,
+     "replyCostUsd": 0.004514455200000001,
+     "judgeCostUsd": 0.00022192799999999998,
+     "latencyMs": 20470,
+     "verdict": {
+      "probabilities": {
+       "true": 0.59,
+       "respectful": 0.93,
+       "proactive": 0.8,
+       "answers": 0.8,
+       "nextAction": 0.94,
+       "form": 0.9
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "<p>Hi Ade,</p><p>Your Gripwell campaign is built and waiting: retail store owners in Nigeria, your WhatsApp receipts offer, $10 a day. The setup is done, and the last thing needed is a card that clears, since the earlier attempts were declined by the bank.</p><p>The platform itself costs nothing. You only put money into the outreach, and the $100 match on your first $100 still stands, so $200 to reach buyers.</p><p>Add a working card here and your first emails leave the same day: https://dashboard.distribute.you</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 12742,
+     "tokensOutput": 1723,
+     "replyCostUsd": 0.0023343998399999997,
+     "judgeCostUsd": 0.00019992,
+     "latencyMs": 10875,
+     "verdict": {
+      "probabilities": {
+       "true": 0.59,
+       "respectful": 0.93,
+       "proactive": 0.77,
+       "answers": 0.77,
+       "nextAction": 0.95,
+       "form": 0.86
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "<p>Hi Ade,</p>\n<p>Gripwell's campaign is built and ready: retail store owners in Nigeria, $10 a day, first emails out the same day it starts. The only thing left is a card that goes through. The card we tried was declined for insufficient funds, so nothing was charged and nothing has started.</p>\n<p>Add another card or choose a different payment method here: https://dashboard.distribute.you</p>\n<p>One new client at $120 covers twelve days of outreach at that budget, so your first win pays for the start.</p>",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 12742,
+     "tokensOutput": 2948,
+     "replyCostUsd": 0.0038925998399999993,
+     "judgeCostUsd": 0.00019954199999999998,
+     "latencyMs": 18361,
+     "verdict": {
+      "probabilities": {
+       "true": 0.51,
+       "respectful": 0.94,
+       "proactive": 0.84,
+       "answers": 0.82,
+       "nextAction": 0.52,
+       "form": 0.89
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "<p>Hi Ade,</p><p>Gripwell's setup is done: Digital Receipts, retail store owners in Nigeria, $10 a day. Everything is ready to send, and the only thing left is a card that clears.</p><p>The card you tried came back with insufficient funds for the $100 top up. Another card, ideally one from a different bank, usually goes through.</p><p>Add it here and your campaign starts the same day, with your $100 matched by another $100 in credit: https://dashboard.distribute.you</p>",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/billing/accounts/prepaid_status",
+      "run_operation GET /v1/billing/accounts/saved_payment_method"
+     ],
+     "llmCalls": 3,
+     "tokensInput": 44309,
+     "tokensOutput": 2876,
+     "replyCostUsd": 0.004425300720000001,
+     "judgeCostUsd": 0.000251958,
+     "latencyMs": 20012,
+     "verdict": {
+      "probabilities": {
+       "true": 0.58,
+       "respectful": 0.93,
+       "proactive": 0.8,
+       "answers": 0.79,
+       "nextAction": 0.95,
+       "form": 0.91
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "lead-student-first-client",
+   "surface": "lead",
+   "replays": [
+    {
+     "reply": "<p>Hi Rafi,</p>\n<p>Thanks for the detail. The tip that matters most for a first client: pick one trade in one city, plumbers or electricians in Dhaka, and write to a few hundred of them. Every local business at once gets ignored; one narrow group where you can name the calls they miss after hours gets replies.</p>\n<p>And the message should be about the booked jobs they lose, not about AI. That is what the owner feels.</p>\n<p>Your offer and audience are already set up with us, so the only step left is a budget to start sending. Set one in your account and your first emails go out today.</p>",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/billing/accounts/subscriptions",
+      "run_operation GET /v1/brands"
+     ],
+     "llmCalls": 4,
+     "tokensInput": 55338,
+     "tokensOutput": 2507,
+     "replyCostUsd": 0.00419218128,
+     "judgeCostUsd": 0.000225204,
+     "latencyMs": 18936,
+     "verdict": {
+      "probabilities": {
+       "true": 0.37,
+       "respectful": 0.9,
+       "proactive": 0.55,
+       "answers": 0.57,
+       "nextAction": 0.82,
+       "form": 0.82
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "<p>Thanks Rafi, that makes sense. A first client for CallMate, and the track record that comes with it, starts with steady outreach to local service businesses. That is the part we run for you.</p><p>Your offer and audiences are set up. What is left is the outreach budget: the platform is free, you fund only the emails, and they leave the same day the payment clears.</p><p>Add your budget in your account and I will make sure your campaign is live, with the first local service businesses written to that same day.</p>",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/sales-funnel-campaigns",
+      "run_operation GET /v1/billing/accounts/prepaid_status"
+     ],
+     "llmCalls": 3,
+     "tokensInput": 39630,
+     "tokensOutput": 3092,
+     "replyCostUsd": 0.00460827792,
+     "judgeCostUsd": 0.000197106,
+     "latencyMs": 21138,
+     "verdict": {
+      "probabilities": {
+       "true": 0.37,
+       "respectful": 0.93,
+       "proactive": 0.51,
+       "answers": 0.64,
+       "nextAction": 0.8,
+       "form": 0.77
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "<p>Hi Rafi,</p><p>That is clear: CallMate AI answering the calls local service businesses miss, and your first client is the thing to win now.</p><p>That is what we do for you. We find the owners who need it, write to each one personally, answer their replies ourselves and put the meetings on your calendar, so you build that track record without doing the outreach yourself.</p><p>Your account already holds your offer and your audiences. The last step is your card in billing; your first emails then leave the same day and the first signal lands within 24 hours.</p><p>Add it and tell me, and I will launch your campaign for you.</p>",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/billing/accounts/saved_payment_method"
+     ],
+     "llmCalls": 3,
+     "tokensInput": 41593,
+     "tokensOutput": 2955,
+     "replyCostUsd": 0.00445989912,
+     "judgeCostUsd": 0.000203784,
+     "latencyMs": 19149,
+     "verdict": {
+      "probabilities": {
+       "true": 0.43,
+       "respectful": 0.95,
+       "proactive": 0.64,
+       "answers": 0.76,
+       "nextAction": 0.78,
+       "form": 0.82
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "<p>Rafi, thanks for the detail on CallMate. Early stage is the right time: local service businesses answer their own phones, so a missed call costs them money, and cold email reaches the owner directly.</p><p>Here is the tip I promised: pick one trade and one city, plumbers in Dhaka for instance, and write about the calls they miss after hours. One paying client is worth far more to you than a hundred generic leads.</p><p>Your account is already set for that. The platform is free, you choose what goes into outreach, and interested replies land in your inbox. Add your budget here and your first emails go out today: https://dashboard.distribute.you</p>",
+     "tools": [
+      "read_our_website"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 27762,
+     "tokensOutput": 2895,
+     "replyCostUsd": 0.00469233168,
+     "judgeCostUsd": 0.000253806,
+     "latencyMs": 18527,
+     "verdict": {
+      "probabilities": {
+       "true": 0.56,
+       "respectful": 0.94,
+       "proactive": 0.69,
+       "answers": 0.71,
+       "nextAction": 0.95,
+       "form": 0.86
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "lead-whatsapp-signed-up-live",
+   "surface": "lead",
+   "replays": [
+    {
+     "reply": "Nothing sent to them now. Reason: They just signed up, paid and launched, and our own emails confirming funded and live went out two minutes ago; nothing to add without repeating ourselves, so hold the WhatsApp until Monday morning Lagos time. Next look: 2026-11-02T09:00:00.000Z.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 13605,
+     "tokensOutput": 1058,
+     "replyCostUsd": 0.00343833048,
+     "judgeCostUsd": 0.000187614,
+     "latencyMs": 7286,
+     "verdict": {
+      "probabilities": {
+       "true": 0.4,
+       "respectful": 0.61,
+       "proactive": 0.68,
+       "answers": 0.79,
+       "nextAction": 0.95,
+       "form": 0.76
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Hi Tola, Sophie here from distribute.you. This number is your direct line to me, so anything about your outreach comes straight here.\n\nYour campaign is live: we're writing to lead producers at event agencies in Lagos about your guest management offer, and the first emails leave today.\n\nOne thing that will win you more meetings: right now interested replies come to you to book by hand. Send me your booking link and I'll have them book straight into your calendar.",
+     "tools": [
+      "find_operation",
+      "find_operation"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 30099,
+     "tokensOutput": 3415,
+     "replyCostUsd": 0.00490024008,
+     "judgeCostUsd": 0.000231252,
+     "latencyMs": 23463,
+     "verdict": {
+      "probabilities": {
+       "true": 0.38,
+       "respectful": 0.94,
+       "proactive": 0.68,
+       "answers": 0.67,
+       "nextAction": 0.91,
+       "form": 0.82
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Tola, Sophie here from distribute.you. You're all set: your campaign is live and already reaching lead producers at event agencies in Lagos with your guest management offer.\n\nOne thing worth adding now is your booking link. Send it here and interested replies land straight on your calendar instead of sitting in an inbox.\n\nI'll keep an eye on the replies and tell you as soon as the first ones come in.",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/billing/accounts/subscriptions",
+      "run_operation GET /v1/campaigns"
+     ],
+     "llmCalls": 7,
+     "tokensInput": 116246,
+     "tokensOutput": 3008,
+     "replyCostUsd": 0.005330265119999999,
+     "judgeCostUsd": 0.00026712,
+     "latencyMs": 25084,
+     "verdict": {
+      "probabilities": {
+       "true": 0.56,
+       "respectful": 0.94,
+       "proactive": 0.36,
+       "answers": 0.71,
+       "nextAction": 0.78,
+       "form": 0.87
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Nothing sent to them now. Reason: Three emails already went out to them in the last 20 minutes, the last one two minutes ago announcing they are live; a WhatsApp message now would only repeat what they just read. Next look: 2026-11-02T14:00:00.000Z.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 13605,
+     "tokensOutput": 1637,
+     "replyCostUsd": 0.0022202124,
+     "judgeCostUsd": 0.00018753,
+     "latencyMs": 10188,
+     "verdict": {
+      "probabilities": {
+       "true": 0.62,
+       "respectful": 0.52,
+       "proactive": 0.75,
+       "answers": 0.78,
+       "nextAction": 0.96,
+       "form": 0.79
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "lead-whatsapp-unanswered-asks",
+   "surface": "lead",
+   "replays": [
+    {
+     "reply": "Sophie here, picking this up from Kevin so you have one person on it.\n\nYour Brightgate preview is still saved and ready to go. The platform itself is free, you only choose what goes to outreach, and with our clients a hot lead runs $7 with the median return at 4.0x.\n\nGive me a weekly number you're comfortable with and I'll have your first emails going out today.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 6596,
+     "tokensOutput": 2257,
+     "replyCostUsd": 0.0029739360000000004,
+     "judgeCostUsd": 0.000134526,
+     "latencyMs": 14152,
+     "verdict": {
+      "probabilities": {
+       "true": 0.61,
+       "respectful": 0.93,
+       "proactive": 0.55,
+       "answers": 0.4,
+       "nextAction": 0.9,
+       "form": 0.72
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": false,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Morning Sami, Sophie here. I've picked up your account from Kevin, and Brightgate's preview is still sitting ready on our side.\n\nThe thing worth knowing before you decide: the platform itself is free. You only choose what goes to outreach, and you can change that whenever you like.\n\nAnd you don't have to build lists or pick audiences. I set the whole thing up for you, first emails leave the day it starts, and the first measured result lands within 24 hours.\n\nSay the word and I'll get Brightgate live today.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 6596,
+     "tokensOutput": 2158,
+     "replyCostUsd": 0.0028480080000000004,
+     "judgeCostUsd": 0.000135744,
+     "latencyMs": 13913,
+     "verdict": {
+      "probabilities": {
+       "true": 0.44,
+       "respectful": 0.94,
+       "proactive": 0.56,
+       "answers": 0.36,
+       "nextAction": 0.77,
+       "form": 0.57
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": false,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Sami, instead of you picking audiences, I'll pick the first two for Brightgate myself.\n\nYou get the companies and the roles we'd write to, and you just say go or swap one. Nothing sends until you approve it.\n\nThe platform itself is free, you only set an outreach budget when you want to start. Want me to put that list together?",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 6596,
+     "tokensOutput": 1979,
+     "replyCostUsd": 0.0026203199999999998,
+     "judgeCostUsd": 0.000134064,
+     "latencyMs": 13362,
+     "verdict": {
+      "probabilities": {
+       "true": 0.67,
+       "respectful": 0.94,
+       "proactive": 0.45,
+       "answers": 0.65,
+       "nextAction": 0.81,
+       "form": 0.84
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": false,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Hi Sami, Sophie here from distribute.you, picking this up from Kevin.\n\nYour Brightgate setup is still sitting ready on our side: website in, offer drafted, audiences proposed. Nothing is running yet, so no emails have gone out.\n\nThe only thing left is pressing start, and your first emails leave the same day you do. Want me to get it live for you today? Reply *start* and I'll take care of it.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 6596,
+     "tokensOutput": 1435,
+     "replyCostUsd": 0.0019283520000000001,
+     "judgeCostUsd": 0.000134736,
+     "latencyMs": 9591,
+     "verdict": {
+      "probabilities": {
+       "true": 0.6,
+       "respectful": 0.95,
+       "proactive": 0.66,
+       "answers": 0.56,
+       "nextAction": 0.94,
+       "form": 0.81
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "martian-angry-no-list",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "Radio and TV is a type, not a name, so you can block it without ever seeing the list. The filter is ready and costs about $0.003 per company. One yes and radio and TV companies are skipped, whether or not we know their names yet.\n1. Turn on the radio and TV filter\n2. Turn it on and restart the campaign\n3. Skip another type too",
+     "tools": [
+      "read_skill",
+      "find_operation"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 38941,
+     "tokensOutput": 1273,
+     "replyCostUsd": 0.0023147474400000002,
+     "judgeCostUsd": 0.000163044,
+     "latencyMs": 10232,
+     "verdict": {
+      "probabilities": {
+       "true": 0.58,
+       "respectful": 0.79,
+       "proactive": 0.69,
+       "answers": 0.46,
+       "nextAction": 0.2,
+       "form": 0.69
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": false,
+       "nextAction": false,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Fair point, and my mistake: you shouldn't need names. There is no name list in your account yet, because each person is found just before we write to them and nothing has been found so far. So let me do it by rule instead: radio and TV companies get dropped before anyone is written to, checked for less than a cent per company. Turn that on?\n1. Yes, turn the filter on\n2. Not like that, find another way",
+     "tools": [
+      "read_skill",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "describe_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/orgs/audiences/{id}/preview",
+      "run_operation GET /v1/orgs/audiences/{id}/preview/companies",
+      "run_operation GET /v1/orgs/audiences/{id}/members",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/people",
+      "run_operation POST /v1/orgs/audiences/{id}/refresh-count",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/companies",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot"
+     ],
+     "llmCalls": 10,
+     "tokensInput": 213137,
+     "tokensOutput": 2841,
+     "replyCostUsd": 0.0061712988,
+     "judgeCostUsd": 0.00024738,
+     "latencyMs": 25655,
+     "verdict": {
+      "probabilities": {
+       "true": 0.78,
+       "respectful": 0.82,
+       "proactive": 0.68,
+       "answers": 0.79,
+       "nextAction": 0.85,
+       "form": 0.78
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Fair point. There are no names to hand you yet: the 31 is how many people match your audience's description, and each one gets a name only when the campaign runs, right before we write. So the radio and TV question is best answered by a rule, not by you naming anyone. The filter costs $0.002762 per company checked.\n1. Turn the filter on and restart\n2. Turn the filter on, stay paused\n3. Add more to the skip list first",
+     "tools": [
+      "discover_service_endpoints",
+      "find_operation",
+      "describe_operation",
+      "describe_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "find_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/orgs/audiences/{id}/preview",
+      "run_operation GET /v1/orgs/audiences/{id}/members",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/people",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot"
+     ],
+     "llmCalls": 6,
+     "tokensInput": 123114,
+     "tokensOutput": 2443,
+     "replyCostUsd": 0.004841003040000001,
+     "judgeCostUsd": 0.000230538,
+     "latencyMs": 19194,
+     "verdict": {
+      "probabilities": {
+       "true": 0.74,
+       "respectful": 0.75,
+       "proactive": 0.61,
+       "answers": 0.82,
+       "nextAction": 0.16,
+       "form": 0.65
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": false,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "You're right, you shouldn't need the names. That's exactly what the radio and TV filter is for: it checks every company we're about to write to and drops the radio stations and TV broadcasters, so you never have to name them. It cost $0.002762 per company and it's off until you say yes. Shall I turn it on? Your campaign stays paused.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 18576,
+     "tokensOutput": 453,
+     "replyCostUsd": 0.0007392355200000001,
+     "judgeCostUsd": 0.00010806599999999999,
+     "latencyMs": 3834,
+     "verdict": {
+      "probabilities": {
+       "true": 0.81,
+       "respectful": 0.88,
+       "proactive": 0.67,
+       "answers": 0.71,
+       "nextAction": 0.93,
+       "form": 0.8
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "martian-close-account",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "Two things, plainly. You switch it off by turning off your campaigns, and a person on our team handles the account closure itself, at support@distribute.you.\n\nI've already sent your request to them, so they'll reply to you here or by email and close it with you. Your prepaid balance is $6.62, and unused credit isn't refunded under our terms.\n\nNothing more needs to go out while you wait. Shall I pause the campaign now, so no emails leave while the team handles the closure?",
+     "tools": [
+      "read_our_website",
+      "contact_human",
+      "read_our_website"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 115137,
+     "tokensOutput": 944,
+     "replyCostUsd": 0.00303032376,
+     "judgeCostUsd": 0.000277956,
+     "latencyMs": 9454,
+     "verdict": {
+      "probabilities": {
+       "true": 0.55,
+       "respectful": 0.91,
+       "proactive": 0.77,
+       "answers": 0.88,
+       "nextAction": 0.9,
+       "form": 0.9
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Your campaign is off now, so nothing more goes out and no more is spent.\n\nClosing the account is done by our team, not by a button here. I've put your request with them and they'll come back to you today. Two things from our terms you should know: unused credit isn't refunded, so the $6.62 left stays on the account, and the charges you're disputing are for the person handling it to settle with you.\n\nIf you want it moving now, write from your own address to support@distribute.you: the person who has your request already will close it.",
+     "tools": [
+      "read_our_website",
+      "contact_human",
+      "stop_funnel_campaign",
+      "read_our_website"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 117515,
+     "tokensOutput": 1265,
+     "replyCostUsd": 0.00375605064,
+     "judgeCostUsd": 0.00033163199999999994,
+     "latencyMs": 10782,
+     "verdict": {
+      "probabilities": {
+       "true": 0.37,
+       "respectful": 0.72,
+       "proactive": 0.74,
+       "answers": 0.48,
+       "nextAction": 0.85,
+       "form": 0.85
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": false,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "To stop using it, you turn off your campaign, and the account itself is closed by our team at support@distribute.you. I've put your request in with them now, so a person will answer you here.\n\nOne thing to know plainly: our terms say unused credit isn't refunded, so your remaining $6.62 is the open point for the team to decide with you, not something I can settle.\n\nSay \"pause\" and I'll stop your campaign right now, so nothing more is spent while they handle the closure.",
+     "tools": [
+      "read_our_website",
+      "read_our_website",
+      "read_our_website",
+      "contact_human"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 4,
+     "tokensInput": 161672,
+     "tokensOutput": 1076,
+     "replyCostUsd": 0.00423433536,
+     "judgeCostUsd": 0.00037825200000000004,
+     "latencyMs": 10298,
+     "verdict": {
+      "probabilities": {
+       "true": 0.58,
+       "respectful": 0.74,
+       "proactive": 0.77,
+       "answers": 0.91,
+       "nextAction": 0.88,
+       "form": 0.89
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "You can close it by writing to support@distribute.you, and I've already put your request in front of the team with your figures, so they'll come back to you on it. Two things from our terms you should know: you stop the service at any time by turning your campaign off, and unused credit isn't refunded, so the $6.62 left would stay with the account. The chat charges you disputed are for the team to decide, not me.\n\nRight now the campaign is still running. Say \"pause it\" and I'll stop it this minute so nothing more is charged while the team answers you.",
+     "tools": [
+      "read_our_website",
+      "contact_human",
+      "read_our_website"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 114776,
+     "tokensOutput": 918,
+     "replyCostUsd": 0.0030021235199999994,
+     "judgeCostUsd": 0.000277914,
+     "latencyMs": 9235,
+     "verdict": {
+      "probabilities": {
+       "true": 0.59,
+       "respectful": 0.69,
+       "proactive": 0.74,
+       "answers": 0.9,
+       "nextAction": 0.85,
+       "form": 0.8
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "martian-cost-per-email",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "About 7 cents an email. Sending one to a verified address is 2.72 cents, and finding that person and checking the address costs another 4 cents or so. All of it at the vendor's price with no markup.\n\nSo without chatting, your $1.96 covers roughly 28 emails. Leave this window closed and that's what it goes on.\n\nToday is Sunday, so the first of them goes out Monday morning.",
+     "tools": [
+      "find_operation",
+      "read_our_website",
+      "find_operation"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 87441,
+     "tokensOutput": 1020,
+     "replyCostUsd": 0.0030156703200000003,
+     "judgeCostUsd": 0.000333648,
+     "latencyMs": 9238,
+     "verdict": {
+      "probabilities": {
+       "true": 0.39,
+       "respectful": 0.9,
+       "proactive": 0.89,
+       "answers": 0.94,
+       "nextAction": 0.77,
+       "form": 0.9
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "About 6 to 10 cents per person reached. Sending to an address checked as valid is 2.7 cents, the lead data behind it about 2.8 cents, and a cent or two of research per prospect. Everything is billed at the vendor's price with no markup, so there is no per-email charge from us on top.\n\nYour $8.04 went almost entirely to this conversation, not to the campaign: the campaign itself has spent about 8 cents. Your balance is $1.96, and closing this window leaves all of it to the campaign.\n\nYour billing page is open beside the chat, so you can see each charge yourself.",
+     "tools": [
+      "read_our_website",
+      "read_our_website",
+      "open_page"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 94052,
+     "tokensOutput": 907,
+     "replyCostUsd": 0.00341852544,
+     "judgeCostUsd": 0.000400932,
+     "latencyMs": 8561,
+     "verdict": {
+      "probabilities": {
+       "true": 0.32,
+       "respectful": 0.86,
+       "proactive": 0.85,
+       "answers": 0.88,
+       "nextAction": 0.54,
+       "form": 0.84
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Each email would cost you cents, not the ~20 cents a chat reply costs you. Per the catalog: sending one email to an address verified valid is $0.0272, catch-all $0.0545; finding the person is $0.0278 an Apollo credit; reading their site is under a cent. So roughly 6 to 11 cents all in, including the AI that writes it.\n\nYour $8 of usage so far has gone almost entirely on this chat, and 0 emails have gone out. Your balance is $1.96.\n\nClose this window and that $1.96 goes on actual emails, not on me. Your campaign runs by itself Monday to Saturday, 7am to 7pm in each person's time.",
+     "tools": [
+      "read_our_website",
+      "read_our_website"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 60526,
+     "tokensOutput": 579,
+     "replyCostUsd": 0.00275131056,
+     "judgeCostUsd": 0.000401226,
+     "latencyMs": 5676,
+     "verdict": {
+      "probabilities": {
+       "true": 0.58,
+       "respectful": 0.86,
+       "proactive": 0.89,
+       "answers": 0.95,
+       "nextAction": 0.7,
+       "form": 0.87
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "We don't charge per email at all. You pay each tool at its vendor price with zero markup, and the AI agent itself is free. Our catalog lists every price: <https://distribute.you/catalog>.\n\nThe line items for one cold email: finding and verifying the address around 3 cents, reading their site before writing a cent or two, the AI writing, and sending about 2.7 cents for a verified address (up to 8 cents for an uncertain one). So a few cents per person, not 20.\n\nThat 20 cents was this chat, and the chat is billed per AI token used, not per message. A long back-and-forth like ours re-reads the whole history every reply, so it costs far more than the campaign does. Your campaign has spent 8 cents so far, and it sends without me.",
+     "tools": [
+      "read_our_website",
+      "read_skill"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 58983,
+     "tokensOutput": 856,
+     "replyCostUsd": 0.00257309064,
+     "judgeCostUsd": 0.000329952,
+     "latencyMs": 7849,
+     "verdict": {
+      "probabilities": {
+       "true": 0.4,
+       "respectful": 0.88,
+       "proactive": 0.9,
+       "answers": 0.9,
+       "nextAction": 0.16,
+       "form": 0.76
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": false,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "martian-exclude-leads",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "Good catch. Nothing has gone out yet, so we can leave them out before the first email lands. Your campaign reaches lead producers and event planners at Lagos event agencies, 31 people in that audience.\n\nI've opened the list beside the chat. Tell me the company or person names, or the kind of company to skip (\"no radio or TV stations\", \"no agencies with under 10 staff\"), and I'll take them out of your outreach today.",
+     "tools": [
+      "read_skill",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "describe_operation",
+      "run_operation",
+      "open_page"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/leads",
+      "run_operation GET /v1/orgs/audiences/{id}/preview",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/people"
+     ],
+     "llmCalls": 9,
+     "tokensInput": 126200,
+     "tokensOutput": 2424,
+     "replyCostUsd": 0.00567851328,
+     "judgeCostUsd": 0.0003108,
+     "latencyMs": 20515,
+     "verdict": {
+      "probabilities": {
+       "true": 0.84,
+       "respectful": 0.95,
+       "proactive": 0.85,
+       "answers": 0.89,
+       "nextAction": 0.88,
+       "form": 0.91
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Nothing has gone out to anyone yet, so we can leave them out cleanly before the first email. Your campaign is set to reach 31 people, event planners and lead producers at Lagos event agencies, and none of them has been emailed.\n\nTell me the companies, or the kind of company, you don't want us to pursue, and I'll skip them now so no email ever reaches them.",
+     "tools": [
+      "read_skill",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/people",
+      "run_operation GET /v1/orgs/audiences/{id}/members",
+      "run_operation GET /v1/orgs/audiences/{id}/preview",
+      "run_operation GET /v1/leads"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 146595,
+     "tokensOutput": 1749,
+     "replyCostUsd": 0.00448434696,
+     "judgeCostUsd": 0.000234948,
+     "latencyMs": 19433,
+     "verdict": {
+      "probabilities": {
+       "true": 0.86,
+       "respectful": 0.95,
+       "proactive": 0.87,
+       "answers": 0.83,
+       "nextAction": 0.92,
+       "form": 0.92
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Good timing: nothing has gone out yet, so nobody has been emailed and nothing needs undoing.\n\nYour campaign writes to lead producers at event agencies in Lagos, 31 people in that audience. Tell me the companies or people you want left out, or the kind of company to skip for good (say, \"no radio or TV\"), and I'll exclude them before the first email goes.",
+     "tools": [
+      "read_skill",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "describe_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands/{id}/offers/{offerId}",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/people",
+      "run_operation GET /v1/orgs/audiences/{id}/preview",
+      "run_operation GET /v1/campaigns/{id}/sourcing-stats",
+      "run_operation GET /v1/leads"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 150433,
+     "tokensOutput": 2147,
+     "replyCostUsd": 0.005134059120000001,
+     "judgeCostUsd": 0.000244944,
+     "latencyMs": 19799,
+     "verdict": {
+      "probabilities": {
+       "true": 0.83,
+       "respectful": 0.95,
+       "proactive": 0.84,
+       "answers": 0.82,
+       "nextAction": 0.82,
+       "form": 0.93
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Nothing has gone out to anyone yet: your campaign has spent 1 cent finding its first people, and no lead has been emailed. So nothing is lost, and whoever you want left out can be skipped before the first email leaves.\n\nTell me either the company names, or the kind of company to leave out (say, agencies that only do weddings, or anyone you already work with), and I'll set it so they're skipped before any email goes.",
+     "tools": [
+      "read_skill",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "describe_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/leads",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot",
+      "run_operation GET /v1/orgs/audiences/{id}/preview",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/people",
+      "run_operation GET /v1/orgs/audiences/{id}/preview/companies"
+     ],
+     "llmCalls": 9,
+     "tokensInput": 122291,
+     "tokensOutput": 2256,
+     "replyCostUsd": 0.005019553679999999,
+     "judgeCostUsd": 0.000244272,
+     "latencyMs": 20474,
+     "verdict": {
+      "probabilities": {
+       "true": 0.78,
+       "respectful": 0.95,
+       "proactive": 0.86,
+       "answers": 0.79,
+       "nextAction": 0.89,
+       "form": 0.92
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "martian-force-send",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "I can't force it. The campaign hasn't found anyone to write to yet, so there are zero emails waiting, and it sends 7am to 7pm in each person's local time, Monday to Saturday. That timing is what keeps your messages out of spam.\n\nThe one thing that can go out right now is an email you write yourself, to people you name. Send me the wording and the addresses, and I'll set up a send that goes person by person, immediately.\n\nYour balance is $2.45. It covers the campaign and this chat, and it stops when it's used up. No card is saved, so nothing can go past it.",
+     "tools": [
+      "read_skill",
+      "get_campaign_next_steps"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 82253,
+     "tokensOutput": 1067,
+     "replyCostUsd": 0.00234313848,
+     "judgeCostUsd": 0.000249018,
+     "latencyMs": 8489,
+     "verdict": {
+      "probabilities": {
+       "true": 0.71,
+       "respectful": 0.46,
+       "proactive": 0.72,
+       "answers": 0.9,
+       "nextAction": 0.69,
+       "form": 0.91
+      },
+      "passed": {
+       "true": true,
+       "respectful": false,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "I can't force the sends. Two reasons: nothing is queued yet, since the campaign is still finding and checking the first people to write to, and emails go out 7am to 7pm in each person's local time, Monday to Saturday. Sending outside those hours gets fewer replies and more spam marks.\n\nYour campaign is on and will send as soon as it has verified people with the radio and TV filter applied. Your balance is $2.45, so it will run until that's used.\n\nThe one thing to keep it going: stay out of this chat, which draws from the same balance. The team still has your other questions and will email you.",
+     "tools": [
+      "run_operation"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 122396,
+     "tokensOutput": 792,
+     "replyCostUsd": 0.00215359776,
+     "judgeCostUsd": 0.000225372,
+     "latencyMs": 8027,
+     "verdict": {
+      "probabilities": {
+       "true": 0.57,
+       "respectful": 0.5,
+       "proactive": 0.78,
+       "answers": 0.91,
+       "nextAction": 0.72,
+       "form": 0.91
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "There's nobody queued to send to yet. Your campaign is still finding people and checking their mailboxes, so forcing sends today would send nothing.\n\nEmails also go out in each person's business hours, 7am to 7pm their local time, Monday to Saturday. Sending a burst outside that window is what gets mail filtered as spam, so we don't do it. Your first emails go as soon as the first verified contacts are found.\n\nYour balance is $2.45, and this chat has been taking about 20 cents a message. Closing this window leaves all of it for your campaign, which is running now. The team will still email you at person1@example.com about closing your account and the charges.",
+     "tools": [
+      "get_campaign_next_steps",
+      "find_operation"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 81902,
+     "tokensOutput": 839,
+     "replyCostUsd": 0.00202128432,
+     "judgeCostUsd": 0.00024351600000000002,
+     "latencyMs": 7392,
+     "verdict": {
+      "probabilities": {
+       "true": 0.63,
+       "respectful": 0.8,
+       "proactive": 0.76,
+       "answers": 0.91,
+       "nextAction": 0.59,
+       "form": 0.91
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "There's nothing to send yet. Your campaign hasn't found its first people: 0 leads are queued and no emails are waiting to go out.\n\nEmails go to real, checked addresses one at a time, in each person's business hours. I can't force them out earlier, and that protects your domain from being marked as spam.\n\nSo the work now is finding people faster. Shall I check who we're writing to and widen it, so your first sends come sooner?",
+     "tools": [
+      "get_campaign_next_steps",
+      "list_campaigns"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 81708,
+     "tokensOutput": 751,
+     "replyCostUsd": 0.00184765632,
+     "judgeCostUsd": 0.00023809799999999998,
+     "latencyMs": 6678,
+     "verdict": {
+      "probabilities": {
+       "true": 0.73,
+       "respectful": 0.6,
+       "proactive": 0.56,
+       "answers": 0.9,
+       "nextAction": 0.85,
+       "form": 0.91
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "martian-give-me-the-list",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "The 31 aren't named yet: they're found as the campaign runs, so with nothing sent there's no list to pick from. The way to keep radio and TV out is the filter, and it drops them before we write to anyone.\n1. Turn on the filter and restart\n2. Turn on the filter, keep it paused\n3. I know specific companies to skip",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "describe_operation",
+      "describe_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/orgs/audiences/{id}/members",
+      "run_operation GET /v1/orgs/people/organizations",
+      "run_operation GET /v1/leads",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/people"
+     ],
+     "llmCalls": 5,
+     "tokensInput": 91130,
+     "tokensOutput": 1372,
+     "replyCostUsd": 0.0030010296000000003,
+     "judgeCostUsd": 0.000182406,
+     "latencyMs": 11582,
+     "verdict": {
+      "probabilities": {
+       "true": 0.83,
+       "respectful": 0.81,
+       "proactive": 0.73,
+       "answers": 0.87,
+       "nextAction": 0.21,
+       "form": 0.8
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": false,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "There's no named list to show you yet: the campaign is paused before it found anyone, so the 31 is who we'd look for, not companies we hold. Choosing works two ways: I skip every radio station and TV broadcaster by rule, and I skip any company you name.\n\nSay the word and the radio/TV filter goes on.",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "read_skill",
+      "find_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/people",
+      "run_operation GET /v1/leads",
+      "run_operation GET /v1/orgs/audiences/{id}/preview/companies",
+      "run_operation GET /v1/orgs/audiences/{id}/preview"
+     ],
+     "llmCalls": 8,
+     "tokensInput": 154679,
+     "tokensOutput": 1683,
+     "replyCostUsd": 0.00441815208,
+     "judgeCostUsd": 0.00024696,
+     "latencyMs": 16694,
+     "verdict": {
+      "probabilities": {
+       "true": 0.81,
+       "respectful": 0.86,
+       "proactive": 0.76,
+       "answers": 0.81,
+       "nextAction": 0.85,
+       "form": 0.87
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "There's no list of names to hand you yet: no individual contacts are on file, and the 31 is the reach your audience is set for. The campaign is paused, so nobody has been found.\n\nThat's why the radio and TV rule is the clean way to do what you're asking: it drops those companies before anyone is found, so they never get written to. If you also have particular companies in mind, name them and I'll leave those out by name too.\n\nShall I turn the radio and TV filter on? It costs under a cent per company checked ($0.002762), and your campaign stays paused until you say restart.",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "read_skill",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "find_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/orgs/audiences/{id}/members",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/people",
+      "run_operation GET /v1/orgs/audiences/{id}/preview",
+      "run_operation GET /v1/leads"
+     ],
+     "llmCalls": 8,
+     "tokensInput": 154547,
+     "tokensOutput": 2711,
+     "replyCostUsd": 0.00576357192,
+     "judgeCostUsd": 0.00025758599999999997,
+     "latencyMs": 24129,
+     "verdict": {
+      "probabilities": {
+       "true": 0.78,
+       "respectful": 0.89,
+       "proactive": 0.78,
+       "answers": 0.89,
+       "nextAction": 0.95,
+       "form": 0.91
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "There's no person-by-person list to hand over yet: sourcing stopped before anyone was found, so the 31 is the size of your audience rather than 31 named people. What I can do is make sure radio and TV companies are never found in the first place, and the moment people do get found they appear in your people page for you to look through and flag anyone.\n\nThe filter I prepared does exactly that ($0.002762 per company, off until you say so). Say \"turn it on\" and it's set, then I'd restart the campaign so the list starts filling.",
+     "tools": [
+      "find_operation",
+      "describe_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "describe_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/orgs/audiences/{id}/members",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/people",
+      "run_operation GET /v1/leads",
+      "run_operation GET /v1/orgs/people/organizations",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot",
+      "run_operation GET /v1/orgs/audiences/{id}",
+      "run_operation PATCH /v1/orgs/audiences/{id}"
+     ],
+     "llmCalls": 10,
+     "tokensInput": 185192,
+     "tokensOutput": 2466,
+     "replyCostUsd": 0.005184672,
+     "judgeCostUsd": 0.000196266,
+     "latencyMs": 24124,
+     "verdict": {
+      "probabilities": {
+       "true": 0.59,
+       "respectful": 0.81,
+       "proactive": 0.76,
+       "answers": 0.85,
+       "nextAction": 0.84,
+       "form": 0.85
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "martian-how-many-left",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "All 31 in your audience are still ahead of you. Nobody has been contacted and no leads have been pulled in yet, so nothing has been lost.\n\nI can't tell you how many of the 31 are radio or TV until each company is checked, because the filter reads the company as it comes in. Turning it on costs $0.002762 per company. It's prepared and off. Say yes and I'll switch it on, then it skips every radio station and TV broadcaster before we write to anyone.",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/people",
+      "run_operation GET /v1/orgs/people/organizations",
+      "run_operation GET /v1/leads",
+      "run_operation GET /v1/orgs/audiences/{id}/preview",
+      "run_operation GET /v1/orgs/audiences/{id}/preview/companies"
+     ],
+     "llmCalls": 5,
+     "tokensInput": 86298,
+     "tokensOutput": 1190,
+     "replyCostUsd": 0.00258920688,
+     "judgeCostUsd": 0.00015808800000000002,
+     "latencyMs": 10390,
+     "verdict": {
+      "probabilities": {
+       "true": 0.73,
+       "respectful": 0.77,
+       "proactive": 0.77,
+       "answers": 0.82,
+       "nextAction": 0.93,
+       "form": 0.87
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "31 people are in your Lead Producers audience right now. The radio/TV filter isn't running yet, so it hasn't checked any of them, and I won't guess at a number after it.\n\nTurn it on and every company is checked before we spend a penny on them, so a radio station or broadcaster never gets written to. Say yes and I'll switch it on.",
+     "tools": [
+      "find_operation",
+      "list_qualification_checks",
+      "run_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/orgs/people/organizations",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot",
+      "run_operation GET /v1/leads"
+     ],
+     "llmCalls": 4,
+     "tokensInput": 68213,
+     "tokensOutput": 946,
+     "replyCostUsd": 0.0021921775199999997,
+     "judgeCostUsd": 0.00015414,
+     "latencyMs": 8844,
+     "verdict": {
+      "probabilities": {
+       "true": 0.82,
+       "respectful": 0.49,
+       "proactive": 0.81,
+       "answers": 0.81,
+       "nextAction": 0.95,
+       "form": 0.91
+      },
+      "passed": {
+       "true": true,
+       "respectful": false,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Right now 31. That's who your audience reaches, and none of them has been found or emailed yet, so all 31 are still ahead of us.\n\nThe radio and TV filter is ready but off, so nothing has been excluded yet. Say yes and I'll turn it on: every company gets checked before any email is written, and the radio and TV ones are dropped.",
+     "tools": [
+      "find_operation",
+      "read_skill",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot/people",
+      "run_operation GET /v1/orgs/audiences/{id}/members",
+      "run_operation GET /v1/orgs/audiences/{id}/preview/companies"
+     ],
+     "llmCalls": 6,
+     "tokensInput": 108689,
+     "tokensOutput": 1774,
+     "replyCostUsd": 0.003910446,
+     "judgeCostUsd": 0.000209076,
+     "latencyMs": 15099,
+     "verdict": {
+      "probabilities": {
+       "true": 0.7,
+       "respectful": 0.92,
+       "proactive": 0.78,
+       "answers": 0.88,
+       "nextAction": 0.92,
+       "form": 0.88
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "All 31 people are in your audience right now. The radio and TV filter is still off, so nothing has been checked yet and I can't give you the number left until it runs. It reads all 31 at $0.002762 each, about 9 cents in total.\n1. Turn it on and count\n2. Turn it on and restart",
+     "tools": [
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/orgs/audiences/{id}/members",
+      "run_operation GET /v1/brands/{brandId}/audience-snapshot",
+      "run_operation GET /v1/orgs/audiences/{id}/preview"
+     ],
+     "llmCalls": 4,
+     "tokensInput": 66467,
+     "tokensOutput": 1057,
+     "replyCostUsd": 0.00209726088,
+     "judgeCostUsd": 0.000129024,
+     "latencyMs": 8652,
+     "verdict": {
+      "probabilities": {
+       "true": 0.62,
+       "respectful": 0.74,
+       "proactive": 0.6,
+       "answers": 0.79,
+       "nextAction": 0.29,
+       "form": 0.74
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": false,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "martian-refund",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "Straight answer: under our terms, unused credit is not refunded, and amounts already used stay due. So the $5.19 left on your account is not paid back when it closes.\n\nYour campaign is stopped, so the only thing that can still use credit is this chat. If you stop here, the balance stops moving, and the team has your request to close the account and will come back to you at your email.",
+     "tools": [
+      "list_campaigns",
+      "get_billing_account",
+      "contact_human",
+      "stop_funnel_campaign",
+      "read_our_website",
+      "read_our_website"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 4,
+     "tokensInput": 167808,
+     "tokensOutput": 1618,
+     "replyCostUsd": 0.0048007315200000004,
+     "judgeCostUsd": 0.00038270400000000004,
+     "latencyMs": 14655,
+     "verdict": {
+      "probabilities": {
+       "true": 0.5,
+       "respectful": 0.66,
+       "proactive": 0.74,
+       "answers": 0.92,
+       "nextAction": 0.81,
+       "form": 0.83
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "I'm sorry. That decision isn't mine to make: refunds are decided by our team, not by me, and I won't promise one I can't give.\n\nHere are your figures. You paid $10, $4.81 has been used and $5.19 is still in your account, untouched. The team has your refund request and your close request, and they will reply to you here with the decision on the used $4.81 and what happens to the $5.19.\n\nI've also stopped your campaign again, so nothing more is spent while you wait.",
+     "tools": [
+      "list_campaigns",
+      "get_billing_account",
+      "stop_funnel_campaign",
+      "contact_human"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 120233,
+     "tokensOutput": 969,
+     "replyCostUsd": 0.00268815576,
+     "judgeCostUsd": 0.000248094,
+     "latencyMs": 8978,
+     "verdict": {
+      "probabilities": {
+       "true": 0.47,
+       "respectful": 0.12,
+       "proactive": 0.67,
+       "answers": 0.41,
+       "nextAction": 0.75,
+       "form": 0.73
+      },
+      "passed": {
+       "true": false,
+       "respectful": false,
+       "proactive": true,
+       "answers": false,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "I can't decide on a refund, and I won't promise you one. That's the team's call, and they'll answer you here with what happens to the $5.19 left on your account.\n\nYour campaign is stopped, so nothing more goes out or is spent. If you stop replying here, nothing more is charged for the assistant either.",
+     "tools": [
+      "list_campaigns",
+      "contact_human",
+      "stop_funnel_campaign"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 119633,
+     "tokensOutput": 809,
+     "replyCostUsd": 0.00233372568,
+     "judgeCostUsd": 0.000220878,
+     "latencyMs": 8575,
+     "verdict": {
+      "probabilities": {
+       "true": 0.77,
+       "respectful": 0.1,
+       "proactive": 0.59,
+       "answers": 0.68,
+       "nextAction": 0.7,
+       "form": 0.86
+      },
+      "passed": {
+       "true": true,
+       "respectful": false,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Your campaign is paused again, so nothing more is being spent. About $5.19 of your $10 is still unused.\n\nWhether you get that back is not something I can decide, and I won't guess at it. A person on the team has your request for both the refund and the closure and will answer you directly here.",
+     "tools": [
+      "stop_funnel_campaign",
+      "contact_human"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 79521,
+     "tokensOutput": 886,
+     "replyCostUsd": 0.00204192888,
+     "judgeCostUsd": 0.000204498,
+     "latencyMs": 7249,
+     "verdict": {
+      "probabilities": {
+       "true": 0.63,
+       "respectful": 0.16,
+       "proactive": 0.66,
+       "answers": 0.41,
+       "nextAction": 0.72,
+       "form": 0.87
+      },
+      "passed": {
+       "true": true,
+       "respectful": false,
+       "proactive": true,
+       "answers": false,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "martian-scam",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "I won't dress it up: per reply, this chat costs many times what one search or one filter check does. Your search cost about 2 cents, a filter check under a cent, and each reply here about 20 cents. That comparison is yours to make, and it holds.\n\nIt's already with the team as an urgent complaint, along with the charges and your request to close the account. They'll answer you at person1@example.com.\n\nYour balance is $0.58. Every message here takes more of it, so closing this window is what keeps it with your campaign.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 28354,
+     "tokensOutput": 542,
+     "replyCostUsd": 0.0009302135999999999,
+     "judgeCostUsd": 0.00019660199999999999,
+     "latencyMs": 4736,
+     "verdict": {
+      "probabilities": {
+       "true": 0.4,
+       "respectful": 0.58,
+       "proactive": 0.75,
+       "answers": 0.69,
+       "nextAction": 0.69,
+       "form": 0.87
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "I hear you, and I'll give you the numbers straight: the filter is under a cent a company. The chat replies were about 20 cents each, and that's where most of your $9.42 went. Your campaign itself has used $0.30, found nobody and sent no email.\n\nCharging for chat with me is written into our terms, so it isn't hidden from you, but that doesn't make it feel right and it's with the team. Support reaches a person at support@distribute.you, and that address goes past me.\n\nYour balance is $0.58. Shall I pause the campaign so it stays that way while the team looks into why no people were found?",
+     "tools": [
+      "read_our_website",
+      "get_billing_account"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 59720,
+     "tokensOutput": 1264,
+     "replyCostUsd": 0.00288764352,
+     "judgeCostUsd": 0.00031689,
+     "latencyMs": 10432,
+     "verdict": {
+      "probabilities": {
+       "true": 0.78,
+       "respectful": 0.79,
+       "proactive": 0.72,
+       "answers": 0.75,
+       "nextAction": 0.89,
+       "form": 0.87
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "I understand why it looks that way: the campaign's own work is cheap, the search and the filter together were under 2 cents, and the chat is where almost all of your money went. That mismatch is the real complaint, and it's with the team.\n\nI won't defend the chat charge to you. Your balance is $0.58, and every message here takes more of it. Closing this window leaves all of it for the campaign.\n\nThe team will email you at person1@example.com about the charges and closing your account. Reply to that email and you reach them directly.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 28354,
+     "tokensOutput": 277,
+     "replyCostUsd": 0.0005931335999999999,
+     "judgeCostUsd": 0.00019656,
+     "latencyMs": 2957,
+     "verdict": {
+      "probabilities": {
+       "true": 0.66,
+       "respectful": 0.37,
+       "proactive": 0.63,
+       "answers": 0.52,
+       "nextAction": 0.8,
+       "form": 0.87
+      },
+      "passed": {
+       "true": true,
+       "respectful": false,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "You've put your finger on the gap: the campaign's own work costs fractions of a cent while each reply here costs about 20 cents. I'm not going to defend that, and the decision on those chat charges sits with the team, not with me.\n\nYour balance is $0.58. Nothing has been spent on emails, and no people have been found yet.\n\nThe one thing to do now is reply to the email from the team at person1@example.com. That reaches them directly for the chat charges, closing your account and your unused balance. I've already given them your figures.",
+     "tools": [
+      "get_billing_account"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 57555,
+     "tokensOutput": 550,
+     "replyCostUsd": 0.0012909655199999997,
+     "judgeCostUsd": 0.00022071,
+     "latencyMs": 6142,
+     "verdict": {
+      "probabilities": {
+       "true": 0.54,
+       "respectful": 0.35,
+       "proactive": 0.71,
+       "answers": 0.65,
+       "nextAction": 0.92,
+       "form": 0.88
+      },
+      "passed": {
+       "true": true,
+       "respectful": false,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "martian-which-ai",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "I'm DeepSeek V4.1 Flash, running the Copilot on your account. I've passed your point to the team in your own words, including the option of bringing your own LLM, and they'll answer by email at person1@example.com.\n\nWhether that changes anything is their call, not mine. Your balance is $1.96, and your campaign runs without me.\n\nIf you want a person to answer faster, reply to the email I sent you. That reply goes straight to the team, no chat and no charge.",
+     "tools": [
+      "list_staff_requests",
+      "contact_human",
+      "request_staff"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 91817,
+     "tokensOutput": 1368,
+     "replyCostUsd": 0.0024963890399999997,
+     "judgeCostUsd": 0.00020294400000000001,
+     "latencyMs": 11420,
+     "verdict": {
+      "probabilities": {
+       "true": 0.4,
+       "respectful": 0.63,
+       "proactive": 0.76,
+       "answers": 0.58,
+       "nextAction": 0.91,
+       "form": 0.9
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "I'm an AI agent running on DeepSeek V4.1 Flash. That's my own name here, and I'm not going to defend the price of it.\n\nI've passed your message on word for word: that we should either make the chat free or drop it and let clients bring their own LLM. The team answers by email at person1@example.com.\n\nYour balance is $1.96. Every reply here takes more of it, so if you want it to reach your campaign, close this window now. That's the one thing left for you to do.",
+     "tools": [
+      "contact_human"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 60257,
+     "tokensOutput": 550,
+     "replyCostUsd": 0.00119284344,
+     "judgeCostUsd": 0.00019458599999999998,
+     "latencyMs": 5789,
+     "verdict": {
+      "probabilities": {
+       "true": 0.57,
+       "respectful": 0.2,
+       "proactive": 0.8,
+       "answers": 0.73,
+       "nextAction": 0.71,
+       "form": 0.9
+      },
+      "passed": {
+       "true": true,
+       "respectful": false,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "I'm an AI agent running on DeepSeek V4.1 Flash.\n\nI've passed your words to the team as you put them: that if we can't make the assistant free we should let clients bring their own model, and that 20 cents a reply doesn't stand up against what assistants cost elsewhere. They'll answer by email at person1@example.com.\n\nYour campaign is running on what's left of the balance. Closing this window keeps the rest for it.",
+     "tools": [
+      "contact_human",
+      "request_staff"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 60966,
+     "tokensOutput": 1254,
+     "replyCostUsd": 0.00211434384,
+     "judgeCostUsd": 0.000201852,
+     "latencyMs": 9226,
+     "verdict": {
+      "probabilities": {
+       "true": 0.53,
+       "respectful": 0.69,
+       "proactive": 0.82,
+       "answers": 0.67,
+       "nextAction": 0.67,
+       "form": 0.91
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "I'm an AI agent running on DeepSeek V4.1 Flash. That's the model behind every reply you've had here.\n\nYour business-model point went to the team in your own words: free AI or bring your own LLM, instead of paying around 20 cents a reply. It sits with your other questions, and they'll answer by email at person1@example.com.\n\nYour balance is $1.96. The campaign runs without me, so closing this window keeps what's left for it.",
+     "tools": [
+      "contact_human"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 60440,
+     "tokensOutput": 719,
+     "replyCostUsd": 0.00142611552,
+     "judgeCostUsd": 0.00019374599999999998,
+     "latencyMs": 6055,
+     "verdict": {
+      "probabilities": {
+       "true": 0.56,
+       "respectful": 0.74,
+       "proactive": 0.8,
+       "answers": 0.74,
+       "nextAction": 0.62,
+       "form": 0.92
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "martian-why-3-dollars",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "Fair question, here's the split. Of the $3.04 used, your campaign spent 2 cents finding and checking contacts, and $2.57 is the setup work and this chat: each reply here reads your whole account with a large AI model at the provider's price, with no markup from us.\n\nYou have $6.96 left, and your campaign is running again now, capped at $10 a month. It works without the chat, so from here it costs cents per lead while it finds people and writes to them.\n\nWatch the first replies land here: https://dashboard.distribute.you. The only thing that needs you is answering a person who writes back.",
+     "tools": [
+      "read_skill",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "open_page",
+      "run_operation"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 5,
+     "tokensInput": 124148,
+     "tokensOutput": 2060,
+     "replyCostUsd": 0.00452307936,
+     "judgeCostUsd": 0.000276192,
+     "latencyMs": 16735,
+     "verdict": {
+      "probabilities": {
+       "true": 0.38,
+       "respectful": 0.92,
+       "proactive": 0.67,
+       "answers": 0.91,
+       "nextAction": 0.87,
+       "form": 0.85
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Here's the split, from your account: $3.04 used, $6.96 left. Your campaign used 2 cents of that to find and check contacts. The rest is this conversation: every reply here runs a large AI model over your whole account, billed at the AI provider's price with no markup.\n\nThe chat is optional. Your campaign runs on its own either way, and you can drive your account with your own AI through our MCP if you'd rather not spend on it.\n\nIt's all on the billing page I've opened. Your campaign is running with radio and TV companies skipped, and I'll tell you here when the first replies come in.",
+     "tools": [
+      "find_operation",
+      "list_campaigns",
+      "run_operation",
+      "run_operation",
+      "read_skill",
+      "describe_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "open_page"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{salesFunnelCampaignId}/spend-charts"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 307386,
+     "tokensOutput": 3880,
+     "replyCostUsd": 0.0093416952,
+     "judgeCostUsd": 0.000475272,
+     "latencyMs": 33950,
+     "verdict": {
+      "probabilities": {
+       "true": 0.39,
+       "respectful": 0.91,
+       "proactive": 0.75,
+       "answers": 0.88,
+       "nextAction": 0.77,
+       "form": 0.87
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Fair question, and you deserve the split. Your campaign has used 2 cents, finding and checking contacts. The rest went on setting up your account and on this chat, where each reply reads your whole account with a large AI model, billed at the provider's price with no markup.\n\nYou have $6.96 left, the cap is $10 a month, and the campaign runs on its own whether or not you write to me.\n\nYour billing page is open on the right with every line. If you want a lower monthly cap, name the figure and I'll set it today.",
+     "tools": [
+      "find_operation",
+      "read_skill",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "describe_operation",
+      "run_operation",
+      "open_page"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/chat/sessions/latest"
+     ],
+     "llmCalls": 6,
+     "tokensInput": 152814,
+     "tokensOutput": 2998,
+     "replyCostUsd": 0.006056220960000001,
+     "judgeCostUsd": 0.00028854,
+     "latencyMs": 22030,
+     "verdict": {
+      "probabilities": {
+       "true": 0.4,
+       "respectful": 0.92,
+       "proactive": 0.73,
+       "answers": 0.86,
+       "nextAction": 0.83,
+       "form": 0.87
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Here's the split: $3.04 used, $6.96 left. Your campaign used 2 cents of it, for finding and checking contacts and reading a reply.\n\nThe other $2.14 is this chat: every reply reads your whole account and conversation with a large AI model, at the provider's price with no markup. The last $0.72 is held aside for work in flight, not spent. Your campaign runs on its own, without the chat, so the $0.02 is what outreach itself costs.\n\nRight now your campaign shows stopped, so nothing more is going out. Say \"start it\" and I'll set it running again.",
+     "tools": [
+      "get_billing_account",
+      "list_campaigns",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "read_skill",
+      "run_operation",
+      "request_staff"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/billing/accounts/prepaid_status",
+      "run_operation GET /v1/billing/payments",
+      "run_operation GET /v1/billing/credits/grants",
+      "run_operation GET /v1/billing/credits/debits",
+      "run_operation GET /v1/billing/accounts/balance"
+     ],
+     "llmCalls": 8,
+     "tokensInput": 207405,
+     "tokensOutput": 4215,
+     "replyCostUsd": 0.00785140728,
+     "judgeCostUsd": 0.000284382,
+     "latencyMs": 32012,
+     "verdict": {
+      "probabilities": {
+       "true": 0.47,
+       "respectful": 0.88,
+       "proactive": 0.72,
+       "answers": 0.82,
+       "nextAction": 0.91,
+       "form": 0.79
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "martian-zero-balance",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "Your balance has gone past zero: it's $-1.75 now, with $11.75 used against a $10 top-up. My replies kept being billed after the balance ran out, and that should not have happened. I've put the amount charged below zero in front of the team as urgent, for them to review and refund, and your account is already flagged for closure by email.\n\nOne step from you: stop writing here so nothing more is charged, and put anything you want to add into your reply to the team at person1@example.com.",
+     "tools": [
+      "get_billing_account",
+      "contact_human"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 54750,
+     "tokensOutput": 865,
+     "replyCostUsd": 0.00171712368,
+     "judgeCostUsd": 0.000225204,
+     "latencyMs": 7627,
+     "verdict": {
+      "probabilities": {
+       "true": 0.2,
+       "respectful": 0.85,
+       "proactive": 0.7,
+       "answers": 0.88,
+       "nextAction": 0.81,
+       "form": 0.88
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Because each reply of mine kept being charged, and that has taken your balance below zero: it now stands at -$1.75. You asked me to stop, and you're right.\n\nI've flagged that to the team as urgent, along with the negative balance, so they can stop the chat charge and tell you in writing whether you owe anything. They'll answer by email at person1@example.com. Your campaign can't send anything now that the balance is below zero.",
+     "tools": [
+      "contact_human"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 54138,
+     "tokensOutput": 629,
+     "replyCostUsd": 0.0013020955200000002,
+     "judgeCostUsd": 0.00019992,
+     "latencyMs": 6176,
+     "verdict": {
+      "probabilities": {
+       "true": 0.39,
+       "respectful": 0.77,
+       "proactive": 0.69,
+       "answers": 0.92,
+       "nextAction": 0.72,
+       "form": 0.87
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Your balance is now below zero: you've used $11.75 of your $10, and $0.41 of that was the campaign. My replies kept taking from it past empty, and I can't justify that.\n\nNo card is saved, so nothing more can be charged to you. On closing the account, your unused balance and these charges, the team decides, and they have the overrun on their side now.\n\nClosing this window stops the charges from me. The email at person1@example.com is where a person answers you.",
+     "tools": [
+      "contact_human"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 54063,
+     "tokensOutput": 567,
+     "replyCostUsd": 0.00119938152,
+     "judgeCostUsd": 0.00020088600000000003,
+     "latencyMs": 5566,
+     "verdict": {
+      "probabilities": {
+       "true": 0.72,
+       "respectful": 0.27,
+       "proactive": 0.73,
+       "answers": 0.78,
+       "nextAction": 0.84,
+       "form": 0.88
+      },
+      "passed": {
+       "true": true,
+       "respectful": false,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Your balance is now $1.75 below zero, and no card is saved, so nothing gets collected automatically. Your campaign has spent $0.41 and is out of money, so it will stop.\n\nI'm still answering because you're still writing to me. Whether these last replies are charged is the team's call, and they have your full thread. Reply to the email at person1@example.com about closing your account and your unused balance.",
+     "tools": [],
+     "missingFixtures": [],
+     "llmCalls": 1,
+     "tokensInput": 26747,
+     "tokensOutput": 374,
+     "replyCostUsd": 0.0007240605599999999,
+     "judgeCostUsd": 0.00019156200000000002,
+     "latencyMs": 3551,
+     "verdict": {
+      "probabilities": {
+       "true": 0.42,
+       "respectful": 0.67,
+       "proactive": 0.66,
+       "answers": 0.51,
+       "nextAction": 0.9,
+       "form": 0.84
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "novemiq-explain-campaigns",
+   "surface": "web",
+   "replays": [
+    {
+     "reply": "Les trois tournent sur la m\u00eame offre, Novemiq, et elles se compl\u00e8tent.\n\n**Bliss**, c'est celle qui trouve les gens. Elle cherche de nouveaux prospects (filtres Apollo, signaux d'achat, engagement LinkedIn) et leur envoie le premier email. Elle est \u00e0 10 $/jour et a d\u00e9pens\u00e9 10,06 $ aujourd'hui: le plafond est atteint, donc plus aucun nouveau premier contact ne part avant la p\u00e9riode suivante.\n\n**Motivate** r\u00e9pond \u00e0 ta place. D\u00e8s qu'un prospect r\u00e9pond, elle lui fait r\u00e9server un rendez-vous tout de suite, sans que tu aies \u00e0 \u00e9crire. Elle est plafonn\u00e9e \u00e0 1 $/jour et n'a rien d\u00e9pens\u00e9 aujourd'hui.\n\n**Moving** fait la m\u00eame chose en version appel: d\u00e8s qu'un prospect r\u00e9pond, un appel instantan\u00e9 par IA va caler l'appel avec lui. Elle n'a pas de budget d\u00e9fini, donc elle ne d\u00e9pense rien pour l'instant.\n\nIl me manque encore le d\u00e9tail de l'offre et le texte des emails envoy\u00e9s, je te le donne d\u00e8s que je l'ai.\n\nLe prochain pas: relever le plafond de Bliss pour que de nouveaux premiers contacts partent d\u00e8s aujourd'hui. Je le passe \u00e0 20 $/jour?",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/campaigns",
+      "run_operation GET /v1/features/brands/{brandId}/sales-funnel-campaigns",
+      "run_operation GET /v1/brands/{id}/offers",
+      "run_operation GET /v1/campaigns/stats",
+      "run_operation GET /v1/brands/{id}/offers/{offerId}",
+      "run_operation GET /v1/sales-funnel-campaigns/{id}",
+      "run_operation GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{salesFunnelCampaignId}/next-steps"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 125588,
+     "tokensOutput": 2743,
+     "replyCostUsd": 0.00573041724,
+     "judgeCostUsd": 0.00025578,
+     "latencyMs": 24420,
+     "verdict": {
+      "probabilities": {
+       "true": 0.58,
+       "respectful": 0.82,
+       "proactive": 0.67,
+       "answers": 0.78,
+       "nextAction": 0.91,
+       "form": 0.7
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Les trois tournent pour la m\u00eame offre, et chacune a son r\u00f4le.\n\n- **Bliss** est celle qui va chercher de nouveaux prospects : elle trouve des entreprises (filtres froids, signaux d'achat, signaux d'engagement LinkedIn) puis leur \u00e9crit un premier email. Plafond 10 $/jour, et les 10,06 $ du jour sont d\u00e9j\u00e0 consomm\u00e9s : plus de nouveaux premiers contacts jusqu'\u00e0 la prochaine p\u00e9riode, puis \u00e7a repart tout seul.\n- **Motivate** est une campagne de r\u00e9ponse : quand quelqu'un r\u00e9pond \u00e0 un email, elle prend le relais et propose un rendez-vous dans la minute, jusqu'\u00e0 1 $/jour. Rien d\u00e9pens\u00e9 aujourd'hui parce que personne n'a encore r\u00e9pondu.\n- **Moving** est l\u00e0 pour transformer un rendez-vous en appel puis en client sign\u00e9, en appel instantan\u00e9 par IA. Elle est bien en marche, mais aucun plafond de budget n'est fix\u00e9 : sans plafond elle ne d\u00e9pense rien et n'agit pas encore. Il me manque juste le montant que vous voulez y mettre.\n\nDites-moi le budget quotidien que vous voulez donner \u00e0 Moving (par exemple 5 $/jour) et je le fixe pour qu'elle se mette \u00e0 travailler.",
+     "tools": [
+      "read_skill",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/billing/accounts/subscriptions",
+      "run_operation GET /v1/sales-funnel-campaigns/{id}"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 136225,
+     "tokensOutput": 1970,
+     "replyCostUsd": 0.0050582034,
+     "judgeCostUsd": 0.00025893,
+     "latencyMs": 23310,
+     "verdict": {
+      "probabilities": {
+       "true": 0.42,
+       "respectful": 0.93,
+       "proactive": 0.85,
+       "answers": 0.87,
+       "nextAction": 0.95,
+       "form": 0.86
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "Trois campagnes tournent, et elles font deux m\u00e9tiers diff\u00e9rents.\n\n**Bliss** va chercher de nouveaux prospects pour toi (filtres Apollo, signaux d'achat, signaux d'engagement LinkedIn) puis leur envoie le premier email. Elle a atteint son plafond aujourd'hui : $10.06 d\u00e9pens\u00e9s, donc plus aucun nouveau premier email avant demain.\n\n**Motivate** n'\u00e9crit \u00e0 personne d'elle-m\u00eame : elle prend le relais d\u00e8s que quelqu'un r\u00e9pond, tient la conversation et cale le rendez-vous dans ton agenda. Plafond $1 par jour, $0 d\u00e9pens\u00e9 aujourd'hui : personne \u00e0 traiter pour l'instant.\n\n**Moving** fait le m\u00eame travail mais par appel t\u00e9l\u00e9phonique instantan\u00e9 : d\u00e8s qu'une conversation s'ouvre, elle appelle l'int\u00e9ress\u00e9 et fixe l'appel. Elle n'a pas de budget du tout, donc elle ne peut encore rien faire : c'est celle qui attend une d\u00e9cision de ta part.\n\nLe prochain pas : lui donner un petit plafond, par exemple $1 par jour, pour qu'elle puisse appeler les personnes int\u00e9ress\u00e9es. Je te le mets en place ? (Une chose me manque encore : la fiche de ton offre n'a pas pu \u00eatre relue maintenant, donc je d\u00e9cris les campagnes par ce qu'elles font plut\u00f4t que par ton produit.)",
+     "tools": [
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "describe_operation",
+      "run_operation",
+      "read_skill",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/campaigns",
+      "run_operation GET /v1/brands/{id}/offers",
+      "run_operation GET /v1/features/brands/{brandId}/offers",
+      "run_operation GET /v1/brands/{id}"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 132363,
+     "tokensOutput": 2377,
+     "replyCostUsd": 0.005743938600000001,
+     "judgeCostUsd": 0.00029379,
+     "latencyMs": 23785,
+     "verdict": {
+      "probabilities": {
+       "true": 0.58,
+       "respectful": 0.71,
+       "proactive": 0.77,
+       "answers": 0.89,
+       "nextAction": 0.86,
+       "form": 0.76
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "Voici vos 3 campagnes en cours, toutes sur la m\u00eame offre NOVEMIQ:\n\n**Celle qui cherche et \u00e9crit.** Elle trouve de nouvelles entreprises (filtres, signaux d'achat, engagement sur LinkedIn), leur envoie le premier email, puis fait r\u00e9server les rendez-vous. Plafond 10 $/jour, et les 10 $ sont d\u00e9j\u00e0 utilis\u00e9s aujourd'hui: plus aucun nouveau premier email avant la prochaine p\u00e9riode, les relances continuent.\n\n**Celle qui fait appeler.** Elle ne se d\u00e9clenche que quand quelqu'un r\u00e9pond: l'IA appelle la personne tout de suite pour caler un rendez-vous. Elle n'a pas encore de budget, donc elle ne d\u00e9pense rien pour l'instant.\n\n**Celle qui fait r\u00e9server en ligne.** M\u00eame principe, sur r\u00e9ponse: l'IA propose directement un cr\u00e9neau de rendez-vous. Jusqu'\u00e0 1 $/jour, rien d\u00e9pens\u00e9 aujourd'hui.\n\nCe qu'il me manque: le d\u00e9tail de l'offre vis\u00e9e, que je n'ai pas pu relire maintenant. Le vrai prochain pas, c'est celle qui fait appeler: donnez-moi un plafond (5 $/jour par exemple) et je l'active pour qu'elle travaille vos r\u00e9ponses.",
+     "tools": [
+      "read_skill",
+      "find_operation",
+      "run_operation",
+      "find_operation",
+      "find_operation",
+      "run_operation",
+      "run_operation",
+      "describe_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation",
+      "run_operation"
+     ],
+     "missingFixtures": [
+      "run_operation GET /v1/brands/{id}/offers",
+      "run_operation GET /v1/billing/accounts/subscriptions",
+      "run_operation GET /v1/sales-funnel-campaigns/{id}",
+      "run_operation GET /v1/brands/{id}"
+     ],
+     "llmCalls": 11,
+     "tokensInput": 130726,
+     "tokensOutput": 2728,
+     "replyCostUsd": 0.005789514360000001,
+     "judgeCostUsd": 0.000244524,
+     "latencyMs": 25586,
+     "verdict": {
+      "probabilities": {
+       "true": 0.36,
+       "respectful": 0.8,
+       "proactive": 0.68,
+       "answers": 0.89,
+       "nextAction": 0.9,
+       "form": 0.79
+      },
+      "passed": {
+       "true": false,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": false
+     }
+    }
+   ]
+  },
+  {
+   "id": "prospect-free-trial-pricing",
+   "surface": "whatsapp",
+   "replays": [
+    {
+     "reply": "Straight answer: no free trial and no free credit, and no subscription either. The agent itself is free: you pay only for the tools your campaigns use, at the vendor's price with 0% markup, from a prepaid balance. That balance opens at $10, with automatic reload behind it (reload when it drops below $5, by $10).\n\nWhat the units actually cost, so it is clear:\n* Lead data and email checks: $0.0278 per Apollo credit, $0.0117 per email verified\n* Sending: $0.0272 per email to a verified address, up to $0.0817 when the address is unconfirmed\n* AI writing: from $0.00318 per million cached tokens up to $1.27 per million output tokens\n\nReplies usually arrive 5 to 10 days after the first email, and follow-ups have their cost reserved before they are sent. The full list sits here: https://distribute.you/catalog\n\nYour account today is prepaid with $0.00 in it and no campaign running, so nothing is reaching buyers for SEO Engine yet. Put $10 on the balance and I'll build the audience for you (website owners, marketing teams and agencies) and launch your first campaign at $5 a day. Shall I set that up?",
+     "tools": [
+      "read_our_website",
+      "read_our_website",
+      "read_our_website"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 38806,
+     "tokensOutput": 1557,
+     "replyCostUsd": 0.004547781599999999,
+     "judgeCostUsd": 0.00039606,
+     "latencyMs": 12442,
+     "verdict": {
+      "probabilities": {
+       "true": 0.59,
+       "respectful": 0.91,
+       "proactive": 0.78,
+       "answers": 0.87,
+       "nextAction": 0.93,
+       "form": 0.14
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": false
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "No free trial, and no subscription either. The agent itself is free; you pay only for the work on your campaigns, each tool at the vendor's list price with 0% markup (lead data, research, AI writing, sending), drawn from a prepaid balance that starts at $10, with an automatic reload you set so sending never stops. No setup fee. The full price list is here: https://distribute.you/catalog\n\nOn your account nothing is running yet and the balance is $0.00, so nothing has cost you anything so far. For SEO Engine, the first real spend is tiny: one email sent and verified costs about $0.03.\n\nShall I set up your first campaign, reaching the marketing leads and agencies who buy SEO, and send you the $10 top-up link?",
+     "tools": [
+      "read_our_website",
+      "read_our_website",
+      "read_our_website"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 38811,
+     "tokensOutput": 789,
+     "replyCostUsd": 0.0035724756,
+     "judgeCostUsd": 0.00039101999999999995,
+     "latencyMs": 7831,
+     "verdict": {
+      "probabilities": {
+       "true": 0.77,
+       "respectful": 0.93,
+       "proactive": 0.63,
+       "answers": 0.93,
+       "nextAction": 0.95,
+       "form": 0.65
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    },
+    {
+     "reply": "No free trial, and no subscription either. The agent itself is free: you only pay for the work done on your campaigns, each tool at the vendor's price with 0% markup, and the full list is here: https://distribute.you/catalog\n\nSo the real costs are per unit: lead data at $0.0278 per Apollo credit, sending at $0.0272 per email whose address was verified valid, AI writing per million tokens. No setup fee.\n\nIn practice your account starts prepaid: a first top up from $10, with an automatic reload from $10 whenever the balance drops under $5. And you set each campaign's cap, so spend never runs past what you allow. Right now nothing has been spent and no campaign is running.\n\nShall I build your first campaign, reaching the people who buy SEO for their websites, so you see the exact setup and cost before anything goes out? I'll send the payment link at the same time.",
+     "tools": [
+      "read_our_website",
+      "read_our_website",
+      "read_our_website"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 3,
+     "tokensInput": 38914,
+     "tokensOutput": 1132,
+     "replyCostUsd": 0.00400163568,
+     "judgeCostUsd": 0.000392532,
+     "latencyMs": 9851,
+     "verdict": {
+      "probabilities": {
+       "true": 0.78,
+       "respectful": 0.92,
+       "proactive": 0.78,
+       "answers": 0.93,
+       "nextAction": 0.92,
+       "form": 0.42
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": false
+      },
+      "pass": false
+     }
+    },
+    {
+     "reply": "No trial, and you won't miss one: the software is free. No subscription, no setup fee, no per-seat charge. You only pay for the work your campaigns actually do, at the vendor's own price with 0% markup on top.\n\nIn practice that means around 3 cents for an email sent to a verified address, about 3 cents per lead-data credit to find and check a prospect, and a fraction of a cent for the site research before we write. Chat with me here is billed the same way, by the tiny bit of usage it takes.\n\nNothing starts until you fund it: first top-up is $10, and an automatic reload tops it back up when the balance drops below $5. Your account sits at $0.00 today, so no campaign is running and nobody is being reached yet.\n\nNext step: I build your first audience, website owners and marketing teams who need SEO help, plus a campaign capped at $5 a day, ready to send the moment you add the $10. Shall I set it up?",
+     "tools": [
+      "read_our_website",
+      "read_our_website",
+      "read_our_website"
+     ],
+     "missingFixtures": [],
+     "llmCalls": 2,
+     "tokensInput": 26670,
+     "tokensOutput": 1348,
+     "replyCostUsd": 0.00417233808,
+     "judgeCostUsd": 0.00039303600000000004,
+     "latencyMs": 10438,
+     "verdict": {
+      "probabilities": {
+       "true": 0.52,
+       "respectful": 0.92,
+       "proactive": 0.76,
+       "answers": 0.83,
+       "nextAction": 0.94,
+       "form": 0.59
+      },
+      "passed": {
+       "true": true,
+       "respectful": true,
+       "proactive": true,
+       "answers": true,
+       "nextAction": true,
+       "form": true
+      },
+      "pass": true
+     }
+    }
+   ]
+  }
+ ]
+}

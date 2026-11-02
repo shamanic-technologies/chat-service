@@ -16,7 +16,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
-export const EVAL_SURFACES = ["web", "whatsapp"] as const;
+export const EVAL_SURFACES = ["web", "whatsapp", "lead"] as const;
 export type EvalSurface = (typeof EVAL_SURFACES)[number];
 
 const ToolCallSchema = z
@@ -44,6 +44,15 @@ export const ScenarioSchema = z
     surface: z.enum(EVAL_SURFACES),
     /** Who writes (first name, anonymised) and what our records say about them. */
     person: z.object({ name: z.string().min(1), email: z.string().email().optional() }).strict(),
+    /**
+     * A Lead event turn (surface "lead"): the writer's payload as the Lead event
+     * workflow sent it (its prompt, the thread, the answer schema), on our own
+     * brand. `guest` = no account of ours is theirs.
+     */
+    lead: z
+      .object({ payload: z.record(z.string(), z.unknown()), guest: z.boolean(), phoneBound: z.boolean() })
+      .strict()
+      .optional(),
     /** Page context the web client sent with the message (page, account, recentActions). */
     context: z.record(z.string(), z.unknown()).optional(),
     history: z.array(HistoryMessageSchema),

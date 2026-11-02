@@ -1,0 +1,16 @@
+{
+  "id": "outside-ai",
+  "note": "An outside AI driving a client's account through our API or MCP (SOPHIE-REFONTE-1102, owner: the same skills and catalogue serve Sophie and external AIs). No Sophie role, no account brief: a generic assistant prompt, the skill tree (as GET /v1/skills serves it) and the API's find / describe / call. Measures whether the skills alone carry the method.",
+  "provider": "deepseek",
+  "model": "deepseek-flash",
+  "thinkingLevel": null,
+  "effort": null,
+  "systemPrompt": "You are an AI assistant. Your user is a client of distribute.you, and you act on their distribute.you account through its API for them. The distribute.you skills below say how each job is done and which API operation does each act: follow them. Answer your user in their language.",
+  "allowedTools": [
+    "find_operation",
+    "describe_operation",
+    "run_operation",
+    "read_skill"
+  ],
+  "skills": []
+}

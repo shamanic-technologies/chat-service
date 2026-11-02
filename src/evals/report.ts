@@ -12,6 +12,8 @@ export const COST_PER_REPLY_TARGET_USD = 0.03;
 
 export interface ReplayResult {
   reply: string;
+  /** The reply failed before an answer (it fails every criterion). */
+  error?: string;
   tools: string[];
   /** Each tool call with what it returned (what the judge read), for re-judging without a model call. */
   actions?: string[];
@@ -51,17 +53,20 @@ export function summarise(results: ScenarioResult[]) {
     CRITERIA.map((c) => [c, replays.length ? replays.filter((x) => x.verdict.passed[c]).length / replays.length : 0]),
   ) as Record<Criterion, number>;
   const scenariosPassed = results.filter(scenarioPasses).length;
-  const medianCost = median(replays.map((x) => x.replyCostUsd));
+  // Cost and size are measured on the replies that ran (a failed one cost nothing and says nothing).
+  const ran = replays.filter((x) => !x.error);
+  const medianCost = median(ran.map((x) => x.replyCostUsd));
   const alwaysTrue = replays.every((x) => x.verdict.passed.true);
   return {
     scenarios: results.length,
     scenariosPassed,
     replays: replays.length,
     criterionRate,
+    failedReplies: replays.filter((x) => x.error).length,
     medianCostPerReplyUsd: Number(medianCost.toFixed(5)),
-    medianLlmCalls: median(replays.map((x) => x.llmCalls)),
-    medianInputTokens: median(replays.map((x) => x.tokensInput)),
-    medianLatencyMs: median(replays.map((x) => x.latencyMs)),
+    medianLlmCalls: median(ran.map((x) => x.llmCalls)),
+    medianInputTokens: median(ran.map((x) => x.tokensInput)),
+    medianLatencyMs: median(ran.map((x) => x.latencyMs)),
     passed: results.length > 0 && scenariosPassed === results.length && alwaysTrue && medianCost < COST_PER_REPLY_TARGET_USD,
   };
 }

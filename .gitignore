@@ -4,3 +4,4 @@ dist/
 *.tgz
 openapi.json
 
+__pycache__/

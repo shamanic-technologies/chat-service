@@ -6,6 +6,8 @@
 // ---------------------------------------------------------------------------
 
 import type { ToolExecutor } from "../lib/gemini-chat.js";
+import { REACH_ELSEWHERE_TOOL_NAME } from "../lib/lead-contact.js";
+import { LEAD_ANSWER_TOOL_NAME } from "../lib/lead-turn.js";
 import { readOurWebsite } from "../lib/our-website.js";
 import { readSkillFrom } from "../lib/skills.js";
 import { parseChoicesArgs, parseChoicesIntro, OPEN_PAGE_TOOL_NAME, PRESENT_CHOICES_TOOL_NAME } from "../lib/ui-tools.js";
@@ -41,6 +43,13 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
       return "input_request";
     }
     if (name === OPEN_PAGE_TOOL_NAME) return { name, result: { opened: true, page: a.page } };
+    // A lead turn's answer ends the turn; what the person receives is read from it.
+    if (name === LEAD_ANSWER_TOOL_NAME && scenario.lead) {
+      const field = String((scenario.lead.payload as { messageField?: unknown }).messageField ?? "message");
+      choicesText = leadAnswerForJudge(a, field);
+      return "input_request";
+    }
+    if (name === REACH_ELSEWHERE_TOOL_NAME) return { name, result: { stated: true, note: "Recorded (replay: nothing written)." } };
     if (name === FIND_API_TOOL_NAME) return { name, result: await findApi(a) };
     if (name === DESCRIBE_API_TOOL_NAME) return { name, result: await describeApi(a) };
     if (name === CALL_API_TOOL_NAME) return { name, result: await replayCallApi(a) };
@@ -83,4 +92,18 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
   }
 
   return { executeTool, uiText: () => choicesText, missing: () => [...missing] };
+}
+
+/**
+ * What the judge reads of a lead answer: the text the person receives, or, when
+ * nothing goes out now, the decision in plain words (never a JSON blob the
+ * judge would grade as a message).
+ */
+export function leadAnswerForJudge(answer: Record<string, unknown>, messageField: string): string {
+  const sent = answer[messageField];
+  if (typeof sent === "string" && sent.trim()) return sent;
+  const words = (k: string) => (typeof answer[k] === "string" && (answer[k] as string).trim() ? (answer[k] as string).trim() : null);
+  const reason = words("reason") ?? words("why") ?? words("nextFollowUpWhy");
+  const next = words("nextFollowUpAt");
+  return ["Nothing sent to them now.", reason ? `Reason: ${reason}` : null, next ? `Next look: ${next}.` : null].filter(Boolean).join(" ");
 }

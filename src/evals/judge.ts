@@ -20,6 +20,7 @@ export type Criterion = (typeof CRITERIA)[number];
 const SURFACE_FORM: Record<Scenario["surface"], string> = {
   web: "a chat panel in the client's dashboard: short paragraphs, plain words, no internal ids or tool names",
   whatsapp: "WhatsApp: short plain-text messages, no HTML tags, no markdown tables or headings, links written out",
+  lead: "a message we send for our brand to a lead or client, in the channel the facts name (email: HTML paragraphs are right; WhatsApp: short plain text), or a reasoned decision to write nothing now",
 };
 
 export const QUESTIONS: Record<Criterion, TypeSafeNoulQuestion> = {
@@ -52,7 +53,8 @@ export const QUESTIONS: Record<Criterion, TypeSafeNoulQuestion> = {
   },
   answers: {
     type: "noul",
-    instructions: "Does the reply answer what the person asked in their last message, directly, in its first sentences?",
+    instructions:
+      "Does the reply answer what the person asked in their last message, directly, in its first sentences? When nobody asked anything (an event fired about the person), a message or a decision that fits that event counts.",
     criteria: {
       true: "The person's question or request is answered or done, up front.",
       false: "The question is dodged, answered only partly, or buried under other things.",
@@ -61,7 +63,7 @@ export const QUESTIONS: Record<Criterion, TypeSafeNoulQuestion> = {
   nextAction: {
     type: "noul",
     instructions:
-      "Does the reply end on one concrete next step: what we do next, or the one thing the person does now (with its link or a yes/no question)? When the person is leaving and everything they asked is done, saying what happens next and when counts. A vague close (\"let me know\", \"any question?\", \"close this window\") is false.",
+      "Does the reply end on one concrete next step: what we do next, or the one thing the person does now (with its link or a yes/no question)? When the person is leaving and everything they asked is done, saying what happens next and when counts. A decision to write nothing now, with a reason and a date to look again, counts. A vague close (\"let me know\", \"any question?\", \"close this window\") is false.",
     criteria: {
       true: "It ends on one concrete next step that moves the person forward, or, for a person leaving, on what happens next.",
       false: "It ends with no step, a vague invitation, or several options with no lead.",
@@ -69,7 +71,8 @@ export const QUESTIONS: Record<Criterion, TypeSafeNoulQuestion> = {
   },
   form: {
     type: "noul",
-    instructions: "Is the reply in the right form for where it is read, and short enough to read in one pass?",
+    instructions:
+      "Is the reply in the right form for where it is read, and short enough to read in one pass? A decision to write nothing now is not a message to anyone: its form is right when it says why and when to look again.",
     criteria: {
       true: "Right format for the surface and short.",
       false: "Wrong format for the surface (HTML on WhatsApp, a table, internal ids) or too long to read in one pass.",
@@ -103,6 +106,8 @@ export function judgeState(scenario: Scenario, reply: string, actions: readonly 
     facts: scenario.facts,
     whatAGreatAnswerDoes: scenario.expect,
     conversationBefore: recent,
+    // A lead turn: the thread, who they are and our facts are in the writer's message.
+    ...(scenario.lead ? { whatTheCampaignKnows: String((scenario.lead.payload as { message?: unknown }).message ?? "").slice(0, 20_000) } : {}),
     personWrites: scenario.message,
     ...(contextGiven.trim() ? { accountFactsTheAssistantWasGiven: contextGiven.trim() } : {}),
     actionsTakenThisTurn: actions.length ? actions : ["none"],

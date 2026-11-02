@@ -104,8 +104,9 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
     const replays: ReplayResult[] = [];
     for (let i = 0; i < runs; i++) {
       const r = await withRun("sophie-eval-replay", async (runId) => {
+       try {
         const fixtures = fixtureExecutor(def, scenario);
-        const turn = await replayTurn({ def, scenario, provider, model, apiKey: modelKey, executeTool: fixtures.executeTool, uiText: fixtures.uiText });
+        const turn = await replayTurn({ def, scenario, provider, model, apiKey: modelKey, executeTool: fixtures.executeTool, uiText: fixtures.uiText, ...(process.argv.includes("--reasoning-off") ? { reasoningDisabled: true } : process.argv.includes("--reasoning-on") ? { reasoningDisabled: false } : {}) });
         const modelCosts = await retryRefused("reply costs", () => addPlatformRunCosts(runId, SERVICE, turn.costLines.map((l) => ({ costName: l.costName, quantity: l.quantity, costSource: "platform" as const }))));
         const actions = turn.toolCalls.map((c) => describeAction(c.name, c.args, c.result));
         const judged = await judge(runId, typesafeKey, scenario, turn.reply, actions, turn.turnContext);
@@ -123,6 +124,25 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
           latencyMs: turn.latencyMs,
           verdict: judged.verdict,
         };
+       } catch (err) {
+        // One failed reply (a vendor 500, a dropped connection) is a reply the
+        // person never got: it counts as failing every criterion, the run goes on.
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[evals] ${scenario.id}: the reply failed: ${message.slice(0, 300)}`);
+        return {
+          reply: "",
+          error: message.slice(0, 1000),
+          tools: [],
+          missingFixtures: [],
+          llmCalls: 0,
+          tokensInput: 0,
+          tokensOutput: 0,
+          replyCostUsd: 0,
+          judgeCostUsd: 0,
+          latencyMs: 0,
+          verdict: { probabilities: Object.fromEntries(CRITERIA.map((c) => [c, 0])), passed: Object.fromEntries(CRITERIA.map((c) => [c, false])), pass: false } as Verdict,
+        };
+       }
       });
       replays.push(r);
       const failed = CRITERIA.filter((c) => !r.verdict.passed[c]);
@@ -156,7 +176,12 @@ async function codeDefinition(): Promise<AgentDefinition> {
 async function main() {
   const definitionPath = arg("definition");
   if (!definitionPath) throw new Error("--definition <file> is required");
-  const def = definitionPath === "code" ? await codeDefinition() : loadDefinition(definitionPath);
+  const loaded = definitionPath === "code" ? await codeDefinition() : loadDefinition(definitionPath);
+  // A file definition with no skills of its own (an outside AI) reads the tree as this code seeds it.
+  const def =
+    loaded.skills.length === 0
+      ? { ...loaded, skills: (await import("../lib/skill-seed.js")).SEED_SKILLS.map((x) => ({ slug: x.slug, parentSlug: x.parentSlug, title: x.title, description: x.description, content: x.content })) }
+      : loaded;
   const only = arg("only")?.split(",").map((s) => s.trim()).filter(Boolean);
   const scenarios = loadScenarios(arg("scenarios") ?? "evals/scenarios").filter((s) => !only || only.includes(s.id));
   if (scenarios.length === 0) throw new Error("[evals] no scenario selected");
@@ -183,7 +208,7 @@ async function main() {
     definition: def.id,
     ...(def.id.startsWith("sophie-code") ? { codeHash: sophieCodeHash(), definitionSnapshot: def } : {}),
     definitionHash: definitionHash(def, `${provider}/${model}`),
-    model: `${provider}/${model}`,
+    model: `${provider}/${model}${process.argv.includes("--reasoning-off") || (!process.argv.includes("--reasoning-on") && def.reasoning === "off") ? " (reasoning off)" : ""}`,
     judge: `jev/${TYPESAFE_DEFAULT_MODEL}`,
     runsPerScenario: runs,
     summary,
