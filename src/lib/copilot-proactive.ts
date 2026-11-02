@@ -268,15 +268,18 @@ export async function pickProactiveRecipient(
   orgId: string,
 ): Promise<ProactiveRecipient | null> {
   const rows = await deps.db
-    .select({ id: sessions.id, userId: sessions.userId, channelPhone: sessions.channelPhone })
+    .select({ id: sessions.id, userId: sessions.userId, channelPhone: sessions.channelPhone, leadThread: sessions.leadThread })
     .from(sessions)
     .where(and(eq(sessions.orgId, orgId), eq(sessions.configKey, COPILOT_CONFIG_KEY), eq(sessions.guest, false)))
     .orderBy(desc(sessions.updatedAt))
     .limit(50);
+  // The thread is the person's own chat, never a lead thread (SOPHIE-JCURVE-1102);
+  // their WhatsApp number is wherever a turn bound it, a lead thread included.
   const latestPerUser: Array<{ id: string; userId: string; channelPhone: string | null }> = [];
   for (const r of rows) {
-    if (!r.userId || latestPerUser.some((x) => x.userId === r.userId)) continue;
-    latestPerUser.push({ id: r.id, userId: r.userId, channelPhone: r.channelPhone });
+    if (r.leadThread || !r.userId || latestPerUser.some((x) => x.userId === r.userId)) continue;
+    const channelPhone = r.channelPhone ?? rows.find((x) => x.userId === r.userId && x.channelPhone)?.channelPhone ?? null;
+    latestPerUser.push({ id: r.id, userId: r.userId, channelPhone });
     if (latestPerUser.length >= MAX_CANDIDATES) break;
   }
   if (latestPerUser.length === 0) return null;

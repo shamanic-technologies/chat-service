@@ -233,6 +233,17 @@ const lineDeps = (reach: Awaited<ReturnType<ProactiveDeps["reachWhatsapp"]>> = {
 });
 
 describe("pickProactiveRecipient", () => {
+  it("writes in the person's own chat, never a lead thread, and reaches WhatsApp by the number a lead thread bound (SOPHIE-JCURVE-1102)", async () => {
+    const { db } = fakeDb([
+      [
+        { id: "s-lead", userId: "u-owner", channelPhone: "+33600000009", leadThread: true },
+        { id: "s-web", userId: "u-owner", channelPhone: null, leadThread: false },
+      ],
+    ]);
+    const r = await pickProactiveRecipient({ db, fetchEmail: async () => "owner@acme.example", isStaffEmail: () => false }, REQ.orgId);
+    expect(r).toEqual({ userId: "u-owner", sessionId: "s-web", whatsapp: { phone: "+33600000009" } });
+  });
+
   it("picks the latest customer member over a more recent staff member, with the WhatsApp hop of their thread", async () => {
     const { db } = fakeDb([
       [
