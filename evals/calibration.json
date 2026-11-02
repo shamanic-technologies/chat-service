@@ -1,9 +1,9 @@
 {
   "kind": "calibration",
-  "at": "2026-11-02T06:08:46.786Z",
+  "at": "2026-11-02T09:01:03.748Z",
   "judge": "jev/jev-latest",
-  "cases": 25,
-  "agree": 25,
+  "cases": 34,
+  "agree": 34,
   "passed": true,
   "rows": [
     {
@@ -53,12 +53,76 @@
         "true",
         "respectful",
         "proactive",
-        "answers",
         "form"
       ]
     },
     {
       "id": "jcurve-new-chat-empty-profile",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-autoreply-then-visit",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-cold-newsletter-click",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-newsletter-reader-old-autoreply",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-reply-partnership-ask",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-signup-card-declined",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true"
+      ]
+    },
+    {
+      "id": "lead-signup-card-declined",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-student-first-client",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-whatsapp-signed-up-live",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-whatsapp-unanswered-asks",
       "which": "good",
       "expected": "pass",
       "got": "pass",

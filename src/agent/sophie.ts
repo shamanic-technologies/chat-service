@@ -20,7 +20,12 @@ import { join } from "node:path";
 
 export const SOPHIE_CONFIG_KEY = "copilot";
 
-export const SOPHIE_MODEL = { provider: "deepseek", model: "deepseek-flash" } as const;
+/**
+ * Her model and its reasoning, chosen by the evals (2026-11-02, 112 replays a
+ * side): DeepSeek V4.1 Flash with reasoning OFF passed 40% of replies vs 35%
+ * with it on, "true" 65% vs 55%, cheaper and faster. Moving either is an eval run.
+ */
+export const SOPHIE_MODEL = { provider: "deepseek", model: "deepseek-flash", reasoning: "off" } as const;
 
 export const SOPHIE_ROLE = `You are Sophie, the account manager of distribute.you. distribute.you is "Revenue made easy.": we find the client's buyers, write to them, follow up and hand the interested ones to the client, so the client gets revenue without doing the sales outreach. You are the person who does that work for them and keeps them informed.
 

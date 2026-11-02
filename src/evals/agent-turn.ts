@@ -15,12 +15,17 @@ import { z } from "zod";
 import { withAccountSetup } from "../lib/account-setup.js";
 import { buildSystemPrompt, resolveModel, resolveToolSet, type ModelAlias, type Provider } from "../lib/anthropic.js";
 import { buildChannelBlock } from "../lib/channel-copilot.js";
+import { REACH_ELSEWHERE_TOOL, REACH_ELSEWHERE_TOOL_NAME } from "../lib/lead-contact.js";
+import { LEAD_ANSWER_TOOL_NAME, buildLeadAnswerTool, buildLeadTurnBlock, leadTurnToolNames, type LeadTurnFrame } from "../lib/lead-turn.js";
+import { CLIENT_UI_TOOL_NAMES } from "../lib/ui-tools.js";
+import type { LeadTurnRequest } from "../schemas.js";
 import type { ToolDefinition, ToolExecutor } from "../lib/gemini-chat.js";
 import { modelDisplayName } from "../lib/model-ids.js";
 import { isVendorProvider, type VendorId } from "../lib/openai-compatible.js";
 import { aboutYouBlock, withOurWebsite } from "../lib/person-facing.js";
 import { skillIndexBlockFrom } from "../lib/skills.js";
 import { streamVendorChat } from "../lib/vendor-chat.js";
+import { streamGeminiChat } from "../lib/gemini-chat.js";
 import type { VendorCostLine } from "../lib/cost-names.js";
 import { buildSituationBrief } from "../agent/situation.js";
 import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS } from "../agent/sophie.js";
@@ -42,6 +47,8 @@ export const AgentDefinitionSchema = z
     clientBrief: z.boolean().optional(),
     /** The turn's context carries the situation brief (SOPHIE-REFONTE-1102 P1). */
     situationBrief: z.boolean().optional(),
+    /** Direct vendors: the model reasons ("on", its default) or not ("off"). */
+    reasoning: z.enum(["on", "off"]).optional(),
     skills: z.array(
       z
         .object({
@@ -79,10 +86,34 @@ export interface AssembledTurn {
   turnContext: string;
   tools: ToolDefinition[];
   holdTextBesideToolCalls: boolean;
+  /** A lead turn ends on this tool (answer_person). */
+  endToolName?: string;
+}
+
+/** A lead turn as /chat builds it: the writer's block, the person's tools (none for a guest), the answer and reach tools. */
+function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string): AssembledTurn {
+  const lead = scenario.lead!;
+  const payload = lead.payload as unknown as LeadTurnRequest;
+  const frame: LeadTurnFrame = { payload, ownBrand: true, guest: lead.guest, phoneBound: lead.phoneBound, afterSignIn: false };
+  const sessionTools = lead.guest ? [] : withOurWebsite(def.allowedTools, def.allowedTools.includes("read_skill"));
+  const toolNames = leadTurnToolNames(sessionTools, CLIENT_UI_TOOL_NAMES);
+  const skillBlock = !lead.guest && toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
+  return {
+    systemPrompt: def.systemPrompt + skillBlock + aboutYouBlock(modelDisplay),
+    turnContext: buildLeadTurnBlock(frame),
+    tools: [
+      ...(resolveToolSet(toolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME)) as unknown as ToolDefinition[]),
+      REACH_ELSEWHERE_TOOL as unknown as ToolDefinition,
+      buildLeadAnswerTool(payload.responseSchema, payload.messageField) as unknown as ToolDefinition,
+    ],
+    holdTextBesideToolCalls: true,
+    endToolName: LEAD_ANSWER_TOOL_NAME,
+  };
 }
 
 /** The prompt and tools /chat would build for this scenario under this definition. */
 export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string, brief = ""): AssembledTurn {
+  if (scenario.surface === "lead") return assembleLeadTurn(def, scenario, modelDisplay);
   const toolNames = withOurWebsite(withAccountSetup(def.allowedTools), def.allowedTools.includes("read_skill"));
   const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
   const systemPrompt = def.systemPrompt + skillBlock + aboutYouBlock(modelDisplay);
@@ -114,7 +145,7 @@ export interface ReplayedTurn {
   llmCalls: number;
   tokensInput: number;
   tokensOutput: number;
-  costLines: VendorCostLine[];
+  costLines: Array<{ costName: string; quantity: number }>;
   latencyMs: number;
 }
 
@@ -137,37 +168,62 @@ export async function replayTurn(args: {
   executeTool: ToolExecutor;
   /** The text a turn-ending UI tool (present_choices) showed, read after the loop. */
   uiText: () => string;
+  /** Direct vendors: send the reasoning-off field (a thinking-level comparison). */
+  reasoningDisabled?: boolean;
 }): Promise<ReplayedTurn> {
   const { def, scenario, provider, model, apiKey, executeTool, uiText } = args;
-  if (!isVendorProvider(provider)) {
-    throw new Error(`[evals] provider "${provider}" is not wired in the replay yet (direct vendors only: deepseek, zai, moonshot, openai)`);
+  if (!isVendorProvider(provider) && provider !== "google") {
+    throw new Error(`[evals] provider "${provider}" is not wired in the replay yet (direct vendors and google; the Anthropic loop lives inside the /chat handler)`);
   }
   const resolved = resolveModel(provider as Provider, model as ModelAlias);
-  // Same order as /chat: the client brief, then where the account stands.
-  const brief =
+  // Same order as /chat: the client brief, then where the account stands. A lead
+  // turn carries neither here (it runs in the writing brand's thread; its
+  // context is the writer's message).
+  const brief = scenario.surface === "lead" ? "" :
     (def.clientBrief ? await fixtureClientBrief(scenario).catch((err) => clientBriefUnavailable(err)) : "") +
     (def.situationBrief ? await buildSituationBrief(fixtureSituationReader(scenario)) : "");
   const turn = assembleTurn(def, scenario, modelDisplayName(resolved.apiModelId), brief);
   let llmCalls = 0;
   const started = Date.now();
-  const result = await streamVendorChat({
+  const history = scenario.history.map((m) => ({ role: m.role, content: m.content, toolCalls: m.toolCalls as never }));
+  const hooks = {
+    res: silentResponse(),
+    sendSSE: () => undefined,
+    executeTool,
+    signal: new AbortController().signal,
+    holdTextBesideToolCalls: turn.holdTextBesideToolCalls,
+    ...(turn.endToolName ? { endToolName: turn.endToolName } : {}),
+  };
+  // Gemini reads the stable prompt and the turn's context joined, as /chat sends it.
+  const result =
+    provider === "google"
+      ? await streamGeminiChat({
+          ...hooks,
+          apiKey,
+          model: resolved.apiModelId,
+          systemPrompt: turn.systemPrompt + turn.turnContext,
+          history,
+          userMessage: scenario.message,
+          tools: turn.tools,
+          beforeProviderCall: async () => {
+            llmCalls++;
+          },
+        })
+      : await streamVendorChat({
     vendor: provider as VendorId,
     apiKey,
     model: resolved.apiModelId,
     costPrefix: resolved.costPrefix,
     systemPrompt: turn.systemPrompt,
     turnContext: turn.turnContext,
-    history: scenario.history.map((m) => ({ role: m.role, content: m.content, toolCalls: m.toolCalls as never })),
+    history,
     userMessage: scenario.message,
     tools: turn.tools,
-    res: silentResponse(),
-    sendSSE: () => undefined,
-    executeTool,
-    signal: new AbortController().signal,
+    ...hooks,
     beforeProviderCall: async () => {
       llmCalls++;
     },
-    holdTextBesideToolCalls: turn.holdTextBesideToolCalls,
+    reasoningDisabled: args.reasoningDisabled ?? def.reasoning === "off",
   });
   const ui = uiText();
   return {
@@ -195,6 +251,7 @@ export function sophieDefinition(skills: AgentDefinition["skills"]): AgentDefini
     allowedTools: [...SOPHIE_TOOLS],
     clientBrief: true,
     situationBrief: true,
+    reasoning: SOPHIE_MODEL.reasoning,
     skills,
   };
 }

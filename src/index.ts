@@ -157,7 +157,7 @@ import {
 import { seedPlatformConfigs, seedSophieConfig, holdTextBesideToolCallsFor, isSelfSeededConfigKey } from "./lib/seed-platform-configs.js";
 import { buildSituationBrief } from "./agent/situation.js";
 import { gatewaySituationReader } from "./agent/situation-reader.js";
-import { SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
+import { SOPHIE_CONFIG_KEY, SOPHIE_MODEL } from "./agent/sophie.js";
 import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi } from "./agent/catalogue-tools.js";
 import {
   SkillNotFoundError,
@@ -5046,6 +5046,8 @@ app.post("/chat", requireAuth, async (req, res) => {
         signal: abortController.signal,
         holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),
         ...(leadTurn ? { endToolName: LEAD_ANSWER_TOOL_NAME } : {}),
+        // Sophie's reasoning is part of her definition (src/agent/sophie.ts), chosen by the evals.
+        reasoningDisabled: configKey === SOPHIE_CONFIG_KEY && SOPHIE_MODEL.reasoning === "off",
         beforeProviderCall: async ({ requestBody, at }) => {
           await authorizeChatProviderCall(estimateRequestTokens(requestBody), at);
         },

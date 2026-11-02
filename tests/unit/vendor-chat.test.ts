@@ -68,3 +68,38 @@ describe("streamVendorChat: never tool_choice none", () => {
     expect((await out).fullResponse).toBe("You have $4.12 left.");
   });
 });
+
+describe("streamVendorChat: the vendor's own request fields (SOPHIE-REFONTE-1102 model comparison)", () => {
+  beforeEach(() => post.mockReset());
+
+  it("caps output under the vendor's field name, and sends reasoning-off only when asked", async () => {
+    post.mockResolvedValue(reply({ content: "Done." }));
+    await run().out;
+    expect(post.mock.calls[0][0].body.max_tokens).toBeGreaterThan(0);
+    expect(post.mock.calls[0][0].reasoningDisabled).toBe(false);
+
+    post.mockReset();
+    post.mockResolvedValue({ ...reply({ content: "Done." }), model: "gpt-6.1-sol" });
+    await streamVendorChat({
+      vendor: "openai",
+      apiKey: "k",
+      model: "gpt-6.1-sol",
+      costPrefix: "openai-gpt-6.1-sol",
+      systemPrompt: "SYS",
+      turnContext: "",
+      history: [],
+      userMessage: "Hi",
+      tools: TOOLS,
+      res: {} as never,
+      sendSSE: () => {},
+      executeTool: vi.fn(),
+      signal: new AbortController().signal,
+      beforeProviderCall: async () => {},
+      reasoningDisabled: true,
+    }).catch(() => undefined);
+    const body = post.mock.calls[0][0].body;
+    expect(body.max_completion_tokens).toBeGreaterThan(0);
+    expect(body.max_tokens).toBeUndefined();
+    expect(post.mock.calls[0][0].reasoningDisabled).toBe(true);
+  });
+});

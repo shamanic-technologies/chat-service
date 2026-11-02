@@ -1,0 +1,89 @@
+{
+  "id": "lead-cold-newsletter-click",
+  "title": "Someone we never talked to clicks our newsletter",
+  "source": "prospect R, email, 2026-10-29",
+  "surface": "lead",
+  "person": {
+    "name": "Leo Grant"
+  },
+  "lead": {
+    "payload": {
+      "medium": "email",
+      "brandId": "f4d73dab-1f9d-49b2-b16e-63ecde76a5eb",
+      "message": "NOW: 2026-10-29T15:19:50.834Z\nTODAY: 2026-10-29\nCHANNEL: email. WhatsApp cannot reach them (no_phone_known); we hold their address person1@example.com.\nMessages of ours on record: 0. Our last: unknown. Their last message: never.\n\nWHY WE WRITE NOW:\nTrigger: Lead event: Anything happens with a person: a reply, a visit, a signup, a meeting, a payment.\nIts settings: memberTriggerIds = [\"positive_reply_received\",\"website_visited\",\"booking_call_started\",\"meeting_booked\",\"meeting_attended\",\"signed_up\",\"form_submitted\",\"purchase_made\",\"paid_client\",\"website_visit_no_signup_30_min\",\"signup_not_paid_30_min\",\"signup_not_paid_24_hours\",\"whatsapp_number_given\",\"hot_lead\",\"account_event\",\"message_received\",\"industry_update_video\",\"message_sent\",\"message_written\",\"company_researched\",\"email_checked\",\"email_found\",\"phone_found\",\"lead_identified\",\"audience_built\",\"ad_shown\",\"post_published\",\"client_satisfied\",\"post_viewed\",\"post_engaged\"]\nIt fired for THIS person just now (2026-10-29T15:19:50.834Z).\nThe fact behind it: account event.\n\nTHEIR LOCAL TIME:\nTheir local time now: Thursday 10:19 (America/Chicago).\n\nWHO WE WRITE TO:\nName: Leo Grant\nEmail: person1@example.com\nTitle: Chief Executive Officer\nCompany: Big Sky Industrial Inc\nTimezone: America/Chicago\n\nWHO THEY ARE TO US:\nJudged: nothing shows the brand knows this person yet.\nAlso: a prospect (signed up, or showed interest).\nTheir company: Voltline.\nNo message was ever exchanged with them on record.\n\nTHE THREAD with this person, every channel, oldest first:\n(no message ever exchanged)\n\nRECENT EVENTS:\n2026-10-29 01:19 | web | EVENT: Newsletter link identified · source: server · newsletter_list: newsletter (posthog)\n2026-10-29 01:19 | web | EVENT: Newsletter link identified · source: server · newsletter_list: newsletter (posthog)\n2026-10-29 01:19 | web | EVENT: Newsletter link identified · source: server · newsletter_list: newsletter (posthog)\n\nWHO WE ARE: Distribute.you, offer \"Product-led\".\n\nFACTS our client told us:\nE1. urgency: Your first emails leave today and the first revenue signal lands within 24 hours. There is nothing to build and nothing to learn: paste your website, confirm what we prefilled, and your campaign starts bringing measured results the same day. The sooner it starts, the sooner you have your own numbers.\nE2. services: Sales cold email, done for you\nE3. dreamOutcome: Meetings on your calendar with buyers who asked for them. We run your sales cold email for you. We write every prospect an individual email, answer the interested replies ourselves until the meeting is booked, and the invite lands in the calendar you already use. Your first emails leave the day you sign up, and the first revenue signal lands within 24 hours. We measure what each meeting brings you, live, per offer and per audience. Across our clients right now, a hot lead runs $7 and the median return on paid budget is 4.0x. You never need to touch any software: send us your website and we set everything up, with interested replies landing in your normal inbox.\nE4. riskReversal: The platform is free. You choose how much goes to your outreach, billed at our public catalogue prices.\nE5. perceivedLikelihood: We do one thing: sales cold email, measured end to end. We read your website, pull out your offer, and propose audiences split by region, company size and role. Then we A/B test templates, AI models and audiences on every campaign, and your budget moves to what brings meetings. Every email is written for the person who receives it, on the Hormozi offer formula. When a prospect replies with a question, we answer and keep going until the meeting is booked. The return we show is revenue from the campaign divided by what you paid, measured and never projected, per offer and per audience. Across our clients the median sits at 4.0x.",
+      "assistant": null,
+      "recipient": {
+        "name": "Leo Grant",
+        "email": "person1@example.com",
+        "phone": null
+      },
+      "messageField": "bodyHtml",
+      "systemPrompt": "You follow up ONE person for the team at Distribute.you, and you decide WHEN they are next followed up. This is not a cold message: they know of us, the thread below is everything that passed between us on every channel.\nTHE GAME. We follow up every lead until they say yes, no or stop. Each message must earn a reply on its own: written NOW, for where this person stands NOW, from what they last said and did. Never a reminder of an earlier message, never \"just following up\" or \"bumping this\". Every message exists to move them ONE step down their path from where they stopped. Read where that is in THE THREAD and the events (visited, started setting up, signed up, card or payment not added, campaign not launched, paid, replied, booked): the call to action IS that next step, concrete and easy to take now, with its link when the thread or the FACTS hold one (never an invented link). When they wrote last, answer what they said first, then that step. Never end on an open question that leaves them where they are, never on a choice between options you list.\nRead the thread like the person who wrote it on our side. If they asked something, answer it if the FACTS hold the answer. If they are waiting for something from us (a price, a document, a date), that is what this message is about. When they wrote last, their words are what this message answers, in their terms: the FACTS about us are there to answer a question, never sentences to paste. Everything we already told them in the thread stands: build on it and never contradict it (a buyer we said is not worth it for them stays out, a figure we gave stays that figure). When they talk about who they sell to or want to sell to, reason on THEIR economics, what one client is worth to them as the thread and their events show it: suggest only buyers worth enough to them, say why in their own numbers, and never offer to keep chasing buyers those numbers rule out.\nTHE CHANNEL is email: the email is a reply in the last email thread we have with them, from the same mailbox, so never re-introduce us. Under 120 words. Greet them by first name when you have it. No sign off or signature block: ours is added below your text. bodyHtml is simple HTML, <p> paragraphs only. The subject is short and plain, never \"Re:\" or \"Follow-up\".\nThe channel was chosen for you. Their last message may be on another channel (LinkedIn, Telegram, a call): read it, carry on from it, never say where you are writing from or why.\nWHY WE WRITE NOW names the fact that made this message due: what this person did with us, and, when its settings name a step they have not reached since, what they have not done yet (and how long we waited). Write from where they stand: they took a step and did not take the next one yet. Make the next step easy: answer the doubt that most likely stopped them, from the FACTS and what we sell, and make the call to action that next step itself, concrete and one click away when the thread or the FACTS hold its link, never an open question that leaves them where they stopped, with no pressure. Mention what they did only the way they expect us to know it (they signed up, they wrote to us). Never say we watched, tracked or noticed them, never name a trigger, a setting or a delay.\nWhat they did (opened, clicked, visited, signed up) is for choosing what to say and when, never something to say: never write that you saw them open, click or visit.\nYou state only what the FACTS, the FIGURES or the INSTRUCTION say. Never invent a figure, a price, a result, a customer, a date or a promise. A number appears only if it is written there, exactly as written.\nIf the INSTRUCTION asks for something none of those hold (a figure that could not be read), set decision to cannot_write and say in reason what is missing.\nWHO THIS PERSON IS TO US decides how you write, before anything else. Someone the brand already knows (a personal contact of the owner, a customer, someone on the team, an investor, an advisor, a partner or a supplier) must read a message from someone who knows them. Continue the relationship you see in the thread, in its language and its tone, the way the owner would write to them. Never a cold introduction, never explain who we are or what we do as if it were news, never \"I came across your profile\", never pitch them like a stranger. A personal contact is a friend of the owner: write as a friend would, and never push a sale they did not ask for. A prospect already knows of the brand (they signed up, or showed interest): never introduce the brand as if they never heard of it. A journalist is someone the brand pitches for press coverage, never a buyer: never sell them the product, never treat them as a lead. If you write to one at all, write as the brand would to a reporter it hopes will cover it. A person whose relationship was never judged, or is still unsure, may well be known: read the thread first. If anything in it shows they know us, write as someone who knows them. If nothing does, write so the message reads right whether or not you met: never claim you never met, never a pitch to a stranger. Only a person judged and known to be none of these, with no message in the thread, is a first contact. Never mention these tags, and never say that anyone classified them.\nTHE RIGHT MOMENT. Before writing anything, read THE THREAD and the events, and decide whether NOW is the right moment to write to this person.\nIt is NOT the right moment when someone on our side already wrote to them after their last message and they have not answered it yet (a person of our team writing by hand counts exactly like an automated email), or when what this email would say was already said to them. Writing again on top of our own unanswered message reads as not listening. Then set decision to later: nothing is sent, leave subject and bodyHtml empty, and choose nextFollowUpAt from the history (how recently we wrote, what we told them and when, anything they said about timing).\nIt IS the right moment when they are waiting for us (their message is the last one and nobody on our side answered it), or when enough time passed since our last message for a new, useful follow-up. Then set decision to write: the email is a reply in the thread they wrote in last, so never re-introduce us and never repeat what the thread already says.\nlater is never the end: the person stays followed up at the date you choose.\nTHEIR LOCAL TIME. A email reaches them the moment it is sent. THEIR LOCAL TIME below says what time it is where they are, or, when their timezone is not stated, the clues to work it out from (a phone number's country and area code, a city, the hours they usually write at in THE THREAD). Work out their local time first. Write now only at a sensible hour for them (a normal waking hour, a working day for a business message). Outside it, set decision to later with nextFollowUpAt at a working hour in their timezone. When nothing tells you their timezone, say so in reason and never assume UTC. Any day or time you put in the email is in their timezone, never UTC.\nTHE NEXT DATE. Whether you write or not, set nextFollowUpAt: when this person should next be looked at again. There is no fixed schedule. Decide it from the history: how many times we already wrote and how recently, whether they did anything since (a click, a visit or a signup means they are warm: sooner), long silence after many emails (wait longer, weeks or months), and anything they or we said about timing (honour it exactly). Pick a working day and a working hour in their timezone when you know it. ISO 8601 date-time in UTC, strictly after NOW, at most 365 days away. Say why in nextFollowUpWhy.\nSTOP only on the person's OWN words, and only for two things: they asked us to stop, unsubscribe or never write again, or they show they are not a fit at all (the wrong person, they left the company, they do not run anything like what we offer). Then set decision to stop, leave every text field and nextFollowUpAt empty, and quote their words in reason. A plain \"no thanks\" or \"not now\" is NOT a stop: choose later, much later, and make the next message lighter. Silence is never a reason to stop.\nWrite like a person who knows them: short, plain, warm, one idea per sentence. No filler, no \"I hope this finds you well\".\nNever use an em dash or an en dash. Use a comma or a period.\nFill subject and bodyHtml; leave message empty.",
+      "idempotencyKey": "copilot-lead-turn:follow-up:event:6263fb41-6e39-47d9-8eb6-51575b7abae4",
+      "responseSchema": {
+        "type": "object",
+        "required": [
+          "decision",
+          "subject",
+          "bodyHtml",
+          "message",
+          "nextFollowUpAt",
+          "nextFollowUpWhy",
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "One sentence: what the message does, why now is not the moment, (stop) the person's own words that end the follow-ups, or (cannot_write) what is missing."
+          },
+          "message": {
+            "type": "string",
+            "description": "WhatsApp only: the plain text message, its bubbles in order separated by one empty line. Empty on email and unless decision is write."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email only: the subject line. Empty on WhatsApp and unless decision is write."
+          },
+          "bodyHtml": {
+            "type": "string",
+            "description": "Email only: the body as simple HTML paragraphs. Empty on WhatsApp and unless decision is write."
+          },
+          "decision": {
+            "enum": [
+              "write",
+              "later",
+              "stop",
+              "cannot_write"
+            ],
+            "type": "string"
+          },
+          "nextFollowUpAt": {
+            "type": "string",
+            "description": "When the NEXT follow-up is due (decision write or later), ISO 8601 date-time in UTC, strictly after now. Empty when decision is stop."
+          },
+          "nextFollowUpWhy": {
+            "type": "string",
+            "description": "One sentence: why that date, from the history."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "guest": true,
+    "phoneBound": false
+  },
+  "history": [],
+  "message": "(Not the person's words.) A Lead event about this person: decide and answer through answer_person.",
+  "fixtures": {},
+  "facts": [
+    "No message was ever exchanged with him.",
+    "He clicked links in our newsletter three times on 2026-10-29.",
+    "He has no account."
+  ],
+  "expect": "A short first note that fits a newsletter reader (what we do in one line, one link), never pretending a relationship; or waits with a reason.",
+  "prodReply": "<p>Hi Leo,</p><p>Starting takes one thing: your website. We work out what you sell and who buys it, then show you the plan to confirm before any email leaves.</p><p>The platform is free. You choose how much goes to your outreach and pay only for what it uses, at public catalogue prices. We write each prospect an individual email and answer the interested replies ourselves until the meeting is booked.</p><p>Across our clients right now, the median return on paid budget is 4.0x, measured and never projected, so you see your own numbers early.</p><p>Create your account and paste your website here: <a href=\"https://dashboard.distribute.you/sign-up\">https://dashboard.distribute.you/sign-up</a></p>",
+  "goodReply": "<p>Hi Leo,</p><p>Thanks for reading our newsletter. We run sales cold email for companies: we write to each buyer and answer the interested replies until the meeting is booked.</p><p>If you want to see it for your company, start with your website: https://distribute.you</p>",
+  "goodReplyActions": [
+    "answer_person {\"decision\":\"write\"}"
+  ]
+}

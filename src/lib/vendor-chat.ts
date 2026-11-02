@@ -30,6 +30,7 @@ import {
   inBandError,
   postVendorChatCompletion,
   VendorProviderError,
+  VENDORS,
   type VendorId,
   type VendorResponseBody,
   type VendorToolCall,
@@ -85,6 +86,12 @@ export interface StreamVendorChatOptions {
   holdTextBesideToolCalls?: boolean;
   /** A turn that must END by calling this tool (a Lead event turn's answer_person). */
   endToolName?: string;
+  /**
+   * Send the vendor's reasoning-off field (evals measure a model with and
+   * without reasoning, SOPHIE-REFONTE-1102). Absent = the model's default, as
+   * every /chat turn runs today.
+   */
+  reasoningDisabled?: boolean;
 }
 
 export interface StreamVendorChatResult {
@@ -212,6 +219,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
     beforeProviderCall,
     holdTextBesideToolCalls = false,
     endToolName,
+    reasoningDisabled = false,
   } = options;
 
   let tokensInput = 0;
@@ -242,7 +250,8 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
       model,
       messages,
       stream: false,
-      max_tokens: VENDOR_CHAT_MAX_OUTPUT_TOKENS,
+      // The output cap's field name is vendor data (OpenAI: max_completion_tokens).
+      [VENDORS[vendor].maxOutputTokensField]: VENDOR_CHAT_MAX_OUTPUT_TOKENS,
       // Tools are ALWAYS declared, `tool_choice: "none"` is never sent: with it
       // DeepSeek drops the tool definitions and the model writes fake tool-call
       // markup (`<｜DSML｜ invoke ...>`) into the text the person receives
@@ -259,7 +268,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
     try {
       // Reasoning stays at the model's default for chat (free text): the
       // request carries no reasoning-off field.
-      json = await postVendorChatCompletion({ vendor, apiKey, model, body, reasoningDisabled: false, signal });
+      json = await postVendorChatCompletion({ vendor, apiKey, model, body, reasoningDisabled, signal });
     } catch (err) {
       if (signal.aborted) break;
       throw err;
