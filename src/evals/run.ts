@@ -120,8 +120,15 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
 async function codeDefinition(candidate: "current" | "p2" = "current"): Promise<AgentDefinition> {
   const { db } = await import("../db/index.js");
   const { listSkills } = await import("../lib/skills.js");
-  const rows = await listSkills(db);
-  return sophieDefinition(rows.map((r) => ({ slug: r.slug, parentSlug: r.parentSlug, title: r.title, description: r.description, content: r.content })), candidate);
+  const { SEED_SKILLS } = await import("../lib/skill-seed.js");
+  // --seed-skills a,b: those skills as this code seeds them, over the live table (a skill rewrite measured before it ships).
+  const fromSeed = new Set((arg("seed-skills") ?? "").split(",").map((x) => x.trim()).filter(Boolean));
+  const rows = (await listSkills(db)).map((r) => ({ slug: r.slug, parentSlug: r.parentSlug, title: r.title, description: r.description, content: r.content }));
+  const merged = rows.map((r) => {
+    const seed = fromSeed.has(r.slug) ? SEED_SKILLS.find((x) => x.slug === r.slug) : undefined;
+    return seed ? { slug: seed.slug, parentSlug: seed.parentSlug, title: seed.title, description: seed.description, content: seed.content } : r;
+  });
+  return sophieDefinition(merged, candidate);
 }
 
 async function main() {

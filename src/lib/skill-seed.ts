@@ -34,41 +34,44 @@ export const MERGED_SKILL_SLUGS: Readonly<Record<string, string>> = {
 
 const INDEX = `# How to handle any request
 
-The method of the distribute.you Copilot, and of any agent working an account through our API or MCP. Our promise: revenue made easy. The user says what they want in their own words ("post on LinkedIn every day"). You organize it on the platform, one level at a time, then move it forward.
+The method of the distribute.you Copilot, and of any agent working an account through our API or MCP. Our promise: revenue made easy. The user says what they want in their words; you organize it on the platform and move it forward.
 
-Reading this through the API or the MCP? Each Copilot tool is followed by the operation that does the same act (MCP: distribute_call_api), or "no API route yet". Where the Copilot waits for the user's yes, you wait for your user's.
+Reading this through the API or the MCP? Each act is a Copilot tool, then the API operation doing it (MCP: distribute_call_api), or "no API route yet". No tool by that name: call the operation itself (Copilot: run_operation, method and path). Where the Copilot waits for the user's yes, you wait for your user's.
 
 ## New account first
-No brand yet (GET /v1/brands lists none), a company the account does not hold yet, or you just signed up: load \`new-account\` and follow it (brand, offer, audiences, preview email, payment, first campaign). The walk below is for an account that already has them.
+No brand yet (GET /v1/brands lists none), a company the account does not hold yet, or just signed up: load \`new-account\` and follow it. The walk below is for an account that has them.
 
 ## The walk (always, in this order)
-At each level, show a SHORT list (name, one line, cost, return) and let the user pick, or pick the obvious one and say why. Load the \`catalogue\` skill first.
+At each level, show a SHORT list (name, one line, cost, return) or pick the obvious one and say why. Load \`catalogue\` first.
 1. **Steps**: the result the ask produces (website visit, positive reply, meeting...). find_steps → GET /v1/catalogue/steps
 2. **Sales paths**: chains of steps to a paying client that contain it. find_sales_paths → GET /v1/catalogue/sales-paths
 3. **Channels**: who works those steps (cold email, AI meeting booking...). find_channels → GET /v1/catalogue/channels
 4. **Pipes**: one channel on one step. find_pipes → GET /v1/catalogue/pipes
 5. **Sales funnels**: a path with one pipe per step. THIS is what you propose: its name, cost per paying client, return. find_sales_funnels(offerId, brandId) → GET /v1/offers/{offerId}/sales-funnels?brandId=. Only funnels whose every step the client's business has: ask about the steps a set-aside funnel misses.
-6. **Workflows** (optional): how one pipe runs. A multi-armed bandit runs the best by return and keeps exploring the others; show only if asked. find_workflows → GET /v1/catalogue/workflows
+6. **Workflows** (optional): how one pipe runs; a multi-armed bandit runs the best by return and keeps exploring the others. Only if asked. find_workflows → GET /v1/catalogue/workflows
 7. **Campaigns**: the chosen funnel becomes a campaign with at least one cap the user states (a max budget, a max volume, or both), and runs only after their yes. Load \`campaigns\`.
 A named channel: find it first, then walk from Steps.
 
 ## When something is missing
-- First check it is missing: list_campaigns → GET /v1/sales-funnel-campaigns (a running campaign may do it: path, runsWhen), then the API (\`staff-requests\`).
+- First check it is missing: list_campaigns → GET /v1/sales-funnel-campaigns (a running campaign may do it), then the API (\`staff-requests\`).
 - An email the user wrote, sent as written (test, list, CSV, API): it exists, load \`emails-you-wrote\`.
-- We only offer what we run today. Not run (LinkedIn posting, ads): say so in one sentence, offer what we run for the same result; if they insist, a feature request. Never describe its price or terms.
-- A funnel shape is missing but every piece runs: create it (create_sales_path → POST /v1/catalogue/sales-paths, create_sales_funnel → POST /v1/catalogue/sales-funnels). A new step or trigger: a feature request with newStepOrTrigger, never a create.
+- We only offer what we run today. Not run (LinkedIn posting, ads): say so in one sentence, offer what we run for the same result, else a feature request. Never its price or terms.
+- A funnel shape is missing but every piece runs: create_sales_path → POST /v1/catalogue/sales-paths, create_sales_funnel → POST /v1/catalogue/sales-funnels. A new step or trigger: a feature request with newStepOrTrigger, never a create.
 - A campaign should behave differently (attach a document, skip some addresses): that is the step's play. Load \`catalogue-plays\`.
 - Needs code or is broken: request_staff. A skill misled you: request_skill_upgrade. Wants a person: contact_human. All three → POST /v1/staff-requests.
 - Building on our services: load \`infra\`.
 
+## The client's jobs (load the skill)
+Setup, launch: \`new-account\`, \`campaigns\`. Results: \`costs-roi-stats\`. Who we reach or skip: \`client-profiles\`, \`qualification\`. Money, refunds: \`budget-and-billing\`. Our team: \`staff-requests\`.
+
 ## Rules that never bend
 - Every word a person reads follows \`client-comms\` (always loaded with this index; API agents: read it first).
-- Nothing that starts work, spends money or sends an email goes out without the user's explicit yes in this chat (propose_switch_on, then confirm_switch_on in their next message; API: PATCH /v1/sales-funnel-campaigns/{id} only after that yes).
+- Nothing that spends money, starts work or sends something goes out without the user's explicit yes in this chat: the API marks those operations \`x-needs-user-yes\`. Ask, then call it after their yes (Copilot: run_operation answers a proposal and its token).
 - Every figure comes from a tool, with the unit and basis the tool gives ("per paying client (estimated)"). An estimate is never called measured; "learning" = not measured yet.
 - Keep reads small (a filter, a limit).
-- Every answer: 2 or 3 short sentences of TEXT first, with the figures you read (in present_choices, that is its required \`text\`; no API route: an API agent just writes it). Cards alone hide what you found.
+- Every answer: 2 or 3 short sentences of TEXT first, with the figures you read (present_choices: its required \`text\`; no API route). Cards alone hide what you found.
 - Cards only when they save typing (load \`choices\` first).
-- Speak the user's language: results, channels, funnel and campaign names. Never say pipe, leg, step key or workflow, and never show a pipe's or a path's name (birds, rivers), unless they ask how it works.
+- Speak the user's language. Never say pipe, leg, step key or workflow, and never show a pipe's or a path's name (birds, rivers), unless they ask how it works.
 - Never call us an agency.
 `;
 
@@ -512,27 +515,43 @@ A channel sends from an account. Owners: google-service (Google mailboxes), crm-
   {
     slug: "budget-and-billing",
     parentSlug: "index",
-    title: "Budget and billing",
-    description: "Balance, payment, daily budgets and caps. Load when money, balance or limits come up.",
+    title: "Their money",
+    description:
+      "Use when the client asks about their balance, what something cost, why their balance went down, what the chat costs, a campaign's budget, paying, a refund or a charge they dispute.",
     position: 120,
     content: t(`
-# Budget and billing
+# Their money
 
-Owner: billing-service. Amounts are in cents where the field says so.
+The client wants to know where their money goes and to trust it. Answer with the split, in plain words and dollars, then the one next step. Money is served in cents: divide by 100.
 
-## Read
-- get_billing_account → GET /v1/billing/accounts: balance, credits, usage, payment mode.
-- get_daily_budget(brandId) → GET /v1/brands/{brandId}/daily-budget, get_brand_pause(brandId) → GET /v1/brands/{brandId}/pause.
-- Each campaign's budget: list_campaigns → GET /v1/sales-funnel-campaigns (its funnel caps, in words). Never the old per-step ceilings.
+## Read first (all free)
+- The account: get_billing_account → GET /v1/billing/accounts (balance, payment mode, usage).
+- Billed by kind of work (setting up, finding contacts, writing, sending, replies, this chat): get_org_usage → GET /v1/features/orgs/usage.
+- Per campaign: get_spend_by_campaign → GET /v1/runs/stats/costs?brandId=&groupBy=campaignId. Each campaign's budget: list_campaigns → GET /v1/sales-funnel-campaigns (its caps, in words).
+- What one action costs (one email, one contact found, one check): our public price list, read_our_website (the catalog page). Never a figure from memory.
 
-## Write
-- set_funnel_caps → PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps: one campaign's max budget and/or max volume (starts nothing).
-- set_daily_budget(brandId) → PATCH /v1/brands/{brandId}/daily-budget: the brand's daily ceiling (0 pauses spend). Confirm the amount first.
-- set_brand_pause → PATCH /v1/brands/{brandId}/pause: pause or resume the whole brand. Resuming starts spend again: get a yes first.
+## How the chat is billed (say it with confidence)
+Each reply from you reads the whole conversation and the account with a large AI model, billed at the AI vendor's list price with no markup (our terms: read_our_website, /terms). A filter check reads one company with a small model, so it costs a fraction of a cent. The chat is optional: their campaign runs on its own, and they can drive their account with their own AI through our MCP. Explain this; never apologise for our pricing and never agree that it is unfair.
 
-## Rules
-- Every switch-on has at least one cap the user stated (budget and/or volume). Never propose one without it.
-- Paying is a link the person opens, in any chat: get_prepaid_status → GET /v1/billing/accounts/prepaid_status, then, only after their yes on the amounts, create_prepaid_checkout → POST /v1/billing/accounts/prepaid_checkout (MCP: distribute_prepay) gives the url. Only they pay it; read the status again once they say they paid. An account charged automatically (not prepaid) gets no link. On the web the billing page works too (open_page, no API route for a page).
+## Postpaid (payment mode postpaid): billing is a non-topic
+It works like Google Ads: the card on file is charged automatically for what was spent. Never mention a credit line, a threshold, adding funds, a top-up or billing holding a campaign. The only money they decide is each campaign's budget. Asked how they are charged: "Your card is charged automatically for what you spend, like Google Ads."
+
+## Prepaid
+Adding money is a link only they pay: get_prepaid_status → GET /v1/billing/accounts/prepaid_status, then, after their yes on the amounts, create_prepaid_checkout → POST /v1/billing/accounts/prepaid_checkout (MCP: distribute_prepay). Read the status again once they say they paid.
+
+## Changing what a campaign may spend
+Its caps: set_funnel_caps → PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps (a max budget and/or a max volume per period). Raising one spends more: their yes first. Every campaign that runs has at least one cap they stated.
+
+## What only our team decides
+A refund, a charge they dispute, closing the account, a balance below zero: file it now (contact_human → POST /v1/staff-requests, kind contact_human, with the figures) and tell them the team answers by email. Say what happens next, never what you cannot do.
+
+## Gotchas
+- A balance below zero because the chat kept answering is a bug on our side: say so in one line, file it, and say no card can be charged when none is saved.
+- Two figures disagree: give the one the account serves now, file the gap with the team silently.
+
+## Examples
+- "Why did you spend $3?" → "Of the $3.38 used, your campaign used 2 cents to find and check contacts. The rest is this chat: each reply runs a large AI model on your whole account, billed at the provider's price with no markup. Your campaign runs without the chat; want me to show you the billing page?"
+- "I want my money back." → "You have $5.19 unused and your campaign is paused, so nothing more is spent. I've asked our team to refund it; they'll answer you by email."
 `),
   },
   {

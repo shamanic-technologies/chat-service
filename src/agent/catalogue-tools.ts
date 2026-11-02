@@ -26,8 +26,20 @@ export const DESCRIBE_API_TOOL_NAME = "describe_operation";
 export const CALL_API_TOOL_NAME = "run_operation";
 export const CATALOGUE_TOOL_NAMES = [FIND_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, CALL_API_TOOL_NAME] as const;
 
-/** The extension the gateway sets on an operation that spends, starts work or sends (api-service SOPHIE-YES-GATE-1102). */
-export const YES_MARKER = "x-requires-yes";
+/**
+ * The extension the gateway sets on an operation that spends, starts work or
+ * sends (api-service SOPHIE-YES-GATE-1102, served shape): `{ because: string[],
+ * why: string, notNeededWhen?: Array<Record<string, unknown>> }`. An entry of
+ * `notNeededWhen` matches when every key equals the body's top-level field (a
+ * campaign created `status: "stopped"`): such a call needs no yes.
+ */
+export const YES_MARKER = "x-needs-user-yes";
+
+interface YesMarker {
+  because?: string[];
+  why?: string;
+  notNeededWhen?: Array<Record<string, unknown>>;
+}
 
 /** Tool results stay small (owner rule: no tool result above ~2k tokens). */
 const MAX_RESULT_CHARS = 8_000;
@@ -81,8 +93,18 @@ export const CATALOGUE_TOOLS: Anthropic.Tool[] = [
   },
 ];
 
-function needsYes(op: CatalogOperation): boolean {
-  return op.extensions?.[YES_MARKER] === true;
+function yesMarker(op: CatalogOperation): YesMarker | null {
+  const m = op.extensions?.[YES_MARKER];
+  return m && typeof m === "object" ? (m as YesMarker) : null;
+}
+
+/** Whether calling `op` with `body` needs the person's yes (the gateway's marker, its harmless cases excepted). */
+export function needsYes(op: CatalogOperation, body?: unknown): boolean {
+  const m = yesMarker(op);
+  if (!m) return false;
+  const b = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const harmless = (m.notNeededWhen ?? []).some((entry) => Object.entries(entry).every(([k, v]) => JSON.stringify(b[k]) === JSON.stringify(v)));
+  return !harmless;
 }
 
 export async function findApi(args: Record<string, unknown>): Promise<unknown> {
@@ -108,7 +130,9 @@ export async function describeApi(args: Record<string, unknown>): Promise<unknow
     params: op.params,
     body: op.hasBody ? clip(resolveSchema(op.bodySchema, components, 3), MAX_SCHEMA_CHARS) : null,
     answers: op.successResponses.map((r) => ({ status: r.status, description: r.description, schema: clip(resolveSchema(r.schema, components, 2), MAX_SCHEMA_CHARS) })),
-    needsTheirYes: needsYes(op),
+    needsTheirYes: yesMarker(op)
+      ? { why: yesMarker(op)!.why ?? null, because: yesMarker(op)!.because ?? [], notNeededWhen: yesMarker(op)!.notNeededWhen ?? [] }
+      : false,
   };
 }
 
@@ -193,9 +217,10 @@ export async function callApi(
   }
   if (op.staffOnly || isPlatformInternal(op.path)) throw new Error(`[run_operation] ${op.operationId} is not a client operation`);
   const req = byId || !concretePath ? prepare(op, args) : { ...prepare(op, { ...args, pathParams: pathParamsFrom(op.path, concretePath) }) };
-  if (needsYes(op)) {
+  if (needsYes(op, req.body)) {
     return {
       yesRequired: true,
+      why: yesMarker(op)?.why ?? null,
       confirmationToken: randomUUID(),
       request: req,
       instruction:

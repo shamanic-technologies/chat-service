@@ -125,6 +125,10 @@ export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> =
   discover_service_endpoints: ["distribute_find_api", "/v1/me/openapi.json"],
   discover_endpoint: ["distribute_describe_api", "/v1/me/openapi.json"],
   test_endpoint: ["distribute_call_api"],
+  find_operation: ["distribute_find_api", "/v1/me/openapi.json"],
+  describe_operation: ["distribute_describe_api", "/v1/me/openapi.json"],
+  run_operation: ["distribute_call_api"],
+  read_our_website: ["/llms.txt", "/terms", "/catalog"],
   read_skill: ["/v1/skills/{slug}"],
 
   // setting up a new account in the chat (SOPHIE-WA-ONBOARD-1101)

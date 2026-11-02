@@ -12,7 +12,7 @@ const DOC = {
   paths: {
     "/v1/billing/accounts": { get: { operationId: "getV1BillingAccounts", summary: "The org's billing account", responses: { "200": { description: "ok" } } } },
     "/v1/sales-funnel-campaigns/{id}": {
-      patch: { operationId: "patchV1SalesFunnelCampaignsById", summary: "Start or stop a campaign", [YES_MARKER]: true, parameters: [{ name: "id", in: "path", required: true }], requestBody: { content: { "application/json": { schema: { type: "object" } } } } },
+      patch: { operationId: "patchV1SalesFunnelCampaignsById", summary: "Start or stop a campaign", [YES_MARKER]: { because: ["starts_work"], why: "Starts the campaign.", notNeededWhen: [{ status: "stopped" }] }, parameters: [{ name: "id", in: "path", required: true }], requestBody: { content: { "application/json": { schema: { type: "object" } } } } },
     },
     "/v1/orgs": { post: { operationId: "postV1Orgs", summary: "Create an organization", "x-staff-only": true } },
     "/v1/prompts": { get: { operationId: "getV1Prompts", summary: "Prompt templates" } },
@@ -38,7 +38,7 @@ describe("find_operation / describe_operation", () => {
   });
 
   it("says when an operation needs the person's yes", async () => {
-    expect(await describeApi({ operationId: "patchV1SalesFunnelCampaignsById" })).toMatchObject({ needsTheirYes: true });
+    expect(await describeApi({ operationId: "patchV1SalesFunnelCampaignsById" })).toMatchObject({ needsTheirYes: { why: "Starts the campaign." } });
     expect(await describeApi({ operationId: "getV1BillingAccounts" })).toMatchObject({ needsTheirYes: false });
   });
 });
@@ -71,6 +71,11 @@ describe("run_operation", () => {
     };
     expect(r.yesRequired).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("needs no yes for a case the gateway marks harmless (stopping a campaign)", async () => {
+    await callApi({ operationId: "patchV1SalesFunnelCampaignsById", pathParams: { id: "c1" }, body: { status: "stopped" } }, PARAMS, []);
+    expect(fetchMock).toHaveBeenCalledWith("/v1/sales-funnel-campaigns/c1", "PATCH", PARAMS, { status: "stopped" });
   });
 
   it("runs exactly the proposed request from a later turn, once", async () => {
