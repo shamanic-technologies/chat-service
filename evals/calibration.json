@@ -1,0 +1,219 @@
+{
+  "kind": "calibration",
+  "at": "2026-11-02T05:13:49.501Z",
+  "judge": "jev/jev-latest",
+  "cases": 25,
+  "agree": 25,
+  "passed": true,
+  "rows": [
+    {
+      "id": "aba-diagnose-results",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "clinic-cancel-trial",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "clinic-find-me-clients",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "jarygo-cost-at-7am",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "jarygo-when-booked-leads",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "respectful",
+        "nextAction"
+      ]
+    },
+    {
+      "id": "jcurve-new-chat-empty-profile",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "respectful",
+        "proactive",
+        "answers",
+        "form"
+      ]
+    },
+    {
+      "id": "jcurve-new-chat-empty-profile",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-angry-no-list",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "martian-angry-no-list",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-close-account",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-cost-per-email",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "respectful",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "martian-exclude-leads",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-force-send",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-give-me-the-list",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "nextAction"
+      ]
+    },
+    {
+      "id": "martian-give-me-the-list",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-how-many-left",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-refund",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "respectful",
+        "answers"
+      ]
+    },
+    {
+      "id": "martian-refund",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-scam",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "respectful",
+        "answers"
+      ]
+    },
+    {
+      "id": "martian-which-ai",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "respectful"
+      ]
+    },
+    {
+      "id": "martian-which-ai",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-why-3-dollars",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-zero-balance",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "novemiq-explain-campaigns",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "prospect-free-trial-pricing",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    }
+  ]
+}

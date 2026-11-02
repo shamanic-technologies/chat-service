@@ -1,0 +1,305 @@
+{
+  "id": "novemiq-explain-campaigns",
+  "title": "Explain my 3 campaigns (French)",
+  "source": "client N, web, 2026-10-12",
+  "surface": "web",
+  "person": {
+    "name": "Luc"
+  },
+  "history": [],
+  "message": "Tu mexplqies les 3 campaingen cours ce quelles font",
+  "fixtures": {
+    "list_campaigns": [
+      {
+        "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+        "campaigns": [
+          {
+            "id": "02332e00-ed9c-42bf-8072-da7f099e00b2",
+            "name": "Moving",
+            "type": "reactive",
+            "spent": null,
+            "steps": [
+              {
+                "leg": "conversation_to_booking_call",
+                "status": "ongoing",
+                "channel": "ai-instant-call"
+              }
+            ],
+            "budget": "Not funded (no max budget)",
+            "status": "ongoing",
+            "volume": null,
+            "offerId": "e59646e4-e351-462d-a8a7-618098e7e5c1",
+            "stopReason": null,
+            "salesFunnelId": "conversation_to_booking_call@ai-instant-call+booking_call_to_meeting_booked+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client"
+          },
+          {
+            "id": "05e6a895-f57a-48f4-887e-79cd8a68ec02",
+            "name": "Motivate",
+            "type": "reactive",
+            "spent": "$0 spent today",
+            "steps": [
+              {
+                "leg": "conversation_to_meeting_booked",
+                "status": "ongoing",
+                "channel": "ai-meeting-booking"
+              }
+            ],
+            "budget": "Up to $1/day",
+            "status": "ongoing",
+            "volume": null,
+            "offerId": "e59646e4-e351-462d-a8a7-618098e7e5c1",
+            "stopReason": null,
+            "salesFunnelId": "conversation_to_meeting_booked@ai-meeting-booking+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client"
+          },
+          {
+            "id": "7fcf42ab-fe7a-46a5-9375-90fbdd260f18",
+            "name": "Bliss",
+            "type": "proactive",
+            "spent": "$10.06 spent today (cap reached: no new first touches until the next period)",
+            "steps": [
+              {
+                "leg": "lead_found_to_conversation",
+                "status": "ongoing",
+                "channel": "sales-cold-email-outreach"
+              },
+              {
+                "leg": "start_to_lead_found",
+                "status": "ongoing",
+                "channel": "sourcing-apollo-cold-filters"
+              },
+              {
+                "leg": "start_to_lead_found",
+                "status": "ongoing",
+                "channel": "sourcing-apollo-buying-signals"
+              },
+              {
+                "leg": "start_to_lead_found",
+                "status": "ongoing",
+                "channel": "sourcing-linkedin-engagement-signals"
+              }
+            ],
+            "budget": "Max $10/day",
+            "status": "ongoing",
+            "volume": null,
+            "offerId": "e59646e4-e351-462d-a8a7-618098e7e5c1",
+            "stopReason": null,
+            "salesFunnelId": "lead_found_to_conversation@sales-cold-email-outreach+conversation_to_meeting_booked+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client"
+          }
+        ],
+        "campaignCount": 3
+      }
+    ],
+    "list_brands": [
+      {
+        "brands": [
+          {
+            "id": "933d4abb-9695-4fcb-b3aa-354d61565798",
+            "name": "NOVEMIQ | Simplify. Amplify. Certify",
+            "colors": null,
+            "domain": "novemiq.com",
+            "logoUrl": "https://img.logo.dev/novemiq.com?token=pk_J1iY4__HSfm9acHjR8FibA&size=256&format=png",
+            "brandUrl": "https://novemiq.com",
+            "createdAt": "2026-09-28 13:26:02.721421+00",
+            "updatedAt": "2026-09-29 11:25:26.31662+00"
+          }
+        ]
+      }
+    ],
+    "get_offer_performance": [
+      {
+        "brandId": "933d4abb-9695-4fcb-b3aa-354d61565798",
+        "offerId": "e59646e4-e351-462d-a8a7-618098e7e5c1",
+        "omitted": "Per-company list, per-day series and per-channel detail are left out to keep the chat small: the offer and campaign pages show them (open_page).",
+        "signups": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "headline": {
+          "unpricedReason": null,
+          "totalPipelineUsd": 1048.644619385752,
+          "lifetimeRevenueUsd": 2500,
+          "lifetimeRevenueSource": "offer_stated"
+        },
+        "maturity": {
+          "legs": [
+            {
+              "flash": {
+                "outcomes": 0,
+                "spentUsd": 62.969256987,
+                "contacted": 204,
+                "conversionRatePct": 0,
+                "costPerOutcomeUsd": null
+              },
+              "legKey": "start_to_conversation",
+              "mature": {
+                "outcomes": 0,
+                "spentUsd": 0,
+                "contacted": 0,
+                "conversionRatePct": null,
+                "costPerOutcomeUsd": null
+              },
+              "source": "measured",
+              "isMature": false,
+              "durationDays": 21,
+              "outcomeSignal": "positiveReply",
+              "outcomesRequired": 1
+            }
+          ],
+          "isMature": false
+        },
+        "outcomes": {
+          "sending": {
+            "replyRatePct": 0,
+            "bounceRatePct": 1.098901098901099,
+            "recipientsSent": 182,
+            "deliveryRatePct": 98.9010989010989,
+            "recipientsBounced": 2,
+            "recipientsReplied": 0,
+            "recipientsDelivered": 180,
+            "positiveReplyRatePct": 0,
+            "recipientsRepliedPositive": 0,
+            "recipientsAwaitingDelivery": 0
+          },
+          "cpcCents": null,
+          "maturity": {
+            "flash": {
+              "cpcCents": 6754.114456300001,
+              "cpprCents": null
+            },
+            "mature": {
+              "cpcCents": null,
+              "cpprCents": null
+            },
+            "isMature": false
+          },
+          "cpprCents": null,
+          "ratioBasis": {
+            "maturityDays": 21,
+            "unmeasuredReason": null,
+            "recipientsClicked": 0,
+            "committedSpentCents": 457,
+            "recipientsRepliesPositive": 0
+          },
+          "actualSpentCents": 6314,
+          "recipientsBounced": 2,
+          "recipientsClicked": 1,
+          "committedSpentCents": 6756,
+          "recipientsContacted": 204,
+          "recipientsConvertible": 201,
+          "recipientsUnsubscribed": 1,
+          "recipientsRepliesPositive": 0
+        },
+        "costBasis": "charged",
+        "purchased": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "costEconomics": {
+          "maturity": {
+            "flash": {
+              "roiMultiple": 15.526011976412589,
+              "costOfAcquisitionPct": 6.440803997312503,
+              "costPerAcquisitionUsd": 161.02009993281257
+            },
+            "mature": {
+              "roiMultiple": 0,
+              "costOfAcquisitionPct": null,
+              "costPerAcquisitionUsd": null
+            },
+            "isMature": false
+          },
+          "ratioBasis": {
+            "committedCostUsd": 4.57,
+            "totalPipelineUsd": 0
+          },
+          "roiMultiple": 0,
+          "maturityDays": 21,
+          "actualCostUsd": 63.14,
+          "realizedReturn": {
+            "roiMultiple": 0,
+            "closedWonCount": 0,
+            "closedWonRevenueUsd": 0
+          },
+          "committedCostUsd": 67.56,
+          "unmeasuredReason": null,
+          "costOfAcquisitionPct": null,
+          "costPerAcquisitionUsd": null
+        },
+        "meetingsBooked": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "formSubmissions": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "recipientsClicked": {
+          "daily": [
+            {
+              "date": "2026-10-10",
+              "count": 1
+            }
+          ],
+          "total": 1,
+          "undatedCount": 0
+        },
+        "recipientsContacted": {
+          "daily": [
+            {
+              "date": "2026-09-28",
+              "count": 42
+            },
+            {
+              "date": "2026-09-29",
+              "count": 51
+            },
+            {
+              "date": "2026-09-30",
+              "count": 32
+            },
+            {
+              "date": "2026-10-01",
+              "count": 50
+            },
+            {
+              "date": "2026-10-09",
+              "count": 3
+            },
+            {
+              "date": "2026-10-10",
+              "count": 26
+            }
+          ],
+          "total": 204,
+          "undatedCount": 0
+        },
+        "recipientsRepliesPositive": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        }
+      }
+    ],
+    "list_replies_to_handle": [
+      {
+        "leads": [],
+        "total": 0,
+        "nextCursor": null
+      }
+    ]
+  },
+  "facts": [
+    "Three campaigns: Bliss (finds prospects then cold emails them, max $10 a day, cap reached today at $10.06), Motivate (answers replies, up to $1 a day, $0 today), Moving (answers replies, no max budget so it does not run)."
+  ],
+  "expect": "Explains each campaign in one line in French, flags that Moving has no budget so it does not run, and ends on one next step (e.g. give Moving a budget).",
+  "prodReply": "**Bliss** (proactive) va chercher des prospects (Apollo, signaux d'achat, engagement LinkedIn) puis leur envoie des cold emails pour ouvrir la conversation. Max $10/jour, $10.06 dépensés aujourd'hui : le plafond est atteint, plus de nouveaux premiers contacts avant la prochaine période.\n\n**Motivate** (réactive) prend le relais quand quelqu'un répond : l'IA propose et cale un rendez-vous. Budget jusqu'à $1/jour, $0 dépensé aujourd'hui.\n\n**Moving** (réactive) rappelle instantanément par un appel IA la personne qui a répondu, pour l'amener à réserver un appel. Elle n'a pas de budget max : elle est donc non financée.",
+  "prodReplyActions": [
+    "list_campaigns {\"status\": \"ongoing\"} → {\"note\": \"A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.\", \"campaigns\": [{\"id\": \"02332e00-ed9c-42bf-8072-da7f099e00b2\", \"name\": \"Moving\", \"type\": \"reactive\", \"spent\": null, \"steps\": [{\"leg\": \"conversation_to_booking_call\", \"status\": \"ongoing\", \"channel\": \"ai-instant-call\"}], \"budget\": \"Not funded (no max budget)\", \"status\": \"ongoing\", \"volume\": null, \"offerId\": \"e59646e4-e351-462d-a8a7-618098e7e5c1\", \"stopReason\": null, \"salesFunnelId\": \"conversation_to_booking_call@ai-instant-call+booking_call_to_meeting_booked+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client\"}, {\"id\": \"05e6a895-f57a-48f4-887e-79cd8a68ec02\", \"name\": \"Motivate\", \"type\": \"reactive\", \"spent\": \"$0 spent today\", \"steps\": [{\"leg\": \"conversation_to_meeting_booked\", \"status\": \"ongoing\", \"channel\": \"ai-meeting-booking\"}], \"budget\": \"Up to $1/day\", \"status\": \"ongoing\", \"volume\": null, \"offerId\": \"e59646e4-e351-462d-a8a7-618098e7e5c1\", \"stopReason\": null, \"salesFunnelId\": \"conversation_to_meeting_booked@ai-meeting-booking+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client\"}, {\"id\": \"7fcf42ab-fe7a-46a5-9375-90fbdd260f18\", \"name\": \"Bliss\", \"type\": \"proactive\", \"spent\": \"$10.06 spent today (cap reached: no new first touches until the next period)\", \"steps\": [{\"leg\": \"lead_found_to_conversation\", \"status\": \"ongoing\", \"channel\": \"sales-cold-email-outreach\"}, {\"leg\": \"start_to_lead_found\", \"status\": \"ongoing\", \"channel\": \"sourcing-apollo-cold-filters\"}, {\"leg\": \"start_to_lead_found\", \"status\": \"ongoing\", \"channel\": \"sourcing-apollo-buying-signals\"}, {\"leg\": \"start_to_lead_found\", \"status\": \"ongoing\", \"channel\": \"sourcing-linkedin-engagement-signals\"}], \"budget\": \"Max $10/day\", \"status\": \"ongoing\", \"volume\": null, \"offerId\": \"e59646e4-e351-462d-a8a7-618098e7e5c1\", \"stopReason\": null, \"salesFunnelId\": \"lead_found_to_conversation@sales-cold-email-outreach+conversation_to_meeting_booked+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client\"}], \"campaignCount\": 3}",
+    "present_choices {\"text\": \"**Bliss** (proactive) va chercher des prospects (Apollo, signaux d'achat, engagement LinkedIn) puis leur envoie des cold emails pour ouvrir la conversation. Max $10/jour, $10.06 dépensés aujourd'hui : le plafond est atteint, plus de nouveaux premiers contacts avant la prochaine période.\\n\\ → {\"note\": \"The cards are on screen and your turn is over. The user's pick (or their own words) arrives as their next message.\", \"presented\": true}"
+  ],
+  "goodReply": "Bliss trouve des prospects puis leur écrit, max 10 $ par jour, plafond atteint aujourd'hui. Motivate répond aux réponses, jusqu'à 1 $ par jour. Moving répond aussi mais n'a pas de budget, donc elle ne tourne pas. Je lui mets 1 $ par jour ?"
+}
