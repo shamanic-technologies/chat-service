@@ -37,7 +37,8 @@ import type { AskingCampaign } from "./funnel-campaign-client.js";
  * No cards either: the message ends on a plain question the team answers in words.
  */
 export function isProactiveReadTool(name: string): boolean {
-  return /^(get|list|find)_/.test(name) || name === "read_skill";
+  // run_operation reads only here: the dispatcher refuses any method but GET in a proactive turn.
+  return /^(get|list|find)_/.test(name) || name === "read_skill" || name === "describe_operation" || name === "run_operation";
 }
 
 export function proactiveToolNames(allowed: readonly string[]): string[] {

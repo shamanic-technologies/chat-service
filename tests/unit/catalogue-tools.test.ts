@@ -12,7 +12,7 @@ const DOC = {
   paths: {
     "/v1/billing/accounts": { get: { operationId: "getV1BillingAccounts", summary: "The org's billing account", responses: { "200": { description: "ok" } } } },
     "/v1/sales-funnel-campaigns/{id}": {
-      patch: { operationId: "patchV1SalesFunnelCampaignsById", summary: "Start or stop a campaign", [YES_MARKER]: true, parameters: [{ name: "id", in: "path", required: true }], requestBody: { content: { "application/json": { schema: { type: "object" } } } } },
+      patch: { operationId: "patchV1SalesFunnelCampaignsById", summary: "Start or stop a campaign", [YES_MARKER]: { because: ["starts_work"], why: "Starts the campaign.", notNeededWhen: [{ status: "stopped" }] }, parameters: [{ name: "id", in: "path", required: true }], requestBody: { content: { "application/json": { schema: { type: "object" } } } } },
     },
     "/v1/orgs": { post: { operationId: "postV1Orgs", summary: "Create an organization", "x-staff-only": true } },
     "/v1/prompts": { get: { operationId: "getV1Prompts", summary: "Prompt templates" } },
@@ -38,7 +38,7 @@ describe("find_operation / describe_operation", () => {
   });
 
   it("says when an operation needs the person's yes", async () => {
-    expect(await describeApi({ operationId: "patchV1SalesFunnelCampaignsById" })).toMatchObject({ needsTheirYes: true });
+    expect(await describeApi({ operationId: "patchV1SalesFunnelCampaignsById" })).toMatchObject({ needsTheirYes: { why: "Starts the campaign." } });
     expect(await describeApi({ operationId: "getV1BillingAccounts" })).toMatchObject({ needsTheirYes: false });
   });
 });
@@ -73,6 +73,11 @@ describe("run_operation", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("needs no yes for a case the gateway marks harmless (stopping a campaign)", async () => {
+    await callApi({ operationId: "patchV1SalesFunnelCampaignsById", pathParams: { id: "c1" }, body: { status: "stopped" } }, PARAMS, []);
+    expect(fetchMock).toHaveBeenCalledWith("/v1/sales-funnel-campaigns/c1", "PATCH", PARAMS, { status: "stopped" });
+  });
+
   it("runs exactly the proposed request from a later turn, once", async () => {
     const proposal = (await callApi({ operationId: "patchV1SalesFunnelCampaignsById", pathParams: { id: "c1" }, body: { status: "ongoing" } }, PARAMS, [])) as {
       confirmationToken: string;
@@ -83,6 +88,16 @@ describe("run_operation", () => {
     expect(fetchMock).toHaveBeenCalledWith("/v1/sales-funnel-campaigns/c1", "PATCH", PARAMS, { status: "ongoing" });
     const used = [...history, { toolCalls: [{ name: "run_operation", args: { confirmationToken: proposal.confirmationToken }, result: { ok: true } }] }];
     expect(() => resolveCallApiProposal(proposal.confirmationToken, used)).toThrow(/already used/);
+  });
+
+  it("in a read-only turn (proactive) reads, and refuses any write or token before a request", async () => {
+    await callApi({ operationId: "getV1BillingAccounts" }, PARAMS, [], { readOnly: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(
+      callApi({ operationId: "patchV1SalesFunnelCampaignsById", pathParams: { id: "c1" }, body: { status: "stopped" } }, PARAMS, [], { readOnly: true }),
+    ).rejects.toThrow(/only reads/);
+    await expect(callApi({ confirmationToken: "t" }, PARAMS, [], { readOnly: true })).rejects.toThrow(/only reads/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a token the conversation never proposed (or proposed in this same turn)", () => {

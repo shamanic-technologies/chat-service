@@ -19,20 +19,22 @@ Jev (`src/evals/judge.ts`) answers one yes/no question per criterion: **true** (
 
 A scenario passes when a majority of its replays pass every criterion. A suite passes when every scenario passes, **true** holds on every replay, and the median reply costs under **$0.03**.
 
+**The merge gate** (`evals/last-run.json`, pinned by `tests/unit/evals.test.ts`): on the current `sophieCodeHash()`, the pooled share of replies passing every criterion, over at least two runs (120 replays) a side, is at least the baseline's, measured the same hour on the same judge. One 60-replay run swings by about two scenarios, so a single run decides nothing.
+
 ## Running (inside the chat-service container on the box)
 
 The runner reads platform keys from key-service and declares its spend on platform runs marked `staff_experiment`. Tools are answered from the scenario: no client account is read or written, nothing is sent.
 
 ```bash
 # local: build and copy into an isolated dir of the container (the live service is untouched)
-npx tsc -p . && COPYFILE_DISABLE=1 tar czf /tmp/evals.tgz dist evals
+npx tsc -p . && COPYFILE_DISABLE=1 tar czf /tmp/evals.tgz dist evals src/agent src/lib/client-brief.ts  # the sources: sophieCodeHash() reads them
 scp -i ~/.ssh/oracle-distribute /tmp/evals.tgz root@167.233.196.79:/tmp/<workspace>-evals.tgz
 # box: unpack in /tmp/sophie-evals of distribute-chat-service-1, symlink /app/node_modules, then
 node dist/evals/run.js --definition evals/definitions/<id>.json --runs 3 --parallel 5 --out /tmp/sophie-evals/run.json
 node dist/evals/run.js --definition evals/definitions/<id>.json --calibrate --out /tmp/sophie-evals/calibration.json
 ```
 
-`--only id1,id2` runs a subset, `--provider` / `--model` override the definition's model (direct vendors only for now: DeepSeek, Z.ai, Moonshot, OpenAI).
+`--definition code` replays Sophie as the code defines her; `--seed-skills all` (or a list of slugs) uses the skills as this code seeds them instead of the live table. `--only id1,id2` runs a subset, `--provider` / `--model` override the definition's model (direct vendors only for now: DeepSeek, Z.ai, Moonshot, OpenAI).
 
 ## Adding a scenario
 

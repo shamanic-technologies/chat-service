@@ -23,7 +23,7 @@ import { skillIndexBlockFrom } from "../lib/skills.js";
 import { streamVendorChat } from "../lib/vendor-chat.js";
 import type { VendorCostLine } from "../lib/cost-names.js";
 import { buildSituationBrief } from "../agent/situation.js";
-import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS, SOPHIE_TOOLS_P2 } from "../agent/sophie.js";
+import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS } from "../agent/sophie.js";
 import { clientBriefUnavailable } from "../lib/client-brief.js";
 import { fixtureClientBrief, fixtureSituationReader } from "./fixture-situation.js";
 import type { Scenario } from "./scenario.js";
@@ -186,13 +186,13 @@ export async function replayTurn(args: {
  * Sophie as the code defines her (src/agent/sophie.ts) with the skills given
  * (the live table inside the container): what the merge gate replays.
  */
-export function sophieDefinition(skills: AgentDefinition["skills"], candidate: "current" | "p2" = "current"): AgentDefinition {
+export function sophieDefinition(skills: AgentDefinition["skills"]): AgentDefinition {
   return {
-    id: candidate === "p2" ? "sophie-code-p2" : "sophie-code",
+    id: "sophie-code",
     provider: SOPHIE_MODEL.provider,
     model: SOPHIE_MODEL.model,
     systemPrompt: SOPHIE_SYSTEM_PROMPT,
-    allowedTools: [...(candidate === "p2" ? SOPHIE_TOOLS_P2 : SOPHIE_TOOLS)],
+    allowedTools: [...SOPHIE_TOOLS],
     clientBrief: true,
     situationBrief: true,
     skills,
