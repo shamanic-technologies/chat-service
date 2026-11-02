@@ -37,14 +37,32 @@ const cents = (costs: RunCost[]) => costs.reduce((s, c) => s + Number(c.totalCos
 
 async function judge(runId: string, typesafeKey: string, scenario: Scenario, reply: string, actions: readonly string[], contextGiven = ""): Promise<{ verdict: Verdict; cents: number }> {
   const result = await runJudge({ judge: "jev", apiKey: typesafeKey, model: TYPESAFE_DEFAULT_MODEL, state: judgeState(scenario, reply, actions, contextGiven), questions: QUESTIONS });
-  const costs = await addPlatformRunCosts(runId, SERVICE, [
+  const costs = await retryRefused("judge costs", () => addPlatformRunCosts(runId, SERVICE, [
     { costName: judgeActualCostName("jev", result.inputTokens), quantity: result.inputTokens, costSource: "platform" },
-  ]);
+  ]));
   return { verdict: verdictFrom(result.answers as never), cents: cents(costs) };
 }
 
+/**
+ * A sibling service redeploying refuses connections for a minute (prod
+ * 2026-11-02: runs-service mid-run killed a 60-replay eval at 52). Retry a
+ * refused connection only: an answer of any kind is final.
+ */
+async function retryRefused<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const code = (err as { cause?: { code?: string } })?.cause?.code;
+      if (attempt >= 8 || (code !== "ECONNREFUSED" && code !== "ECONNRESET")) throw err;
+      console.warn(`[evals] ${label}: ${code}, retrying in 15s (${attempt}/8)`);
+      await new Promise((r) => setTimeout(r, 15_000));
+    }
+  }
+}
+
 async function withRun<T>(task: string, fn: (runId: string) => Promise<T>): Promise<T> {
-  const run = await createPlatformRun({ serviceName: SERVICE, taskName: task, support: SUPPORT });
+  const run = await retryRefused("create run", () => createPlatformRun({ serviceName: SERVICE, taskName: task, support: SUPPORT }));
   let failed = false;
   try {
     return await fn(run.id);
@@ -52,7 +70,7 @@ async function withRun<T>(task: string, fn: (runId: string) => Promise<T>): Prom
     failed = true;
     throw err;
   } finally {
-    await updatePlatformRunStatus(run.id, SERVICE, failed ? "failed" : "completed");
+    await retryRefused("close run", () => updatePlatformRunStatus(run.id, SERVICE, failed ? "failed" : "completed"));
   }
 }
 
@@ -88,7 +106,7 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
       const r = await withRun("sophie-eval-replay", async (runId) => {
         const fixtures = fixtureExecutor(def, scenario);
         const turn = await replayTurn({ def, scenario, provider, model, apiKey: modelKey, executeTool: fixtures.executeTool, uiText: fixtures.uiText });
-        const modelCosts = await addPlatformRunCosts(runId, SERVICE, turn.costLines.map((l) => ({ costName: l.costName, quantity: l.quantity, costSource: "platform" as const })));
+        const modelCosts = await retryRefused("reply costs", () => addPlatformRunCosts(runId, SERVICE, turn.costLines.map((l) => ({ costName: l.costName, quantity: l.quantity, costSource: "platform" as const }))));
         const actions = turn.toolCalls.map((c) => describeAction(c.name, c.args, c.result));
         const judged = await judge(runId, typesafeKey, scenario, turn.reply, actions, turn.turnContext);
         return {
