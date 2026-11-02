@@ -13,6 +13,10 @@ export const COST_PER_REPLY_TARGET_USD = 0.03;
 export interface ReplayResult {
   reply: string;
   tools: string[];
+  /** Each tool call with what it returned (what the judge read), for re-judging without a model call. */
+  actions?: string[];
+  /** The account context the turn was given (the briefs). */
+  turnContext?: string;
   missingFixtures: string[];
   llmCalls: number;
   tokensInput: number;

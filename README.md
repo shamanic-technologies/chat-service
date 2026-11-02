@@ -1633,6 +1633,12 @@ Response `200`:
 
 Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token streaming is complete and **before** `[DONE]`. Each button has a `label` (display text) and `value` (text to send back as the next user message). Only render buttons when `buttons.length > 0`.
 
+## Sophie, the Copilot (`src/agent/`)
+
+The `copilot` config (web Copilot, WhatsApp) is owned by chat-service: role, tools and model in `src/agent/sophie.ts`, seeded at boot. `PUT /platform-config` on a self-seeded key (`copilot`, the editors, `whatsapp`) answers the stored row with `ownedByChatService: true` and writes nothing. Each web or signed-in WhatsApp turn starts with a situation brief (`src/agent/situation.ts`): the account read through the gateway (business and what it sells, offer, campaigns, results, replies waiting, money), placed in the turn's context.
+
+`src/agent/catalogue*.ts` (P2, not yet in Sophie's tool list): `find_operation` / `describe_operation` / `run_operation` over the gateway's public API document, called as the person; an operation the gateway marks as needing their yes answers a proposal whose token runs it from a later turn.
+
 ## Sophie evals (`evals/`, `src/evals/`)
 
 Replays real Copilot conversations (anonymised) through the real tool loop, tools answered from recorded account data, and grades each reply with Jev: true, respectful, proactive, answers, next action, form, plus cost per reply (target < $0.03). Runs inside the chat-service container: `node dist/evals/run.js --definition evals/definitions/<id>.json [--runs 3] [--parallel 5] [--calibrate] [--out file]`. Details and how to add a scenario: `evals/README.md`.
