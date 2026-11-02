@@ -11,17 +11,23 @@
 // --calibrate judges the recorded replies only (no model call): every known-bad
 // production reply must FAIL and every hand-written good reply must PASS, or the
 // judge is not trusted and the run exits 1.
+//
+// --rejudge <run.json> --labels <labels.json> grades the replies a past run
+// stored (reply, actions, turn context) with the judge as this code defines it,
+// and reports its agreement with hand-checked labels: the judge measured alone,
+// without the agent's own variance.
 // ---------------------------------------------------------------------------
 
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { sophieCodeHash } from "../agent/sophie.js";
 import { resolvePlatformKey } from "../lib/key-client.js";
-import { judgeActualCostName, runJudge } from "../lib/judges.js";
+import { JUDGES, JUDGE_PROVIDERS, judgeActualCostName, runJudge, type Judge } from "../lib/judges.js";
 import { addPlatformRunCosts, createPlatformRun, updatePlatformRunStatus, type RunCost } from "../lib/runs-client.js";
 import { TYPESAFE_DEFAULT_MODEL, TYPESAFE_PROVIDER } from "../lib/typesafe.js";
 import { definitionHash, loadDefinition, replayTurn, sophieDefinition, type AgentDefinition } from "./agent-turn.js";
 import { fixtureExecutor } from "./fixture-tools.js";
 import { CRITERIA, QUESTIONS, describeAction, judgeState, verdictFrom, type Criterion, type Verdict } from "./judge.js";
+import { LabelFileSchema, trueAgreement, type JudgedRow } from "./labels.js";
 import { loadScenarios, type Scenario } from "./scenario.js";
 import { summarise, type ScenarioResult, type ReplayResult } from "./report.js";
 
@@ -35,10 +41,17 @@ function arg(name: string): string | undefined {
 
 const cents = (costs: RunCost[]) => costs.reduce((s, c) => s + Number(c.totalCostInUsdCents), 0);
 
-async function judge(runId: string, typesafeKey: string, scenario: Scenario, reply: string, actions: readonly string[], contextGiven = ""): Promise<{ verdict: Verdict; cents: number }> {
-  const result = await runJudge({ judge: "jev", apiKey: typesafeKey, model: TYPESAFE_DEFAULT_MODEL, state: judgeState(scenario, reply, actions, contextGiven), questions: QUESTIONS });
+/** --judge <id>: which judge grades (Jev unless stated; the others are benchmarked with --rejudge). */
+const JUDGE: Judge = (() => {
+  const j = arg("judge") ?? "jev";
+  if (!(JUDGES as readonly string[]).includes(j)) throw new Error(`[evals] --judge must be one of ${JUDGES.join(", ")}`);
+  return j as Judge;
+})();
+
+async function judge(runId: string, judgeKey: string, scenario: Scenario, reply: string, actions: readonly string[], contextGiven = ""): Promise<{ verdict: Verdict; cents: number }> {
+  const result = await runJudge({ judge: JUDGE, apiKey: judgeKey, model: TYPESAFE_DEFAULT_MODEL, state: judgeState(scenario, reply, actions, contextGiven), questions: QUESTIONS });
   const costs = await retryRefused("judge costs", () => addPlatformRunCosts(runId, SERVICE, [
-    { costName: judgeActualCostName("jev", result.inputTokens), quantity: result.inputTokens, costSource: "platform" },
+    { costName: judgeActualCostName(JUDGE, result.inputTokens), quantity: result.inputTokens, costSource: "platform" },
   ]));
   return { verdict: verdictFrom(result.answers as never), cents: cents(costs) };
 }
@@ -154,6 +167,32 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
   return results.sort((a, b) => a.id.localeCompare(b.id));
 }
 
+interface StoredRun {
+  at: string;
+  scenarios: Array<{ id: string; replays: Array<{ reply: string; actions?: string[]; turnContext?: string; error?: string }> }>;
+}
+
+async function rejudge(runPath: string, labelsPath: string, scenarios: Scenario[], typesafeKey: string, parallel: number) {
+  const stored = JSON.parse(readFileSync(runPath, "utf8")) as StoredRun;
+  const labelFile = LabelFileSchema.parse(JSON.parse(readFileSync(labelsPath, "utf8")));
+  if (labelFile.run !== stored.at) throw new Error(`[evals] labels were checked on run ${labelFile.run}, not ${stored.at}`);
+  const byId = new Map(scenarios.map((s) => [s.id, s]));
+  const queue = stored.scenarios.flatMap((sc) =>
+    sc.replays.map((r, replay) => ({ sc, r, replay })).filter((x) => !x.r.error && x.r.reply && byId.has(x.sc.id)),
+  );
+  const rows: Array<JudgedRow & { pTrue: number; pass: boolean }> = [];
+  const worker = async () => {
+    for (let item = queue.shift(); item; item = queue.shift()) {
+      const { sc, r, replay } = item;
+      const { verdict } = await withRun("sophie-eval-rejudge", (runId) => judge(runId, typesafeKey, byId.get(sc.id)!, r.reply, r.actions ?? [], r.turnContext ?? ""));
+      rows.push({ scenario: sc.id, replay, judgedTrue: verdict.passed.true, pTrue: verdict.probabilities.true, pass: verdict.pass });
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, parallel) }, worker));
+  rows.sort((a, b) => a.scenario.localeCompare(b.scenario) || a.replay - b.replay);
+  return { kind: "rejudge", at: new Date().toISOString(), run: stored.at, judge: JUDGE === "jev" ? `jev/${TYPESAFE_DEFAULT_MODEL}` : JUDGE, agreement: trueAgreement(rows, labelFile.labels), rows };
+}
+
 /** Sophie from the code, with the skills table as production serves it. */
 async function codeDefinition(): Promise<AgentDefinition> {
   const { db } = await import("../db/index.js");
@@ -174,7 +213,7 @@ async function codeDefinition(): Promise<AgentDefinition> {
 }
 
 async function main() {
-  const definitionPath = arg("definition");
+  const definitionPath = arg("definition") ?? (arg("rejudge") ? "code" : undefined);
   if (!definitionPath) throw new Error("--definition <file> is required");
   const loaded = definitionPath === "code" ? await codeDefinition() : loadDefinition(definitionPath);
   // A file definition with no skills of its own (an outside AI) reads the tree as this code seeds it.
@@ -189,7 +228,17 @@ async function main() {
   const model = arg("model") ?? def.model;
   const runs = Number(arg("runs") ?? "3");
   const out = arg("out");
-  const { key: typesafeKey } = await resolvePlatformKey(TYPESAFE_PROVIDER, { method: "POST", path: "/evals" });
+  const { key: typesafeKey } = await resolvePlatformKey(JUDGE_PROVIDERS[JUDGE], { method: "POST", path: "/evals" });
+
+  const rejudgePath = arg("rejudge");
+  if (rejudgePath) {
+    const labelsPath = arg("labels");
+    if (!labelsPath) throw new Error("--rejudge needs --labels <file>");
+    const report = await rejudge(rejudgePath, labelsPath, scenarios, typesafeKey, Number(arg("parallel") ?? "5"));
+    if (out) writeFileSync(out, JSON.stringify(report, null, 2));
+    console.log(`[evals] rejudge: true agrees with the labels on ${report.agreement.agree}/${report.agreement.labelled} (${Math.round(report.agreement.rate * 100)}%), ${report.agreement.falseAlarms.length} false alarms, ${report.agreement.missed.length} missed`);
+    return;
+  }
 
   if (process.argv.includes("--calibrate")) {
     const calibration = await calibrate(scenarios, typesafeKey);

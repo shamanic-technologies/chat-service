@@ -1,0 +1,789 @@
+{
+ "run": "2026-11-02T13:19:23.801Z",
+ "labels": [
+  {
+   "scenario": "aba-diagnose-results",
+   "replay": 0,
+   "true": false,
+   "unsupported": "57 people are waiting... and 180 leads are queued behind them",
+   "evidence": "next-steps: leadsQueued 180 includes the 57 (57+123 follow-ups); nothing says the 57 are ABA"
+  },
+  {
+   "scenario": "aba-diagnose-results",
+   "replay": 1,
+   "true": false,
+   "unsupported": "Your ABA agencies are only now entering the queue: 180 prospects are lined up",
+   "evidence": "next-steps: 180 = 57 first emails + 123 follow-ups of already-emailed leads, not ABA"
+  },
+  {
+   "scenario": "aba-diagnose-results",
+   "replay": 2,
+   "true": false,
+   "unsupported": "57 ABA prospects are queued... and 180 leads are queued behind them",
+   "evidence": "next-steps: 180 total includes 57 and 123 follow-ups; ABA attribution unsupported"
+  },
+  {
+   "scenario": "aba-diagnose-results",
+   "replay": 3,
+   "true": false,
+   "unsupported": "180 ABA leaders are queued, 57 of them waiting for their first email",
+   "evidence": "next-steps leadsQueued 180 mostly follow-ups of the 124 already emailed (non-ABA)"
+  },
+  {
+   "scenario": "clinic-cancel-trial",
+   "replay": 0,
+   "true": false,
+   "unsupported": "what's still due ($13.93 used so far)",
+   "evidence": "turnContext: used $18.93, owed $13.93; stops confirmed by PATCH actions"
+  },
+  {
+   "scenario": "clinic-cancel-trial",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "PATCH stop x2 + contact_human in actions; used $18.93/owed $13.93/no card match turnContext"
+  },
+  {
+   "scenario": "clinic-cancel-trial",
+   "replay": 2,
+   "true": false,
+   "unsupported": "the $13.93 of work used so far",
+   "evidence": "turnContext/billing: usage $18.93, $13.93 is the amount owed"
+  },
+  {
+   "scenario": "clinic-cancel-trial",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "stops + contact_human in actions; $18.93 used, $13.93 owed, no card per billing read"
+  },
+  {
+   "scenario": "clinic-find-me-clients",
+   "replay": 0,
+   "true": false,
+   "unsupported": "capped at $20 a week, and it's ready but stopped",
+   "evidence": "caps PUT returned yesRequired, nothing ran; no cap was set"
+  },
+  {
+   "scenario": "clinic-find-me-clients",
+   "replay": 1,
+   "true": false,
+   "unsupported": "It's ready but not started yet: capped at $20 a week",
+   "evidence": "caps PUT refused pending yes; cap not set"
+  },
+  {
+   "scenario": "clinic-find-me-clients",
+   "replay": 2,
+   "true": false,
+   "unsupported": "capped at $20 a week like your other one; both campaigns work from your contact list",
+   "evidence": "no caps call ran; Reply Booking is reactive, not contact list"
+  },
+  {
+   "scenario": "clinic-find-me-clients",
+   "replay": 3,
+   "true": false,
+   "unsupported": "3,628 companies in your audience",
+   "evidence": "audience EU Clinics: 3,628 people, not companies (facts, list audiences)"
+  },
+  {
+   "scenario": "jarygo-cost-at-7am",
+   "replay": 0,
+   "true": false,
+   "unsupported": "Emails cost cents each",
+   "evidence": "no price read this turn or in history; rest matches turnContext"
+  },
+  {
+   "scenario": "jarygo-cost-at-7am",
+   "replay": 1,
+   "true": false,
+   "unsupported": "billed as work happens, a fraction of a cent at a time",
+   "evidence": "no per-unit price in context or tools; $1.03 owed and card 2096 supported"
+  },
+  {
+   "scenario": "jarygo-cost-at-7am",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "turnContext: $0.84 spent today, $1.03 owed, $20/day cap, $50 threshold or month end"
+  },
+  {
+   "scenario": "jarygo-cost-at-7am",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "turnContext: postpaid, $20/day cap, card 2096, $1.03 owed, $50 or month end"
+  },
+  {
+   "scenario": "jarygo-when-booked-leads",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "history tool calls: audience 8,493 roofing/HVAC/plumbing, fleet sample 54, median 5.1d; $0.84 today"
+  },
+  {
+   "scenario": "jarygo-when-booked-leads",
+   "replay": 1,
+   "true": false,
+   "unsupported": "card only charged when the running total reaches $50, so nothing lands before",
+   "evidence": "turnContext: also charged at month end; claim nothing lands before first client unsupported"
+  },
+  {
+   "scenario": "jarygo-when-booked-leads",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "next-steps: median 5.1d, average 14.4d; audience 8,493; $20/day cap"
+  },
+  {
+   "scenario": "jarygo-when-booked-leads",
+   "replay": 3,
+   "true": false,
+   "unsupported": "capped at $20 a day, about 20 prospects reached daily",
+   "evidence": "no per-prospect cost anywhere in context or actions"
+  },
+  {
+   "scenario": "jcurve-new-chat-empty-profile",
+   "replay": 0,
+   "true": false,
+   "unsupported": "Jcurve sells ERP software and implementation to growing businesses",
+   "evidence": "website unread (fetch failed); implementation and growing businesses unsupported"
+  },
+  {
+   "scenario": "jcurve-new-chat-empty-profile",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "brand URL jcurve-erp; offers list no description; $4,000 stated; $4.89 credit in turnContext"
+  },
+  {
+   "scenario": "jcurve-new-chat-empty-profile",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "turnContext: $4.89 free credit, owe $0, no card, $20 after $25 paid; no campaigns"
+  },
+  {
+   "scenario": "jcurve-new-chat-empty-profile",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "offer blank, no booking link, $4,000 value, $4.89 credit per turnContext"
+  },
+  {
+   "scenario": "lead-autoreply-then-visit",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "events 2026-10-31 (Saturday) visit; only email 2026-07-14; 08:30Z = Monday 09:30 Paris"
+  },
+  {
+   "scenario": "lead-autoreply-then-visit",
+   "replay": 1,
+   "true": false,
+   "unsupported": "Their site visit half an hour ago makes a follow-up due",
+   "evidence": "visit events 2026-10-31 01:14-01:17, ~23 hours before NOW"
+  },
+  {
+   "scenario": "lead-autoreply-then-visit",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "01:05 Sunday Paris per context; 09:00Z = 10:00 Paris (UTC+1)"
+  },
+  {
+   "scenario": "lead-autoreply-then-visit",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "01:05 Europe/Paris in context; 08:30Z = 09:30 local Monday"
+  },
+  {
+   "scenario": "lead-cold-newsletter-click",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "all claims from FACTS E1-E5 (same-day emails, free platform, replies in inbox)"
+  },
+  {
+   "scenario": "lead-cold-newsletter-click",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "FACTS E1-E5: $7 hot lead, 4.0x median, free platform, same-day emails"
+  },
+  {
+   "scenario": "lead-cold-newsletter-click",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "newsletter link events support newsletter list; other claims from FACTS"
+  },
+  {
+   "scenario": "lead-cold-newsletter-click",
+   "replay": 3,
+   "true": false,
+   "unsupported": "You signed up with us",
+   "evidence": "facts: he has no account; only newsletter clicks"
+  },
+  {
+   "scenario": "lead-newsletter-reader-old-autoreply",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "FACTS E1-E5: free platform, catalogue prices, $7, 4.0x, 24h signal"
+  },
+  {
+   "scenario": "lead-newsletter-reader-old-autoreply",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "FACTS: free platform, same day, $7 hot lead, 4.0x median"
+  },
+  {
+   "scenario": "lead-newsletter-reader-old-autoreply",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "conditional opener; rest from FACTS E1-E5"
+  },
+  {
+   "scenario": "lead-newsletter-reader-old-autoreply",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "thread: her May out-of-office supports 'you were away'; rest from FACTS"
+  },
+  {
+   "scenario": "lead-reply-partnership-ask",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "thread: he has cold outreach function; $30 free budget no card in our Oct 19 email; FACTS E1"
+  },
+  {
+   "scenario": "lead-reply-partnership-ask",
+   "replay": 1,
+   "true": false,
+   "unsupported": "our own outreach runs on our stack, so we would not swap it",
+   "evidence": "no fact says this; facts only say we do not partner to resell"
+  },
+  {
+   "scenario": "lead-reply-partnership-ask",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "facts: we do not partner; $30 budget no card from our thread message"
+  },
+  {
+   "scenario": "lead-reply-partnership-ask",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "thread: in-house function, $30 free budget no card; roles from our Nov 2 email"
+  },
+  {
+   "scenario": "lead-signup-card-declined",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "events: Digital Receipts, Retail Store Owners Nigeria, $10/day; declined insufficient funds; $100 match in thread"
+  },
+  {
+   "scenario": "lead-signup-card-declined",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "events: campaign $10/day, insufficient funds refusal; FACTS E4 free platform, 4.0x median"
+  },
+  {
+   "scenario": "lead-signup-card-declined",
+   "replay": 2,
+   "true": false,
+   "unsupported": "Cards issued in Nigeria are often refused for international online payments",
+   "evidence": "refusals were insufficient funds; no source for that general claim"
+  },
+  {
+   "scenario": "lead-signup-card-declined",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "05:38 refusal: card does not support this type of purchase; $100 match in our WhatsApp"
+  },
+  {
+   "scenario": "lead-student-first-client",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "facts: campaign set up waits for budget; offer AI receptionist per onboarding event; FACTS E1"
+  },
+  {
+   "scenario": "lead-student-first-client",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "thread: CallMate AI, local service businesses; FACTS E3/E4"
+  },
+  {
+   "scenario": "lead-student-first-client",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "thread: early stage; FACTS: free platform, $7 hot lead, 4.0x, same-day emails"
+  },
+  {
+   "scenario": "lead-student-first-client",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "facts: campaign set up waits for budget; offer from onboarding event; site free"
+  },
+  {
+   "scenario": "lead-whatsapp-signed-up-live",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "thread: go-live email 12:10, three emails of ours, no answer"
+  },
+  {
+   "scenario": "lead-whatsapp-signed-up-live",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "events: give_for_free walkthrough call, meeting_booking off; campaign launched"
+  },
+  {
+   "scenario": "lead-whatsapp-signed-up-live",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "facts: live campaign to Lagos event agencies; replies passed to her per our email; FACTS E1"
+  },
+  {
+   "scenario": "lead-whatsapp-signed-up-live",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "emails minutes ago unanswered; 12:12Z Sunday = 13:12 Lagos; 08:30Z Monday 09:30"
+  },
+  {
+   "scenario": "lead-whatsapp-unanswered-asks",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "events: preview ready, no account/launch; FACTS E1-E5 $7, free, same day"
+  },
+  {
+   "scenario": "lead-whatsapp-unanswered-asks",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "preview ready event; FACTS E4 free platform; thread from Kevin"
+  },
+  {
+   "scenario": "lead-whatsapp-unanswered-asks",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "preview ready, no campaign; FACTS: same day, free, replies answered"
+  },
+  {
+   "scenario": "lead-whatsapp-unanswered-asks",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "preview ready per events; no factual claims beyond that"
+  },
+  {
+   "scenario": "martian-angry-no-list",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Filter prepared and off in history; nothing else asserted"
+  },
+  {
+   "scenario": "martian-angry-no-list",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "$0.002762 from create_qualification_check; review list filed via request_staff in history"
+  },
+  {
+   "scenario": "martian-angry-no-list",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "31 audience size and find-before-write in history and facts"
+  },
+  {
+   "scenario": "martian-angry-no-list",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "31 count, review list request filed, filter under a cent: history"
+  },
+  {
+   "scenario": "martian-close-account",
+   "replay": 0,
+   "true": false,
+   "unsupported": "I've stopped your campaign, so nothing more is spent from your $10.",
+   "evidence": "History: each chat reply costs 16-21 cents; chat spend continues"
+  },
+  {
+   "scenario": "martian-close-account",
+   "replay": 1,
+   "true": false,
+   "unsupported": "turning the campaign off stops all spend immediately",
+   "evidence": "History: chat charges are separate from the campaign and continue"
+  },
+  {
+   "scenario": "martian-close-account",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Terms: unused credit not refunded, support@; facts: team answers by email; $6.62 turnContext"
+  },
+  {
+   "scenario": "martian-close-account",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "contact_human in actions; $6.62 balance turnContext; team replies by email (facts)"
+  },
+  {
+   "scenario": "martian-cost-per-email",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Catalog: $0.0272/$0.0545/$0.0817 send, Apollo + BounceVerify; 0% markup; estimates computed"
+  },
+  {
+   "scenario": "martian-cost-per-email",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Catalog prices, llms.txt 0% markup chat at cost; $1.96/0.06 ~30 computed"
+  },
+  {
+   "scenario": "martian-cost-per-email",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Catalog lines match; $0.08 spent turnContext; history attributes rest to chat"
+  },
+  {
+   "scenario": "martian-cost-per-email",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "$0.0272 catalog; 8 cents spent turnContext; Monday earliest send in history"
+  },
+  {
+   "scenario": "martian-exclude-leads",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Facts: nobody found or emailed yet"
+  },
+  {
+   "scenario": "martian-exclude-leads",
+   "replay": 1,
+   "true": false,
+   "unsupported": "one lead has been sourced so far",
+   "evidence": "Facts: no person has been found yet; sourcing leadsServed 0"
+  },
+  {
+   "scenario": "martian-exclude-leads",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Facts: no email sent, campaign finding first people in Lagos"
+  },
+  {
+   "scenario": "martian-exclude-leads",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Audience Lead Producers, 31, Lagos from run_operation audiences; nothing sent per facts"
+  },
+  {
+   "scenario": "martian-force-send",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "next_steps: 0 queued, send window Mon-Sat 7-19; balance $2.45"
+  },
+  {
+   "scenario": "martian-force-send",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "next_steps: 0 queued, send window; balance $2.45"
+  },
+  {
+   "scenario": "martian-force-send",
+   "replay": 2,
+   "true": false,
+   "unsupported": "Today is Sunday, so the first sends happen tomorrow morning",
+   "evidence": "Nobody found or queued yet (facts, next_steps); Monday sends not established"
+  },
+  {
+   "scenario": "martian-force-send",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Balance 268.1 to 244.6 cents = ~23 cents; 0 queued; send window"
+  },
+  {
+   "scenario": "martian-give-me-the-list",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "31 match, nobody found (facts); filter under a cent from history"
+  },
+  {
+   "scenario": "martian-give-me-the-list",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Facts: names appear on People page as found; 31 matches"
+  },
+  {
+   "scenario": "martian-give-me-the-list",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "$0.002762 from history; nobody found per facts"
+  },
+  {
+   "scenario": "martian-give-me-the-list",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Facts: nobody found; $0.002762 from history"
+  },
+  {
+   "scenario": "martian-how-many-left",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "31 estimate, filter off (facts); cost under a cent from history"
+  },
+  {
+   "scenario": "martian-how-many-left",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Facts: nobody found, campaign paused, filter off"
+  },
+  {
+   "scenario": "martian-how-many-left",
+   "replay": 2,
+   "true": false,
+   "unsupported": "I can run the check across all 31 now for about 9 cents",
+   "evidence": "Facts: nobody found yet, filter checks companies as found; preview reads returned 404"
+  },
+  {
+   "scenario": "martian-how-many-left",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Facts: nothing found or contacted, campaign paused, filter off"
+  },
+  {
+   "scenario": "martian-refund",
+   "replay": 0,
+   "true": false,
+   "unsupported": "The team will come back to you here with their answer",
+   "evidence": "Facts: our team answers the client by email"
+  },
+  {
+   "scenario": "martian-refund",
+   "replay": 1,
+   "true": false,
+   "unsupported": "The team ... will answer you here",
+   "evidence": "Facts: our team answers the client by email"
+  },
+  {
+   "scenario": "martian-refund",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "$5.19/$4.81 billing; contact_human and stop_funnel_campaign in actions"
+  },
+  {
+   "scenario": "martian-refund",
+   "replay": 3,
+   "true": false,
+   "unsupported": "the remaining $5.19 stops going down ... will reply to you here",
+   "evidence": "Chat charges continue (history); facts: team answers by email"
+  },
+  {
+   "scenario": "martian-scam",
+   "replay": 0,
+   "true": false,
+   "unsupported": "you pay for the model's tokens at DeepSeek's own list price",
+   "evidence": "Facts: replies at the time came from a larger model, not DeepSeek pricing"
+  },
+  {
+   "scenario": "martian-scam",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Search ~2c, filter under half cent, ~20c/reply in history; contact_human in actions"
+  },
+  {
+   "scenario": "martian-scam",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Figures from history; earlier contact_human on chat pricing in history"
+  },
+  {
+   "scenario": "martian-scam",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "$0.30 spent turnContext; rest chat per facts; no card on file"
+  },
+  {
+   "scenario": "martian-which-ai",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "turnContext names DeepSeek V4.1 Flash; contact_human in actions; $1.96 balance"
+  },
+  {
+   "scenario": "martian-which-ai",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "turnContext model line; contact_human in actions"
+  },
+  {
+   "scenario": "martian-which-ai",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Terms part 2 read: payments final, no refunds, two guarantees, 30-day disputes"
+  },
+  {
+   "scenario": "martian-which-ai",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Model line; contact_human in history; Monday sends from history"
+  },
+  {
+   "scenario": "martian-why-3-dollars",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Usage: finding contacts $0.0157; facts: rest is chat at list price"
+  },
+  {
+   "scenario": "martian-why-3-dollars",
+   "replay": 1,
+   "true": false,
+   "unsupported": "The other $2.86 is our own AI work: setting up your account",
+   "evidence": "Usage shows setup $0; 3.04 minus 0.02 is not 2.86; facts: rest is chat"
+  },
+  {
+   "scenario": "martian-why-3-dollars",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "2 cents + $2.14 adjustments + $0.88 provisioned = $3.04; facts: rest is chat"
+  },
+  {
+   "scenario": "martian-why-3-dollars",
+   "replay": 3,
+   "true": false,
+   "unsupported": "The other $2.57 is setting up your brand, offer and audience",
+   "evidence": "Usage: setup billed $0; $2.57 matches no figure; facts: rest is chat"
+  },
+  {
+   "scenario": "martian-zero-balance",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "turnContext: -$1.75, $11.75 used, campaign $0.41, no card"
+  },
+  {
+   "scenario": "martian-zero-balance",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "turnContext balance figures; chat charges past zero per facts"
+  },
+  {
+   "scenario": "martian-zero-balance",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "request_staff bug filed in actions; billing -174.7 cents"
+  },
+  {
+   "scenario": "martian-zero-balance",
+   "replay": 3,
+   "true": true,
+   "unsupported": "",
+   "evidence": "request_staff in actions; turnContext figures"
+  },
+  {
+   "scenario": "novemiq-explain-campaigns",
+   "replay": 0,
+   "true": false,
+   "unsupported": "$0 dépensé aujourd'hui parce que personne n'est encore entré dedans",
+   "evidence": "Only '$0 spent today' read; no reply/conversation data read this turn"
+  },
+  {
+   "scenario": "novemiq-explain-campaigns",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "Funnel paths, caps and spend match list_campaigns fixture"
+  },
+  {
+   "scenario": "novemiq-explain-campaigns",
+   "replay": 2,
+   "true": false,
+   "unsupported": "l'IA répond dans la minute et propose un rendez-vous",
+   "evidence": "Nothing read states response speed; only channel ai-meeting-booking"
+  },
+  {
+   "scenario": "novemiq-explain-campaigns",
+   "replay": 3,
+   "true": false,
+   "unsupported": "parce qu'aucune conversation n'a démarré pour l'instant aujourd'hui",
+   "evidence": "Only '$0 spent today' read; conversation count never read"
+  },
+  {
+   "scenario": "prospect-free-trial-pricing",
+   "replay": 0,
+   "true": true,
+   "unsupported": "",
+   "evidence": "llms.txt: no trial, $10 start, agency guarantee; catalog prices; terms reload threshold $5"
+  },
+  {
+   "scenario": "prospect-free-trial-pricing",
+   "replay": 1,
+   "true": true,
+   "unsupported": "",
+   "evidence": "llms.txt and catalog: 0% markup, $0.0272, $0.0278 credit, $10 start; balance $0 turnContext"
+  },
+  {
+   "scenario": "prospect-free-trial-pricing",
+   "replay": 2,
+   "true": true,
+   "unsupported": "",
+   "evidence": "llms.txt: no free credit, no trial; catalog unit prices; terms auto reload"
+  },
+  {
+   "scenario": "prospect-free-trial-pricing",
+   "replay": 3,
+   "true": false,
+   "unsupported": "an automatic reload of $10 whenever the balance drops below $5",
+   "evidence": "Terms: reload amount at least $10 above threshold; llms.txt auto top-up min $15"
+  }
+ ]
+}
