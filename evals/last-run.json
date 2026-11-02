@@ -1,224 +1,224 @@
 {
-  "note": "The eval runs the current Sophie code was merged on (SOPHIE-REFONTE-1102). Gate: pooled pass rate over >=3 replies per scenario (100+) a side >= the baseline's, same day, same judge. Replace with fresh runs on any change to Sophie's prompt, tools, model, reasoning or briefs (sophieCodeHash).",
-  "model": "deepseek/deepseek-flash (reasoning off)",
-  "judge": "jev/jev-latest",
-  "codeHash": "797f405c8d1acc12",
+ "note": "The eval runs the current Sophie code was merged on (SOPHIE-TRUE-1102: the brief states today's date and how the account pays; the judge reads the model's ## You line; scenario facts aligned with their fixtures). Gate: pooled pass rate over >=3 replies per scenario (100+) a side >= the baseline's, same hour, same judge. Replace with fresh runs on any change to Sophie's prompt, tools, model, reasoning or briefs (sophieCodeHash).",
+ "model": "deepseek/deepseek-flash (reasoning off)",
+ "judge": "jev/jev-latest",
+ "codeHash": "c969aea28f635311",
+ "runs": [
+  {
+   "at": "2026-11-02T13:01:40.602Z",
+   "runsPerScenario": 4,
+   "scenariosPassed": 9
+  }
+ ],
+ "pooled": {
+  "replays": 112,
+  "passRate": 0.4196,
+  "criterionRate": {
+   "true": 0.625,
+   "respectful": 0.9196,
+   "proactive": 0.875,
+   "answers": 0.9286,
+   "nextAction": 0.9107,
+   "form": 1
+  },
+  "failedReplies": 0,
+  "medianCostPerReplyUsd": 0.00145,
+  "medianLlmCalls": 3,
+  "medianLatencyMs": 11998.5
+ },
+ "baseline": {
+  "definition": "sophie-code as merged before this change (brief without date or payment words), same harness fixes",
   "runs": [
-    {
-      "at": "2026-11-02T09:11:30.039Z",
-      "runsPerScenario": 4,
-      "scenariosPassed": 7
-    }
+   {
+    "at": "2026-11-02T13:01:44.705Z",
+    "runsPerScenario": 4
+   }
   ],
   "pooled": {
-    "replays": 112,
-    "passRate": 0.4018,
-    "criterionRate": {
-      "true": 0.6875,
-      "respectful": 0.9196,
-      "proactive": 0.8661,
-      "answers": 0.9107,
-      "nextAction": 0.9464,
-      "form": 0.9821
-    },
-    "failedReplies": 0,
-    "medianCostPerReplyUsd": 0.00329,
-    "medianLlmCalls": 3.0,
-    "medianLatencyMs": 12902.0
+   "replays": 112,
+   "passRate": 0.3393,
+   "criterionRate": {
+    "true": 0.5536,
+    "respectful": 0.9107,
+    "proactive": 0.8393,
+    "answers": 0.9464,
+    "nextAction": 0.9286,
+    "form": 0.9732
+   },
+   "failedReplies": 0,
+   "medianCostPerReplyUsd": 0.00166,
+   "medianLlmCalls": 3,
+   "medianLatencyMs": 12666.5
+  }
+ },
+ "scenarios": [
+  {
+   "id": "aba-diagnose-results",
+   "surface": "whatsapp",
+   "baseline": "FTFF",
+   "sophie": "FTTT"
   },
-  "baseline": {
-    "definition": "sophie-code with DeepSeek reasoning on (live before this change)",
-    "runs": [
-      {
-        "at": "2026-11-02T09:11:36.469Z",
-        "runsPerScenario": 4
-      }
-    ],
-    "pooled": {
-      "replays": 112,
-      "passRate": 0.3393,
-      "criterionRate": {
-        "true": 0.5893,
-        "respectful": 0.9196,
-        "proactive": 0.8036,
-        "answers": 0.9375,
-        "nextAction": 0.9196,
-        "form": 0.9732
-      },
-      "failedReplies": 0,
-      "medianCostPerReplyUsd": 0.00388,
-      "medianLlmCalls": 3.0,
-      "medianLatencyMs": 13143.5
-    }
+  {
+   "id": "clinic-cancel-trial",
+   "surface": "web",
+   "baseline": "FFFF",
+   "sophie": "FFFF"
   },
-  "scenarios": [
-    {
-      "id": "aba-diagnose-results",
-      "surface": "whatsapp",
-      "baseline": "TFFT",
-      "sophie": "FFFT"
-    },
-    {
-      "id": "clinic-cancel-trial",
-      "surface": "web",
-      "baseline": "FFFF",
-      "sophie": "TFFF"
-    },
-    {
-      "id": "clinic-find-me-clients",
-      "surface": "web",
-      "baseline": "FFFF",
-      "sophie": "FFFF"
-    },
-    {
-      "id": "jarygo-cost-at-7am",
-      "surface": "web",
-      "baseline": "TTTT",
-      "sophie": "TTTF"
-    },
-    {
-      "id": "jarygo-when-booked-leads",
-      "surface": "web",
-      "baseline": "FFFF",
-      "sophie": "TFFF"
-    },
-    {
-      "id": "jcurve-new-chat-empty-profile",
-      "surface": "web",
-      "baseline": "FFFT",
-      "sophie": "FFFF"
-    },
-    {
-      "id": "lead-autoreply-then-visit",
-      "surface": "lead",
-      "baseline": "TFFF",
-      "sophie": "TTTT"
-    },
-    {
-      "id": "lead-cold-newsletter-click",
-      "surface": "lead",
-      "baseline": "FFFF",
-      "sophie": "FFFF"
-    },
-    {
-      "id": "lead-newsletter-reader-old-autoreply",
-      "surface": "lead",
-      "baseline": "FFFF",
-      "sophie": "FFFF"
-    },
-    {
-      "id": "lead-reply-partnership-ask",
-      "surface": "lead",
-      "baseline": "TTFF",
-      "sophie": "FTTF"
-    },
-    {
-      "id": "lead-signup-card-declined",
-      "surface": "lead",
-      "baseline": "TTFT",
-      "sophie": "TTTT"
-    },
-    {
-      "id": "lead-student-first-client",
-      "surface": "lead",
-      "baseline": "TFTF",
-      "sophie": "FFFT"
-    },
-    {
-      "id": "lead-whatsapp-signed-up-live",
-      "surface": "lead",
-      "baseline": "FTFF",
-      "sophie": "FFFT"
-    },
-    {
-      "id": "lead-whatsapp-unanswered-asks",
-      "surface": "lead",
-      "baseline": "TFFF",
-      "sophie": "FFFT"
-    },
-    {
-      "id": "martian-angry-no-list",
-      "surface": "web",
-      "baseline": "FFTT",
-      "sophie": "FTFT"
-    },
-    {
-      "id": "martian-close-account",
-      "surface": "web",
-      "baseline": "TTTF",
-      "sophie": "TFTT"
-    },
-    {
-      "id": "martian-cost-per-email",
-      "surface": "web",
-      "baseline": "FFFF",
-      "sophie": "FFTF"
-    },
-    {
-      "id": "martian-exclude-leads",
-      "surface": "web",
-      "baseline": "TTTT",
-      "sophie": "TTTT"
-    },
-    {
-      "id": "martian-force-send",
-      "surface": "web",
-      "baseline": "FFFF",
-      "sophie": "FTTT"
-    },
-    {
-      "id": "martian-give-me-the-list",
-      "surface": "web",
-      "baseline": "FFTT",
-      "sophie": "FTTT"
-    },
-    {
-      "id": "martian-how-many-left",
-      "surface": "web",
-      "baseline": "TFTF",
-      "sophie": "TFTF"
-    },
-    {
-      "id": "martian-refund",
-      "surface": "web",
-      "baseline": "FFFF",
-      "sophie": "TFFF"
-    },
-    {
-      "id": "martian-scam",
-      "surface": "web",
-      "baseline": "TTTT",
-      "sophie": "FTFF"
-    },
-    {
-      "id": "martian-which-ai",
-      "surface": "web",
-      "baseline": "FTFT",
-      "sophie": "FFTT"
-    },
-    {
-      "id": "martian-why-3-dollars",
-      "surface": "web",
-      "baseline": "FFFF",
-      "sophie": "FFFF"
-    },
-    {
-      "id": "martian-zero-balance",
-      "surface": "web",
-      "baseline": "FFFF",
-      "sophie": "FFFF"
-    },
-    {
-      "id": "novemiq-explain-campaigns",
-      "surface": "web",
-      "baseline": "TTFF",
-      "sophie": "TFTF"
-    },
-    {
-      "id": "prospect-free-trial-pricing",
-      "surface": "whatsapp",
-      "baseline": "FFFF",
-      "sophie": "FTFT"
-    }
-  ]
+  {
+   "id": "clinic-find-me-clients",
+   "surface": "web",
+   "baseline": "FFFF",
+   "sophie": "FTFF"
+  },
+  {
+   "id": "jarygo-cost-at-7am",
+   "surface": "web",
+   "baseline": "TTFF",
+   "sophie": "TTTT"
+  },
+  {
+   "id": "jarygo-when-booked-leads",
+   "surface": "web",
+   "baseline": "FFFF",
+   "sophie": "FFFT"
+  },
+  {
+   "id": "jcurve-new-chat-empty-profile",
+   "surface": "web",
+   "baseline": "FFFF",
+   "sophie": "FFFF"
+  },
+  {
+   "id": "lead-autoreply-then-visit",
+   "surface": "lead",
+   "baseline": "TTFT",
+   "sophie": "TTTT"
+  },
+  {
+   "id": "lead-cold-newsletter-click",
+   "surface": "lead",
+   "baseline": "FFFF",
+   "sophie": "FFFF"
+  },
+  {
+   "id": "lead-newsletter-reader-old-autoreply",
+   "surface": "lead",
+   "baseline": "FFFF",
+   "sophie": "FFFF"
+  },
+  {
+   "id": "lead-reply-partnership-ask",
+   "surface": "lead",
+   "baseline": "TFFF",
+   "sophie": "TFTT"
+  },
+  {
+   "id": "lead-signup-card-declined",
+   "surface": "lead",
+   "baseline": "FTTF",
+   "sophie": "FFFF"
+  },
+  {
+   "id": "lead-student-first-client",
+   "surface": "lead",
+   "baseline": "FFFF",
+   "sophie": "FTFT"
+  },
+  {
+   "id": "lead-whatsapp-signed-up-live",
+   "surface": "lead",
+   "baseline": "FFFF",
+   "sophie": "FFFT"
+  },
+  {
+   "id": "lead-whatsapp-unanswered-asks",
+   "surface": "lead",
+   "baseline": "TFFF",
+   "sophie": "FTFF"
+  },
+  {
+   "id": "martian-angry-no-list",
+   "surface": "web",
+   "baseline": "TFFF",
+   "sophie": "FTTF"
+  },
+  {
+   "id": "martian-close-account",
+   "surface": "web",
+   "baseline": "FFFT",
+   "sophie": "TTTF"
+  },
+  {
+   "id": "martian-cost-per-email",
+   "surface": "web",
+   "baseline": "TFFF",
+   "sophie": "TFFF"
+  },
+  {
+   "id": "martian-exclude-leads",
+   "surface": "web",
+   "baseline": "TTTT",
+   "sophie": "TTTT"
+  },
+  {
+   "id": "martian-force-send",
+   "surface": "web",
+   "baseline": "TTTT",
+   "sophie": "TFFT"
+  },
+  {
+   "id": "martian-give-me-the-list",
+   "surface": "web",
+   "baseline": "TTFT",
+   "sophie": "FTTT"
+  },
+  {
+   "id": "martian-how-many-left",
+   "surface": "web",
+   "baseline": "TTTT",
+   "sophie": "FFFF"
+  },
+  {
+   "id": "martian-refund",
+   "surface": "web",
+   "baseline": "FFFF",
+   "sophie": "FFFF"
+  },
+  {
+   "id": "martian-scam",
+   "surface": "web",
+   "baseline": "FFFF",
+   "sophie": "TFFF"
+  },
+  {
+   "id": "martian-which-ai",
+   "surface": "web",
+   "baseline": "FTTF",
+   "sophie": "TTFF"
+  },
+  {
+   "id": "martian-why-3-dollars",
+   "surface": "web",
+   "baseline": "TFFT",
+   "sophie": "TFTF"
+  },
+  {
+   "id": "martian-zero-balance",
+   "surface": "web",
+   "baseline": "TTTT",
+   "sophie": "FTTT"
+  },
+  {
+   "id": "novemiq-explain-campaigns",
+   "surface": "web",
+   "baseline": "FFFF",
+   "sophie": "FFFT"
+  },
+  {
+   "id": "prospect-free-trial-pricing",
+   "surface": "whatsapp",
+   "baseline": "FFTT",
+   "sophie": "TTTF"
+  }
+ ]
 }

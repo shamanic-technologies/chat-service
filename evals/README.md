@@ -16,7 +16,7 @@ merges without a passing run here. Owner, 2026-11-02: « evals first ».
 
 ## The judge
 
-Jev (`src/evals/judge.ts`) answers one yes/no question per criterion: **true** (nothing invented, every done action is in the turn's tool calls), **respectful** (no recited limits, never runs us down), **proactive** (did the work, asked only what only the client knows), **answers** (the question, up front), **nextAction** (ends on one concrete step), **form** (right for the surface). A criterion passes at p(yes) >= 0.5.
+Jev (`src/evals/judge.ts`) answers one yes/no question per criterion: **true** (nothing invented, every done action is in the turn's tool calls), **respectful** (no recited limits, never runs us down), **proactive** (did the work, asked only what only the client knows), **answers** (the question, up front), **nextAction** (ends on one concrete step), **form** (right for the surface). A criterion passes at p(yes) >= 0.5. The judge reads what the model read: the conversation, every tool answer, the turn's briefs and the prompt's `## You` line (its model name). A scenario's `facts` must agree with its `fixtures`: when they disagree, the reply is graded against data it never saw (fix the facts, never the judge question).
 
 A scenario passes when a majority of its replays pass every criterion. A suite passes when every scenario passes, **true** holds on every replay, and the median reply costs under **$0.03**.
 

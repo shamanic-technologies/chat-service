@@ -82,6 +82,13 @@ export const ScenarioSchema = z
 
 export type Scenario = z.infer<typeof ScenarioSchema>;
 
+/** The day the turn was written, from its source ("client A, web, 2026-11-01"): the brief's "Today". */
+export function scenarioDay(scenario: Scenario): Date {
+  const day = /\d{4}-\d{2}-\d{2}/.exec(scenario.source)?.[0];
+  if (!day) throw new Error(`[evals] scenario ${scenario.id} names no day in its source`);
+  return new Date(`${day}T12:00:00Z`);
+}
+
 /** Every scenario in a directory, validated; a bad file fails loud with its name. */
 export function loadScenarios(dir: string): Scenario[] {
   const files = readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith(".")).sort();
