@@ -1,0 +1,4086 @@
+{
+  "id": "martian-how-many-left",
+  "title": "How many leads are left after a filter",
+  "source": "client M, web, 2026-11-01",
+  "surface": "web",
+  "person": {
+    "name": "Tola"
+  },
+  "history": [
+    {
+      "role": "assistant",
+      "content": "Hi Tola, Sophie here from distribute.you.\n\nYour card is saved and your Guest Management campaign is live. We're finding lead producers at Lagos event agencies for you now.\n\nEvery email is written for the person who gets it and goes out in their business hours. Across our clients, a first positive reply usually lands about 5 days after the first email.\n\nYou can follow the first sends and replies here: https://dashboard.distribute.you",
+      "toolCalls": [
+        {
+          "name": "list_brands",
+          "args": {},
+          "result": {
+            "brands": [
+              {
+                "id": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+                "name": "Martian DBB",
+                "colors": null,
+                "domain": "martiandbb.com",
+                "logoUrl": "https://img.logo.dev/martiandbb.com?token=pk_J1iY4__HSfm9acHjR8FibA&size=256&format=png",
+                "brandUrl": "https://martiandbb.com",
+                "createdAt": "2026-11-01 11:37:49.751139+00",
+                "updatedAt": "2026-11-01 11:39:28.322613+00"
+              }
+            ]
+          }
+        },
+        {
+          "name": "get_billing_account",
+          "args": {},
+          "result": {
+            "id": "63ec66eb-9af9-4089-8d77-56c2bd130d9d",
+            "org_id": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "card_brand": "visa",
+            "card_last4": "0651",
+            "created_at": "2026-11-01T11:37:48.861Z",
+            "updated_at": "2026-11-01T11:37:48.861Z",
+            "usage_cents": "62.7221480000",
+            "card_country": "SG",
+            "payment_mode": "prepaid",
+            "balance_cents": "937.2778520000",
+            "card_exp_year": 2029,
+            "debited_cents": "0",
+            "expired_cents": "0",
+            "card_exp_month": 4,
+            "credited_cents": "1000.0000000000",
+            "has_auto_topup": false,
+            "cash_paid_cents": "1000.0000000000",
+            "amount_owed_cents": null,
+            "credit_line_cents": null,
+            "free_credit_offer": "prepaid_at_cost",
+            "has_payment_method": true,
+            "topup_amount_cents": null,
+            "usage_discount_pct": null,
+            "credited_paid_cents": "500.0000000000",
+            "postpaid_card_check": "required",
+            "actual_balance_cents": "951.5966520000",
+            "auto_reload_supported": true,
+            "credited_gifted_cents": "0.0000000000",
+            "topup_threshold_cents": null,
+            "credit_line_step_cents": null,
+            "credited_advance_cents": "500.0000000000",
+            "free_credit_pending_cents": "0.0000000000",
+            "free_credit_received_cents": "0.0000000000",
+            "credited_trial_repaid_cents": "0.0000000000",
+            "free_credit_spendable_cents": "0.0000000000",
+            "postpaid_card_check_message": null,
+            "credited_trial_advance_cents": "0.0000000000",
+            "free_credit_entitlement_cents": 0,
+            "auto_reload_unsupported_reason": null,
+            "free_credit_paid_trigger_cents": 0,
+            "free_credit_remaining_to_pay_cents": "0.0000000000"
+          }
+        },
+        {
+          "name": "list_campaigns",
+          "args": {
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+          },
+          "result": {
+            "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+            "campaigns": [
+              {
+                "id": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+                "name": "Email Replies",
+                "path": "Start → Lead Sourcing → Lead → Sales Cold Email Outreach → Positive reply → Your Team Reply Closing → Paid client",
+                "type": "proactive",
+                "spent": "$0.01 spent this month",
+                "steps": [
+                  {
+                    "leg": "lead_found_to_conversation",
+                    "status": "ongoing",
+                    "channel": "sales-cold-email-outreach"
+                  },
+                  {
+                    "leg": "conversation_to_paid_client",
+                    "status": "ongoing",
+                    "channel": "your-team-reply-closing"
+                  },
+                  {
+                    "leg": "start_to_lead_found",
+                    "status": "ongoing",
+                    "channel": "lead-sourcing"
+                  }
+                ],
+                "budget": "Max $10/month",
+                "return": "no return measured yet",
+                "status": "ongoing",
+                "volume": null,
+                "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+                "invested": "$0 invested since start",
+                "runsWhen": "On its own, within its caps (no trigger)",
+                "stopReason": null,
+                "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+              }
+            ],
+            "campaignCount": 1
+          }
+        },
+        {
+          "name": "get_campaign_next_steps",
+          "args": {
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+            "campaignId": "f088b03a-08f6-4029-8b2b-53bc5809c259"
+          },
+          "result": {
+            "name": "Email Replies",
+            "pipes": [
+              {
+                "legKey": "lead_found_to_conversation",
+                "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+                "status": "ongoing",
+                "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+                "featureSlug": "sales-cold-email-outreach",
+                "endsOnPositiveReply": true
+              },
+              {
+                "legKey": "conversation_to_paid_client",
+                "pipeId": "your-team-reply-closing|conversation_to_paid_client",
+                "status": "ongoing",
+                "campaignId": "72f92c2e-2c38-4b0f-9274-6653862a8ca5",
+                "featureSlug": "your-team-reply-closing",
+                "endsOnPositiveReply": false
+              },
+              {
+                "legKey": "start_to_lead_found",
+                "pipeId": "lead-sourcing|start_to_lead_found",
+                "status": "ongoing",
+                "campaignId": "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9",
+                "featureSlug": "lead-sourcing",
+                "endsOnPositiveReply": false
+              }
+            ],
+            "status": "ongoing",
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+            "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+            "nextSends": {
+              "dueNow": 0,
+              "nextSendAt": null,
+              "leadsQueued": 0,
+              "unavailableReason": null
+            },
+            "emailSendQueue": {
+              "asOf": "2026-11-01T12:11:10.347Z",
+              "timezones": [],
+              "sendWindow": {
+                "endHour": 19,
+                "weekdays": [
+                  "monday",
+                  "tuesday",
+                  "wednesday",
+                  "thursday",
+                  "friday",
+                  "saturday"
+                ],
+                "startHour": 7,
+                "timezoneRule": "lead_local"
+              },
+              "queuedEmails": 0,
+              "firstEmailsFrom": null,
+              "leadsAwaitingFirstEmail": 0,
+              "leadsWithFollowUpQueued": 0
+            },
+            "scheduledFollowups": {
+              "due": 0,
+              "asOf": "2026-11-01T12:11:10.188Z",
+              "byDay": [],
+              "leads": 0,
+              "nextAt": null,
+              "upcoming": 0,
+              "oldestDueAt": null,
+              "laterThanHorizon": 0
+            },
+            "salesFunnelCampaignId": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+            "requestedPipeCampaignId": null,
+            "timeToFirstPositiveReply": {
+              "basis": "pipe_fleet",
+              "campaign": {
+                "medianMs": null,
+                "averageMs": null,
+                "medianDays": null,
+                "sampleSize": 0,
+                "averageDays": null
+              },
+              "learning": false,
+              "minSample": 10,
+              "pipeFleet": {
+                "medianMs": 437489336,
+                "averageMs": 1346215862,
+                "medianDays": 5.1,
+                "sampleSize": 56,
+                "averageDays": 15.6
+              },
+              "medianDays": 5.1,
+              "sampleSize": 56,
+              "averageDays": 15.6,
+              "unavailableReason": null
+            },
+            "emailSendQueueUnavailableReason": null,
+            "scheduledFollowupsUnavailableReason": null
+          }
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": "Hi Tola, Sophie here from distribute.you. Your Guest Management campaign is live 🎉\n\nWe're finding lead producers at Lagos event agencies for you now. Each email is written for the person who gets it and goes out in their business hours, Monday to Saturday.\n\nAcross our clients, a first positive reply usually lands about 5 days after the first email. When someone replies with interest, it lands in your inbox for you to answer.\n\nWatch the first sends come in here: https://dashboard.distribute.you"
+    },
+    {
+      "role": "user",
+      "content": "I saw some leads that I don't want to be pursued"
+    },
+    {
+      "role": "user",
+      "content": "I saw some leads that I don't want to be pursued"
+    },
+    {
+      "role": "assistant",
+      "content": "Thanks for flagging it. No email has gone out yet and none are queued, so nobody has been contacted. Tell me who you saw (a name or company) or what they have in common, and I'll set your campaign to skip them. Or I can pause it while you decide.",
+      "toolCalls": [
+        {
+          "name": "find_people",
+          "args": {
+            "limit": 10,
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+          },
+          "result": {
+            "total": 0,
+            "people": [],
+            "nextOffset": null
+          }
+        },
+        {
+          "name": "list_audiences",
+          "args": {
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+          },
+          "result": {
+            "total": 1,
+            "offset": 0,
+            "audiences": [
+              {
+                "id": "13b9c4cf-326c-4a52-a120-e504b3f9505f",
+                "name": "Lead Producers",
+                "size": 31,
+                "status": "active",
+                "target": "Event planners and lead producers at event management agencies in Lagos, Nigeria, who organize high-profile corporate or…",
+                "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+                "channels": [
+                  "cold_email"
+                ]
+              }
+            ],
+            "nextOffset": null
+          }
+        },
+        {
+          "name": "list_qualification_checks",
+          "args": {},
+          "result": {
+            "checks": [
+              {
+                "on": true,
+                "why": "Showing they host recurring events proves they have an ongoing need for professional guest check-in solutions.",
+                "role": "Bonus",
+                "source": "Homepage content",
+                "checkId": "36d807bc-27cc-422d-b264-10a018faa333",
+                "passRate": 0,
+                "question": "Does the company's homepage mention hosting annual conferences, summits, or corporate retreats?",
+                "suggestedByAi": true,
+                "costPerLeadUsd": 0.002912,
+                "companiesChecked": 5
+              },
+              {
+                "on": true,
+                "why": "Companies running physical gatherings need reliable RSVP collection and check-in software.",
+                "role": "Bonus",
+                "source": "Homepage content",
+                "checkId": "2be1d141-a501-4fff-86eb-0f33cc47f43b",
+                "passRate": 0.4,
+                "question": "Does the homepage text mention live seminars, workshops, or offline gatherings?",
+                "suggestedByAi": true,
+                "costPerLeadUsd": 0.002912,
+                "companiesChecked": 5
+              },
+              {
+                "on": true,
+                "why": "An active social presence ensures the marketing team is paying attention to outbound messages.",
+                "role": "Bonus",
+                "source": "Recent LinkedIn posts",
+                "checkId": "05df0976-9fb4-4aa5-9a83-e63c86257548",
+                "passRate": 0,
+                "question": "Has the company posted on LinkedIn at least once in the last two weeks?",
+                "suggestedByAi": true,
+                "costPerLeadUsd": 0.004642,
+                "companiesChecked": 5
+              },
+              {
+                "on": true,
+                "why": "Active hiring for event staff indicates they regularly host corporate events and need better management tools.",
+                "role": "Bonus",
+                "source": "Open job postings",
+                "checkId": "b55830c6-3589-4366-999f-963a60c41183",
+                "passRate": 0,
+                "question": "Is the company currently hiring for an event manager or event coordinator?",
+                "suggestedByAi": true,
+                "costPerLeadUsd": 0.011762,
+                "companiesChecked": 5
+              }
+            ]
+          }
+        },
+        {
+          "name": "read_skill",
+          "args": {
+            "slug": "qualification"
+          },
+          "result": {
+            "slug": "qualification",
+            "title": "Qualification",
+            "content": "# Qualification\n\nQualification checks run on each found lead BEFORE any paid step, so money is only spent on leads that pass. Each check is on or off, with a mode, a pass rate and a cost per lead. Owner: sales-lead-service. API base: /v1/brands/{id}/offers/{offerId}/qualification.\n\n## Read\n- list_qualification_checks → GET .../qualification/criteria: the offer's checks (works on the offer open in the dashboard).\n- list_qualification_sources → GET /v1/qualification/catalog: what a check can read.\n\n## Write\n- suggest_qualification_checks → POST .../qualification/suggestions: proposes checks. Spends money; new checks are written OFF.\n- create_qualification_check → POST .../qualification/criteria. update_qualification_check (on/off, mode) → PATCH .../qualification/criteria/{criterionId}. archive_qualification_check → DELETE .../qualification/criteria/{criterionId}.\n\n## Articulation\n- A check turned on costs money on every lead it reads: state the cost per lead and get a yes before turning one on.\n- If the user's criterion cannot be expressed as a check, request_staff (POST /v1/staff-requests, repo sales-lead-service).\n",
+            "subSkills": []
+          }
+        },
+        {
+          "name": "present_choices",
+          "args": {
+            "text": "Thanks for flagging it. No email has gone out yet and none are queued, so nobody has been contacted. Tell me who you saw (a name or company) or what they have in common, and I'll set your campaign to skip them. Or I can pause it while you decide.",
+            "choices": [
+              {
+                "label": "Pause the campaign for now",
+                "value": "Pause my campaign for now",
+                "visual": {
+                  "icon": "pause",
+                  "type": "icon"
+                },
+                "description": "No new first emails until you say go"
+              },
+              {
+                "label": "Skip companies like these",
+                "value": "I want to skip leads with something in common. Let me tell you what they share.",
+                "visual": {
+                  "icon": "target",
+                  "type": "icon"
+                },
+                "description": "I'll turn what they share into a filter"
+              }
+            ]
+          },
+          "result": {
+            "note": "The cards are on screen and your turn is over. The user's pick (or their own words) arrives as their next message.",
+            "presented": true
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "Pause my campaign for now"
+    },
+    {
+      "role": "assistant",
+      "content": "Your campaign is paused. No new first emails will go out, and none had been sent yet. Tell me who you don't want us to reach, a name, a company or what they share, and I'll set that up before you restart.",
+      "toolCalls": [
+        {
+          "name": "stop_funnel_campaign",
+          "args": {
+            "salesFunnelCampaignId": "f088b03a-08f6-4029-8b2b-53bc5809c259"
+          },
+          "result": {
+            "salesFunnelCampaign": {
+              "id": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+              "mode": "proactive",
+              "brief": "Use only these channels:\nUse Lead Sourcing (Start to Lead): Valid only. Sends only to addresses whose mailbox is confirmed, never to a catch-all address.\nUse Sales Cold Email Outreach (Lead to Positive reply).",
+              "orgId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+              "units": [
+                {
+                  "name": "Email Replies f088b03a - sales-cold-email-outreach - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - lead_found_to_conversation",
+                  "legKey": "lead_found_to_conversation",
+                  "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+                  "status": "stopped",
+                  "planRole": null,
+                  "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+                  "featureSlug": "sales-cold-email-outreach",
+                  "workflowSlug": "sales-cold-email-outreach-ballad",
+                  "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+                },
+                {
+                  "name": "Email Replies f088b03a - your-team-reply-closing - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - conversation_to_paid_client",
+                  "legKey": "conversation_to_paid_client",
+                  "pipeId": "your-team-reply-closing|conversation_to_paid_client",
+                  "status": "stopped",
+                  "planRole": null,
+                  "campaignId": "72f92c2e-2c38-4b0f-9274-6653862a8ca5",
+                  "featureSlug": "your-team-reply-closing",
+                  "workflowSlug": null,
+                  "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+                },
+                {
+                  "name": "Email Replies f088b03a - lead-sourcing - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - start_to_lead_found",
+                  "legKey": "start_to_lead_found",
+                  "pipeId": "lead-sourcing|start_to_lead_found",
+                  "status": "stopped",
+                  "planRole": null,
+                  "campaignId": "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9",
+                  "featureSlug": "lead-sourcing",
+                  "workflowSlug": "lead-sourcing-scheat",
+                  "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+                }
+              ],
+              "people": null,
+              "status": "stopped",
+              "target": "paid_client",
+              "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+              "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+              "createdAt": "2026-11-01T12:10:42.333Z",
+              "planCheck": null,
+              "triggerId": null,
+              "updatedAt": "2026-11-01T12:20:46.912Z",
+              "stopReason": "manual",
+              "followsPlan": false,
+              "githubIssue": null,
+              "instruction": null,
+              "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client",
+              "briefUpdatedAt": "2026-11-01T12:19:38.036Z",
+              "createdByUserId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+              "salesFunnelName": "Email Replies",
+              "githubIssueCheck": null,
+              "briefUpdatedByUserId": "system-features-service",
+              "runningSalesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+            }
+          }
+        },
+        {
+          "name": "present_choices",
+          "args": {
+            "text": "Your campaign is paused. No new first emails will go out, and none had been sent yet. Tell me who you don't want us to reach, a name, a company or what they share, and I'll set that up before you restart.",
+            "choices": [
+              {
+                "label": "Show who we'd reach",
+                "value": "Show me the leads in my audience",
+                "visual": {
+                  "icon": "users",
+                  "type": "icon"
+                },
+                "description": "Open the list so you can point out who to skip"
+              },
+              {
+                "label": "Tell you who to skip",
+                "value": "I want to skip certain leads. Let me tell you who.",
+                "visual": {
+                  "icon": "target",
+                  "type": "icon"
+                },
+                "description": "Give me a name, a company or what they share"
+              },
+              {
+                "label": "Restart the campaign",
+                "value": "Restart my campaign",
+                "visual": {
+                  "icon": "play",
+                  "type": "icon"
+                },
+                "description": "Only when you're happy with who we reach"
+              }
+            ]
+          },
+          "result": {
+            "note": "The cards are on screen and your turn is over. The user's pick (or their own words) arrives as their next message.",
+            "presented": true
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "Pause my campaign for now"
+    },
+    {
+      "role": "assistant",
+      "content": "Your campaign is paused. It shows as stopped, so no new first emails will go out until you restart it. Nothing had been sent yet, so nobody has been contacted. Tell me who you don't want us to reach, a name, a company or what they share, and I'll set that up before you restart.",
+      "toolCalls": [
+        {
+          "name": "get_brand_pause",
+          "args": {
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+          },
+          "result": {
+            "orgId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "paused": false,
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+            "updatedAt": null
+          }
+        },
+        {
+          "name": "list_campaigns",
+          "args": {
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+          },
+          "result": {
+            "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+            "campaigns": [
+              {
+                "id": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+                "name": "Email Replies",
+                "path": "Start → Lead Sourcing → Lead → Sales Cold Email Outreach → Positive reply → Your Team Reply Closing → Paid client",
+                "type": "proactive",
+                "spent": "$0.02 spent this month",
+                "steps": [
+                  {
+                    "leg": "lead_found_to_conversation",
+                    "status": "stopped",
+                    "channel": "sales-cold-email-outreach"
+                  },
+                  {
+                    "leg": "conversation_to_paid_client",
+                    "status": "stopped",
+                    "channel": "your-team-reply-closing"
+                  },
+                  {
+                    "leg": "start_to_lead_found",
+                    "status": "stopped",
+                    "channel": "lead-sourcing"
+                  }
+                ],
+                "budget": "Max $10/month",
+                "return": "no return measured yet",
+                "status": "stopped",
+                "volume": null,
+                "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+                "invested": "$0.02 invested since start",
+                "runsWhen": "On its own, within its caps (no trigger)",
+                "stopReason": "manual",
+                "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+              }
+            ],
+            "campaignCount": 1
+          }
+        },
+        {
+          "name": "present_choices",
+          "args": {
+            "text": "Your campaign is paused. It shows as stopped, so no new first emails will go out until you restart it. Nothing had been sent yet, so nobody has been contacted. Tell me who you don't want us to reach, a name, a company or what they share, and I'll set that up before you restart.",
+            "choices": [
+              {
+                "label": "Show who we'd reach",
+                "value": "Show me the leads in my audience",
+                "visual": {
+                  "icon": "users",
+                  "type": "icon"
+                },
+                "description": "Open the list so you can point out who to skip"
+              },
+              {
+                "label": "Tell you who to skip",
+                "value": "I want to skip certain leads. Let me tell you who.",
+                "visual": {
+                  "icon": "target",
+                  "type": "icon"
+                },
+                "description": "Give me a name, a company or what they share"
+              },
+              {
+                "label": "Restart the campaign",
+                "value": "Restart my campaign",
+                "visual": {
+                  "icon": "play",
+                  "type": "icon"
+                },
+                "description": "Only when you're happy with who we reach"
+              }
+            ]
+          },
+          "result": {
+            "note": "The cards are on screen and your turn is over. The user's pick (or their own words) arrives as their next message.",
+            "presented": true
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "Show me the leads in my audience"
+    },
+    {
+      "role": "assistant",
+      "content": "I've opened your targeting page on the right. Your one audience, \"Lead Producers\", has 31 people. It targets event planners and lead producers at event management agencies in Lagos, Nigeria. The campaign is still paused.\n\nTell me which of those 31 you don't want us to reach. A name or company works, or what they have in common, such as a type of agency. Then I'll set up the skip before you restart.",
+      "toolCalls": [
+        {
+          "name": "list_audiences",
+          "args": {
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+          },
+          "result": {
+            "total": 1,
+            "offset": 0,
+            "audiences": [
+              {
+                "id": "13b9c4cf-326c-4a52-a120-e504b3f9505f",
+                "name": "Lead Producers",
+                "size": 31,
+                "status": "active",
+                "target": "Event planners and lead producers at event management agencies in Lagos, Nigeria, who organize high-profile corporate or…",
+                "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+                "channels": [
+                  "cold_email"
+                ]
+              }
+            ],
+            "nextOffset": null
+          }
+        },
+        {
+          "name": "open_page",
+          "args": {
+            "page": "targeting",
+            "title": "Who we write to",
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+            "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8"
+          },
+          "result": {
+            "page": "targeting",
+            "opened": true
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "I don't want radio and TVs"
+    },
+    {
+      "role": "assistant",
+      "content": "Got it. I've prepared a filter that skips any company that is a radio station or TV broadcaster, checked against company data we already hold. It costs under a cent per company ($0.002762), and it's off until you say yes. Your campaign stays paused either way.",
+      "toolCalls": [
+        {
+          "name": "list_qualification_sources",
+          "args": {},
+          "result": {
+            "sources": [
+              {
+                "label": "Company data we hold",
+                "source": "company_data",
+                "description": "Firmographics we already hold on the company: industry, size, revenue, location, technologies used, keywords, funding, founding year.",
+                "costPerLeadUsd": 0.002762
+              },
+              {
+                "label": "Homepage content",
+                "source": "homepage_text",
+                "description": "The text content of the company's homepage (what they say they do, offers, sign-up forms, newsletter, careers links).",
+                "costPerLeadUsd": 0.002912
+              },
+              {
+                "label": "Homepage first screen",
+                "source": "homepage_screenshot",
+                "description": "A screenshot of the first screen of the company's homepage, each question asked of the image itself (is the key message clear above the fold, does it look modern, is there a clear call to action, is a phone number shown in the header).",
+                "costPerLeadUsd": 0.003126
+              },
+              {
+                "label": "Open job postings",
+                "source": "job_postings",
+                "description": "The company's open job postings (titles, locations, dates): who they are hiring right now.",
+                "costPerLeadUsd": 0.011762
+              },
+              {
+                "label": "Recent LinkedIn posts",
+                "source": "linkedin_company_posts",
+                "description": "The company's recent LinkedIn page posts, with their dates: do they post, how often, about what.",
+                "costPerLeadUsd": 0.004642
+              }
+            ]
+          }
+        },
+        {
+          "name": "create_qualification_check",
+          "args": {
+            "on": false,
+            "role": "hard_filter",
+            "source": "company_data",
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+            "question": "Is the company something other than a radio station or TV broadcaster?"
+          },
+          "result": {
+            "check": {
+              "on": false,
+              "why": null,
+              "role": "Hard filter",
+              "source": "Company data we hold",
+              "checkId": "f5e0c515-ba59-4e26-9f03-1dc703dbd640",
+              "passRate": null,
+              "question": "Is the company something other than a radio station or TV broadcaster?",
+              "suggestedByAi": false,
+              "costPerLeadUsd": 0.002762,
+              "companiesChecked": 0
+            }
+          }
+        },
+        {
+          "name": "present_choices",
+          "args": {
+            "text": "Got it. I've prepared a filter that skips any company that is a radio station or TV broadcaster, checked against company data we already hold. It costs under a cent per company ($0.002762), and it's off until you say yes. Your campaign stays paused either way.",
+            "choices": [
+              {
+                "label": "Turn the filter on",
+                "value": "Yes, turn on the radio and TV filter",
+                "visual": {
+                  "icon": "check",
+                  "type": "icon"
+                },
+                "description": "Radio and TV companies are skipped"
+              },
+              {
+                "label": "Turn it on and restart the campaign",
+                "value": "Yes, turn on the radio and TV filter and restart my campaign",
+                "visual": {
+                  "icon": "play",
+                  "type": "icon"
+                },
+                "description": "Filter on first, then the campaign runs again"
+              },
+              {
+                "label": "Skip something else too",
+                "value": "I also want to skip other leads",
+                "visual": {
+                  "icon": "target",
+                  "type": "icon"
+                },
+                "description": "Tell me what else they share"
+              }
+            ]
+          },
+          "result": {
+            "note": "The cards are on screen and your turn is over. The user's pick (or their own words) arrives as their next message.",
+            "presented": true
+          }
+        }
+      ]
+    }
+  ],
+  "message": "How many are left",
+  "fixtures": {
+    "list_qualification_checks": [
+      {
+        "checks": [
+          {
+            "on": true,
+            "why": "Showing they host recurring events proves they have an ongoing need for professional guest check-in solutions.",
+            "role": "Bonus",
+            "source": "Homepage content",
+            "checkId": "36d807bc-27cc-422d-b264-10a018faa333",
+            "passRate": 0,
+            "question": "Does the company's homepage mention hosting annual conferences, summits, or corporate retreats?",
+            "suggestedByAi": true,
+            "costPerLeadUsd": 0.002912,
+            "companiesChecked": 5
+          },
+          {
+            "on": true,
+            "why": "Companies running physical gatherings need reliable RSVP collection and check-in software.",
+            "role": "Bonus",
+            "source": "Homepage content",
+            "checkId": "2be1d141-a501-4fff-86eb-0f33cc47f43b",
+            "passRate": 0.4,
+            "question": "Does the homepage text mention live seminars, workshops, or offline gatherings?",
+            "suggestedByAi": true,
+            "costPerLeadUsd": 0.002912,
+            "companiesChecked": 5
+          },
+          {
+            "on": true,
+            "why": "An active social presence ensures the marketing team is paying attention to outbound messages.",
+            "role": "Bonus",
+            "source": "Recent LinkedIn posts",
+            "checkId": "05df0976-9fb4-4aa5-9a83-e63c86257548",
+            "passRate": 0,
+            "question": "Has the company posted on LinkedIn at least once in the last two weeks?",
+            "suggestedByAi": true,
+            "costPerLeadUsd": 0.004642,
+            "companiesChecked": 5
+          },
+          {
+            "on": true,
+            "why": "Active hiring for event staff indicates they regularly host corporate events and need better management tools.",
+            "role": "Bonus",
+            "source": "Open job postings",
+            "checkId": "b55830c6-3589-4366-999f-963a60c41183",
+            "passRate": 0,
+            "question": "Is the company currently hiring for an event manager or event coordinator?",
+            "suggestedByAi": true,
+            "costPerLeadUsd": 0.011762,
+            "companiesChecked": 5
+          },
+          {
+            "on": false,
+            "why": null,
+            "role": "Hard filter",
+            "source": "Company data we hold",
+            "checkId": "f5e0c515-ba59-4e26-9f03-1dc703dbd640",
+            "passRate": null,
+            "question": "Is the company something other than a radio station or TV broadcaster?",
+            "suggestedByAi": false,
+            "costPerLeadUsd": 0.002762,
+            "companiesChecked": 0
+          }
+        ]
+      },
+      {
+        "checks": [
+          {
+            "on": true,
+            "why": "Showing they host recurring events proves they have an ongoing need for professional guest check-in solutions.",
+            "role": "Bonus",
+            "source": "Homepage content",
+            "checkId": "36d807bc-27cc-422d-b264-10a018faa333",
+            "passRate": 0,
+            "question": "Does the company's homepage mention hosting annual conferences, summits, or corporate retreats?",
+            "suggestedByAi": true,
+            "costPerLeadUsd": 0.002912,
+            "companiesChecked": 5
+          },
+          {
+            "on": true,
+            "why": "Companies running physical gatherings need reliable RSVP collection and check-in software.",
+            "role": "Bonus",
+            "source": "Homepage content",
+            "checkId": "2be1d141-a501-4fff-86eb-0f33cc47f43b",
+            "passRate": 0.4,
+            "question": "Does the homepage text mention live seminars, workshops, or offline gatherings?",
+            "suggestedByAi": true,
+            "costPerLeadUsd": 0.002912,
+            "companiesChecked": 5
+          },
+          {
+            "on": true,
+            "why": "An active social presence ensures the marketing team is paying attention to outbound messages.",
+            "role": "Bonus",
+            "source": "Recent LinkedIn posts",
+            "checkId": "05df0976-9fb4-4aa5-9a83-e63c86257548",
+            "passRate": 0,
+            "question": "Has the company posted on LinkedIn at least once in the last two weeks?",
+            "suggestedByAi": true,
+            "costPerLeadUsd": 0.004642,
+            "companiesChecked": 5
+          },
+          {
+            "on": true,
+            "why": "Active hiring for event staff indicates they regularly host corporate events and need better management tools.",
+            "role": "Bonus",
+            "source": "Open job postings",
+            "checkId": "b55830c6-3589-4366-999f-963a60c41183",
+            "passRate": 0,
+            "question": "Is the company currently hiring for an event manager or event coordinator?",
+            "suggestedByAi": true,
+            "costPerLeadUsd": 0.011762,
+            "companiesChecked": 5
+          }
+        ]
+      }
+    ],
+    "list_audiences": [
+      {
+        "total": 1,
+        "offset": 0,
+        "audiences": [
+          {
+            "id": "13b9c4cf-326c-4a52-a120-e504b3f9505f",
+            "name": "Lead Producers",
+            "size": 31,
+            "status": "paused",
+            "target": "Event planners and lead producers at event management agencies in Lagos, Nigeria, who organize high-profile corporate or…",
+            "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+            "channels": [
+              "cold_email"
+            ]
+          }
+        ],
+        "nextOffset": null
+      },
+      {
+        "total": 1,
+        "offset": 0,
+        "audiences": [
+          {
+            "id": "13b9c4cf-326c-4a52-a120-e504b3f9505f",
+            "name": "Lead Producers",
+            "size": 31,
+            "status": "active",
+            "target": "Event planners and lead producers at event management agencies in Lagos, Nigeria, who organize high-profile corporate or…",
+            "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+            "channels": [
+              "cold_email"
+            ]
+          }
+        ],
+        "nextOffset": null
+      }
+    ],
+    "list_qualification_sources": [
+      {
+        "sources": [
+          {
+            "label": "Company data we hold",
+            "source": "company_data",
+            "description": "Firmographics we already hold on the company: industry, size, revenue, location, technologies used, keywords, funding, founding year.",
+            "costPerLeadUsd": 0.002762
+          },
+          {
+            "label": "Homepage content",
+            "source": "homepage_text",
+            "description": "The text content of the company's homepage (what they say they do, offers, sign-up forms, newsletter, careers links).",
+            "costPerLeadUsd": 0.002912
+          },
+          {
+            "label": "Homepage first screen",
+            "source": "homepage_screenshot",
+            "description": "A screenshot of the first screen of the company's homepage, each question asked of the image itself (is the key message clear above the fold, does it look modern, is there a clear call to action, is a phone number shown in the header).",
+            "costPerLeadUsd": 0.003126
+          },
+          {
+            "label": "Open job postings",
+            "source": "job_postings",
+            "description": "The company's open job postings (titles, locations, dates): who they are hiring right now.",
+            "costPerLeadUsd": 0.011762
+          },
+          {
+            "label": "Recent LinkedIn posts",
+            "source": "linkedin_company_posts",
+            "description": "The company's recent LinkedIn page posts, with their dates: do they post, how often, about what.",
+            "costPerLeadUsd": 0.004642
+          }
+        ]
+      }
+    ],
+    "create_qualification_check": [
+      {
+        "check": {
+          "on": false,
+          "why": null,
+          "role": "Hard filter",
+          "source": "Company data we hold",
+          "checkId": "f5e0c515-ba59-4e26-9f03-1dc703dbd640",
+          "passRate": null,
+          "question": "Is the company something other than a radio station or TV broadcaster?",
+          "suggestedByAi": false,
+          "costPerLeadUsd": 0.002762,
+          "companiesChecked": 0
+        }
+      }
+    ],
+    "get_brand_pause": [
+      {
+        "orgId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+        "paused": false,
+        "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+        "updatedAt": null
+      }
+    ],
+    "list_campaigns": [
+      {
+        "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+        "campaigns": [
+          {
+            "id": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+            "name": "Email Replies",
+            "path": "Start → Lead Sourcing → Lead → Sales Cold Email Outreach → Positive reply → Your Team Reply Closing → Paid client",
+            "type": "proactive",
+            "spent": "$0.02 spent this month",
+            "steps": [
+              {
+                "leg": "lead_found_to_conversation",
+                "status": "stopped",
+                "channel": "sales-cold-email-outreach"
+              },
+              {
+                "leg": "conversation_to_paid_client",
+                "status": "stopped",
+                "channel": "your-team-reply-closing"
+              },
+              {
+                "leg": "start_to_lead_found",
+                "status": "stopped",
+                "channel": "lead-sourcing"
+              }
+            ],
+            "budget": "Max $10/month",
+            "return": "no return measured yet",
+            "status": "stopped",
+            "volume": null,
+            "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+            "invested": "$0.02 invested since start",
+            "runsWhen": "On its own, within its caps (no trigger)",
+            "stopReason": "manual",
+            "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+          }
+        ],
+        "campaignCount": 1
+      },
+      {
+        "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+        "campaigns": [
+          {
+            "id": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+            "name": "Email Replies",
+            "path": "Start → Lead Sourcing → Lead → Sales Cold Email Outreach → Positive reply → Your Team Reply Closing → Paid client",
+            "type": "proactive",
+            "spent": "$0.01 spent this month",
+            "steps": [
+              {
+                "leg": "lead_found_to_conversation",
+                "status": "ongoing",
+                "channel": "sales-cold-email-outreach"
+              },
+              {
+                "leg": "conversation_to_paid_client",
+                "status": "ongoing",
+                "channel": "your-team-reply-closing"
+              },
+              {
+                "leg": "start_to_lead_found",
+                "status": "ongoing",
+                "channel": "lead-sourcing"
+              }
+            ],
+            "budget": "Max $10/month",
+            "return": "no return measured yet",
+            "status": "ongoing",
+            "volume": null,
+            "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+            "invested": "$0 invested since start",
+            "runsWhen": "On its own, within its caps (no trigger)",
+            "stopReason": null,
+            "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+          }
+        ],
+        "campaignCount": 1
+      },
+      {
+        "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+        "campaigns": [
+          {
+            "id": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+            "name": "Email Replies",
+            "path": "Start → Lead Sourcing → Lead → Sales Cold Email Outreach → Positive reply → Your Team Reply Closing → Paid client",
+            "type": "proactive",
+            "spent": "$0.02 spent this month",
+            "steps": [
+              {
+                "leg": "lead_found_to_conversation",
+                "status": "ongoing",
+                "channel": "sales-cold-email-outreach"
+              },
+              {
+                "leg": "conversation_to_paid_client",
+                "status": "ongoing",
+                "channel": "your-team-reply-closing"
+              },
+              {
+                "leg": "start_to_lead_found",
+                "status": "ongoing",
+                "channel": "lead-sourcing"
+              }
+            ],
+            "budget": "Max $10/month",
+            "return": "no return measured yet",
+            "status": "ongoing",
+            "volume": null,
+            "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+            "invested": "$0.02 invested since start",
+            "runsWhen": "On its own, within its caps (no trigger)",
+            "stopReason": null,
+            "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+          }
+        ],
+        "campaignCount": 1
+      }
+    ],
+    "stop_funnel_campaign": [
+      {
+        "salesFunnelCampaign": {
+          "id": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+          "mode": "proactive",
+          "brief": "Use only these channels:\nUse Lead Sourcing (Start to Lead): Valid only. Sends only to addresses whose mailbox is confirmed, never to a catch-all address.\nUse Sales Cold Email Outreach (Lead to Positive reply).",
+          "orgId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+          "units": [
+            {
+              "name": "Email Replies f088b03a - sales-cold-email-outreach - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - lead_found_to_conversation",
+              "legKey": "lead_found_to_conversation",
+              "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+              "status": "stopped",
+              "planRole": null,
+              "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+              "featureSlug": "sales-cold-email-outreach",
+              "workflowSlug": "sales-cold-email-outreach-ballad",
+              "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+            },
+            {
+              "name": "Email Replies f088b03a - your-team-reply-closing - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - conversation_to_paid_client",
+              "legKey": "conversation_to_paid_client",
+              "pipeId": "your-team-reply-closing|conversation_to_paid_client",
+              "status": "stopped",
+              "planRole": null,
+              "campaignId": "72f92c2e-2c38-4b0f-9274-6653862a8ca5",
+              "featureSlug": "your-team-reply-closing",
+              "workflowSlug": null,
+              "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+            },
+            {
+              "name": "Email Replies f088b03a - lead-sourcing - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - start_to_lead_found",
+              "legKey": "start_to_lead_found",
+              "pipeId": "lead-sourcing|start_to_lead_found",
+              "status": "stopped",
+              "planRole": null,
+              "campaignId": "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9",
+              "featureSlug": "lead-sourcing",
+              "workflowSlug": "lead-sourcing-scheat",
+              "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+            }
+          ],
+          "people": null,
+          "status": "stopped",
+          "target": "paid_client",
+          "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+          "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+          "createdAt": "2026-11-01T12:10:42.333Z",
+          "planCheck": null,
+          "triggerId": null,
+          "updatedAt": "2026-11-01T12:20:46.912Z",
+          "stopReason": "manual",
+          "followsPlan": false,
+          "githubIssue": null,
+          "instruction": null,
+          "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client",
+          "briefUpdatedAt": "2026-11-01T12:19:38.036Z",
+          "createdByUserId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+          "salesFunnelName": "Email Replies",
+          "githubIssueCheck": null,
+          "briefUpdatedByUserId": "system-features-service",
+          "runningSalesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+        }
+      },
+      {
+        "salesFunnelCampaign": {
+          "id": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+          "mode": "proactive",
+          "brief": "Use only these channels:\nUse Lead Sourcing (Start to Lead): Valid only. Sends only to addresses whose mailbox is confirmed, never to a catch-all address.\nUse Sales Cold Email Outreach (Lead to Positive reply).",
+          "orgId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+          "units": [
+            {
+              "name": "Email Replies f088b03a - your-team-reply-closing - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - conversation_to_paid_client",
+              "legKey": "conversation_to_paid_client",
+              "pipeId": "your-team-reply-closing|conversation_to_paid_client",
+              "status": "stopped",
+              "planRole": null,
+              "campaignId": "72f92c2e-2c38-4b0f-9274-6653862a8ca5",
+              "featureSlug": "your-team-reply-closing",
+              "workflowSlug": null,
+              "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+            },
+            {
+              "name": "Email Replies f088b03a - lead-sourcing - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - start_to_lead_found",
+              "legKey": "start_to_lead_found",
+              "pipeId": "lead-sourcing|start_to_lead_found",
+              "status": "stopped",
+              "planRole": null,
+              "campaignId": "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9",
+              "featureSlug": "lead-sourcing",
+              "workflowSlug": "lead-sourcing-scheat",
+              "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+            },
+            {
+              "name": "Email Replies f088b03a - sales-cold-email-outreach - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - lead_found_to_conversation",
+              "legKey": "lead_found_to_conversation",
+              "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+              "status": "stopped",
+              "planRole": null,
+              "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+              "featureSlug": "sales-cold-email-outreach",
+              "workflowSlug": "sales-cold-email-outreach-ballad",
+              "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+            }
+          ],
+          "people": null,
+          "status": "stopped",
+          "target": "paid_client",
+          "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+          "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+          "createdAt": "2026-11-01T12:10:42.333Z",
+          "planCheck": null,
+          "triggerId": null,
+          "updatedAt": "2026-11-01T12:38:47.380Z",
+          "stopReason": "manual",
+          "followsPlan": false,
+          "githubIssue": null,
+          "instruction": null,
+          "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client",
+          "briefUpdatedAt": "2026-11-01T12:19:38.036Z",
+          "createdByUserId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+          "salesFunnelName": "Email Replies",
+          "githubIssueCheck": null,
+          "briefUpdatedByUserId": "system-features-service",
+          "runningSalesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+        }
+      }
+    ],
+    "find_people": [
+      {
+        "total": 0,
+        "people": [],
+        "nextOffset": null
+      }
+    ],
+    "list_brands": [
+      {
+        "brands": [
+          {
+            "id": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+            "name": "Martian DBB",
+            "colors": null,
+            "domain": "martiandbb.com",
+            "logoUrl": "https://img.logo.dev/martiandbb.com?token=pk_J1iY4__HSfm9acHjR8FibA&size=256&format=png",
+            "brandUrl": "https://martiandbb.com",
+            "createdAt": "2026-11-01 11:37:49.751139+00",
+            "updatedAt": "2026-11-01 11:39:28.322613+00"
+          }
+        ]
+      }
+    ],
+    "get_billing_account": [
+      {
+        "id": "63ec66eb-9af9-4089-8d77-56c2bd130d9d",
+        "org_id": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+        "card_brand": "visa",
+        "card_last4": "0651",
+        "created_at": "2026-11-01T11:37:48.861Z",
+        "updated_at": "2026-11-01T11:37:48.861Z",
+        "usage_cents": "62.7221480000",
+        "card_country": "SG",
+        "payment_mode": "prepaid",
+        "balance_cents": "937.2778520000",
+        "card_exp_year": 2029,
+        "debited_cents": "0",
+        "expired_cents": "0",
+        "card_exp_month": 4,
+        "credited_cents": "1000.0000000000",
+        "has_auto_topup": false,
+        "cash_paid_cents": "1000.0000000000",
+        "amount_owed_cents": null,
+        "credit_line_cents": null,
+        "free_credit_offer": "prepaid_at_cost",
+        "has_payment_method": true,
+        "topup_amount_cents": null,
+        "usage_discount_pct": null,
+        "credited_paid_cents": "500.0000000000",
+        "postpaid_card_check": "required",
+        "actual_balance_cents": "951.5966520000",
+        "auto_reload_supported": true,
+        "credited_gifted_cents": "0.0000000000",
+        "topup_threshold_cents": null,
+        "credit_line_step_cents": null,
+        "credited_advance_cents": "500.0000000000",
+        "free_credit_pending_cents": "0.0000000000",
+        "free_credit_received_cents": "0.0000000000",
+        "credited_trial_repaid_cents": "0.0000000000",
+        "free_credit_spendable_cents": "0.0000000000",
+        "postpaid_card_check_message": null,
+        "credited_trial_advance_cents": "0.0000000000",
+        "free_credit_entitlement_cents": 0,
+        "auto_reload_unsupported_reason": null,
+        "free_credit_paid_trigger_cents": 0,
+        "free_credit_remaining_to_pay_cents": "0.0000000000"
+      },
+      {
+        "id": "63ec66eb-9af9-4089-8d77-56c2bd130d9d",
+        "org_id": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+        "card_brand": null,
+        "card_last4": null,
+        "created_at": "2026-11-01T11:37:48.861Z",
+        "updated_at": "2026-11-01T12:31:12.383Z",
+        "usage_cents": "303.8135140000",
+        "card_country": null,
+        "payment_mode": "prepaid",
+        "balance_cents": "696.1864860000",
+        "card_exp_year": null,
+        "debited_cents": "0",
+        "expired_cents": "0",
+        "card_exp_month": null,
+        "credited_cents": "1000.0000000000",
+        "has_auto_topup": false,
+        "cash_paid_cents": "1000.0000000000",
+        "amount_owed_cents": null,
+        "credit_line_cents": null,
+        "free_credit_offer": "prepaid_at_cost",
+        "has_payment_method": false,
+        "topup_amount_cents": null,
+        "usage_discount_pct": null,
+        "credited_paid_cents": "500.0000000000",
+        "postpaid_card_check": "required",
+        "actual_balance_cents": "784.3172860000",
+        "auto_reload_supported": true,
+        "credited_gifted_cents": "0.0000000000",
+        "topup_threshold_cents": null,
+        "credit_line_step_cents": null,
+        "credited_advance_cents": "500.0000000000",
+        "free_credit_pending_cents": "0.0000000000",
+        "free_credit_received_cents": "0.0000000000",
+        "credited_trial_repaid_cents": "0.0000000000",
+        "free_credit_spendable_cents": "0.0000000000",
+        "postpaid_card_check_message": null,
+        "credited_trial_advance_cents": "0.0000000000",
+        "free_credit_entitlement_cents": 0,
+        "auto_reload_unsupported_reason": null,
+        "free_credit_paid_trigger_cents": 0,
+        "free_credit_remaining_to_pay_cents": "0.0000000000"
+      },
+      {
+        "id": "63ec66eb-9af9-4089-8d77-56c2bd130d9d",
+        "org_id": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+        "card_brand": null,
+        "card_last4": null,
+        "created_at": "2026-11-01T11:37:48.861Z",
+        "updated_at": "2026-11-01T12:31:12.383Z",
+        "usage_cents": "337.6966740000",
+        "card_country": null,
+        "payment_mode": "prepaid",
+        "balance_cents": "662.3033260000",
+        "card_exp_year": null,
+        "debited_cents": "0",
+        "expired_cents": "0",
+        "card_exp_month": null,
+        "credited_cents": "1000.0000000000",
+        "has_auto_topup": false,
+        "cash_paid_cents": "1000.0000000000",
+        "amount_owed_cents": null,
+        "credit_line_cents": null,
+        "free_credit_offer": "prepaid_at_cost",
+        "has_payment_method": false,
+        "topup_amount_cents": null,
+        "usage_discount_pct": null,
+        "credited_paid_cents": "500.0000000000",
+        "postpaid_card_check": "required",
+        "actual_balance_cents": "752.0967260000",
+        "auto_reload_supported": true,
+        "credited_gifted_cents": "0.0000000000",
+        "topup_threshold_cents": null,
+        "credit_line_step_cents": null,
+        "credited_advance_cents": "500.0000000000",
+        "free_credit_pending_cents": "0.0000000000",
+        "free_credit_received_cents": "0.0000000000",
+        "credited_trial_repaid_cents": "0.0000000000",
+        "free_credit_spendable_cents": "0.0000000000",
+        "postpaid_card_check_message": null,
+        "credited_trial_advance_cents": "0.0000000000",
+        "free_credit_entitlement_cents": 0,
+        "auto_reload_unsupported_reason": null,
+        "free_credit_paid_trigger_cents": 0,
+        "free_credit_remaining_to_pay_cents": "0.0000000000"
+      }
+    ],
+    "get_campaign_next_steps": [
+      {
+        "name": "Email Replies",
+        "pipes": [
+          {
+            "legKey": "lead_found_to_conversation",
+            "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+            "status": "ongoing",
+            "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+            "featureSlug": "sales-cold-email-outreach",
+            "endsOnPositiveReply": true
+          },
+          {
+            "legKey": "conversation_to_paid_client",
+            "pipeId": "your-team-reply-closing|conversation_to_paid_client",
+            "status": "ongoing",
+            "campaignId": "72f92c2e-2c38-4b0f-9274-6653862a8ca5",
+            "featureSlug": "your-team-reply-closing",
+            "endsOnPositiveReply": false
+          },
+          {
+            "legKey": "start_to_lead_found",
+            "pipeId": "lead-sourcing|start_to_lead_found",
+            "status": "ongoing",
+            "campaignId": "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9",
+            "featureSlug": "lead-sourcing",
+            "endsOnPositiveReply": false
+          }
+        ],
+        "status": "ongoing",
+        "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+        "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+        "nextSends": {
+          "dueNow": 0,
+          "nextSendAt": null,
+          "leadsQueued": 0,
+          "unavailableReason": null
+        },
+        "emailSendQueue": {
+          "asOf": "2026-11-01T12:11:10.347Z",
+          "timezones": [],
+          "sendWindow": {
+            "endHour": 19,
+            "weekdays": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday"
+            ],
+            "startHour": 7,
+            "timezoneRule": "lead_local"
+          },
+          "queuedEmails": 0,
+          "firstEmailsFrom": null,
+          "leadsAwaitingFirstEmail": 0,
+          "leadsWithFollowUpQueued": 0
+        },
+        "scheduledFollowups": {
+          "due": 0,
+          "asOf": "2026-11-01T12:11:10.188Z",
+          "byDay": [],
+          "leads": 0,
+          "nextAt": null,
+          "upcoming": 0,
+          "oldestDueAt": null,
+          "laterThanHorizon": 0
+        },
+        "salesFunnelCampaignId": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+        "requestedPipeCampaignId": null,
+        "timeToFirstPositiveReply": {
+          "basis": "pipe_fleet",
+          "campaign": {
+            "medianMs": null,
+            "averageMs": null,
+            "medianDays": null,
+            "sampleSize": 0,
+            "averageDays": null
+          },
+          "learning": false,
+          "minSample": 10,
+          "pipeFleet": {
+            "medianMs": 437489336,
+            "averageMs": 1346215862,
+            "medianDays": 5.1,
+            "sampleSize": 56,
+            "averageDays": 15.6
+          },
+          "medianDays": 5.1,
+          "sampleSize": 56,
+          "averageDays": 15.6,
+          "unavailableReason": null
+        },
+        "emailSendQueueUnavailableReason": null,
+        "scheduledFollowupsUnavailableReason": null
+      },
+      {
+        "name": "Email Replies",
+        "pipes": [
+          {
+            "legKey": "lead_found_to_conversation",
+            "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+            "status": "ongoing",
+            "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+            "featureSlug": "sales-cold-email-outreach",
+            "endsOnPositiveReply": true
+          },
+          {
+            "legKey": "conversation_to_paid_client",
+            "pipeId": "your-team-reply-closing|conversation_to_paid_client",
+            "status": "ongoing",
+            "campaignId": "72f92c2e-2c38-4b0f-9274-6653862a8ca5",
+            "featureSlug": "your-team-reply-closing",
+            "endsOnPositiveReply": false
+          },
+          {
+            "legKey": "start_to_lead_found",
+            "pipeId": "lead-sourcing|start_to_lead_found",
+            "status": "ongoing",
+            "campaignId": "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9",
+            "featureSlug": "lead-sourcing",
+            "endsOnPositiveReply": false
+          }
+        ],
+        "status": "ongoing",
+        "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+        "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+        "nextSends": {
+          "dueNow": 0,
+          "nextSendAt": null,
+          "leadsQueued": 0,
+          "unavailableReason": null
+        },
+        "emailSendQueue": {
+          "asOf": "2026-11-01T12:47:30.270Z",
+          "timezones": [],
+          "sendWindow": {
+            "endHour": 19,
+            "weekdays": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday"
+            ],
+            "startHour": 7,
+            "timezoneRule": "lead_local"
+          },
+          "queuedEmails": 0,
+          "firstEmailsFrom": null,
+          "leadsAwaitingFirstEmail": 0,
+          "leadsWithFollowUpQueued": 0
+        },
+        "scheduledFollowups": {
+          "due": 0,
+          "asOf": "2026-11-01T12:47:30.295Z",
+          "byDay": [],
+          "leads": 0,
+          "nextAt": null,
+          "upcoming": 0,
+          "oldestDueAt": null,
+          "laterThanHorizon": 0
+        },
+        "salesFunnelCampaignId": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+        "requestedPipeCampaignId": null,
+        "timeToFirstPositiveReply": {
+          "basis": "pipe_fleet",
+          "campaign": {
+            "medianMs": null,
+            "averageMs": null,
+            "medianDays": null,
+            "sampleSize": 0,
+            "averageDays": null
+          },
+          "learning": false,
+          "minSample": 10,
+          "pipeFleet": {
+            "medianMs": 437489336,
+            "averageMs": 1346215862,
+            "medianDays": 5.1,
+            "sampleSize": 56,
+            "averageDays": 15.6
+          },
+          "medianDays": 5.1,
+          "sampleSize": 56,
+          "averageDays": 15.6,
+          "unavailableReason": null
+        },
+        "emailSendQueueUnavailableReason": null,
+        "scheduledFollowupsUnavailableReason": null
+      },
+      {
+        "name": "Email Replies",
+        "pipes": [
+          {
+            "legKey": "lead_found_to_conversation",
+            "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+            "status": "ongoing",
+            "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+            "featureSlug": "sales-cold-email-outreach",
+            "endsOnPositiveReply": true
+          },
+          {
+            "legKey": "conversation_to_paid_client",
+            "pipeId": "your-team-reply-closing|conversation_to_paid_client",
+            "status": "ongoing",
+            "campaignId": "72f92c2e-2c38-4b0f-9274-6653862a8ca5",
+            "featureSlug": "your-team-reply-closing",
+            "endsOnPositiveReply": false
+          },
+          {
+            "legKey": "start_to_lead_found",
+            "pipeId": "lead-sourcing|start_to_lead_found",
+            "status": "ongoing",
+            "campaignId": "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9",
+            "featureSlug": "lead-sourcing",
+            "endsOnPositiveReply": false
+          }
+        ],
+        "status": "ongoing",
+        "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+        "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+        "nextSends": {
+          "dueNow": 0,
+          "nextSendAt": null,
+          "leadsQueued": 0,
+          "unavailableReason": null
+        },
+        "emailSendQueue": {
+          "asOf": "2026-11-01T12:58:10.040Z",
+          "timezones": [],
+          "sendWindow": {
+            "endHour": 19,
+            "weekdays": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday"
+            ],
+            "startHour": 7,
+            "timezoneRule": "lead_local"
+          },
+          "queuedEmails": 0,
+          "firstEmailsFrom": null,
+          "leadsAwaitingFirstEmail": 0,
+          "leadsWithFollowUpQueued": 0
+        },
+        "scheduledFollowups": {
+          "due": 0,
+          "asOf": "2026-11-01T12:58:10.107Z",
+          "byDay": [],
+          "leads": 0,
+          "nextAt": null,
+          "upcoming": 0,
+          "oldestDueAt": null,
+          "laterThanHorizon": 0
+        },
+        "salesFunnelCampaignId": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+        "requestedPipeCampaignId": null,
+        "timeToFirstPositiveReply": {
+          "basis": "pipe_fleet",
+          "campaign": {
+            "medianMs": null,
+            "averageMs": null,
+            "medianDays": null,
+            "sampleSize": 0,
+            "averageDays": null
+          },
+          "learning": false,
+          "minSample": 10,
+          "pipeFleet": {
+            "medianMs": 437489336,
+            "averageMs": 1346215862,
+            "medianDays": 5.1,
+            "sampleSize": 56,
+            "averageDays": 15.6
+          },
+          "medianDays": 5.1,
+          "sampleSize": 56,
+          "averageDays": 15.6,
+          "unavailableReason": null
+        },
+        "emailSendQueueUnavailableReason": null,
+        "scheduledFollowupsUnavailableReason": null
+      }
+    ],
+    "discover_services": [
+      {
+        "_next": "Level 2: discover_service_endpoints(service) or GET /discover/services/{service}/endpoints",
+        "matched": 1,
+        "services": [
+          {
+            "name": "lead",
+            "endpoints": 115,
+            "description": "Serves the next qualified lead to a campaign: buffer, dedup, qualification, follow-ups."
+          }
+        ],
+        "serviceCount": 31
+      }
+    ],
+    "discover_service_endpoints": [
+      {
+        "_next": "Level 3: discover_endpoint(service, method, path) or GET /discover/services/{service}/endpoint?method=&path=",
+        "shown": 3,
+        "matched": 3,
+        "service": "lead",
+        "roiBasis": "roi = valueUsd of the step the endpoint produces (features-service: fleet median lifetime revenue x best rated route to Paid client) / avgCostUsd per call. Endpoints producing no step show cost only.",
+        "endpoints": [
+          {
+            "path": "/orgs/leads",
+            "stats": "no run of its own: this endpoint opens no run, so no metered cost of its own",
+            "method": "GET",
+            "summary": "List leads with full enrichment and delivery status"
+          },
+          {
+            "path": "/internal/feature-memberships",
+            "stats": "no run of its own: this endpoint opens no run, so no metered cost of its own",
+            "method": "GET",
+            "summary": "List distinct (org, brand, workflow) combinations that have leads for a feature"
+          },
+          {
+            "path": "/orgs/leads/unibox-lifecycle-counts",
+            "stats": "no run of its own: this endpoint opens no run, so no metered cost of its own",
+            "method": "GET",
+            "summary": "How many Unibox people stand on each lifecycle rung, for a brand / offer / campaign and the list's filters (t…"
+          }
+        ],
+        "statsAsOf": "2026-11-01T12:18:39.312Z",
+        "statsBasis": "Per endpoint, from its last 200 runs at most, all orgs: successRate = completed/(completed+failed); avgCostUsd = mean whole-run cost (its own and every sub-call's actual costs, catalogue price); avgDurationMs = mean of completed runs; runs = all-time count.",
+        "description": "Serves the next qualified lead to a campaign: buffer, dedup, qualification, follow-ups.",
+        "endpointCount": 115
+      }
+    ],
+    "test_endpoint": [
+      {
+        "ok": true,
+        "data": {
+          "leads": [],
+          "total": 0,
+          "nextCursor": null
+        },
+        "path": "/orgs/leads?brandId=23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4&limit=40",
+        "method": "GET",
+        "status": 200,
+        "service": "lead"
+      }
+    ],
+    "list_staff_requests": [
+      {
+        "requests": []
+      }
+    ],
+    "request_staff": [
+      {
+        "kind": "feature",
+        "issueUrl": "https://github.com/shamanic-technologies/sales-lead-service/issues/1187",
+        "duplicate": false,
+        "requestId": "c3462671-1345-49bf-a130-3e98a37eb7ed",
+        "issueError": null,
+        "destination": "GitHub issue in sales-lead-service + Telegram to the team",
+        "staffPinged": true,
+        "requestCount": 1,
+        "telegramError": null,
+        "telegramSkippedReason": null
+      },
+      {
+        "kind": "feature",
+        "issueUrl": "https://github.com/shamanic-technologies/costs-service/issues/377",
+        "duplicate": false,
+        "requestId": "3631c886-aba9-47ac-9116-ecb7b2d9e0b1",
+        "issueError": null,
+        "destination": "GitHub issue in costs-service + Telegram to the team",
+        "staffPinged": true,
+        "requestCount": 1,
+        "telegramError": null,
+        "telegramSkippedReason": null
+      },
+      {
+        "kind": "feature",
+        "issueUrl": "https://github.com/shamanic-technologies/client-service/issues/195",
+        "duplicate": false,
+        "requestId": "00f3cea0-bf6b-40be-b1ae-867b0b56397a",
+        "issueError": null,
+        "destination": "GitHub issue in client-service + Telegram to the team",
+        "staffPinged": true,
+        "requestCount": 1,
+        "telegramError": null,
+        "telegramSkippedReason": null
+      }
+    ],
+    "contact_human": [
+      {
+        "kind": "contact_human",
+        "issueUrl": null,
+        "duplicate": false,
+        "requestId": "63a56747-ace1-4d2c-9f1a-61705d80cc8c",
+        "issueError": null,
+        "destination": "Telegram to the team (the owner reads it on his phone)",
+        "staffPinged": true,
+        "requestCount": 1,
+        "telegramError": null,
+        "telegramSkippedReason": null
+      },
+      {
+        "kind": "contact_human",
+        "issueUrl": null,
+        "duplicate": false,
+        "requestId": "4239615c-ecd3-4d34-b473-32f409a90051",
+        "issueError": null,
+        "destination": "Telegram to the team (the owner reads it on his phone)",
+        "staffPinged": false,
+        "requestCount": 1,
+        "telegramError": null,
+        "telegramSkippedReason": "recent_contact_already_pinged"
+      },
+      {
+        "kind": "contact_human",
+        "issueUrl": null,
+        "duplicate": false,
+        "requestId": "73433705-b370-4195-9667-fd3e99403a0f",
+        "issueError": null,
+        "destination": "Telegram to the team (the owner reads it on his phone)",
+        "staffPinged": false,
+        "requestCount": 1,
+        "telegramError": null,
+        "telegramSkippedReason": "recent_contact_already_pinged"
+      }
+    ],
+    "propose_switch_on": [
+      {
+        "caps": {
+          "funded": true,
+          "funding": "Funded: once started, it spends within these caps.",
+          "maxBudget": {
+            "period": "monthly",
+            "reached": false,
+            "periodEnd": "2026-12-01T00:00:00.000Z",
+            "amountCents": "1000.0000000000",
+            "periodStart": "2026-11-01T00:00:00.000Z",
+            "refusedSpend": null,
+            "consumedCents": "1.5711500000",
+            "remainingCents": "998.4288500000",
+            "dailyBudgetCents": "33.3333333333",
+            "consumedUnavailableDetail": null,
+            "consumedUnavailableReason": null
+          },
+          "maxVolume": null
+        },
+        "action": "start_funnel_campaign",
+        "status": "awaiting_user_confirmation",
+        "target": {
+          "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+          "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+          "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+        },
+        "summary": "Restart your Guest Management campaign, max $10/month, with the radio and TV filter on so those companies are skipped.",
+        "instruction": "Nothing is on yet. Show the user exactly what will start and its caps (and, if `caps.funded` is false, that billing holds it), and ask yes or no. Only after they say yes, in a later message, call confirm_switch_on with this confirmationToken.",
+        "confirmationToken": "4fbc5060-72b6-470c-adf5-25dcce73bb1b"
+      },
+      {
+        "caps": {
+          "funded": true,
+          "funding": "Funded: once started, it spends within these caps.",
+          "maxBudget": {
+            "period": "monthly",
+            "reached": false,
+            "periodEnd": "2026-12-01T00:00:00.000Z",
+            "amountCents": "1000.0000000000",
+            "periodStart": "2026-11-01T00:00:00.000Z",
+            "refusedSpend": null,
+            "consumedCents": "1.5711500000",
+            "remainingCents": "998.4288500000",
+            "dailyBudgetCents": "33.3333333333",
+            "consumedUnavailableDetail": null,
+            "consumedUnavailableReason": null
+          },
+          "maxVolume": null
+        },
+        "action": "start_funnel_campaign",
+        "status": "awaiting_user_confirmation",
+        "target": {
+          "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+          "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+          "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+        },
+        "summary": "Restart your Guest Management campaign (radio and TV filter on, max $10/month) so it spends from your remaining balance until it is used or you pause it.",
+        "instruction": "Nothing is on yet. Show the user exactly what will start and its caps (and, if `caps.funded` is false, that billing holds it), and ask yes or no. Only after they say yes, in a later message, call confirm_switch_on with this confirmationToken.",
+        "confirmationToken": "256c16cb-c9cc-426d-8da3-b9c9456a5417"
+      }
+    ],
+    "update_qualification_check": [
+      {
+        "check": {
+          "on": true,
+          "why": null,
+          "role": "Hard filter",
+          "source": "Company data we hold",
+          "checkId": "f5e0c515-ba59-4e26-9f03-1dc703dbd640",
+          "passRate": null,
+          "question": "Is the company something other than a radio station or TV broadcaster?",
+          "suggestedByAi": false,
+          "costPerLeadUsd": 0.002762,
+          "companiesChecked": 0
+        }
+      }
+    ],
+    "confirm_switch_on": [
+      {
+        "action": "start_funnel_campaign",
+        "result": {
+          "created": false,
+          "started": true,
+          "salesFunnelCampaign": {
+            "id": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+            "mode": "proactive",
+            "brief": "Use only these channels:\nUse Lead Sourcing (Start to Lead): Valid only. Sends only to addresses whose mailbox is confirmed, never to a catch-all address.\nUse Sales Cold Email Outreach (Lead to Positive reply).",
+            "orgId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "units": [
+              {
+                "name": "Email Replies f088b03a - sales-cold-email-outreach - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - lead_found_to_conversation",
+                "legKey": "lead_found_to_conversation",
+                "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+                "status": "ongoing",
+                "planRole": null,
+                "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+                "featureSlug": "sales-cold-email-outreach",
+                "workflowSlug": "sales-cold-email-outreach-ballad",
+                "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+              },
+              {
+                "name": "Email Replies f088b03a - your-team-reply-closing - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - conversation_to_paid_client",
+                "legKey": "conversation_to_paid_client",
+                "pipeId": "your-team-reply-closing|conversation_to_paid_client",
+                "status": "ongoing",
+                "planRole": null,
+                "campaignId": "72f92c2e-2c38-4b0f-9274-6653862a8ca5",
+                "featureSlug": "your-team-reply-closing",
+                "workflowSlug": null,
+                "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+              },
+              {
+                "name": "Email Replies f088b03a - lead-sourcing - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - start_to_lead_found",
+                "legKey": "start_to_lead_found",
+                "pipeId": "lead-sourcing|start_to_lead_found",
+                "status": "ongoing",
+                "planRole": null,
+                "campaignId": "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9",
+                "featureSlug": "lead-sourcing",
+                "workflowSlug": "lead-sourcing-scheat",
+                "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+              }
+            ],
+            "people": null,
+            "status": "ongoing",
+            "target": "paid_client",
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+            "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+            "createdAt": "2026-11-01T12:10:42.333Z",
+            "planCheck": null,
+            "triggerId": null,
+            "updatedAt": "2026-11-01T12:33:51.131Z",
+            "stopReason": null,
+            "followsPlan": false,
+            "githubIssue": null,
+            "instruction": null,
+            "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client",
+            "briefUpdatedAt": "2026-11-01T12:19:38.036Z",
+            "createdByUserId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "salesFunnelName": "Email Replies",
+            "githubIssueCheck": null,
+            "briefUpdatedByUserId": "system-features-service",
+            "runningSalesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+          }
+        },
+        "target": {
+          "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+          "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+          "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+        },
+        "switchedOn": true
+      },
+      {
+        "action": "start_funnel_campaign",
+        "result": {
+          "created": false,
+          "started": true,
+          "salesFunnelCampaign": {
+            "id": "f088b03a-08f6-4029-8b2b-53bc5809c259",
+            "mode": "proactive",
+            "brief": "Use only these channels:\nUse Lead Sourcing (Start to Lead): Valid only. Sends only to addresses whose mailbox is confirmed, never to a catch-all address.\nUse Sales Cold Email Outreach (Lead to Positive reply).",
+            "orgId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "units": [
+              {
+                "name": "Email Replies f088b03a - your-team-reply-closing - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - conversation_to_paid_client",
+                "legKey": "conversation_to_paid_client",
+                "pipeId": "your-team-reply-closing|conversation_to_paid_client",
+                "status": "ongoing",
+                "planRole": null,
+                "campaignId": "72f92c2e-2c38-4b0f-9274-6653862a8ca5",
+                "featureSlug": "your-team-reply-closing",
+                "workflowSlug": null,
+                "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+              },
+              {
+                "name": "Email Replies f088b03a - sales-cold-email-outreach - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - lead_found_to_conversation",
+                "legKey": "lead_found_to_conversation",
+                "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+                "status": "ongoing",
+                "planRole": null,
+                "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+                "featureSlug": "sales-cold-email-outreach",
+                "workflowSlug": "sales-cold-email-outreach-ballad",
+                "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+              },
+              {
+                "name": "Email Replies f088b03a - lead-sourcing - 23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4 - a334ccd3-546e-4c25-a378-50c50832fda8 - start_to_lead_found",
+                "legKey": "start_to_lead_found",
+                "pipeId": "lead-sourcing|start_to_lead_found",
+                "status": "ongoing",
+                "planRole": null,
+                "campaignId": "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9",
+                "featureSlug": "lead-sourcing",
+                "workflowSlug": "lead-sourcing-scheat",
+                "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+              }
+            ],
+            "people": null,
+            "status": "ongoing",
+            "target": "paid_client",
+            "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+            "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+            "createdAt": "2026-11-01T12:10:42.333Z",
+            "planCheck": null,
+            "triggerId": null,
+            "updatedAt": "2026-11-01T12:44:47.024Z",
+            "stopReason": null,
+            "followsPlan": false,
+            "githubIssue": null,
+            "instruction": null,
+            "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client",
+            "briefUpdatedAt": "2026-11-01T12:19:38.036Z",
+            "engineOutcomes": [],
+            "createdByUserId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "salesFunnelName": "Email Replies",
+            "githubIssueCheck": null,
+            "briefUpdatedByUserId": "system-features-service",
+            "runningSalesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+          }
+        },
+        "target": {
+          "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+          "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+          "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client"
+        },
+        "switchedOn": true
+      }
+    ],
+    "get_org_usage": [
+      {
+        "basis": "billed",
+        "categories": [
+          {
+            "key": "setup",
+            "label": "Setting up your brand, offer and audiences",
+            "billedUsd": 0,
+            "setAsideUsd": 0
+          },
+          {
+            "key": "finding_contacts",
+            "label": "Finding and verifying contacts",
+            "billedUsd": 0.01568924,
+            "setAsideUsd": 0
+          },
+          {
+            "key": "writing_emails",
+            "label": "Writing your emails",
+            "billedUsd": 0,
+            "setAsideUsd": 0
+          },
+          {
+            "key": "sending_emails",
+            "label": "Sending emails",
+            "billedUsd": 0,
+            "setAsideUsd": 0
+          },
+          {
+            "key": "reading_replies",
+            "label": "Reading replies",
+            "billedUsd": 2.226e-05,
+            "setAsideUsd": 0
+          },
+          {
+            "key": "notifications",
+            "label": "Notifications",
+            "billedUsd": 0,
+            "setAsideUsd": 0
+          },
+          {
+            "key": "other",
+            "label": "Other",
+            "billedUsd": 0,
+            "setAsideUsd": 0
+          },
+          {
+            "key": "account_adjustments",
+            "label": "Account adjustments",
+            "billedUsd": 2.140949068,
+            "setAsideUsd": 0.720084
+          }
+        ],
+        "coveredByUs": {
+          "sinceIso": "2026-10-13T00:00:00.000Z",
+          "billedUsd": 2.140949068,
+          "setAsideUsd": 0.720084
+        },
+        "totalsSource": "billing",
+        "totalBilledUsd": 2.156660568,
+        "totalSetAsideUsd": 0.720084
+      }
+    ],
+    "get_spend_by_campaign": [
+      {
+        "groups": [
+          {
+            "runCount": 367,
+            "dimensions": {
+              "campaignId": null
+            },
+            "maxStartedAt": "2026-11-01T12:34:38.625Z",
+            "minStartedAt": "2026-11-01T11:37:51.745Z",
+            "totalCostInUsdCents": "256.7250100000",
+            "actualCostInUsdCents": "168.5942100000",
+            "netTotalCostInUsdCents": "256.7250100000",
+            "refundedCostInUsdCents": "0.0000000000",
+            "cancelledCostInUsdCents": "554.3506322000",
+            "netActualCostInUsdCents": "168.5942100000",
+            "netRefundedCostInUsdCents": "0.0000000000",
+            "provisionedCostInUsdCents": "88.1308000000",
+            "netProvisionedCostInUsdCents": "88.1308000000"
+          },
+          {
+            "runCount": 12,
+            "dimensions": {
+              "campaignId": "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9"
+            },
+            "maxStartedAt": "2026-11-01T12:12:14.661Z",
+            "minStartedAt": "2026-11-01T12:10:44.560Z",
+            "totalCostInUsdCents": "1.5711500000",
+            "actualCostInUsdCents": "1.5711500000",
+            "netTotalCostInUsdCents": "1.5711500000",
+            "refundedCostInUsdCents": "0.0000000000",
+            "cancelledCostInUsdCents": "1.5710240000",
+            "netActualCostInUsdCents": "1.5711500000",
+            "netRefundedCostInUsdCents": "0.0000000000",
+            "provisionedCostInUsdCents": "0.0000000000",
+            "netProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "runCount": 6,
+            "dimensions": {
+              "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc"
+            },
+            "maxStartedAt": "2026-11-01T12:34:38.655Z",
+            "minStartedAt": "2026-11-01T12:10:49.810Z",
+            "totalCostInUsdCents": "0.0000000000",
+            "actualCostInUsdCents": "0.0000000000",
+            "netTotalCostInUsdCents": "0.0000000000",
+            "refundedCostInUsdCents": "0.0000000000",
+            "cancelledCostInUsdCents": "0.0000000000",
+            "netActualCostInUsdCents": "0.0000000000",
+            "netRefundedCostInUsdCents": "0.0000000000",
+            "provisionedCostInUsdCents": "0.0000000000",
+            "netProvisionedCostInUsdCents": "0.0000000000"
+          }
+        ]
+      },
+      {
+        "groups": [
+          {
+            "runCount": 604,
+            "dimensions": {
+              "campaignId": null
+            },
+            "maxStartedAt": "2026-11-01T12:56:00.691Z",
+            "minStartedAt": "2026-11-01T11:37:51.745Z",
+            "totalCostInUsdCents": "632.1346792000",
+            "actualCostInUsdCents": "502.2770792000",
+            "netTotalCostInUsdCents": "632.1346792000",
+            "refundedCostInUsdCents": "0.0000000000",
+            "cancelledCostInUsdCents": "1210.3220306000",
+            "netActualCostInUsdCents": "502.2770792000",
+            "netRefundedCostInUsdCents": "0.0000000000",
+            "provisionedCostInUsdCents": "129.8576000000",
+            "netProvisionedCostInUsdCents": "129.8576000000"
+          },
+          {
+            "runCount": 34,
+            "dimensions": {
+              "campaignId": "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9"
+            },
+            "maxStartedAt": "2026-11-01T12:55:43.368Z",
+            "minStartedAt": "2026-11-01T12:10:44.560Z",
+            "totalCostInUsdCents": "4.1517080000",
+            "actualCostInUsdCents": "4.1517080000",
+            "netTotalCostInUsdCents": "4.1517080000",
+            "refundedCostInUsdCents": "0.0000000000",
+            "cancelledCostInUsdCents": "3.2320480000",
+            "netActualCostInUsdCents": "4.1517080000",
+            "netRefundedCostInUsdCents": "0.0000000000",
+            "provisionedCostInUsdCents": "0.0000000000",
+            "netProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "runCount": 12,
+            "dimensions": {
+              "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc"
+            },
+            "maxStartedAt": "2026-11-01T12:55:29.863Z",
+            "minStartedAt": "2026-11-01T12:10:49.810Z",
+            "totalCostInUsdCents": "0.0000000000",
+            "actualCostInUsdCents": "0.0000000000",
+            "netTotalCostInUsdCents": "0.0000000000",
+            "refundedCostInUsdCents": "0.0000000000",
+            "cancelledCostInUsdCents": "0.0000000000",
+            "netActualCostInUsdCents": "0.0000000000",
+            "netRefundedCostInUsdCents": "0.0000000000",
+            "provisionedCostInUsdCents": "0.0000000000",
+            "netProvisionedCostInUsdCents": "0.0000000000"
+          }
+        ]
+      }
+    ],
+    "list_recent_runs": [
+      {
+        "runs": [
+          {
+            "id": "f5c87e7f-3b13-4c3f-b4ba-bb135a0a8187",
+            "goal": null,
+            "status": "running",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "GET /v1/runs",
+            "createdAt": "2026-11-01T12:34:38.916Z",
+            "startedAt": "2026-11-01T12:34:38.916Z",
+            "updatedAt": "2026-11-01T12:34:38.916Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": null,
+            "featureSlug": null,
+            "parentRunId": null,
+            "serviceName": "api-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "e3f99dbe-650a-411e-a6cc-6f89cc06a44a",
+            "goal": null,
+            "status": "running",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "lead-serve",
+            "createdAt": "2026-11-01T12:34:38.655Z",
+            "startedAt": "2026-11-01T12:34:38.655Z",
+            "updatedAt": "2026-11-01T12:34:38.655Z",
+            "audienceId": "13b9c4cf-326c-4a52-a120-e504b3f9505f",
+            "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+            "completedAt": null,
+            "featureSlug": "sales-cold-email-outreach",
+            "parentRunId": "495dbdf6-844f-4526-bd2a-89ee8dee9cf5",
+            "serviceName": "lead-service",
+            "workflowSlug": "sales-cold-email-outreach-ballad-v13",
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "2b658198-d523-4db3-99c6-bdebf56fa4f9",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "GET /v1/runs/stats/costs",
+            "createdAt": "2026-11-01T12:34:38.625Z",
+            "startedAt": "2026-11-01T12:34:38.625Z",
+            "updatedAt": "2026-11-01T12:34:38.900Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:34:38.900Z",
+            "featureSlug": null,
+            "parentRunId": null,
+            "serviceName": "api-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "f6f072b9-989b-47cc-b6a7-d895e852445f",
+            "goal": null,
+            "status": "running",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:34:38.022Z",
+            "startedAt": "2026-11-01T12:34:38.022Z",
+            "updatedAt": "2026-11-01T12:34:38.022Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": null,
+            "featureSlug": null,
+            "parentRunId": "4cdf9dad-bd1e-44ce-9dc6-bcd8eb6b16a5",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "aa9c8d17-1060-43b2-90e8-e3979b09e7bb",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:34:32.215Z",
+            "startedAt": "2026-11-01T12:34:32.215Z",
+            "updatedAt": "2026-11-01T12:34:32.282Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:34:32.282Z",
+            "featureSlug": null,
+            "parentRunId": "0a8c90a8-f3de-4fe6-958a-2876eedb5130",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "5fdddcfb-da4e-42b1-9359-257478a3d3ec",
+            "goal": null,
+            "status": "running",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+            "createdAt": "2026-11-01T12:34:24.983Z",
+            "startedAt": "2026-11-01T12:34:24.983Z",
+            "updatedAt": "2026-11-01T12:34:24.983Z",
+            "audienceId": "13b9c4cf-326c-4a52-a120-e504b3f9505f",
+            "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+            "completedAt": null,
+            "featureSlug": "sales-cold-email-outreach",
+            "parentRunId": "495dbdf6-844f-4526-bd2a-89ee8dee9cf5",
+            "serviceName": "campaign-service",
+            "workflowSlug": "sales-cold-email-outreach-ballad-v13",
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "495dbdf6-844f-4526-bd2a-89ee8dee9cf5",
+            "goal": null,
+            "status": "running",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "execute-workflow",
+            "createdAt": "2026-11-01T12:34:24.065Z",
+            "startedAt": "2026-11-01T12:34:24.065Z",
+            "updatedAt": "2026-11-01T12:34:24.065Z",
+            "audienceId": null,
+            "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+            "completedAt": null,
+            "featureSlug": "sales-cold-email-outreach",
+            "parentRunId": "e3fde1f8-3f3c-4602-8138-1304ad717512",
+            "serviceName": "workflow",
+            "workflowSlug": "sales-cold-email-outreach-ballad-v13",
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "e2632163-4ceb-45e8-a364-c678c0f13ee4",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:34:22.152Z",
+            "startedAt": "2026-11-01T12:34:22.152Z",
+            "updatedAt": "2026-11-01T12:34:22.249Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:34:22.249Z",
+            "featureSlug": null,
+            "parentRunId": "eb140067-07ed-4ba5-90fc-8b72ec74411b",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "954af3d7-aadd-41d5-9008-c65789f3634d",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "GET /v1/features/orgs/usage",
+            "createdAt": "2026-11-01T12:34:20.688Z",
+            "startedAt": "2026-11-01T12:34:20.688Z",
+            "updatedAt": "2026-11-01T12:34:38.627Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:34:38.627Z",
+            "featureSlug": null,
+            "parentRunId": null,
+            "serviceName": "api-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "1845d634-799a-4ecd-baec-8811e9acb884",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "GET /v1/billing/accounts",
+            "createdAt": "2026-11-01T12:34:20.187Z",
+            "startedAt": "2026-11-01T12:34:20.187Z",
+            "updatedAt": "2026-11-01T12:34:20.681Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:34:20.681Z",
+            "featureSlug": null,
+            "parentRunId": null,
+            "serviceName": "api-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "6f243c66-8e99-4d50-914f-0c09176ff7f7",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:34:16.690Z",
+            "startedAt": "2026-11-01T12:34:16.690Z",
+            "updatedAt": "2026-11-01T12:34:16.719Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:34:16.719Z",
+            "featureSlug": null,
+            "parentRunId": "60f3c0ef-955d-4a89-b5d3-60f9a6f46fe7",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "7b35d7be-312d-4ed4-884b-c81189e0f93d",
+            "goal": null,
+            "status": "running",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "chat",
+            "createdAt": "2026-11-01T12:34:15.839Z",
+            "startedAt": "2026-11-01T12:34:15.839Z",
+            "updatedAt": "2026-11-01T12:34:15.839Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": null,
+            "featureSlug": null,
+            "parentRunId": "e6881866-a738-4a15-abdf-02b640cae5cb",
+            "serviceName": "chat-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "16.1224000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "16.1224000000"
+          },
+          {
+            "id": "e6881866-a738-4a15-abdf-02b640cae5cb",
+            "goal": null,
+            "status": "running",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "POST /v1/chat",
+            "createdAt": "2026-11-01T12:34:15.735Z",
+            "startedAt": "2026-11-01T12:34:15.735Z",
+            "updatedAt": "2026-11-01T12:34:15.735Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": null,
+            "featureSlug": null,
+            "parentRunId": null,
+            "serviceName": "api-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "ecf03a12-2d61-4ee2-8062-9a0529c4a169",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:34:11.002Z",
+            "startedAt": "2026-11-01T12:34:11.002Z",
+            "updatedAt": "2026-11-01T12:34:11.263Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:34:11.263Z",
+            "featureSlug": null,
+            "parentRunId": "1fc1045b-c667-47e1-8069-44630b14513b",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "7b1f4e74-12a5-4df2-b81d-64345e4ce9d7",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:34:04.019Z",
+            "startedAt": "2026-11-01T12:34:04.019Z",
+            "updatedAt": "2026-11-01T12:34:04.608Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:34:04.608Z",
+            "featureSlug": null,
+            "parentRunId": "8c270181-df6a-4fbb-a534-085947f8013d",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "6c2c900f-a467-471a-89c3-0b5a97ceb097",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "copilot-nudge",
+            "createdAt": "2026-11-01T12:34:00.113Z",
+            "startedAt": "2026-11-01T12:34:00.113Z",
+            "updatedAt": "2026-11-01T12:34:00.734Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:34:00.734Z",
+            "featureSlug": null,
+            "parentRunId": "81a4e29d-2068-4b71-8f86-b3834f489a59",
+            "serviceName": "chat-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0166572000",
+            "ownActualCostInUsdCents": "0.0166572000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "81a4e29d-2068-4b71-8f86-b3834f489a59",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "POST /v1/chat",
+            "createdAt": "2026-11-01T12:34:00.042Z",
+            "startedAt": "2026-11-01T12:34:00.042Z",
+            "updatedAt": "2026-11-01T12:34:00.762Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:34:00.762Z",
+            "featureSlug": null,
+            "parentRunId": null,
+            "serviceName": "api-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "8d91f14c-2157-4084-8982-165efa3a07fb",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:33:57.608Z",
+            "startedAt": "2026-11-01T12:33:57.608Z",
+            "updatedAt": "2026-11-01T12:33:57.661Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:57.661Z",
+            "featureSlug": null,
+            "parentRunId": "86719931-54bc-4eb2-a127-c59d21f638d6",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "07dfa3b6-c9f6-4a86-af6c-17c9757d64b8",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:33:52.091Z",
+            "startedAt": "2026-11-01T12:33:52.091Z",
+            "updatedAt": "2026-11-01T12:33:52.172Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:52.172Z",
+            "featureSlug": null,
+            "parentRunId": "0f1d99f2-ab08-4816-af3a-b358ac9a5956",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "17ac6055-a8f4-498b-9d7d-ce92a56da99e",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "PATCH /v1/brands/23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4/offers/a334ccd3-546e-4c25-a378-50c50832fda8/qualification/criteria/f5e0c515-ba59-4e26-9f03-1dc703dbd640",
+            "createdAt": "2026-11-01T12:33:48.926Z",
+            "startedAt": "2026-11-01T12:33:48.926Z",
+            "updatedAt": "2026-11-01T12:33:49.073Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:49.073Z",
+            "featureSlug": null,
+            "parentRunId": null,
+            "serviceName": "api-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "322c587e-326b-4fe8-a31b-838549285da9",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "chat",
+            "createdAt": "2026-11-01T12:33:44.543Z",
+            "startedAt": "2026-11-01T12:33:44.543Z",
+            "updatedAt": "2026-11-01T12:33:55.455Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:55.455Z",
+            "featureSlug": null,
+            "parentRunId": "639382c7-c3b7-4772-8f62-e271efe7cfce",
+            "serviceName": "chat-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "20.8631500000",
+            "ownActualCostInUsdCents": "20.8631500000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "639382c7-c3b7-4772-8f62-e271efe7cfce",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "POST /v1/chat",
+            "createdAt": "2026-11-01T12:33:44.216Z",
+            "startedAt": "2026-11-01T12:33:44.216Z",
+            "updatedAt": "2026-11-01T12:33:55.455Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:55.455Z",
+            "featureSlug": null,
+            "parentRunId": null,
+            "serviceName": "api-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "2615818f-31d4-4ea3-bc26-ffd62c9d6977",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:33:41.959Z",
+            "startedAt": "2026-11-01T12:33:41.959Z",
+            "updatedAt": "2026-11-01T12:33:42.016Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:42.016Z",
+            "featureSlug": null,
+            "parentRunId": "5b63309a-7c03-440a-a89a-c5f8addc828b",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "0dc81de2-2fe5-4d84-ace8-a3b75555b866",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:33:36.318Z",
+            "startedAt": "2026-11-01T12:33:36.318Z",
+            "updatedAt": "2026-11-01T12:33:36.476Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:36.476Z",
+            "featureSlug": null,
+            "parentRunId": "d8145fff-7551-4269-8b21-d2a0dd87bf7f",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "675dd7ed-a835-4f9c-9c90-d84d54e1305a",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:33:30.563Z",
+            "startedAt": "2026-11-01T12:33:30.563Z",
+            "updatedAt": "2026-11-01T12:33:30.801Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:30.801Z",
+            "featureSlug": null,
+            "parentRunId": "f7dbe496-0fce-4c88-8da1-0cb47d4d33a9",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "9ba556ea-a50a-4b9e-ac1e-0d9a0e3c8cfd",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:33:25.081Z",
+            "startedAt": "2026-11-01T12:33:25.081Z",
+            "updatedAt": "2026-11-01T12:33:25.194Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:25.194Z",
+            "featureSlug": null,
+            "parentRunId": "522331b0-36ce-4bce-9a15-bd8fb58e7d4d",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "ce7d7559-4381-426b-81b7-dfbab5a99e61",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:33:19.241Z",
+            "startedAt": "2026-11-01T12:33:19.241Z",
+            "updatedAt": "2026-11-01T12:33:19.688Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:19.688Z",
+            "featureSlug": null,
+            "parentRunId": "da60177f-2a27-4a92-93a9-da2a26fecfb7",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "e864d8c9-816a-4b1a-a779-f956a86b6f67",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:33:13.509Z",
+            "startedAt": "2026-11-01T12:33:13.509Z",
+            "updatedAt": "2026-11-01T12:33:13.578Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:13.578Z",
+            "featureSlug": null,
+            "parentRunId": "2e85aa4b-79ee-48b2-8c11-1a6a2497de33",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "390aacdd-97ec-419b-81bc-b076f317d3a6",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:33:08.109Z",
+            "startedAt": "2026-11-01T12:33:08.109Z",
+            "updatedAt": "2026-11-01T12:33:08.171Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:08.171Z",
+            "featureSlug": null,
+            "parentRunId": "ccc05833-adf8-4c18-b734-ab672ccf290e",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          },
+          {
+            "id": "cf1c2517-48dc-437e-ab85-85bec29675a8",
+            "goal": null,
+            "status": "completed",
+            "userId": "ffedbb3d-05c7-49bd-85e4-c356e8a07e14",
+            "brandIds": [
+              "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4"
+            ],
+            "taskName": "people.outcomes",
+            "createdAt": "2026-11-01T12:33:02.567Z",
+            "startedAt": "2026-11-01T12:33:02.567Z",
+            "updatedAt": "2026-11-01T12:33:02.628Z",
+            "audienceId": null,
+            "campaignId": null,
+            "completedAt": "2026-11-01T12:33:02.628Z",
+            "featureSlug": null,
+            "parentRunId": "3c7beafa-cf31-4754-af60-7ed7960dbefe",
+            "serviceName": "crm-service",
+            "workflowSlug": null,
+            "brandProfileId": null,
+            "organizationId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+            "workflowContext": null,
+            "ownCostInUsdCents": "0.0000000000",
+            "ownActualCostInUsdCents": "0.0000000000",
+            "ownProvisionedCostInUsdCents": "0.0000000000"
+          }
+        ],
+        "limit": 30,
+        "offset": 0
+      }
+    ],
+    "get_funnel_caps": [
+      {
+        "orgId": "cb9ad98a-d572-4fe7-9dd9-7dbce61d8373",
+        "pipes": [
+          {
+            "mode": "proactive",
+            "legKey": "start_to_lead_found",
+            "pipeId": "lead-sourcing|start_to_lead_found",
+            "toStep": "lead_found",
+            "runByUs": true,
+            "strategyId": null,
+            "campaignIds": [
+              "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9"
+            ],
+            "channelSlug": "lead-sourcing"
+          },
+          {
+            "mode": "proactive",
+            "legKey": "lead_found_to_conversation",
+            "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+            "toStep": "conversation",
+            "runByUs": true,
+            "strategyId": null,
+            "campaignIds": [
+              "4b60cbc4-9787-467a-b887-2f36b94898fc"
+            ],
+            "channelSlug": "sales-cold-email-outreach"
+          },
+          {
+            "mode": "reactive",
+            "legKey": "conversation_to_paid_client",
+            "pipeId": "your-team-reply-closing|conversation_to_paid_client",
+            "toStep": "paid_client",
+            "runByUs": false,
+            "strategyId": null,
+            "campaignIds": [
+              "72f92c2e-2c38-4b0f-9274-6653862a8ca5"
+            ],
+            "channelSlug": "your-team-reply-closing"
+          }
+        ],
+        "funded": true,
+        "stated": true,
+        "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+        "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+        "sources": [],
+        "fundedBy": "max_budget",
+        "maxBudget": {
+          "period": "monthly",
+          "reached": false,
+          "periodEnd": "2026-12-01T00:00:00.000Z",
+          "amountCents": "1000.0000000000",
+          "periodStart": "2026-11-01T00:00:00.000Z",
+          "refusedSpend": null,
+          "consumedCents": "1.5711500000",
+          "remainingCents": "998.4288500000",
+          "dailyBudgetCents": "33.3333333333",
+          "consumedUnavailableDetail": null,
+          "consumedUnavailableReason": null
+        },
+        "maxVolume": null,
+        "updatedAt": "2026-11-01T12:10:24.264Z",
+        "volumeUnit": "first_contacts",
+        "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client",
+        "salesFunnelName": "Email Replies",
+        "salesFunnelType": "proactive",
+        "salesFunnelTypeUnavailableReason": null
+      }
+    ],
+    "create_followup": [
+      {
+        "to": "person1@example.com",
+        "status": "ongoing",
+        "created": true,
+        "firesWhen": "fire_followup is called",
+        "followUpId": "260125bc-aaf4-43e0-b001-19c285936bd3",
+        "instruction": "Tola (Martian DBB) asked to close his account and asked what happens to his unused prepaid balance. Write him one short, warm email. Say: a person on the team has his request to close the account and his question about the unused balance (about $5 of his $10), and will answer him by email. He can reply directly to this email and it goes straight to the team. Do not promise a refund, a date, or how closing works: the team decides. Say his campaign is paused unless he restarted it. Do not mention internal names or billing mechanics.",
+        "sendsAtMost": 1
+      }
+    ],
+    "fire_followup": [
+      {
+        "event": {
+          "event": {
+            "id": "51f1e9a2-a220-4fe6-b7a5-bdbfc4285516",
+            "step": null,
+            "dueAt": "2026-11-01T12:41:56.467Z",
+            "orgId": "f0420eb5-8f72-4f0a-a150-f473746df1e6",
+            "detail": {
+              "legKeys": [
+                "signup_to_paid_client",
+                "start_to_conversation"
+              ],
+              "skipped": [
+                {
+                  "detail": "a run of the brand's ai_follow_up_email campaigns is already in flight",
+                  "legKey": "signup_to_paid_client",
+                  "reason": "cohort_run_in_flight",
+                  "campaignId": "3b19055d-f655-45ab-bf63-9c1e836f19da"
+                }
+              ],
+              "triggered": [],
+              "offCampaignIds": []
+            },
+            "leadId": "3a4f1089-cd73-4743-bc67-0c170d953a5b",
+            "status": "done",
+            "brandId": "f4d73dab-1f9d-49b2-b16e-63ecde76a5eb",
+            "offerId": "832126f3-f3f1-4601-885d-bc8e101e5680",
+            "outcome": "skipped",
+            "delivery": null,
+            "ranLeads": [],
+            "triggerId": "follow_up_due",
+            "occurredAt": "2026-11-01T12:41:56.467Z",
+            "skipReason": "cohort_run_in_flight",
+            "processedAt": "2026-11-01T12:41:57.520Z",
+            "recordedVia": "trigger_events",
+            "ranCampaignIds": [],
+            "sourceTriggerId": null,
+            "performedByCaller": false,
+            "requestedByCampaignId": null
+          },
+          "replayed": false
+        },
+        "followUpId": "260125bc-aaf4-43e0-b001-19c285936bd3"
+      },
+      {
+        "event": {
+          "event": {
+            "id": "eda9cb51-3a4a-4311-b70d-ca165a10bd83",
+            "step": null,
+            "dueAt": "2026-11-01T12:54:01.980Z",
+            "orgId": "f0420eb5-8f72-4f0a-a150-f473746df1e6",
+            "detail": {
+              "legKeys": [
+                "signup_to_paid_client",
+                "start_to_conversation"
+              ],
+              "skipped": [],
+              "triggered": [
+                {
+                  "runId": "a1b7664d-fae9-44b5-b555-d37c4b0ccd98",
+                  "legKey": "signup_to_paid_client",
+                  "campaignId": "3b19055d-f655-45ab-bf63-9c1e836f19da",
+                  "workflowSlug": "ai-follow-up-email-tureis"
+                }
+              ],
+              "offCampaignIds": []
+            },
+            "leadId": "3a4f1089-cd73-4743-bc67-0c170d953a5b",
+            "status": "done",
+            "brandId": "f4d73dab-1f9d-49b2-b16e-63ecde76a5eb",
+            "offerId": "832126f3-f3f1-4601-885d-bc8e101e5680",
+            "outcome": "ran",
+            "delivery": null,
+            "ranLeads": [],
+            "triggerId": "follow_up_due",
+            "occurredAt": "2026-11-01T12:54:01.980Z",
+            "skipReason": null,
+            "processedAt": "2026-11-01T12:54:49.858Z",
+            "recordedVia": "trigger_events",
+            "ranCampaignIds": [
+              "3b19055d-f655-45ab-bf63-9c1e836f19da"
+            ],
+            "sourceTriggerId": null,
+            "performedByCaller": false,
+            "requestedByCampaignId": null
+          },
+          "replayed": false
+        },
+        "followUpId": "260125bc-aaf4-43e0-b001-19c285936bd3"
+      }
+    ],
+    "list_followups": [
+      {
+        "followUps": [
+          {
+            "status": "ongoing",
+            "followUpId": "260125bc-aaf4-43e0-b001-19c285936bd3",
+            "instruction": "Tola (Martian DBB) asked to close his account and asked what happens to his unused prepaid balance. Write him one short, warm email. Say: a person on the team has his request to close the account and his question about the unused balance (about $5 of his $10), and will answer him by email. He can reply directly to this email and it goes straight to the team. Do not promise a refund, a date, or how closing works: the team decides. Say his campaign is paused unless he restarted it. Do not mention internal names or billing mechanics.",
+            "salesFunnelId": "signup_to_paid_client@ai-follow-up-email"
+          }
+        ]
+      }
+    ],
+    "update_followup": [
+      {
+        "status": "ongoing",
+        "followUpId": "260125bc-aaf4-43e0-b001-19c285936bd3",
+        "instruction": "Tola (Martian DBB) is upset and wants a direct line to a person. He asked to close his account, what happens to his unused prepaid balance (about $3 left), whether assistant chat charges stand, whether he can use his own LLM via the MCP, and why his billing page shows a number of days left for his balance. Write one short, warm email. Say a person on the team has all these questions and will answer by email. He can reply directly to this email and his reply goes straight to the team, no chat needed. His campaign is running on his remaining balance and stops by itself when it is used up; no card is saved, so nothing else can be charged. Do not promise a refund, a date, or how closing works: the team decides. No internal names or billing mechanics.",
+        "salesFunnelId": "signup_to_paid_client@ai-follow-up-email"
+      }
+    ],
+    "get_offer_performance": [
+      {
+        "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+        "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+        "omitted": "Per-company list, per-day series and per-channel detail are left out to keep the chat small: the offer and campaign pages show them (open_page).",
+        "signups": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "headline": {
+          "unpricedReason": null,
+          "totalPipelineUsd": 0,
+          "lifetimeRevenueUsd": 50,
+          "lifetimeRevenueSource": "offer_stated"
+        },
+        "maturity": {
+          "legs": [
+            {
+              "flash": {
+                "outcomes": 0,
+                "spentUsd": 0,
+                "contacted": 0,
+                "conversionRatePct": null,
+                "costPerOutcomeUsd": null
+              },
+              "legKey": "start_to_conversation",
+              "mature": {
+                "outcomes": 0,
+                "spentUsd": 0,
+                "contacted": 0,
+                "conversionRatePct": null,
+                "costPerOutcomeUsd": null
+              },
+              "source": "measured",
+              "isMature": false,
+              "durationDays": 21,
+              "outcomeSignal": "positiveReply",
+              "outcomesRequired": 1
+            }
+          ],
+          "isMature": null
+        },
+        "outcomes": {
+          "sending": {
+            "replyRatePct": null,
+            "bounceRatePct": null,
+            "recipientsSent": 0,
+            "deliveryRatePct": null,
+            "recipientsBounced": 0,
+            "recipientsReplied": 0,
+            "recipientsDelivered": 0,
+            "positiveReplyRatePct": null,
+            "recipientsRepliedPositive": 0,
+            "recipientsAwaitingDelivery": 0
+          },
+          "cpcCents": null,
+          "maturity": {
+            "flash": {
+              "cpcCents": null,
+              "cpprCents": null
+            },
+            "mature": {
+              "cpcCents": null,
+              "cpprCents": null
+            },
+            "isMature": null
+          },
+          "cpprCents": null,
+          "ratioBasis": {
+            "maturityDays": 21,
+            "unmeasuredReason": "maturing",
+            "recipientsClicked": null,
+            "committedSpentCents": null,
+            "recipientsRepliesPositive": null
+          },
+          "actualSpentCents": 577,
+          "recipientsBounced": 0,
+          "recipientsClicked": 0,
+          "committedSpentCents": 729,
+          "recipientsContacted": 0,
+          "recipientsConvertible": 0,
+          "recipientsUnsubscribed": 0,
+          "recipientsRepliesPositive": 0
+        },
+        "costBasis": "charged",
+        "purchased": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "costEconomics": {
+          "maturity": {
+            "flash": {
+              "roiMultiple": 0,
+              "costOfAcquisitionPct": null,
+              "costPerAcquisitionUsd": null
+            },
+            "mature": {
+              "roiMultiple": 0,
+              "costOfAcquisitionPct": null,
+              "costPerAcquisitionUsd": null
+            },
+            "isMature": null
+          },
+          "ratioBasis": {
+            "committedCostUsd": 0,
+            "totalPipelineUsd": 0
+          },
+          "roiMultiple": null,
+          "maturityDays": 21,
+          "actualCostUsd": 5.77,
+          "realizedReturn": {
+            "roiMultiple": null,
+            "closedWonCount": 0,
+            "closedWonRevenueUsd": 0
+          },
+          "committedCostUsd": 7.29,
+          "unmeasuredReason": "maturing",
+          "costOfAcquisitionPct": null,
+          "costPerAcquisitionUsd": null
+        },
+        "meetingsBooked": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "formSubmissions": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "recipientsClicked": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "recipientsContacted": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "recipientsRepliesPositive": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        }
+      },
+      {
+        "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+        "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+        "omitted": "Per-company list, per-day series and per-channel detail are left out to keep the chat small: the offer and campaign pages show them (open_page).",
+        "signups": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "headline": {
+          "unpricedReason": null,
+          "totalPipelineUsd": 0,
+          "lifetimeRevenueUsd": 50,
+          "lifetimeRevenueSource": "offer_stated"
+        },
+        "maturity": {
+          "legs": [
+            {
+              "flash": {
+                "outcomes": 0,
+                "spentUsd": 0.28068118999999997,
+                "contacted": 0,
+                "conversionRatePct": null,
+                "costPerOutcomeUsd": null
+              },
+              "legKey": "start_to_conversation",
+              "mature": {
+                "outcomes": 0,
+                "spentUsd": 0,
+                "contacted": 0,
+                "conversionRatePct": null,
+                "costPerOutcomeUsd": null
+              },
+              "source": "measured",
+              "isMature": false,
+              "durationDays": 21,
+              "outcomeSignal": "positiveReply",
+              "outcomesRequired": 1
+            }
+          ],
+          "isMature": false
+        },
+        "outcomes": {
+          "sending": {
+            "replyRatePct": null,
+            "bounceRatePct": null,
+            "recipientsSent": 0,
+            "deliveryRatePct": null,
+            "recipientsBounced": 0,
+            "recipientsReplied": 0,
+            "recipientsDelivered": 0,
+            "positiveReplyRatePct": null,
+            "recipientsRepliedPositive": 0,
+            "recipientsAwaitingDelivery": 0
+          },
+          "cpcCents": null,
+          "maturity": {
+            "flash": {
+              "cpcCents": null,
+              "cpprCents": null
+            },
+            "mature": {
+              "cpcCents": null,
+              "cpprCents": null
+            },
+            "isMature": false
+          },
+          "cpprCents": null,
+          "ratioBasis": {
+            "maturityDays": 21,
+            "unmeasuredReason": "maturing",
+            "recipientsClicked": null,
+            "committedSpentCents": null,
+            "recipientsRepliesPositive": null
+          },
+          "actualSpentCents": 680,
+          "recipientsBounced": 0,
+          "recipientsClicked": 0,
+          "committedSpentCents": 879,
+          "recipientsContacted": 0,
+          "recipientsConvertible": 0,
+          "recipientsUnsubscribed": 0,
+          "recipientsRepliesPositive": 0
+        },
+        "costBasis": "charged",
+        "purchased": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "costEconomics": {
+          "maturity": {
+            "flash": {
+              "roiMultiple": 0,
+              "costOfAcquisitionPct": null,
+              "costPerAcquisitionUsd": null
+            },
+            "mature": {
+              "roiMultiple": 0,
+              "costOfAcquisitionPct": null,
+              "costPerAcquisitionUsd": null
+            },
+            "isMature": false
+          },
+          "ratioBasis": {
+            "committedCostUsd": 0,
+            "totalPipelineUsd": 0
+          },
+          "roiMultiple": null,
+          "maturityDays": 21,
+          "actualCostUsd": 6.8,
+          "realizedReturn": {
+            "roiMultiple": null,
+            "closedWonCount": 0,
+            "closedWonRevenueUsd": 0
+          },
+          "committedCostUsd": 8.79,
+          "unmeasuredReason": "maturing",
+          "costOfAcquisitionPct": null,
+          "costPerAcquisitionUsd": null
+        },
+        "meetingsBooked": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "formSubmissions": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "recipientsClicked": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "recipientsContacted": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        },
+        "recipientsRepliesPositive": {
+          "daily": [],
+          "total": 0,
+          "undatedCount": 0
+        }
+      }
+    ],
+    "find_channels": [
+      {
+        "rows": [
+          {
+            "id": "feedback-request-cold-email-outreach",
+            "roi": null,
+            "icon": "chat-text",
+            "line": "We ask buyers for feedback, not a sale.",
+            "name": "Sales Feedback Request Cold Email Outreach",
+            "status": "learning",
+            "costPer": null,
+            "costUsd": null,
+            "roiBasis": null,
+            "runnable": true
+          },
+          {
+            "id": "sales-cold-email-outreach",
+            "roi": null,
+            "icon": "envelope",
+            "line": "We find your buyers and email them for you.",
+            "name": "Sales Cold Email Outreach",
+            "status": "learning",
+            "costPer": null,
+            "costUsd": null,
+            "roiBasis": null,
+            "runnable": true
+          }
+        ],
+        "order": "roi_desc",
+        "total": 2,
+        "object": "channel",
+        "costUnit": "per_outcome",
+        "truncated": false
+      }
+    ],
+    "find_pipes": [
+      {
+        "id": "sales-cold-email-outreach|lead_found_to_conversation",
+        "roi": null,
+        "icon": "bird",
+        "line": "Sales Cold Email Outreach: Lead → Positive reply",
+        "mode": "proactive",
+        "name": "Dotterel",
+        "play": null,
+        "color": "#3D7FD0",
+        "draft": false,
+        "plays": [
+          {
+            "id": "sales-cold-email-outreach|lead_found_to_conversation",
+            "roi": null,
+            "object": "play",
+            "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+            "status": "learning",
+            "costPer": null,
+            "costUsd": null,
+            "default": true,
+            "roiBasis": null,
+            "runnable": true,
+            "strategyId": null,
+            "strategyName": null,
+            "measuredBasis": null,
+            "bestWorkflowSlug": null,
+            "notRunnableDetail": null,
+            "notRunnableReason": null,
+            "strategyDescription": null,
+            "allowedActiveWorkflowCount": null,
+            "allowedWorkflowDynastySlugs": null
+          },
+          {
+            "id": "sales-cold-email-outreach|lead_found_to_conversation~blind-emails-only",
+            "roi": null,
+            "object": "play",
+            "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+            "status": "learning",
+            "costPer": null,
+            "costUsd": null,
+            "default": false,
+            "roiBasis": null,
+            "runnable": true,
+            "strategyId": "blind-emails-only",
+            "strategyName": "Blind emails only",
+            "measuredBasis": null,
+            "bestWorkflowSlug": null,
+            "notRunnableDetail": null,
+            "notRunnableReason": null,
+            "strategyDescription": "Runs only workflows whose first cold email never names the client brand (Blind angle). Who is written to is the sourcing pipe's choice.",
+            "allowedActiveWorkflowCount": 2,
+            "allowedWorkflowDynastySlugs": [
+              "sales-cold-email-outreach-ballad",
+              "sales-cold-email-outreach-keel"
+            ]
+          },
+          {
+            "id": "sales-cold-email-outreach|lead_found_to_conversation~named-emails-only",
+            "roi": null,
+            "object": "play",
+            "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+            "status": "learning",
+            "costPer": null,
+            "costUsd": null,
+            "default": false,
+            "roiBasis": null,
+            "runnable": true,
+            "strategyId": "named-emails-only",
+            "strategyName": "Named emails only",
+            "measuredBasis": null,
+            "bestWorkflowSlug": null,
+            "notRunnableDetail": null,
+            "notRunnableReason": null,
+            "strategyDescription": "Runs only workflows whose cold email names the client brand and pitches it directly (Named angle). Who is written to is the sourcing pipe's choice.",
+            "allowedActiveWorkflowCount": 2,
+            "allowedWorkflowDynastySlugs": [
+              "sales-cold-email-outreach-ballad",
+              "sales-cold-email-outreach-keel"
+            ]
+          },
+          {
+            "id": "sales-cold-email-outreach|lead_found_to_conversation~no-blind-emails",
+            "roi": null,
+            "object": "play",
+            "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+            "status": "learning",
+            "costPer": null,
+            "costUsd": null,
+            "default": false,
+            "roiBasis": null,
+            "runnable": true,
+            "strategyId": "no-blind-emails",
+            "strategyName": "No blind emails",
+            "measuredBasis": null,
+            "bestWorkflowSlug": null,
+            "notRunnableDetail": null,
+            "notRunnableReason": null,
+            "strategyDescription": "Runs every workflow except those whose first cold email never names the client brand (excludes Blind angle). Who is written to is the sourcing pipe's choice.",
+            "allowedActiveWorkflowCount": 2,
+            "allowedWorkflowDynastySlugs": [
+              "sales-cold-email-outreach-ballad",
+              "sales-cold-email-outreach-keel"
+            ]
+          },
+          {
+            "id": "sales-cold-email-outreach|lead_found_to_conversation~no-named-emails",
+            "roi": null,
+            "object": "play",
+            "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+            "status": "learning",
+            "costPer": null,
+            "costUsd": null,
+            "default": false,
+            "roiBasis": null,
+            "runnable": true,
+            "strategyId": "no-named-emails",
+            "strategyName": "No named emails",
+            "measuredBasis": null,
+            "bestWorkflowSlug": null,
+            "notRunnableDetail": null,
+            "notRunnableReason": null,
+            "strategyDescription": "Runs every workflow except those whose cold email names the client brand and pitches it directly (excludes Named angle). Who is written to is the sourcing pipe's choice.",
+            "allowedActiveWorkflowCount": 2,
+            "allowedWorkflowDynastySlugs": [
+              "sales-cold-email-outreach-ballad",
+              "sales-cold-email-outreach-keel"
+            ]
+          },
+          {
+            "id": "sales-cold-email-outreach|lead_found_to_conversation~no-offer-emails",
+            "roi": null,
+            "object": "play",
+            "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+            "status": "learning",
+            "costPer": null,
+            "costUsd": null,
+            "default": false,
+            "roiBasis": null,
+            "runnable": true,
+            "strategyId": "no-offer-emails",
+            "strategyName": "No offer emails",
+            "measuredBasis": null,
+            "bestWorkflowSlug": null,
+            "notRunnableDetail": null,
+            "notRunnableReason": null,
+            "strategyDescription": "Runs every workflow except those whose cold email leads with something given for free (excludes Offer angle). Who is written to is the sourcing pipe's choice.",
+            "allowedActiveWorkflowCount": 2,
+            "allowedWorkflowDynastySlugs": [
+              "sales-cold-email-outreach-ballad",
+              "sales-cold-email-outreach-keel"
+            ]
+          },
+          {
+            "id": "sales-cold-email-outreach|lead_found_to_conversation~offer-emails-only",
+            "roi": null,
+            "object": "play",
+            "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+            "status": "learning",
+            "costPer": null,
+            "costUsd": null,
+            "default": false,
+            "roiBasis": null,
+            "runnable": true,
+            "strategyId": "offer-emails-only",
+            "strategyName": "Offer emails only",
+            "measuredBasis": null,
+            "bestWorkflowSlug": null,
+            "notRunnableDetail": null,
+            "notRunnableReason": null,
+            "strategyDescription": "Runs only workflows whose cold email leads with something given for free (Offer angle). Who is written to is the sourcing pipe's choice.",
+            "allowedActiveWorkflowCount": 2,
+            "allowedWorkflowDynastySlugs": [
+              "sales-cold-email-outreach-ballad",
+              "sales-cold-email-outreach-keel"
+            ]
+          }
+        ],
+        "legKey": "lead_found_to_conversation",
+        "object": "pipe",
+        "status": "learning",
+        "toStep": "conversation",
+        "costPer": null,
+        "costUsd": null,
+        "managed": true,
+        "costUnit": "per_outcome",
+        "fromStep": "lead_found",
+        "roiBasis": null,
+        "runnable": true,
+        "estimates": [],
+        "triggerId": null,
+        "operatedBy": "platform",
+        "channelName": "Sales Cold Email Outreach",
+        "channelSlug": "sales-cold-email-outreach",
+        "measuredBasis": null,
+        "learningReason": "measurement_unreadable",
+        "toStepValueUsd": 125,
+        "bestWorkflowSlug": null,
+        "conversionRatePct": null,
+        "notRunnableDetail": null,
+        "notRunnableReason": null
+      }
+    ],
+    "get_offer_sourcing": [
+      {
+        "totals": {
+          "totalCostUsd": 0.0157115,
+          "outreachCostUsd": 0,
+          "sourcingCostUsd": 0.0157115
+        },
+        "brandId": "23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4",
+        "offerId": "a334ccd3-546e-4c25-a378-50c50832fda8",
+        "origins": [
+          {
+            "roi": null,
+            "live": true,
+            "name": "Apollo Cold Filters",
+            "slug": "sourcing-apollo-cold-filters",
+            "used": true,
+            "family": "cold_filters",
+            "provider": {
+              "name": "Apollo",
+              "domain": "apollo.io"
+            },
+            "serveCount": 1,
+            "audienceIds": [
+              "13b9c4cf-326c-4a52-a120-e504b3f9505f"
+            ],
+            "description": "People who match your target, found on Apollo by title, company and location.",
+            "leadsServed": 0,
+            "costPerLeadUsd": null,
+            "endToEndCostUsd": 0,
+            "outreachCostUsd": 0,
+            "positiveReplies": 0,
+            "sourcingCostUsd": 0,
+            "roiUnavailableReason": "nothing_spent",
+            "leadsAlsoFoundByAnotherSource": 0,
+            "endToEndCostPerPositiveReplyUsd": null,
+            "sourcingCostPerPositiveReplyUsd": null
+          },
+          {
+            "roi": null,
+            "live": true,
+            "name": "Apollo Buying Signals",
+            "slug": "sourcing-apollo-buying-signals",
+            "used": false,
+            "family": "signal",
+            "provider": {
+              "name": "Apollo",
+              "domain": "apollo.io"
+            },
+            "serveCount": 0,
+            "audienceIds": [],
+            "description": "People who match your target and show a buying signal right now.",
+            "leadsServed": 0,
+            "costPerLeadUsd": null,
+            "endToEndCostUsd": 0,
+            "outreachCostUsd": 0,
+            "positiveReplies": 0,
+            "sourcingCostUsd": 0,
+            "roiUnavailableReason": "nothing_spent",
+            "leadsAlsoFoundByAnotherSource": 0,
+            "endToEndCostPerPositiveReplyUsd": null,
+            "sourcingCostPerPositiveReplyUsd": null
+          },
+          {
+            "roi": null,
+            "live": true,
+            "name": "LinkedIn Engagement Signals",
+            "slug": "sourcing-linkedin-engagement-signals",
+            "used": false,
+            "family": "signal",
+            "provider": {
+              "name": "LinkedIn",
+              "domain": "linkedin.com"
+            },
+            "serveCount": 0,
+            "audienceIds": [],
+            "description": "People who recently reacted to or commented on your competitors' LinkedIn posts.",
+            "leadsServed": 0,
+            "costPerLeadUsd": null,
+            "endToEndCostUsd": 0,
+            "outreachCostUsd": 0,
+            "positiveReplies": 0,
+            "sourcingCostUsd": 0,
+            "roiUnavailableReason": "nothing_spent",
+            "leadsAlsoFoundByAnotherSource": 0,
+            "endToEndCostPerPositiveReplyUsd": null,
+            "sourcingCostPerPositiveReplyUsd": null
+          },
+          {
+            "roi": null,
+            "live": true,
+            "name": "Your CRM Contacts",
+            "slug": "sourcing-crm-contacts",
+            "used": false,
+            "family": "own_contacts",
+            "provider": null,
+            "serveCount": 0,
+            "audienceIds": [],
+            "description": "People from the contact list you uploaded.",
+            "leadsServed": 0,
+            "costPerLeadUsd": null,
+            "endToEndCostUsd": 0,
+            "outreachCostUsd": 0,
+            "positiveReplies": 0,
+            "sourcingCostUsd": 0,
+            "roiUnavailableReason": "nothing_spent",
+            "leadsAlsoFoundByAnotherSource": 0,
+            "endToEndCostPerPositiveReplyUsd": null,
+            "sourcingCostPerPositiveReplyUsd": null
+          },
+          {
+            "roi": null,
+            "live": false,
+            "name": "Apify Search",
+            "slug": "sourcing-apify-search",
+            "used": false,
+            "family": "cold_filters",
+            "provider": {
+              "name": "Apify",
+              "domain": "apify.com"
+            },
+            "serveCount": 0,
+            "audienceIds": [],
+            "description": "People found by our former search provider. Retired, kept for its history.",
+            "leadsServed": 0,
+            "costPerLeadUsd": null,
+            "endToEndCostUsd": 0,
+            "outreachCostUsd": 0,
+            "positiveReplies": 0,
+            "sourcingCostUsd": 0,
+            "roiUnavailableReason": "nothing_spent",
+            "leadsAlsoFoundByAnotherSource": 0,
+            "endToEndCostPerPositiveReplyUsd": null,
+            "sourcingCostPerPositiveReplyUsd": null
+          }
+        ],
+        "pricing": "gross",
+        "campaigns": [
+          {
+            "legKey": "start_to_lead_found",
+            "status": "ongoing",
+            "sources": [
+              {
+                "name": null,
+                "slug": null,
+                "provider": null,
+                "serveCount": 1,
+                "leadsServed": 0,
+                "sourcingCostUsd": 0.0157115
+              }
+            ],
+            "campaignId": "f5e00ec7-94e3-47b4-8da5-46efbedd8fe9",
+            "serveCount": 1,
+            "channelName": "Lead Sourcing",
+            "featureSlug": "lead-sourcing",
+            "leadsServed": 0,
+            "totalCostUsd": 0.0157115,
+            "outreachCostUsd": 0,
+            "positiveReplies": 0,
+            "sourcingCostUsd": 0.0157115,
+            "costPerPositiveReply": {
+              "totalUsd": null,
+              "outreachUsd": null,
+              "sourcingUsd": null
+            },
+            "outreachUnavailableReason": null
+          },
+          {
+            "legKey": "lead_found_to_conversation",
+            "status": "ongoing",
+            "sources": [
+              {
+                "name": "Apollo Cold Filters",
+                "slug": "sourcing-apollo-cold-filters",
+                "provider": {
+                  "name": "Apollo",
+                  "domain": "apollo.io"
+                },
+                "serveCount": 1,
+                "leadsServed": 0,
+                "sourcingCostUsd": 0
+              }
+            ],
+            "campaignId": "4b60cbc4-9787-467a-b887-2f36b94898fc",
+            "serveCount": 1,
+            "channelName": "Sales Cold Email Outreach",
+            "featureSlug": "sales-cold-email-outreach",
+            "leadsServed": 0,
+            "totalCostUsd": 0,
+            "outreachCostUsd": 0,
+            "positiveReplies": 0,
+            "sourcingCostUsd": 0,
+            "costPerPositiveReply": {
+              "totalUsd": null,
+              "outreachUsd": null,
+              "sourcingUsd": null
+            },
+            "outreachUnavailableReason": null
+          }
+        ],
+        "definition": {
+          "basis": "committed",
+          "window": "since_inception",
+          "outreach": "campaign total minus sourcing, exact",
+          "sourcing": "the whole cost subtree of every lead-service lead-serve run of the campaign (screening, reveal, enrichment, email finding and verification)",
+          "notCounted": [
+            "audience list building (apollo-service audience-companies): it belongs to no campaign"
+          ],
+          "leadOrigins": "a lead carries EVERY origin that found it: its serve's origin plus the list kind of every audience of the offer (or of no offer) human-service records it a member of (served there, or found there while already taken). Per-origin leads, positive replies and ROI count every lead carrying the origin; offer totals count each lead once (sourceOverlap)",
+          "campaignTotal": "committed spend of the campaign's runs on its channel slug and every sourcing origin slug (the figure the campaign's outcome reads print)",
+          "unrecordedOrigin": "a serve or lead that recorded no audience counts under the origin its campaign is proven to source from: a channel serving from one origin only (CRM email), else the lead-provider costs its audience-less runs bought (Apollo only, all before Apollo Buying Signals existed on 2026-10-02 -> Apollo Cold Filters; Apify search only -> Apify Search); otherwise unattributed",
+          "outreachAllocation": "each campaign's outreach is split evenly over the leads it served; each lead's share counts for every origin that lead carries"
+        },
+        "unattributed": {
+          "roi": 0,
+          "live": null,
+          "name": null,
+          "slug": null,
+          "used": true,
+          "family": null,
+          "provider": null,
+          "serveCount": 1,
+          "audienceIds": [],
+          "description": null,
+          "leadsServed": 0,
+          "costPerLeadUsd": null,
+          "endToEndCostUsd": 0.0157115,
+          "outreachCostUsd": 0,
+          "positiveReplies": 0,
+          "sourcingCostUsd": 0.0157115,
+          "roiUnavailableReason": null,
+          "leadsAlsoFoundByAnotherSource": 0,
+          "endToEndCostPerPositiveReplyUsd": null,
+          "sourcingCostPerPositiveReplyUsd": null
+        },
+        "sourceOverlap": {
+          "window": "since_inception",
+          "buckets": [
+            {
+              "label": "unattributed",
+              "leads": 0,
+              "maturity": {
+                "flash": {
+                  "leads": 0,
+                  "positiveReplies": 0,
+                  "positiveReplyRatePct": null
+                },
+                "mature": null,
+                "isMature": false
+              },
+              "sourceCount": 0,
+              "positiveReplies": 0,
+              "positiveReplyRatePct": null
+            },
+            {
+              "label": "1",
+              "leads": 0,
+              "maturity": {
+                "flash": {
+                  "leads": 0,
+                  "positiveReplies": 0,
+                  "positiveReplyRatePct": null
+                },
+                "mature": null,
+                "isMature": false
+              },
+              "sourceCount": 1,
+              "positiveReplies": 0,
+              "positiveReplyRatePct": null
+            },
+            {
+              "label": "2",
+              "leads": 0,
+              "maturity": {
+                "flash": {
+                  "leads": 0,
+                  "positiveReplies": 0,
+                  "positiveReplyRatePct": null
+                },
+                "mature": null,
+                "isMature": false
+              },
+              "sourceCount": 2,
+              "positiveReplies": 0,
+              "positiveReplyRatePct": null
+            },
+            {
+              "label": "3+",
+              "leads": 0,
+              "maturity": {
+                "flash": {
+                  "leads": 0,
+                  "positiveReplies": 0,
+                  "positiveReplyRatePct": null
+                },
+                "mature": null,
+                "isMature": false
+              },
+              "sourceCount": 3,
+              "positiveReplies": 0,
+              "positiveReplyRatePct": null
+            }
+          ],
+          "leadTotal": 0,
+          "maturityRule": {
+            "cutoff": "2026-10-11T00:00:00.000Z",
+            "legKey": "lead_found_to_conversation",
+            "durationDays": 21,
+            "outcomesRequired": 1
+          },
+          "multiSourceLeads": 0,
+          "sourceCreditTotal": 0,
+          "extraSourceCredits": 0,
+          "positiveReplyTotal": 0
+        },
+        "outreachCampaigns": [
+          {
+            "legKey": "lead_found_to_conversation",
+            "sourcedBy": [
+              {
+                "costUsd": 0,
+                "originSlug": "sourcing-apollo-cold-filters",
+                "sourceCampaignKey": "campaign:sourcing-apollo-cold-filters|start_to_lead_found"
+              }
+            ],
+            "ownCostUsd": 0,
+            "campaignIds": [
+              "4b60cbc4-9787-467a-b887-2f36b94898fc"
+            ],
+            "campaignKey": "campaign:sales-cold-email-outreach|lead_found_to_conversation",
+            "featureSlug": "sales-cold-email-outreach",
+            "totalCostUsd": 0,
+            "outreachCostUsd": 0,
+            "sourcingCostUsd": 0,
+            "unattributedSourcingCostUsd": 0
+          }
+        ],
+        "valuePerPositiveReplyUsd": 2.5,
+        "sourceOverlapUnavailableReason": null
+      }
+    ]
+  },
+  "facts": [
+    "The audience Lead Producers has about 31 matching people (an estimate of matches, nobody found yet).",
+    "A filter that skips radio stations and TV broadcasters was created, OFF, and has checked 0 companies.",
+    "The campaign is paused. No email has been sent."
+  ],
+  "expect": "Answers directly that the count after the filter is not known until people are found, gives the 31, and moves to the next step: switch the filter on and restart, with a yes question.",
+  "prodReply": "I can't give you that number yet. Your audience has 31 people, and the radio and TV filter hasn't checked any of their companies. It's still off.\n\nOnce it's on, each company is checked before we write to anyone. Radio and TV companies are dropped, and the count of who's left shows once the campaign runs again.\n\nSay \"turn on the filter\" and I'll switch it on. Your campaign stays paused until you tell me to restart it.",
+  "prodReplyActions": [
+    "list_qualification_checks → {\"checks\": [{\"on\": true, \"why\": \"Showing they host recurring events proves they have an ongoing need for professional guest check-in solutions.\", \"role\": \"Bonus\", \"source\": \"Homepage content\", \"checkId\": \"36d807bc-27cc-422d-b264-10a018faa333\", \"passRate\": 0, \"question\": \"Does the company's homepage mention hosting annual conferences, summits, or corporate retreats?\", \"suggestedByAi\": true, \"costPerLeadUsd\": 0.002912, \"companiesChecked\": 5}, {\"on\": true, \"why\": \"Companies running physical gatherings need reliable RSVP collection and check-in software.\", \"role\": \"Bonus\", \"source\": \"Homepage content\", \"checkId\": \"2be1d141-a501-4fff-86eb-0f33cc47f43b\", \"passRate\": 0.4, \"question\": \"Does the homepage text mention live seminars, workshops, or offline gatherings?\", \"suggestedByAi\": true, \"costPerLeadUsd\": 0.002912, \"companiesChecked\": 5}, {\"on\": true, \"why\": \"An active social presence ensures the marketing team is paying attention to outbound messages.\", \"role\": \"Bonus\", \"source\": \"Recent LinkedIn posts\", \"checkId\": \"05df0976-9fb4-4aa5-9a83-e63c86257548\", \"passRate\": 0, \"question\": \"Has the company posted on LinkedIn at least once in the last two weeks?\", \"suggestedByAi\": true, \"costPerLeadUsd\": 0.004642, \"companiesChecked\": 5}, {\"on\": true, \"why\": \"Active hiring for event staff indicates they regularly host corporate events and need better management tools.\", \"role\": \"Bonus\", \"source\": \"Open job postings\", \"checkId\": \"b55830c6-3589-4366-999f-963a60c41183\", \"passRate\": 0, \"question\": \"Is the company currently hiring for an event manager or event coordinator?\", \"suggestedByAi\": true, \"costPerLeadUsd\": 0.011762, \"companiesChecked\": 5}, {\"on\": false, \"why\": null, \"role\": \"Hard filter\", \"source\": \"Company data we hold\", \"checkId\": \"f5e0c515-ba59-4e26-9f03-1dc703dbd640\", \"passRate\": null, \"question\": \"Is the company something other than a radio station or TV broadcaster?\", \"suggestedByAi\": false, \"costPerLeadUsd\": 0.002762, \"companiesChecked\": 0}]}",
+    "list_audiences {\"brandId\": \"23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4\"} → {\"total\": 1, \"offset\": 0, \"audiences\": [{\"id\": \"13b9c4cf-326c-4a52-a120-e504b3f9505f\", \"name\": \"Lead Producers\", \"size\": 31, \"status\": \"paused\", \"target\": \"Event planners and lead producers at event management agencies in Lagos, Nigeria, who organize high-profile corporate or…\", \"offerId\": \"a334ccd3-546e-4c25-a378-50c50832fda8\", \"channels\": [\"cold_email\"]}], \"nextOffset\": null}"
+  ],
+  "goodReply": "About 31 people match your audience today. How many the radio and TV filter removes shows up once people are found, as each company gets checked before any email. Shall I switch the filter on and restart the campaign?"
+}
