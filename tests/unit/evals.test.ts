@@ -7,6 +7,7 @@ import { CRITERIA, verdictFrom } from "../../src/evals/judge.js";
 import { COST_PER_REPLY_TARGET_USD, summarise, type ReplayResult } from "../../src/evals/report.js";
 import { loadScenarios, type Scenario } from "../../src/evals/scenario.js";
 import { readSkillFrom, skillIndexBlockFrom } from "../../src/lib/skills.js";
+import { sophieCodeHash } from "../../src/agent/sophie.js";
 
 const ROOT = join(__dirname, "../..");
 const SCENARIOS_DIR = join(ROOT, "evals/scenarios");
@@ -172,5 +173,17 @@ describe("the judge is calibrated (merge gate)", () => {
     expect(c.cases).toBeGreaterThanOrEqual(20);
     expect(c.agree).toBe(c.cases);
     expect(c.passed).toBe(true);
+  });
+});
+
+describe("Sophie changes only with a fresh eval run (merge gate)", () => {
+  it("evals/last-run.json was run on the code as it is now, and beat the recorded baseline", () => {
+    const run = JSON.parse(readFileSync(join(ROOT, "evals/last-run.json"), "utf8")) as {
+      codeHash: string;
+      summary: { scenariosPassed: number; criterionRate: Record<string, number> };
+      baseline: { scenariosPassed: number; criterionRate: Record<string, number> };
+    };
+    expect(run.codeHash, "Sophie's prompt, tools or model changed: run evals/ and record the run in evals/last-run.json").toBe(sophieCodeHash());
+    expect(run.summary.scenariosPassed).toBeGreaterThanOrEqual(run.baseline.scenariosPassed);
   });
 });

@@ -10,6 +10,7 @@ import { OPEN_PAGE_TOOL, PRESENT_CHOICES_TOOL } from "./ui-tools.js";
 import { ACCOUNT_SETUP_TOOLS } from "./account-setup.js";
 import type { AnthropicEffort } from "../schemas.js";
 import { STAFF_REQUEST_REPOS } from "./staff-requests.js";
+import { CATALOGUE_TOOLS } from "../agent/catalogue-tools.js";
 
 export const MODEL = "claude-sonnet-4-6";
 /** Cost-name prefix used by costs-service: {provider}-{model} */
@@ -3383,6 +3384,8 @@ function withStaffBuild(tool: Anthropic.Tool): Anthropic.Tool {
 
 export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   request_user_input: REQUEST_USER_INPUT_TOOL,
+  // Sophie's reach into the gateway's served API (SOPHIE-REFONTE-1102 P2).
+  ...Object.fromEntries(CATALOGUE_TOOLS.map((t) => [t.name, t])),
   create_workflow: CREATE_WORKFLOW_TOOL,
   upgrade_workflow: UPGRADE_WORKFLOW_TOOL,
   fork_workflow: FORK_WORKFLOW_TOOL,

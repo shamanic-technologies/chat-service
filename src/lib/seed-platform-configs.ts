@@ -1,3 +1,4 @@
+import { SOPHIE_CONFIG_KEY, SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS } from "../agent/sophie.js";
 import type { db } from "../db/index.js";
 import { platformConfigs } from "../db/schema.js";
 
@@ -327,6 +328,21 @@ export const WHATSAPP_CONFIG = {
   thinkingLevel: EDITOR_THINKING_LEVEL,
 };
 
+/**
+ * Sophie, the Copilot (SOPHIE-REFONTE-1102): her prompt, tools and model are
+ * chat-service's own since 2026-11-02 (src/agent/sophie.ts). The dashboard
+ * still registers this key at boot; PUT /platform-config ignores that write.
+ */
+export const SOPHIE_CONFIG = {
+  key: SOPHIE_CONFIG_KEY,
+  systemPrompt: SOPHIE_SYSTEM_PROMPT,
+  allowedTools: SOPHIE_TOOLS,
+  provider: SOPHIE_MODEL.provider,
+  model: SOPHIE_MODEL.model,
+  supportKind: "copilot" as const,
+  thinkingLevel: null,
+};
+
 export const SELF_SEEDED_CONFIGS = [
   PERSONA_EDITOR_CONFIG,
   BRAND_PROFILE_EDITOR_CONFIG,
@@ -378,6 +394,33 @@ export async function seedPlatformConfigs(database: typeof db): Promise<void> {
  * written beside a tool call (see QUALIFICATION_EDITOR_CONFIG). Code-owned, not a
  * DB column: only chat-service's own seeded configs opt in.
  */
+/**
+ * Upsert Sophie's `copilot` config from the code (src/agent/sophie.ts), at
+ * every boot beside the editors. O(1), safe before listen(). Fails loud.
+ */
+export async function seedSophieConfig(database: typeof db): Promise<void> {
+  const c = SOPHIE_CONFIG;
+  const row = {
+    systemPrompt: c.systemPrompt,
+    allowedTools: [...c.allowedTools],
+    provider: c.provider,
+    model: c.model,
+    thinkingLevel: c.thinkingLevel,
+    effort: null,
+    supportKind: c.supportKind,
+  };
+  await database
+    .insert(platformConfigs)
+    .values({ key: c.key, ...row })
+    .onConflictDoUpdate({ target: [platformConfigs.key], set: { ...row, updatedAt: new Date() } });
+  console.log(`[chat-service] Seeded Sophie's "${c.key}" config from code (${c.provider}/${c.model}, ${c.allowedTools.length} tools)`);
+}
+
+/** A key chat-service seeds itself: an app's registration of it is not written. */
+export function isSelfSeededConfigKey(key: string): boolean {
+  return key === SOPHIE_CONFIG.key || SELF_SEEDED_CONFIGS.some((c) => c.key === key);
+}
+
 export function holdTextBesideToolCallsFor(configKey: string): boolean {
   return SELF_SEEDED_CONFIGS.some(
     (c) => c.key === configKey && "holdTextBesideToolCalls" in c && c.holdTextBesideToolCalls === true,

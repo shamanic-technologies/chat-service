@@ -154,7 +154,11 @@ import {
   isBrandProfileWebsiteRefreshIntent,
   refreshBrandProfileFromWebsite,
 } from "./lib/brand-profile-refresh.js";
-import { seedPlatformConfigs, holdTextBesideToolCallsFor } from "./lib/seed-platform-configs.js";
+import { seedPlatformConfigs, seedSophieConfig, holdTextBesideToolCallsFor, isSelfSeededConfigKey } from "./lib/seed-platform-configs.js";
+import { buildSituationBrief } from "./agent/situation.js";
+import { gatewaySituationReader } from "./agent/situation-reader.js";
+import { SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
+import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi } from "./agent/catalogue-tools.js";
 import {
   SkillNotFoundError,
   SkillValidationError,
@@ -671,6 +675,28 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
   }
 
   const { key, systemPrompt, allowedTools, provider, model, thinkingLevel, effort, supportKind } = parsed.data;
+
+  // A config chat-service seeds itself (Sophie's `copilot`, the editors) is
+  // code-owned: an app re-registering it at boot must not overwrite it
+  // (SOPHIE-REFONTE-1102). Answer with the stored row, write nothing.
+  if (isSelfSeededConfigKey(key)) {
+    const [stored] = await db.select().from(platformConfigs).where(eq(platformConfigs.key, key));
+    if (!stored) return res.status(503).json({ error: `Config "${key}" is owned by chat-service and not seeded yet` });
+    console.log(`[chat-service] PUT /platform-config key="${key}" ignored: owned by chat-service`);
+    return res.json({
+      key: stored.key,
+      systemPrompt: stored.systemPrompt,
+      allowedTools: stored.allowedTools,
+      provider: stored.provider,
+      model: stored.model,
+      thinkingLevel: stored.thinkingLevel,
+      effort: stored.effort,
+      supportKind: stored.supportKind,
+      createdAt: stored.createdAt.toISOString(),
+      updatedAt: stored.updatedAt.toISOString(),
+      ownedByChatService: true,
+    });
+  }
 
   // Validate all tool names
   const unknownTools = allowedTools.filter((t) => !AVAILABLE_TOOL_NAMES.includes(t) && !RETIRED_TOOL_NAMES.includes(t));
@@ -3740,6 +3766,22 @@ app.post("/chat", requireAuth, async (req, res) => {
         claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
       }
     }
+    // Sophie reads where the account stands before she answers
+    // (SOPHIE-REFONTE-1102): campaigns, results, replies waiting, money, after
+    // the client brief above. Not on a lead turn (it runs in the writing
+    // brand's org), a proactive turn or a guest (no account).
+    if (configKey === SOPHIE_CONFIG_KEY && !leadTurn && !proactiveTurn && !sessionIsGuest) {
+      turnContextBlock += await buildSituationBrief(gatewaySituationReader(featureCallParams), {
+        brandId: brandIds[0] ?? null,
+        offerId: offerId ?? null,
+      });
+      systemPrompt = stableSystemPrompt + turnContextBlock;
+      if (anthropicCache) anthropicTurnContext = turnContextBlock;
+      else if (claude) {
+        anthropicSystemPrompt = systemPrompt;
+        claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
+      }
+    }
     const brandProfileWebsiteRefreshIntent =
       configKey === "brand-profile-editor" &&
       isBrandProfileWebsiteRefreshIntent(message);
@@ -4053,6 +4095,22 @@ app.post("/chat", requireAuth, async (req, res) => {
       if (call.name === "propose_switch_on") {
         const args = (call.args as Record<string, unknown>) || {};
         const result = await proposeSwitchOn(args, featureCallParams);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Sophie: the gateway's served API (SOPHIE-REFONTE-1102 P2) ---------
+      // find / describe / call, as the person; an operation the gateway marks as
+      // needing their yes answers a proposal, run only from a later turn
+      // (`history` ends before this turn's message).
+      if (call.name === FIND_API_TOOL_NAME || call.name === DESCRIBE_API_TOOL_NAME || call.name === CALL_API_TOOL_NAME) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result =
+          call.name === FIND_API_TOOL_NAME
+            ? await findApi(args)
+            : call.name === DESCRIBE_API_TOOL_NAME
+              ? await describeApi(args)
+              : await callApi(args, featureCallParams, history);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -5959,6 +6017,7 @@ if (process.env.NODE_ENV !== "test") {
       // brand-profile-editor). O(1) — two upserts — safe to await before
       // listen(); fails loud so the configs are guaranteed live.
       await seedPlatformConfigs(db);
+      await seedSophieConfig(db);
       // Outages still open survive a restart: the detour and the red stay on.
       await initVendorCredit(createVendorCreditStore(db));
       // Copilot skill tree: insert absent skills, refresh rows still holding

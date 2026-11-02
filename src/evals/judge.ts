@@ -26,7 +26,7 @@ export const QUESTIONS: Record<Criterion, TypeSafeNoulQuestion> = {
   true: {
     type: "noul",
     instructions:
-      "Is every statement of fact in the reply supported by the facts, the conversation or the actions taken this turn (each with what it returned)? A figure, client, result or price none of these support, or something said to be DONE (sent, stopped, filed, opened) that is not in actionsTakenThisTurn, makes this false. A plan or proposal of what the assistant will do next, or an example of who it could target, is not a statement of fact.",
+      "Is every statement of fact in the reply supported by the facts, the account facts the assistant was given, the conversation or the actions taken this turn (each with what it returned)? A figure, client, result or price none of these support, or something said to be DONE (sent, stopped, filed, opened) that is not in actionsTakenThisTurn, makes this false. A plan or proposal of what the assistant will do next, or an example of who it could target, is not a statement of fact.",
     criteria: {
       true: "Nothing invented: every figure, client and result is in the facts or the conversation, and every action said to be done is in actionsTakenThisTurn.",
       false: "The reply states a figure, client, result or done action that the facts, the conversation or actionsTakenThisTurn contradict or do not support.",
@@ -88,17 +88,23 @@ export function describeAction(name: string, args: Record<string, unknown>, resu
   return `${call} → ${r.length > RESULT_CHARS ? `${r.slice(0, RESULT_CHARS)}...` : r}`;
 }
 
-/** How much of each tool answer the judge reads (the figures a reply cites are in the first part). */
-const RESULT_CHARS = 4000;
+/** How much of each earlier message the judge reads (the whole conversation is read). */
+const HISTORY_MESSAGE_CHARS = 2000;
 
-export function judgeState(scenario: Scenario, reply: string, actions: readonly string[]): Record<string, unknown> {
-  const recent = scenario.history.slice(-6).map((m) => `${m.role === "user" ? scenario.person.name : "Assistant"}: ${m.content}`);
+/** How much of each tool answer the judge reads (the figures a reply cites are in the first part). */
+const RESULT_CHARS = 20_000;
+
+export function judgeState(scenario: Scenario, reply: string, actions: readonly string[], contextGiven = ""): Record<string, unknown> {
+  const recent = scenario.history
+    .filter((m) => m.content.trim())
+    .map((m) => `${m.role === "user" ? scenario.person.name : "Assistant"}: ${m.content.length > HISTORY_MESSAGE_CHARS ? `${m.content.slice(0, HISTORY_MESSAGE_CHARS)}...` : m.content}`);
   return {
     where: SURFACE_FORM[scenario.surface],
     facts: scenario.facts,
     whatAGreatAnswerDoes: scenario.expect,
     conversationBefore: recent,
     personWrites: scenario.message,
+    ...(contextGiven.trim() ? { accountFactsTheAssistantWasGiven: contextGiven.trim() } : {}),
     actionsTakenThisTurn: actions.length ? actions : ["none"],
     assistantReply: reply,
   };

@@ -22,6 +22,10 @@ import { aboutYouBlock, withOurWebsite } from "../lib/person-facing.js";
 import { skillIndexBlockFrom } from "../lib/skills.js";
 import { streamVendorChat } from "../lib/vendor-chat.js";
 import type { VendorCostLine } from "../lib/cost-names.js";
+import { buildSituationBrief } from "../agent/situation.js";
+import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS, SOPHIE_TOOLS_P2 } from "../agent/sophie.js";
+import { clientBriefUnavailable } from "../lib/client-brief.js";
+import { fixtureClientBrief, fixtureSituationReader } from "./fixture-situation.js";
 import type { Scenario } from "./scenario.js";
 
 export const AgentDefinitionSchema = z
@@ -34,6 +38,10 @@ export const AgentDefinitionSchema = z
     effort: z.string().nullable().optional(),
     systemPrompt: z.string().min(1),
     allowedTools: z.array(z.string().min(1)),
+    /** The turn's context carries the client brief (client-brief.ts, SOPHIE-JCURVE-1102). */
+    clientBrief: z.boolean().optional(),
+    /** The turn's context carries the situation brief (SOPHIE-REFONTE-1102 P1). */
+    situationBrief: z.boolean().optional(),
     skills: z.array(
       z
         .object({
@@ -74,7 +82,7 @@ export interface AssembledTurn {
 }
 
 /** The prompt and tools /chat would build for this scenario under this definition. */
-export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string): AssembledTurn {
+export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string, brief = ""): AssembledTurn {
   const toolNames = withOurWebsite(withAccountSetup(def.allowedTools), def.allowedTools.includes("read_skill"));
   const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
   const systemPrompt = def.systemPrompt + skillBlock + aboutYouBlock(modelDisplay);
@@ -92,7 +100,7 @@ export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisp
       : "";
   return {
     systemPrompt,
-    turnContext: buildSystemPrompt("", scenario.context) + channelBlock,
+    turnContext: buildSystemPrompt("", scenario.context) + channelBlock + brief,
     tools: resolveToolSet(toolNames) as unknown as ToolDefinition[],
     holdTextBesideToolCalls: toolNames.includes("present_choices"),
   };
@@ -100,6 +108,8 @@ export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisp
 
 export interface ReplayedTurn {
   reply: string;
+  /** The account context the turn was given (the briefs), as the model read it. */
+  turnContext: string;
   toolCalls: Array<{ name: string; args: Record<string, unknown>; result: unknown }>;
   llmCalls: number;
   tokensInput: number;
@@ -133,7 +143,11 @@ export async function replayTurn(args: {
     throw new Error(`[evals] provider "${provider}" is not wired in the replay yet (direct vendors only: deepseek, zai, moonshot, openai)`);
   }
   const resolved = resolveModel(provider as Provider, model as ModelAlias);
-  const turn = assembleTurn(def, scenario, modelDisplayName(resolved.apiModelId));
+  // Same order as /chat: the client brief, then where the account stands.
+  const brief =
+    (def.clientBrief ? await fixtureClientBrief(scenario).catch((err) => clientBriefUnavailable(err)) : "") +
+    (def.situationBrief ? await buildSituationBrief(fixtureSituationReader(scenario)) : "");
+  const turn = assembleTurn(def, scenario, modelDisplayName(resolved.apiModelId), brief);
   let llmCalls = 0;
   const started = Date.now();
   const result = await streamVendorChat({
@@ -158,11 +172,29 @@ export async function replayTurn(args: {
   const ui = uiText();
   return {
     reply: [result.fullResponse.trim(), ui && !result.fullResponse.includes(ui) ? ui : ""].filter(Boolean).join("\n\n"),
+    turnContext: brief,
     toolCalls: result.toolCalls.map((c) => ({ name: c.name, args: (c.args ?? {}) as Record<string, unknown>, result: c.result })),
     llmCalls,
     tokensInput: result.tokensInput,
     tokensOutput: result.tokensOutput,
     costLines: result.costLines,
     latencyMs: Date.now() - started,
+  };
+}
+
+/**
+ * Sophie as the code defines her (src/agent/sophie.ts) with the skills given
+ * (the live table inside the container): what the merge gate replays.
+ */
+export function sophieDefinition(skills: AgentDefinition["skills"], candidate: "current" | "p2" = "current"): AgentDefinition {
+  return {
+    id: candidate === "p2" ? "sophie-code-p2" : "sophie-code",
+    provider: SOPHIE_MODEL.provider,
+    model: SOPHIE_MODEL.model,
+    systemPrompt: SOPHIE_SYSTEM_PROMPT,
+    allowedTools: [...(candidate === "p2" ? SOPHIE_TOOLS_P2 : SOPHIE_TOOLS)],
+    clientBrief: true,
+    situationBrief: true,
+    skills,
   };
 }
