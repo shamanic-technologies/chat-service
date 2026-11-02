@@ -112,6 +112,7 @@ import { createRun, updateRunStatus, addRunCosts, updateRunCostStatus, createPla
 import { traceEvent } from "./lib/trace-event.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
 import { extractBrandFields, BrandError } from "./lib/brand-client.js";
+import { CLIENT_BRIEF_FIELDS, clientBriefUnavailable, formatClientBrief, readClientBrief, readSiteFields } from "./lib/client-brief.js";
 import {
   listPersonas,
   createPersona,
@@ -404,6 +405,7 @@ import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, endToolFinalNote, endToolNudgeNote
 import {
   LEAD_ANSWER_TOOL_NAME,
   LEAD_TURN_TRIGGER,
+  leadTurnStoredText,
   buildLeadAnswerTool,
   buildLeadTurnBlock,
   copilotOwnBrandId,
@@ -3106,6 +3108,8 @@ app.get("/sessions/latest", requireAuth, async (req, res) => {
         eq(sessions.configKey, configKey),
         // A guest WhatsApp thread runs under the number owner's user: not theirs.
         eq(sessions.guest, false),
+        // Lead event turns run in their own thread: never the person's chat.
+        eq(sessions.leadThread, false),
       ),
     )
     .orderBy(desc(sessions.updatedAt))
@@ -3449,19 +3453,20 @@ app.post("/chat", requireAuth, async (req, res) => {
   // (anthropic-turn.ts, CHAT-COST-1101).
   const stableSystemPrompt =
     appConfig.systemPrompt + skillIndexBlock + (speaksForUs ? aboutYouBlock(modelDisplayName(resolvedModelInfo.apiModelId)) : "");
-  const turnContextBlock =
+  // `let`: the client brief joins it once the turn's run exists (it reads with that run).
+  let turnContextBlock =
     buildSystemPrompt("", promptContext, campaignFeatureInputs) +
     (leadTurn ? buildLeadTurnBlock(leadTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
-  const systemPrompt = stableSystemPrompt + turnContextBlock;
+  let systemPrompt = stableSystemPrompt + turnContextBlock;
   const isGeminiChat = chatProvider === "google";
   // A direct OpenAI-compatible vendor (DeepSeek, CHAT-DEEPSEEK-FLASH-1101): its own loop, vendor-chat.ts.
   const chatVendor: VendorId | null = isVendorProvider(chatProvider) ? chatProvider : null;
   // Only the cache-priced models (all accept a mid-conversation system message)
   // split the prompt; an older model keeps it whole, as before.
   const anthropicCache = !isGeminiChat && !chatVendor && anthropicCachePriced(resolvedModelInfo.costPrefix);
-  const anthropicSystemPrompt = anthropicCache ? stableSystemPrompt : systemPrompt;
-  const anthropicTurnContext = anthropicCache ? turnContextBlock : "";
-  const claude = isGeminiChat || chatVendor ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
+  let anthropicSystemPrompt = anthropicCache ? stableSystemPrompt : systemPrompt;
+  let anthropicTurnContext = anthropicCache ? turnContextBlock : "";
+  let claude = isGeminiChat || chatVendor ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
 
   let runId: string | null = null;
   let chatFailed = false;
@@ -3708,6 +3713,33 @@ app.post("/chat", requireAuth, async (req, res) => {
       runId: runId!,
       trackingHeaders: downstreamTrackingHeaders,
     };
+
+    // The client brief (SOPHIE-JCURVE-1102): an account holder's turn on a chat
+    // that speaks for us starts knowing their brands, offers and what they sell
+    // (read from their website), never asking them for it.
+    if (speaksForUs && !sessionIsGuest && !(leadTurn && (!leadTurn.ownBrand || leadTurn.guest))) {
+      let brief: string;
+      try {
+        brief = formatClientBrief(
+          await readClientBrief({
+            listBrands: () => listBrands(featureCallParams),
+            listOffers: (brandId) => listOffers(brandId, featureCallParams),
+            readWebsite: async (brandId) =>
+              readSiteFields(await extractBrandFields([...CLIENT_BRIEF_FIELDS], [brandId], featureCallParams)),
+          }),
+        );
+      } catch (err) {
+        console.error(`[chat] session="${currentSessionId}" client brief unreadable:`, err);
+        brief = clientBriefUnavailable(err);
+      }
+      turnContextBlock += brief;
+      systemPrompt = stableSystemPrompt + turnContextBlock;
+      if (anthropicCache) anthropicTurnContext = turnContextBlock;
+      else if (claude) {
+        anthropicSystemPrompt = systemPrompt;
+        claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
+      }
+    }
     const brandProfileWebsiteRefreshIntent =
       configKey === "brand-profile-editor" &&
       isBrandProfileWebsiteRefreshIntent(message);
@@ -5340,8 +5372,7 @@ app.post("/chat", requireAuth, async (req, res) => {
         sendSSE(res, "[DONE]");
         return;
       }
-      const sent = leadAnswer.json[leadTurn.payload.messageField];
-      fullResponse = typeof sent === "string" ? sent : "";
+      fullResponse = leadTurnStoredText(leadAnswer.json, leadTurn.payload.messageField);
     }
 
     // Tool(s) ran but the model produced no summary text. This must never leave
@@ -5396,8 +5427,8 @@ app.post("/chat", requireAuth, async (req, res) => {
       choices: turnUi.choices,
       openPages: openedPages.length > 0 ? openedPages : null,
       tokenCount: totalPromptTokens + totalOutputTokens || null,
-      // A lead turn that wrote nothing now leaves nothing to show.
-      ...(leadTurn && !cleanedResponse.trim() ? { proactiveTrigger: true } : {}),
+      // A lead turn's answer is the campaign's, never a chat line anyone reads.
+      ...(leadTurn ? { proactiveTrigger: true } : {}),
     })).returning({ id: messages.id, createdAt: messages.createdAt });
     // The Copilot is staff: the turn also lands in distribute.you's Unibox (crm-service).
     // A WhatsApp turn is already in crm's WhatsApp thread: never filed twice.

@@ -150,6 +150,19 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
   return parts.join("");
 }
 
+/**
+ * What a lead turn stores as its answer (in the lead thread, hidden): the text
+ * the person receives, or, when nothing goes out now, the decision itself.
+ * Never an empty message (prod 2026-11-01: three empty replies were stored),
+ * and the next lead turn reads what was decided.
+ */
+export function leadTurnStoredText(answer: Record<string, unknown>, messageField: string): string {
+  const sent = answer[messageField];
+  if (typeof sent === "string" && sent.trim()) return sent;
+  const decision = Object.fromEntries(Object.entries(answer).filter(([k]) => k !== messageField));
+  return `(Nothing sent to them now.${Object.keys(decision).length > 0 ? ` Decision: ${JSON.stringify(decision)}` : ""})`;
+}
+
 // ---------------------------------------------------------------------------
 // The answer, read back from the /chat stream
 // ---------------------------------------------------------------------------
@@ -245,11 +258,14 @@ export async function resolveLeadAccount(deps: Pick<LeadTurnDeps, "resolvePhone"
 }
 
 /**
- * The session the turn writes in. An account: that user's latest Copilot
- * session (web + WhatsApp share it), tied to their number when we have it. A
- * guest on our brand with a number: their WhatsApp guest session. Anything
- * else: a fresh session under the caller (the writer's message carries the
- * whole thread; a number is never bound there, so no sign-in leaks across brands).
+ * The session the turn writes in. Never the thread the web chat shows
+ * (SOPHIE-JCURVE-1102, prod 2026-11-01: an HTML email and empty replies landed
+ * in a client's dashboard chat): an account gets its own LEAD THREAD (that
+ * user's latest `lead_thread` Copilot session, tied to their number when we
+ * have it), never served by GET /sessions/latest; the writer's message carries
+ * their whole thread on every channel. A guest on our brand with a number:
+ * their WhatsApp guest session. Anything else: a fresh session under the caller
+ * (a number is never bound there, so no sign-in leaks across brands).
  */
 export async function pickLeadSession(
   deps: Pick<LeadTurnDeps, "db" | "listBrandIds">,
@@ -262,7 +278,7 @@ export async function pickLeadSession(
     const [latest] = await db
       .select()
       .from(sessions)
-      .where(and(eq(sessions.orgId, account.orgId), eq(sessions.userId, account.userId), eq(sessions.configKey, COPILOT_CONFIG_KEY), eq(sessions.guest, false)))
+      .where(and(eq(sessions.orgId, account.orgId), eq(sessions.userId, account.userId), eq(sessions.configKey, COPILOT_CONFIG_KEY), eq(sessions.guest, false), eq(sessions.leadThread, true)))
       .orderBy(desc(sessions.updatedAt))
       .limit(1);
     const brandIds = latest?.brandIds && latest.brandIds.length > 0 ? null : await deps.listBrandIds({ ...account, runId: args.runId });
@@ -275,7 +291,7 @@ export async function pickLeadSession(
     }
     const [created] = await db
       .insert(sessions)
-      .values({ orgId: account.orgId, userId: account.userId, parentRunId: args.runId, configKey: COPILOT_CONFIG_KEY, channelPhone: phone, guest: false, brandIds: brandIds && brandIds.length > 0 ? brandIds : null })
+      .values({ orgId: account.orgId, userId: account.userId, parentRunId: args.runId, configKey: COPILOT_CONFIG_KEY, channelPhone: phone, guest: false, leadThread: true, brandIds: brandIds && brandIds.length > 0 ? brandIds : null })
       .returning({ id: sessions.id });
     return { sessionId: created.id, ...account, guest: false, phoneBound: Boolean(phone) };
   }
@@ -290,7 +306,7 @@ export async function pickLeadSession(
   }
   const [created] = await db
     .insert(sessions)
-    .values({ orgId: caller.orgId, userId: caller.userId, parentRunId: caller.runId, configKey: COPILOT_CONFIG_KEY, channelPhone: phone, guest: true, brandIds: [payload.brandId] })
+    .values({ orgId: caller.orgId, userId: caller.userId, parentRunId: caller.runId, configKey: COPILOT_CONFIG_KEY, channelPhone: phone, guest: true, leadThread: true, brandIds: [payload.brandId] })
     .returning({ id: sessions.id });
   return { sessionId: created.id, orgId: caller.orgId, userId: caller.userId, guest: true, phoneBound: Boolean(phone) };
 }

@@ -66,6 +66,18 @@ export interface SessionHistoryResponse {
  * Build the history response from a session row and its messages (which the
  * caller must supply already ordered oldest-first by createdAt).
  */
+/**
+ * Whether a stored message is shown. A nudge's or lead turn's hidden rows never
+ * are; nor is an assistant row that carries nothing to read, click or answer (prod
+ * 2026-11-01: empty replies stood in a client's chat, SOPHIE-JCURVE-1102).
+ */
+export function isShownMessage(m: Pick<Message, "role" | "content" | "proactiveTrigger" | "choices" | "openPages" | "creditsRequired" | "buttons" | "toolCalls">): boolean {
+  if (m.proactiveTrigger) return false;
+  if (m.role !== "assistant" || m.content.trim()) return true;
+  // A paused turn (request_user_input) shows its tool call with no text.
+  return Boolean(m.choices || m.creditsRequired || (m.openPages && m.openPages.length > 0) || (m.buttons && m.buttons.length > 0) || (m.toolCalls && m.toolCalls.length > 0));
+}
+
 export function serializeSessionHistory(
   session: Session,
   messages: Message[],
@@ -82,7 +94,7 @@ export function serializeSessionHistory(
     createdAt: session.createdAt.toISOString(),
     updatedAt: session.updatedAt.toISOString(),
     // A Copilot nudge's trigger is the user's turn on paper only: never shown.
-    messages: messages.filter((m) => !m.proactiveTrigger).map((m) => ({
+    messages: messages.filter(isShownMessage).map((m) => ({
       id: m.id,
       role: m.role,
       content: m.content,
