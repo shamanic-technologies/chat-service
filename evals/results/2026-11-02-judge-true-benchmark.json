@@ -1,0 +1,41 @@
+{
+ "note": "SOPHIE-TRUE-1102 round 3: every judge variant graded the 112 stored replies of evals/results/2026-11-02-sophie-true-lead-date.json; agreement with evals/labels/2026-11-02-sophie-true-lead-date.json (two Claude labelers, 31/36 agreement on a blind second pass).",
+ "variants": {
+  "claims listed by DeepSeek, one Jev question per claim": {
+   "agree": 71,
+   "labelled": 112,
+   "falseAlarms": 22,
+   "missed": 19
+  },
+  "claims listed and checked by DeepSeek (reasoning on)": {
+   "agree": 73,
+   "labelled": 112,
+   "falseAlarms": 31,
+   "missed": 8
+  },
+  "clef, question reworded": {
+   "agree": 78,
+   "labelled": 112,
+   "falseAlarms": 1,
+   "missed": 33
+  },
+  "jev, question reworded (shipped)": {
+   "agree": 79,
+   "labelled": 112,
+   "falseAlarms": 12,
+   "missed": 21
+  },
+  "clef, question before": {
+   "agree": 76,
+   "labelled": 112,
+   "falseAlarms": 3,
+   "missed": 33
+  },
+  "jev, question before round 3": {
+   "agree": 75,
+   "labelled": 112,
+   "falseAlarms": 19,
+   "missed": 18
+  }
+ }
+}

@@ -22,6 +22,10 @@ A scenario passes when a majority of its replays pass every criterion. A suite p
 
 **The merge gate** (`evals/last-run.json`, pinned by `tests/unit/evals.test.ts`): on the current `sophieCodeHash()`, the pooled share of replies passing every criterion, over at least 3 replies per scenario (100+) a side, is at least the baseline's, measured the same hour on the same judge. One 60-replay run swings by about two scenarios, so a single run decides nothing.
 
+## How far the judge's "true" can be trusted (2026-11-02)
+
+`evals/labels/` holds hand-checked labels: per stored reply, is every statement of fact supported by what the model read. `--rejudge <run.json> --labels <file> [--judge <id>]` grades a past run's stored replies again and reports agreement with the labels, so the judge is measured without the agent's own variance. On 112 labelled replies (`results/2026-11-02-judge-true-benchmark.json`): Jev agrees on 79 (71%, 67% before the question was reworded), Cloudflare Clef 70% (calls nearly everything true), claim-by-claim checks 63-65%; two Claude labelers agree with each other on 86%. Every judge misses the same subtle inventions ("3,628 companies" for 3,628 people, "the team will answer you here" when it answers by email). So read the "true" rate as a coarse signal: a change to Sophie's truthfulness is measured on labels, not on the judge's rate alone.
+
 ## Running (inside the chat-service container on the box)
 
 The runner reads platform keys from key-service and declares its spend on platform runs marked `staff_experiment`. Tools are answered from the scenario: no client account is read or written, nothing is sent.
