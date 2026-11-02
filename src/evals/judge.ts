@@ -27,10 +27,10 @@ export const QUESTIONS: Record<Criterion, TypeSafeNoulQuestion> = {
   true: {
     type: "noul",
     instructions:
-      "Is every statement of fact in the reply supported by the facts, the account facts the assistant was given, the conversation or the actions taken this turn (each with what it returned)? A figure, client, result or price none of these support, or something said to be DONE (sent, stopped, filed, opened) that is not in actionsTakenThisTurn, makes this false. A plan or proposal of what the assistant will do next, or an example of who it could target, is not a statement of fact.",
+      "Check every statement of FACT in the reply against what is known: facts, accountFactsTheAssistantWasGiven, conversationBefore, whatTheCampaignKnows and actionsTakenThisTurn (each tool call with what it returned). A statement is supported when one of them contains it, or when it follows from them by simple arithmetic or rounding. These are NOT statements of fact and never make this false: a plan, offer or proposal of what the assistant or the team will do next, a question, advice, an example of who could be targeted, and how distribute.you works when the assistant read it from our website this turn. It is false only when the reply states as true a figure, date, status, price, client, result, or something DONE this turn (sent, stopped, filed, opened, created) that no source contains or that a source contradicts.",
     criteria: {
-      true: "Nothing invented: every figure, client and result is in the facts or the conversation, and every action said to be done is in actionsTakenThisTurn.",
-      false: "The reply states a figure, client, result or done action that the facts, the conversation or actionsTakenThisTurn contradict or do not support.",
+      true: "Every figure, date, status, result and done action the reply states is in one of the sources or computed from them.",
+      false: "At least one figure, date, status, result or done action the reply states is in no source, or a source contradicts it.",
     },
   },
   respectful: {
