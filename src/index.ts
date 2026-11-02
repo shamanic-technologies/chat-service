@@ -416,6 +416,7 @@ import {
   type LeadTurnDeps,
   type LeadTurnFrame,
 } from "./lib/lead-turn.js";
+import { REACH_ELSEWHERE_TOOL, REACH_ELSEWHERE_TOOL_NAME, leadTurnCaller, reachPersonElsewhere } from "./lib/lead-contact.js";
 import { SESSION_NOT_FOUND_EVENT, SESSION_NOT_FOUND_MESSAGE, isSessionOwner } from "./lib/session-errors.js";
 import { serializeSessionHistory } from "./lib/session-history.js";
 import { buildContextUsageEvent } from "./lib/context-usage.js";
@@ -3225,6 +3226,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   // unlocks it. It ends on answer_person, in the writer's schema.
   let leadTurn: LeadTurnFrame | null = null;
   let leadTurnOrgId: string | null = null;
+  const leadTurnId = parsed.data.leadTurnId ?? null;
   if (parsed.data.leadTurnId) {
     const [t] = await db
       .select({ orgId: copilotLeadTurns.orgId, sessionId: copilotLeadTurns.sessionId, status: copilotLeadTurns.status, signedIn: copilotLeadTurns.signedIn, payload: copilotLeadTurns.payload })
@@ -3677,8 +3679,8 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
 
-    const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME));
-    if (leadTurn) allTools.push(buildLeadAnswerTool(leadTurn.payload.responseSchema, leadTurn.payload.messageField));
+    const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME));
+    if (leadTurn) allTools.push(REACH_ELSEWHERE_TOOL, buildLeadAnswerTool(leadTurn.payload.responseSchema, leadTurn.payload.messageField));
     // The answer a lead turn ended on (answer_person), in the writer's schema.
     const leadAnswer: { json: Record<string, unknown> | null } = { json: null };
     const allowedToolSet = new Set(allowedToolNames);
@@ -3808,6 +3810,20 @@ app.post("/chat", requireAuth, async (req, res) => {
         emittedInputRequest = true;
         // Not replayed as a tool call: the stored answer is the text they got.
         return "input_request";
+      }
+
+      // A lead turn: the person asked to be reached elsewhere (CONTACT-REDIRECT-1101).
+      if (call.name === REACH_ELSEWHERE_TOOL_NAME && leadTurn && leadTurnId) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const caller = leadTurnCaller(leadTurnId);
+        if (!caller) throw new Error(`${REACH_ELSEWHERE_TOOL_NAME}: no caller for lead turn ${leadTurnId} on this process`);
+        const result = await reachPersonElsewhere(args, { payload: leadTurn.payload, caller });
+        if (result.stated === true && result.kind === "phone" && typeof result.handle === "string" && currentSessionId) {
+          // The session follows them: a message from the new number finds this conversation.
+          await db.update(sessions).set({ channelPhone: result.handle, updatedAt: new Date() }).where(eq(sessions.id, currentSessionId));
+        }
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
       }
 
       // Client-side tool: emit input_request and signal to stop

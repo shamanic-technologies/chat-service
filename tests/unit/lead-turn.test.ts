@@ -6,11 +6,13 @@ import {
   leadTurnToolNames,
   parseLeadTurnStream,
   processLeadTurn,
+  resolveLeadAccount,
   type LeadTurnDeps,
   type LeadTurnFrame,
 } from "../../src/lib/lead-turn.js";
 import { LeadTurnRequestSchema, type LeadTurnRequest } from "../../src/schemas.js";
 import { CLIENT_UI_TOOL_NAMES } from "../../src/lib/ui-tools.js";
+import { REACH_ELSEWHERE_TOOL_NAME, leadTurnCaller } from "../../src/lib/lead-contact.js";
 import { endToolFinalNote, endToolNudgeNote } from "../../src/lib/tool-budget.js";
 
 const BRAND = "22222222-2222-4222-8222-222222222222";
@@ -43,8 +45,9 @@ describe("LeadTurnRequestSchema", () => {
 
 describe("leadTurnToolNames / buildLeadAnswerTool", () => {
   it("drops the client-UI tools (no screen) and always ends on answer_person", () => {
-    expect(leadTurnToolNames(["list_campaigns", "present_choices", "open_page", "request_user_input"], CLIENT_UI_TOOL_NAMES)).toEqual(["list_campaigns", LEAD_ANSWER_TOOL_NAME]);
-    expect(leadTurnToolNames([], CLIENT_UI_TOOL_NAMES)).toEqual([LEAD_ANSWER_TOOL_NAME]);
+    expect(leadTurnToolNames(["list_campaigns", "present_choices", "open_page", "request_user_input"], CLIENT_UI_TOOL_NAMES)).toEqual(["list_campaigns", REACH_ELSEWHERE_TOOL_NAME, LEAD_ANSWER_TOOL_NAME]);
+    // Any brand's lead can ask to be reached elsewhere (CONTACT-REDIRECT-1101).
+    expect(leadTurnToolNames([], CLIENT_UI_TOOL_NAMES)).toEqual([REACH_ELSEWHERE_TOOL_NAME, LEAD_ANSWER_TOOL_NAME]);
   });
   it("the answer tool's input IS the writer's schema and names the message field", () => {
     const tool = buildLeadAnswerTool(SCHEMA, "message");
@@ -117,7 +120,8 @@ describe("processLeadTurn", () => {
     process.env.COPILOT_FOLLOWUP_BRAND_ID = BRAND;
     const answered = { id: "row-1", status: "answered", answer: { decision: "write", message: "You're in. Your balance is $3." }, model: "m", sessionId: "sess-g", accountOrgId: "org-person", accountUserId: "user-person", signedIn: true };
     const { db, updates } = fakeDb(
-      [[ROW], [{ id: "sess-g", orgId: CALLER.orgId, userId: CALLER.userId }], [{ orgId: "org-person", userId: "user-person", guest: false }], [answered]],
+      // ROW, no account bound to the number, the guest session, the session after sign-in, the stored answer.
+      [[ROW], [], [{ id: "sess-g", orgId: CALLER.orgId, userId: CALLER.userId }], [{ orgId: "org-person", userId: "user-person", guest: false }], [answered]],
     );
     const runChat = vi.fn()
       .mockResolvedValueOnce({ status: 200, body: sse({ type: "lead_answer", answer: { decision: "write", message: "You're in." } }) })
@@ -164,5 +168,38 @@ describe("processLeadTurn", () => {
     );
     expect(out.status).toBe(402);
     expect(out.body).toMatchObject({ error: "out_of_credits" });
+  });
+});
+
+describe("CONTACT-REDIRECT-1101: the person moved to another number", () => {
+  it("a number no account holds finds the account whose conversation is bound to it", async () => {
+    const { db } = fakeDb([[{ orgId: "org-person", userId: "user-person" }]]);
+    const moved = { ...PAYLOAD, recipient: { email: null, phone: "+8801952666418", name: null } };
+    const account = await resolveLeadAccount({ db, resolvePhone: async () => null, resolveEmail: async () => null }, moved, true);
+    expect(account).toEqual({ orgId: "org-person", userId: "user-person" });
+    // Another brand's lead never reads an account of ours.
+    expect(await resolveLeadAccount({ db, resolvePhone: async () => null, resolveEmail: async () => null }, moved, false)).toBeNull();
+  });
+
+  it("the turn's tools know the caller while it runs, never after", async () => {
+    const { db } = fakeDb([[ROW]], [[{ id: "sess-new" }]]);
+    let seen: unknown = null;
+    await processLeadTurn(
+      {
+        db,
+        resolvePhone: async () => null,
+        resolveEmail: async () => null,
+        listBrandIds: async () => [],
+        createRootRun: vi.fn(),
+        runChat: async () => {
+          seen = leadTurnCaller("row-1");
+          return { status: 200, body: sse({ type: "lead_answer", answer: { decision: "write", message: "hi" } }) };
+        },
+      },
+      "row-1",
+      CALLER,
+    );
+    expect(seen).toEqual({ orgId: CALLER.orgId, userId: CALLER.userId, runId: CALLER.runId });
+    expect(leadTurnCaller("row-1")).toBeNull();
   });
 });

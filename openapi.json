@@ -634,6 +634,7 @@
             "enum": [
               "anthropic",
               "google",
+              "deepseek",
               null
             ],
             "description": "LLM provider. Null means default (google)."
@@ -731,9 +732,10 @@
             "type": "string",
             "enum": [
               "anthropic",
-              "google"
+              "google",
+              "deepseek"
             ],
-            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, flash-pro, pro)",
+            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n- `deepseek` — DeepSeek V4.1 Flash (deepseek-flash), tools included",
             "example": "google"
           },
           "model": {
@@ -745,7 +747,8 @@
               "flash-lite",
               "flash",
               "flash-pro",
-              "pro"
+              "pro",
+              "deepseek-flash"
             ],
             "description": "Model alias (version-free). Omit to use the provider's default (sonnet for anthropic, flash-pro for google). Must match the provider:\n\n- anthropic → haiku, sonnet, opus\n- google → flash-lite, flash, flash-pro, pro",
             "example": "pro"
@@ -793,6 +796,7 @@
             "enum": [
               "anthropic",
               "google",
+              "deepseek",
               null
             ],
             "description": "LLM provider. Null means default (google)."
@@ -899,9 +903,10 @@
             "type": "string",
             "enum": [
               "anthropic",
-              "google"
+              "google",
+              "deepseek"
             ],
-            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, flash-pro, pro)",
+            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n- `deepseek` — DeepSeek V4.1 Flash (deepseek-flash), tools included",
             "example": "google"
           },
           "model": {
@@ -913,7 +918,8 @@
               "flash-lite",
               "flash",
               "flash-pro",
-              "pro"
+              "pro",
+              "deepseek-flash"
             ],
             "description": "Model alias (version-free). Omit to use the provider's default (sonnet for anthropic, flash-pro for google). Must match the provider.",
             "example": "pro"
