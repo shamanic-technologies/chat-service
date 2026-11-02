@@ -6998,6 +6998,20 @@
         "salesFunnelType": "proactive",
         "salesFunnelTypeUnavailableReason": null
       }
+    ],
+    "list_brands": [
+      {
+        "brands": [
+          {
+            "id": "33211c62-b34b-4d21-b124-4ff16338c800",
+            "name": "Beyond Logic",
+            "domain": "beyondlogic.tech",
+            "brandUrl": "https://beyondlogic.tech",
+            "createdAt": "2026-10-27 16:50:00.353109+00",
+            "updatedAt": "2026-10-27 17:00:28.609751+00"
+          }
+        ]
+      }
     ]
   },
   "facts": [

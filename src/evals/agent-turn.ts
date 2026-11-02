@@ -31,7 +31,7 @@ import { buildSituationBrief } from "../agent/situation.js";
 import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS } from "../agent/sophie.js";
 import { clientBriefUnavailable } from "../lib/client-brief.js";
 import { fixtureClientBrief, fixtureSituationReader } from "./fixture-situation.js";
-import type { Scenario } from "./scenario.js";
+import { scenarioDay, type Scenario } from "./scenario.js";
 
 export const AgentDefinitionSchema = z
   .object({
@@ -181,8 +181,9 @@ export async function replayTurn(args: {
   // context is the writer's message).
   const brief = scenario.surface === "lead" ? "" :
     (def.clientBrief ? await fixtureClientBrief(scenario).catch((err) => clientBriefUnavailable(err)) : "") +
-    (def.situationBrief ? await buildSituationBrief(fixtureSituationReader(scenario)) : "");
-  const turn = assembleTurn(def, scenario, modelDisplayName(resolved.apiModelId), brief);
+    (def.situationBrief ? await buildSituationBrief(fixtureSituationReader(scenario), { now: scenarioDay(scenario) }) : "");
+  const modelDisplay = modelDisplayName(resolved.apiModelId);
+  const turn = assembleTurn(def, scenario, modelDisplay, brief);
   let llmCalls = 0;
   const started = Date.now();
   const history = scenario.history.map((m) => ({ role: m.role, content: m.content, toolCalls: m.toolCalls as never }));
@@ -228,7 +229,9 @@ export async function replayTurn(args: {
   const ui = uiText();
   return {
     reply: [result.fullResponse.trim(), ui && !result.fullResponse.includes(ui) ? ui : ""].filter(Boolean).join("\n\n"),
-    turnContext: brief,
+    // The judge reads what the model was told about the account AND about
+    // itself (its model name lives in the prompt's "## You" line).
+    turnContext: brief + aboutYouBlock(modelDisplay),
     toolCalls: result.toolCalls.map((c) => ({ name: c.name, args: (c.args ?? {}) as Record<string, unknown>, result: c.result })),
     llmCalls,
     tokensInput: result.tokensInput,
