@@ -1633,6 +1633,10 @@ Response `200`:
 
 Listen for the `{"type":"buttons"}` SSE event. It arrives **after** all token streaming is complete and **before** `[DONE]`. Each button has a `label` (display text) and `value` (text to send back as the next user message). Only render buttons when `buttons.length > 0`.
 
+## Sophie evals (`evals/`, `src/evals/`)
+
+Replays real Copilot conversations (anonymised) through the real tool loop, tools answered from recorded account data, and grades each reply with Jev: true, respectful, proactive, answers, next action, form, plus cost per reply (target < $0.03). Runs inside the chat-service container: `node dist/evals/run.js --definition evals/definitions/<id>.json [--runs 3] [--parallel 5] [--calibrate] [--out file]`. Details and how to add a scenario: `evals/README.md`.
+
 ## The Copilot on WhatsApp
 
 Since ONE-AI-CONVERSES-1029 crm-service no longer hands WhatsApp messages to chat-service: every message is a Lead event and the Copilot writes the answer through `POST /internal/copilot/lead-turns` (below); the workflow sends it. What stays here:

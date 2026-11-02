@@ -351,7 +351,14 @@ export async function seedSkills(
  * the prompt stays small however deep the tree grows (owner 2026-10-10).
  */
 export async function buildSkillIndexBlock(database: Database): Promise<string> {
-  const all = await listSkills(database);
+  return skillIndexBlockFrom(await listSkills(database));
+}
+
+/** A skill as the prompt builders read it (a stored row, or a snapshot of one). */
+export type SkillText = Pick<Skill, "slug" | "parentSlug" | "title" | "description" | "content">;
+
+/** `buildSkillIndexBlock` over rows already read (the eval harness replays a snapshot). */
+export function skillIndexBlockFrom(all: readonly SkillText[]): string {
   const index = all.find((s) => s.slug === INDEX_SKILL_SLUG);
   if (!index) throw new SkillNotFoundError(INDEX_SKILL_SLUG);
   const voice = all.find((s) => s.slug === CLIENT_COMMS_SKILL_SLUG);
@@ -377,7 +384,10 @@ export async function buildSkillIndexBlock(database: Database): Promise<string> 
  * sign-in in front of it (SOPHIE-WA-SIGNED-IN-1029).
  */
 export async function buildGuestSkillsBlock(database: Database): Promise<string> {
-  const all = await listSkills(database);
+  return guestSkillsBlockFrom(await listSkills(database));
+}
+
+export function guestSkillsBlockFrom(all: readonly SkillText[]): string {
   const parts = [CLIENT_COMMS_SKILL_SLUG, OUR_OFFER_SKILL_SLUG].map((slug) => {
     const skill = all.find((s) => s.slug === slug);
     if (!skill) throw new SkillNotFoundError(slug);
@@ -391,7 +401,13 @@ export async function readSkillForModel(database: Database, slug: unknown) {
   if (typeof slug !== "string" || slug.trim() === "") {
     throw new SkillValidationError("read_skill needs a slug (see the skill index).");
   }
-  const all = await listSkills(database);
+  return readSkillFrom(await listSkills(database), slug);
+}
+
+export function readSkillFrom(all: readonly SkillText[], slug: unknown) {
+  if (typeof slug !== "string" || slug.trim() === "") {
+    throw new SkillValidationError("read_skill needs a slug (see the skill index).");
+  }
   const wanted = slug.trim();
   const skill = all.find((s) => s.slug === wanted) ?? all.find((s) => s.slug === MERGED_SKILL_SLUGS[wanted]);
   if (!skill) throw new SkillNotFoundError(wanted);
