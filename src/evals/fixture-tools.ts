@@ -58,10 +58,15 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
       missing.add(name);
       return { name, result: { error: `No data for ${name} in this account right now.` } };
     }
+    return { name, result: nextAnswer(name, recorded) };
+  };
+
+  /** The recorded answers of a tool in the order the real session got them (the last one repeats). */
+  function nextAnswer(name: string, recorded: unknown[]): unknown {
     const i = served.get(name) ?? 0;
     served.set(name, i + 1);
-    return { name, result: recorded[Math.min(i, recorded.length - 1)] };
-  };
+    return recorded[Math.min(i, recorded.length - 1)];
+  }
 
   /**
    * A gateway call in a replay is answered with what the account answered the
@@ -85,7 +90,8 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
     }
     for (const tool of toolsForOperation(op.method, op.path)) {
       const recorded = scenario.fixtures[tool];
-      if (recorded) return { ok: true, status: 200, data: recorded[0] };
+      // Same order as the chat tool: a stop then a re-read sees the stopped list.
+      if (recorded) return { ok: true, status: 200, data: nextAnswer(tool, recorded) };
     }
     missing.add(`run_operation ${op.method} ${op.path}`);
     return { ok: false, status: 404, error: "No data for this request in this account right now." };

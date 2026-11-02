@@ -31,6 +31,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { db as Db } from "../db/index.js";
 import { copilotLeadTurns, sessions } from "../db/schema.js";
 import type { LeadTurnRequest } from "../schemas.js";
+import { todayLine } from "../agent/situation.js";
 import { buildChannelBlock, type PhoneAccount } from "./channel-copilot.js";
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
 import { REACH_ELSEWHERE_TOOL_NAME, forgetLeadTurnCaller, registerLeadTurnCaller } from "./lead-contact.js";
@@ -79,6 +80,8 @@ export interface LeadTurnFrame {
   /** The session is tied to the person's WhatsApp number (sign-in possible). */
   phoneBound: boolean;
   afterSignIn: boolean;
+  /** The clock of the turn (a replay passes the scenario's day). */
+  now?: Date;
   /**
    * The recipient's email (crm's record) is the email of a distribute.you
    * account. Only then is it a sign-in email the model may use by itself; an
@@ -145,6 +148,7 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
       "They signed in a moment ago, in this same exchange, and nothing you wrote before reached them: write the WHOLE message now, with their account's access: say in a few words that they are in, then answer what they asked.",
     );
   }
+  lines.push(todayLine(frame.now ?? new Date()));
   lines.push("### How the campaign asks you to decide", payload.systemPrompt.trim(), "### What the campaign knows", payload.message.trim());
   parts.push(lines.join("\n"));
   return parts.join("");

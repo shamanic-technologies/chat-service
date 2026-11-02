@@ -69,6 +69,11 @@ describe("buildLeadTurnBlock", () => {
     expect(block.indexOf("THE GAME")).toBeLessThan(block.indexOf("THE THREAD"));
     expect(block).not.toContain("not as distribute.you");
   });
+  it("states today's date before the campaign's facts (a lead was promised a Sunday send, 2026-11-01)", () => {
+    const block = buildLeadTurnBlock(frame({ now: new Date("2026-11-01T12:00:00Z") }));
+    expect(block).toContain("Today: Sunday 1 November 2026 (UTC).");
+    expect(block.indexOf("Today:")).toBeLessThan(block.indexOf("### What the campaign knows"));
+  });
   it("another brand: never speaks as distribute.you, no channel block of ours", () => {
     const block = buildLeadTurnBlock(frame({ ownBrand: false, guest: true, phoneBound: false }));
     expect(block).not.toContain("## Channel: WhatsApp");
