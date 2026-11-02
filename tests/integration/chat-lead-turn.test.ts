@@ -264,6 +264,8 @@ describe("POST /internal/copilot/lead-turns: the Copilot writes the Lead event a
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ json: ANSWER, account: { orgId: ORG, userId: USER } });
     expect(declaredNames(gemini.bodies[0])).toEqual(["list_workflows", "launch_campaign", "propose_switch_on", "confirm_switch_on", "create_followup", "reach_person_elsewhere", "answer_person"]);
+    // SOPHIE-JCURVE-1102: the answer is the campaign's, stored hidden, never a line of their chat.
+    expect(state.messageInserts.filter((m) => m.role === "assistant")).toEqual([expect.objectContaining({ content: ANSWER.message, proactiveTrigger: true })]);
   }, 30_000);
 
   it("a turn that never answers fails loud (502), the key can run again", async () => {

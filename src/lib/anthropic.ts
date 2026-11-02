@@ -2613,7 +2613,7 @@ export const REMOVE_OFFER_STEP_TOOL: Anthropic.Tool = {
 export const GET_OFFER_SETTINGS_TOOL: Anthropic.Tool = {
   name: "get_offer_settings",
   description:
-    "Read one offer's settings, as the Brand Settings page shows them: bookingUrl (the call booking link: the page where a prospect who replies books a meeting; the AI meeting booking sends people there), destinationUrl (the page on the brand's site an outreach click lands on) and lifetimeRevenueUsd (what a paying client is worth). null = the client never stated it. Read it FIRST whenever the client mentions their booking link, calendar, scheduling page (Calendly, neocal...) or asks where people who reply are sent: the link lives HERE, never in a mailbox or a Google connection. Read-only.",
+    "Read one offer's settings, as the Brand Settings page shows them: bookingUrl (the call booking link: the page where a prospect who replies books a meeting; the AI meeting booking sends people there), destinationUrl (the page on the brand's site an outreach click lands on) and lifetimeRevenueUsd (what ONE paying client of this offer would be worth to them over time: a value they stated, never a client they already have). null = the client never stated it. Read it FIRST whenever the client mentions their booking link, calendar, scheduling page (Calendly, neocal...) or asks where people who reply are sent: the link lives HERE, never in a mailbox or a Google connection. Read-only.",
   input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
 };
 

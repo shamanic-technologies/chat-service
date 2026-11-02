@@ -25,6 +25,9 @@ export const sessions = pgTable(
     // A number with no distribute.you account yet: the turn sees no account and
     // gets the sign-in tools only. Never served by GET /sessions/latest.
     guest: boolean("guest").notNull().default(false),
+    // A thread where Lead event turns run (migration 0030, SOPHIE-JCURVE-1102):
+    // the person never sees it, so never served by GET /sessions/latest.
+    leadThread: boolean("lead_thread").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

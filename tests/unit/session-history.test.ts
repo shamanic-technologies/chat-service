@@ -162,3 +162,17 @@ describe("serializeSessionHistory", () => {
     });
   });
 });
+
+describe("isShownMessage (SOPHIE-JCURVE-1102)", () => {
+  it("never shows an empty assistant row, nor a hidden one; keeps an empty row that carries cards", async () => {
+    const { isShownMessage } = await import("../../src/lib/session-history.js");
+    const base = { role: "assistant" as const, proactiveTrigger: false, choices: null, openPages: null, creditsRequired: null, buttons: null, toolCalls: null };
+    expect(isShownMessage({ ...base, content: "" })).toBe(false);
+    expect(isShownMessage({ ...base, content: "  " })).toBe(false);
+    expect(isShownMessage({ ...base, content: "<p>Hi James</p>", proactiveTrigger: true })).toBe(false);
+    expect(isShownMessage({ ...base, content: "Hello" })).toBe(true);
+    expect(isShownMessage({ ...base, content: "", choices: { text: "Pick", choices: [] } as never })).toBe(true);
+    expect(isShownMessage({ ...base, content: "", toolCalls: [{ name: "request_user_input", args: {} }] as never })).toBe(true);
+    expect(isShownMessage({ ...base, role: "user", content: "hi" })).toBe(true);
+  });
+});
