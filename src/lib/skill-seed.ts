@@ -30,46 +30,39 @@ export interface SeedSkill {
 export const MERGED_SKILL_SLUGS: Readonly<Record<string, string>> = {
   channels: "catalogue-channels",
   "sales-paths": "catalogue-sales-paths",
+  // SOPHIE-REFONTE-1102: who we reach, who we skip and where leads come from are one client job.
+  qualification: "client-profiles",
+  sources: "client-profiles",
 };
 
 const INDEX = `# How to handle any request
 
-The method of the distribute.you Copilot, and of any agent working an account through our API or MCP. Our promise: revenue made easy. The user says what they want in their own words ("post on LinkedIn every day"). You organize it on the platform, one level at a time, then move it forward.
+The method of the distribute.you Copilot, and of any agent working an account through our API or MCP. Our promise: revenue made easy. The client says what they want in their words; you do it on the platform and move them forward.
 
-Reading this through the API or the MCP? Each Copilot tool is followed by the operation that does the same act (MCP: distribute_call_api), or "no API route yet". Where the Copilot waits for the user's yes, you wait for your user's.
+Reading this through the API or the MCP? Every act below is an API operation (METHOD /path); its full doc is in the API document (MCP: distribute_describe_api, then distribute_call_api). The Copilot calls it with run_operation, and uses find_operation / describe_operation (MCP: distribute_find_api) when no skill names it. Where the Copilot waits for the client's yes, you wait for your user's.
 
-## New account first
-No brand yet (GET /v1/brands lists none), a company the account does not hold yet, or you just signed up: load \`new-account\` and follow it (brand, offer, audiences, preview email, payment, first campaign). The walk below is for an account that already has them.
-
-## The walk (always, in this order)
-At each level, show a SHORT list (name, one line, cost, return) and let the user pick, or pick the obvious one and say why. Load the \`catalogue\` skill first.
-1. **Steps**: the result the ask produces (website visit, positive reply, meeting...). find_steps → GET /v1/catalogue/steps
-2. **Sales paths**: chains of steps to a paying client that contain it. find_sales_paths → GET /v1/catalogue/sales-paths
-3. **Channels**: who works those steps (cold email, AI meeting booking...). find_channels → GET /v1/catalogue/channels
-4. **Pipes**: one channel on one step. find_pipes → GET /v1/catalogue/pipes
-5. **Sales funnels**: a path with one pipe per step. THIS is what you propose: its name, cost per paying client, return. find_sales_funnels(offerId, brandId) → GET /v1/offers/{offerId}/sales-funnels?brandId=. Only funnels whose every step the client's business has: ask about the steps a set-aside funnel misses.
-6. **Workflows** (optional): how one pipe runs. A multi-armed bandit runs the best by return and keeps exploring the others; show only if asked. find_workflows → GET /v1/catalogue/workflows
-7. **Campaigns**: the chosen funnel becomes a campaign with at least one cap the user states (a max budget, a max volume, or both), and runs only after their yes. Load \`campaigns\`.
-A named channel: find it first, then walk from Steps.
-
-## When something is missing
-- First check it is missing: list_campaigns → GET /v1/sales-funnel-campaigns (a running campaign may do it: path, runsWhen), then the API (\`staff-requests\`).
-- An email the user wrote, sent as written (test, list, CSV, API): it exists, load \`emails-you-wrote\`.
-- We only offer what we run today. Not run (LinkedIn posting, ads): say so in one sentence, offer what we run for the same result; if they insist, a feature request. Never describe its price or terms.
-- A funnel shape is missing but every piece runs: create it (create_sales_path → POST /v1/catalogue/sales-paths, create_sales_funnel → POST /v1/catalogue/sales-funnels). A new step or trigger: a feature request with newStepOrTrigger, never a create.
+## The client's jobs: load the skill, follow its method
+- Set up a new account (no brand yet, a new company, just signed up): \`new-account\`. It comes before anything else.
+- Launch, change or stop a campaign: \`campaigns\`.
+- What they sell, their documents, their booking link: \`offers\`.
+- Who we reach, who we skip, the people found: \`client-profiles\`.
+- How their campaigns are doing, replies waiting, when results come: \`costs-roi-stats\`.
+- Their money (balance, what it cost, the chat's cost, a refund): \`budget-and-billing\`.
+- Their own email sent as written: \`emails-you-wrote\`.
+- Their mailboxes and tools: \`connected-accounts\`.
+- Our team, a bug, a missing feature: \`staff-requests\`.
 - A campaign should behave differently (attach a document, skip some addresses): that is the step's play. Load \`catalogue-plays\`.
-- Needs code or is broken: request_staff. A skill misled you: request_skill_upgrade. Wants a person: contact_human. All three → POST /v1/staff-requests.
-- Building on our services: load \`infra\`.
+Building channels, pipes or workflows is staff work: \`staff\`.
 
 ## Rules that never bend
 - Every word a person reads follows \`client-comms\` (always loaded with this index; API agents: read it first).
-- Nothing that starts work, spends money or sends an email goes out without the user's explicit yes in this chat (propose_switch_on, then confirm_switch_on in their next message; API: PATCH /v1/sales-funnel-campaigns/{id} only after that yes).
-- Every figure comes from a tool, with the unit and basis the tool gives ("per paying client (estimated)"). An estimate is never called measured; "learning" = not measured yet.
-- Keep reads small (a filter, a limit).
-- Every answer: 2 or 3 short sentences of TEXT first, with the figures you read (in present_choices, that is its required \`text\`; no API route: an API agent just writes it). Cards alone hide what you found.
-- Cards only when they save typing (load \`choices\` first).
-- Speak the user's language: results, channels, funnel and campaign names. Never say pipe, leg, step key or workflow, and never show a pipe's or a path's name (birds, rivers), unless they ask how it works.
-- Never call us an agency.
+- The API marks every operation that spends money, starts work or sends something \`x-needs-user-yes\`. Say what it will do and ask; call it only after their explicit yes (Copilot: run_operation answers a proposal and a token, the token runs it from their next message).
+- We only offer what we run today. Not run (LinkedIn posting, ads): say so in one sentence, offer what we run for the same result, else a feature request. Never its price or terms.
+- Before asking for code, check it is missing: a running campaign may already do it (GET /v1/sales-funnel-campaigns), then the API (find_operation). Needs code or is broken: request_staff. A skill misled you: request_skill_upgrade. Wants a person: contact_human. All three → POST /v1/staff-requests.
+- Every figure comes from the account, with the unit and basis the API gives ("per paying client (estimated)"). An estimate is never called measured; "learning" = not measured yet.
+- Answer from what you already know (the account brief, the conversation) first; call an operation only for what they lack, the one the job's skill names. Searching the API is for an act no skill names. Keep reads small (a filter, a limit).
+- Every answer: 2 or 3 short sentences of TEXT first, with the figures you read (present_choices: its required \`text\`; no API route). Cards only when they save typing (\`choices\`).
+- Speak the client's language. Never say pipe, leg, step key or workflow, and never show a pipe's or a path's name (birds, rivers), unless they ask how it works. Never call us an agency.
 `;
 
 const t = (s: string) => s.trim() + "\n";
@@ -150,149 +143,90 @@ Wanting to start = creating their account. On WhatsApp you do it with them right
     slug: "new-account",
     parentSlug: "index",
     title: "Set up a new account",
-    description: "A new client, or an agent that just signed up: brand, offer, who to reach, audiences, a preview email, payment, first campaign. Load first when the account has no brand yet.",
+    description:
+      "Use when the account has no brand yet, the client names a company we do not hold yet, or an agent just signed up: brand, offer, who to reach, audiences, preview email, payment, first campaign.",
     position: 5,
     content: t(`
 # Set up a new account
-
-For an account with no brand yet (list_brands → GET /v1/brands lists none). In order. Copilot: each step is your tool named first, in any chat (WhatsApp too): never send the person to the dashboard for one. Steps 1 to 6 send nothing, cost cents: pick the obvious answer, say what you picked. Steps 7 and 8 wait for their explicit yes. (MCP: distribute_call_api.)
-
+For an account with no brand yet (GET /v1/brands lists none), or a company it does not hold yet. In order, in any chat (WhatsApp too): never send the person to the dashboard for a step. Steps 1 to 6 send nothing and cost cents: pick the obvious answer and say what you picked. Steps 7 and 8 wait for their explicit yes.
 0. **Account** (agents): POST /v1/agent-signups/start {email, phone}, read the 6-digit code in that inbox, POST /v1/agent-signups/complete {email, code} → apiKey (Bearer). A key reaching several organizations: send the client's orgId (or a brandId) on every call.
-1. **Brand**: create_brand_from_url → POST /v1/brands with {url, name} (name omitted = read from the site), or {name} alone → brandId. No website: PUT /v1/brands/{id}/business-context {content}.
-2. **Offer**: propose_offers → POST /v1/brands/{id}/offers/proposals {description: what they sell} (up to a minute) → offers. confirm_offers → POST /v1/brands/{id}/offers/confirm {offers kept, as returned; chosenIndex only when several} → chosenOfferId = the offerId of every next call; never a placeholder in a path (it also readies step 5, like POST /v1/content/preview-email/prepare). Lost: list_offers → GET /v1/brands/{id}/offers. Then update_offer_settings → PUT /v1/brands/{id}/offers/{offerId}/economics with what your user stated (lifetimeRevenueUsd, destinationUrl, bookingUrl). get_offer_steps → GET /v1/brands/{id}/offers/{offerId}/steps: ask about a step it lacks (\`catalogue-sales-funnels\`).
-3. **Who to reach**: suggest_icp → POST /v1/brands/{id}/icp/suggest {offerId} → one sentence, the targetAudience below; your user's words win.
-4. **Audiences**: split_audiences → POST /v1/orgs/audiences/split {brandId, targetAudience} (up to a minute, saves nothing) → segments. confirm_audiences → POST /v1/orgs/audiences/split/confirm {brandId, offerId, targetAudience, segments kept, as returned} → audience ids. 409 = name exists: GET /v1/orgs/audiences?brandId=, reuse it.
-5. **Show who and what**: preview_audience → GET /v1/orgs/audiences/{id}/preview → real companies and people, free (not_built_yet: again in a minute). preview_email → POST /v1/content/preview-email {brandId, offerId, audience: targetAudience, recipient: {firstName, lastName, title, companyName}} from one sample person → show it as written; flag any claim your user never made. 402 payment_required = step 7 first.
-6. **Campaign to propose**: find_sales_funnels → GET /v1/offers/{offerId}/sales-funnels?brandId= → the first proactive row from a source a new account has: name and figure as served.
-7. **Prepay, after their yes on the amount**: get_prepaid_status → GET /v1/billing/accounts/prepaid_status (active = paid; MCP: distribute_prepaid_status). Else create_prepaid_checkout → POST /v1/billing/accounts/prepaid_checkout {topup_amount_cents ≥ 1000, auto_topup_amount_cents ≥ 1500, auto_topup_threshold_cents ≥ 500} (MCP: distribute_prepay) → url. Only your user pays it; read the status again once they say they paid.
-8. **Start, after their yes on the campaign and a cap**: build_audience_portfolio → POST /v1/orgs/audiences/portfolio {brandId, offerId, targetAudience} (call again until ready, nothing re-spent), then the launch in \`campaigns\`.
-
+1. **Brand**: POST /v1/brands with {url, name} (name omitted = read from the site), or {name} alone → brandId. No website: PUT /v1/brands/{id}/business-context {content}.
+2. **Offer**: POST /v1/brands/{id}/offers/proposals {description: what they sell} (up to a minute) → offers. POST /v1/brands/{id}/offers/confirm {offers kept, as returned; chosenIndex only when several} → chosenOfferId = the offerId of every next call; never a placeholder in a path (it also readies step 5, like POST /v1/content/preview-email/prepare). Lost: GET /v1/brands/{id}/offers. Then PUT /v1/brands/{id}/offers/{offerId}/economics with what your user stated (lifetimeRevenueUsd = what ONE paying client is worth to them, destinationUrl, bookingUrl).
+3. **Who to reach**: POST /v1/brands/{id}/icp/suggest {offerId} → one sentence, the targetAudience below; your user's words win.
+4. **Audiences**: POST /v1/orgs/audiences/split {brandId, targetAudience} (up to a minute, saves nothing) → segments. POST /v1/orgs/audiences/split/confirm {brandId, offerId, targetAudience, segments kept, as returned} → audience ids. 409 = name exists: GET /v1/orgs/audiences?brandId=, reuse it.
+5. **Show who and what**: GET /v1/orgs/audiences/{id}/preview → real companies and people, free (not_built_yet: again in a minute). POST /v1/content/preview-email {brandId, offerId, audience: targetAudience, recipient: {firstName, lastName, title, companyName}} from one sample person → show it as written; flag any claim your user never made. 402 payment_required = step 7 first.
+6. **Campaign to propose**: GET /v1/offers/{offerId}/sales-funnels?brandId= → the first proactive row from a source a new account has: name and figure as served.
+7. **Prepay, after their yes on the amount**: GET /v1/billing/accounts/prepaid_status (active = paid; MCP: distribute_prepaid_status). Else POST /v1/billing/accounts/prepaid_checkout {topup_amount_cents ≥ 1000, auto_topup_amount_cents ≥ 1500, auto_topup_threshold_cents ≥ 500} (MCP: distribute_prepay) → url. Only your user pays it; read the status again once they say they paid.
+8. **Start, after their yes on the campaign and a cap**: POST /v1/orgs/audiences/portfolio {brandId, offerId, targetAudience} (call again until ready, nothing re-spent), then the launch in \`campaigns\`.
 Before 7, stop and show your user what is ready: brand, offer, who you will reach (a few company names), the email, the campaign and its estimate. Never pay or start on your own.
 `),
   },
   {
     slug: "offers",
     parentSlug: "index",
-    title: "Offers",
-    description: "What a brand sells. Load when the request names a product, service or offer.",
+    title: "What they sell: offers, documents, booking link",
+    description:
+      "Use when the client talks about what they sell, an offer, a document to send prospects, their call booking link or what a client is worth to them.",
     position: 10,
     content: t(`
-# Offers
-
-An offer is one thing a brand sells. Every campaign, leg, sales path, budget and qualification check hangs off ONE offer. Owner: brand-service (money figures: features-service).
+# What they sell: offers, documents, booking link
+An offer is one thing a brand sells. Every campaign, budget and check hangs off ONE offer. Several offers and the client did not say which: ask (\`choices\`).
 
 ## Read
-- list_brands → GET /v1/brands: the org's brands (brandId).
-- list_offers(brandId) → GET /v1/brands/{id}/offers: offers with id, name, status.
-- get_offer_performance(brandId, offerId[, windowDays]) → GET /v1/offers/{offerId}/revenue?brandId=: spend, emails, replies, return.
-- get_offer_steps(brandId, offerId) → GET /v1/brands/{id}/offers/{offerId}/steps: the sales steps the client's business has for this offer (conversation, booking call, purchase...).
-- get_offer_settings(brandId, offerId) → GET /v1/brands/{id}/offers/{offerId}/economics: the Brand Settings fields of the offer. bookingUrl = the client's call booking link (where a prospect who replies books a meeting), destinationUrl = where an outreach click lands, lifetimeRevenueUsd = what a paying client is worth; null = never stated. A question about their booking link, calendar or where replies are sent is answered from here, never from mailboxes or a Google connection.
+- The brands and offers: GET /v1/brands, GET /v1/brands/{id}/offers.
+- The offer's settings: GET /v1/brands/{id}/offers/{offerId}/economics. bookingUrl = the client's call booking link (where a prospect who replies books a meeting), destinationUrl = where an outreach click lands, lifetimeRevenueUsd = what ONE paying client is worth to them (never a client they have); null = never stated. A question about their booking link or where replies are sent is answered from here, never from mailboxes.
+- The sales steps their business has: GET /v1/brands/{id}/offers/{offerId}/steps.
 
 ## Write
-- create_offer(brandId, name) → POST /v1/brands/{id}/offers: data only, starts nothing. Confirm the name first.
-- add_offer_step / remove_offer_step(brandId, offerId, stepKey) → PUT / DELETE /v1/brands/{id}/offers/{offerId}/steps/{stepKey}: record the client's answer about one step. Why and when: \`catalogue-sales-funnels\`.
-- update_offer_settings(brandId, offerId, bookingUrl?, destinationUrl?, lifetimeRevenueUsd?) → PUT /v1/brands/{id}/offers/{offerId}/economics: the client gives a new booking link (or landing page, deal value). Send only what they stated; Brand Settings shows it at once. Say the old and new value.
+- A new offer: POST /v1/brands/{id}/offers (data only, starts nothing; confirm the name first).
+- New settings: PUT /v1/brands/{id}/offers/{offerId}/economics with only what they stated. Say the old and new value.
+- A step they say their business has or lacks: PUT / DELETE /v1/brands/{id}/offers/{offerId}/steps/{stepKey}.
+- Archive: POST /v1/brands/{id}/offers/{offerId}/archive (refused while a campaign of the offer runs).
 
 ## Documents (files to send prospects)
-An offer holds the client's files about it (one-pager, case study, price list; pdf, docx, pptx, images...; 5 MB each, 25 per offer). Each has a description: what the file is and when it helps a prospect ("Price list for UK employers: helps when a prospect asks what a listing costs"). The AI answering picks a file on name + description alone, so each must say what sets it apart from the others.
-- Near-duplicates already on the offer (same content, overlapping descriptions) blur the pick: show them to the client and ask which to keep, or how each differs. Never delete or rewrite a client's file unasked.
-- Uploading is half the setup: only workflows that attach a document send them, and the step answering prospects may run one that does not. Give that step a play whose strategy requires that tactic: \`catalogue-plays\`.
-- From the chat: the user uploads on the offer page (open_page; no API route: an API agent uploads itself). Through the API: GET, POST /v1/brands/{id}/offers/{offerId}/documents (JSON fileName, description, contentBase64), PATCH and DELETE .../documents/{documentId}.
-
-## Not available from the chat yet
-- Rename, describe, archive an offer: the user does it on the offer page (open_page), or request_staff (POST /v1/staff-requests) if they insist on doing it here. Through the API: POST .../offers/{offerId}/archive.
-- Archiving is refused while a campaign of the offer is running.
-
-## Articulation
-Before building anything, know WHICH offer the request is about. If the brand has several and the user did not say, ask which (the offers are an obvious pick: see \`choices\`).
+An offer holds the client's files (one-pager, case study, price list; 5 MB each, 25 per offer), each with a description: what the file is and when it helps a prospect. The AI answering picks a file on name + description alone, so each must say what sets it apart.
+- Near-duplicates blur the pick: show them and ask which to keep. Never delete or rewrite a client's file unasked.
+- Uploading is half the setup: only workflows that attach a document send them. Give that step a play whose strategy requires that tactic: \`catalogue-plays\`.
+- GET, POST /v1/brands/{id}/offers/{offerId}/documents (fileName, description, contentBase64), PATCH and DELETE .../documents/{documentId}. In the chat the client can also upload on the offer page (open_page; no API route for a page).
 `),
   },
   {
     slug: "client-profiles",
     parentSlug: "index",
-    title: "Client profiles and audiences (ICP)",
-    description: "Who the brand targets. Load when the request says who to reach.",
+    title: "Who we reach, and who we skip",
+    description:
+      "Use when the client asks who we write to, wants to see the people or companies, wants to target differently, or wants some people or kinds of company left out.",
     position: 20,
     content: t(`
-# Client profiles and audiences (ICP)
+# Who we reach, and who we skip
+An audience is who a campaign looks for (job titles, company size, industry, location). A source finds the people (Apollo filters, buying signals, LinkedIn engagement, their CRM contacts). Qualification checks drop a company before we pay to reach it. New account: \`new-account\` first.
 
-An audience is a described group of people to reach (job titles, company size, industry, location). It replaced personas. Owner: human-service. The brand's own facts (what it does, its site) live in brand-service.
+## Show them who
+- Their audiences: GET /v1/orgs/audiences?brandId= (status, size, who it targets).
+- Before anyone is found, a free sample of who an audience reaches: GET /v1/orgs/audiences/{id}/preview (real companies and people).
+- The people in an audience: GET /v1/brands/{brandId}/audience-snapshot/people. People already found or reached: GET /v1/orgs/people?brandId=. Show a few names and companies, then the next step.
 
-## Read
-- list_audiences → GET /v1/orgs/audiences?brandId=: the brand's audiences with status. Works on the brand open in the dashboard; with no brand open (WhatsApp, no brand page) on the account's brand, or, when it has several, on the brandId you pass after asking the person which one. Never send them to the dashboard for this.
+## Change who we reach
+- New audiences from one sentence: POST /v1/orgs/audiences/split {brandId, targetAudience} (saves nothing), then POST /v1/orgs/audiences/split/confirm {brandId, offerId, targetAudience, segments}.
+- Pause or archive one: PATCH /v1/orgs/audiences/{id}/status. Rename: PATCH /v1/orgs/audiences/{id}.
 
-## Write
-- From one sentence saying who to reach (POST /v1/brands/{id}/icp/suggest writes one): POST /v1/orgs/audiences/split {brandId, targetAudience} proposes segments (saves nothing), POST /v1/orgs/audiences/split/confirm {brandId, offerId, targetAudience, segments} creates the kept ones. No Copilot tool yet; the order for a new account: \`new-account\`.
-- GET /v1/orgs/audiences/{id}/preview: a free sample of the companies and people an audience reaches (no email).
-- suggest_audiences(nlPrompt) → POST /v1/orgs/audiences/suggest: proposes audiences from a description. May spend (LLM); say so.
-- set_audience_status (active / paused / archived) → PATCH /v1/orgs/audiences/{id}/status.
-- rename_audience → PATCH /v1/orgs/audiences/{id}. refresh_audience_count → POST /v1/orgs/audiences/{id}/refresh-count.
+## Skip people or companies
+- One person: PUT /v1/leads/{id}/disqualification (DELETE undoes it).
+- A kind of company ("no radio or TV"), or named companies: a qualification check, POST /v1/brands/{id}/offers/{offerId}/qualification/criteria {question, ...}, created off; the sources it can read: GET /v1/qualification/catalog. A check that is on costs a little on every lead it reads: give the cost per lead and turn it on (PATCH .../qualification/criteria/{criterionId}) after their yes. Read them: GET .../qualification/criteria.
+- A criterion no check can express: request_staff (POST /v1/staff-requests, repo sales-lead-service).
 
-## Gaps
-- Personas and the old brand profile are retired (their routes were removed): never look for them.
-- A LinkedIn-engagement audience ("people who react to my posts") is a buying-signal audience; the chat cannot create one yet. Point the user to the Audiences page (open_page; no API route for a page) or request_staff (POST /v1/staff-requests, repo human-service) if they want the chat to do it.
+## Sources
+- The origins we run: GET /v1/public/sourcing-origins. Leads found, cost and return per source: GET /v1/offers/{offerId}/sourcing?brandId=.
+- A source is a step of a proactive campaign: it spends inside that campaign's caps and runs with it. A source has no on/off or budget of its own.
+- A person the client names ("add Sarah Lee, Head of Ops at Acme"): POST /v1/orgs/contacts {brandId, fullName, jobTitle, companyName or companyDomain, linkedinUrl?, email?, note: how they know her}. Free. A campaign on their CRM contacts reaches her: if none runs, propose one (GET /v1/offers/{offerId}/sales-funnels?brandId=&containsChannels=sourcing-crm-contacts, then \`campaigns\`). Never start it without their yes.
 
-## Articulation
-An audience feeds a SOURCE (see sources). Qualification then filters what the source found.
-`),
-  },
-  {
-    slug: "qualification",
-    parentSlug: "index",
-    title: "Qualification",
-    description: "Filtering leads before spending on them. Load when the request says qualify, filter, only if.",
-    position: 30,
-    content: t(`
-# Qualification
-
-Qualification checks run on each found lead BEFORE any paid step, so money is only spent on leads that pass. Each check is on or off, with a mode, a pass rate and a cost per lead. Owner: sales-lead-service. API base: /v1/brands/{id}/offers/{offerId}/qualification.
-
-## Read
-- list_qualification_checks → GET .../qualification/criteria: the offer's checks (works on the offer open in the dashboard).
-- list_qualification_sources → GET /v1/qualification/catalog: what a check can read.
-
-## Write
-- suggest_qualification_checks → POST .../qualification/suggestions: proposes checks. Spends money; new checks are written OFF.
-- create_qualification_check → POST .../qualification/criteria. update_qualification_check (on/off, mode) → PATCH .../qualification/criteria/{criterionId}. archive_qualification_check → DELETE .../qualification/criteria/{criterionId}.
-
-## Articulation
-- A check turned on costs money on every lead it reads: state the cost per lead and get a yes before turning one on.
-- If the user's criterion cannot be expressed as a check, request_staff (POST /v1/staff-requests, repo sales-lead-service).
-`),
-  },
-  {
-    slug: "sources",
-    parentSlug: "index",
-    title: "Sources (where leads come from)",
-    description: "Lead sourcing. Load when the request says where leads come from (Apollo, LinkedIn engagement, CRM), or the client names a person to reach.",
-    position: 40,
-    content: t(`
-# Sources
-
-A source is where leads come from. Live origins: Apollo cold filters, Apollo buying signals, LinkedIn engagement signals (people who engage with posts), CRM contacts. A source is a STEP of a proactive funnel campaign (it feeds the funnel's first contacts), never a campaign of its own. Rules: campaign-service; origin list: features-service.
-
-## Read
-- list_sourcing_origins → GET /v1/public/sourcing-origins: the origins and their feature slugs.
-- get_offer_sourcing(brandId, offerId) → GET /v1/offers/{offerId}/sourcing?brandId=: leads found, cost and return per source.
-
-## Budget and on/off (the funnel campaign's)
-- A source spends inside its funnel campaign's caps: change them with set_funnel_caps → PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps (see \`campaigns\`).
-- It runs and stops with its funnel campaign: propose_switch_on (start_funnel_campaign) then confirm_switch_on after the user's yes; stop_funnel_campaign to stop. API: PATCH /v1/sales-funnel-campaigns/{id} {status: "activate"} or {status: "stop"}. A source has no on/off or budget of its own.
-
-## A person the client names ("add Sarah Lee, Head of Ops at Acme, linkedin..., I met her at X")
-1. add_contact → POST /v1/orgs/contacts {brandId, fullName, jobTitle, companyName or companyDomain, linkedinUrl, email?, phone?, note}: into the brand's own contacts. Needs an email, a LinkedIn URL, or a name with a company. note = how they know the person, in their words (the email writer reads it). One call per person.
-2. Confirm in one short message: added; email known, or "we find their email when your campaign reaches them".
-3. They are reached by a campaign on the CRM contacts source ("We work the contacts you already have"), separate from new-lead sourcing. list_campaigns (GET /v1/sales-funnel-campaigns?brandId=): if none running has it, offer one: find_sales_funnels(offerId, brandId, containsChannels ["sourcing-crm-contacts"]) → GET /v1/offers/{offerId}/sales-funnels?brandId=, then \`campaigns\` (created stopped, a cap from them, their yes before the start). Never start it without that yes; never a people list per campaign.
-Adding is free. Only if asked: the email lookup and lead checks are paid by that campaign when it reaches the person.
-
-## Articulation
-Leads the client brings (emails they wrote, pushed one person at a time) need no source: see \`emails-you-wrote\`.
-"Each time someone reacts to my LinkedIn posts" is a SOURCE (LinkedIn engagement signals), not a trigger: it finds those people as leads; the following legs then reach them.
+## Example
+"I saw leads I don't want" → show who the campaign is reaching (a few names), then "Tell me the companies or the kind of company to leave out and I'll skip them before any email goes."
 `),
   },
   {
     slug: "legs",
-    parentSlug: "index",
+    parentSlug: "staff",
     title: "Legs (proactive and reactive)",
     description: "One move of a lead from one step to the next. Load when the request has steps, follow-ups or delays.",
     position: 60,
@@ -325,7 +259,7 @@ In both cases say it is on hold, never call request_staff (POST /v1/staff-reques
   },
   {
     slug: "triggers",
-    parentSlug: "index",
+    parentSlug: "staff",
     title: "Triggers",
     description: "Events that start a reactive leg. Load when the request says each time, when, as soon as.",
     position: 70,
@@ -363,71 +297,61 @@ Fired by the client's own push: one email they wrote, for one person (POST /v1/t
   {
     slug: "campaigns",
     parentSlug: "index",
-    title: "Campaigns",
-    description: "Turning a chosen funnel into a running campaign with caps. Load before anything goes on or off.",
+    title: "Launch, change or stop a campaign",
+    description:
+      "Use when the client wants to start, pause, stop or change a campaign, or its budget: caps, the yes before it starts, what each campaign does.",
     position: 90,
     content: t(`
-# Campaigns
+# Launch, change or stop a campaign
+A campaign is ONE sales funnel run for one offer (brand x offer x funnel). It runs every step of the funnel and is started or stopped as a whole. A new account first has its brand, offer, audiences, preview email and payment: \`new-account\`.
 
-A campaign is ONE sales funnel run for one offer of the brand (brand x offer x funnel). It runs every step of the funnel; it is started or stopped as a whole. Owner: campaign-service; its money: billing-service.
-
-## Money: at least one cap, from the user (owner 2026-10-11)
+## Money: at least one cap, from the client
 A campaign needs a max budget, a max volume, or both. Either alone is valid; only NEITHER is refused.
 - **Proactive:** "Max budget" (amount + period: one_off, daily, weekly, monthly) and/or "Max volume" (first contacts + period).
 - **Reactive:** read as "Up to $X" and/or "Up to N prospects handled" per period (spends only when its trigger fires).
-- Ask once, in plain text, for what the user has not stated. "No volume cap" or "pas de max" is an answer: that cap is null. Never invent a cap, never ask again for a declined one, never say one is mandatory. No cards for amounts (\`choices\`).
-- Billing decides if it is FUNDED; its verdict comes back with the caps. If billing holds it (today: no max budget), say it will spend nothing yet; never say it runs.
-- A funnel served \`mixed\` is refused: make two. Never judge a mix yourself.
-- **Leads only** (a source, then Your Team): we find leads, no email goes out; say so.
+- Ask once, in plain text, for what they have not stated. "No volume cap" is an answer: that cap is null. Never invent a cap, never ask again for a declined one.
+- Billing says if it is FUNDED (with the caps). Not funded (today: no max budget) = it spends nothing yet: never say it runs.
+- A funnel served \`mixed\` is refused: make two. **Leads only** (a source, then their team): no email goes out; say so.
 
 ## Launch (always this order)
-A new account first has its brand, offer, audiences, preview email and payment: \`new-account\`.
-1. Know the offer (list_offers → GET /v1/brands/{id}/offers) and the funnel (find_sales_funnels → GET /v1/offers/{offerId}/sales-funnels?brandId=).
-2. create_funnel_campaign → POST /v1/sales-funnel-campaigns {brandId, offerId, salesFunnelId, status: "stopped"}: created STOPPED, starts nothing.
-3. Ask the caps the user has not stated (max budget and/or max volume); set_funnel_caps with both keys (null = no such cap) → PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps.
-4. propose_switch_on(action start_funnel_campaign, brandId, offerId, salesFunnelId): refused only while no cap is stated. Show the funnel name, its caps and billing's funding verdict; ask yes or no.
-5. confirm_switch_on only after their yes, in their next message, even if they said "just do it". API: PATCH /v1/sales-funnel-campaigns/{id} {status: "activate"}, only after your user's yes. Refused (no workflow yet, payment): say why plainly; request_staff (POST /v1/staff-requests) only if it needs code.
+1. The offer (GET /v1/brands/{id}/offers) and the funnel: GET /v1/offers/{offerId}/sales-funnels?brandId=.
+2. POST /v1/sales-funnel-campaigns {brandId, offerId, salesFunnelId, status: "stopped"}: created STOPPED, starts nothing.
+3. The caps: PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps with both keys (null = no such cap).
+4. Show the funnel, its caps and billing's verdict; ask yes or no.
+5. Only after their yes, in their next message: PATCH /v1/sales-funnel-campaigns/{id} {status: "activate"} (it needs their yes). Refused (no workflow yet, payment held): say why plainly; request_staff (POST /v1/staff-requests) only if it needs code.
 
 ## Read and adjust
-- list_campaigns(brandId, status?) → GET /v1/sales-funnel-campaigns?brandId= (results: GET /v1/features/brands/{brandId}/sales-funnel-campaigns): THE campaigns with type, status, budget in words ("Max $10/day", "Up to $1/day", "Not funded"), volume, spent this period, results since start ("still learning" = not final), its path (that IS what it does) and steps. Count and name only campaigns: a step (a source, cold email, AI booking) is part of a campaign, never a campaign. list_funnel_campaigns is the same read.
-- get_funnel_caps(salesFunnelId from list_campaigns, never a campaign id) → GET .../sales-funnels/{salesFunnelId}/caps: one funnel's raw caps.
-- set_funnel_caps: change a cap (starts nothing). Send both keys: the one you keep stays as get_funnel_caps reads it.
-- stop_funnel_campaign → PATCH /v1/sales-funnel-campaigns/{id} {status: "stop"}: stops new first touches now; follow-ups still go out. Say what stopped.
-- Every start is refused while the org's payment is on hold: point to billing. There is no create-and-start.
+- GET /v1/sales-funnel-campaigns?brandId= : THE campaigns with status, budget in words ("Max $10/day", "Not funded"), spent this period, results, and their path (that IS what it does). Count and name only campaigns: a step (a source, cold email, AI booking) is part of a campaign, never a campaign.
+- GET .../sales-funnels/{salesFunnelId}/caps: one funnel's caps (never a campaign id there). Raising a cap spends more: their yes first.
+- Stop: PATCH /v1/sales-funnel-campaigns/{id} {status: "stop"}: no new first touches from now; follow-ups still go out. Say what stopped.
+- A campaign owns one part per step, each with its own campaign id; GET /v1/campaigns/{id} names its salesFunnelCampaignId. To change how a step behaves: \`catalogue-plays\`.
 
-## Parts of a campaign
-A campaign owns one part per step of its funnel, each with its own campaign id and workflow (older per-step campaigns are parts too). Trigger events, stats and runs show PART ids; a campaign-level read may refuse one. get_campaign(part id) → GET /v1/campaigns/{id} names its salesFunnelCampaignId; GET /v1/sales-funnel-campaigns/{id} lists its units (campaignId, pipeId, workflowSlug). To change how a step behaves: \`catalogue-plays\`.
+## Example
+"Start reaching event planners in Lagos" → "Your Guest Management campaign is ready, stopped: it finds event planners in Lagos and emails them. I'd cap it at $10 a week. Shall I start it?" → after "yes": PATCH .../{id} {status: "activate"}, then "It's on: first emails leave in their business hours."
 `),
   },
   {
     slug: "emails-you-wrote",
     parentSlug: "index",
-    title: "Send emails the user wrote, as written",
-    description: "A client wants their own email sent unchanged (one test, a list, a CSV, by API). Load before calling it missing.",
+    title: "Send emails the client wrote, as written",
+    description:
+      "Use when the client wants their own email sent unchanged: a test to themselves, a few people, a list, a CSV, or through the API.",
     position: 92,
     content: t(`
-# Send emails the user wrote, as written
-
+# Send emails the client wrote, as written
 A client who wants an email THEY wrote sent unchanged (one test, a list, a CSV, by API) needs no new feature. Their offer's reactive campaign that runs "Each time: Email Pushed Via API" (Email Sending) sends it word for word from our inboxes. One push = one person. No template, no AI writing.
 
 ## Check first
-list_campaigns(brandId, offerId): a running campaign whose runsWhen is "Each time: Email Pushed Via API".
-- None running: offer to turn a stopped one back on, else start one from find_sales_funnels (a funnel starting on that trigger, Email Sending first): create_funnel_campaign, its caps (Up to $X and/or Up to N prospects handled), propose_switch_on start_funnel_campaign. Never request_staff for it (nor POST /v1/staff-requests).
-- Through the MCP or the API: GET /v1/sales-funnel-campaigns?brandId&offerId gives each campaign's salesFunnelId and status; GET /v1/public/catalogue/sales-funnels?containsChannels=email-sending (or GET /v1/catalogue/sales-funnels) gives each funnel's \`trigger\` (\`email_pushed_via_api\`); create with POST /v1/sales-funnel-campaigns, start with PATCH /v1/sales-funnel-campaigns/{id}. The chat tools named here are the Copilot's; an API agent calls the operations.
+GET /v1/sales-funnel-campaigns?brandId=&offerId=: a running campaign whose runsWhen is "Each time: Email Pushed Via API".
+- None running: offer to turn a stopped one back on, else start one (\`campaigns\`) from a funnel whose \`trigger\` is \`email_pushed_via_api\` (GET /v1/offers/{offerId}/sales-funnels?brandId=&containsChannels=email-sending), with its caps (Up to $X and/or Up to N prospects handled). Never request_staff for it (nor POST /v1/staff-requests).
 
-## From the chat (a test, or a few people)
-1. propose_switch_on(action push_email, brandId, offerId, email, name?, subject, bodyText or bodyHtml, exactly as written).
-2. Show its preview: recipient, the email, the campaign sending it and its caps, the cost of one send (costOfOneSend, as written), the sender line (the inbox is picked when it goes out: never name one). Ask yes or no.
-3. After their yes, in their next message: confirm_switch_on. Say what its messageState says: only sent means it left; any other state = the person has received nothing yet, never call it sent (when nothing will go out, say why plainly).
-A test to the user themselves is the same push, to their own address. Never push a whole list from the chat.
+## One email (a test, or a few people)
+POST /v1/trigger-events {triggerId: "email_pushed_via_api", brandId, offerId, person: {email, name?}, item: {subject, bodyText | bodyHtml, exactly as written}, idempotencyKey}. It sends to a person, so it needs their yes: show the recipient, the email as written, the campaign sending it and its caps (the inbox is picked when it goes out: never name one), ask yes or no, send after their yes.
+- What became of it: event.delivery.state. delivered = sent, refused = not sent (say why), any other state = not sent yet. event.outcome "ran" only means a run started: never call that sent. Read back: GET /v1/offers/{offerId}/trigger-events.
+- A test to the client themselves is the same push, to their own address. Never push a whole list from the chat.
 
-## A list, a CSV, ongoing volume (e.g. 1,800 a month)
-The client pushes from their own system with their API key, one call per person: POST /v1/trigger-events
-\`{triggerId: "email_pushed_via_api", brandId, offerId, person: {email, name?, timezone?}, item: {subject, bodyText | bodyHtml}, idempotencyKey}\`
-- The answer's event.delivery.state says what became of the email: delivered = sent, refused = not sent (code + reason), any other state = not sent yet. event.outcome "ran" only means a run started. Read back: GET /v1/offers/{offerId}/trigger-events. The operation's own description (POST /v1/trigger-events) is the reference.
-- No CSV upload: the client's script loops over the rows, one call per person; a retry with the same idempotencyKey sends nothing twice.
-- Every send counts against the campaign's caps, the dollar one first: size "Up to $X" (what one push cost: GET /v1/runs/{runId}, runId in the event's detail.triggered) and "Up to N prospects handled" to the volume.
-- A reply goes on to the campaign's next steps, like any campaign.
+## A list, a CSV, ongoing volume
+The client pushes from their own system with their API key, one POST /v1/trigger-events per person (no CSV upload; the same idempotencyKey never sends twice). Every send counts against the campaign's caps: size "Up to $X" and "Up to N prospects handled" to the volume. A reply goes on to the campaign's next steps.
 
 ## Where do the leads come from?
 The client brings them: each push names the person. No source runs, no lead is bought.
@@ -467,7 +391,7 @@ An API or MCP agent has no cards (no API route): offer the same few options to i
   },
   {
     slug: "workflows-and-templates",
-    parentSlug: "index",
+    parentSlug: "staff",
     title: "Workflows and templates",
     description: "How each leg is executed and what it writes. Load when the request is about message content or how a step runs.",
     position: 100,
@@ -489,81 +413,93 @@ A workflow is the program that runs one leg on one channel (find, write, send, w
   {
     slug: "connected-accounts",
     parentSlug: "index",
-    title: "Connected accounts",
-    description: "Mailboxes, WhatsApp, LinkedIn, CRM and analytics connections. Load when a channel needs an account.",
+    title: "Their mailboxes and tools",
+    description:
+      "Use when the client asks about connecting a mailbox, WhatsApp, a CRM or analytics, or why a channel needs an account.",
     position: 110,
     content: t(`
-# Connected accounts
-
-A channel sends from an account. Owners: google-service (Google mailboxes), crm-service (WhatsApp / Telegram / Discord links, GoHighLevel, PostHog, Stripe, Clerk).
+# Their mailboxes and tools
+A channel sends from an account. Cold-email inboxes are ours: the client connects nothing for cold email.
 
 ## Read
-- list_connected_accounts(brandId?): every connection, one block per provider. API: GET /v1/orgs/google/accounts, GET /v1/orgs/matrix/connections, and GET /v1/orgs/{gohighlevel|posthog|stripe|clerk}/connections.
+Google mailboxes: GET /v1/orgs/google/accounts. WhatsApp / Telegram links: GET /v1/orgs/matrix/connections. CRM and analytics: GET /v1/orgs/{gohighlevel|posthog|stripe|clerk}/connections.
 
-## Write
-- Connecting an account needs the user's own login (OAuth, QR code): send them to the page with open_page (no API route for a page). Never ask for a password in the chat. Through the API: POST /v1/orgs/google/auth/start for a Google mailbox; POST /v1/orgs/{gohighlevel|posthog|stripe|clerk}/connections with the user's own credentials.
+## Connect
+Connecting needs the client's own login (OAuth, QR code): send them to the page (open_page, no API route for a page; on WhatsApp its link). Never ask for a password in the chat. Through the API: POST /v1/orgs/google/auth/start for a Google mailbox; POST /v1/orgs/{gohighlevel|posthog|stripe|clerk}/connections with their own credentials.
 
 ## Gaps
-- No route connects a LinkedIn account today. A LinkedIn DM piece needs code: request_staff (POST /v1/staff-requests; repo crm-service for the connection, the sending service for the DMs).
-- Cold-email inboxes are managed by the platform; the user connects nothing for cold email.
-- A call booking link (Calendly, neocal...) is not a connected account: it is an offer setting (get_offer_settings / update_offer_settings → GET / PUT /v1/brands/{id}/offers/{offerId}/economics, \`offers\`). Never answer a booking-link question with mailboxes or a Google connection.
+- No route connects a LinkedIn account today: request_staff (POST /v1/staff-requests, repo crm-service).
+- A call booking link (Calendly, neocal...) is not a connected account: it is an offer setting (GET / PUT /v1/brands/{id}/offers/{offerId}/economics, \`offers\`). Never answer a booking-link question with mailboxes.
 `),
   },
   {
     slug: "budget-and-billing",
     parentSlug: "index",
-    title: "Budget and billing",
-    description: "Balance, payment, daily budgets and caps. Load when money, balance or limits come up.",
+    title: "Their money",
+    description:
+      "Use when the client asks about their balance, what something cost, why their balance went down, what the chat costs, a campaign's budget, paying, a refund or a charge they dispute.",
     position: 120,
     content: t(`
-# Budget and billing
+# Their money
+The client wants to know where their money goes and to trust it. Answer with the split, in plain words and dollars, then the one next step. Amounts the API serves in cents: divide by 100.
 
-Owner: billing-service. Amounts are in cents where the field says so.
+## Read first (all free)
+- The account: GET /v1/billing/accounts (balance, payment mode, usage).
+- Billed by kind of work (setting up, finding contacts, writing, sending, replies, this chat): GET /v1/features/orgs/usage.
+- Per campaign: GET /v1/runs/stats/costs?brandId=&groupBy=campaignId. Each campaign's budget: GET /v1/sales-funnel-campaigns (its caps, in words).
+- What one action costs (one email, one contact found, one check): our public price list, read_our_website (the /catalog page). Never a figure from memory.
 
-## Read
-- get_billing_account → GET /v1/billing/accounts: balance, credits, usage, payment mode.
-- get_daily_budget(brandId) → GET /v1/brands/{brandId}/daily-budget, get_brand_pause(brandId) → GET /v1/brands/{brandId}/pause.
-- Each campaign's budget: list_campaigns → GET /v1/sales-funnel-campaigns (its funnel caps, in words). Never the old per-step ceilings.
+## How the chat is billed (say it with confidence)
+Each reply reads the whole conversation and the account with a large AI model, billed at the AI vendor's list price with no markup (our terms: read_our_website, /terms). A filter check reads one company with a small model, so it costs a fraction of a cent. The chat is optional: their campaign runs on its own, and they can drive their account with their own AI through our MCP. Explain this; never apologise for our pricing and never agree that it is unfair.
 
-## Write
-- set_funnel_caps → PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps: one campaign's max budget and/or max volume (starts nothing).
-- set_daily_budget(brandId) → PATCH /v1/brands/{brandId}/daily-budget: the brand's daily ceiling (0 pauses spend). Confirm the amount first.
-- set_brand_pause → PATCH /v1/brands/{brandId}/pause: pause or resume the whole brand. Resuming starts spend again: get a yes first.
+## Postpaid (payment mode postpaid): billing is a non-topic
+Like Google Ads: the card on file is charged automatically for what was spent. Never mention a credit line, a threshold, adding funds, a top-up or billing holding a campaign. Asked how they are charged: "Your card is charged automatically for what you spend, like Google Ads."
 
-## Rules
-- Every switch-on has at least one cap the user stated (budget and/or volume). Never propose one without it.
-- Paying is a link the person opens, in any chat: get_prepaid_status → GET /v1/billing/accounts/prepaid_status, then, only after their yes on the amounts, create_prepaid_checkout → POST /v1/billing/accounts/prepaid_checkout (MCP: distribute_prepay) gives the url. Only they pay it; read the status again once they say they paid. An account charged automatically (not prepaid) gets no link. On the web the billing page works too (open_page, no API route for a page).
+## Prepaid
+Adding money is a link only they pay: GET /v1/billing/accounts/prepaid_status first. active = already paid; not_prepaid = charged automatically (postpaid or subscription): no link, ever (a checkout would switch them to prepaid). Else, after their yes on the amounts, POST /v1/billing/accounts/prepaid_checkout (MCP: distribute_prepay). Read the status again once they say they paid.
+
+## What a campaign may spend
+Its caps: PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps (a max budget and/or a max volume per period). Raising one spends more: their yes first.
+
+## What only our team decides
+A refund, a charge they dispute, closing the account, a balance below zero: file it now (contact_human → POST /v1/staff-requests, kind contact_human, with the figures) and say the team answers by email. Say what happens next, never what you cannot do.
+
+## Examples
+- "Why did you spend $3?" → "Of the $3.38 used, your campaign used 2 cents to find and check contacts. The rest is this chat: each reply runs a large AI model on your whole account, at the provider's price with no markup. Your campaign runs without the chat."
+- "I want my money back." → "You have $5.19 unused and your campaign is paused, so nothing more is spent. I've asked our team to refund it; they'll answer you by email."
 `),
   },
   {
     slug: "costs-roi-stats",
     parentSlug: "index",
-    title: "Costs, ROI and stats",
-    description: "What was spent, what it brought. Load when the user asks how things are going.",
+    title: "How their campaigns are doing",
+    description:
+      "Use when the client asks how things are going, what their campaigns brought, when replies or meetings will come, or what is waiting for them.",
     position: 130,
     content: t(`
-# Costs, ROI and stats
-
-Owners: runs-service (work done and its cost), features-service (usage, return), sales-lead-service (replies).
+# How their campaigns are doing
+The brief already says what runs, its spend and its results. Read deeper only for what it lacks.
 
 ## Read (all free)
-- get_spend_by_campaign(brandId, window) → GET /v1/runs/stats/costs?brandId=&groupBy=campaignId. list_recent_runs(brandId) → GET /v1/runs?brandId=.
-- get_org_usage → GET /v1/features/orgs/usage: everything billed, by kind of work.
-- get_offer_performance(brandId, offerId) → GET /v1/offers/{offerId}/revenue?brandId=: spend, emails, replies, return.
-- list_sales_paths → GET /v1/offers/{offerId}/sales-paths: return per path. get_offer_sourcing → GET /v1/offers/{offerId}/sourcing: return per source.
-- list_replies_to_handle(brandId, offerId) → GET /v1/leads?brandId=&offerId=&bucket=positive_reply: people who replied with interest and wait for the user.
-- get_campaign_next_steps(brandId, campaignId) → GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{campaignId}/next-steps: what comes next in one campaign. Leads waiting for a send on any channel (nextSends.leadsQueued: follow-ups scheduled on email, WhatsApp... plus the email sender's queue), when the next send happens (nextSends.nextSendAt, in each lead's own working hours; scheduledFollowups.byDay per day), and the measured median days from a first email to a first positive reply (timeToFirstPositiveReply).
+- Each campaign, its cap, spend this period and results: GET /v1/sales-funnel-campaigns?brandId=.
+- What comes next in one campaign: GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{campaignId}/next-steps. Leads waiting on any channel (nextSends.leadsQueued), the earliest next send (nextSends.nextSendAt, in each lead's own working hours), and the measured days from a first email to a first positive reply (timeToFirstPositiveReply).
+- The offer's figures: GET /v1/offers/{offerId}/revenue?brandId= (sent, replies, return). Per source: GET /v1/offers/{offerId}/sourcing?brandId=.
+- Replies waiting for the client: GET /v1/leads?brandId=&offerId=&bucket=positive_reply&standing=sales_interest.
+- Spend per campaign: GET /v1/runs/stats/costs?brandId=&groupBy=campaignId.
 
-## "How are my campaigns doing?"
-Tell it as a short story, one running campaign at a time (list_campaigns → GET /v1/sales-funnel-campaigns, then get_campaign_next_steps for each):
-1. It runs, its cap, what it used this period (list_campaigns: budget, maxBudget).
-2. What waits and when it leaves: "47 leads are queued, the next go out Monday morning in their own working hours." Read nextSends only: leadsQueued (every channel), nextSendAt (the earliest moment, never an exact promise), dueNow (already due: they go at the next pass). leadsQueued null = say you cannot see the queue right now, never "nothing queued".
-3. When replies come: ALWAYS say it, never skip this line. Measured (timeToFirstPositiveReply has a figure): "Expect a reply about <that figure> after the first email", and whose figure it is (basis): this campaign, or our clients on the same channel. Not measured (learning: true, or no figure): "It is too early to say how long replies take on this campaign." No number, no guess, no word "learning".
-4. A reactive campaign acts on its trigger (runsWhen): say what starts it. No tool serves its delay: state none.
+## "How are my campaigns doing?" as a short story, one running campaign at a time
+1. It runs, its cap, what it used this period.
+2. What waits and when it leaves: "47 leads are queued, the next go out Monday morning in their own working hours." leadsQueued null = you cannot see the queue right now, never "nothing queued".
+3. When replies come: ALWAYS say it, never skip this line. Measured: "Expect a reply about <that figure> after the first email", and whose figure it is (this campaign, or our clients on the same channel). Not measured: "It is too early to say how long replies take on this campaign." No number, no guess, no word "learning".
+4. A reactive campaign acts on its trigger: say what starts it.
+5. End on the one move that helps most (answer the replies waiting, raise the cap, narrow who we reach).
 
 ## Rules
-- Use served figures only. Never add, average or estimate a figure yourself.
+- Served figures only. Never add, average or estimate a figure yourself.
 - Two figures disagree: file it for the team (request_staff → POST /v1/staff-requests, kind bug), silently; tell the client only what is certain (\`client-comms\`).
+
+## Example
+"When will I see booked leads?" → "Your first emails haven't gone out yet: the campaign is still finding prospects, and sends start in their business hours. A first positive reply usually comes <timeToFirstPositiveReply, as served> after the first email. Want me to raise the cap so more go out each day?"
 `),
   },
   {
@@ -585,8 +521,8 @@ Four kinds, each lands with someone who acts. Every request is recorded and answ
 | contact_human: the user wants a person | contact_human | A person on the team, now. No issue |
 
 ## Before filing (always)
-1. list_campaigns (GET /v1/sales-funnel-campaigns): does a running campaign already do it (its path, runsWhen)? Then use it, never a request. Prod 2026-10-14: two features filed for "send our own emails as written" while the client's live campaign did exactly that.
-2. Search the API the client's key can call: discover_service_endpoints(service "api", q: the ask's words), then discover_endpoint (MCP: distribute_find_api, then distribute_describe_api). A route covering it is the answer: do it, or tell the user how.
+1. GET /v1/sales-funnel-campaigns: does a running campaign already do it (its path, runsWhen)? Then use it, never a request. Prod 2026-10-14: two features filed for "send our own emails as written" while the client's live campaign did exactly that.
+2. Search the API the client's key can call: find_operation (the ask's words), then describe_operation (MCP: distribute_find_api, then distribute_describe_api). A route covering it is the answer: do it, or tell the user how.
 3. Only then request_staff, saying in missingPiece what you checked.
 
 ## How
@@ -616,8 +552,26 @@ Four kinds, each lands with someone who acts. Every request is recorded and answ
 `),
   },
   {
-    slug: "catalogue",
+    slug: "staff",
     parentSlug: "index",
+    title: "Staff work",
+    description:
+      "distribute.you staff only: declaring channels, pipes, triggers and plays, building workflows, reading our services. Never a client's job.",
+    position: 900,
+    content: t(`
+# Staff work (distribute.you staff only)
+Declaring channels, pipes, triggers and plays, building workflows, reading our services: staff operations, never a client's job and never offered to a client. A client who needs one of them gets a feature request (\`staff-requests\`).
+- The catalogue walk (steps, sales paths, channels, pipes, sales funnels, workflows): \`catalogue\`.
+- One move of a lead between two steps, its rates: \`legs\`. Events that start a reactive leg: \`triggers\`.
+- How a leg runs and what it writes: \`workflows-and-templates\`. Our services and their endpoints: \`infra\`.
+
+## The walk (always in this order)
+1. Steps: find_steps → GET /v1/catalogue/steps. 2. Sales paths: find_sales_paths → GET /v1/catalogue/sales-paths. 3. Channels: find_channels → GET /v1/catalogue/channels. 4. Pipes: find_pipes → GET /v1/catalogue/pipes. 5. Sales funnels (what a client is proposed): find_sales_funnels(offerId, brandId) → GET /v1/offers/{offerId}/sales-funnels?brandId=. 6. Workflows, only if asked (a multi-armed bandit runs the best by return and keeps exploring the others): find_workflows → GET /v1/catalogue/workflows. 7. The client's campaign: \`campaigns\`.
+`),
+  },
+  {
+    slug: "catalogue",
+    parentSlug: "staff",
     title: "Catalogue: organize a request",
     description: "The walk Steps, Sales paths, Channels, Pipes, Sales funnels, Workflows. Load before organizing any ask.",
     position: 5,
@@ -836,7 +790,7 @@ A workflow that does not exist (a new rule, a new step) needs the team: request_
   },
   {
     slug: "infra",
-    parentSlug: "index",
+    parentSlug: "staff",
     title: "Infra: explore our services",
     description: "Services, their endpoints with cost and duration, one endpoint's doc, a read-only test run. Load to build something new.",
     position: 150,

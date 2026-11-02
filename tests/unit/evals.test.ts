@@ -177,13 +177,16 @@ describe("the judge is calibrated (merge gate)", () => {
 });
 
 describe("Sophie changes only with a fresh eval run (merge gate)", () => {
-  it("evals/last-run.json was run on the code as it is now, and beat the recorded baseline", () => {
+  it("evals/last-run.json was run on the code as it is now, and passes at least as many replies as the baseline (pooled)", () => {
     const run = JSON.parse(readFileSync(join(ROOT, "evals/last-run.json"), "utf8")) as {
       codeHash: string;
-      summary: { scenariosPassed: number; criterionRate: Record<string, number> };
-      baseline: { scenariosPassed: number; criterionRate: Record<string, number> };
+      pooled: { replays: number; passRate: number };
+      baseline: { pooled: { replays: number; passRate: number } };
     };
-    expect(run.codeHash, "Sophie's prompt, tools or model changed: run evals/ and record the run in evals/last-run.json").toBe(sophieCodeHash());
-    expect(run.summary.scenariosPassed).toBeGreaterThanOrEqual(run.baseline.scenariosPassed);
+    expect(run.codeHash, "Sophie's prompt, tools, model or briefs changed: run evals/ and record the run in evals/last-run.json").toBe(sophieCodeHash());
+    // One 60-replay run swings by about two scenarios: the gate pools at least two runs a side.
+    expect(run.pooled.replays).toBeGreaterThanOrEqual(120);
+    expect(run.baseline.pooled.replays).toBeGreaterThanOrEqual(120);
+    expect(run.pooled.passRate).toBeGreaterThanOrEqual(run.baseline.pooled.passRate);
   });
 });

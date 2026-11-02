@@ -190,8 +190,13 @@ describe("who gets the setup tools", () => {
     const { skillApiGaps } = await import("../../src/lib/skill-api-ops.js");
     const { AVAILABLE_TOOL_NAMES } = await import("../../src/lib/anthropic.js");
     const skill = SEED_SKILLS.find((s) => s.slug === "new-account")!.content;
-    for (const t of ACCOUNT_SETUP_TOOL_NAMES) expect(skill).toContain(t);
-    expect(skill).toContain("find_sales_funnels");
+    // SOPHIE-REFONTE-1102: the skill names each step's API operation (Sophie and outside AIs call the same one).
+    const { COPILOT_TOOL_API_OPS } = await import("../../src/lib/skill-api-ops.js");
+    for (const t of ACCOUNT_SETUP_TOOL_NAMES) {
+      const frags = COPILOT_TOOL_API_OPS[t].map((f) => f.replace(/^(GET|POST|PUT|PATCH|DELETE) /, ""));
+      expect(frags.some((f) => skill.includes(f)), t).toBe(true);
+    }
+    expect(skill).toContain("GET /v1/offers/{offerId}/sales-funnels");
     expect(skill).toContain("the launch in `campaigns`");
     expect(skillApiGaps(skill, AVAILABLE_TOOL_NAMES)).toEqual({ missing: [], unmapped: [] });
     expect(skill).toContain("never send the person to the dashboard");

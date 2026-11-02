@@ -37,14 +37,32 @@ const cents = (costs: RunCost[]) => costs.reduce((s, c) => s + Number(c.totalCos
 
 async function judge(runId: string, typesafeKey: string, scenario: Scenario, reply: string, actions: readonly string[], contextGiven = ""): Promise<{ verdict: Verdict; cents: number }> {
   const result = await runJudge({ judge: "jev", apiKey: typesafeKey, model: TYPESAFE_DEFAULT_MODEL, state: judgeState(scenario, reply, actions, contextGiven), questions: QUESTIONS });
-  const costs = await addPlatformRunCosts(runId, SERVICE, [
+  const costs = await retryRefused("judge costs", () => addPlatformRunCosts(runId, SERVICE, [
     { costName: judgeActualCostName("jev", result.inputTokens), quantity: result.inputTokens, costSource: "platform" },
-  ]);
+  ]));
   return { verdict: verdictFrom(result.answers as never), cents: cents(costs) };
 }
 
+/**
+ * A sibling service redeploying refuses connections for a minute (prod
+ * 2026-11-02: runs-service mid-run killed a 60-replay eval at 52). Retry a
+ * refused connection only: an answer of any kind is final.
+ */
+async function retryRefused<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const code = (err as { cause?: { code?: string } })?.cause?.code;
+      if (attempt >= 8 || (code !== "ECONNREFUSED" && code !== "ECONNRESET")) throw err;
+      console.warn(`[evals] ${label}: ${code}, retrying in 15s (${attempt}/8)`);
+      await new Promise((r) => setTimeout(r, 15_000));
+    }
+  }
+}
+
 async function withRun<T>(task: string, fn: (runId: string) => Promise<T>): Promise<T> {
-  const run = await createPlatformRun({ serviceName: SERVICE, taskName: task, support: SUPPORT });
+  const run = await retryRefused("create run", () => createPlatformRun({ serviceName: SERVICE, taskName: task, support: SUPPORT }));
   let failed = false;
   try {
     return await fn(run.id);
@@ -52,7 +70,7 @@ async function withRun<T>(task: string, fn: (runId: string) => Promise<T>): Prom
     failed = true;
     throw err;
   } finally {
-    await updatePlatformRunStatus(run.id, SERVICE, failed ? "failed" : "completed");
+    await retryRefused("close run", () => updatePlatformRunStatus(run.id, SERVICE, failed ? "failed" : "completed"));
   }
 }
 
@@ -88,7 +106,7 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
       const r = await withRun("sophie-eval-replay", async (runId) => {
         const fixtures = fixtureExecutor(def, scenario);
         const turn = await replayTurn({ def, scenario, provider, model, apiKey: modelKey, executeTool: fixtures.executeTool, uiText: fixtures.uiText });
-        const modelCosts = await addPlatformRunCosts(runId, SERVICE, turn.costLines.map((l) => ({ costName: l.costName, quantity: l.quantity, costSource: "platform" as const })));
+        const modelCosts = await retryRefused("reply costs", () => addPlatformRunCosts(runId, SERVICE, turn.costLines.map((l) => ({ costName: l.costName, quantity: l.quantity, costSource: "platform" as const }))));
         const actions = turn.toolCalls.map((c) => describeAction(c.name, c.args, c.result));
         const judged = await judge(runId, typesafeKey, scenario, turn.reply, actions, turn.turnContext);
         return {
@@ -117,18 +135,28 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
 }
 
 /** Sophie from the code, with the skills table as production serves it. */
-async function codeDefinition(candidate: "current" | "p2" = "current"): Promise<AgentDefinition> {
+async function codeDefinition(): Promise<AgentDefinition> {
   const { db } = await import("../db/index.js");
   const { listSkills } = await import("../lib/skills.js");
-  const rows = await listSkills(db);
-  return sophieDefinition(rows.map((r) => ({ slug: r.slug, parentSlug: r.parentSlug, title: r.title, description: r.description, content: r.content })), candidate);
+  const { SEED_SKILLS } = await import("../lib/skill-seed.js");
+  // --seed-skills a,b: those skills as this code seeds them, over the live table (a skill rewrite measured before it ships).
+  const fromSeed = new Set((arg("seed-skills") ?? "").split(",").map((x) => x.trim()).filter(Boolean));
+  const rows = (await listSkills(db)).map((r) => ({ slug: r.slug, parentSlug: r.parentSlug, title: r.title, description: r.description, content: r.content }));
+  // --seed-skills all: the whole tree as this code seeds it (what production reads once it ships).
+  if (fromSeed.has("all")) {
+    return sophieDefinition(SEED_SKILLS.map((x) => ({ slug: x.slug, parentSlug: x.parentSlug, title: x.title, description: x.description, content: x.content })));
+  }
+  const merged = rows.map((r) => {
+    const seed = fromSeed.has(r.slug) ? SEED_SKILLS.find((x) => x.slug === r.slug) : undefined;
+    return seed ? { slug: seed.slug, parentSlug: seed.parentSlug, title: seed.title, description: seed.description, content: seed.content } : r;
+  });
+  return sophieDefinition(merged);
 }
 
 async function main() {
   const definitionPath = arg("definition");
   if (!definitionPath) throw new Error("--definition <file> is required");
-  const def =
-    definitionPath === "code" ? await codeDefinition() : definitionPath === "code-p2" ? await codeDefinition("p2") : loadDefinition(definitionPath);
+  const def = definitionPath === "code" ? await codeDefinition() : loadDefinition(definitionPath);
   const only = arg("only")?.split(",").map((s) => s.trim()).filter(Boolean);
   const scenarios = loadScenarios(arg("scenarios") ?? "evals/scenarios").filter((s) => !only || only.includes(s.id));
   if (scenarios.length === 0) throw new Error("[evals] no scenario selected");

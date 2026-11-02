@@ -48,38 +48,7 @@ Cards (present_choices) only when they save typing (the choices skill). Tools se
 
 export const SOPHIE_SYSTEM_PROMPT = `${SOPHIE_ROLE}\n\n${SOPHIE_WEB_PAGES}`;
 
-/**
- * The tools Sophie may call: the list the dashboard registered until 2026-11-02,
- * unchanged in P1 so the evals measure the role and the brief alone. P2 replaces
- * it with the gateway catalogue (find / describe / call) and a small core.
- */
-export const SOPHIE_TOOLS: readonly string[] = [
-  "present_choices", "open_page", "request_user_input", "list_offers",
-  "get_offer_performance", "list_replies_to_handle", "get_spend_by_campaign", "get_campaign_next_steps",
-  "list_recent_runs", "get_billing_account", "get_org_usage", "read_skill",
-  "list_brands", "get_brand_profile", "list_personas", "create_persona",
-  "list_audiences", "suggest_audiences", "set_audience_status", "rename_audience",
-  "refresh_audience_count", "list_qualification_checks", "list_qualification_sources", "suggest_qualification_checks",
-  "create_qualification_check", "update_qualification_check", "archive_qualification_check", "list_sourcing_origins",
-  "get_offer_sourcing", "get_leg_rates", "set_leg_rates", "get_offer_steps",
-  "add_offer_step", "remove_offer_step", "get_offer_settings", "update_offer_settings",
-  "list_sales_paths", "get_trigger_events", "list_campaigns", "list_workflows",
-  "get_workflow_details", "create_workflow", "get_prompt_template", "update_prompt_template",
-  "list_connected_accounts", "get_brand_pause", "create_offer", "list_declared_channels",
-  "list_declared_legs", "list_trigger_types", "list_declared_sales_paths", "declare_channel",
-  "declare_leg", "declare_sales_path", "propose_switch_on", "confirm_switch_on",
-  "find_steps", "find_sales_paths", "find_channels", "find_pipes",
-  "find_sales_funnels", "find_workflows", "create_pipe", "create_sales_path",
-  "create_sales_funnel", "find_plays", "find_strategies", "find_tactics",
-  "create_tactic", "create_strategy", "create_play", "list_funnel_campaigns",
-  "get_funnel_caps", "set_funnel_caps", "create_funnel_campaign", "stop_funnel_campaign",
-  "discover_services", "discover_service_endpoints", "discover_endpoint", "test_endpoint",
-  "request_staff", "request_skill_upgrade", "contact_human", "list_staff_requests",
-  "create_followup", "update_followup", "cancel_followup", "list_followups",
-  "fire_followup", "find_people", "list_people_organizations", "correct_person",
-  "list_people_corrections", "undo_people_correction", "merge_people", "undo_people_merge",
-  "add_contact",
-];
+
 
 /**
  * What the eval merge gate pins (SOPHIE-REFONTE-1102): a change to Sophie's
@@ -97,15 +66,16 @@ export function sophieCodeHash(root = process.cwd()): string {
 export const SOPHIE_BRIEF_SOURCES = ["src/agent/situation.ts", "src/lib/client-brief.ts"] as const;
 
 /**
- * P2 candidate (SOPHIE-REFONTE-1102): the gateway's served API (find / describe
- * / call, as the person) plus a small core the API does not carry: the screen
- * (cards, pages, a field), the skills, a request to our team, and the Copilot's
- * own follow-ups (they run on OUR brand). Replaces SOPHIE_TOOLS once its evals
- * pass and the gateway marks the operations that need the person's yes.
+ * The tools Sophie calls (SOPHIE-REFONTE-1102): the gateway's served API (find /
+ * describe / run_operation, as the person, the yes gated by the gateway's
+ * `x-needs-user-yes`) plus a small core the API does not carry: the screen
+ * (cards, pages, a field), the skills, a request to our team, and the
+ * Copilot's own follow-ups (they run on OUR brand). Measured against the
+ * 97 hand-written tools it replaces: evals/last-run.json.
  */
-export const SOPHIE_TOOLS_P2: readonly string[] = [
+export const SOPHIE_TOOLS: readonly string[] = [
   "find_operation", "describe_operation", "run_operation",
   "read_skill", "present_choices", "open_page", "request_user_input",
-  "contact_human", "request_staff", "list_staff_requests",
+  "contact_human", "request_staff", "request_skill_upgrade", "list_staff_requests",
   "create_followup", "update_followup", "cancel_followup", "list_followups", "fire_followup",
 ];

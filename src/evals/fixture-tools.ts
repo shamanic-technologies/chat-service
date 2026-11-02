@@ -9,7 +9,7 @@ import type { ToolExecutor } from "../lib/gemini-chat.js";
 import { readOurWebsite } from "../lib/our-website.js";
 import { readSkillFrom } from "../lib/skills.js";
 import { parseChoicesArgs, parseChoicesIntro, OPEN_PAGE_TOOL_NAME, PRESENT_CHOICES_TOOL_NAME } from "../lib/ui-tools.js";
-import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, YES_MARKER, describeApi, findApi, operationsForTool, toolsForOperation } from "../agent/catalogue-tools.js";
+import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, describeApi, findApi, needsYes, operationsForTool, toolsForOperation } from "../agent/catalogue-tools.js";
 import { findOperation, getCatalog, matchPath } from "../agent/catalogue.js";
 import type { AgentDefinition } from "./agent-turn.js";
 import type { Scenario } from "./scenario.js";
@@ -71,7 +71,7 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
       const known = operationsForTool(String(a.operationId ?? ""), operations);
       throw new Error(`[run_operation] no operation "${String(a.operationId ?? concretePath)}" in the client API: ${known.length ? `that act is ${known.map((o) => `${o.operationId} (${o.method} ${o.path})`).join(" or ")}` : "use find_operation"}`);
     }
-    if (op.extensions?.[YES_MARKER] === true) {
+    if (needsYes(op, a.body)) {
       return { yesRequired: true, confirmationToken: `replay-${op.operationId}`, request: { operationId: op.operationId }, instruction: "Nothing ran. Ask the person yes or no first." };
     }
     for (const tool of toolsForOperation(op.method, op.path)) {
