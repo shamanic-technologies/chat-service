@@ -4699,7 +4699,7 @@
     ]
   },
   "facts": [
-    "About $3.38 of the $10 balance has been used. The campaign was just restarted with a radio and TV filter on.",
+    "About $3.04 of the $10 balance has been used ($6.96 left), as billing read it at this message. Earlier in this conversation the assistant restarted the campaign with a radio and TV filter on; the campaign list read this turn may still show it stopped.",
     "The campaign itself cost about 2 cents (finding and checking contacts).",
     "Almost all the rest is replies from this assistant chat: each reply was billed at the AI vendor's list price with no markup, about 16 to 21 cents each at the time.",
     "Chat with the AI agent is billed like any other work, at vendor cost (terms on distribute.you).",
@@ -4716,7 +4716,7 @@
     "request_staff {\"kind\": \"feature\", \"repo\": \"costs-service\", \"title\": \"Line-by-line spend breakdown per task for the client\", \"pieceKey\": \"spend-breakdown-by-task\", \"userRequest\": \"So how the fuck have you spent 3$\", \"missingPiece\": \"A client sees about $3 used with 0 emails sent. Today spend by campaign only attri → {\"kind\": \"feature\", \"issueUrl\": \"https://github.com/shamanic-technologies/costs-service/issues/377\", \"duplicate\": false, \"requestId\": \"3631c886-aba9-47ac-9116-ecb7b2d9e0b1\", \"issueError\": null, \"destination\": \"GitHub issue in costs-service + Telegram to the team\", \"staffPinged\": true, \"requestCount\": 1, \"telegramError\": null, \"telegramSkippedReason\": null}",
     "open_page {\"page\": \"billing\", \"title\": \"Your spend\", \"brandId\": \"23c02734-ecc0-4ad7-bb3f-7a101e7b1cd4\"} → {\"page\": \"billing\", \"opened\": true}"
   ],
-  "goodReply": "Of the $3.38 used, your campaign cost 2 cents. The rest is this chat: each reply is billed at the AI provider's price, with no markup, about 20 cents each so far. Your campaign is running with the radio and TV filter on and doesn't need the chat. I've opened your billing page so you can follow every cent.",
+  "goodReply": "Of the $3.04 used, your campaign cost 2 cents. The rest is this chat: each reply is billed at the AI provider's price, with no markup, about 20 cents each so far. Your campaign is running with the radio and TV filter on and doesn't need the chat. I've opened your billing page so you can follow every cent.",
   "goodReplyActions": [
     "get_billing_account",
     "get_org_usage",

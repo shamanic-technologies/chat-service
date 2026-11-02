@@ -25,7 +25,33 @@ describe("buildSituationBrief", () => {
   it("says no campaign means nobody is reached, and gives money in dollars", async () => {
     const brief = await buildSituationBrief(reader());
     expect(brief).toContain("**Campaigns**: none yet, so nobody is being reached.");
-    expect(brief).toContain("payment: postpaid, balance $4.89, no card on file");
+    expect(brief).toContain("postpaid: work is billed as it runs, balance $4.89, no card on file");
+  });
+
+  it("states today's date so a reply never guesses the day (Sunday send 2026-11-01)", async () => {
+    const brief = await buildSituationBrief(reader(), { now: new Date("2026-11-01T12:00:00Z") });
+    expect(brief).toContain("Today: Sunday 1 November 2026 (UTC).");
+  });
+
+  it("says how a postpaid account pays: what it owes and when the card is charged (Jarygo 2026-10-21)", async () => {
+    const brief = await buildSituationBrief(
+      reader({
+        getBillingAccount: async () => ({
+          payment_mode: "postpaid", balance_cents: "-6.44", usage_cents: "6.44", amount_owed_cents: "6.44",
+          credit_line_step_cents: 5000, has_payment_method: true, card_last4: "2096",
+          free_credit_pending_cents: "10000", free_credit_remaining_to_pay_cents: "10000",
+        }),
+      }),
+    );
+    expect(brief).toContain("postpaid: work is billed as it runs; they owe $0.06 now, charged to their card each time it reaches $50.00 and at month end");
+    expect(brief).toContain("$100.00 of credit comes once they have paid $100.00");
+  });
+
+  it("says how a prepaid account pays (Martian DBB 2026-11-01)", async () => {
+    const brief = await buildSituationBrief(
+      reader({ getBillingAccount: async () => ({ payment_mode: "prepaid", balance_cents: "-174.75", usage_cents: "1174.75", has_payment_method: false, has_auto_topup: false }) }),
+    );
+    expect(brief).toContain("prepaid: work is paid from a balance they add money to, balance -$1.75, used $11.75, no card on file");
   });
 
   it("names a read that failed instead of reporting it as empty", async () => {

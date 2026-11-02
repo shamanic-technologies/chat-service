@@ -35,7 +35,7 @@ const num = (v: unknown): number | null => {
 };
 const dollars = (cents: unknown): string | null => {
   const c = num(cents);
-  return c === null ? null : `$${(c / 100).toFixed(2)}`;
+  return c === null ? null : `${c < 0 ? "-" : ""}$${(Math.abs(c) / 100).toFixed(2)}`;
 };
 
 async function settle<T>(label: string, read: () => Promise<T>, failed: string[]): Promise<T | null> {
@@ -70,14 +70,33 @@ function performanceLines(perf: unknown): string[] {
     .map((k) => `- ${k}: ${typeof p[k] === "object" ? JSON.stringify(p[k]).slice(0, 400) : String(p[k])}`);
 }
 
+/**
+ * How this account pays, in words (billing-service's model): a reply that
+ * guessed it told a postpaid client "nothing is due until a meeting is
+ * booked" while they already owed (Jarygo 2026-10-21).
+ */
+function paymentWords(b: Obj): string | null {
+  const mode = str(b.payment_mode);
+  if (mode === "postpaid") {
+    const owed = num(b.amount_owed_cents);
+    const step = dollars(b.credit_line_step_cents);
+    return `postpaid: work is billed as it runs${owed !== null ? `; they owe ${dollars(owed)} now${step ? `, charged to their card each time it reaches ${step} and at month end` : ", charged at month end"}` : ""}`;
+  }
+  if (mode === "prepaid") return `prepaid: work is paid from a balance they add money to${b.has_auto_topup === true ? ", topped up automatically from their card" : ""}`;
+  return mode ? `payment: ${mode}` : null;
+}
+
 function moneyLine(billing: unknown): string {
   const b = asObj(billing);
+  const pending = num(b.free_credit_pending_cents);
+  const toPay = num(b.free_credit_remaining_to_pay_cents);
   const parts = [
-    str(b.payment_mode) ? `payment: ${str(b.payment_mode)}` : null,
+    paymentWords(b),
     dollars(b.balance_cents) ? `balance ${dollars(b.balance_cents)}` : null,
     dollars(b.usage_cents) ? `used ${dollars(b.usage_cents)}` : null,
     b.has_payment_method === true ? `card on file${str(b.card_last4) ? ` (ending ${str(b.card_last4)})` : ""}` : b.has_payment_method === false ? "no card on file" : null,
     num(b.free_credit_spendable_cents) ? `free credit left ${dollars(b.free_credit_spendable_cents)}` : null,
+    pending && toPay ? `${dollars(pending)} of credit comes once they have paid ${dollars(toPay)}` : null,
   ].filter(Boolean);
   return parts.length ? parts.join(", ") : "not read";
 }
@@ -93,7 +112,10 @@ export async function buildSituationBrief(
 ): Promise<string> {
   const failed: string[] = [];
   const brands = asArr(asObj(await settle("brands", () => reader.listBrands(), failed)).brands);
-  const lines: string[] = ["\n\n---\n## Where their account stands (read just now, before this message)"];
+  const lines: string[] = [
+    "\n\n---\n## Where their account stands (read just now, before this message)",
+    `Today: ${(opts.now ?? new Date()).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).replace(",", "")} (UTC).`,
+  ];
   if (brands.length === 0) {
     lines.push(failed.length ? "The account could not be read this turn: use your tools." : "Nothing set up yet: no brand, no campaign.");
     return lines.join("\n");
