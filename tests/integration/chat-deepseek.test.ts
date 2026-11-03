@@ -13,6 +13,7 @@ process.env.BILLING_SERVICE_URL = process.env.BILLING_SERVICE_URL || "https://bi
 
 interface MockRoute {
   match: (url: string, init?: RequestInit) => boolean;
+  before?: () => Promise<void>;
   respond: (url: string, init?: RequestInit) => { ok: boolean; status?: number; body: unknown; text?: string };
 }
 
@@ -97,7 +98,10 @@ function installFetchMock() {
       const url = typeof input === "string" ? input : input.toString();
       fetchCalls.push({ url, init });
       for (const route of routes) {
-        if (route.match(url, init)) return buildResponse(route.respond(url, init));
+        if (route.match(url, init)) {
+          if (route.before) await route.before();
+          return buildResponse(route.respond(url, init));
+        }
       }
       throw new Error(`[test] Unmocked fetch: ${url}`);
     }),
@@ -371,5 +375,50 @@ describe("POST /chat on a DeepSeek config", () => {
     const events = sseEvents(res.text);
     expect(events.some((e) => e.type === "error")).toBe(true);
     expect(fetchCalls.some((c) => c.url.includes("anthropic.com") || c.url.includes("generativelanguage") || c.url.includes("api.z.ai"))).toBe(false);
+  });
+  // SOPHIE-TURN-LOST-1103 (prod 2026-11-03): a paying client left the page while
+  // the Copilot read its tools; the disconnect aborted the turn and stored
+  // "Sorry, my answer did not come through". The turn must finish server-side
+  // and store the real answer, which is what the session shows when they return.
+  it("finishes the turn and stores the real answer when the client disconnects mid-turn", async () => {
+    const app = (await import("../../src/index.js")).default;
+    const ds = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+    let stored!: () => void;
+    const assistantStored = new Promise<void>((resolve) => { stored = resolve; });
+    const watch = setInterval(() => {
+      if (inserted.some((v) => v.role === "assistant")) stored();
+    }, 20);
+
+    // The client hangs up while the tool runs.
+    let hangUp!: () => void;
+    const pending = request(app).post("/chat").set(AUTH).send({ configKey: "test-chat", message: "Which workflows do I have?" });
+    hangUp = () => pending.abort();
+    routes.push(
+      mockKeyDecrypt(),
+      mockRunCreate(),
+      mockRunCosts({ provisionCalls: 0, actualCalls: 0 }),
+      mockCostPatch(),
+      mockRunPatch(),
+      mockTraceEvents(),
+      mockBilling({ calls: 0 }),
+      {
+        ...mockWorkflowList(),
+        before: async () => {
+          hangUp();
+          await new Promise((r) => setTimeout(r, 200));
+        },
+      },
+      mockDeepSeekToolThenText(ds),
+    );
+    pending.end(() => {});
+
+    await Promise.race([assistantStored, new Promise((_, rej) => setTimeout(() => rej(new Error("no assistant row stored")), 5000))]);
+    clearInterval(watch);
+
+    // Both model rounds ran: the disconnect did not cut the loop.
+    expect(ds.calls).toBe(2);
+    const assistant = [...inserted].reverse().find((v) => v.role === "assistant")!;
+    expect(assistant.content).toContain("You have one workflow, Workflow.");
+    expect(assistant.content).not.toContain("did not come through");
   });
 });
