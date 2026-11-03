@@ -144,6 +144,8 @@ function baseRoutes(gemini: { calls: number; bodies: Array<Record<string, unknow
       match: (url) => url === `${process.env.CAMPAIGN_SERVICE_URL}/sales-funnel-campaigns/sfc-1`,
       respond: () => ({ ok: true, body: { salesFunnelCampaign: { id: "sfc-1", salesFunnelId: "start_to_paid_client@ai-lead-proposal", salesFunnelName: "Lead Proposal Deals" } } }),
     },
+    // client-service: this org linked no Telegram chat, the turn stays on the web thread.
+    { match: (url) => url.endsWith("/owner-telegram"), respond: () => ({ ok: true, body: { reachable: false } }) },
     { match: (url) => url.includes("/internal/users/"), respond: () => ({ ok: true, body: { user: { email: "owner@acme.example" } } }) },
     { match: (url) => url.includes("/keys/google/decrypt"), respond: () => ({ ok: true, body: { provider: "google", key: "fake", keySource: "platform" } }) },
     { match: (url, init) => url.endsWith("/v1/runs") && init?.method === "POST", respond: () => ({ ok: true, status: 201, body: { id: RUN, status: "running" } }) },
