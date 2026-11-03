@@ -199,6 +199,18 @@ import {
   reachWhatsapp,
 } from "./lib/channel-copilot.js";
 import {
+  TELEGRAM_CHANNEL,
+  TELEGRAM_TASK_NAME,
+  acceptTelegramMessage,
+  buildTelegramBlock,
+  enqueueTelegramMessage,
+  orgTelegramLinker,
+  recoverTelegramMessages,
+  resolveTelegramChat,
+  sendTelegramToOrg,
+  type TelegramDeps,
+} from "./lib/telegram-copilot.js";
+import {
   COMPLETE_SIGN_IN_TOOL_NAME,
   SIGN_IN_TOOL_NAMES,
   START_SIGN_IN_TOOL_NAME,
@@ -332,7 +344,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -3299,6 +3311,26 @@ app.post("/chat", requireAuth, async (req, res) => {
     }
     proactiveTurn = true;
   }
+  // A Telegram message being answered (POST /internal/copilot/telegram-messages,
+  // on this process, SOPHIE-TELEGRAM-1103): only its row, for this org, user and
+  // session, unlocks the Telegram form. A proactive turn delivered to the org's
+  // linked Telegram asks for the same form through context.channel.
+  let telegramTurn = false;
+  if (parsed.data.channelMessageId) {
+    const [m] = await db
+      .select({ channel: channelInboundMessages.channel, status: channelInboundMessages.status, orgId: channelInboundMessages.orgId, userId: channelInboundMessages.userId, sessionId: channelInboundMessages.sessionId })
+      .from(channelInboundMessages)
+      .where(eq(channelInboundMessages.id, parsed.data.channelMessageId));
+    if (nudge || leadTurn || proactiveTurn || !m || m.channel !== TELEGRAM_CHANNEL || m.status !== "processing" || m.orgId !== orgId || m.userId !== userId || !sessionId || m.sessionId !== sessionId) {
+      return res.status(400).json({ error: "channelMessageId names no Telegram message being answered in this session." });
+    }
+    telegramTurn = true;
+  } else if (proactiveTurn && (context?.channel as { kind?: unknown } | undefined)?.kind === TELEGRAM_CHANNEL) {
+    telegramTurn = true;
+  }
+  // Telegram is a whole surface of its own: a WhatsApp number once bound to the
+  // same thread neither adds sign-in tools nor writes the WhatsApp form here.
+  if (telegramTurn) channelSession = null;
   // The campaign that asked for a proactive turn is hidden from the turn's reads
   // (withoutAskingCampaign): the turn proposes for the person, never itself.
   let askingCampaign: AskingCampaign | null = null;
@@ -3482,7 +3514,7 @@ app.post("/chat", requireAuth, async (req, res) => {
   // `let`: the client brief joins it once the turn's run exists (it reads with that run).
   let turnContextBlock =
     buildSystemPrompt("", promptContext, campaignFeatureInputs) +
-    (leadTurn ? buildLeadTurnBlock(leadTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
+    (leadTurn ? buildLeadTurnBlock(leadTurn) : telegramTurn ? buildTelegramBlock() : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
   let systemPrompt = stableSystemPrompt + turnContextBlock;
   const isGeminiChat = chatProvider === "google";
   // A direct OpenAI-compatible vendor (DeepSeek, CHAT-DEEPSEEK-FLASH-1101): its own loop, vendor-chat.ts.
@@ -5697,6 +5729,46 @@ app.get("/internal/copilot/channel-replies/daily", requireInternalAuth, async (r
   res.json({ days: await channelReplyDays(db, parsed.data.days) });
 });
 
+const telegramDeps: TelegramDeps = {
+  db,
+  resolveChat: (chatId) => resolveTelegramChat(chatId),
+  listBrandIds: (identity) => listOrgBrandIds(identity),
+  createRootRun: (identity) => createChannelRootRun(identity, fetch, TELEGRAM_TASK_NAME),
+  runChat: async (args) => {
+    const res = await fetch(`http://127.0.0.1:${PORT}/chat`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": process.env.CHAT_SERVICE_API_KEY || "chat-service-self",
+        "x-org-id": args.orgId,
+        "x-user-id": args.userId,
+        "x-run-id": args.runId,
+      },
+      body: JSON.stringify({ configKey: COPILOT_CONFIG_KEY, message: args.message, sessionId: args.sessionId, channelMessageId: args.channelMessageId }),
+      signal: AbortSignal.timeout(15 * 60_000),
+    });
+    return { status: res.status, body: await res.text() };
+  },
+  sendReply: (args) => sendTelegramToOrg(args),
+};
+
+app.post("/internal/copilot/telegram-messages", requireInternalAuth, async (req, res) => {
+  const parsed = TelegramMessageRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  let accepted;
+  try {
+    accepted = await acceptTelegramMessage(telegramDeps, parsed.data);
+  } catch (err) {
+    console.error(`[chat-service] telegram chat ${parsed.data.chatId}: could not read its link:`, err);
+    return res.status(502).json({ error: `Could not read whether this chat is linked: ${err instanceof Error ? err.message : String(err)}` });
+  }
+  if (accepted.status !== "accepted") return res.status(200).json({ status: accepted.status });
+  res.status(202).json({ status: "accepted" });
+  void enqueueTelegramMessage(telegramDeps, parsed.data.chatId, accepted.rowId);
+});
+
 const leadTurnDeps: LeadTurnDeps = {
   db,
   resolvePhone: (phone) => resolvePhoneAccount(phone),
@@ -5788,6 +5860,8 @@ const proactiveDeps: ProactiveDeps = {
   copilotLine: () => copilotLineFromEnv(),
   readThread: (args) => readPersonThread(args),
   resolveAskingCampaign: ({ campaignId, ...p }) => resolveAskingCampaign(campaignId, p),
+  telegramLinker: (orgId) => orgTelegramLinker(orgId),
+  sendTelegram: (args) => sendTelegramToOrg(args),
 };
 
 function proactiveTurnBody(row: typeof copilotProactiveTurns.$inferSelect, duplicate: boolean) {
@@ -5836,7 +5910,7 @@ app.post("/internal/copilot/proactive-turns", requireInternalAuth, async (req, r
       brandId: turn.brandId,
       recipientUserId: recipient.userId,
       sessionId: recipient.sessionId,
-      delivery: recipient.whatsapp ? "whatsapp" : "web",
+      delivery: recipient.telegram ? "telegram" : recipient.whatsapp ? "whatsapp" : "web",
       status: "processing",
       parentRunId,
       payload: turn,
@@ -6036,6 +6110,13 @@ if (process.env.NODE_ENV !== "test") {
       failInterruptedProactiveTurns(db, bootedAt)
         .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
         .catch((err) => console.error("[chat-service] proactive turn recovery failed:", err));
+
+      // Telegram messages a restart cut off mid-turn: answered once the port is up.
+      setTimeout(() => {
+        recoverTelegramMessages(telegramDeps)
+          .then((n) => { if (n > 0) console.log(`[chat-service] re-running ${n} Telegram message(s) cut off by a restart`); })
+          .catch((err) => console.error("[chat-service] Telegram recovery failed:", err));
+      }, 60_000).unref();
 
       // Node 20 defaults requestTimeout to 300s (5 min). SSE chat streams
       // can run for 30–60 min when the LLM makes many tool calls, so we

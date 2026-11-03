@@ -275,6 +275,28 @@ describe("pickProactiveRecipient", () => {
     expect(r).toEqual({ userId: "cfe148ed", sessionId: "s-gmail", whatsapp: { phone: "+33680478702" } });
   });
 
+  it("an org that linked its own Telegram hears there, as the member who linked it, in their thread (SOPHIE-TELEGRAM-1103)", async () => {
+    const { db } = fakeDb([[{ id: "s-linker" }]]);
+    const r = await pickProactiveRecipient(
+      { db, fetchEmail: async () => "owner@acme.example", isStaffEmail: () => false, telegramLinker: async () => "u-linker" },
+      REQ.orgId,
+    );
+    expect(r).toEqual({ userId: "u-linker", sessionId: "s-linker", whatsapp: null, telegram: true });
+  });
+
+  it("no Telegram link, an unreadable one, or a linker with no Copilot thread: picks as before", async () => {
+    const team = [{ id: "s-owner", userId: "u-owner", channelPhone: "+33600000000" }];
+    const none = fakeDb([team]);
+    expect(await pickProactiveRecipient({ db: none.db, fetchEmail: async () => "owner@acme.example", isStaffEmail: () => false, telegramLinker: async () => null }, REQ.orgId))
+      .toEqual({ userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000" } });
+    const broken = fakeDb([team]);
+    expect(await pickProactiveRecipient({ db: broken.db, fetchEmail: async () => "owner@acme.example", isStaffEmail: () => false, telegramLinker: async () => { throw new Error("502"); } }, REQ.orgId))
+      .toEqual({ userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000" } });
+    const noThread = fakeDb([[], team]);
+    expect(await pickProactiveRecipient({ db: noThread.db, fetchEmail: async () => "owner@acme.example", isStaffEmail: () => false, telegramLinker: async () => "u-linker" }, REQ.orgId))
+      .toEqual({ userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000" } });
+  });
+
   it("on an org where everyone is staff, the latest staff member; nobody ever used the Copilot → null", async () => {
     const staffOnly = fakeDb([[{ id: "s-1", userId: "u-1", channelPhone: null }]]);
     expect(await pickProactiveRecipient({ db: staffOnly.db, fetchEmail: async () => "kevin@distribute.you", isStaffEmail: () => true }, REQ.orgId))
@@ -289,6 +311,30 @@ const ROW = { id: "turn-1", kind: "hot_lead", orgId: REQ.orgId, brandId: REQ.bra
 
 describe("processProactiveTurn", () => {
   const whatsappRecipient: ProactiveRecipient = { userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000" } };
+
+  it("Telegram: the turn writes in the Telegram form and the answer goes to the org's linked chat as plain text", async () => {
+    const { db, updates } = fakeDb([[ROW]]);
+    const runChat = vi.fn(async () => ({ status: 200, body: sse({ type: "token", content: "**Marie** from Acme wants outbound. Go?" }) }));
+    const sendTelegram = vi.fn(async () => {});
+    const sendWhatsapp = vi.fn(async () => {});
+    const recipient: ProactiveRecipient = { userId: "u-linker", sessionId: "s-linker", whatsapp: null, telegram: true };
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp, sendTelegram }, "turn-1", recipient, {});
+    const args = (runChat.mock.calls[0] as unknown as [Parameters<ProactiveDeps["runChat"]>[0]])[0];
+    expect(args.context.channel).toEqual({ kind: "telegram" });
+    expect(sendTelegram).toHaveBeenCalledWith({ orgId: REQ.orgId, text: "Marie from Acme wants outbound. Go?", runId: "run-1" });
+    expect(sendWhatsapp).not.toHaveBeenCalled();
+    expect(updates.at(-1)).toMatchObject({ status: "delivered", error: null });
+  });
+
+  it("Telegram refused: the message waits in the web thread and the row says why", async () => {
+    const { db, updates } = fakeDb([[ROW]]);
+    const runChat = vi.fn(async () => ({ status: 200, body: sse({ type: "token", content: "Go?" }) }));
+    const sendTelegram = vi.fn(async () => { throw new Error("telegram delivery_failed: bot was blocked by the user"); });
+    const recipient: ProactiveRecipient = { userId: "u-linker", sessionId: "s-linker", whatsapp: null, telegram: true };
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp: vi.fn(), sendTelegram }, "turn-1", recipient, {});
+    expect(updates.at(-1)).toMatchObject({ status: "failed" });
+    expect(String(updates.at(-1)!.error)).toContain("telegram delivery failed, the message waits in the web Copilot thread");
+  });
 
   it("sends the answer once on WhatsApp from the linked account, keyed on the turn", async () => {
     const { db, updates } = fakeDb([[ROW]]);

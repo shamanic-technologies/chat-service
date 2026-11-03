@@ -2003,6 +2003,63 @@
           "days"
         ]
       },
+      "TelegramMessageResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "duplicate",
+              "not_linked"
+            ],
+            "description": "`accepted`: the chat is linked to an org; the Copilot answers in that chat shortly (sent by chat-service). `duplicate`: this message was already taken. `not_linked`: the chat is linked to no org, nothing runs; the bot answers it with the linking guidance."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "TelegramMessageRequest": {
+        "type": "object",
+        "properties": {
+          "chatId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "description": "The Telegram chat that wrote to the platform bot.",
+            "example": "123456789"
+          },
+          "messageId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "description": "Telegram's message id in that chat (a webhook retry of the same message runs nothing twice).",
+            "example": "42"
+          },
+          "text": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 8000,
+            "description": "What they wrote (text or caption); null for a message with no text (photo, voice note, file)."
+          }
+        },
+        "required": [
+          "chatId",
+          "messageId",
+          "text"
+        ]
+      },
       "LeadTurnResponse": {
         "type": "object",
         "properties": {
@@ -2208,6 +2265,7 @@
           "delivery": {
             "type": "string",
             "enum": [
+              "telegram",
               "whatsapp",
               "web"
             ]
@@ -2597,6 +2655,11 @@
             "type": "string",
             "format": "uuid",
             "description": "Internal: set only by chat-service itself when running a proactive turn (POST /internal/copilot/proactive-turns). Must name a turn in progress for this org, user and session, or the request is refused (400). The turn then gets read tools only and its trigger is stored hidden."
+          },
+          "channelMessageId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Internal: set only by chat-service itself when answering a Telegram message (POST /internal/copilot/telegram-messages). Must name a Telegram message being answered for this org, user and session, or the request is refused (400). The turn then writes for Telegram (plain text)."
           },
           "leadTurnId": {
             "type": "string",
@@ -5290,6 +5353,67 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/internal/copilot/telegram-messages": {
+      "post": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "A chat wrote to the platform Telegram bot: the Copilot answers a linked client there",
+        "description": "Called by the platform bot's webhook for every message from a chat that is not the team's. The chat is the identity: client-service names the org it is linked to (dashboard card Telegram updates, one-time code) and the member who linked it, newest link first. A linked chat runs a Copilot turn as that member, in their latest Copilot conversation (the web thread), billed to their org on a Copilot support run; the answer goes back to the chat as plain text through client-service. An unlinked chat runs nothing (`not_linked`). Answers fast; the turn runs after the response, one message at a time per chat.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelegramMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "`duplicate` or `not_linked`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramMessageResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "`accepted`: the answer will be sent to the chat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramMessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Missing x-api-key"
+          },
+          "502": {
+            "description": "client-service could not say whether the chat is linked"
           }
         }
       }

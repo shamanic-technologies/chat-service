@@ -291,7 +291,7 @@ export const copilotProactiveTurns = pgTable(
     brandId: text("brand_id").notNull(),
     recipientUserId: text("recipient_user_id").notNull(),
     sessionId: uuid("session_id").notNull(),
-    delivery: text("delivery").notNull().$type<"whatsapp" | "web">(),
+    delivery: text("delivery").notNull().$type<"telegram" | "whatsapp" | "web">(),
     status: text("status").notNull().$type<"processing" | "delivered" | "out_of_credits" | "failed">(),
     parentRunId: text("parent_run_id").notNull(),
     payload: jsonb("payload").notNull(),

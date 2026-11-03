@@ -14,9 +14,10 @@
  *  2. the turn runs through POST /chat itself on that member's latest Copilot
  *     session (the thread the web and WhatsApp share), with READ tools only:
  *     nothing is created, started, sent or spent for the lead in that turn;
- *  3. the answer goes out on WhatsApp when that thread is tied to a number (from
- *     the same linked account that last answered them), else it waits in the
- *     web Copilot thread. The team answers "go" in that thread and the Copilot
+ *  3. the answer goes out on Telegram when the org linked its chat (the member
+ *     who linked it is then the recipient, SOPHIE-TELEGRAM-1103), else on
+ *     WhatsApp when that thread is tied to a number (from the same linked
+ *     account that last answered them), else it waits in the web Copilot thread. The team answers "go" in that thread and the Copilot
  *     continues with the whole context and its usual confirm rules.
  *
  * Cross-org: nothing here names a brand, an org or the assistant's persona.
@@ -26,7 +27,7 @@ import type { db as Db } from "../db/index.js";
 import { copilotProactiveTurns, sessions } from "../db/schema.js";
 import type { ProactiveTurnRequest } from "../schemas.js";
 import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
-import { WhatsappSendError, parseChatStream, renderChannelReply, type ChatChannelContext } from "./channel-copilot.js";
+import { WhatsappSendError, parseChatStream, renderChannelReply, toPlainText, type ChatChannelContext } from "./channel-copilot.js";
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
 import type { AskingCampaign } from "./funnel-campaign-client.js";
 
@@ -225,6 +226,13 @@ export interface ProactiveDeps {
   readThread: (args: { orgId: string; userId: string; runId: string; brandId: string; lead: ProactiveTurnRequest["lead"] }) => Promise<PersonThreadMessage[]>;
   /** campaign-service: the campaign whose step asked (resolveAskingCampaign). */
   resolveAskingCampaign: (args: { orgId: string; userId: string; runId: string; campaignId: string }) => Promise<AskingCampaign>;
+  /**
+   * client-service: the member who linked the org's own Telegram chat, null when
+   * the org has none (absent = Telegram is never used).
+   */
+  telegramLinker?: (orgId: string) => Promise<string | null>;
+  /** client-service: one message to the org's linked Telegram chat; throws unless sent. */
+  sendTelegram?: (args: { orgId: string; text: string; runId: string }) => Promise<void>;
   /** Waits between delivery attempts (injected for tests). */
   sleep?: (ms: number) => Promise<void>;
 }
@@ -253,6 +261,8 @@ export interface ProactiveRecipient {
   sessionId: string;
   /** The WhatsApp hop when this person's thread is tied to a number, else null (web thread). */
   whatsapp: { phone: string } | null;
+  /** The org's linked Telegram chat is where this one goes (it wins over WhatsApp: the org chose it). */
+  telegram?: boolean;
 }
 
 const MAX_CANDIDATES = 10;
@@ -265,9 +275,29 @@ const MAX_CANDIDATES = 10;
  * latest Copilot session is the thread; null when nobody ever used the Copilot.
  */
 export async function pickProactiveRecipient(
-  deps: Pick<ProactiveDeps, "db" | "fetchEmail" | "isStaffEmail">,
+  deps: Pick<ProactiveDeps, "db" | "fetchEmail" | "isStaffEmail" | "telegramLinker">,
   orgId: string,
 ): Promise<ProactiveRecipient | null> {
+  // An org that linked its own Telegram chat hears there, from the member who
+  // linked it, in their own Copilot thread: their answer in Telegram continues it.
+  if (deps.telegramLinker) {
+    let linker: string | null = null;
+    try {
+      linker = await deps.telegramLinker(orgId);
+    } catch (err) {
+      console.error(`[chat-service] proactive recipient org="${orgId}": Telegram link unreadable, picking without it: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (linker) {
+      const [own] = await deps.db
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(and(eq(sessions.orgId, orgId), eq(sessions.userId, linker), eq(sessions.configKey, COPILOT_CONFIG_KEY), eq(sessions.guest, false), eq(sessions.leadThread, false)))
+        .orderBy(desc(sessions.updatedAt))
+        .limit(1);
+      if (own) return { userId: linker, sessionId: own.id, whatsapp: null, telegram: true };
+      console.warn(`[chat-service] proactive recipient org="${orgId}": the member who linked Telegram has no Copilot thread yet, picking without Telegram`);
+    }
+  }
   const rows = await deps.db
     .select({ id: sessions.id, userId: sessions.userId, channelPhone: sessions.channelPhone, leadThread: sessions.leadThread })
     .from(sessions)
@@ -354,7 +384,10 @@ export async function processProactiveTurn(
       runId: row.parentRunId,
       sessionId: recipient.sessionId,
       message: buildProactiveTriggerMessage(req, { thread, asking }),
-      context: { brandId: row.brandId, ...(recipient.whatsapp && line ? { channel: proactiveChannelContext(recipient.whatsapp.phone, persona) } : {}) },
+      context: {
+        brandId: row.brandId,
+        ...(recipient.telegram ? { channel: { kind: "telegram" } } : recipient.whatsapp && line ? { channel: proactiveChannelContext(recipient.whatsapp.phone, persona) } : {}),
+      },
       proactiveTurnId: row.id,
       trackingHeaders,
     });
@@ -369,6 +402,15 @@ export async function processProactiveTurn(
     } else {
       if (!turn.text.trim()) throw new Error("the turn ended with no answer");
       replyText = turn.text;
+      if (recipient.telegram) {
+        replyText = renderChannelReply(turn, toPlainText);
+        if (!deps.sendTelegram) throw new Error("telegram delivery is not wired, the message waits in the web Copilot thread");
+        try {
+          await deps.sendTelegram({ orgId: row.orgId, text: replyText, runId: row.parentRunId });
+        } catch (err) {
+          throw new Error(`telegram delivery failed, the message waits in the web Copilot thread: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       if (recipient.whatsapp && notReachable) {
         throw new Error(`whatsapp not reachable, the message waits in the web Copilot thread: ${notReachable}`);
       }
