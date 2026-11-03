@@ -1,3 +1,4 @@
+import { returnLine, type ExpectedReturnBody, type RealizedReturnBody } from "./return-words.js";
 import type { ApiCallParams } from "./api-client.js";
 import { DeclarationRefusedError, features } from "./declarations-client.js";
 import { assertFunnelNotMixed } from "./funnel-mix.js";
@@ -364,9 +365,10 @@ interface CampaignResults {
   /** The campaign's path, in order (owner 2026-10-11: the path IS the description). */
   path?: { items?: Array<{ kind?: string; label?: string; name?: string }> } | null;
   investedUsd?: number | null;
-  roiMultiple?: number | null;
   moneyUnavailableReason?: string | null;
-  maturity?: { isMature?: boolean } | null;
+  /** The ONLY returns a client is told (ROI-CONSISTENCY-1103): expected, and realized (Paid clients over money spent). */
+  expectedReturn?: ExpectedReturnBody | null;
+  costEconomics?: { realizedReturn?: RealizedReturnBody | null } | null;
 }
 
 async function campaignResults(brandId: string, p: ApiCallParams): Promise<Map<string, CampaignResults>> {
@@ -399,10 +401,10 @@ export function investedWords(r: CampaignResults | undefined): string {
   return `$${r.investedUsd} invested since start`;
 }
 
-/** The campaign's return as served, with its maturity: never presented as final while learning. */
+/** "Expected 18x · no paid client yet ($94 spent)": the expected and realized returns only (ROI-CONSISTENCY-1103). */
 export function returnWords(r: CampaignResults | undefined): string {
-  if (!r || typeof r.roiMultiple !== "number") return "no return measured yet";
-  return r.maturity?.isMature === true ? `${r.roiMultiple}x` : `${r.roiMultiple}x so far (still learning, not mature)`;
+  if (!r) return "no return served yet";
+  return returnLine(r.expectedReturn, r.costEconomics?.realizedReturn);
 }
 
 /** "Each time: Email Pushed Via API" for a reactive funnel; a proactive one runs on its own caps. */

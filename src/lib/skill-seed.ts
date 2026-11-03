@@ -496,6 +496,7 @@ The brief already says what runs, its spend and its results. Read deeper only fo
 
 ## Rules
 - Served figures only. Never add, average or estimate a figure yourself.
+- Two returns only, quoted as served (\`return\`): "Expected 18x" and the realized one (paid clients over money spent: "no paid client yet ($94 spent)"). Never a return per channel, step or workflow, never "so far" or a % / $ CAC.
 - Two figures disagree: file it for the team (request_staff → POST /v1/staff-requests, kind bug), silently; tell the client only what is certain (\`client-comms\`).
 
 ## Example
@@ -581,12 +582,11 @@ Declaring channels, pipes, triggers and plays, building workflows, reading our s
 The menu of everything the platform can do, measured across all accounts. Owner: features-service. One find tool per level, small pages. Every catalogue object is shared by every account; only a campaign belongs to one.
 
 ## Every row
-id, name, icon, line, cost, costUsd, roi, status.
+id, name, icon, line, cost, costUsd, status.
 - cost: the figure WITH its unit ("$137.43 per positive reply", "$2748.69 per paying client (estimated)"). Quote it exactly, unit and "(estimated)" included. A channel or pipe cost is per its outcome, never per paying client; only sales paths and funnels are per paying client.
-- return: "0.91x (estimated)". Every return is an estimate today: say "estimated" (or "about"), never "measured".
-- roi: value / cost. Above 1 pays back.
-- expected: the same figures where an input is assumed (cost and return carry "(expected)" and what they rest on). Use it only when cost or return is null, and say "expected".
-- status: measured (real evidence), estimated (a rate it rests on is not measured: say "estimated", never "measured"), learning (not measured yet: cost and roi are null, say so), customer_time (the customer's own team: no cost to us).
+- No return on a row: a step, path, channel, pipe, funnel or workflow has a cost, never a return.
+- expected (per offer): cost "(expected)" and return "Expected 1.5x (fleet inputs)", what a campaign on it would expect. Say "expected".
+- status: measured (real evidence), estimated (a rate it rests on is not measured: say "estimated", never "measured"), learning (not measured yet: cost is null, say so), customer_time (the customer's own team: no cost to us).
 Pages are 10 rows by default, 25 at most. Narrow with filters or q, never page through everything. Pass id to any find tool to read ONE object in detail.
 
 ## Through the API
@@ -638,10 +638,10 @@ A sales path is a chain of steps from first contact to Paid client, with no chan
 
 ## Read
 - find_sales_paths(containsSteps: [step ids]) → GET /v1/catalogue/sales-paths: the paths through the user's step, best return first.
-- Per offer: list_sales_paths(brandId, offerId) → GET /v1/offers/{offerId}/sales-paths?brandId=: every path with channels, rates, cost per paying client, return. Those rows are Sales Funnels in the catalogue (same id).
+- Per offer: list_sales_paths(brandId, offerId) → GET /v1/offers/{offerId}/sales-paths?brandId=: every path with channels, rates, cost per paying client, expected return (say "expected"). Those rows are Sales Funnels in the catalogue (same id).
 
 ## Choose
-Prefer measured paths with the highest roi. A path is only a shape: the channels come next. Map the user's sequence onto the closest ranked funnel first and show its return and cost per paying client before proposing it. A campaign IS a funnel campaign: see \`campaigns\`.
+Prefer measured paths with the highest roi. A path is only a shape: the channels come next. Map the user's sequence onto the closest ranked funnel first and show its expected return and cost per paying client before proposing it. A campaign IS a funnel campaign: see \`campaigns\`.
 
 ## Create
 create_sales_path(legKeys in order) when the user's sequence matches none → POST /v1/catalogue/sales-paths {legKeys, triggerId?}. Every leg must be performed by some pipe (find_pipes → GET /v1/catalogue/pipes). Returns created:false when it exists. A new funnel: \`catalogue-sales-funnels\`.
@@ -759,7 +759,7 @@ A funnel is worth proposing only if the client's business has EVERY step on its 
 - A funnel's path never changes: never "move" a campaign to another path. A campaign on a step the business lacks: offer to stop it (stop_funnel_campaign → PATCH /v1/sales-funnel-campaigns/{id} {status: "stop"}) and start a new one on the right funnel.
 
 ## Propose
-First WRITE the 1 to 3 funnels in the text, one line each: name, what it does, cost per paying client, return (learning: "not measured yet"). Two or more real options are an obvious pick: one card per funnel (see \`choices\`), its cost as a number visual (cents). One clear best funnel: say why and ask, no cards. The user picks; then \`campaigns\`: it becomes a campaign with at least one cap they state (max budget, max volume, or both).
+First WRITE the 1 to 3 funnels in the text, one line each: name, what it does, cost per paying client, expected return (none: "not known yet"). Two or more real options are an obvious pick: one card per funnel (see \`choices\`), its cost as a number visual (cents). One clear best funnel: say why and ask, no cards. The user picks; then \`campaigns\`: it becomes a campaign with at least one cap they state (max budget, max volume, or both).
 
 ## Create
 create_sales_funnel → POST /v1/catalogue/sales-funnels (pipeIds in order: one pipe or play per step (find_plays → GET /v1/plays?pipe=), a Your Team pipe for a step the customer's team works). Live at once. For a customer every pipe must be one we run (refused otherwise). A user who only wants leads: Start -> Lead found with a source, then Paid client with your-team-closing-calls; no email goes out, say so.

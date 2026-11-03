@@ -1390,7 +1390,7 @@ Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaig
 
 `get_channel_catalogue` is RETIRED (2026-10-10): one read was 128k characters; `find_channels` / `find_pipes` replace it.
 
-**Agent catalogue** (`src/lib/catalogue-client.ts`, owner 2026-10-10 "chat first"). The Copilot organizes a request level by level on small pages: Steps -> Sales Paths -> Channels -> Pipes -> Sales Funnels -> Workflows. Owner: features-service `/internal/catalogue/*`, called directly with chat-service's features-service key. Bodies are verbatim (rows: `id, name, icon, line, costUsd, roi, status`). `limit` is 1-25 (refused above, before any call); `id` reads one object in detail.
+**Agent catalogue** (`src/lib/catalogue-client.ts`, owner 2026-10-10 "chat first"). The Copilot organizes a request level by level on small pages: Steps -> Sales Paths -> Channels -> Pipes -> Sales Funnels -> Workflows. Owner: features-service `/internal/catalogue/*`, called directly with chat-service's features-service key. Bodies are verbatim (rows: `id, name, icon, line, costUsd, status`; the fleet `roi` / `roiBasis` are dropped, ROI-CONSISTENCY-1103). `limit` is 1-25 (refused above, before any call); `id` reads one object in detail.
 
 | Tool | Route |
 |---|---|
@@ -1409,7 +1409,9 @@ Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaig
 
 Every create stamps `createdBy` = the requester and `requestedByOrgId` = the chat's org (tactics, strategies and plays: `createdBy` only, they are shared by every customer).
 
-**Every cost carries its unit.** features-service serves `costPer` on every catalogue row and detail (`per positive reply`, `per paying client`); `withCostUnits` adds `cost: "$137.43 per positive reply"` beside every `costUsd` (suffixed ` (estimated)` when features-service serves `status: estimated`) and `return: "0.91x (estimated)"` beside every `roi` (from `roiBasis`), recursively, and FAILS LOUD on a cost served without its unit or a return without its basis (prod 2026-10-10: a per-reply channel cost was quoted per paying client).
+**Two returns only (ROI-CONSISTENCY-1103).** Every sentence stating a return to a client is built by `src/lib/return-words.ts`: the EXPECTED return (features-service `expectedReturn`, "Expected 18x") and the REALIZED one (`costEconomics.realizedReturn`, paid clients over money spent: "no paid client yet ($94 spent)"). `list_campaigns` rows and `get_offer_performance` carry it as `return`; the pipeline ROI, its flash/mature variants and % / $ CAC never leave this service.
+
+**Every cost carries its unit.** features-service serves `costPer` on every catalogue row and detail (`per positive reply`, `per paying client`); `withCostUnits` adds `cost: "$137.43 per positive reply"` beside every `costUsd` (suffixed ` (estimated)` when features-service serves `status: estimated`) recursively, and FAILS LOUD on a cost served without its unit. A row states no return; only an offer's `expected` block gets `return: "Expected 1.5x (fleet inputs)"` (prod 2026-10-10: a per-reply channel cost was quoted per paying client).
 
 **Only what we run today** (owner 2026-10-10: a customer surface never presents a channel we do not run). Every channel / pipe / sales-path / sales-funnel list is sent `runnable=true` (features-service: published AND customer-operated or managed); a detail read of a `runnable: false` object answers `{ id, weRunItToday: false, instruction }` instead of its body. `includeNotRunnable: true` lifts both, staff requesters only (email from client-service, `isStaffEmail`; a failed lookup counts as a customer). `create_pipe` is staff only; a customer's `create_sales_funnel` is refused if a pipe is not runnable. The declaration tools (`list_declared_*`, `list_trigger_types`, `declare_*`) need `staffBuild: true` AND a staff requester.
 

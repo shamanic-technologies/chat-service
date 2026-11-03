@@ -1,3 +1,4 @@
+import { returnLine, type ExpectedReturnBody, type RealizedReturnBody } from "./return-words.js";
 import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
 import { FunnelError } from "./funnel-client.js";
 
@@ -134,7 +135,7 @@ export const OFFER_PERFORMANCE_FIELDS = [
   "brandId",
   "costBasis",
   "headline",
-  "costEconomics",
+  "expectedReturn",
   "recipientsContacted",
   "recipientsClicked",
   "recipientsRepliesPositive",
@@ -143,7 +144,6 @@ export const OFFER_PERFORMANCE_FIELDS = [
   "signups",
   "formSubmissions",
   "outcomes",
-  "maturity",
 ] as const;
 
 export function compactOfferPerformance(body: unknown): unknown {
@@ -151,6 +151,11 @@ export function compactOfferPerformance(body: unknown): unknown {
   const b = body as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const k of OFFER_PERFORMANCE_FIELDS) if (k in b) out[k] = b[k];
+  // The two returns a client is ever told (ROI-CONSISTENCY-1103): `costEconomics` (pipeline ROI, % / $ CAC)
+  // and `maturity` (its flash / mature variants) are retired, so only the realized return leaves this read.
+  const ce = b.costEconomics as { realizedReturn?: RealizedReturnBody | null } | null | undefined;
+  out.realizedReturn = ce?.realizedReturn ?? null;
+  out.return = returnLine(b.expectedReturn as ExpectedReturnBody | null | undefined, ce?.realizedReturn);
   out.omitted =
     "Per-company list, per-day series and per-channel detail are left out to keep the chat small: the offer and campaign pages show them (open_page).";
   return out;

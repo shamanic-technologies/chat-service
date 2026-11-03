@@ -241,6 +241,10 @@ The four platform routes read `readPlatformCaller` (`src/lib/platform-parent-run
 
 The Copilot's prompt, skills, tools, model and thinking level change ONLY with a passing run of `evals/` (the gate: `evals/last-run.json`, pooled pass rate over at least 3 replies per scenario (100+) a side >= the baseline's, on the current `sophieCodeHash()`; one 60-replay run swings by about two scenarios) (see `evals/README.md`): real conversations replayed through the real tool loop on recorded account answers, judged by Jev on six criteria (true, respectful, proactive, answers, next action, form) plus cost per reply under $0.03. The judge is trusted only while `evals/calibration.json` holds 100% (every known-bad production reply fails, every good reply passes; pinned in `tests/unit/evals.test.ts`). A production failure becomes a scenario BEFORE its fix. Replays run inside the chat-service container (platform keys, spend on `staff_experiment` runs); tools answer from the scenario, so no client account is ever read or written. Never weaken a judge question to make a reply pass: fix the agent, or the scenario's facts when they were wrong.
 
+## Two returns only, built in `return-words.ts` (ROI-CONSISTENCY-1103, owner 2026-11-03)
+
+A return is told to a client only as the EXPECTED return (features `expectedReturn`, always "Expected") or the REALIZED one (`costEconomics.realizedReturn`: paid clients over money spent, whole history; stated only when it carries `spentUsd`). Never the pipeline `costEconomics.roiMultiple`, its flash/mature ("so far, still learning"), % / $ CAC, nor a catalogue row's fleet `roi` (`withCostUnits` drops it). New surface = call `returnLine`, never format a multiple elsewhere.
+
 ## Code Conventions
 
 - TypeScript strict mode, ESM modules

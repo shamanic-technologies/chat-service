@@ -1,3 +1,4 @@
+import { multipleWords } from "./return-words.js";
 import {
   DeclarationRefusedError,
   ON_HOLD_INSTRUCTION,
@@ -152,7 +153,7 @@ export function withCostUnits(value: unknown): unknown {
       if (typeof o.basis !== "string" || o.basis.trim() === "") {
         throw new Error("[catalogue] features-service served an expected return without its basis");
       }
-      out.return = `${o.roi}x (expected, ${o.basis} inputs)`;
+      out.return = `Expected ${multipleWords(o.roi)} (${o.basis} inputs)`;
     }
     return out;
   }
@@ -164,13 +165,9 @@ export function withCostUnits(value: unknown): unknown {
     // owner 2026-10-10: never present an estimate as measured).
     out.cost = `$${o.costUsd} ${o.costPer}${o.status === "estimated" ? " (estimated)" : ""}`;
   }
-  if (typeof o.roi === "number") {
-    if (o.roiBasis !== "measured" && o.roiBasis !== "estimated") {
-      throw new Error(`[catalogue] features-service served a return without its basis (roiBasis) on ${String(o.id ?? "a row")}`);
-    }
-    out.return = `${o.roi}x (${o.roiBasis})`;
-  }
-  for (const [k, v] of Object.entries(o)) out[k] = withCostUnits(v);
+  // A fleet-average return per step / path / channel / pipe / funnel / workflow is RETIRED
+  // (ROI-CONSISTENCY-1103: a return exists only where a value lands): the row keeps its cost, never a return.
+  for (const [k, v] of Object.entries(o)) if (k !== "roi" && k !== "roiBasis") out[k] = withCostUnits(v);
   return out;
 }
 
