@@ -4,7 +4,8 @@
 // release is live:
 //   node scripts/sophie-skills-staff-rows.mjs            (dry run: prints the plan)
 //   node scripts/sophie-skills-staff-rows.mjs --apply
-// - budget-and-billing: the seed's "Their money" job skill (its postpaid rules carried over).
+// - budget-and-billing: the seed's "Their money" job skill (SOPHIE-BRIEF-EQUALS-DASHBOARD-1103: no
+//   "never mention" rule; a payment notice the dashboard shows is said in its words).
 // - legs, triggers: moved under `staff`, content unchanged.
 import { SEED_SKILLS } from "../dist/lib/skill-seed.js";
 

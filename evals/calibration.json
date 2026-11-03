@@ -1,9 +1,9 @@
 {
   "kind": "calibration",
-  "at": "2026-11-02T14:14:36.029Z",
+  "at": "2026-11-03T16:24:09.748Z",
   "judge": "jev/jev-latest",
-  "cases": 34,
-  "agree": 34,
+  "cases": 36,
+  "agree": 36,
   "passed": true,
   "rows": [
     {
@@ -53,6 +53,7 @@
         "true",
         "respectful",
         "proactive",
+        "answers",
         "form"
       ]
     },
@@ -272,6 +273,25 @@
         "proactive",
         "answers"
       ]
+    },
+    {
+      "id": "state-declined-proactive",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "answers",
+        "nextAction",
+        "form"
+      ]
+    },
+    {
+      "id": "state-declined-proactive",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
     }
   ]
 }

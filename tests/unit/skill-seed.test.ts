@@ -267,6 +267,17 @@ describe("a campaign IS a funnel campaign in every skill (owner rule)", () => {
   });
 });
 
+describe("the money skill lets the served state speak (SOPHIE-BRIEF-EQUALS-DASHBOARD-1103)", () => {
+  it("no 'never mention' rule, and a payment notice is said in the dashboard's words", () => {
+    const b = SEED_SKILLS.find((s) => s.slug === "budget-and-billing")!.content;
+    // « Postpaid: billing is a non-topic, never mention billing holding a campaign » licensed
+    // "nothing is blocking your account" while the dashboard said "Campaigns paused: payment declined".
+    expect(b).not.toMatch(/never mention|non-topic/i);
+    expect(b).toMatch(/as their dashboard shows it/);
+    expect(b).toMatch(/Campaigns paused: payment declined/);
+  });
+});
+
 describe("no per-step writes in the Copilot's skills (owner 2026-10-10)", () => {
   it("budgets are set_funnel_caps and on/off is the funnel campaign; a source has no budget of its own", () => {
     for (const sk of SEED_SKILLS) expect(sk.content, sk.slug).not.toMatch(/set_campaign_budget|stop_campaign\b|start_campaign\b|activate_campaign/);
