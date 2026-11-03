@@ -216,3 +216,21 @@ describe("authorizeCredits", () => {
     );
   });
 });
+
+describe("getPaymentOutlook (SOPHIE-BRIEF-EQUALS-DASHBOARD-1103)", () => {
+  it("reads billing's payment outlook for the org, verbatim, with the service key only", async () => {
+    const body = { state: "charge_blocked", blockedReason: "card_declined" };
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(body)) });
+    const { getPaymentOutlook } = await loadModule();
+    expect(await getPaymentOutlook("8c043fa7-88b9-4e92-a96b-3dab875cb465")).toEqual(body);
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("https://billing.test.local/internal/accounts/by-org/8c043fa7-88b9-4e92-a96b-3dab875cb465/payment-outlook");
+    expect(init.headers).toEqual({ "X-API-Key": "test-billing-key" });
+  });
+
+  it("fails loud on a refusal", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: false, status: 502, text: () => Promise.resolve("down") });
+    const { getPaymentOutlook } = await loadModule();
+    await expect(getPaymentOutlook("o")).rejects.toThrow(/payment-outlook returned 502: down/);
+  });
+});

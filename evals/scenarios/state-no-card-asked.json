@@ -1,0 +1,150 @@
+{
+ "id": "state-no-card-asked",
+ "title": "Is my campaign running? (no card)",
+ "source": "client B, whatsapp, 2026-11-03",
+ "surface": "whatsapp",
+ "person": {
+  "name": "Chris"
+ },
+ "history": [],
+ "message": "Is my campaign still running?",
+ "fixtures": {
+  "list_brands": [
+   {
+    "brands": [
+     {
+      "id": "33211c62-b34b-4d21-b124-4ff16338c800",
+      "name": "Beyond Logic",
+      "domain": "beyondlogic.tech",
+      "brandUrl": "https://beyondlogic.tech"
+     }
+    ]
+   }
+  ],
+  "list_offers": [
+   {
+    "offers": [
+     {
+      "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+      "brandId": "33211c62-b34b-4d21-b124-4ff16338c800",
+      "name": "Fixed-Price Software Build",
+      "status": "active",
+      "description": "Custom software development delivered in 30 days for a fixed fee with full code ownership."
+     }
+    ]
+   }
+  ],
+  "get_offer_settings": [
+   {
+    "lifetimeRevenueUsd": 15000,
+    "bookingUrl": null
+   }
+  ],
+  "get_offer_performance": [
+   {
+    "brandId": "33211c62-b34b-4d21-b124-4ff16338c800",
+    "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+    "recipientsContacted": 828,
+    "recipientsClicked": {
+     "total": 3
+    },
+    "recipientsRepliesPositive": {
+     "total": 1
+    },
+    "spent": {
+     "actualSpentCents": 10316,
+     "totalSpentCents": 14944
+    },
+    "return": "Expected 6x · no paid client yet ($103.16 spent)"
+   }
+  ],
+  "list_replies_to_handle": [
+   {
+    "leads": [],
+    "total": 0,
+    "nextCursor": null
+   }
+  ],
+  "get_billing_account": [
+   {
+    "org_id": "8c043fa7-88b9-4e92-a96b-3dab875cb465",
+    "payment_mode": "postpaid",
+    "balance_cents": "-2140.0000000000",
+    "usage_cents": "17837.6329741000",
+    "amount_owed_cents": "2140.0000000000",
+    "credit_line_cents": 5000,
+    "credit_line_step_cents": 5000,
+    "credited_cents": "4013.0000000000",
+    "cash_paid_cents": "4013.0000000000",
+    "actual_balance_cents": "-2140.0000000000",
+    "has_auto_topup": false,
+    "has_payment_method": false,
+    "card_brand": null,
+    "card_last4": null,
+    "usage_discount_pct": 50,
+    "postpaid_card_check": "passed"
+   }
+  ],
+  "get_payment_outlook": [
+   {
+    "orgId": "8c043fa7-88b9-4e92-a96b-3dab875cb465",
+    "paymentMode": "postpaid",
+    "state": "charge_blocked",
+    "blockedReason": "no_chargeable_card",
+    "nextChargeAttemptAt": null,
+    "trigger": null,
+    "runningDailyBudgetCents": "0.0000000000",
+    "configuredDailyBudgetCents": "500.0000000000"
+   }
+  ],
+  "list_campaigns": [
+   {
+    "campaignCount": 2,
+    "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+    "campaigns": [
+     {
+      "id": "b255706c-b855-4593-baf1-3a6a76957269",
+      "name": "Wide Email",
+      "path": "Start → Lead Sourcing → Lead found → Sales Cold Email Outreach → Positive reply → Paid client",
+      "runsWhen": "On its own, within its caps (no trigger)",
+      "type": "proactive",
+      "status": "stopped",
+      "stopReason": "no_payment_method",
+      "budget": "Max $5/day",
+      "volume": null,
+      "spent": null,
+      "invested": "$101.87 invested since start",
+      "return": "Expected 6x · no paid client yet ($101.87 spent)",
+      "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+      "salesFunnelId": "start_to_lead_found@lead-sourcing~valid-catch-all+lead_found_to_conversation@sales-cold-email-outreach~no-offer-emails+conversation_to_paid_client",
+      "steps": []
+     },
+     {
+      "id": "4b0e33f0-4a25-435e-b768-eafa9d0cff69",
+      "name": "Reply Booking",
+      "path": "Positive reply → AI Meeting Booking → Meeting booked → Meeting attended → Paid client",
+      "runsWhen": "Each time: Positive reply",
+      "type": "reactive",
+      "status": "stopped",
+      "stopReason": "no_payment_method",
+      "budget": "Up to $1/day",
+      "volume": null,
+      "spent": null,
+      "invested": "$0 invested since start",
+      "return": "no return served yet",
+      "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+      "salesFunnelId": "conversation_to_meeting_booked@ai-meeting-booking+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client",
+      "steps": []
+     }
+    ]
+   }
+  ]
+ },
+ "facts": [
+  "Their dashboard shows the banner \"Campaigns paused: no payment method\" on every page: they removed their card, so billing stopped both campaigns (Wide Email and Reply Booking). Nothing is running.",
+  "The account is postpaid; the balance due is $21.40. Their Billing page shows \"Add a card so your campaigns can run on credit.\"",
+  "Once a card is added (the balance due is charged to it), a person starts the campaigns again: nothing resumes on its own.",
+  "The dashboard's Spent is $103.16 since they started. Their campaigns reached 828 people and brought one interested reply."
+ ],
+ "expect": "Answers no up front: both campaigns are paused because there is no card on the account; the fix is to add a card, then start them again. Plain text for WhatsApp."
+}

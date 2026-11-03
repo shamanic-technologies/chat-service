@@ -138,3 +138,24 @@ export async function isAgentApiOrg(orgId: string, userId: string, runId: string
   const body = (await res.json()) as { free_credit_offer?: string | null };
   return body.free_credit_offer === AGENT_API_OFFER;
 }
+
+/**
+ * billing-service's payment outlook for the org (SOPHIE-BRIEF-EQUALS-DASHBOARD-1103):
+ * the verdict the client's dashboard reads for its "Campaigns paused: payment
+ * declined" band (`state: charge_blocked` + `blockedReason`), served verbatim.
+ * A pure read keyed on the org in the path; the gateway does not serve it.
+ */
+export async function getPaymentOutlook(orgId: string): Promise<unknown> {
+  if (!BILLING_SERVICE_API_KEY) {
+    throw new Error("[billing-client] BILLING_SERVICE_API_KEY is required to read the payment outlook");
+  }
+  const res = await fetch(`${BILLING_SERVICE_URL}/internal/accounts/by-org/${encodeURIComponent(orgId)}/payment-outlook`, {
+    headers: { "X-API-Key": BILLING_SERVICE_API_KEY },
+    signal: AbortSignal.timeout(15_000),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new BillingError(`[billing-client] GET payment-outlook returned ${res.status}: ${text}`, res.status, text);
+  }
+  return JSON.parse(text) as unknown;
+}
