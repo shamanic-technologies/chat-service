@@ -7,6 +7,7 @@ import {
   SEED_EDITOR,
   SKILL_VERSION_COALESCE_MS,
   getSkill,
+  listSkills,
   listSkillVersions,
   seedSkills,
   writeSkill,
@@ -130,8 +131,12 @@ describe("skill tree store", { timeout: 30000 }, () => {
     // The old slug never 404s: it answers the skill it was merged into.
     const read = await getSkill(db as never, old, merged);
     expect(read.slug).toBe(root);
-    // A human-edited row still answers itself.
-    expect((await getSkill(db as never, kept, merged)).slug).toBe(kept);
+    // A human-edited row is kept in the table but never served (SOPHIE-TURN-LOST-1103:
+    // Sophie read the staff-edited `catalogue-plays` row of a removed concept).
+    const [stillStored] = await db.select().from(schema.skills).where(eq(schema.skills.slug, kept));
+    expect(stillStored).toBeDefined();
+    expect((await getSkill(db as never, kept, merged)).slug).toBe(root);
+    expect((await listSkills(db as never, merged)).map((s) => s.slug)).not.toContain(kept);
   });
 
   it("refuses to re-create a slug merged into another skill", async () => {

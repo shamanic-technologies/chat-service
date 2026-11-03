@@ -33,6 +33,9 @@ export const MERGED_SKILL_SLUGS: Readonly<Record<string, string>> = {
   // SOPHIE-REFONTE-1102: who we reach, who we skip and where leads come from are one client job.
   qualification: "client-profiles",
   sources: "client-profiles",
+  // SOPHIE-TURN-LOST-1103: pipes and plays are removed from the backend (framework v10, 2026-11-03).
+  "catalogue-pipes": "gtm-factory",
+  "catalogue-plays": "gtm-factory",
 };
 
 const INDEX = `# How to handle any request
@@ -52,8 +55,8 @@ Reading this through the API or the MCP? Every act below is an API operation (ME
 - Their mailboxes and tools: \`connected-accounts\`.
 - Their WhatsApp number answers people by itself, hands a chat to them when stuck: \`whatsapp-line\`.
 - Our team, a bug, a missing feature: \`staff-requests\`.
-- A campaign should behave differently (attach a document, skip some addresses): that is the step's play. Load \`catalogue-plays\`.
-Building channels, pipes or workflows is staff work: \`staff\`.
+- Their emails should say or do something else ("my emails never mention our flat rate", attach a document): \`offers\`, "What the emails say".
+Building scripts, tactics and strategies is staff work: \`staff\`.
 
 ## Rules that never bend
 - Every word a person reads follows \`client-comms\` (always loaded with this index; API agents: read it first).
@@ -63,7 +66,7 @@ Building channels, pipes or workflows is staff work: \`staff\`.
 - Every figure comes from the account, with the unit and basis the API gives ("per paying client (estimated)"). An estimate is never called measured; "learning" = not measured yet.
 - Answer from what you already know (the account brief, the conversation) first; call an operation only for what they lack, the one the job's skill names. Searching the API is for an act no skill names. Keep reads small (a filter, a limit).
 - Every answer: 2 or 3 short sentences of TEXT first, with the figures you read (present_choices: its required \`text\`; no API route). Cards only when they save typing (\`choices\`).
-- Speak the client's language. Never say pipe, leg, step key or workflow, and never show a pipe's or a path's name (birds, rivers), unless they ask how it works. Never call us an agency.
+- Speak the client's language. Never say Engine, script, tactic, leg, step key or workflow, and never show a path's name (birds, rivers), unless they ask how it works. Never call us an agency.
 `;
 
 const t = (s: string) => s.trim() + "\n";
@@ -99,7 +102,7 @@ They want revenue made easy. A message wins when they finish it reassured, knowi
 - Never repeat yourself: an ask or a line they have not answered is not sent again. When they say not now, one short warm line that leaves the next step one click away, in new words.
 
 ## What never reaches them
-- Internal names and words: a campaign's stored name ("Cold Follow-up Replies 5"), pipe, leg, funnel, workflow, lead event, "learning", ids. Name a campaign by what it does for them ("your main campaign, reaching new prospects").
+- Internal names and words: a campaign's stored name ("Cold Follow-up Replies 5"), Engine, script, leg, funnel, workflow, lead event, "learning", ids. Name a campaign by what it does for them ("your main campaign, reaching new prospects").
 - Your process ("I checked three ways", "let me look") and the history of your own answers (what you said before, that it was wrong, that this corrects it).
 - Which app or person a request reaches inside.
 - Anything broken or uncertain on our side: a failed read, a bug, a doubt about a figure, an issue link, a repo, an earlier answer of yours they may have acted on. It goes to the team silently (request_staff → POST /v1/staff-requests); answer with what you do know. Never say what you could not read or what you passed to the team, not even to reassure.
@@ -187,8 +190,15 @@ An offer is one thing a brand sells. Every campaign, budget and check hangs off 
 ## Documents (files to send prospects)
 An offer holds the client's files (one-pager, case study, price list; 5 MB each, 25 per offer), each with a description: what the file is and when it helps a prospect. The AI answering picks a file on name + description alone, so each must say what sets it apart.
 - Near-duplicates blur the pick: show them and ask which to keep. Never delete or rewrite a client's file unasked.
-- Uploading is half the setup: only workflows that attach a document send them. Give that step a play whose strategy requires that tactic: \`catalogue-plays\`.
+- Uploading is half the setup: the AI answering a prospect sends a file only if what answers them attaches documents. A client whose files never go out: request_staff (POST /v1/staff-requests) with their words.
 - GET, POST /v1/brands/{id}/offers/{offerId}/documents (fileName, description, contentBase64), PATCH and DELETE .../documents/{documentId}. In the chat the client can also upload on the offer page (open_page; no API route for a page).
+
+## What the emails say
+"My emails never mention our flat rate": the client is telling you what sells. Look, then answer in the same turn:
+1. The offer as we hold it (GET /v1/brands/{id}/offers/{offerId}) and a few emails we sent (GET /v1/emails?brandId=&limit=5).
+2. Tell them what the emails say today (quote one line) and whether the offer holds their point.
+3. Their point becomes the team's change, with their words, the offer's text and one email as the example: request_staff (POST /v1/staff-requests, repo content-generation-service). Say the team has it and what they get next.
+A few reads, then the answer. No API route rewrites the emails or the offer's text: never search for one.
 `),
   },
   {
@@ -234,19 +244,19 @@ An audience is who a campaign looks for (job titles, company size, industry, loc
     content: t(`
 # Legs
 
-A leg is the move of a lead from one sales step to the next, e.g. lead found to positive reply, positive reply to meeting. Leg keys come from the catalogue (outbound legs are now spelled lead_found_to_*; old start_to_* spellings are still accepted). One channel working one leg is a **pipe** in the catalogue: find_pipes → GET /v1/catalogue/pipes reads them, create_pipe → POST /v1/catalogue/pipes creates one (preferred over declare_leg, the older route).
+A leg is the move of a lead from one sales step to the next, e.g. lead found to positive reply, positive reply to meeting. Leg keys come from the catalogue (outbound legs are now spelled lead_found_to_*; old start_to_* spellings are still accepted). The work on a leg is done by the scripts of its outcome's Engine: \`gtm-factory\`.
 
 - **Proactive leg:** runs on its own daily budget, no trigger (e.g. first cold email to found leads).
 - **Reactive leg:** runs on demand when its trigger fires (e.g. a positive reply asks for a meeting leg).
 
 ## Read
-- find_pipes(channels): legs per channel (a pipe = one channel on one leg) with mode.
-- list_declared_legs(channelSlug?): every leg, coded and declared, with published / visibleToClients (no API route yet: GET /v1/catalogue/pipes lists the same legs as pipes).
+- find_channels(id) → GET /v1/catalogue/channels/{id}: one channel's legs with mode.
+- list_declared_legs(channelSlug?): every leg, coded and declared, with published / visibleToClients (no API route yet).
 - get_leg_rates(brandId) → GET /v1/brands/{id}/leg-rates: conversion rate per leg.
 
 ## Write
 - set_leg_rates(brandId, legRates) → PUT /v1/brands/{id}/leg-rates: the rates the client STATES, for the whole brand. Steps spelled as get_leg_rates lists them ("Website visit"). ratePct is a percent: "0.5%" is 0.5; null clears it. Legs not named stay as they are. Read back with get_leg_rates and quote it. Never invent a rate.
-- STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_leg(channelSlug, fromStep, toStep, mode, triggerId?): a NEW leg on a channel (declared or coded), created live. Proactive: no trigger. Reactive: exactly one trigger (list_trigger_types → GET /v1/catalogue/triggers). No API route yet for declare_leg: POST /v1/catalogue/pipes is the staff route for a new leg.
+- STAFF ONLY, on an explicit ask (staffBuild: true), never for a customer: declare_leg(channelSlug, fromStep, toStep, mode, triggerId?): a NEW leg on a channel (declared or coded), created live. Proactive: no trigger. Reactive: exactly one trigger (list_trigger_types → GET /v1/catalogue/triggers). No API route yet for declare_leg.
 - The offer's legs come from the funnels it runs (funnel campaigns, see campaigns).
 
 ## Live at once, one hold case (never a dead end)
@@ -255,7 +265,7 @@ A declared leg is live the moment it is created; nothing waits on staff, never f
 In both cases say it is on hold, never call request_staff (POST /v1/staff-requests) again for that piece, and carry on.
 
 ## Articulation
-"Email them next day, WhatsApp 3 days later if no reply": each touch is a leg on a channel. "3 days later if no reply" is a delay trigger (see triggers) running a reactive WhatsApp leg that starts at Start (start_to_<step>), never at Lead found (see catalogue-pipes).
+"Email them next day, WhatsApp 3 days later if no reply": each touch is a leg on a channel. "3 days later if no reply" is a delay trigger (see triggers) running a reactive WhatsApp leg that starts at Start (start_to_<step>), never at Lead found.
 `),
   },
   {
@@ -276,7 +286,6 @@ Each trigger's \`callable\` is the answer (GET /v1/public/channels triggers[]; M
 
 ## Read
 - list_trigger_types(triggerId?) → GET /v1/catalogue/triggers: every type with kind, params, coded, callable. The truth for "does this fire today?".
-- find_pipes(id) → GET /v1/catalogue/pipes/{id}: a reactive pipe's triggerId.
 - get_trigger_events(brandId, offerId) → GET /v1/offers/{offerId}/trigger-events/summary?brandId=: per type, fired / ran / skipped and why (campaign off, unfunded).
 
 ## Write
@@ -291,7 +300,7 @@ Fired by the client's own push: one email they wrote, for one person (POST /v1/t
 
 ## Articulation
 - Check list_trigger_types before requesting one: reuse an existing type of the same meaning.
-- A trigger's fromStep is where the lead stands when it fires, never where a reactive pipe on it starts: that pipe starts at Start (start_to_<step>). See catalogue-pipes.
+- A trigger's fromStep is where the lead stands when it fires, never where a reactive leg on it starts: that leg starts at Start (start_to_<step>).
 - "Someone reacts to my LinkedIn post" is not a trigger today; it is a SOURCE (see sources).
 `),
   },
@@ -325,7 +334,7 @@ A campaign needs a max budget, a max volume, or both. Either alone is valid; onl
 - GET /v1/sales-funnel-campaigns?brandId= : THE campaigns with status, budget in words ("Max $10/day", "Not funded"), spent this period, results, and their path (that IS what it does). Count and name only campaigns: a step (a source, cold email, AI booking) is part of a campaign, never a campaign.
 - GET .../sales-funnels/{salesFunnelId}/caps: one funnel's caps (never a campaign id there). Raising a cap spends more: their yes first.
 - Stop: PATCH /v1/sales-funnel-campaigns/{id} {status: "stop"}: no new first touches from now; follow-ups still go out. Say what stopped.
-- A campaign owns one part per step, each with its own campaign id; GET /v1/campaigns/{id} names its salesFunnelCampaignId. To change how a step behaves: \`catalogue-plays\`.
+- A campaign owns one part per step, each with its own campaign id; GET /v1/campaigns/{id} names its salesFunnelCampaignId. What the emails say: \`offers\`.
 
 ## Example
 "Start reaching event planners in Lagos" → "Your Guest Management campaign is ready, stopped: it finds event planners in Lagos and emails them. I'd cap it at $10 a week. Shall I start it?" → after "yes": PATCH .../{id} {status: "activate"}, then "It's on: first emails leave in their business hours."
@@ -565,7 +574,7 @@ Four kinds, each lands with someone who acts. Every request is recorded and answ
 - After a feature: tell the user that piece is on hold with the team, then carry on with the rest.
 
 ## Which repo owns what
-- Catalogue (steps, paths, channels, pipes, funnels, triggers): features-service
+- Catalogue (steps, paths, channels, funnels, triggers), Engines, scripts, tactics, strategies: features-service
 - Trigger events, campaign start/stop: campaign-service
 - Offers, brand facts: brand-service
 - Audiences, Apollo filters, buying signals: human-service
@@ -580,7 +589,7 @@ Four kinds, each lands with someone who acts. Every request is recorded and answ
 
 ## Rules
 - Never promise a date.
-- A missing pipe, path or funnel whose pieces run is CREATED, not requested. A tool that files a request itself (a detector for a trigger nothing fires) lists it in onHold: never file it again.
+- A missing path or funnel whose pieces run is CREATED, not requested. A tool that files a request itself (a detector for a trigger nothing fires) lists it in onHold: never file it again.
 `),
   },
   {
@@ -588,24 +597,25 @@ Four kinds, each lands with someone who acts. Every request is recorded and answ
     parentSlug: "index",
     title: "Staff work",
     description:
-      "distribute.you staff only: declaring channels, pipes, triggers and plays, building workflows, reading our services. Never a client's job.",
+      "distribute.you staff only: Engines, scripts, tactics and strategies, the catalogue, reading our services. Never a client's job.",
     position: 900,
     content: t(`
 # Staff work (distribute.you staff only)
-Declaring channels, pipes, triggers and plays, building workflows, reading our services: staff operations, never a client's job and never offered to a client. A client who needs one of them gets a feature request (\`staff-requests\`).
-- The catalogue walk (steps, sales paths, channels, pipes, sales funnels, workflows): \`catalogue\`.
+Engines, scripts, tactics and strategies, the catalogue, reading our services: staff operations, never a client's job and never offered to a client. A client who needs one of them gets a feature request (\`staff-requests\`).
+- How the plant runs (Engine, script, tactic, strategy, Provider, Plan, Campaign): \`gtm-factory\`.
+- The catalogue walk (steps, sales paths, channels, sales funnels, workflows): \`catalogue\`.
 - One move of a lead between two steps, its rates: \`legs\`. Events that start a reactive leg: \`triggers\`.
 - How a leg runs and what it writes: \`workflows-and-templates\`. Our services and their endpoints: \`infra\`.
 
 ## The walk (always in this order)
-1. Steps: find_steps → GET /v1/catalogue/steps. 2. Sales paths: find_sales_paths → GET /v1/catalogue/sales-paths. 3. Channels: find_channels → GET /v1/catalogue/channels. 4. Pipes: find_pipes → GET /v1/catalogue/pipes. 5. Sales funnels (what a client is proposed): find_sales_funnels(offerId, brandId) → GET /v1/offers/{offerId}/sales-funnels?brandId=. 6. Workflows, only if asked (a multi-armed bandit runs the best by return and keeps exploring the others): find_workflows → GET /v1/catalogue/workflows. 7. The client's campaign: \`campaigns\`.
+1. Steps: find_steps → GET /v1/catalogue/steps. 2. Sales paths: find_sales_paths → GET /v1/catalogue/sales-paths. 3. Channels: find_channels → GET /v1/catalogue/channels. 4. Sales funnels (what a client is proposed): find_sales_funnels(offerId, brandId) → GET /v1/offers/{offerId}/sales-funnels?brandId=. 5. Workflows, only if asked (a multi-armed bandit runs the best by return and keeps exploring the others): find_workflows → GET /v1/catalogue/workflows. 6. The client's campaign: \`campaigns\`.
 `),
   },
   {
     slug: "catalogue",
     parentSlug: "staff",
     title: "Catalogue: organize a request",
-    description: "The walk Steps, Sales paths, Channels, Pipes, Sales funnels, Workflows. Load before organizing any ask.",
+    description: "The walk Steps, Sales paths, Channels, Sales funnels, Workflows. Load before organizing any ask.",
     position: 5,
     content: t(`
 # Catalogue
@@ -614,17 +624,17 @@ The menu of everything the platform can do, measured across all accounts. Owner:
 
 ## Every row
 id, name, icon, line, cost, costUsd, status.
-- cost: the figure WITH its unit ("$137.43 per positive reply", "$2748.69 per paying client (estimated)"). Quote it exactly, unit and "(estimated)" included. A channel or pipe cost is per its outcome, never per paying client; only sales paths and funnels are per paying client.
-- No return on a row: a step, path, channel, pipe, funnel or workflow has a cost, never a return.
+- cost: the figure WITH its unit ("$137.43 per positive reply", "$2748.69 per paying client (estimated)"). Quote it exactly, unit and "(estimated)" included. A channel cost is per its outcome, never per paying client; only sales paths and funnels are per paying client.
+- No return on a row: a step, path, channel, funnel or workflow has a cost, never a return.
 - expected (per offer): cost "(expected)" and return "Expected 1.5x (fleet inputs)", what a campaign on it would expect. Say "expected".
 - status: measured (real evidence), estimated (a rate it rests on is not measured: say "estimated", never "measured"), learning (not measured yet: cost is null, say so), customer_time (the customer's own team: no cost to us).
 Pages are 10 rows by default, 25 at most. Narrow with filters or q, never page through everything. Pass id to any find tool to read ONE object in detail.
 
 ## Through the API
-GET /v1/catalogue/{steps,sales-paths,channels,pipes,sales-funnels,triggers}[/{id}] answer a customer key too (lists show only what we run); GET /v1/catalogue/workflows answers a staff key (a customer reads GET /v1/workflows/summaries). POST /v1/catalogue/sales-paths and POST /v1/catalogue/sales-funnels take a customer key; POST /v1/catalogue/pipes is staff. Per offer: GET /v1/offers/{offerId}/sales-funnels?brandId=.
+GET /v1/catalogue/{steps,sales-paths,channels,sales-funnels,triggers}[/{id}] answer a customer key too (lists show only what we run); GET /v1/catalogue/workflows answers a staff key (a customer reads GET /v1/workflows/summaries). POST /v1/catalogue/sales-paths and POST /v1/catalogue/sales-funnels take a customer key. Per offer: GET /v1/offers/{offerId}/sales-funnels?brandId=.
 
 ## Chaining
-step id → find_sales_paths(containsSteps) → path id → find_channels(forPaths) → channel id → find_pipes(paths, channels) → find_sales_funnels(paths, containsChannels) → funnel id → find_workflows(pipe) only if asked. API: GET /v1/catalogue/sales-paths, GET /v1/catalogue/channels, GET /v1/catalogue/pipes, GET /v1/catalogue/sales-funnels, GET /v1/catalogue/workflows, same filters.
+step id → find_sales_paths(containsSteps) → path id → find_channels(forPaths) → channel id → find_sales_funnels(paths, containsChannels) → funnel id → find_workflows only if asked. API: GET /v1/catalogue/sales-paths, GET /v1/catalogue/channels, GET /v1/catalogue/sales-funnels, GET /v1/catalogue/workflows, same filters.
 
 ## Example: "post on LinkedIn every day"
 1. find_channels(q "linkedin"): nothing listed. We do not run LinkedIn posting today.
@@ -632,7 +642,7 @@ step id → find_sales_paths(containsSteps) → path id → find_channels(forPat
 3. Cards: the funnels we run, and "I want LinkedIn posting anyway" (then request_staff → POST /v1/staff-requests, kind feature, repo features-service, their words).
 
 ## Create
-create_sales_path → POST /v1/catalogue/sales-paths, create_sales_funnel → POST /v1/catalogue/sales-funnels (runnable pipes only). Data only, starts nothing. Find first; never create what exists. create_pipe → POST /v1/catalogue/pipes (a channel on a new step) is staff work. A new step or trigger is never created: it is a feature request (catalogue-steps).
+create_sales_path → POST /v1/catalogue/sales-paths, create_sales_funnel → POST /v1/catalogue/sales-funnels (what we run only). Data only, starts nothing. Find first; never create what exists. A new step or trigger is never created: it is a feature request (catalogue-steps).
 `),
   },
   {
@@ -675,7 +685,7 @@ A sales path is a chain of steps from first contact to Paid client, with no chan
 Prefer measured paths with the highest roi. A path is only a shape: the channels come next. Map the user's sequence onto the closest ranked funnel first and show its expected return and cost per paying client before proposing it. A campaign IS a funnel campaign: see \`campaigns\`.
 
 ## Create
-create_sales_path(legKeys in order) when the user's sequence matches none → POST /v1/catalogue/sales-paths {legKeys, triggerId?}. Every leg must be performed by some pipe (find_pipes → GET /v1/catalogue/pipes). Returns created:false when it exists. A new funnel: \`catalogue-sales-funnels\`.
+create_sales_path(legKeys in order) when the user's sequence matches none → POST /v1/catalogue/sales-paths {legKeys, triggerId?}. Every leg must be worked by a channel we run (find_channels → GET /v1/catalogue/channels). Returns created:false when it exists. A new funnel: \`catalogue-sales-funnels\`.
 `),
   },
   {
@@ -706,80 +716,22 @@ On an explicit ask (staffBuild: true), never for a customer: declare_channel (no
 `),
   },
   {
-    slug: "catalogue-pipes",
-    parentSlug: "catalogue",
-    title: "Pipes",
-    description: "One channel working one step, with its cost per outcome. Level 4. Internal word.",
-    position: 40,
-    content: t(`
-# Pipes
-
-A pipe is one channel working one leg (from one step to the next). Proactive pipes run on their own daily budget; reactive pipes run when a trigger fires. Named after birds. Id: <channel slug>|<leg key>. Never say "pipe" or show its bird name to the user: say what it does ("LinkedIn posting brings website visits").
-
-## Read
-- find_pipes(paths, channels) → GET /v1/catalogue/pipes: the pipes on the chosen paths and channels, cost per outcome and return.
-- find_pipes(id) → GET /v1/catalogue/pipes/{id}: one pipe, with its best workflow and conversion rate.
-
-## Plays: how a step runs (owner 2026-10-13)
-A pipe runs under a play (a strategy over tactics), with its own cost and return. Who a step reaches or skips, and how it behaves, is its play, never a per-campaign pick. find_plays(pipe) → GET /v1/plays?pipe=: before a funnel is built, show the plays of each step that has more than one. Finding or creating one: \`catalogue-plays\`.
-
-## Create (staff only)
-create_pipe(channelSlug, fromStep, toStep, mode, triggerId?) → POST /v1/catalogue/pipes: refused for a customer. Live at once. A reactive pipe on a trigger nothing fires is not created: the tool asks for the detector and returns on_hold: say it is on hold with the team, carry on.
-- **Where a pipe on a trigger starts:** at Start (fromStep null, leg start_to_<step>): the trigger starts it, like every running reactive campaign. Or out of a real step the trigger stands for (Positive reply, Form submitted). NEVER at Lead found (refused \`reactive_pipe_from_lead_found\`): a trigger's fromStep is where the lead stands when it fires, not where the pipe starts. To reuse a proactive pipe leaving that step, head the sales funnel with the trigger (create the funnel with triggerId).
-- **Created by mistake:** a pipe no campaign uses and no funnel names is retired with POST /v1/catalogue/pipes/{pipeId}/retire {note} (staff; MCP: distribute_call_api, id URL-encoded). A pipe a campaign uses is never retired (409 pipe_in_use).
-`),
-  },
-  {
-    slug: "catalogue-plays",
-    parentSlug: "catalogue",
-    title: "Plays: make a step behave a certain way",
-    description: "Tactics, strategies, plays. Load when the user wants a campaign to do something differently (attach a document, skip some addresses, reach only some people).",
-    position: 45,
-    content: t(`
-# Plays: make a step behave a certain way
-
-"Attach the right PDF when you answer interested prospects", "skip catch-all addresses": none of these is a setting. Several workflows compete on each step: a multi-armed bandit runs the best by return and keeps exploring the others. A play limits which workflows a step may run. Shared by every customer (owner: features-service).
-
-## Three words
-- **Tactic**: a yes/no trait judged on every workflow from its description, within minutes of its creation.
-- **Strategy**: the tactics a workflow must follow (requires) and must not follow (excludes).
-- **Play**: one pipe run under one strategy, id \`<pipe id>~<strategy id>\` (the default play is the bare pipe id). The step runs only the workflows the strategy allows; none allowed: the step waits.
-
-## Find before you create
-1. Name the step that must change: answering an interested prospect is the AI meeting booking step after Positive reply (find_pipes → GET /v1/catalogue/pipes).
-2. find_plays(pipe) → GET /v1/plays?pipe=: a play doing it already? Use it.
-3. Else find_tactics(q) → GET /v1/tactics, find_strategies(q) → GET /v1/strategies.
-4. Missing: create_tactic → POST /v1/tactics (what a workflow DOES, precise enough to judge: "the reply it sends attaches one of the offer's documents"), create_strategy(requires, excludes) → POST /v1/strategies, create_play(pipeId, strategyId) → POST /v1/plays. General names, never one client's.
-5. Read the play back (GET /v1/plays/{id}): allowedActiveWorkflowCount 0 = no workflow does it yet, the step would wait; request_staff (POST /v1/staff-requests, repo workflow-service). Which workflows it counts: \`catalogue-workflows\`.
-
-## The funnel carrying it
-A funnel names one play per step in its id (\`...@ai-meeting-booking~<strategy id>+...\`); the catalogue builds one for every play by itself. The play's read lists them (GET /v1/plays/{id} (salesFunnels)). Or add \`~<strategy id>\` after that step's channel in the campaign's funnel id and read it: find_sales_funnels(id). API: GET /v1/offers/{offerId}/sales-funnels?brandId=&q=<funnel id, or ~<strategy id>>, then match the id exactly (no id filter: an unknown param is ignored and you get the top 10 by ROI).
-
-## Switch a running campaign
-Its funnel never changes: a new behaviour is a new campaign. Two running campaigns of one offer with the same reactive step BOTH answer a positive reply, so the old one stops when the new one starts. No single call swaps them:
-1. create_funnel_campaign on the new funnel, STOPPED (POST /v1/sales-funnel-campaigns {brandId, offerId, salesFunnelId, status: "stopped"}).
-2. Caps belong to the funnel: the new one has none. Read the old one's (get_funnel_caps), propose carrying it over; the client says the amount (their money); set_funnel_caps. API: GET, PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps.
-3. Propose the start, saying the old one stops. On their yes: stop_funnel_campaign(old), then confirm_switch_on(new). API: PATCH /v1/sales-funnel-campaigns/{id} {status: "stop"} on the old, then {status: "activate"} on the new. Start refused: say why, offer to restart the old one.
-Created by mistake (stopped, never ran): DELETE .../{id} (409 if running or with history).
-`),
-  },
-  {
     slug: "catalogue-sales-funnels",
     parentSlug: "catalogue",
     title: "Sales funnels",
-    description: "A sales path with one pipe per step: what you propose. Level 5.",
+    description: "A sales path with a channel on every step: what you propose. Level 4.",
     position: 50,
     content: t(`
 # Sales funnels
 
-A sales funnel is a sales path with a pipe on every step: the complete plan that turns strangers into paying clients. It is what you PROPOSE. It has a name (uplifting words: Zenith, Bliss) and a face image.
+A sales funnel is a sales path with a channel on every step: the complete plan that turns strangers into paying clients. It is what you PROPOSE. It has a name (uplifting words: Zenith, Bliss) and a face image.
 
 ## One kind per funnel
-Its budget caps every pipe in it, so a funnel is either **Proactive** (it reaches out: cold email) or **Reactive** (it answers a trigger: AI meeting booking or an AI call on a positive reply), never both: a reactive pipe inside a proactive funnel can starve it. Every row's \`type\` and \`mixed\` say which: features-service's verdict, never yours (a step the user's own team works is no mix). Propose one Proactive funnel; if the user wants replies handled by AI, ALSO a Reactive funnel from the list (its line starts at the trigger step, e.g. Positive reply). The campaign tools refuse a funnel served as mixed.
+Its budget caps every step in it, so a funnel is either **Proactive** (it reaches out: cold email) or **Reactive** (it answers a trigger: AI meeting booking or an AI call on a positive reply), never both: a reactive step inside a proactive funnel can starve it. Every row's \`type\` and \`mixed\` say which: features-service's verdict, never yours (a step the user's own team works is no mix). Propose one Proactive funnel; if the user wants replies handled by AI, ALSO a Reactive funnel from the list (its line starts at the trigger step, e.g. Positive reply). The campaign tools refuse a funnel served as mixed.
 
 ## Read
-- find_sales_funnels(paths, containsChannels, offerId, brandId) → GET /v1/offers/{offerId}/sales-funnels?brandId= (catalogue-wide: GET /v1/catalogue/sales-funnels): best return first, per offer.
-- find_sales_funnels(id) → GET /v1/catalogue/sales-funnels/{id}: its legs, the rate at each, the pipe on each, cost per paying client, return.
+- find_sales_funnels(paths, containsChannels, offerId, brandId) → GET /v1/offers/{offerId}/sales-funnels?brandId= (catalogue-wide: GET /v1/catalogue/sales-funnels): best first, per offer.
+- find_sales_funnels(id) → GET /v1/catalogue/sales-funnels/{id}: its legs, the rate at each, the channel on each, cost per paying client.
 
 ## Only funnels the client's business can run (owner 2026-10-12)
 A funnel is worth proposing only if the client's business has EVERY step on its line. A funnel through Direct purchase is worthless to a business that sells no other way than a call. So read per offer: find_sales_funnels(offerId, brandId). rows = funnels its business can run; setAside = funnels through a step it has not stated, with missingSteps. get_offer_steps (GET /v1/brands/{id}/offers/{offerId}/steps) shows the list itself.
@@ -793,23 +745,22 @@ A funnel is worth proposing only if the client's business has EVERY step on its 
 First WRITE the 1 to 3 funnels in the text, one line each: name, what it does, cost per paying client, expected return (none: "not known yet"). Two or more real options are an obvious pick: one card per funnel (see \`choices\`), its cost as a number visual (cents). One clear best funnel: say why and ask, no cards. The user picks; then \`campaigns\`: it becomes a campaign with at least one cap they state (max budget, max volume, or both).
 
 ## Create
-create_sales_funnel → POST /v1/catalogue/sales-funnels (pipeIds in order: one pipe or play per step (find_plays → GET /v1/plays?pipe=), a Your Team pipe for a step the customer's team works). Live at once. For a customer every pipe must be one we run (refused otherwise). A user who only wants leads: Start -> Lead found with a source, then Paid client with your-team-closing-calls; no email goes out, say so.
+create_sales_funnel → POST /v1/catalogue/sales-funnels (a channel per step, in order; Your Team for a step the customer's team works). Live at once. For a customer every channel must be one we run (refused otherwise). A user who only wants leads: Start -> Lead found with a source, then Paid client with your-team-closing-calls; no email goes out, say so.
 `),
   },
   {
     slug: "catalogue-workflows",
     parentSlug: "catalogue",
     title: "Workflows",
-    description: "How one pipe runs. Optional: a multi-armed bandit picks the best. Level 6.",
+    description: "How one step runs. Optional: a multi-armed bandit picks the best. Level 5.",
     position: 60,
     content: t(`
 # Workflows
 
-A workflow is the program that runs one pipe (find, write, send, wait). Several compete on each pipe, ranked as a multi-armed bandit: the best by return runs most, the others are still explored so a better one can win. Owner of the ranking: features-service; the programs: workflow-service.
+A workflow is the program that runs one channel on one step (find, write, send, wait). Several compete on each step, ranked as a multi-armed bandit: the best by return runs most, the others are still explored so a better one can win. Owner of the ranking: features-service; the programs: workflow-service. They give way to scripts (\`gtm-factory\`).
 
 ## Read
-- find_workflows(pipe) → GET /v1/catalogue/workflows?pipe=: the ranking for one pipe, with outcomes, cost and, per tactic, whether each follows it. find_workflows(pipe, id) → GET /v1/catalogue/workflows/{id} for one.
-- Which workflows a play runs: a play counts them (allowedActiveWorkflowCount); its detail (API GET /v1/plays/{id}) names those its strategy rules out (excludedWorkflowDynastySlugs). Allowed = the pipe's workflows minus those.
+- find_workflows → GET /v1/catalogue/workflows: the ranking for one step, with outcomes, cost and, per tactic, whether each follows it. find_workflows(id) → GET /v1/catalogue/workflows/{id} for one.
 - Through the API, what each workflow does (name + description, no program): GET /v1/workflows/summaries?featureSlug=<channel slug>&status=active (if it answers 400, GET /v1/workflows?workflowDynastySlug=<slug> reads one, program included).
 
 ## When
@@ -817,6 +768,34 @@ Only when the user wants to choose or understand how a step runs. Never ask them
 
 ## New behaviour
 A workflow that does not exist (a new rule, a new step) needs the team: request_staff (POST /v1/staff-requests, repo workflow-service), or load \`infra\` to design it from our services first.
+`),
+  },
+  {
+    slug: "gtm-factory",
+    parentSlug: "staff",
+    title: "How the plant runs: Engines, scripts, tactics, strategies",
+    description: "The framework v10 objects. Load when staff asks how a campaign picks what runs, or wants a campaign to behave differently.",
+    position: 5,
+    content: t(`
+# How the plant runs (framework v10)
+
+A campaign orders production; the plant decides how. Staff words only: a client hears what it does for them.
+
+## The objects
+- **Campaign**: a Target (the outcome it buys, e.g. Meeting booked), a start, a budget and a brief. The only object an org owns.
+- **Engine**: one per outcome. It makes new Units of that outcome, and only that one.
+- **Script**: code that makes one Unit of its Engine's outcome, or none. Scripts of one Engine compete, in dynasties of versions. The Rating picks one per run: never picked by hand. GET /v1/scripts, GET /v1/scripts/{id}, GET /v1/scripts/dynasty/{outcome}/{dynasty}.
+- **Tactic**: data on a script (a channel is a tactic; who performs it; where its LLM runs). GET, POST /v1/tactics, PATCH /v1/tactics/{id} (its description).
+- **Strategy**: conditions on tactics a judge keeps per Engine from the campaign's brief. GET, POST /v1/strategies.
+- **Provider**: the store of one outcome; a script asks it for what it needs.
+- **Plan**: the tree a campaign runs, recomputed at every tick. What each Engine picked and why: GET /v1/offers/{offerId}/engine-picks?brandId=.
+
+## A campaign should behave differently
+"Mention our flat rate", "attach the case study", "skip catch-all addresses": none is a setting.
+1. Read what ran: GET /v1/offers/{offerId}/engine-picks?brandId=, and the emails sent (GET /v1/emails?brandId=&limit=5).
+2. A script already does it: the tactic it carries (GET /v1/tactics) and a strategy that keeps it (GET /v1/strategies) make the judge keep it.
+3. No script does it: a new script version is code (workflow, writer: the owning repo), request_staff (POST /v1/staff-requests) with the client's words and one example.
+Fixing a live script = a new version of its dynasty, never a fork.
 `),
   },
   {
@@ -852,7 +831,7 @@ See \`infra-build-workflow\` to design a new workflow from what you found.
     content: t(`
 # Designing a new workflow
 
-When no workflow does what a pipe needs (e.g. "post on LinkedIn every day" with no posting workflow):
+When no workflow does what a step needs (e.g. "post on LinkedIn every day" with no posting workflow):
 1. Find the endpoints each step needs (discover_service_endpoints with q: "post", "linkedin", "generate"; MCP: distribute_find_api).
 2. Read each one (discover_endpoint; MCP: distribute_describe_api) and test the reads (test_endpoint; MCP: distribute_call_api, GET only) to see real data.
 3. Write the design: the steps in order, the endpoint of each, its average cost, what is missing.
