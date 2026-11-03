@@ -85,27 +85,38 @@ export function toSkillVersionBody(v: SkillVersion) {
   };
 }
 
-export async function listSkills(database: Database): Promise<Skill[]> {
-  return database.select().from(skills).orderBy(asc(skills.position), asc(skills.slug));
+/**
+ * Every skill an agent may read. A slug merged into another skill is never
+ * served, even while a staff-edited row of it is kept (seedSkills removes only
+ * seed rows): prod 2026-11-03, Sophie read `catalogue-plays` and hunted the
+ * removed plays for 50 s (SOPHIE-TURN-LOST-1103).
+ */
+export async function listSkills(
+  database: Database,
+  merged: Readonly<Record<string, string>> = MERGED_SKILL_SLUGS,
+): Promise<Skill[]> {
+  const rows = await database.select().from(skills).orderBy(asc(skills.position), asc(skills.slug));
+  return rows.filter((s) => !(s.slug in merged));
 }
 
 /**
  * One skill by slug. A slug merged into another skill (MERGED_SKILL_SLUGS)
  * answers the skill it was merged into, so a caller still asking for the old
- * slug never gets a 404 (its body carries the new slug).
+ * slug never gets a 404 (its body carries the new slug), and never the old
+ * row a person may have edited.
  */
 export async function getSkill(
   database: Database,
   slug: string,
   merged: Readonly<Record<string, string>> = MERGED_SKILL_SLUGS,
 ): Promise<Skill> {
-  const [row] = await database.select().from(skills).where(eq(skills.slug, slug));
-  if (row) return row;
   const mergedInto = merged[slug];
   if (mergedInto) {
     const [target] = await database.select().from(skills).where(eq(skills.slug, mergedInto));
     if (target) return target;
   }
+  const [row] = await database.select().from(skills).where(eq(skills.slug, slug));
+  if (row) return row;
   throw new SkillNotFoundError(slug);
 }
 
@@ -409,7 +420,7 @@ export function readSkillFrom(all: readonly SkillText[], slug: unknown) {
     throw new SkillValidationError("read_skill needs a slug (see the skill index).");
   }
   const wanted = slug.trim();
-  const skill = all.find((s) => s.slug === wanted) ?? all.find((s) => s.slug === MERGED_SKILL_SLUGS[wanted]);
+  const skill = all.find((s) => s.slug === (MERGED_SKILL_SLUGS[wanted] ?? wanted));
   if (!skill) throw new SkillNotFoundError(wanted);
   return {
     slug: skill.slug,

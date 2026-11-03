@@ -6,7 +6,7 @@
 //   node scripts/sophie-skills-staff-rows.mjs --apply
 // - budget-and-billing: the seed's "Their money" job skill (SOPHIE-BRIEF-EQUALS-DASHBOARD-1103: no
 //   "never mention" rule; a payment notice the dashboard shows is said in its words).
-// - legs, triggers: moved under `staff`, content unchanged.
+// - legs, triggers: under `staff`, the seed's text (SOPHIE-TURN-LOST-1103: no removed pipes or plays).
 import { SEED_SKILLS } from "../dist/lib/skill-seed.js";
 
 const base = `http://localhost:${process.env.PORT ?? 8080}`;
@@ -31,7 +31,8 @@ async function write(slug, body) {
 const money = SEED_SKILLS.find((s) => s.slug === "budget-and-billing");
 await write("budget-and-billing", { content: money.content, title: money.title, description: money.description, parentSlug: "index" });
 for (const slug of ["legs", "triggers"]) {
+  const seed = SEED_SKILLS.find((s) => s.slug === slug);
   const row = await read(slug);
-  if (row.parentSlug === "staff") { console.log(`${slug}: already under staff`); continue; }
-  await write(slug, { content: row.content, parentSlug: "staff" });
+  if (row.parentSlug === "staff" && row.content === seed.content) { console.log(`${slug}: already the seed's text`); continue; }
+  await write(slug, { content: seed.content, title: seed.title, description: seed.description, parentSlug: "staff" });
 }

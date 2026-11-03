@@ -554,6 +554,8 @@ app.use(express.json({ limit: "10mb" }));
 const PORT = parseInt(process.env.PORT || "3002", 10);
 
 function sendSSE(res: express.Response, data: unknown) {
+  // The client may have left mid-turn: the turn finishes anyway, its events go nowhere.
+  if (res.destroyed || res.writableEnded) return;
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
@@ -3844,12 +3846,16 @@ app.post("/chat", requireAuth, async (req, res) => {
       return { brandId, offerId };
     };
 
-    // Detect client disconnect to abort in-flight streams
+    // A client that leaves mid-turn does NOT abort the turn (SOPHIE-TURN-LOST-1103,
+    // prod 2026-11-03: a paying client closed the tab while Sophie read 12 tools,
+    // the turn was cut and stored "Sorry, my answer did not come through"). The
+    // turn runs to its answer, which is stored and served when they come back;
+    // writes to the closed response are dropped by `sendSSE`. The signal stays
+    // for the provider loops' contract and is never aborted by a disconnect.
     const abortController = new AbortController();
     res.on("close", () => {
       if (!res.writableEnded) {
-        console.log(`[chat] session="${currentSessionId}" client disconnected — aborting stream`);
-        abortController.abort();
+        console.log(`[chat] session="${currentSessionId}" client disconnected, finishing the turn server-side`);
       }
     });
 

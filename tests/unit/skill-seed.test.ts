@@ -10,18 +10,17 @@ const TOPICS = [
   "new-account", "offers", "client-profiles", "campaigns", "emails-you-wrote", "connected-accounts", "whatsapp-line",
   "budget-and-billing", "costs-roi-stats", "staff-requests", "choices", "staff",
 ];
-const STAFF_TOPICS = ["catalogue", "infra", "workflows-and-templates", "legs", "triggers"];
+const STAFF_TOPICS = ["gtm-factory", "catalogue", "infra", "workflows-and-templates", "legs", "triggers"];
 
 const CATALOGUE_LEVELS = [
-  "catalogue-steps", "catalogue-sales-paths", "catalogue-channels", "catalogue-pipes", "catalogue-plays",
-  "catalogue-sales-funnels", "catalogue-workflows",
+  "catalogue-steps", "catalogue-sales-paths", "catalogue-channels", "catalogue-sales-funnels", "catalogue-workflows",
 ];
 
 // Sophie's own tools beside the API (SOPHIE-REFONTE-1102): every act on the account is an API operation the skills name.
 const COPILOT_TOOLS = [
   "find_operation", "describe_operation", "run_operation",
   "request_staff", "list_staff_requests", "request_skill_upgrade", "contact_human",
-  "find_steps", "find_sales_paths", "find_channels", "find_pipes", "find_sales_funnels", "find_workflows",
+  "find_steps", "find_sales_paths", "find_channels", "find_sales_funnels", "find_workflows",
 ];
 
 describe("seeded skill tree", () => {
@@ -82,7 +81,7 @@ describe("chat-first walk (owner 2026-10-10)", () => {
 
   it("the staff skill walks the levels in the owner's order", () => {
     const index = bySlug.get("staff")!.content;
-    const order = ["find_steps", "find_sales_paths", "find_channels", "find_pipes", "find_sales_funnels", "find_workflows", "campaigns"];
+    const order = ["find_steps", "find_sales_paths", "find_channels", "find_sales_funnels", "find_workflows", "campaigns"];
     const at = order.map((t) => index.indexOf(t));
     for (const [i, pos] of at.entries()) expect(pos, order[i]).toBeGreaterThan(-1);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
@@ -136,7 +135,7 @@ describe("chat-first walk (owner 2026-10-10)", () => {
 
   it("the index keeps inner words away from the user and names every request kind", () => {
     const index = bySlug.get("index")!.content;
-    expect(index).toMatch(/Never say pipe/);
+    expect(index).toMatch(/Never say Engine, script, tactic, leg/);
     for (const t of ["request_staff", "request_skill_upgrade", "contact_human"]) expect(index).toContain(t);
   });
 
@@ -216,10 +215,10 @@ describe("a funnel proposal shows its figures in text (prod 2026-10-10: cards on
 });
 
 describe("voice (prod 2026-10-10: cards with no text, a card naming a pipe)", () => {
-  it("the index asks for text before the cards and hides pipe and path names", () => {
+  it("the index asks for text before the cards and hides path names", () => {
     const index = SEED_SKILLS.find((s) => s.slug === "index")!.content;
     expect(index).toMatch(/TEXT first/);
-    expect(index).toMatch(/never show a pipe's or a path's name/);
+    expect(index).toMatch(/never show a path's name/);
   });
 });
 
@@ -234,7 +233,7 @@ describe("only what we run today (owner 2026-10-10: the Copilot offered LinkedIn
 });
 
 describe("costs keep their unit", () => {
-  it("the catalogue skill says a channel or pipe cost is never per paying client", () => {
+  it("the catalogue skill says a channel cost is never per paying client", () => {
     const cat = SEED_SKILLS.find((s) => s.slug === "catalogue")!.content;
     expect(cat).toMatch(/never per paying client/);
     expect(SEED_SKILLS.find((s) => s.slug === "index")!.content).toMatch(/with the unit and basis the API gives/);
@@ -353,53 +352,52 @@ describe("ask before proposing a funnel on a step the business may lack (owner 2
   });
 });
 
-describe("making a campaign behave a certain way (MCP role-play 2026-10-14: documents uploaded, campaign never changed)", () => {
+describe("framework v10 only: no removed plays or pipes (SOPHIE-TURN-LOST-1103, prod 2026-11-03)", () => {
   const bySlug = new Map(SEED_SKILLS.map((s) => [s.slug, s]));
+  // Sophie read `catalogue-plays`, called GET /v1/plays and hunted 50 s for a route,
+  // while the client left: no skill she can read names a removed object.
+  const REMOVED = /\bplays?\b|\bpipes?\b|find_plays|find_pipes|create_pipe|create_play|\/v1\/plays|\/v1\/catalogue\/pipes|catalogue-plays|catalogue-pipes/i;
 
-  it("the index points a behaviour change to the plays skill", () => {
-    expect(bySlug.get("index")!.content).toMatch(/behave differently .* Load `catalogue-plays`/);
+  it("no seed skill names a play or a pipe", () => {
+    for (const s of SEED_SKILLS) {
+      expect(`${s.title}\n${s.description}\n${s.content}`, s.slug).not.toMatch(REMOVED);
+    }
   });
 
-  it("the plays skill explains the three words, find before create, the funnel id, and one responder per reply", () => {
-    const c = bySlug.get("catalogue-plays")!.content;
-    for (const w of ["**Tactic**", "**Strategy**", "**Play**", "find_plays", "find_tactics", "create_tactic", "create_strategy", "create_play", "~<strategy id>", "STOPPED", "stop_funnel_campaign", "allowedActiveWorkflowCount"]) {
+  it("the guard catches both spellings (dry-run both ways)", () => {
+    expect("Load `catalogue-plays`").toMatch(REMOVED);
+    expect("find_pipes → GET /v1/catalogue/pipes").toMatch(REMOVED);
+    expect("a playbook for the display").not.toMatch(REMOVED);
+  });
+
+  it("the old slugs answer the v10 skill, which names the framework objects", () => {
+    expect(MERGED_SKILL_SLUGS["catalogue-plays"]).toBe("gtm-factory");
+    expect(MERGED_SKILL_SLUGS["catalogue-pipes"]).toBe("gtm-factory");
+    const c = bySlug.get("gtm-factory")!.content;
+    for (const w of ["**Campaign**", "**Engine**", "**Script**", "**Tactic**", "**Strategy**", "**Provider**", "**Plan**", "GET /v1/scripts", "engine-picks"]) {
       expect(c, w).toContain(w);
     }
-    expect(c).toMatch(/BOTH answer a positive reply/);
-    expect(c).toContain("POST /v1/sales-funnel-campaigns");
+  });
+
+  it("'my emails never say X' is read, answered and handed to the team, never a long search", () => {
+    expect(bySlug.get("index")!.content).toMatch(/emails never mention our flat rate.*`offers`/);
+    const c = bySlug.get("offers")!.content;
+    expect(c).toContain("## What the emails say");
+    expect(c).toContain("GET /v1/emails?brandId=&limit=5");
+    expect(c).toContain("GET /v1/brands/{id}/offers/{offerId}");
+    expect(c).toMatch(/never search for one/);
   });
 
   it("offers says uploading documents is half the setup", () => {
     const c = bySlug.get("offers")!.content;
     expect(c).toMatch(/Uploading is half the setup/);
     expect(c).toMatch(/what the file is and when it helps a prospect/);
-    expect(c).toContain("catalogue-plays");
   });
 
   it("campaigns explains part ids", () => {
     const c = bySlug.get("campaigns")!.content;
     expect(c).toMatch(/one part per step/);
     expect(c).toMatch(/salesFunnelCampaignId/);
-  });
-});
-
-describe("MCP role-play gaps 2026-10-14 (attach the right PDF): API agents must reach every step", () => {
-  const bySlug = new Map(SEED_SKILLS.map((s) => [s.slug, s]));
-
-  it("funnels by id through the API are a q search, never an id filter; a play lists its funnels", () => {
-    const c = bySlug.get("catalogue-plays")!.content;
-    expect(c).toMatch(/sales-funnels\?brandId=&q=/);
-    expect(c).toMatch(/no id filter/);
-    expect(c).toContain("GET /v1/plays/{id} (salesFunnels)");
-  });
-
-  it("switching a campaign carries the cap over, asks the amount, stops the old then starts the new", () => {
-    const c = bySlug.get("catalogue-plays")!.content;
-    expect(c).toMatch(/Caps belong to the funnel: the new one has none/);
-    expect(c).toMatch(/the client says the amount/);
-    expect(c.indexOf("stop_funnel_campaign(old)")).toBeLessThan(c.indexOf("confirm_switch_on(new)"));
-    expect(c).toMatch(/No single call swaps them/);
-    expect(c).toMatch(/DELETE \.\.\.\/\{id\} \(409 if running or with history\)/);
   });
 
   it("documents: description wording matches the API field, near-duplicates go to the client", () => {
@@ -409,9 +407,8 @@ describe("MCP role-play gaps 2026-10-14 (attach the right PDF): API agents must 
     expect(c).toMatch(/Never delete or rewrite a client's file unasked/);
   });
 
-  it("workflows: how to see which workflows a play runs, by name and description", () => {
+  it("workflows: what each one does, by name and description", () => {
     const c = bySlug.get("catalogue-workflows")!.content;
-    expect(c).toContain("excludedWorkflowDynastySlugs");
     expect(c).toContain("GET /v1/workflows/summaries?featureSlug=<channel slug>&status=active");
   });
 });
@@ -471,6 +468,8 @@ describe("one skill text, two readers (standard vocabulary, owner 2026-10-16)", 
       "sales-paths": "catalogue-sales-paths",
       qualification: "client-profiles",
       sources: "client-profiles",
+      "catalogue-pipes": "gtm-factory",
+      "catalogue-plays": "gtm-factory",
     });
     for (const [old, into] of Object.entries(MERGED_SKILL_SLUGS)) {
       expect(slugs.has(old), old).toBe(false);
@@ -483,7 +482,7 @@ describe("one skill text, two readers (standard vocabulary, owner 2026-10-16)", 
   });
 
   it("workflow ranking is named a multi-armed bandit (best ROI runs, the others are still explored)", () => {
-    for (const slug of ["staff", "catalogue-workflows", "catalogue-plays", "workflows-and-templates"]) {
+    for (const slug of ["staff", "catalogue-workflows", "workflows-and-templates"]) {
       const c = SEED_SKILLS.find((s) => s.slug === slug)!.content;
       expect(c, slug).toContain("multi-armed bandit");
       expect(c, slug).toMatch(/explor/);
