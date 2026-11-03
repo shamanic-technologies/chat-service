@@ -1455,6 +1455,54 @@ export const LeadTurnResponseSchema = z
   })
   .openapi("LeadTurnResponse");
 
+// ── The Copilot on Telegram (SOPHIE-TELEGRAM-1103) ───────────────────────────
+
+export const TelegramMessageRequestSchema = z
+  .object({
+    chatId: z
+      .union([z.string(), z.number().int()])
+      .transform((v) => String(v))
+      .pipe(z.string().regex(/^-?\d{1,20}$/))
+      .openapi({ description: "The Telegram chat that wrote to the platform bot.", example: "123456789" }),
+    messageId: z
+      .union([z.string(), z.number().int()])
+      .transform((v) => String(v))
+      .pipe(z.string().min(1).max(40))
+      .openapi({ description: "Telegram's message id in that chat (a webhook retry of the same message runs nothing twice).", example: "42" }),
+    text: z.string().max(8000).nullable().openapi({ description: "What they wrote (text or caption); null for a message with no text (photo, voice note, file)." }),
+  })
+  .openapi("TelegramMessageRequest");
+export type TelegramMessageRequest = z.infer<typeof TelegramMessageRequestSchema>;
+
+const TelegramMessageResponseSchema = z
+  .object({
+    status: z.enum(["accepted", "duplicate", "not_linked"]).openapi({
+      description:
+        "`accepted`: the chat is linked to an org; the Copilot answers in that chat shortly (sent by chat-service). `duplicate`: this message was already taken. `not_linked`: the chat is linked to no org, nothing runs; the bot answers it with the linking guidance.",
+    }),
+  })
+  .openapi("TelegramMessageResponse");
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/copilot/telegram-messages",
+  tags: ["Internal"],
+  summary: "A chat wrote to the platform Telegram bot: the Copilot answers a linked client there",
+  description:
+    "Called by the platform bot's webhook for every message from a chat that is not the team's. The chat is the identity: client-service names the org it is linked to (dashboard card Telegram updates, one-time code) and the member who linked it, newest link first. A linked chat runs a Copilot turn as that member, in their latest Copilot conversation (the web thread), billed to their org on a Copilot support run; the answer goes back to the chat as plain text through client-service. An unlinked chat runs nothing (`not_linked`). Answers fast; the turn runs after the response, one message at a time per chat.",
+  request: {
+    headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
+    body: { content: { "application/json": { schema: TelegramMessageRequestSchema } } },
+  },
+  responses: {
+    200: { description: "`duplicate` or `not_linked`", content: { "application/json": { schema: TelegramMessageResponseSchema } } },
+    202: { description: "`accepted`: the answer will be sent to the chat", content: { "application/json": { schema: TelegramMessageResponseSchema } } },
+    400: { description: "Invalid request" },
+    401: { description: "Missing x-api-key" },
+    502: { description: "client-service could not say whether the chat is linked" },
+  },
+});
+
 registry.registerPath({
   method: "post",
   path: "/internal/copilot/lead-turns",
@@ -1534,7 +1582,7 @@ export const ProactiveTurnResponseSchema = z
     duplicate: z.boolean().openapi({ description: "true when this idempotency key was already received: nothing ran again." }),
     recipientUserId: z.string(),
     sessionId: z.string().uuid(),
-    delivery: z.enum(["whatsapp", "web"]),
+    delivery: z.enum(["telegram", "whatsapp", "web"]),
     replyText: z.string().nullable(),
     error: z.string().nullable(),
   })
@@ -1917,6 +1965,12 @@ export const ChatRequestSchema = z
         "Internal: set only by chat-service itself when running a proactive turn (POST /internal/copilot/proactive-turns). " +
         "Must name a turn in progress for this org, user and session, or the request is refused (400). " +
         "The turn then gets read tools only and its trigger is stored hidden.",
+    }),
+    channelMessageId: z.string().uuid().optional().openapi({
+      description:
+        "Internal: set only by chat-service itself when answering a Telegram message (POST /internal/copilot/telegram-messages). " +
+        "Must name a Telegram message being answered for this org, user and session, or the request is refused (400). " +
+        "The turn then writes for Telegram (plain text).",
     }),
     leadTurnId: z.string().uuid().optional().openapi({
       description:

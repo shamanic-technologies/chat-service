@@ -89,6 +89,23 @@ const PUBLIC_FIRST =
 const SIGN_IN_ANSWERS_AT_ONCE =
   "Signing in never costs them a message: right after complete_sign_in succeeds, you answer again with their account's access, so in that reply just say in a few words that they are in, and never ask them to send anything (\"ok\", a question) to continue.";
 
+/**
+ * How a conversation in a chat app works (COPILOT-WA-REPEAT-1027, owner
+ * 2026-10-27: « ça fait vraiment répondeur automatique »): the STRATEGY, never
+ * canned replies. Shared by every chat-app surface (WhatsApp, Telegram).
+ */
+export const CONVERSATION_LINES: readonly string[] = [
+  "How a real conversation works here: before you write, read the thread and your own last messages. Answer what they just said, in their register. " +
+    "Never send again something you already said: no ask they have not answered yet, no pitch, no figure, no offer line you already wrote. An unanswered ask means they are not ready; asking again is pressure, and repeating yourself is what makes you sound like an auto-responder. " +
+    "When someone says not now, they are busy, or they have no questions, one short warm line that still leaves their next step one click away (in new words, never the same ask again). Short and human beats complete. Every message moves them one step from where they stopped (client-comms): never close on \"any question?\" or \"take your time\".",
+  "Our earlier messages in this thread (campaign messages included) may carry prices or offer terms that have changed since. Never repeat a price, amount or offer term from the thread: state one only from what your skills or tools say now, and when you have none, say no figure.",
+];
+
+/** A signed-in person can do everything in the chat (SOPHIE-WA-ONBOARD-1101). Shared by every chat-app surface. */
+export const WHOLE_WAY_TO_USE =
+  "This chat is a whole way to use distribute.you: a person can set up their account here from their website, choose their offer and who to reach, see a sample and an email, pay through a link you give, and launch, all in this conversation (the new-account skill is the path; your tools do every step). " +
+  "So never send them to the dashboard for a step your tools can do; the dashboard link is for what they want to look at, never a hand-off. Steps that change nothing you just do and tell them what you picked; paying and launching wait for their clear yes.";
+
 export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): string {
   const name = channel.assistant.name?.trim();
   const role = channel.assistant.role?.trim();
@@ -102,14 +119,8 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
     `People may send voice notes. ${VOICE_NOTE_PREFIX} followed by words is what they SAID in a voice note, transcribed: treat it as their message and answer it like any written one. ${VOICE_NOTE_UNREADABLE} means a voice note we could not understand: say you could not listen to it and ask them to write it or send it again. Always answer in text: you cannot send voice notes.`,
   ];
   if (channel.assistant.instructions?.trim()) lines.push(`How you speak on this number: ${channel.assistant.instructions.trim()}`);
-  // COPILOT-WA-REPEAT-1027 (owner 2026-10-27: « ça fait vraiment répondeur
-  // automatique »): the STRATEGY of a conversation, never canned replies.
-  lines.push(
-    "How a real conversation works here: before you write, read the thread and your own last messages. Answer what they just said, in their register. " +
-      "Never send again something you already said: no ask they have not answered yet, no pitch, no figure, no offer line you already wrote. An unanswered ask means they are not ready; asking again is pressure, and repeating yourself is what makes you sound like an auto-responder. " +
-      "When someone says not now, they are busy, or they have no questions, one short warm line that still leaves their next step one click away (in new words, never the same ask again). Short and human beats complete. Every message moves them one step from where they stopped (client-comms): never close on \"any question?\" or \"take your time\".",
-    "Our earlier messages in this thread (campaign messages included) may carry prices or offer terms that have changed since. Never repeat a price, amount or offer term from the thread: state one only from what your skills or tools say now, and when you have none, say no figure.",
-  );
+  lines.push(...CONVERSATION_LINES);
+
   const knownEmails = (channel.sender.knownEmails ?? []).filter((e) => e.trim());
   if (guest) {
     if (knownEmails.length > 0) {
@@ -134,8 +145,7 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
         "If they say it is not their account, or want another one, sign them in with start_sign_in then complete_sign_in.",
       // SOPHIE-WA-ONBOARD-1101 (prod 2026-11-01: "Creating the company from a
       // website is the one step I can't do from WhatsApp", sent to the dashboard).
-      "This chat is a whole way to use distribute.you: a person can set up their account here from their website, choose their offer and who to reach, see a sample and an email, pay through a link you give, and launch, all in this conversation (the new-account skill is the path; your tools do every step). " +
-        "So never send them to the dashboard for a step your tools can do; the dashboard link is for what they want to look at, never a hand-off. Steps that change nothing you just do and tell them what you picked; paying and launching wait for their clear yes.",
+      WHOLE_WAY_TO_USE,
     );
     if (channel.afterSignIn) {
       lines.push(
@@ -245,20 +255,34 @@ export function toWhatsappText(markdown: string): string {
     .trim();
 }
 
+/** Markdown the web renders → plain text (Telegram is sent without a parse mode): no markup survives. */
+export function toPlainText(markdown: string): string {
+  return markdown
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1: $2")
+    .replace(/^#{1,6}\s+(.+)$/gm, "$1")
+    .replace(/\*\*([^*\n]+)\*\*/g, "$1")
+    .replace(/__([^_\n]+)__/g, "$1")
+    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/gm, "$1$2")
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/\s*[—–]\s*/g, ", ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export const CHANNEL_FAILURE_TEXT = "Sorry, something went wrong on my side. Please send your message again in a minute.";
 
 /** No name header (owner 2026-10-18: a bare "Sophie" line read as a robot); the model introduces itself. */
-export function renderChannelReply(turn: ChannelTurnResult): string {
-  let body = toWhatsappText(turn.text);
+export function renderChannelReply(turn: ChannelTurnResult, format: (markdown: string) => string = toWhatsappText): string {
+  let body = format(turn.text);
   if (turn.choices) {
     const list = turn.choices.choices
-      .map((c, i) => `${i + 1}. ${toWhatsappText(c.label)}${c.description ? ` (${toWhatsappText(c.description)})` : ""}`)
+      .map((c, i) => `${i + 1}. ${format(c.label)}${c.description ? ` (${format(c.description)})` : ""}`)
       .join("\n");
-    body = [body, turn.choices.question ? toWhatsappText(turn.choices.question) : "", list].filter(Boolean).join("\n\n");
+    body = [body, turn.choices.question ? format(turn.choices.question) : "", list].filter(Boolean).join("\n\n");
   }
-  if (turn.inputLabel && !body.includes(turn.inputLabel)) body = [body, toWhatsappText(turn.inputLabel)].filter(Boolean).join("\n\n");
+  if (turn.inputLabel && !body.includes(turn.inputLabel)) body = [body, format(turn.inputLabel)].filter(Boolean).join("\n\n");
   if (turn.creditsRequired) {
-    const credits = `${toWhatsappText(turn.creditsRequired.message)}\n${turn.creditsRequired.label}: ${DASHBOARD_URL}`;
+    const credits = `${format(turn.creditsRequired.message)}\n${turn.creditsRequired.label}: ${DASHBOARD_URL}`;
     body = body.includes(turn.creditsRequired.message) ? `${body}\n${turn.creditsRequired.label}: ${DASHBOARD_URL}` : [body, credits].filter(Boolean).join("\n\n");
   }
   if (!body) body = CHANNEL_FAILURE_TEXT;
