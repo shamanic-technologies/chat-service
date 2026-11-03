@@ -1,0 +1,173 @@
+{
+ "id": "state-declined-asked",
+ "title": "Why did my campaigns stop? (card declined)",
+ "source": "client B, web, 2026-11-03",
+ "surface": "web",
+ "person": {
+  "name": "Chris"
+ },
+ "history": [
+  {
+   "role": "user",
+   "content": "diagnose results so far"
+  },
+  {
+   "role": "assistant",
+   "content": "Nothing is wrong so far: all 124 emails sent were delivered, none bounced, and nobody has replied yet. That's normal this early, since most went out in the last two days."
+  },
+  {
+   "role": "user",
+   "content": "Open my Wide Email campaign page"
+  },
+  {
+   "role": "assistant",
+   "content": "Your campaign page is open on the right. It shows the 124 emails delivered and the 57 prospects still waiting for a first email."
+  }
+ ],
+ "message": "why did my campaigns stop?",
+ "fixtures": {
+  "list_brands": [
+   {
+    "brands": [
+     {
+      "id": "33211c62-b34b-4d21-b124-4ff16338c800",
+      "name": "Beyond Logic",
+      "domain": "beyondlogic.tech",
+      "brandUrl": "https://beyondlogic.tech"
+     }
+    ]
+   }
+  ],
+  "list_offers": [
+   {
+    "offers": [
+     {
+      "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+      "brandId": "33211c62-b34b-4d21-b124-4ff16338c800",
+      "name": "Fixed-Price Software Build",
+      "status": "active",
+      "description": "Custom software development delivered in 30 days for a fixed fee with full code ownership."
+     }
+    ]
+   }
+  ],
+  "get_offer_settings": [
+   {
+    "lifetimeRevenueUsd": 15000,
+    "bookingUrl": null
+   }
+  ],
+  "get_offer_performance": [
+   {
+    "brandId": "33211c62-b34b-4d21-b124-4ff16338c800",
+    "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+    "recipientsContacted": 828,
+    "recipientsClicked": {
+     "total": 3
+    },
+    "recipientsRepliesPositive": {
+     "total": 1
+    },
+    "spent": {
+     "actualSpentCents": 10316,
+     "totalSpentCents": 14944
+    },
+    "return": "Expected 6x · no paid client yet ($103.16 spent)"
+   }
+  ],
+  "list_replies_to_handle": [
+   {
+    "leads": [],
+    "total": 0,
+    "nextCursor": null
+   }
+  ],
+  "get_billing_account": [
+   {
+    "org_id": "8c043fa7-88b9-4e92-a96b-3dab875cb465",
+    "payment_mode": "postpaid",
+    "balance_cents": "-13824.6329741000",
+    "usage_cents": "17837.6329741000",
+    "amount_owed_cents": "5867.5325241000",
+    "credit_line_cents": 5000,
+    "credit_line_step_cents": 5000,
+    "credited_cents": "4013.0000000000",
+    "cash_paid_cents": "4013.0000000000",
+    "actual_balance_cents": "-10616.5141241000",
+    "has_auto_topup": false,
+    "has_payment_method": true,
+    "card_brand": null,
+    "card_last4": null,
+    "usage_discount_pct": 50,
+    "postpaid_card_check": "passed"
+   }
+  ],
+  "get_payment_outlook": [
+   {
+    "orgId": "8c043fa7-88b9-4e92-a96b-3dab875cb465",
+    "paymentMode": "postpaid",
+    "state": "charge_blocked",
+    "blockedReason": "card_declined",
+    "nextChargeAttemptAt": "2026-11-04T15:27:00.786Z",
+    "trigger": "retry_rung",
+    "runningDailyBudgetCents": "0.0000000000",
+    "configuredDailyBudgetCents": "500.0000000000"
+   }
+  ],
+  "list_campaigns": [
+   {
+    "campaignCount": 2,
+    "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+    "campaigns": [
+     {
+      "id": "b255706c-b855-4593-baf1-3a6a76957269",
+      "name": "Wide Email",
+      "path": "Start → Lead Sourcing → Lead found → Sales Cold Email Outreach → Positive reply → Paid client",
+      "runsWhen": "On its own, within its caps (no trigger)",
+      "type": "proactive",
+      "status": "stopped",
+      "stopReason": "payment_declined",
+      "budget": "Max $5/day",
+      "volume": null,
+      "spent": null,
+      "invested": "$101.87 invested since start",
+      "return": "Expected 6x · no paid client yet ($101.87 spent)",
+      "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+      "salesFunnelId": "start_to_lead_found@lead-sourcing~valid-catch-all+lead_found_to_conversation@sales-cold-email-outreach~no-offer-emails+conversation_to_paid_client",
+      "steps": []
+     },
+     {
+      "id": "4b0e33f0-4a25-435e-b768-eafa9d0cff69",
+      "name": "Reply Booking",
+      "path": "Positive reply → AI Meeting Booking → Meeting booked → Meeting attended → Paid client",
+      "runsWhen": "Each time: Positive reply",
+      "type": "reactive",
+      "status": "stopped",
+      "stopReason": "payment_declined",
+      "budget": "Up to $1/day",
+      "volume": null,
+      "spent": null,
+      "invested": "$0 invested since start",
+      "return": "no return served yet",
+      "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+      "salesFunnelId": "conversation_to_meeting_booked@ai-meeting-booking+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client",
+      "steps": []
+     }
+    ]
+   }
+  ]
+ },
+ "facts": [
+  "Their dashboard shows the banner \"Campaigns paused: payment declined\" on every page: the bank declined four charges on their card between 14:57 and 15:40 UTC today, so billing stopped both campaigns (Wide Email and Reply Booking) at 15:30 UTC. Nothing is running.",
+  "The campaigns stay paused until they pay the balance due and have a card that works, then a person starts them again: nothing resumes on its own, and it does not clear by itself at month end.",
+  "The account is postpaid; the balance due is $58.68. Billing tries the card again Wednesday 4 November at 15:27 UTC.",
+  "A payment method (Stripe Link) was added at 15:40 UTC and is on file; no charge on it has succeeded yet, so it is not proven chargeable.",
+  "The dashboard's Spent is $103.16 (billed, net of their 50% usage discount). $178.38 is gross usage before the discount: not a figure their dashboard shows.",
+  "Their campaigns reached 828 people and brought one interested reply; no paid client yet."
+ ],
+ "expect": "Answers up front: the card was declined, so billing paused both campaigns; gives the balance due and the one fix (update the card on Billing, then start them again).",
+ "context": {
+  "currentPage": "today",
+  "recentActions": []
+ }
+}

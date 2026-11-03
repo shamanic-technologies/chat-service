@@ -1,0 +1,165 @@
+{
+ "id": "state-out-of-credit-proactive",
+ "title": "Speak first when prepaid credit has run out",
+ "source": "client B, web, 2026-11-03",
+ "surface": "web",
+ "person": {
+  "name": "Chris"
+ },
+ "history": [
+  {
+   "role": "user",
+   "content": "diagnose results so far"
+  },
+  {
+   "role": "assistant",
+   "content": "Nothing is wrong so far: all 124 emails sent were delivered, none bounced, and nobody has replied yet. That's normal this early, since most went out in the last two days."
+  },
+  {
+   "role": "user",
+   "content": "Open my Wide Email campaign page"
+  },
+  {
+   "role": "assistant",
+   "content": "Your campaign page is open on the right. It shows the 124 emails delivered and the 57 prospects still waiting for a first email."
+  }
+ ],
+ "message": "(Not written by the user. The dashboard asked you to speak first: the user has the Copilot open and seems stuck or looking for something. Read `currentPage` and `recentActions` in the context, and the conversation so far, to guess what they are trying to do. Answer that in one or two short sentences, then call present_choices with 2 or 3 options that move them forward: open the right page, start the action, or answer what they look for. Never pushy, never a sales pitch, no greeting, and do not say you noticed their clicks.)",
+ "fixtures": {
+  "list_brands": [
+   {
+    "brands": [
+     {
+      "id": "33211c62-b34b-4d21-b124-4ff16338c800",
+      "name": "Beyond Logic",
+      "domain": "beyondlogic.tech",
+      "brandUrl": "https://beyondlogic.tech"
+     }
+    ]
+   }
+  ],
+  "list_offers": [
+   {
+    "offers": [
+     {
+      "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+      "brandId": "33211c62-b34b-4d21-b124-4ff16338c800",
+      "name": "Fixed-Price Software Build",
+      "status": "active",
+      "description": "Custom software development delivered in 30 days for a fixed fee with full code ownership."
+     }
+    ]
+   }
+  ],
+  "get_offer_settings": [
+   {
+    "lifetimeRevenueUsd": 15000,
+    "bookingUrl": null
+   }
+  ],
+  "get_offer_performance": [
+   {
+    "brandId": "33211c62-b34b-4d21-b124-4ff16338c800",
+    "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+    "recipientsContacted": 828,
+    "recipientsClicked": {
+     "total": 3
+    },
+    "recipientsRepliesPositive": {
+     "total": 1
+    },
+    "spent": {
+     "actualSpentCents": 10316,
+     "totalSpentCents": 14944
+    },
+    "return": "Expected 6x · no paid client yet ($103.16 spent)"
+   }
+  ],
+  "list_replies_to_handle": [
+   {
+    "leads": [],
+    "total": 0,
+    "nextCursor": null
+   }
+  ],
+  "get_billing_account": [
+   {
+    "org_id": "8c043fa7-88b9-4e92-a96b-3dab875cb465",
+    "payment_mode": "prepaid",
+    "balance_cents": "-12.4000000000",
+    "usage_cents": "5012.4000000000",
+    "credited_cents": "5000.0000000000",
+    "actual_balance_cents": "-12.4000000000",
+    "has_auto_topup": false,
+    "has_payment_method": false,
+    "card_brand": null,
+    "card_last4": null,
+    "usage_discount_pct": null,
+    "amount_owed_cents": null
+   }
+  ],
+  "get_payment_outlook": [
+   {
+    "orgId": "8c043fa7-88b9-4e92-a96b-3dab875cb465",
+    "paymentMode": "prepaid",
+    "state": "no_autopay",
+    "blockedReason": null,
+    "nextChargeAttemptAt": null,
+    "trigger": null
+   }
+  ],
+  "list_campaigns": [
+   {
+    "campaignCount": 2,
+    "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+    "campaigns": [
+     {
+      "id": "b255706c-b855-4593-baf1-3a6a76957269",
+      "name": "Wide Email",
+      "path": "Start → Lead Sourcing → Lead found → Sales Cold Email Outreach → Positive reply → Paid client",
+      "runsWhen": "On its own, within its caps (no trigger)",
+      "type": "proactive",
+      "status": "ongoing",
+      "stopReason": null,
+      "budget": "Max $5/day",
+      "volume": null,
+      "spent": null,
+      "invested": "$101.87 invested since start",
+      "return": "Expected 6x · no paid client yet ($101.87 spent)",
+      "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+      "salesFunnelId": "start_to_lead_found@lead-sourcing~valid-catch-all+lead_found_to_conversation@sales-cold-email-outreach~no-offer-emails+conversation_to_paid_client",
+      "steps": []
+     },
+     {
+      "id": "4b0e33f0-4a25-435e-b768-eafa9d0cff69",
+      "name": "Reply Booking",
+      "path": "Positive reply → AI Meeting Booking → Meeting booked → Meeting attended → Paid client",
+      "runsWhen": "Each time: Positive reply",
+      "type": "reactive",
+      "status": "ongoing",
+      "stopReason": null,
+      "budget": "Up to $1/day",
+      "volume": null,
+      "spent": null,
+      "invested": "$0 invested since start",
+      "return": "no return served yet",
+      "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+      "salesFunnelId": "conversation_to_meeting_booked@ai-meeting-booking+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client",
+      "steps": []
+     }
+    ]
+   }
+  ]
+ },
+ "facts": [
+  "The account is prepaid and its credit has run out: balance -$0.12, no auto top-up, no card saved. Their Billing page shows \"Your credit has run out. Add credit to keep your campaigns running.\"",
+  "Both campaigns (Wide Email, Reply Booking) are still switched on, but nothing runs while the balance is at or below zero: no email goes out until they add credit.",
+  "Adding credit is a payment link only they pay (prepaid checkout), after their yes on the amount.",
+  "The dashboard's Spent is $103.16 since they started. Their campaigns reached 828 people and brought one interested reply."
+ ],
+ "expect": "Says the credit has run out so nothing is sent right now, and ends on adding credit (proposes an amount or opens Billing). Never says the campaigns are running fine.",
+ "context": {
+  "currentPage": "today",
+  "recentActions": []
+ }
+}

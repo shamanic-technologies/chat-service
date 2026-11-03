@@ -41,6 +41,7 @@ export function fixtureSituationReader(scenario: Scenario): SituationReader {
     getOfferPerformance: async () => recorded(scenario, "get_offer_performance"),
     listRepliesToHandle: async () => recorded(scenario, "list_replies_to_handle"),
     getBillingAccount: async () => recorded(scenario, "get_billing_account"),
+    getPaymentOutlook: async () => recorded(scenario, "get_payment_outlook"),
   };
 }
 

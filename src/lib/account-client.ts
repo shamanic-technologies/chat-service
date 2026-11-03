@@ -114,10 +114,13 @@ export function getOfferPerformance(
   const brandId = requireId("brandId", args.brandId);
   const offerId = requireId("offerId", args.offerId);
   const qs = new URLSearchParams({ brandId, pricing: "net" });
-  if (args.windowDays !== undefined && args.windowDays !== null) {
+  if (args.windowDays === "all") {
+    // Since inception: the window the dashboard's Today tiles read (its "Spent").
+    qs.set("windowDays", "all");
+  } else if (args.windowDays !== undefined && args.windowDays !== null) {
     const days = Number(args.windowDays);
     if (!Number.isInteger(days) || days < 1 || days > 365) {
-      throw new Error("[account-client] windowDays must be an integer between 1 and 365");
+      throw new Error('[account-client] windowDays must be an integer between 1 and 365, or "all"');
     }
     qs.set("windowDays", String(days));
   }
@@ -156,6 +159,16 @@ export function compactOfferPerformance(body: unknown): unknown {
   const ce = b.costEconomics as { realizedReturn?: RealizedReturnBody | null } | null | undefined;
   out.realizedReturn = ce?.realizedReturn ?? null;
   out.return = returnLine(b.expectedReturn as ExpectedReturnBody | null | undefined, ce?.realizedReturn);
+  // The window's spend (served with `windowDays`): the dashboard's "Spent" tile reads
+  // `actualSpentCents` (billed, net of their discount), and the total with follow-ups
+  // reserved under it. Kept as served, never recomputed (SOPHIE-BRIEF-EQUALS-DASHBOARD-1103).
+  const spend = (b.window as { spend?: Record<string, unknown> | null } | null | undefined)?.spend;
+  if (spend && typeof spend.actualSpentCents === "number") {
+    out.spent = {
+      actualSpentCents: spend.actualSpentCents,
+      ...(typeof spend.totalSpentCents === "number" ? { totalSpentCents: spend.totalSpentCents } : {}),
+    };
+  }
   out.omitted =
     "Per-company list, per-day series and per-channel detail are left out to keep the chat small: the offer and campaign pages show them (open_page).";
   return out;

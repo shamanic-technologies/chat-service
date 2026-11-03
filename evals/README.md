@@ -44,3 +44,5 @@ Surfaces: `web`, `whatsapp` and `lead` (a Lead event turn ending on `answer_pers
 ## Adding a scenario
 
 Every new failure seen in production becomes a scenario before it is fixed: dump the session, add a spec entry (turn index among the person's visible messages, facts, expect, the production reply flagged `badReplyFails` when it is a failure, a good reply with the actions it stands on), build, recalibrate.
+
+**Account states, not only conversations (SOPHIE-BRIEF-EQUALS-DASHBOARD-1103).** Every state the client's dashboard can show (each payment band and Billing note: payment declined, no card, credit run out) has a scenario, once as a proactive "speak first" turn and once asked (`state-*.json`, built by `tools/state_scenarios.py`: the account answers are typed in the script, a payment state through the `get_payment_outlook` fixture). A new banner on the dashboard = two new scenarios here. A scenario without a `get_payment_outlook` fixture reads "not known this turn" in the brief, as production does when billing does not answer.

@@ -76,11 +76,20 @@ describe("account-client — read-only, the dashboard's own queries", () => {
     const { getOfferPerformance } = await loadModule();
     await getOfferPerformance({ brandId: "b-1", offerId: "o-1" }, params);
     await getOfferPerformance({ brandId: "b-1", offerId: "o-1", windowDays: 7 }, params);
+    await getOfferPerformance({ brandId: "b-1", offerId: "o-1", windowDays: "all" }, params);
     const urls = (fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     expect(urls).toEqual([
       "https://api.test.local/v1/offers/o-1/revenue?brandId=b-1&pricing=net",
       "https://api.test.local/v1/offers/o-1/revenue?brandId=b-1&pricing=net&windowDays=7",
+      "https://api.test.local/v1/offers/o-1/revenue?brandId=b-1&pricing=net&windowDays=all",
     ]);
+  });
+
+  it("keeps the window's served spend: the dashboard's Spent tile (SOPHIE-BRIEF-EQUALS-DASHBOARD-1103)", async () => {
+    const { compactOfferPerformance } = await import("../../src/lib/account-client.js");
+    const out = compactOfferPerformance({ window: { spend: { actualSpentCents: 10312, totalSpentCents: 11020, daily: [{}] } } }) as Record<string, unknown>;
+    expect(out.spent).toEqual({ actualSpentCents: 10312, totalSpentCents: 11020 });
+    expect((compactOfferPerformance({}) as Record<string, unknown>).spent).toBeUndefined();
   });
 
   it("list_replies_to_handle reads the dashboard's 'needs your call' set", async () => {
