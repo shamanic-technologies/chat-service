@@ -7,7 +7,7 @@ import { COPILOT_TOOL_API_OPS, skillApiGaps } from "../../src/lib/skill-api-ops.
 
 // The client's jobs, one level under the index (SOPHIE-REFONTE-1102); staff work sits under `staff`.
 const TOPICS = [
-  "new-account", "offers", "client-profiles", "campaigns", "emails-you-wrote", "connected-accounts",
+  "new-account", "offers", "client-profiles", "campaigns", "emails-you-wrote", "connected-accounts", "whatsapp-line",
   "budget-and-billing", "costs-roi-stats", "staff-requests", "choices", "staff",
 ];
 const STAFF_TOPICS = ["catalogue", "infra", "workflows-and-templates", "legs", "triggers"];
@@ -63,6 +63,8 @@ describe("seeded skill tree", () => {
       "prepaid_checkout", "prepaid_status", "payment_required", "not_built_yet", "topup_amount_cents",
       "auto_topup_amount_cents", "auto_topup_threshold_cents", "positive_reply", "skill_upgrade", "reactive_pipe_from_lead_found", "pipe_in_use",
       "sales_interest", "not_built_yet", "not_prepaid",
+      // WhatsApp line values (crm-service link status, account types).
+      "not_linked", "pro_ai", "personal_human",
     ]);
     const named = new Set(all.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []);
     const unknown = [...named].filter((n) => !notTools.has(n) && !TOOL_REGISTRY[n] && !n.startsWith("lead_found_to") && !n.startsWith("start_to"));
@@ -140,6 +142,22 @@ describe("chat-first walk (owner 2026-10-10)", () => {
 
   // One text serves the Copilot AND an API agent (owner 2026-10-16): the API
   // operation beside each tool costs ~150 tokens on the busiest skills.
+  // CLIENT-FRICTION-SKILLS-1103: an outside agent asked "make my WhatsApp line answer my customers and hand over
+  // to me when stuck" found no setup in the skills, and connected-accounts said linking had no API route.
+  it("a client learns to make their WhatsApp line answer and hand over, from the skills alone (CLIENT-FRICTION-SKILLS-1103)", () => {
+    const ca = bySlug.get("connected-accounts")!.content;
+    expect(ca).toContain("POST /v1/orgs/matrix/links");
+    expect(ca).toContain("GET /v1/orgs/matrix/links");
+    expect(ca).not.toContain("GET /v1/orgs/matrix/connections");
+    expect(ca).toContain("`whatsapp-line`");
+    const wa = bySlug.get("whatsapp-line")!.content;
+    for (const w of [
+      "PATCH /v1/orgs/matrix/links/{linkId}", "pro_ai", "persona", "PUT /v1/brands/{id}/sales-rep-phone",
+      "Lead event", "AI Follow-up Email", "as the business", "Active Follow-up Replies", "no hand-back",
+    ]) expect(wa, w).toContain(w);
+    expect(bySlug.get("index")!.content).toContain("`whatsapp-line`");
+  });
+
   it("every skill stays small (under ~950 tokens), the index under ~1100", () => {
     for (const s of SEED_SKILLS) {
       const cap = s.slug === "index" ? 4400 : 3900;
