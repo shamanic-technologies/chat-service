@@ -123,7 +123,8 @@ describe("get_offer_performance stays small (owner rule: no tool result above ~2
   it("keeps the summary fields, drops the per-company list and day series, never opens", async () => {
     const { compactOfferPerformance, OFFER_PERFORMANCE_FIELDS } = await import("../../src/lib/account-client.js");
     const big = {
-      offerId: "o", brandId: "b", costBasis: "charged", headline: { spentUsd: 71.2 }, costEconomics: { a: 1 },
+      offerId: "o", brandId: "b", costBasis: "charged", headline: { spentUsd: 71.2 }, expectedReturn: { roiMultiple: 18.2, unavailableReason: null },
+      costEconomics: { roiMultiple: 30, costOfAcquisitionPct: 3, costPerAcquisitionUsd: 9, realizedReturn: { closedWonCount: 0, closedWonRevenueUsd: 0, roiMultiple: 0, spentUsd: 94.1 } },
       recipientsContacted: { count: 204 }, recipientsOpened: { count: 99 }, recipientsClicked: { count: 3 }, recipientsRepliesPositive: { count: 0 },
       meetingsBooked: { count: 0 }, purchased: { count: 0 }, signups: { count: 0 }, formSubmissions: { count: 0 }, outcomes: { x: 1 }, maturity: { m: 1 },
       organizations: Array.from({ length: 198 }, (_, i) => ({ id: i, name: "x".repeat(400) })),
@@ -135,5 +136,19 @@ describe("get_offer_performance stays small (owner rule: no tool result above ~2
     expect(out).not.toHaveProperty("timeSeries");
     expect(out).not.toHaveProperty("recipientsOpened");
     expect(JSON.stringify(out).length).toBeLessThan(8000);
+  });
+
+  it("states only the expected and realized returns: the pipeline ROI, its maturity variants and CAC never leave (ROI-CONSISTENCY-1103)", async () => {
+    const { compactOfferPerformance } = await import("../../src/lib/account-client.js");
+    const out = compactOfferPerformance({
+      offerId: "o",
+      expectedReturn: { roiMultiple: 18.2, unavailableReason: null },
+      costEconomics: { roiMultiple: 30, costOfAcquisitionPct: 3, costPerAcquisitionUsd: 9, realizedReturn: { closedWonCount: 0, closedWonRevenueUsd: 0, roiMultiple: 0, spentUsd: 94.1 } },
+      maturity: { flash: { roiMultiple: 30 }, mature: { roiMultiple: null }, isMature: false },
+    }) as Record<string, unknown>;
+    expect(out.return).toBe("Expected 18x · no paid client yet ($94 spent)");
+    expect(out).not.toHaveProperty("costEconomics");
+    expect(out).not.toHaveProperty("maturity");
+    expect(JSON.stringify(out)).not.toMatch(/costOfAcquisitionPct|costPerAcquisitionUsd|"roiMultiple":30/);
   });
 });
