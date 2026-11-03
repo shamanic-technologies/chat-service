@@ -50,6 +50,7 @@ Reading this through the API or the MCP? Every act below is an API operation (ME
 - Their money (balance, what it cost, the chat's cost, a refund): \`budget-and-billing\`.
 - Their own email sent as written: \`emails-you-wrote\`.
 - Their mailboxes and tools: \`connected-accounts\`.
+- Their WhatsApp number answers people by itself, hands a chat to them when stuck: \`whatsapp-line\`.
 - Our team, a bug, a missing feature: \`staff-requests\`.
 - A campaign should behave differently (attach a document, skip some addresses): that is the step's play. Load \`catalogue-plays\`.
 Building channels, pipes or workflows is staff work: \`staff\`.
@@ -422,14 +423,42 @@ A workflow is the program that runs one leg on one channel (find, write, send, w
 A channel sends from an account. Cold-email inboxes are ours: the client connects nothing for cold email.
 
 ## Read
-Google mailboxes: GET /v1/orgs/google/accounts. WhatsApp / Telegram links: GET /v1/orgs/matrix/connections. CRM and analytics: GET /v1/orgs/{gohighlevel|posthog|stripe|clerk}/connections.
+Google mailboxes: GET /v1/orgs/google/accounts. WhatsApp / Telegram lines: GET /v1/orgs/matrix/links (each line's status not_linked | waiting | linked | failed, its QR or pairing code, and per account linkId, phone, accountType, persona). CRM and analytics: GET /v1/orgs/{gohighlevel|posthog|stripe|clerk}/connections.
 
 ## Connect
-Connecting needs the client's own login (OAuth, QR code): send them to the page (open_page, no API route for a page; on WhatsApp its link). Never ask for a password in the chat. Through the API: POST /v1/orgs/google/auth/start for a Google mailbox; POST /v1/orgs/{gohighlevel|posthog|stripe|clerk}/connections with their own credentials.
+Connecting needs the client's own login (OAuth, QR code): never ask for a password in the chat. In the chat: send them to the page (open_page, no API route for a page; on WhatsApp its link). Through the API: POST /v1/orgs/google/auth/start for a Google mailbox; POST /v1/orgs/matrix/links {brandId, channel: "whatsapp", method: "qr"} answers a QR (raw data + a PNG imageDataUrl) the client scans in WhatsApp > Linked devices, then poll GET /v1/orgs/matrix/links until linked; DELETE /v1/orgs/matrix/links/{channel} unlinks; POST /v1/orgs/{gohighlevel|posthog|stripe|clerk}/connections with their own credentials. A linked WhatsApp line that should answer people by itself: \`whatsapp-line\`.
 
 ## Gaps
 - No route connects a LinkedIn account today: request_staff (POST /v1/staff-requests, repo crm-service).
 - A call booking link (Calendly, neocal...) is not a connected account: it is an offer setting (GET / PUT /v1/brands/{id}/offers/{offerId}/economics, \`offers\`). Never answer a booking-link question with mailboxes.
+`),
+  },
+  {
+    slug: "whatsapp-line",
+    parentSlug: "index",
+    title: "Their WhatsApp line answers people",
+    description:
+      "Use when the client wants their WhatsApp number to answer customers or leads by itself, to answer as another business, to hand a chat over to them when the AI is stuck, or asks what follow-ups WhatsApp gets.",
+    position: 115,
+    content: t(`
+# Their WhatsApp line answers people
+A WhatsApp number the client links becomes a line of their brand. Each message someone writes to it is a Lead event: their running Lead event campaign reads the whole conversation and decides to answer now, later, or not at all. No campaign on, nobody is answered.
+
+## Set up (in this order)
+1. Link the number: \`connected-accounts\` (POST /v1/orgs/matrix/links, QR). Read its linkId on GET /v1/orgs/matrix/links.
+2. Say who writes: PATCH /v1/orgs/matrix/links/{linkId} {brandId, accountType: "pro_ai", persona: {name, role, instructions}}. pro_ai = the AI writes from this line; personal_human = never answered by the AI; automationAllowed false = no automated message from it. The persona is how the AI presents itself and what it must know (hours, prices, tone); its instructions are read on every answer.
+3. The hand-over number: PUT /v1/brands/{id}/sales-rep-phone {salesRepPhone} with a country code (+77001234567). An email is not needed for this one.
+4. The answering campaign: GET /v1/offers/{offerId}/sales-funnels?brandId= and pick a funnel whose trigger is "Lead event" and whose line is "AI Follow-up Email" (the Follow-up channel: it writes on the channel the person uses, WhatsApp included). Several variants exist, one per audience: leads only, not current clients, current clients, the brand's team. Pick the one(s) matching who should be answered. Then \`campaigns\`: create stopped, a cap ("Up to $X"), their yes, activate.
+5. Check: GET /v1/offers/{offerId}/trigger-events/summary?brandId= shows each Lead event, what ran, and why one was skipped (campaign off, not funded, person not in that campaign's audience).
+
+## What the AI does
+- Answers in the language of the person's last message, at a sensible hour of their day.
+- Can answer AS THE BUSINESS of the person writing (a demo line: a prospect asks a question like their own customer would and gets their own AI's answer). It happens when the persona instructions say so in plain words ("answer as the business of the person writing to you, from their website") and we know that person's company website (from the lead's company or email domain). It then reads that site. No website known: it answers as the client's own brand.
+- Stuck (a question it cannot answer truthfully): it sends nothing to the person and messages the sales rep phone on WhatsApp: who wrote, what they asked, that nothing was sent. No sales rep phone set: nobody is told.
+- Once someone of the brand types in that chat from the linked phone, the AI never writes in it again (a human took it over, no hand-back). A new person still gets answered.
+
+## Follow-ups on WhatsApp
+Every message we send sets one next follow-up date for that person (the AI can pick it). A Lead event campaign only answers when they write. To write again to someone who went quiet once their date comes, also run a campaign on the "Active Follow-up Replies" funnel: it picks people whose date is due AND who wrote to the brand, and the Follow-up channel writes on their best channel, WhatsApp when that is where they talk. A message to someone who never wrote is outreach (Cold WhatsApp Outreach funnels, \`campaigns\`). No per-line follow-up count is served yet: GET /v1/orgs/matrix/leads gives messages per conversation.
 `),
   },
   {
