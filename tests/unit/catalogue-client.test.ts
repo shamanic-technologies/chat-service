@@ -109,8 +109,10 @@ describe("catalogue reads: one tool per level, features-service service key", ()
     const { CATALOGUE_READ_TOOLS } = await load();
     const out = (await CATALOGUE_READ_TOOLS.find_sales_funnels({}, customer)) as { rows: Array<Record<string, any>> };
     expect(out.rows[0].expected.cost).toBe("$120 per paying client (expected)");
-    expect(out.rows[0].expected.return).toBe("1.5x (expected, fleet inputs)");
-    expect(out.rows[0].return).toBe("2x (estimated)");
+    expect(out.rows[0].expected.return).toBe("Expected 1.5x (fleet inputs)");
+    // A fleet-average return is retired (ROI-CONSISTENCY-1103): only the offer's expected one is stated.
+    expect(out.rows[0]).not.toHaveProperty("return");
+    expect(out.rows[0]).not.toHaveProperty("roi");
     expect(out.rows[1].expected.unavailableReason).toBe("no_lifetime_revenue");
   });
 
@@ -294,8 +296,8 @@ describe("every cost carries its unit (prod 2026-10-10: a per-reply cost quoted 
   });
 });
 
-describe("an estimate says so (owner 2026-10-10: never call an estimate measured)", () => {
-  it("cost and return carry their basis in the same field", async () => {
+describe("an estimate says so; a fleet-average return is never stated (ROI-CONSISTENCY-1103)", () => {
+  it("cost carries its basis; no return, roi or roiBasis on a step, pipe, channel or funnel row", async () => {
     fetchMock().mockResolvedValueOnce(
       res(200, {
         rows: [
@@ -307,15 +309,9 @@ describe("an estimate says so (owner 2026-10-10: never call an estimate measured
     );
     const { CATALOGUE_READ_TOOLS } = await load();
     const out = (await CATALOGUE_READ_TOOLS.find_sales_funnels({}, customer)) as { rows: Array<Record<string, unknown>> };
-    expect(out.rows[0]).toMatchObject({ cost: "$2748.69 per paying client (estimated)", return: "0.91x (estimated)" });
-    expect(out.rows[1]).toMatchObject({ cost: "$2.73 per website visit", return: "17.42x (estimated)" });
-    expect(out.rows[2].return).toBeUndefined();
-  });
-
-  it("a return served without its basis fails loud", async () => {
-    fetchMock().mockResolvedValueOnce(res(200, { rows: [{ id: "x", costUsd: 1, costPer: "per paying client", roi: 2, status: "measured" }] }));
-    const { CATALOGUE_READ_TOOLS } = await load();
-    await expect(CATALOGUE_READ_TOOLS.find_sales_funnels({}, customer)).rejects.toThrow(/without its basis/);
+    expect(out.rows[0]).toMatchObject({ cost: "$2748.69 per paying client (estimated)" });
+    expect(out.rows[1]).toMatchObject({ cost: "$2.73 per website visit" });
+    for (const r of out.rows) for (const k of ["return", "roi", "roiBasis"]) expect(r).not.toHaveProperty(k);
   });
 });
 

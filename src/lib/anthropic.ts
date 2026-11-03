@@ -2306,7 +2306,7 @@ export const GET_SPEND_BY_CAMPAIGN_TOOL: Anthropic.Tool = {
 export const GET_OFFER_PERFORMANCE_TOOL: Anthropic.Tool = {
   name: "get_offer_performance",
   description:
-    "Read an offer's results the way the dashboard shows them: spend, emails sent, replies and the return on spend. Without windowDays it covers the offer since it started; with windowDays (1-365) it adds a block for the last N days. Read-only.",
+    "Read an offer's results the way the dashboard shows them: spend, emails sent, replies, and `return`: the only two returns you may state, the EXPECTED return ('Expected 18x') and the REALIZED one (paid clients over money spent: 'no paid client yet ($94 spent)'). Quote `return` as written. Without windowDays it covers the offer since it started; with windowDays (1-365) it adds a block for the last N days. Read-only.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -2637,7 +2637,7 @@ export const UPDATE_OFFER_SETTINGS_TOOL: Anthropic.Tool = {
 export const LIST_SALES_PATHS_TOOL: Anthropic.Tool = {
   name: "list_sales_paths",
   description:
-    "List every sales path of an offer (a chain of legs from first contact to paid client), ranked by return on spend, with each leg's channel, rate and the cost per paying client. Read-only.",
+    "List every sales path of an offer (a chain of legs from first contact to paid client), ranked by expected return (say expected), with each leg's channel, rate and the cost per paying client. Read-only.",
   input_schema: { type: "object" as const, properties: BRAND_OFFER_PROPS, required: BRAND_OFFER_REQUIRED },
 };
 
@@ -2948,7 +2948,7 @@ const INCLUDE_NOT_RUNNABLE_PROP = {
 };
 
 const CATALOGUE_ROW_NOTE =
-  "Lists ONLY what we run today (a channel we do not run, like LinkedIn posting, is not listed; reading one by id answers weRunItToday: false). Each row: id, name, icon, one line, cost (figure AND unit, e.g. '$2.73 per website visit', '(estimated)' when it is one: quote it as written, never move a cost to another unit, never call an estimate measured), return (e.g. '0.91x (estimated)': quote the basis too), costUsd, roi, status, type (sales funnels: proactive reaches out, reactive answers a trigger) (measured = fleet evidence; learning = not enough history, cost and roi null; customer_time = the customer's own team). Quote figures exactly. Read-only, free.";
+  "Lists ONLY what we run today (a channel we do not run, like LinkedIn posting, is not listed; reading one by id answers weRunItToday: false). Each row: id, name, icon, one line, cost (figure AND unit, e.g. '$2.73 per website visit', '(estimated)' when it is one: quote it as written, never move a cost to another unit, never call an estimate measured), costUsd, status, and on an offer's funnel `expected.return` ('Expected 1.5x (fleet inputs)': say expected). A step, pipe, channel, funnel or workflow row carries a cost, never a return: never state one, type (sales funnels: proactive reaches out, reactive answers a trigger) (measured = fleet evidence; learning = not enough history, cost null; customer_time = the customer's own team). Quote figures exactly. Read-only, free.";
 
 const idList = (description: string) => ({ type: "array", items: { type: "string" }, description });
 
@@ -3012,7 +3012,7 @@ export const FIND_PIPES_TOOL: Anthropic.Tool = {
 export const FIND_SALES_FUNNELS_TOOL: Anthropic.Tool = {
   name: "find_sales_funnels",
   description:
-    "Level 5: SALES FUNNELS, a sales path with one pipe per leg: the thing you PROPOSE to the user (name, cost per paying client, ROI). Filter with paths and/or containsChannels. ALWAYS pass offerId + brandId when you know the offer: rows are then the funnels its business can run, priced on its own figures, and setAside lists the funnels through a step the offer has not stated (missingSteps: ask the client about those before proposing one). Read one with id for its legs, rates and pipes. " +
+    "Level 5: SALES FUNNELS, a sales path with one pipe per leg: the thing you PROPOSE to the user (name, cost per paying client, and with offerId its expected return, said expected). Filter with paths and/or containsChannels. ALWAYS pass offerId + brandId when you know the offer: rows are then the funnels its business can run, priced on its own figures, and setAside lists the funnels through a step the offer has not stated (missingSteps: ask the client about those before proposing one). Read one with id for its legs, rates and pipes. " +
     CATALOGUE_ROW_NOTE,
   input_schema: {
     type: "object" as const,

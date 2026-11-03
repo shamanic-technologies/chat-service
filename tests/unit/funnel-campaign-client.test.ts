@@ -326,8 +326,8 @@ describe("a campaign IS a sales funnel campaign (owner rule; prod 2026-10-10 NOV
       if (url.startsWith("http://features.test/brands/b/sales-funnel-campaigns")) {
         return res(200, {
           salesFunnelCampaigns: [
-            { id: "c1", path: { items: [{ kind: "step", label: "Lead found" }, { kind: "channel", name: "Sales Cold Email Outreach" }, { kind: "step", label: "Positive reply" }, { kind: "step", label: "Paid client" }] }, investedUsd: 67.46, roiMultiple: 0, maturity: { isMature: false } },
-            { id: "c2", investedUsd: 0.07, roiMultiple: null, maturity: null },
+            { id: "c1", path: { items: [{ kind: "step", label: "Lead found" }, { kind: "channel", name: "Sales Cold Email Outreach" }, { kind: "step", label: "Positive reply" }, { kind: "step", label: "Paid client" }] }, investedUsd: 67.46, roiMultiple: 30, maturity: { isMature: false }, expectedReturn: { roiMultiple: 18.2, unavailableReason: null }, costEconomics: { roiMultiple: 30, realizedReturn: { closedWonCount: 0, closedWonRevenueUsd: 0, roiMultiple: 0, spentUsd: 94.1 } } },
+            { id: "c2", investedUsd: 0.07, roiMultiple: null, maturity: null, expectedReturn: { roiMultiple: null, unavailableReason: "own_sales_path_unpriced" }, costEconomics: { realizedReturn: { closedWonCount: 2, closedWonRevenueUsd: 8000, roiMultiple: 3.08, spentUsd: 2600 } } },
             { id: "c3", investedUsd: 0, roiMultiple: null, maturity: null },
           ],
         });
@@ -349,8 +349,10 @@ describe("a campaign IS a sales funnel campaign (owner rule; prod 2026-10-10 NOV
     // Per campaign results from features-service (owner 2026-10-11), as served, maturity said.
     expect(out.campaigns[0]).not.toHaveProperty("description");
     expect(out.campaigns[1].path).toBeNull();
-    expect(out.campaigns[0]).toMatchObject({ path: "Lead found → Sales Cold Email Outreach → Positive reply → Paid client", invested: "$67.46 invested since start", return: "0x so far (still learning, not mature)" });
-    expect(out.campaigns[1]).toMatchObject({ invested: "$0.07 invested since start", return: "no return measured yet" });
+    expect(out.campaigns[0]).toMatchObject({ path: "Lead found → Sales Cold Email Outreach → Positive reply → Paid client", invested: "$67.46 invested since start", return: "Expected 18x · no paid client yet ($94 spent)" });
+    expect(JSON.stringify(out)).not.toMatch(/so far|still learning|30x/);
+    expect(out.campaigns[1]).toMatchObject({ invested: "$0.07 invested since start", return: "Expected return not known (this funnel's path has no price yet) · Realized 3.1x: 2 paid clients worth $8,000 for $2,600 spent" });
+    expect(out.campaigns[2].return).toBe("no return served yet");
     expect(fetchMock().mock.calls.some((c) => String(c[0]).includes("pricing=net"))).toBe(true);
     expect(JSON.stringify(out)).not.toContain("long unit name");
     expect(out.note).toMatch(/never campaigns/);
