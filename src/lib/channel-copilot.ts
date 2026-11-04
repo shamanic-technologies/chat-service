@@ -302,8 +302,19 @@ export interface PhoneAccount {
 // Delivery series (Monitoring: replies written vs delivered, per UTC day)
 // ---------------------------------------------------------------------------
 
-/** crm-service's refusal when the brand's team already took the conversation by hand. */
-export const HUMAN_TAKEOVER_CODE = '"code":"human_in_conversation"';
+/**
+ * crm-service refusals that are an intended silence, never a break: the brand's
+ * team already took the conversation by hand (`human_in_conversation`), or the
+ * brand's user stated the person is not someone of the brand
+ * (`stated_not_to_brand`: no message from us on any channel until the tag is undone).
+ */
+export const INTENDED_SILENCE_CODES = ["human_in_conversation", "stated_not_to_brand"] as const;
+
+/** A stored send error that names one of the intended-silence refusals. */
+export function isIntendedSilence(error: string | null | undefined): boolean {
+  if (!error) return false;
+  return INTENDED_SILENCE_CODES.some((code) => error.includes(`"code":"${code}"`) || error.includes(`${code}:`));
+}
 
 export interface ChannelReplyDay {
   day: string;
@@ -317,9 +328,9 @@ export interface ChannelReplyDay {
  * rows (SOPHIE-WA-SIGNED-IN-1029: a refused send was silent for two days).
  * delivered = crm-service accepted the reply; notDelivered = the turn ended but
  * nothing left; a message still in flight counts in received only. A send crm
- * refused because a person of the brand already wrote by hand
- * (`human_in_conversation`) is the team answering, not a break: it never counts
- * as not delivered (red only when broken).
+ * refused as an intended silence (`INTENDED_SILENCE_CODES`: the team already
+ * wrote by hand, or the brand said the person is not theirs) is not a break: it
+ * never counts as not delivered (red only when broken).
  */
 export async function channelReplyDays(database: typeof Db, days: number, now = new Date()): Promise<ChannelReplyDay[]> {
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -338,7 +349,7 @@ export async function channelReplyDays(database: typeof Db, days: number, now = 
     if (!bucket) continue;
     bucket.received++;
     if (r.sentAt) bucket.delivered++;
-    else if ((r.status === "answered" || r.status === "failed") && !r.error?.includes(HUMAN_TAKEOVER_CODE)) bucket.notDelivered++;
+    else if ((r.status === "answered" || r.status === "failed") && !isIntendedSilence(r.error)) bucket.notDelivered++;
   }
   return [...byDay.values()];
 }
