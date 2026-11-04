@@ -202,6 +202,8 @@ describe("isRetryableDelivery", () => {
     expect(isRetryableDelivery(new TypeError("fetch failed"))).toBe(true);
     expect(isRetryableDelivery(new WhatsappSendError(422, JSON.stringify({ code: "not_linked" })))).toBe(false);
     expect(isRetryableDelivery(new WhatsappSendError(400, "bad"))).toBe(false);
+    expect(isRetryableDelivery(new WhatsappSendError(422, JSON.stringify({ type: "refused", code: "stated_not_to_brand" })))).toBe(false);
+    expect(isRetryableDelivery(new WhatsappSendError(422, JSON.stringify({ type: "refused", code: "human_in_conversation" })))).toBe(false);
   });
 });
 
@@ -406,6 +408,47 @@ describe("processProactiveTurn", () => {
     expect(sendWhatsapp).toHaveBeenCalledTimes(1);
     expect(sleep).not.toHaveBeenCalled();
     expect(updates.at(-1)).toMatchObject({ status: "failed" });
+  });
+
+  it("a person the brand said is not theirs (stated_not_to_brand): one send, no retry, no error log", async () => {
+    const { db, updates } = fakeDb([[ROW]]);
+    const sendWhatsapp = vi.fn(async () => { throw new WhatsappSendError(422, JSON.stringify({ type: "refused", code: "stated_not_to_brand", error: "not someone of the brand" })); });
+    const sendTelegram = vi.fn(async () => {});
+    const sleep = vi.fn(async () => {});
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const infoLog = vi.spyOn(console, "info").mockImplementation(() => {});
+    await processProactiveTurn(
+      { ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, sendTelegram, sleep,
+        runChat: async () => ({ status: 200, body: sse({ type: "token", content: "Go?" }) }) },
+      "turn-1", whatsappRecipient, {},
+    );
+    expect(sendWhatsapp).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(sendTelegram).not.toHaveBeenCalled();
+    expect(errorLog).not.toHaveBeenCalled();
+    expect(infoLog).toHaveBeenCalled();
+    expect(String(updates.at(-1)!.error)).toContain("stated_not_to_brand");
+    errorLog.mockRestore();
+    infoLog.mockRestore();
+  });
+
+  it("reach refused stated_not_to_brand: nothing sent on any channel, no error log", async () => {
+    const { db, updates } = fakeDb([[ROW]]);
+    const sendWhatsapp = vi.fn(async () => {});
+    const sendTelegram = vi.fn(async () => {});
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const infoLog = vi.spyOn(console, "info").mockImplementation(() => {});
+    await processProactiveTurn(
+      { ...lineDeps({ reachable: false, code: "stated_not_to_brand", error: "not someone of the brand" }), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, sendTelegram,
+        runChat: async () => ({ status: 200, body: sse({ type: "token", content: "Go?" }) }) },
+      "turn-1", whatsappRecipient, {},
+    );
+    expect(sendWhatsapp).not.toHaveBeenCalled();
+    expect(sendTelegram).not.toHaveBeenCalled();
+    expect(errorLog).not.toHaveBeenCalled();
+    expect(String(updates.at(-1)!.error)).toContain("stated_not_to_brand");
+    errorLog.mockRestore();
+    infoLog.mockRestore();
   });
 
   it("out of credits: stored in the thread, nothing sent to a phone", async () => {
