@@ -9,6 +9,7 @@ import {
   toWhatsappText,
   CHANNEL_FAILURE_TEXT,
   channelReplyDays,
+  isIntendedSilence,
   type ChatChannelContext,
 } from "../../src/lib/channel-copilot.js";
 
@@ -237,6 +238,17 @@ function fakeDb(script: { selects: unknown[][]; inserts: unknown[][] }) {
   };
 }
 
+describe("isIntendedSilence", () => {
+  it("names the two intended-silence refusals, nothing else", () => {
+    expect(isIntendedSilence('crm-service whatsapp send 422: {"type":"refused","code":"stated_not_to_brand"}')).toBe(true);
+    expect(isIntendedSilence('crm-service whatsapp send 422: {"type":"refused","code":"human_in_conversation"}')).toBe(true);
+    expect(isIntendedSilence("whatsapp not reachable, the message waits in the web Copilot thread: stated_not_to_brand: not theirs")).toBe(true);
+    expect(isIntendedSilence('crm-service whatsapp send 422: {"type":"refused","code":"whatsapp_not_connected"}')).toBe(false);
+    expect(isIntendedSilence("whatsapp not reachable: not_linked: no line")).toBe(false);
+    expect(isIntendedSilence(null)).toBe(false);
+  });
+});
+
 describe("channelReplyDays", () => {
   it("one row per UTC day, zeros included; delivered = sent, not delivered = ended without a send", async () => {
     const { db } = fakeDb({
@@ -247,13 +259,18 @@ describe("channelReplyDays", () => {
         { createdAt: new Date("2026-10-27T10:00:00Z"), status: "failed", sentAt: new Date("2026-10-27T10:01:00Z") },
         // The team already wrote by hand: crm refused the send, nothing is broken.
         { createdAt: new Date("2026-10-28T10:00:00Z"), status: "failed", sentAt: null, error: 'send: crm-service whatsapp send 422: {"type":"refused","code":"human_in_conversation","error":"..."}' },
+        // The brand said this person is not theirs: silence by intent, not a break.
+        { createdAt: new Date("2026-10-28T11:00:00Z"), status: "failed", sentAt: null, error: 'send: crm-service whatsapp send 422: {"type":"refused","code":"stated_not_to_brand","error":"..."}' },
+        // Any other refusal still counts as not delivered.
+        { createdAt: new Date("2026-10-28T12:00:00Z"), status: "failed", sentAt: null, error: 'send: crm-service whatsapp send 422: {"type":"refused","code":"whatsapp_not_connected","error":"..."}' },
+        { createdAt: new Date("2026-10-28T13:00:00Z"), status: "answered", sentAt: null, error: 'send: crm-service whatsapp send 400: {"code":"invalid_phone"}' },
       ]],
       inserts: [],
     });
     const days = await channelReplyDays(db as unknown as Parameters<typeof channelReplyDays>[0], 3, new Date("2026-10-29T12:00:00Z"));
     expect(days).toEqual([
       { day: "2026-10-27", received: 1, delivered: 1, notDelivered: 0 },
-      { day: "2026-10-28", received: 1, delivered: 0, notDelivered: 0 },
+      { day: "2026-10-28", received: 4, delivered: 0, notDelivered: 2 },
       { day: "2026-10-29", received: 3, delivered: 1, notDelivered: 1 },
     ]);
   });

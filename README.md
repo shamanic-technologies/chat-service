@@ -1660,7 +1660,7 @@ Since ONE-AI-CONVERSES-1029 crm-service no longer hands WhatsApp messages to cha
 
 - **The WhatsApp block** (`buildChannelBlock`): persona name and voice, WhatsApp formatting, voice notes read as text, the conversation strategy (never repeat an unanswered ask, a pitch or a stale price), the founder-line introduction, the guest / known-person sign-in rules. Lead turns on our brand and proactive turns use it.
 - **Identity = the number** (client-service `GET /internal/phone-accounts?phone=`); a guest with a number signs in with the email code (`start_sign_in` / `complete_sign_in`, only on a session tied to that number).
-- **Delivery series** `GET /internal/copilot/channel-replies/daily?days=30`: the past hand-offs per UTC day (`received`, `delivered`, `notDelivered`), kept for history.
+- **Delivery series** `GET /internal/copilot/channel-replies/daily?days=30`: the past hand-offs per UTC day (`received`, `delivered`, `notDelivered`), kept for history. A send crm refused as an intended silence (`human_in_conversation`: the team answers by hand; `stated_not_to_brand`: the brand said the person is not theirs) is never counted as not delivered, never retried, never logged as an error.
 
 ## The Copilot writes every Lead event answer (`POST /internal/copilot/lead-turns`)
 

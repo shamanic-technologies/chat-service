@@ -27,7 +27,7 @@ import type { db as Db } from "../db/index.js";
 import { copilotProactiveTurns, sessions } from "../db/schema.js";
 import type { ProactiveTurnRequest } from "../schemas.js";
 import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
-import { WhatsappSendError, parseChatStream, renderChannelReply, toPlainText, type ChatChannelContext } from "./channel-copilot.js";
+import { WhatsappSendError, isIntendedSilence, parseChatStream, renderChannelReply, toPlainText, type ChatChannelContext } from "./channel-copilot.js";
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
 import type { AskingCampaign } from "./funnel-campaign-client.js";
 
@@ -184,7 +184,11 @@ export async function readPersonThread(
  */
 export const DELIVERY_RETRY_DELAYS_MS = [15_000, 30_000, 60_000, 120_000, 240_000] as const;
 
-/** A refusal that can clear by waiting: the account offline for a moment, a rate limit, a crm 5xx, a network cut. */
+/**
+ * A refusal that can clear by waiting: the account offline for a moment, a rate
+ * limit, a crm 5xx, a network cut. An intended silence (`stated_not_to_brand`,
+ * `human_in_conversation`) is never one: nothing is retried.
+ */
 export function isRetryableDelivery(err: unknown): boolean {
   if (!(err instanceof WhatsappSendError)) return true;
   if (err.status >= 500 || err.status === 429) return true;
@@ -448,7 +452,10 @@ export async function processProactiveTurn(
     }
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
-    console.error(`[chat-service] proactive turn "${row.id}" (${row.kind}) org="${row.orgId}": ${error}`);
+    // An intended silence (crm: the brand said the person is not theirs, or its
+    // team answers by hand) is recorded on the row, never logged as a failure.
+    if (isIntendedSilence(error)) console.info(`[chat-service] proactive turn "${row.id}" (${row.kind}) org="${row.orgId}": silent by intent: ${error}`);
+    else console.error(`[chat-service] proactive turn "${row.id}" (${row.kind}) org="${row.orgId}": ${error}`);
   }
   await db
     .update(copilotProactiveTurns)
