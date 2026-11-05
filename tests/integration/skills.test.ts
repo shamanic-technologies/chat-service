@@ -141,7 +141,7 @@ describe("skill tree store", { timeout: 30000 }, () => {
 
   it("refuses to re-create a slug merged into another skill", async () => {
     await expect(writeSkill(db as never, "channels", { content: "x", title: "T", description: "D", parentSlug: root, editedBy: "k" })).rejects.toThrow(
-      /merged into "catalogue-channels"/,
+      /merged into "gtm-factory"/,
     );
   });
 });
