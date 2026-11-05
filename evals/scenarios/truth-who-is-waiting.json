@@ -1,0 +1,514 @@
+{
+ "id": "truth-who-is-waiting",
+ "title": "Who replied and is waiting for me?",
+ "source": "client B, web, 2026-11-04",
+ "surface": "web",
+ "person": {
+  "name": "Chris"
+ },
+ "history": [],
+ "message": "who replied and is waiting for me?",
+ "fixtures": {
+  "list_brands": [
+   {
+    "brands": [
+     {
+      "id": "33211c62-b34b-4d21-b124-4ff16338c800",
+      "name": "Beyond Logic",
+      "domain": "beyondlogic.tech",
+      "brandUrl": "https://beyondlogic.tech"
+     }
+    ]
+   }
+  ],
+  "list_offers": [
+   {
+    "offers": [
+     {
+      "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+      "brandId": "33211c62-b34b-4d21-b124-4ff16338c800",
+      "name": "Fixed-Price Software Build",
+      "status": "active",
+      "description": "Custom software development delivered in 30 days for a fixed fee with full code ownership."
+     }
+    ]
+   }
+  ],
+  "get_offer_settings": [
+   {
+    "lifetimeRevenueUsd": 15000,
+    "bookingUrl": "https://cal.example/beyondlogic"
+   }
+  ],
+  "get_offer_performance": [
+   {
+    "brandId": "33211c62-b34b-4d21-b124-4ff16338c800",
+    "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+    "recipientsContacted": 1040,
+    "recipientsClicked": {
+     "total": 4
+    },
+    "recipientsRepliesPositive": {
+     "total": 2
+    },
+    "spent": {
+     "actualSpentCents": 15286,
+     "totalSpentCents": 16020
+    },
+    "return": "Expected 6x · no paid client yet ($153 spent)"
+   }
+  ],
+  "list_replies_to_handle": [
+   {
+    "leads": [
+     {
+      "id": "1ead0000-0000-4000-8000-000000000001",
+      "lead": {
+       "firstName": "Edgar",
+       "lastName": "Barton",
+       "email": "edgar@example.com",
+       "title": "Founder",
+       "organizationName": "Northwind Apps"
+      },
+      "replyClassification": "positive",
+      "lastActivityAt": "2026-11-03T14:00:00Z"
+     },
+     {
+      "id": "1ead0000-0000-4000-8000-000000000002",
+      "lead": {
+       "firstName": "Rita",
+       "lastName": "Monk",
+       "email": "rita@example.com",
+       "title": "CEO",
+       "organizationName": "Harbor Labs"
+      },
+      "replyClassification": "positive",
+      "lastActivityAt": "2026-11-03T14:00:00Z"
+     }
+    ],
+    "total": 2,
+    "nextCursor": null
+   }
+  ],
+  "get_billing_account": [
+   {
+    "payment_mode": "postpaid",
+    "balance_cents": "-1500",
+    "amount_owed_cents": "1500",
+    "credit_line_step_cents": 5000,
+    "has_payment_method": true,
+    "usage_discount_pct": 50
+   }
+  ],
+  "get_payment_outlook": [
+   {
+    "state": "no_autopay",
+    "blockedReason": null,
+    "paymentMode": "postpaid"
+   }
+  ],
+  "list_campaigns": [
+   {
+    "campaignCount": 2,
+    "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+    "campaigns": [
+     {
+      "id": "b255706c-b855-4593-baf1-3a6a76957269",
+      "name": "Wide Email",
+      "path": "Start → Lead Sourcing → Lead found → Sales Cold Email Outreach → Positive reply → Paid client",
+      "runsWhen": "On its own, within its caps (no trigger)",
+      "type": "proactive",
+      "status": "ongoing",
+      "stopReason": null,
+      "budget": "Max $200/month",
+      "volume": null,
+      "spent": "$169.63 spent this month",
+      "invested": "$152.86 invested since start",
+      "return": "Expected 6x · no paid client yet ($153 spent)",
+      "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+      "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client",
+      "steps": []
+     },
+     {
+      "id": "4b0e33f0-4a25-435e-b768-eafa9d0cff69",
+      "name": "Reply Booking",
+      "path": "Positive reply → AI Meeting Booking → Meeting booked → Meeting attended → Paid client",
+      "runsWhen": "Each time: Positive reply",
+      "type": "reactive",
+      "status": "ongoing",
+      "stopReason": null,
+      "budget": "Up to $1/day",
+      "volume": null,
+      "spent": "$0 spent today",
+      "invested": "$0 invested since start",
+      "return": "no return served yet",
+      "offerId": "43870a82-f1fb-4ad4-82d9-5909fc84447c",
+      "salesFunnelId": "conversation_to_meeting_booked@ai-meeting-booking+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client",
+      "steps": []
+     }
+    ]
+   }
+  ],
+  "GET /v1/leads": [
+   {
+    "leads": [
+     {
+      "id": "1ead0000-0000-4000-8000-000000000001",
+      "lead": {
+       "firstName": "Edgar",
+       "lastName": "Barton",
+       "email": "edgar@example.com",
+       "title": "Founder",
+       "organizationName": "Northwind Apps"
+      },
+      "replyClassification": "positive",
+      "lastActivityAt": "2026-11-03T14:00:00Z"
+     },
+     {
+      "id": "1ead0000-0000-4000-8000-000000000002",
+      "lead": {
+       "firstName": "Rita",
+       "lastName": "Monk",
+       "email": "rita@example.com",
+       "title": "CEO",
+       "organizationName": "Harbor Labs"
+      },
+      "replyClassification": "positive",
+      "lastActivityAt": "2026-11-03T14:00:00Z"
+     }
+    ],
+    "total": 2,
+    "nextCursor": null,
+    "_when": {
+     "bucket": "positive_reply"
+    }
+   },
+   {
+    "leads": [
+     {
+      "id": "1ead0000-0000-4000-8000-000000000003",
+      "lead": {
+       "firstName": "Nathan",
+       "lastName": "Stone",
+       "email": "nathan@example.com",
+       "title": "Owner",
+       "organizationName": "Stone Pool Supply"
+      },
+      "replyClassification": null,
+      "lastActivityAt": "2026-11-03T14:00:00Z"
+     },
+     {
+      "id": "1ead0000-0000-4000-8000-000000000001",
+      "lead": {
+       "firstName": "Edgar",
+       "lastName": "Barton",
+       "email": "edgar@example.com",
+       "title": "Founder",
+       "organizationName": "Northwind Apps"
+      },
+      "replyClassification": "positive",
+      "lastActivityAt": "2026-11-03T14:00:00Z"
+     },
+     {
+      "id": "1ead0000-0000-4000-8000-000000000004",
+      "lead": {
+       "firstName": "Olive",
+       "lastName": "Hart",
+       "email": "olive@example.com",
+       "title": "President",
+       "organizationName": "Hart HVAC"
+      },
+      "replyClassification": null,
+      "lastActivityAt": "2026-11-03T14:00:00Z"
+     },
+     {
+      "id": "1ead0000-0000-4000-8000-000000000002",
+      "lead": {
+       "firstName": "Rita",
+       "lastName": "Monk",
+       "email": "rita@example.com",
+       "title": "CEO",
+       "organizationName": "Harbor Labs"
+      },
+      "replyClassification": "positive",
+      "lastActivityAt": "2026-11-03T14:00:00Z"
+     }
+    ],
+    "total": 4,
+    "nextCursor": null
+   }
+  ],
+  "GET /v1/conversations": [
+   {
+    "_when": {
+     "email": "edgar@example.com"
+    },
+    "campaignId": "6a1f0c2e-1111-4c3b-9d7a-2b9f3c1e0a01",
+    "email": "edgar@example.com",
+    "messages": [
+     {
+      "direction": "outbound",
+      "from": "sender@example.com",
+      "timestamp": "2026-10-27T13:05:00Z",
+      "subject": "Re: a fixed-price build for Northwind",
+      "text": "Hi Edgar, Northwind ships fast; a fixed-price build could help. We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed. "
+     },
+     {
+      "direction": "outbound",
+      "from": "sender@example.com",
+      "timestamp": "2026-10-30T13:05:00Z",
+      "subject": "Re: a fixed-price build for Northwind",
+      "text": "Edgar, a quick follow-up on the fixed-price build. We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed. "
+     },
+     {
+      "direction": "inbound",
+      "from": "edgar@example.com",
+      "timestamp": "2026-11-02T09:12:00Z",
+      "subject": "Re: a fixed-price build for Northwind",
+      "text": "Interesting. What would a first project cost and how fast could you start?"
+     },
+     {
+      "direction": "outbound",
+      "from": "sender@example.com",
+      "timestamp": "2026-11-02T09:13:00Z",
+      "subject": "Re: a fixed-price build for Northwind",
+      "text": "Thanks Edgar! A first project starts at a fixed fee agreed upfront; we can start next week. Here is my calendar to pick a time. We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed. "
+     },
+     {
+      "direction": "outbound",
+      "from": "sender@example.com",
+      "timestamp": "2026-11-03T09:13:00Z",
+      "subject": "Re: a fixed-price build for Northwind",
+      "text": "Edgar, sharing two similar builds we shipped in 30 days, in case it helps your decision. We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed. "
+     },
+     {
+      "direction": "outbound",
+      "from": "sender@example.com",
+      "timestamp": "2026-11-04T09:13:00Z",
+      "subject": "Re: a fixed-price build for Northwind",
+      "text": "Hi Edgar, just making sure my calendar link reached you: happy to set a 20-minute call. We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed.  We deliver custom software in 30 days for a fixed fee, you own all the code, and the price never moves once agreed. "
+     }
+    ]
+   },
+   {
+    "_when": {
+     "email": "rita@example.com"
+    },
+    "campaignId": "6a1f0c2e-1111-4c3b-9d7a-2b9f3c1e0a01",
+    "email": "rita@example.com",
+    "messages": [
+     {
+      "direction": "outbound",
+      "from": "sender@example.com",
+      "timestamp": "2026-11-01T13:05:00Z",
+      "subject": "A fixed-price build for Harbor Labs",
+      "text": "Hi Rita, a fixed-price build for Harbor Labs?"
+     },
+     {
+      "direction": "inbound",
+      "from": "rita@example.com",
+      "timestamp": "2026-11-04T16:40:00Z",
+      "subject": "Re: A fixed-price build for Harbor Labs",
+      "text": "Could be timely. Can you send pricing for an MVP?"
+     }
+    ]
+   },
+   {
+    "_when": {
+     "email": "nathan@example.com"
+    },
+    "campaignId": "6a1f0c2e-1111-4c3b-9d7a-2b9f3c1e0a01",
+    "email": "nathan@example.com",
+    "messages": [
+     {
+      "direction": "outbound",
+      "from": "sender@example.com",
+      "timestamp": "2026-10-30T13:05:00Z",
+      "subject": "A fixed-price build",
+      "text": "Hi Nathan, a fixed-price build?"
+     },
+     {
+      "direction": "outbound",
+      "from": "sender@example.com",
+      "timestamp": "2026-11-02T13:05:00Z",
+      "subject": "Re: A fixed-price build",
+      "text": "Nathan, a quick follow-up."
+     }
+    ]
+   }
+  ],
+  "GET /v1/leads/{id}/timeline": [
+   {
+    "_when": {
+     "id": "1ead0000-0000-4000-8000-000000000001"
+    },
+    "leadId": "1ead0000-0000-4000-8000-000000000001",
+    "brandId": "33211c62-b34b-4d21-b124-4ff16338c800",
+    "offerId": null,
+    "items": [
+     {
+      "id": "x:initial_email:2026-10-27T13:05:00Z",
+      "label": "initial_email",
+      "source": "outreach",
+      "occurredAt": "2026-10-27T13:05:00Z",
+      "attributable": true
+     },
+     {
+      "id": "x:followup:2026-10-30T13:05:00Z",
+      "label": "followup",
+      "source": "outreach",
+      "occurredAt": "2026-10-30T13:05:00Z",
+      "attributable": true
+     },
+     {
+      "id": "x:interested:2026-11-02T09:12:00Z",
+      "label": "interested",
+      "source": "reply",
+      "occurredAt": "2026-11-02T09:12:00Z",
+      "attributable": true
+     },
+     {
+      "id": "x:followup:2026-11-02T09:13:00Z",
+      "label": "followup",
+      "source": "outreach",
+      "occurredAt": "2026-11-02T09:13:00Z",
+      "attributable": true
+     },
+     {
+      "id": "x:followup:2026-11-03T09:13:00Z",
+      "label": "followup",
+      "source": "outreach",
+      "occurredAt": "2026-11-03T09:13:00Z",
+      "attributable": true
+     },
+     {
+      "id": "x:followup:2026-11-04T09:13:00Z",
+      "label": "followup",
+      "source": "outreach",
+      "occurredAt": "2026-11-04T09:13:00Z",
+      "attributable": true
+     }
+    ],
+    "tags": {
+     "lastWord": "interested",
+     "lastWordAt": null,
+     "furthestStep": "conversation_ongoing",
+     "furthestStepAttributable": true,
+     "disqualified": false
+    },
+    "disqualification": null
+   },
+   {
+    "_when": {
+     "id": "1ead0000-0000-4000-8000-000000000002"
+    },
+    "leadId": "1ead0000-0000-4000-8000-000000000002",
+    "brandId": "33211c62-b34b-4d21-b124-4ff16338c800",
+    "offerId": null,
+    "items": [
+     {
+      "id": "x:initial_email:2026-11-01T13:05:00Z",
+      "label": "initial_email",
+      "source": "outreach",
+      "occurredAt": "2026-11-01T13:05:00Z",
+      "attributable": true
+     },
+     {
+      "id": "x:interested:2026-11-04T16:40:00Z",
+      "label": "interested",
+      "source": "reply",
+      "occurredAt": "2026-11-04T16:40:00Z",
+      "attributable": true
+     }
+    ],
+    "tags": {
+     "lastWord": "interested",
+     "lastWordAt": null,
+     "furthestStep": "conversation_ongoing",
+     "furthestStepAttributable": true,
+     "disqualified": false
+    },
+    "disqualification": null
+   },
+   {
+    "_when": {
+     "id": "1ead0000-0000-4000-8000-000000000003"
+    },
+    "leadId": "1ead0000-0000-4000-8000-000000000003",
+    "brandId": "33211c62-b34b-4d21-b124-4ff16338c800",
+    "offerId": null,
+    "items": [
+     {
+      "id": "x:initial_email:2026-10-30T13:05:00Z",
+      "label": "initial_email",
+      "source": "outreach",
+      "occurredAt": "2026-10-30T13:05:00Z",
+      "attributable": true
+     },
+     {
+      "id": "x:followup:2026-11-02T13:05:00Z",
+      "label": "followup",
+      "source": "outreach",
+      "occurredAt": "2026-11-02T13:05:00Z",
+      "attributable": true
+     }
+    ],
+    "tags": {
+     "lastWord": "no_reply",
+     "lastWordAt": null,
+     "furthestStep": "contacted",
+     "furthestStepAttributable": true,
+     "disqualified": false
+    },
+    "disqualification": null
+   },
+   {
+    "_when": {
+     "id": "1ead0000-0000-4000-8000-000000000004"
+    },
+    "leadId": "1ead0000-0000-4000-8000-000000000004",
+    "brandId": "33211c62-b34b-4d21-b124-4ff16338c800",
+    "offerId": null,
+    "items": [
+     {
+      "id": "x:initial_email:2026-10-31T13:05:00Z",
+      "label": "initial_email",
+      "source": "outreach",
+      "occurredAt": "2026-10-31T13:05:00Z",
+      "attributable": true
+     }
+    ],
+    "tags": {
+     "lastWord": "no_reply",
+     "lastWordAt": null,
+     "furthestStep": "contacted",
+     "furthestStepAttributable": true,
+     "disqualified": false
+    },
+    "disqualification": null
+   }
+  ]
+ },
+ "facts": [
+  "Two people replied with interest: Edgar Barton (Northwind Apps) and Rita Monk (Harbor Labs). Nobody else replied: Nathan Stone (Stone Pool Supply) and Olive Hart (Hart HVAC) got our emails and never wrote back.",
+  "Edgar replied on 2 November; we answered him within a minute and followed up on 3 and 4 November (three answers, the calendar link included): he is not waiting on the client, the last message is ours.",
+  "Rita replied on 4 November at 16:40 UTC asking for MVP pricing, and nothing was sent after her reply: she is the one waiting for an answer.",
+  "Spend, each figure on its own basis: the dashboard's Spent is $152.86 (all campaigns of the offer, since they started, after their 50% discount). Wide Email has used $169.63 of its Max $200/month cap this month, counted before the discount: the two are different bases, never compared. No paid client yet.",
+  "Wide Email runs (Max $200/month); Reply Booking runs and answers each positive reply. 1,040 people reached, 4 clicks, 2 interested replies."
+ ],
+ "expect": "Names Rita (Harbor Labs) as the one waiting, with what she asked, and says Edgar was already answered (three times). Never says Nathan or Olive replied, never calls Edgar unanswered. Ends on answering Rita.",
+ "context": {
+  "currentPage": "today",
+  "recentActions": []
+ },
+ "prodReply": "Edgar Barton replied with interest and nobody has answered him yet, and Nathan Stone replied positively on Monday. Want me to send them both your booking link?",
+ "badReplyFails": true,
+ "prodReplyActions": [
+  "run_operation GET /v1/leads {replyClassification: positive}"
+ ],
+ "goodReply": "Rita Monk from Harbor Labs is waiting: on 4 November she asked for MVP pricing, and nothing was sent after her reply. Edgar Barton from Northwind Apps is not waiting: we answered him three times after his reply. Your next step: send Rita your MVP pricing today.",
+ "goodReplyActions": [
+  "run_operation GET /v1/leads/{id}/timeline (Edgar)",
+  "run_operation GET /v1/leads/{id}/timeline (Rita)"
+ ]
+}

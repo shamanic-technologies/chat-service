@@ -20,6 +20,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { apiServiceFetch, type ApiCallParams } from "../lib/api-client.js";
 import { COPILOT_TOOL_API_OPS } from "../lib/skill-api-ops.js";
 import { findOperation, getCatalog, isPlatformInternal, matchPath, resolveSchema, searchOperations, type CatalogOperation } from "./catalogue.js";
+import { cutKeepingNewest } from "./tool-result-cut.js";
 
 export const FIND_API_TOOL_NAME = "find_operation";
 export const DESCRIBE_API_TOOL_NAME = "describe_operation";
@@ -49,6 +50,32 @@ const clip = (v: unknown, max: number): unknown => {
   const s = JSON.stringify(v);
   return s.length <= max ? v : { truncated: true, firstChars: s.slice(0, max), note: "Narrow the request (a filter, a limit, one id) to read the rest." };
 };
+
+/**
+ * A successful answer as the model reads it: cut keeping its newest part when too long
+ * (`tool-result-cut.ts`), and the query parameters the operation's document does not list
+ * named beside it (SOPHIE-TRUTH-1105, prod 2026-11-04: `replyClassification=positive` on the
+ * leads list was ignored downstream, the list held every lead, and Sophie told a client a
+ * person who never wrote had "replied positively"). The gateway forwards a query verbatim,
+ * so an undocumented filter may be honoured or not: the answer says it cannot be trusted to.
+ */
+export function answerForModel(op: Pick<CatalogOperation, "params">, query: Record<string, string>, status: number, data: unknown): Record<string, unknown> {
+  const documented = new Set(op.params.filter((p) => p.in === "query").map((p) => p.name));
+  const unknown = Object.keys(query).filter((k) => !documented.has(k));
+  return {
+    ok: true,
+    status,
+    ...(unknown.length
+      ? {
+          filtersNotDocumented: {
+            names: unknown,
+            note: `This operation's document does not list ${unknown.join(", ")}: the answer may not be filtered by ${unknown.length === 1 ? "it" : "them"}. Check each row really matches before stating anything about it.`,
+          },
+        }
+      : {}),
+    data: cutKeepingNewest(data, MAX_RESULT_CHARS),
+  };
+}
 
 export const CATALOGUE_TOOLS: Anthropic.Tool[] = [
   {
@@ -138,6 +165,8 @@ export async function describeApi(args: Record<string, unknown>): Promise<unknow
 
 interface PreparedRequest {
   operationId: string;
+  /** The operation's documented parameters (path + query), to name an undocumented filter in the answer. */
+  params?: CatalogOperation["params"];
   method: string;
   path: string;
   query: Record<string, string>;
@@ -156,7 +185,7 @@ function prepare(op: CatalogOperation, args: Record<string, unknown>): PreparedR
       .filter(([, v]) => v !== undefined && v !== null)
       .map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]),
   );
-  return { operationId: op.operationId, method: op.method, path, query, body: args.body };
+  return { operationId: op.operationId, params: op.params, method: op.method, path, query, body: args.body };
 }
 
 async function send(req: PreparedRequest, params: ApiCallParams): Promise<unknown> {
@@ -170,7 +199,7 @@ async function send(req: PreparedRequest, params: ApiCallParams): Promise<unknow
     // a non-JSON answer is returned as text
   }
   if (!res.ok) return { ok: false, status: res.status, error: clip(data, 2_000) };
-  return { ok: true, status: res.status, data: clip(data, MAX_RESULT_CHARS) };
+  return answerForModel({ params: req.params ?? [] }, req.params ? req.query : {}, res.status, data);
 }
 
 export class CallApiConfirmationError extends Error {}
@@ -227,7 +256,8 @@ export async function callApi(
       yesRequired: true,
       why: yesMarker(op)?.why ?? null,
       confirmationToken: randomUUID(),
-      request: req,
+      // The proposal carries the request only (its parameter list stays out of the history).
+      request: { operationId: req.operationId, method: req.method, path: req.path, query: req.query, body: req.body },
       instruction:
         "Nothing ran. Tell the person in plain words exactly what this will do (what starts, spends or is sent, to whom, how much) and ask yes or no. Only after their yes, in a later message, call run_operation with just this confirmationToken.",
     };
@@ -236,7 +266,7 @@ export async function callApi(
 }
 
 /** The {placeholders} of a template read back from a concrete path that fits it. */
-function pathParamsFrom(template: string, concrete: string): Record<string, string> {
+export function pathParamsFrom(template: string, concrete: string): Record<string, string> {
   const t = template.split("/");
   const c = concrete.split("/");
   return Object.fromEntries(t.flatMap((seg, i) => (/^\{[^}]+\}$/.test(seg) ? [[seg.slice(1, -1), decodeURIComponent(c[i] ?? "")]] : [])));
