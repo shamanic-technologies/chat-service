@@ -7,11 +7,13 @@
 // - budget-and-billing: the seed's "Their money" job skill (SOPHIE-BRIEF-EQUALS-DASHBOARD-1103: no
 //   "never mention" rule; a payment notice the dashboard shows is said in its words).
 // - legs, triggers: under `staff`, the seed's text (SOPHIE-TURN-LOST-1103: no removed pipes or plays).
+// - SOPHIE-TRUTH-1105: any row a chat-service script wrote takes the seed's text (person facts from
+//   their own record, money with its scope, framework v10 only); a person's edit is listed, never overwritten.
 import { SEED_SKILLS } from "../dist/lib/skill-seed.js";
 
 const base = `http://localhost:${process.env.PORT ?? 8080}`;
 const headers = { "content-type": "application/json", "x-api-key": process.env.CHAT_SERVICE_API_KEY ?? "" };
-const editedBy = "chat-service SOPHIE-REFONTE-1102";
+const editedBy = "chat-service SOPHIE-TRUTH-1105";
 const apply = process.argv.includes("--apply");
 
 async function read(slug) {
@@ -28,11 +30,19 @@ async function write(slug, body) {
   console.log(`PUT ${slug}: parent ${out.skill.parentSlug}, version ${out.skill.version}`);
 }
 
-const money = SEED_SKILLS.find((s) => s.slug === "budget-and-billing");
-await write("budget-and-billing", { content: money.content, title: money.title, description: money.description, parentSlug: "index" });
-for (const slug of ["legs", "triggers"]) {
-  const seed = SEED_SKILLS.find((s) => s.slug === slug);
-  const row = await read(slug);
-  if (row.parentSlug === "staff" && row.content === seed.content) { console.log(`${slug}: already the seed's text`); continue; }
-  await write(slug, { content: seed.content, title: seed.title, description: seed.description, parentSlug: "staff" });
+// SOPHIE-TRUTH-1105: every seed skill whose row a chat-service script wrote (never a person) takes
+// the seed's text; a row a person edited is printed for review and left alone.
+for (const seed of SEED_SKILLS) {
+  let row;
+  try {
+    row = await read(seed.slug);
+  } catch (err) {
+    console.log(`${seed.slug}: ${err.message}`);
+    continue;
+  }
+  const by = row.updatedBy ?? "";
+  if (by === "seed") continue; // the boot seed refreshes it
+  if (row.content === seed.content && row.parentSlug === seed.parentSlug) { console.log(`${seed.slug}: already the seed's text`); continue; }
+  if (!by.startsWith("chat-service")) { console.log(`${seed.slug}: edited by ${by}, left alone (review it)`); continue; }
+  await write(seed.slug, { content: seed.content, title: seed.title, description: seed.description, parentSlug: seed.parentSlug });
 }

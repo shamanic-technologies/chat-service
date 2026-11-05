@@ -113,7 +113,7 @@ describe("the brief states the account as the dashboard shows it (SOPHIE-BRIEF-E
 
   it("states the dashboard's Spent (net), never the gross usage, and no automatic charge while held", async () => {
     const brief = await buildSituationBrief(held);
-    expect(brief).toContain("**Spent** (their dashboard's figure, since they started): $103.12 ($110.20 with follow-ups reserved).");
+    expect(brief).toContain('**Spent** (their dashboard\'s Spent tile: every campaign of the offer "Default Offer", since they started, after their discount): $103.12 ($110.20 with follow-ups reserved).');
     expect(brief).not.toContain("178.38");
     expect(brief).toContain("balance due $58.68");
     expect(brief).not.toContain("at month end");
@@ -163,5 +163,31 @@ describe("Sophie's definition is chat-service's", () => {
   it("the role states the strategy and carries no list of prohibitions", () => {
     expect(SOPHIE_SYSTEM_PROMPT).toContain("Revenue made easy.");
     expect(SOPHIE_SYSTEM_PROMPT).not.toMatch(/\bNever\b|## Never/);
+  });
+});
+
+describe("every spend figure carries its basis, and a replier is never called unanswered (SOPHIE-TRUTH-1105)", () => {
+  // Prod 2026-11-04 Beyond Logic: "$169.63 of its $200 this month" and "$152.86 since you started" in one
+  // answer; and "Edmund replied with interest and nobody has answered him" (we had, three times).
+  const r = reader({
+    listCampaigns: async () => ({
+      campaigns: [{ name: "Wide Email", status: "ongoing", budget: "Max $200/month", spent: "$169.63 spent this month", invested: "$152.86 invested since start", return: "Expected 6x" }],
+    }),
+    getOfferPerformance: async () => ({ spent: { actualSpentCents: 15286 } }),
+    listRepliesToHandle: async () => ({ total: 2, leads: [{}, {}] }),
+  });
+
+  it("labels the cap-period figure and the since-start figure with their scope and discount basis", async () => {
+    const brief = await buildSituationBrief(r);
+    expect(brief).toContain("used against its cap: $169.63 spent this month (this campaign, its cap period, before their discount)");
+    expect(brief).toContain("paid: $152.86 invested since start (this campaign, since it started, after their discount)");
+    expect(brief).toMatch(/Quote one figure with its scope, never two of different scopes as if comparable/);
+  });
+
+  it("counts people who replied with interest, answered or not, and never says nobody answered them", async () => {
+    const brief = await buildSituationBrief(r);
+    expect(brief).not.toMatch(/nobody has answered/);
+    expect(brief).toContain("**Replied with interest**: 2 people, answered or not");
+    expect(brief).toMatch(/only when the latest message of their own conversation is theirs/);
   });
 });
