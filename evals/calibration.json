@@ -1,9 +1,9 @@
 {
   "kind": "calibration",
-  "at": "2026-11-03T16:24:09.748Z",
+  "at": "2026-11-05T18:27:58.869Z",
   "judge": "jev/jev-latest",
-  "cases": 36,
-  "agree": 36,
+  "cases": 45,
+  "agree": 45,
   "passed": true,
   "rows": [
     {
@@ -53,7 +53,6 @@
         "true",
         "respectful",
         "proactive",
-        "answers",
         "form"
       ]
     },
@@ -207,7 +206,8 @@
       "expected": "fail",
       "got": "fail",
       "failed": [
-        "respectful"
+        "respectful",
+        "answers"
       ]
     },
     {
@@ -281,13 +281,87 @@
       "got": "fail",
       "failed": [
         "true",
-        "answers",
-        "nextAction",
-        "form"
+        "answers"
       ]
     },
     {
       "id": "state-declined-proactive",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "truth-campaign-rule",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "truth-evaluate-results",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "nextAction"
+      ]
+    },
+    {
+      "id": "truth-evaluate-results",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "truth-how-much-spent",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "nextAction"
+      ]
+    },
+    {
+      "id": "truth-how-much-spent",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "truth-off-target",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "truth-off-target",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "truth-who-is-waiting",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "truth-who-is-waiting",
       "which": "good",
       "expected": "pass",
       "got": "pass",

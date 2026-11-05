@@ -655,3 +655,11 @@ describe("Sophie tells only what a served fact says (SOPHIE-TRUTH-1105, prod 202
     for (const [slug, text] of bySlug) expect(text, slug).not.toMatch(/\{[^}]*\binstruction\b[^}]*\}/);
   });
 });
+
+describe("a campaign rule reaches the brief from every door (SOPHIE-TRUTH-1105 eval: '$25k only' went to targeting and never wrote it)", () => {
+  it("the index and the targeting skill both send a rule in the client's words to the brief", () => {
+    const by = new Map(SEED_SKILLS.map((s) => [s.slug, s.content]));
+    expect(by.get("index")!).toMatch(/A rule for a campaign in their words .* write it into that campaign's brief now/);
+    expect(by.get("client-profiles")!).toMatch(/write it into the campaign's brief first/);
+  });
+});

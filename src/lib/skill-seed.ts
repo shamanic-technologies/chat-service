@@ -53,7 +53,7 @@ Reading this through the API or the MCP? Every act below is an API operation (ME
 
 ## The client's jobs: load the skill, follow its method
 - Set up a new account (no brand yet, a new company, just signed up): \`new-account\`. It comes before anything else.
-- Launch, change or stop a campaign: \`campaigns\`.
+- Launch, change or stop a campaign: \`campaigns\`. A rule for a campaign in their words ("only companies above $25k", "always mention our 30-day delivery"): write it into that campaign's brief now, \`campaigns\`.
 - What they sell, their documents, their booking link: \`offers\`.
 - Who we reach, who we skip, the people found: \`client-profiles\`.
 - How their campaigns are doing, replies waiting, when results come: \`costs-roi-stats\`.
@@ -230,6 +230,7 @@ An audience is who a campaign looks for (job titles, company size, industry, loc
 - Pause or archive one: PATCH /v1/orgs/audiences/{id}/status. Rename: PATCH /v1/orgs/audiences/{id}.
 
 ## Skip people or companies
+- A rule in their words ("only companies that can afford $25k", "no agencies"): write it into the campaign's brief first, the one text every AI of the campaign reads (\`campaigns\`, "A rule for a campaign"), then sharpen the audience text if it lets the wrong ones in.
 - One person: PUT /v1/leads/{id}/disqualification (DELETE undoes it).
 - A kind of company ("no radio or TV"), or named companies: a qualification check, POST /v1/brands/{id}/offers/{offerId}/qualification/criteria {question, ...}, created off; the sources it can read: GET /v1/qualification/catalog. A check that is on costs a little on every lead it reads: give the cost per lead and turn it on (PATCH .../qualification/criteria/{criterionId}) after their yes. Read them: GET .../qualification/criteria.
 - A criterion no check can express: request_staff (POST /v1/staff-requests, repo sales-lead-service).
@@ -314,7 +315,7 @@ A campaign needs a max budget, a max volume, or both. Either alone is valid; onl
 - A campaign owns one part per step, each with its own campaign id; GET /v1/campaigns/{id} names its salesFunnelCampaignId. What the emails say: \`offers\`.
 
 ## A rule for a campaign ("only companies above $25k", "always mention the 30-day delivery")
-Its brief is the ONE text every AI of the campaign reads (who to keep, what to say). Read it (GET /v1/sales-funnel-campaigns/{id}, field brief), add the rule to the text in the client's words, then PATCH /v1/sales-funnel-campaigns/{id} {brief: the whole new text}: the brief replaces the old text, so keep what was there. Say the rule is in the brief and applies from the next run. Never the instruction field (retired into the brief).
+Its brief is the ONE text every AI of the campaign reads (who to keep, what to say). Read it (GET /v1/sales-funnel-campaigns/{id}, field brief), add the rule to the text in the client's words, then PATCH /v1/sales-funnel-campaigns/{id} {brief: the whole new text}: the brief replaces the old text, so keep what was there. Write it in the same turn (the API may ask their yes first: show the new text and ask), then say the rule is in the brief and applies from the next run. Never the instruction field (retired into the brief).
 
 ## Example
 "Start reaching event planners in Lagos" → "Your Guest Management campaign is ready, stopped: it finds event planners in Lagos and emails them. I'd cap it at $10 a week. Shall I start it?" → after "yes": PATCH .../{id} {status: "activate"}, then "It's on: first emails leave in their business hours."

@@ -506,7 +506,7 @@
  "prodReplyActions": [
   "run_operation GET /v1/leads {replyClassification: positive}"
  ],
- "goodReply": "Rita Monk from Harbor Labs is waiting: she asked for MVP pricing yesterday at 16:40 and nothing has gone back yet. Edgar Barton from Northwind Apps was answered three times, the calendar link included, so the next move is his. Send Rita your pricing today; want me to draft it?",
+ "goodReply": "Rita Monk from Harbor Labs is waiting: on 4 November she asked for MVP pricing, and nothing was sent after her reply. Edgar Barton from Northwind Apps is not waiting: we answered him three times after his reply. Your next step: send Rita your MVP pricing today.",
  "goodReplyActions": [
   "run_operation GET /v1/leads/{id}/timeline (Edgar)",
   "run_operation GET /v1/leads/{id}/timeline (Rita)"

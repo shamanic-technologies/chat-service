@@ -87,7 +87,7 @@ scen("truth-who-is-waiting", "Who replied and is waiting for me?", "web", "who r
   "Names Rita (Harbor Labs) as the one waiting, with what she asked, and says Edgar was already answered (three times). Never says Nathan or Olive replied, never calls Edgar unanswered. Ends on answering Rita.",
   prodReply="Edgar Barton replied with interest and nobody has answered him yet, and Nathan Stone replied positively on Monday. Want me to send them both your booking link?",
   badReplyFails=True, prodReplyActions=["run_operation GET /v1/leads {replyClassification: positive}"],
-  goodReply="Rita Monk from Harbor Labs is waiting: she asked for MVP pricing yesterday at 16:40 and nothing has gone back yet. Edgar Barton from Northwind Apps was answered three times, the calendar link included, so the next move is his. Send Rita your pricing today; want me to draft it?",
+  goodReply="Rita Monk from Harbor Labs is waiting: on 4 November she asked for MVP pricing, and nothing was sent after her reply. Edgar Barton from Northwind Apps is not waiting: we answered him three times after his reply. Your next step: send Rita your MVP pricing today.",
   goodReplyActions=["run_operation GET /v1/leads/{id}/timeline (Edgar)", "run_operation GET /v1/leads/{id}/timeline (Rita)"])
 scen("truth-evaluate-results", "Evaluate my campaign results", "web", "evaluate campaign results", FACTS,
   "Tells the story of Wide Email with served figures, one spend figure with its scope (never $169.63 beside $152.86 as if comparable), two interested replies with Rita waiting and Edgar answered. Invents no reply.",
