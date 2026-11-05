@@ -156,6 +156,13 @@ function dashboardNotices(campaigns: Obj[] | null, outlook: Obj | null, billing:
   return out;
 }
 
+/**
+ * One campaign, every money figure labelled with its basis and scope (SOPHIE-TRUTH-1105, prod
+ * 2026-11-04 Beyond Logic: "$169.63 of its $200 this month" and "$152.86 since you started" in
+ * one answer, since-start smaller than this month, because the brief served "$169.63 spent this
+ * month" (billing's count against the cap, before their discount) beside "$152.86 invested since
+ * start" (what they pay, after it) with no word saying which was which).
+ */
 function campaignLine(c: Obj): string {
   const bits = [
     str(c.name) ? `"${str(c.name)}"` : "a campaign",
@@ -163,21 +170,26 @@ function campaignLine(c: Obj): string {
     str(c.path) ? `does: ${str(c.path)}` : null,
     str(c.runsWhen) ? `runs: ${str(c.runsWhen)}` : null,
     str(c.budget) ? `budget: ${str(c.budget)}` : null,
-    str(c.spent),
-    str(c.invested),
-    str(c.return) ? `return: ${str(c.return)}` : null,
+    str(c.spent) ? `used against its cap: ${str(c.spent)} (this campaign, its cap period, before their discount)` : null,
+    str(c.invested) ? `paid: ${str(c.invested)} (this campaign, since it started, after their discount)` : null,
+    str(c.return) ? `return: ${str(c.return)} (this campaign, whole history)` : null,
   ].filter(Boolean);
   return `- ${bits.join("; ")}`;
 }
 
 /** The dashboard's "Spent" tile: billed since they started, net of their discount, served by features-service. */
-function spentLine(perf: unknown): string | null {
+function spentLine(perf: unknown, offerName: string | null): string | null {
   const spent = asObj(asObj(perf).spent);
   const actual = num(spent.actualSpentCents);
   if (actual === null) return null;
   const total = num(spent.totalSpentCents);
-  return `**Spent** (their dashboard's figure, since they started): ${dollars(actual)}${total !== null && total > actual ? ` (${dollars(total)} with follow-ups reserved)` : ""}.`;
+  const scope = offerName ? `every campaign of the offer "${offerName}"` : "every campaign of this offer";
+  return `**Spent** (their dashboard's Spent tile: ${scope}, since they started, after their discount): ${dollars(actual)}${total !== null && total > actual ? ` (${dollars(total)} with follow-ups reserved)` : ""}.`;
 }
+
+/** Said once under the figures: each money figure has its own basis, so two are never set side by side. */
+const MONEY_BASES_LINE =
+  "Each money figure above names its scope (one campaign or the whole offer; its cap period or since they started; before or after their discount). Quote one figure with its scope, never two of different scopes as if comparable. Two that cannot both be true on the same scope are a bug for the team, filed silently.";
 
 function performanceLines(perf: unknown): string[] {
   const p = asObj(perf);
@@ -292,12 +304,21 @@ export async function buildSituationBrief(
     lines.push(...campaigns.slice(0, 8).map(campaignLine));
   }
 
-  const spent = spentLine(perf);
+  const spent = spentLine(perf, offer ? str(offer.name) : null);
   if (spent) lines.push(spent);
+  if (spent || campaigns.some((c) => str(c.spent) || str(c.invested))) lines.push(MONEY_BASES_LINE);
   const perfLines = performanceLines(perf);
   if (perfLines.length) lines.push("**Results so far** (served figures):", ...perfLines);
   const waiting = num(asObj(replies).total) ?? asArr(asObj(replies).leads).length;
-  if (replies !== null) lines.push(`**Waiting on them**: ${waiting > 0 ? `${waiting} interested repl${waiting === 1 ? "y" : "ies"} nobody has answered yet` : "no reply waiting"}.`);
+  // This list holds every person who replied with interest, answered or not (SOPHIE-TRUTH-1105, prod
+  // 2026-11-04: the brief said "nobody has answered yet" and Sophie told a client three times that
+  // Edmund Bartlett was unanswered; we had answered him three times). Whether one still waits is
+  // that person's own conversation: its latest message.
+  if (replies !== null) {
+    lines.push(
+      `**Replied with interest**: ${waiting > 0 ? `${waiting} ${waiting === 1 ? "person" : "people"}, answered or not (this count does not say whether we answered after their reply: one is waiting on them only when the latest message of their own conversation is theirs)` : "nobody yet"}.`,
+    );
+  }
   if (billing !== null) lines.push(`**Money**: ${moneyLine(billing, outlook !== null && billingHoldKind(asObj(outlook)) !== null)}.`);
   if (failed.length) lines.push(`(Not read this turn: ${failed.join(", ")}. Use your tools if you need them.)`);
   return lines.join("\n");

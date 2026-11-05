@@ -233,7 +233,8 @@ function instructionArg(v: unknown): string {
 interface Row {
   id: string;
   status: string;
-  instruction: string | null;
+  /** The campaign's ONE text (ONE-BRIEF-1105): campaign-service folded every legacy `instruction` into it. */
+  brief?: string | null;
   salesFunnelId: string;
   offerId: string;
   people: { email: string; leadId?: string | null }[];
@@ -251,7 +252,7 @@ function view(r: Row) {
   return {
     followUpId: r.id,
     status: r.status,
-    instruction: r.instruction,
+    instruction: r.brief ?? null,
     salesFunnelId: r.salesFunnelId,
     ...(r.githubIssue ? { waitsForIssue: `https://github.com/${r.githubIssue.repo}/issues/${r.githubIssue.number}`, issueState: r.githubIssueCheck?.state ?? "not_checked_yet" } : {}),
   };
@@ -297,7 +298,8 @@ export async function createFollowup(a: Record<string, unknown>, ctx: FollowupCo
     salesFunnelId,
     status: "stopped",
     people: [{ email }],
-    instruction,
+    // The campaign's ONE text every LLM of it reads (campaign-service ONE-BRIEF-1105): never `instruction`.
+    brief: instruction,
     ...(githubIssue ? { githubIssue } : {}),
   });
   const campaign = created.salesFunnelCampaign as Row | undefined;
@@ -338,7 +340,7 @@ export async function updateFollowup(a: Record<string, unknown>, ctx: FollowupCo
   const row = await ownRow(a.followUpId, await personEmail(ctx.userId, deps), s, deps);
   const instruction = instructionArg(a.instruction);
   const runId = await deps.newRunId();
-  await send(deps, "CAMPAIGN_SERVICE", "PATCH", `/sales-funnel-campaigns/${encodeURIComponent(row.id)}`, s, runId, { instruction });
+  await send(deps, "CAMPAIGN_SERVICE", "PATCH", `/sales-funnel-campaigns/${encodeURIComponent(row.id)}`, s, runId, { brief: instruction });
   return { ...view(row), instruction };
 }
 

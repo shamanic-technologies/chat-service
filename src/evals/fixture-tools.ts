@@ -11,7 +11,7 @@ import { LEAD_ANSWER_TOOL_NAME } from "../lib/lead-turn.js";
 import { readOurWebsite } from "../lib/our-website.js";
 import { readSkillFrom } from "../lib/skills.js";
 import { parseChoicesArgs, parseChoicesIntro, OPEN_PAGE_TOOL_NAME, PRESENT_CHOICES_TOOL_NAME } from "../lib/ui-tools.js";
-import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, describeApi, findApi, needsYes, operationsForTool, toolsForOperation } from "../agent/catalogue-tools.js";
+import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, answerForModel, describeApi, findApi, needsYes, operationsForTool, pathParamsFrom, toolsForOperation } from "../agent/catalogue-tools.js";
 import { findOperation, getCatalog, matchPath } from "../agent/catalogue.js";
 import type { AgentDefinition } from "./agent-turn.js";
 import type { Scenario } from "./scenario.js";
@@ -61,6 +61,25 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
     return { name, result: nextAnswer(name, recorded) };
   };
 
+  /**
+   * A recorded gateway answer may say which request it answers (`_when`: query / path values it
+   * needs, "the conversation of edgar@..."): the first match is served, else the one with no `_when`.
+   * Answers without `_when` are served in the order the real session got them.
+   */
+  function answerFor(key: string, recorded: unknown[], asked: Record<string, string>): unknown {
+    const cond = (r: unknown) => (r && typeof r === "object" && "_when" in r ? ((r as { _when: Record<string, unknown> })._when ?? {}) : null);
+    if (!recorded.some((r) => cond(r) !== null)) return nextAnswer(key, recorded);
+    const hit =
+      recorded.find((r) => {
+        const c = cond(r);
+        return c !== null && Object.entries(c).every(([k, v]) => String(asked[k] ?? "").toLowerCase() === String(v).toLowerCase());
+      }) ?? recorded.find((r) => cond(r) === null);
+    if (hit === undefined) return { error: "No data for this request in this account right now." };
+    if (cond(hit) === null) return hit;
+    const { _when, ...rest } = hit as Record<string, unknown>;
+    return rest;
+  }
+
   /** The recorded answers of a tool in the order the real session got them (the last one repeats). */
   function nextAnswer(name: string, recorded: unknown[]): unknown {
     const i = served.get(name) ?? 0;
@@ -88,10 +107,20 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
     if (needsYes(op, a.body)) {
       return { yesRequired: true, confirmationToken: `replay-${op.operationId}`, request: { operationId: op.operationId }, instruction: "Nothing ran. Ask the person yes or no first." };
     }
-    for (const tool of toolsForOperation(op.method, op.path)) {
-      const recorded = scenario.fixtures[tool];
-      // Same order as the chat tool: a stop then a re-read sees the stopped list.
-      if (recorded) return { ok: true, status: 200, data: nextAnswer(tool, recorded) };
+    // The query as production sends it, so the answer names an undocumented filter the same way.
+    const query = Object.fromEntries(
+      Object.entries((a.query ?? {}) as Record<string, unknown>)
+        .filter(([, v]) => v !== undefined && v !== null)
+        .map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]),
+    );
+    // A scenario may record the gateway answer itself, keyed "METHOD /path" (an act no chat tool does).
+    const direct = `${op.method} ${op.path}`;
+    const pathParams: Record<string, unknown> = concretePath && !a.operationId ? pathParamsFrom(op.path, concretePath) : ((a.pathParams ?? {}) as Record<string, unknown>);
+    const asked: Record<string, string> = { ...query, ...Object.fromEntries(Object.entries(pathParams).map(([k, v]) => [k, String(v)])) };
+    for (const key of [direct, ...toolsForOperation(op.method, op.path)]) {
+      const recorded = scenario.fixtures[key];
+      // Same order as the chat tool: a stop then a re-read sees the stopped list. Cut as production cuts it.
+      if (recorded) return answerForModel(op, query, 200, answerFor(key, recorded, asked));
     }
     missing.add(`run_operation ${op.method} ${op.path}`);
     return { ok: false, status: 404, error: "No data for this request in this account right now." };

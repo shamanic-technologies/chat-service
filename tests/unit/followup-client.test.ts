@@ -51,7 +51,7 @@ function createRoutes(over: (c: Call) => { status: number; body: unknown } | und
 const marieRow = {
   id: "fu-1",
   status: "ongoing",
-  instruction: "Tell Marie her cost per meeting is $37.",
+  brief: "Tell Marie her cost per meeting is $37.",
   salesFunnelId: FOLLOWUP_FUNNEL_ID,
   offerId: "live-offer",
   people: [{ email: "marie@example.com", leadId: "lead-marie" }],
@@ -106,6 +106,9 @@ describe("Copilot follow-ups", () => {
     expect(calls[2].headers["x-org-id"]).toBe("our-org");
     expect(calls[2].headers["x-run-id"]).toBe("platform-run-1");
     expect(calls[2].body).toMatchObject({ status: "stopped", people: [{ email: "marie@example.com" }], brandId: "our-brand", offerId: "live-offer" });
+    // The campaign's ONE text is its brief (ONE-BRIEF-1105): the retired `instruction` field is never written.
+    expect(calls[2].body).toMatchObject({ brief: "Tell Marie her cost per meeting is $37." });
+    expect(calls[2].body).not.toHaveProperty("instruction");
     expect(calls[3].body).toEqual({ maxBudget: null, maxVolume: { count: 1, period: "one_off" } });
     expect(calls[4].body).toEqual({ status: "activate" });
     expect(out).toMatchObject({ created: true, followUpId: "fu-1", to: "marie@example.com", sendsAtMost: 1 });
@@ -190,7 +193,7 @@ describe("Copilot follow-ups", () => {
     const out = await listFollowups({}, { userId: "u" }, deps);
     expect(out.lastEmailsWeSentThem).toEqual([]);
     expect(calls[0].url).toBe("http://campaign/sales-funnel-campaigns?personEmail=marie%40example.com&status=ongoing");
-    expect(out.followUps).toEqual([{ followUpId: "fu-1", status: "ongoing", instruction: marieRow.instruction, salesFunnelId: FOLLOWUP_FUNNEL_ID }]);
+    expect(out.followUps).toEqual([{ followUpId: "fu-1", status: "ongoing", instruction: marieRow.brief, salesFunnelId: FOLLOWUP_FUNNEL_ID }]);
   });
 
   it("update / cancel / fire refuse an id that is not this user's", async () => {
@@ -204,7 +207,8 @@ describe("Copilot follow-ups", () => {
   it("update rewords, cancel stops", async () => {
     const a = fakeDeps((c) => (c.method === "GET" ? listing([marieRow]) : { status: 200, body: {} }));
     await updateFollowup({ followUpId: "fu-1", instruction: "New words." }, { userId: "u" }, a.deps);
-    expect(a.calls[1]).toMatchObject({ method: "PATCH", body: { instruction: "New words." } });
+    expect(a.calls[1]).toMatchObject({ method: "PATCH", body: { brief: "New words." } });
+    expect(a.calls[1].body).not.toHaveProperty("instruction");
 
     const b = fakeDeps((c) => (c.method === "GET" ? listing([marieRow]) : { status: 200, body: {} }));
     await cancelFollowup({ followUpId: "fu-1" }, { userId: "u" }, b.deps);
