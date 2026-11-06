@@ -417,6 +417,8 @@ import {
   type AnthropicCostLine,
 } from "./lib/anthropic-usage.js";
 import { buildToolResultFallback } from "./lib/tool-fallback.js";
+import { leadTurnMoment, withReplyToEventId } from "./lib/lead-whatsapp.js";
+import { estimateRequestTokensWithImages } from "./lib/turn-images.js";
 import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, endToolFinalNote, endToolNudgeNote, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH, needsAnswerNudge } from "./lib/tool-budget.js";
 import {
   LEAD_ANSWER_TOOL_NAME,
@@ -3287,6 +3289,8 @@ app.post("/chat", requireAuth, async (req, res) => {
       guest: sessionIsGuest,
       phoneBound: channelSession !== null,
       afterSignIn: t.signedIn && !sessionIsGuest,
+      // The WhatsApp conversation as WhatsApp shows it, read by processLeadTurn (SOPHIE-WA-HUMAN-1106).
+      whatsapp: payload.medium === "whatsapp" ? leadTurnMoment(parsed.data.leadTurnId) : null,
     };
     // A guest crm knows by an email: that email is a sign-in email only when an
     // account has it (else signing in would open a new account on an address the
@@ -3745,7 +3749,14 @@ app.post("/chat", requireAuth, async (req, res) => {
     }
 
     const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME));
-    if (leadTurn) allTools.push(REACH_ELSEWHERE_TOOL, buildLeadAnswerTool(leadTurn.payload.responseSchema, leadTurn.payload.messageField));
+    if (leadTurn) {
+      allTools.push(
+        REACH_ELSEWHERE_TOOL,
+        buildLeadAnswerTool(leadTurn.payload.responseSchema, leadTurn.payload.messageField, { replyTo: (leadTurn.whatsapp?.shown.length ?? 0) > 0 }),
+      );
+    }
+    // Photos the person sent (SOPHIE-WA-HUMAN-1106): read natively by the model, on the direct-vendor loop (Sophie's).
+    const turnImages = leadTurn?.whatsapp?.images ?? [];
     // The answer a lead turn ended on (answer_person), in the writer's schema.
     const leadAnswer: { json: Record<string, unknown> | null } = { json: null };
     const allowedToolSet = new Set(allowedToolNames);
@@ -3917,8 +3928,11 @@ app.post("/chat", requireAuth, async (req, res) => {
           throw new Error(`${LEAD_ANSWER_TOOL_NAME}: ${leadTurn.payload.messageField} must be the text they receive (a string, empty when you write nothing now).`);
         }
         if (typeof text === "string") args[leadTurn.payload.messageField] = stripLongDashes(text);
-        leadAnswer.json = args;
-        sendSSE(res, { type: "lead_answer", answer: args, model: resolvedModelInfo.apiModelId });
+        // The label of the message she quotes back becomes its event id (the send's replyToEventId).
+        const moment = leadTurnId && leadTurn.whatsapp ? leadTurnMoment(leadTurnId) : null;
+        const answer = moment ? withReplyToEventId(args, moment.labels) : args;
+        leadAnswer.json = answer;
+        sendSSE(res, { type: "lead_answer", answer, model: resolvedModelInfo.apiModelId });
         emittedInputRequest = true;
         // Not replayed as a tool call: the stored answer is the text they got.
         return "input_request";
@@ -5054,6 +5068,8 @@ app.post("/chat", requireAuth, async (req, res) => {
     if (handledBrandProfileRefresh) {
       // The deterministic brand-profile refresh already streamed its concise
       // confirmation and populated fullResponse/toolCalls for persistence.
+    } else if (turnImages.length > 0 && !chatVendor) {
+      throw new Error(`[chat] ${turnImages.length} photo(s) reached a ${chatProvider} turn: photos are read on the direct-vendor loop only (Sophie's model)`);
     } else if (chatVendor) {
       // --- Direct vendor path (DeepSeek): one non-streaming request per round ---
       const vendorResult = await streamVendorChat({
@@ -5067,6 +5083,7 @@ app.post("/chat", requireAuth, async (req, res) => {
           .filter((m) => m.role !== "tool")
           .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as string, toolCalls: m.toolCalls })),
         userMessage: message.trim(),
+        images: turnImages,
         tools: allTools.map((t) => ({
           name: t.name,
           description: t.description ?? "",
@@ -5087,7 +5104,10 @@ app.post("/chat", requireAuth, async (req, res) => {
         // Sophie's reasoning is part of her definition (src/agent/sophie.ts), chosen by the evals.
         reasoningDisabled: configKey === SOPHIE_CONFIG_KEY && SOPHIE_MODEL.reasoning === "off",
         beforeProviderCall: async ({ requestBody, at }) => {
-          await authorizeChatProviderCall(estimateRequestTokens(requestBody), at);
+          await authorizeChatProviderCall(
+            turnImages.length > 0 ? estimateRequestTokensWithImages(requestBody, turnImages) : estimateRequestTokens(requestBody),
+            at,
+          );
         },
       });
       fullResponse = vendorResult.fullResponse;

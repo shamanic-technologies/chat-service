@@ -217,9 +217,10 @@ describe("buildChannelBlock", () => {
     };
     const sha = (g: boolean, c: ChatChannelContext) => createHash("sha256").update(buildChannelBlock(c, g)).digest("hex");
     // Signed-in block re-pinned by SOPHIE-WA-ONBOARD-1101 (the chat sets up an account end to end, never a dashboard hand-off).
-    expect(sha(false, legacy)).toBe("f17091d7090595511372cb3db731e47e3d19905de9bd39796a1e0ffab714cc42");
-    expect(sha(true, legacy)).toBe("cab705574c507f363b38b861955aeb55d502be40960a41ddfb54883feee7599d");
-    expect(sha(true, { ...legacy, receivedOn: null })).toBe("cab705574c507f363b38b861955aeb55d502be40960a41ddfb54883feee7599d");
+    // Both re-pinned by SOPHIE-WA-HUMAN-1106 (ambiguity, quote and photo lines, every chat-app block).
+    expect(sha(false, legacy)).toBe("768159c2a8eb7342ff5cb89c80811da2e917babbf6bb2c2942a12fe73ff7e1f6");
+    expect(sha(true, legacy)).toBe("8efb54f32f529a608691f85599a7c18435d03c9906cb4fba67f5a7190767a3e8");
+    expect(sha(true, { ...legacy, receivedOn: null })).toBe("8efb54f32f529a608691f85599a7c18435d03c9906cb4fba67f5a7190767a3e8");
   });
 
   it("carries no hard-coded assistant name", () => {

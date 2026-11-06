@@ -1,9 +1,9 @@
 {
   "kind": "calibration",
-  "at": "2026-11-05T18:27:58.869Z",
+  "at": "2026-11-06T18:52:25.914Z",
   "judge": "jev/jev-latest",
-  "cases": 45,
-  "agree": 45,
+  "cases": 50,
+  "agree": 50,
   "passed": true,
   "rows": [
     {
@@ -206,8 +206,7 @@
       "expected": "fail",
       "got": "fail",
       "failed": [
-        "respectful",
-        "answers"
+        "respectful"
       ]
     },
     {
@@ -362,6 +361,49 @@
     },
     {
       "id": "truth-who-is-waiting",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "wa-human-ambiguous-him",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "answers"
+      ]
+    },
+    {
+      "id": "wa-human-ambiguous-him",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "wa-human-photo-no-words",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "respectful",
+        "proactive",
+        "answers",
+        "nextAction"
+      ]
+    },
+    {
+      "id": "wa-human-photo-no-words",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "wa-human-quoted-lead",
       "which": "good",
       "expected": "pass",
       "got": "pass",

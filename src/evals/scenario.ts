@@ -58,6 +58,35 @@ export const ScenarioSchema = z
     history: z.array(HistoryMessageSchema),
     message: z.string().min(1),
     /**
+     * Photos the person sent with this message (SOPHIE-WA-HUMAN-1106): files
+     * under `evals/images/`, handed to the model as images like production
+     * does. The judge learns what they show from `facts`.
+     */
+    images: z
+      .array(z.object({ file: z.string().regex(/^evals\/images\/[a-z0-9-]+\.(png|jpg)$/), at: z.string().optional(), caption: z.string().optional() }).strict())
+      .optional(),
+    /**
+     * A WhatsApp lead turn: the conversation as crm-service serves it to the
+     * turn (lead-whatsapp.ts), its quotes and photos included, oldest first.
+     */
+    whatsapp: z
+      .array(
+        z
+          .object({
+            eventId: z.string().min(1),
+            at: z.string().min(1),
+            direction: z.enum(["inbound", "outbound"]),
+            text: z.string().min(1),
+            quote: z
+              .object({ eventId: z.string(), direction: z.enum(["inbound", "outbound"]).nullable(), at: z.string().nullable(), text: z.string().nullable() })
+              .strict()
+              .nullable(),
+            photo: z.object({ caption: z.string().nullable() }).strict().nullable(),
+          })
+          .strict(),
+      )
+      .optional(),
+    /**
      * Recorded tool answers, by tool name, in the order the real session got
      * them (the last one repeats). A tool absent here answers that the replay
      * holds no data for it.
