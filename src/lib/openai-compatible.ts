@@ -1342,8 +1342,33 @@ export function vendorReasoningFields(
   return reasoning.perModel?.[model] ?? reasoning.requestFields;
 }
 
+/**
+ * The line a `json_object` request adds to its system prompt when neither prompt names JSON.
+ *
+ * `json_object` mode refuses a prompt that does not contain the word "json": DeepSeek answers 400 "Prompt must
+ * contain the word 'json' in some form to use 'response_format' of type 'json_object'" (OpenAI documents the same
+ * rule). A caller that sends a `responseSchema` reasonably says nothing about JSON in its prose, and on a
+ * `json_schema` vendor it never has to; the day the Rating picked DeepSeek for such a step (ai-meeting-booking
+ * draft_reply, 2026-11-05 04:30 UTC) every call 400'd. The schema rides along because a `json_object` vendor has
+ * nowhere else to receive it. A prompt that already names JSON is sent byte for byte as before.
+ */
+export function jsonObjectPromptLine(responseSchema: Record<string, unknown> | undefined): string {
+  return responseSchema != null
+    ? `Answer with one JSON object that follows this JSON schema:\n${JSON.stringify(responseSchema)}`
+    : "Answer with one JSON object.";
+}
+
 export function buildVendorRequestBody(options: VendorCompleteOptions): Record<string, unknown> {
-  const { model, message, systemPrompt, responseFormat, responseSchema, temperature, maxOutputTokens } = options;
+  const { model, message, responseFormat, responseSchema, temperature, maxOutputTokens } = options;
+  let { systemPrompt } = options;
+
+  const jsonObjectMode =
+    (responseSchema != null && vendorConfig(options.vendor).structuredOutput === "json_object") ||
+    (responseSchema == null && responseFormat === "json");
+  if (jsonObjectMode && !/json/i.test(`${systemPrompt ?? ""}\n${message}`)) {
+    const line = jsonObjectPromptLine(responseSchema ?? undefined);
+    systemPrompt = systemPrompt ? `${systemPrompt}\n\n${line}` : line;
+  }
 
   const messages: Array<{ role: string; content: string }> = [];
   if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
