@@ -32,9 +32,19 @@ import type { db as Db } from "../db/index.js";
 import { copilotLeadTurns, sessions } from "../db/schema.js";
 import type { LeadTurnRequest } from "../schemas.js";
 import { todayLine } from "../agent/situation.js";
-import { buildChannelBlock, type PhoneAccount } from "./channel-copilot.js";
+import { AMBIGUITY_LINE, QUOTE_AND_PHOTO_LINES, buildChannelBlock, type PhoneAccount } from "./channel-copilot.js";
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
 import { REACH_ELSEWHERE_TOOL_NAME, forgetLeadTurnCaller, registerLeadTurnCaller } from "./lead-contact.js";
+import {
+  REPLY_TO_FIELD,
+  forgetLeadTurnMoment,
+  readWhatsappMoment,
+  registerLeadTurnMoment,
+  setWhatsappTyping,
+  whatsappMomentBlock,
+  type CrmCaller,
+  type WhatsappMoment,
+} from "./lead-whatsapp.js";
 
 export const LEAD_ANSWER_TOOL_NAME = "answer_person";
 export const LEAD_TURN_TASK_NAME = "copilot-lead-turn";
@@ -52,13 +62,28 @@ export function copilotOwnBrandId(): string | null {
  * The tool a lead turn ends on: its input IS the writer's answer schema. The
  * description says what it is for; the writer's game says how to decide.
  */
-export function buildLeadAnswerTool(responseSchema: Record<string, unknown>, messageField: string): Anthropic.Tool {
+export function buildLeadAnswerTool(responseSchema: Record<string, unknown>, messageField: string, opts: { replyTo?: boolean } = {}): Anthropic.Tool {
+  // A WhatsApp turn that lists the conversation's labelled messages can quote
+  // one back (SOPHIE-WA-HUMAN-1106): one more property beside the writer's own.
+  const schema = opts.replyTo
+    ? {
+        ...responseSchema,
+        properties: {
+          ...(responseSchema.properties as Record<string, unknown>),
+          [REPLY_TO_FIELD]: {
+            type: "string",
+            description:
+              "WhatsApp only: the label (m1, m2...) of the message your text answers, to send it as a WhatsApp \"Reply\" quoting that message. Empty when no quote helps.",
+          },
+        },
+      }
+    : responseSchema;
   return {
     name: LEAD_ANSWER_TOOL_NAME,
     description:
       "Your decision for this Lead event, in the shape the campaign needs. Call it ONCE, last: it ends your turn and nothing you write outside it reaches anyone. " +
       `\`${messageField}\` is the exact text the person receives now (leave it empty when you write nothing now); the other fields are your decision as the context below asks.`,
-    input_schema: responseSchema as Anthropic.Tool["input_schema"],
+    input_schema: schema as Anthropic.Tool["input_schema"],
   };
 }
 
@@ -89,6 +114,12 @@ export interface LeadTurnFrame {
    * gave us (prod 2026-11-01: a code went unasked to an old school address).
    */
   recipientEmailIsAccount?: boolean;
+  /**
+   * The WhatsApp conversation as WhatsApp shows it (SOPHIE-WA-HUMAN-1106):
+   * labelled latest messages, their quotes and photos, read from crm-service
+   * before the turn. Absent on email, or when crm could not be read.
+   */
+  whatsapp?: Pick<WhatsappMoment, "shown" | "images" | "unreadablePhotos"> | null;
 }
 
 /** The system-prompt block of a lead turn: who you write to and for, how you answer, then the writer's context. */
@@ -96,7 +127,8 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
   const { payload, ownBrand, guest, phoneBound } = frame;
   const assistant = payload.assistant ?? { name: null, role: null, instructions: null };
   const parts: string[] = [];
-  if (ownBrand && payload.medium === "whatsapp" && payload.recipient.phone && phoneBound) {
+  const channelBlock = ownBrand && payload.medium === "whatsapp" && Boolean(payload.recipient.phone) && phoneBound;
+  if (channelBlock && payload.recipient.phone) {
     parts.push(
       buildChannelBlock(
         {
@@ -125,6 +157,9 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
       ? "That text goes out on WhatsApp: plain text, short, WhatsApp markup only (*bold*, _italic_), URLs written out, never the long dash characters."
       : `That text goes out as an email reply in their thread, in the format \`${payload.messageField}\` and the campaign's instructions ask for (HTML when the field is HTML): short paragraphs, never the long dash characters.`,
   ];
+  // The channel block already carries them; any other WhatsApp turn (another
+  // brand's lead, a person we hold no number session for) reads them here.
+  if (payload.medium === "whatsapp" && !channelBlock) lines.push(AMBIGUITY_LINE, ...QUOTE_AND_PHOTO_LINES);
   if (!ownBrand) {
     lines.push(
       `Here you write for the brand the context below names${who ? `, as ${who}` : ""}, not as distribute.you: never speak of distribute.you, its account or its offer to this person.`,
@@ -150,6 +185,8 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
   }
   lines.push(todayLine(frame.now ?? new Date()));
   lines.push("### How the campaign asks you to decide", payload.systemPrompt.trim(), "### What the campaign knows", payload.message.trim());
+  const moment = payload.medium === "whatsapp" && frame.whatsapp ? whatsappMomentBlock(frame.whatsapp, REPLY_TO_FIELD) : "";
+  if (moment) lines.push(moment);
   parts.push(lines.join("\n"));
   return parts.join("");
 }
@@ -223,6 +260,10 @@ export interface LeadTurnDeps {
     leadTurnId: string;
     trackingHeaders: Record<string, string>;
   }) => Promise<{ status: number; body: string }>;
+  /** crm-service: the WhatsApp conversation as WhatsApp shows it (labelled messages, quotes, photos). */
+  readWhatsappMoment?: (args: { caller: CrmCaller; brandId: string; phone: string }) => Promise<WhatsappMoment>;
+  /** crm-service: « typing… » on (`start`) or off (`stop`) in the person's WhatsApp. */
+  setWhatsappTyping?: (args: { caller: CrmCaller; brandId: string; phone: string; state: "start" | "stop" }) => Promise<void>;
 }
 
 export interface Caller {
@@ -335,12 +376,39 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
   const payload = row.payload as LeadTurnRequest;
   const ownBrand = copilotOwnBrandId() === payload.brandId;
   const fail = async (status: number, error: string): Promise<LeadTurnOutcome> => {
+    if (typingOn) {
+      await typing("stop");
+      typingOn = false;
+    }
     await db.update(copilotLeadTurns).set({ status: "failed", error, updatedAt: new Date() }).where(eq(copilotLeadTurns.id, rowId));
     console.error(`[chat-service] lead turn "${row.idempotencyKey}" org="${row.orgId}" failed: ${error}`);
     return { status, body: error === "out_of_credits" ? { error: "out_of_credits", detail: "The org that runs this turn has no credit left." } : { error } };
   };
   // The turn's tools state a new handle as the caller (the writing brand), whatever org the turn runs in.
   registerLeadTurnCaller(rowId, { orgId: caller.orgId, userId: caller.userId, runId: caller.runId });
+  // WhatsApp (SOPHIE-WA-HUMAN-1106): « typing… » from now until the send (crm
+  // ends it there) or until we decide to write nothing; and the conversation as
+  // WhatsApp shows it (quotes, photos, labels to quote back). Both are the
+  // brand's conversation: read as the caller. Neither blocks the answer: a crm
+  // failure is logged loud and the turn answers from the writer's thread.
+  const waPhone = payload.medium === "whatsapp" ? payload.recipient.phone : null;
+  const crmCaller: CrmCaller = { orgId: caller.orgId, userId: caller.userId, runId: caller.runId };
+  const typing = (state: "start" | "stop") =>
+    waPhone
+      ? (deps.setWhatsappTyping ?? setWhatsappTyping)({ caller: crmCaller, brandId: payload.brandId, phone: waPhone, state }).catch((err) =>
+          console.error(`[chat-service] lead turn "${row.idempotencyKey}": typing ${state} failed: ${err instanceof Error ? err.message : String(err)}`),
+        )
+      : Promise.resolve();
+  let typingOn = false;
+  if (waPhone) {
+    await typing("start");
+    typingOn = true;
+    try {
+      registerLeadTurnMoment(rowId, await (deps.readWhatsappMoment ?? readWhatsappMoment)({ caller: crmCaller, brandId: payload.brandId, phone: waPhone }));
+    } catch (err) {
+      console.error(`[chat-service] lead turn "${row.idempotencyKey}": the WhatsApp conversation could not be read (no quotes, photos or labels this turn): ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   try {
     const account = await resolveLeadAccount(deps, payload, ownBrand);
     // In the caller's org the turn is the caller's work (child of its run); in
@@ -383,6 +451,12 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
       }
     }
 
+    // Nothing goes out now: « typing… » ends here (a send ends it in crm).
+    const sends = answer[payload.messageField];
+    if (!(typeof sends === "string" && sends.trim())) {
+      await typing("stop");
+      typingOn = false;
+    }
     await db
       .update(copilotLeadTurns)
       .set({ status: "answered", answer, model, signedIn, updatedAt: new Date() })
@@ -393,6 +467,7 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
     return fail(502, err instanceof Error ? err.message : String(err));
   } finally {
     forgetLeadTurnCaller(rowId);
+    forgetLeadTurnMoment(rowId);
   }
 }
 

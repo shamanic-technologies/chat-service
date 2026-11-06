@@ -46,14 +46,18 @@ import {
 } from "./tool-budget.js";
 import { formatToolError } from "./tool-errors.js";
 import { CLIENT_UI_TOOL_NAMES } from "./ui-tools.js";
+import { imageDataUrl, imagesIntro, type TurnImage } from "./turn-images.js";
 
 /** Output cap per round (DeepSeek V4.1 Flash takes up to 384k; a chat answer never needs more). */
 export const VENDOR_CHAT_MAX_OUTPUT_TOKENS = 32_000;
 
+/** One part of a user message that carries photos (OpenAI-compatible content parts). */
+export type VendorUserPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
 /** An OpenAI-compatible chat message, as this loop sends it. */
 export type VendorChatMessage =
   | { role: "system"; content: string }
-  | { role: "user"; content: string }
+  | { role: "user"; content: string | VendorUserPart[] }
   | { role: "assistant"; content: string; tool_calls?: VendorToolCall[]; reasoning_content?: string }
   | { role: "tool"; tool_call_id: string; content: string };
 
@@ -72,6 +76,12 @@ export interface StreamVendorChatOptions {
   turnContext: string;
   history: GeminiHistoryInput;
   userMessage: string;
+  /**
+   * Photos the person sent with this message (SOPHIE-WA-HUMAN-1106): they join
+   * the user message as images, read natively by the model. Only a vendor whose
+   * `imageInput` was probed live takes them; any other fails the turn loud.
+   */
+  images?: readonly TurnImage[];
   tools: ToolDefinition[];
   res: ExpressResponse;
   sendSSE: SendSSE;
@@ -136,7 +146,7 @@ export function toVendorHistory(history: GeminiHistoryInput): VendorChatMessage[
     if (!content.trim()) return;
     const prev = out[out.length - 1];
     if (prev && prev.role === role && !(prev.role === "assistant" && prev.tool_calls)) {
-      prev.content = `${prev.content}\n\n${content}`;
+      appendText(prev as { content: string | VendorUserPart[] }, content);
       return;
     }
     out.push({ role, content } as VendorChatMessage);
@@ -162,17 +172,39 @@ export function toVendorHistory(history: GeminiHistoryInput): VendorChatMessage[
   return out;
 }
 
+/** Adds text at the end of a message, whether its content is a string or parts (photos). */
+function appendText(message: { content: string | VendorUserPart[] }, text: string): void {
+  if (typeof message.content === "string") {
+    message.content = `${message.content}\n\n${text}`;
+    return;
+  }
+  message.content.push({ type: "text", text });
+}
+
 /** The turn's messages before its first round (see the file header for why this order). */
 export function buildVendorTurnMessages(args: {
   systemPrompt: string;
   history: VendorChatMessage[];
   userMessage: string;
   turnContext: string;
+  images?: readonly TurnImage[];
 }): VendorChatMessage[] {
   const messages: VendorChatMessage[] = [{ role: "system", content: args.systemPrompt }, ...args.history];
   const last = messages[messages.length - 1];
-  if (last && last.role === "user") last.content = `${last.content}\n\n${args.userMessage}`;
+  if (last && last.role === "user") appendText(last, args.userMessage);
   else messages.push({ role: "user", content: args.userMessage });
+  const images = args.images ?? [];
+  if (images.length > 0) {
+    // The photos ride on this turn's user message, after its words, introduced
+    // by one line (when, with which words): the model reads them natively.
+    const user = messages[messages.length - 1] as { role: "user"; content: string | VendorUserPart[] };
+    const parts: VendorUserPart[] = typeof user.content === "string" ? [{ type: "text", text: user.content }] : user.content;
+    user.content = [
+      ...parts,
+      { type: "text", text: imagesIntro(images) },
+      ...images.map((img) => ({ type: "image_url" as const, image_url: { url: imageDataUrl(img) } })),
+    ];
+  }
   const context = args.turnContext.trim();
   if (context) messages.push({ role: "system", content: context });
   return messages;
@@ -197,7 +229,7 @@ function parseArgs(raw: string): Record<string, unknown> | null {
 /** A note to the model after this turn's last message: joins a user message, else is its own. */
 function pushNote(messages: VendorChatMessage[], text: string): void {
   const last = messages[messages.length - 1];
-  if (last && last.role === "user") last.content = `${last.content}\n\n${text}`;
+  if (last && last.role === "user") appendText(last, text);
   else messages.push({ role: "user", content: text });
 }
 
@@ -211,6 +243,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
     turnContext,
     history,
     userMessage,
+    images = [],
     tools,
     res,
     sendSSE: sse,
@@ -230,6 +263,10 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
   const toolCalls: ToolCallRecord[] = [];
   let emittedInputRequest = false;
 
+  if (images.length > 0 && !VENDORS[vendor].imageInput) {
+    throw new Error(`[vendor-chat] ${vendor} model="${model}" was handed ${images.length} photo(s) and does not take image input`);
+  }
+
   const trim = trimGeminiHistoryToBudget(history);
   if (trim.trimmed) {
     console.log(`[vendor-chat] trimmed history ${history.length} → ${trim.history.length} messages (≈${trim.estimatedInputTokens} tokens)`);
@@ -239,6 +276,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
     history: toVendorHistory(trim.history),
     userMessage,
     turnContext,
+    images,
   });
   const vendorTools = toVendorTools(tools);
 

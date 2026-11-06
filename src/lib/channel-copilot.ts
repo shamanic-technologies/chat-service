@@ -90,6 +90,14 @@ const SIGN_IN_ANSWERS_AT_ONCE =
   "Signing in never costs them a message: right after complete_sign_in succeeds, you answer again with their account's access, so in that reply just say in a few words that they are in, and never ask them to send anything (\"ok\", a question) to continue.";
 
 /**
+ * SOPHIE-WA-HUMAN-1106 (prod 2026-11-04: « lui » right after three lead
+ * proposals; she guessed the wrong topic and doubled down. Owner: a human would
+ * have asked « tu parles de Sumith ? »). The strategy, never a list of words.
+ */
+export const AMBIGUITY_LINE =
+  "When their words point at something you cannot pin down (him, her, that, this one) and the thread holds more than one candidate, ask which one in a few words, naming the candidates (\"Sam or Lea?\"), before you act or explain. A short question costs them two seconds; a confident answer about the wrong thing costs their trust. When one candidate is plainly meant (they quoted it, or it is the only one), just answer it.";
+
+/**
  * How a conversation in a chat app works (COPILOT-WA-REPEAT-1027, owner
  * 2026-10-27: « ça fait vraiment répondeur automatique »): the STRATEGY, never
  * canned replies. Shared by every chat-app surface (WhatsApp, Telegram).
@@ -99,6 +107,18 @@ export const CONVERSATION_LINES: readonly string[] = [
     "Never send again something you already said: no ask they have not answered yet, no pitch, no figure, no offer line you already wrote. An unanswered ask means they are not ready; asking again is pressure, and repeating yourself is what makes you sound like an auto-responder. " +
     "When someone says not now, they are busy, or they have no questions, one short warm line that still leaves their next step one click away (in new words, never the same ask again). Short and human beats complete. Every message moves them one step from where they stopped (client-comms): never close on \"any question?\" or \"take your time\".",
   "Our earlier messages in this thread (campaign messages included) may carry prices or offer terms that have changed since. Never repeat a price, amount or offer term from the thread: state one only from what your skills or tools say now, and when you have none, say no figure.",
+  AMBIGUITY_LINE,
+];
+
+/**
+ * What a chat app carries beside the words (SOPHIE-WA-HUMAN-1106, owner
+ * 2026-11-06: « pas moyen que Sophie voie à quel message je reply ? », « quid
+ * de mettre des images en input de son prompt ? »): the message a person
+ * replies to, and their photos. Shared by every chat-app surface.
+ */
+export const QUOTE_AND_PHOTO_LINES: readonly string[] = [
+  "People reply to one precise message here (WhatsApp \"Reply\"): such a message carries the message it quotes beside it. Their words are about THAT message, even an old one: answer it, not the latest topic.",
+  "Photos they send reach you as images with their message, a photo with no words included: look at what it shows and answer it in the light of what they wrote and of the thread.",
 ];
 
 /** A signed-in person can do everything in the chat (SOPHIE-WA-ONBOARD-1101). Shared by every chat-app surface. */
@@ -119,7 +139,7 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
     `People may send voice notes. ${VOICE_NOTE_PREFIX} followed by words is what they SAID in a voice note, transcribed: treat it as their message and answer it like any written one. ${VOICE_NOTE_UNREADABLE} means a voice note we could not understand: say you could not listen to it and ask them to write it or send it again. Always answer in text: you cannot send voice notes.`,
   ];
   if (channel.assistant.instructions?.trim()) lines.push(`How you speak on this number: ${channel.assistant.instructions.trim()}`);
-  lines.push(...CONVERSATION_LINES);
+  lines.push(...CONVERSATION_LINES, ...QUOTE_AND_PHOTO_LINES);
 
   const knownEmails = (channel.sender.knownEmails ?? []).filter((e) => e.trim());
   if (guest) {
