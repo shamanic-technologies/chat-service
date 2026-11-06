@@ -3,8 +3,10 @@
  * « complètement à côté de la plaque »; 2026-11-06: « pas moyen que Sophie voie à
  * quel message je reply ? », « quid de mettre des images en input de son prompt ? ».
  *
- * A WhatsApp Lead event turn reads, from crm-service (the owner of the
- * conversation), what the writer's text thread cannot carry:
+ * A WhatsApp Lead event turn reads what the writer's text thread cannot carry
+ * from the Lead event's own record (crm-service's occurrence `item`, handed
+ * over by the workflow as `occurrenceItem`: `thread[]` and the burst
+ * `messages[]`, each with its event id, quote and photo):
  *  - the person's latest WhatsApp messages AS WHATSAPP SHOWS THEM: each with the
  *    message it quotes (their « Reply ») and whether it is a photo, each named by
  *    a short label (`m1`…) the model can quote back (`replyTo`); the label maps
@@ -50,8 +52,6 @@ export interface WhatsappLine {
 export const WHATSAPP_LINES_SHOWN = 12;
 /** A line's words are cut here in the list (the writer's thread holds them whole). */
 const LINE_TEXT_MAX = 600;
-/** How many timeline items are read to find them (every channel is mixed in the timeline). */
-const TIMELINE_PAGE = 60;
 
 function env(name: string): string {
   const v = process.env[name];
@@ -171,22 +171,26 @@ export function whatsappMomentBlock(moment: Pick<WhatsappMoment, "shown" | "imag
   return parts.join("\n");
 }
 
-/** crm-service: the person's WhatsApp messages (with quotes, photos, ids), oldest first. */
-export async function readWhatsappLines(
-  args: { caller: CrmCaller; brandId: string; phone: string },
-  fetchImpl: typeof fetch = fetch,
-): Promise<WhatsappLine[]> {
-  const q = new URLSearchParams({ brandId: args.brandId, personKey: `phone:${args.phone}`, limit: String(TIMELINE_PAGE) });
-  const res = await fetchImpl(`${env("CRM_SERVICE_URL")}/orgs/people/timeline?${q}`, {
-    headers: crmHeaders(args.caller, args.brandId),
-    signal: AbortSignal.timeout(30_000),
-  });
-  const text = await res.text().catch(() => "");
-  if (res.status === 404) return [];
-  if (!res.ok) throw new Error(`crm-service GET /orgs/people/timeline ${res.status}: ${text.slice(0, 300)}`);
-  const json = JSON.parse(text) as { items?: unknown };
-  if (!Array.isArray(json.items)) throw new Error(`crm-service GET /orgs/people/timeline answered without items: ${text.slice(0, 200)}`);
-  return whatsappLinesOf(json.items);
+/**
+ * PURE: the WhatsApp messages of a Lead event's record (crm `item`): the
+ * thread before the burst, then the burst (their latest messages), oldest
+ * first. Not a WhatsApp event (no `thread` / `messages` with event ids) = none.
+ * A timeline read was tried first and dropped: a person's timeline mixes every
+ * source (Kevin's: 18,218 items, the latest 60 all API calls, 13 s a read).
+ */
+export function whatsappLinesFromItem(item: Record<string, unknown> | null | undefined): WhatsappLine[] {
+  if (!item || typeof item !== "object") return [];
+  const thread = Array.isArray(item.thread) ? item.thread : [];
+  const burst = Array.isArray(item.messages) ? item.messages : [];
+  const asItem = (raw: unknown, direction: unknown) => {
+    const m = (raw ?? {}) as Record<string, unknown>;
+    if (m.kind !== undefined && m.kind !== "message") return null;
+    return { source: "matrix", kind: "message", at: m.at, direction, text: m.text, ref: { eventId: m.eventId }, quote: m.quote, photo: m.photo };
+  };
+  return whatsappLinesOf([
+    ...thread.map((t) => asItem(t, (t as Record<string, unknown>)?.direction)),
+    ...burst.map((m) => asItem(m, "inbound")),
+  ].filter(Boolean) as unknown[]);
 }
 
 /** crm-service: the bytes of a photo message (base64), for the brand whose line received it. */
@@ -221,7 +225,6 @@ export async function setWhatsappTyping(
 }
 
 export interface WhatsappMomentDeps {
-  readLines: typeof readWhatsappLines;
   readPhoto: typeof readWhatsappPhoto;
 }
 
@@ -231,10 +234,10 @@ export interface WhatsappMomentDeps {
  * TURN_IMAGES_MAX). A photo that cannot be read is named, never silently dropped.
  */
 export async function readWhatsappMoment(
-  args: { caller: CrmCaller; brandId: string; phone: string },
-  deps: WhatsappMomentDeps = { readLines: readWhatsappLines, readPhoto: readWhatsappPhoto },
+  args: { caller: CrmCaller; brandId: string; item: Record<string, unknown> | null | undefined },
+  deps: WhatsappMomentDeps = { readPhoto: readWhatsappPhoto },
 ): Promise<WhatsappMoment> {
-  const lines = await deps.readLines(args);
+  const lines = whatsappLinesFromItem(args.item);
   const shown = labelLines(lines);
   const labels = new Map(shown.map((l) => [l.label, l.eventId]));
   const photos = theirLatest(lines).filter((l) => l.photo).slice(-TURN_IMAGES_MAX);

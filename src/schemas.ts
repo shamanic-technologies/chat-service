@@ -1434,6 +1434,14 @@ export const LeadTurnRequestSchema = z
     messageField: z.string().min(1).max(100).openapi({
       description: "The top-level string property of `responseSchema` holding the text the person receives (empty = nothing written now). Stored as the Copilot's message in the person's conversation.",
     }),
+    occurrenceItem: z
+      .record(z.string(), z.unknown())
+      .nullable()
+      .optional()
+      .openapi({
+        description:
+          "The Lead event's own record as crm-service stated it (its `item`), when the event carries one. On WhatsApp its `thread[]` and `messages[]` (each with `eventId`, the `quote` it replies to and its `photo`) let the Copilot see what the person quoted, see their photos as images, and quote a message back: the answer then carries `replyToEventId`. Absent = the turn reads only `message` (SOPHIE-WA-HUMAN-1106).",
+      }),
   })
   .refine((b) => Boolean(b.recipient.email || b.recipient.phone), { message: "recipient needs an email or a phone", path: ["recipient"] })
   .refine((b) => {
@@ -1445,7 +1453,10 @@ export type LeadTurnRequest = z.infer<typeof LeadTurnRequestSchema>;
 
 export const LeadTurnResponseSchema = z
   .object({
-    json: z.record(z.string(), z.unknown()).openapi({ description: "The answer, in the writer's `responseSchema` (like `/complete` `json`)." }),
+    json: z.record(z.string(), z.unknown()).openapi({
+      description:
+        "The answer, in the writer's `responseSchema` (like `/complete` `json`). A WhatsApp turn that read the event's `occurrenceItem` adds `replyToEventId`: the event id of the message the answer quotes (crm-service send `replyToEventId`), null when it quotes none.",
+    }),
     content: z.string().openapi({ description: "`json` serialized." }),
     model: z.string().nullable().openapi({ description: "The model that answered (the Copilot's)." }),
     sessionId: z.string().uuid().nullable().openapi({ description: "The Copilot conversation the turn ran in (the person's own when they have an account)." }),

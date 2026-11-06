@@ -261,7 +261,7 @@ export interface LeadTurnDeps {
     trackingHeaders: Record<string, string>;
   }) => Promise<{ status: number; body: string }>;
   /** crm-service: the WhatsApp conversation as WhatsApp shows it (labelled messages, quotes, photos). */
-  readWhatsappMoment?: (args: { caller: CrmCaller; brandId: string; phone: string }) => Promise<WhatsappMoment>;
+  readWhatsappMoment?: (args: { caller: CrmCaller; brandId: string; item: Record<string, unknown> | null | undefined }) => Promise<WhatsappMoment>;
   /** crm-service: « typing… » on (`start`) or off (`stop`) in the person's WhatsApp. */
   setWhatsappTyping?: (args: { caller: CrmCaller; brandId: string; phone: string; state: "start" | "stop" }) => Promise<void>;
 }
@@ -388,8 +388,9 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
   registerLeadTurnCaller(rowId, { orgId: caller.orgId, userId: caller.userId, runId: caller.runId });
   // WhatsApp (SOPHIE-WA-HUMAN-1106): « typing… » from now until the send (crm
   // ends it there) or until we decide to write nothing; and the conversation as
-  // WhatsApp shows it (quotes, photos, labels to quote back). Both are the
-  // brand's conversation: read as the caller. Neither blocks the answer: a crm
+  // WhatsApp shows it (quotes, photos, labels to quote back), from the Lead
+  // event's own record, its photos read from crm. Both are the brand's
+  // conversation: crm is called as the caller. Neither blocks the answer: a crm
   // failure is logged loud and the turn answers from the writer's thread.
   const waPhone = payload.medium === "whatsapp" ? payload.recipient.phone : null;
   const crmCaller: CrmCaller = { orgId: caller.orgId, userId: caller.userId, runId: caller.runId };
@@ -404,7 +405,7 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
     await typing("start");
     typingOn = true;
     try {
-      registerLeadTurnMoment(rowId, await (deps.readWhatsappMoment ?? readWhatsappMoment)({ caller: crmCaller, brandId: payload.brandId, phone: waPhone }));
+      registerLeadTurnMoment(rowId, await (deps.readWhatsappMoment ?? readWhatsappMoment)({ caller: crmCaller, brandId: payload.brandId, item: payload.occurrenceItem }));
     } catch (err) {
       console.error(`[chat-service] lead turn "${row.idempotencyKey}": the WhatsApp conversation could not be read (no quotes, photos or labels this turn): ${err instanceof Error ? err.message : String(err)}`);
     }

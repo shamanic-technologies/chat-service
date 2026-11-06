@@ -7,6 +7,7 @@ import {
   leadTurnMoment,
   readWhatsappMoment,
   theirLatest,
+  whatsappLinesFromItem,
   whatsappLinesOf,
   whatsappMomentBlock,
   withReplyToEventId,
@@ -102,11 +103,39 @@ describe("withReplyToEventId", () => {
   });
 });
 
+/** crm-service's Lead event record for a WhatsApp burst (`item.thread[]` + `item.messages[]`, PR #256). */
+const ITEM = {
+  kind: "reply",
+  source: "matrix",
+  thread: [
+    { at: "2026-11-04T11:45:00.000Z", direction: "outbound", kind: "message", text: "Lead: Arjun, launch at $5 a day?", eventId: "$a" },
+    { at: "2026-11-04T11:46:00.000Z", direction: "outbound", kind: "call", text: "Missed voice call", eventId: "$c" },
+    { at: "2026-11-04T11:47:00.000Z", direction: "outbound", kind: "message", text: "Lead: Nimal, launch at $5 a day?", eventId: "$n" },
+  ],
+  messages: [
+    { eventId: "$q", at: "2026-11-04T13:42:00.000Z", text: "tu veux dire lui écrire ?", quote: { eventId: "$n", direction: "outbound", at: "2026-11-04T11:47:00.000Z", text: "Lead: Nimal, launch at $5 a day?" } },
+    { eventId: "$p", at: "2026-11-04T13:43:00.000Z", text: "📷 Photo", photo: { kind: "image", eventId: "$p", mimeType: "image/jpeg", sizeBytes: 1, width: 1, height: 1, caption: null } },
+  ],
+};
+
+describe("whatsappLinesFromItem (the Lead event's own record)", () => {
+  it("the thread then their burst, oldest first, with ids, quotes and photos; a call is not a message", () => {
+    const lines = whatsappLinesFromItem(ITEM);
+    expect(lines.map((l) => `${l.direction}:${l.eventId}`)).toEqual(["outbound:$a", "outbound:$n", "inbound:$q", "inbound:$p"]);
+    expect(lines[2].quote?.eventId).toBe("$n");
+    expect(lines[3].photo).toEqual({ caption: null });
+  });
+  it("an email event, or no record, has no WhatsApp lines", () => {
+    expect(whatsappLinesFromItem({ kind: "reply", source: "gmail", subject: "x" })).toEqual([]);
+    expect(whatsappLinesFromItem(null)).toEqual([]);
+  });
+});
+
 describe("readWhatsappMoment", () => {
   const caller = { orgId: "o", userId: "u", runId: "r" };
   it("loads the photos of their latest messages only, fitted for the model", async () => {
     const readPhoto = vi.fn().mockResolvedValue({ base64: await pngBase64(), mimeType: "image/png", sentAt: null, caption: null });
-    const m = await readWhatsappMoment({ caller, brandId: BRAND, phone: "+33600000001" }, { readLines: async () => whatsappLinesOf(ITEMS), readPhoto });
+    const m = await readWhatsappMoment({ caller, brandId: BRAND, item: ITEM }, { readPhoto });
     expect(readPhoto).toHaveBeenCalledTimes(1);
     expect(readPhoto.mock.calls[0][0]).toMatchObject({ eventId: "$p", brandId: BRAND, caller });
     expect(m.images).toHaveLength(1);
@@ -114,10 +143,7 @@ describe("readWhatsappMoment", () => {
     expect(m.labels.get("m4")).toBe("$p");
   });
   it("a photo crm cannot serve is named, never silently dropped", async () => {
-    const m = await readWhatsappMoment(
-      { caller, brandId: BRAND, phone: "+33600000001" },
-      { readLines: async () => whatsappLinesOf(ITEMS), readPhoto: async () => { throw new Error("502"); } },
-    );
+    const m = await readWhatsappMoment({ caller, brandId: BRAND, item: ITEM }, { readPhoto: async () => { throw new Error("502"); } });
     expect(m.images).toEqual([]);
     expect(m.unreadablePhotos).toEqual(["$p"]);
   });
