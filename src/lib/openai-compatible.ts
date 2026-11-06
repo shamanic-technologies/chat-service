@@ -554,6 +554,14 @@ export interface VendorConfig {
    * rather than anything adjacent to it.
    */
   isOutOfCreditRefusal: (signal: VendorRefusalSignal) => boolean;
+  /**
+   * True when /chat may hand THIS vendor's head models a photo as an
+   * `image_url` content part (SOPHIE-WA-HUMAN-1106). Probed live 2026-11-06
+   * with a PNG data URL: DeepSeek V4.1 Flash, GLM-5.3 Flash and GPT-6.1 Terra
+   * read it right; Moonshot was out of credit, so it stays false until probed.
+   * A photo handed to a vendor marked false fails the turn loud (vendor-chat).
+   */
+  imageInput: boolean;
 }
 
 /**
@@ -647,6 +655,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
       note: "DeepSeek's chat models take temperature; it has been forwarded on this path since 2026-08-15.",
     },
     maxOutputTokensField: "max_tokens",
+    imageInput: true,
     structuredOutput: "json_object",
     // Reasoning is disablable, and it is the SAME field on all three vendors —
     // which is a fact about these three, not a rule: it is recorded per vendor
@@ -736,6 +745,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
       note: "GLM takes temperature; it has been forwarded on this path since 2026-08-15.",
     },
     maxOutputTokensField: "max_tokens",
+    imageInput: true,
     structuredOutput: "json_schema",
     // Z.ai is the vendor this was measured on and the one it saves most on.
     // `thinking: {type:"disabled"}` on glm-5.2 took a probe from 703 to 389
@@ -841,6 +851,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
         "temperature: only 0.6 is allowed for this model\" (probed live 2026-10-27).",
     },
     maxOutputTokensField: "max_tokens",
+    imageInput: false,
     structuredOutput: "json_schema",
     // Moonshot reasons the hardest of the three and answers the shortest while
     // doing it: kimi-k2.6 spent 1,173 output tokens on 3,808 chars of reasoning
@@ -961,6 +972,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
         "supported\") and top_p answers 400 unsupported_parameter. Probed live 2026-09-09.",
     },
     maxOutputTokensField: "max_completion_tokens",
+    imageInput: true,
     // Structured Outputs is a first-class OpenAI feature, and the non-strict
     // schema form we send is confirmed live (200, valid object, probed
     // 2026-09-09) rather than taken from the model page alone. We do NOT send

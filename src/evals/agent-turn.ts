@@ -30,6 +30,8 @@ import type { VendorCostLine } from "../lib/cost-names.js";
 import { buildSituationBrief } from "../agent/situation.js";
 import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS } from "../agent/sophie.js";
 import { clientBriefUnavailable } from "../lib/client-brief.js";
+import { prepareTurnImage, type TurnImage } from "../lib/turn-images.js";
+import { labelLines } from "../lib/lead-whatsapp.js";
 import { fixtureClientBrief, fixtureSituationReader } from "./fixture-situation.js";
 import { scenarioDay, type Scenario } from "./scenario.js";
 
@@ -91,10 +93,12 @@ export interface AssembledTurn {
 }
 
 /** A lead turn as /chat builds it: the writer's block, the person's tools (none for a guest), the answer and reach tools. */
-function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string): AssembledTurn {
+function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string, images: TurnImage[]): AssembledTurn {
   const lead = scenario.lead!;
   const payload = lead.payload as unknown as LeadTurnRequest;
-  const frame: LeadTurnFrame = { payload, ownBrand: true, guest: lead.guest, phoneBound: lead.phoneBound, afterSignIn: false, now: scenarioDay(scenario) };
+  // The WhatsApp conversation as crm serves it to the turn (SOPHIE-WA-HUMAN-1106).
+  const whatsapp = scenario.whatsapp || images.length > 0 ? { shown: labelLines(scenario.whatsapp ?? []), images, unreadablePhotos: [] } : null;
+  const frame: LeadTurnFrame = { payload, ownBrand: true, guest: lead.guest, phoneBound: lead.phoneBound, afterSignIn: false, now: scenarioDay(scenario), whatsapp };
   const sessionTools = lead.guest ? [] : withOurWebsite(def.allowedTools, def.allowedTools.includes("read_skill"));
   const toolNames = leadTurnToolNames(sessionTools, CLIENT_UI_TOOL_NAMES);
   const skillBlock = !lead.guest && toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
@@ -104,7 +108,7 @@ function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay
     tools: [
       ...(resolveToolSet(toolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME)) as unknown as ToolDefinition[]),
       REACH_ELSEWHERE_TOOL as unknown as ToolDefinition,
-      buildLeadAnswerTool(payload.responseSchema, payload.messageField) as unknown as ToolDefinition,
+      buildLeadAnswerTool(payload.responseSchema, payload.messageField, { replyTo: (whatsapp?.shown.length ?? 0) > 0 }) as unknown as ToolDefinition,
     ],
     holdTextBesideToolCalls: true,
     endToolName: LEAD_ANSWER_TOOL_NAME,
@@ -112,8 +116,8 @@ function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay
 }
 
 /** The prompt and tools /chat would build for this scenario under this definition. */
-export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string, brief = ""): AssembledTurn {
-  if (scenario.surface === "lead") return assembleLeadTurn(def, scenario, modelDisplay);
+export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string, brief = "", images: TurnImage[] = []): AssembledTurn {
+  if (scenario.surface === "lead") return assembleLeadTurn(def, scenario, modelDisplay, images);
   const toolNames = withOurWebsite(withAccountSetup(def.allowedTools), def.allowedTools.includes("read_skill"));
   const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
   const systemPrompt = def.systemPrompt + skillBlock + aboutYouBlock(modelDisplay);
@@ -183,7 +187,9 @@ export async function replayTurn(args: {
     (def.clientBrief ? await fixtureClientBrief(scenario).catch((err) => clientBriefUnavailable(err)) : "") +
     (def.situationBrief ? await buildSituationBrief(fixtureSituationReader(scenario), { now: scenarioDay(scenario) }) : "");
   const modelDisplay = modelDisplayName(resolved.apiModelId);
-  const turn = assembleTurn(def, scenario, modelDisplay, brief);
+  const images = await scenarioImages(scenario);
+  if (images.length > 0 && provider === "google") throw new Error("[evals] photos are wired on the direct-vendor loop only (Sophie's)");
+  const turn = assembleTurn(def, scenario, modelDisplay, brief, images);
   let llmCalls = 0;
   const started = Date.now();
   const history = scenario.history.map((m) => ({ role: m.role, content: m.content, toolCalls: m.toolCalls as never }));
@@ -219,6 +225,7 @@ export async function replayTurn(args: {
     turnContext: turn.turnContext,
     history,
     userMessage: scenario.message,
+    images,
     tools: turn.tools,
     ...hooks,
     beforeProviderCall: async () => {
@@ -239,6 +246,15 @@ export async function replayTurn(args: {
     costLines: result.costLines,
     latencyMs: Date.now() - started,
   };
+}
+
+/** The scenario's photos, fitted the way production fits them (files are read from the repo root). */
+export async function scenarioImages(scenario: Scenario, root = process.cwd()): Promise<TurnImage[]> {
+  return Promise.all(
+    (scenario.images ?? []).map((img) =>
+      prepareTurnImage(readFileSync(`${root}/${img.file}`), { at: img.at ?? null, caption: img.caption ?? null }),
+    ),
+  );
 }
 
 /**
