@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildVendorRequestBody,
+  jsonObjectPromptLine,
   assertModelMatches,
   mapVendorResponse,
   completeWithVendor,
@@ -324,6 +325,36 @@ describe("buildVendorRequestBody", () => {
       // The refused form must not appear anywhere on the wire.
       expect(JSON.stringify(body)).not.toContain("json_schema");
     }
+  });
+
+  // 2026-11-05: json_object refuses a prompt without the word "json" (DeepSeek 400 "Prompt must contain the word
+  // 'json' in some form"); ai-meeting-booking draft_reply sent a schema and prose that never said JSON.
+  it("a json_object request whose prompt never says JSON states it, with the schema, in the system prompt", () => {
+    const schema = { type: "object", properties: { decision: { type: "string" } } };
+    const body = buildVendorRequestBody({
+      vendor: "deepseek", apiKey: "k", model: "deepseek-flash",
+      systemPrompt: "You answer prospects.", message: "Their last message: when can we talk?", responseSchema: schema,
+    });
+    const messages = body.messages as Array<{ role: string; content: string }>;
+    expect(messages[0].role).toBe("system");
+    expect(messages[0].content).toBe(`You answer prospects.\n\n${jsonObjectPromptLine(schema)}`);
+    expect(messages[0].content).toContain(JSON.stringify(schema));
+    expect(messages[1].content).toBe("Their last message: when can we talk?");
+
+    const noSystem = buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "m", message: "Hi", responseFormat: "json" });
+    expect((noSystem.messages as Array<{ role: string; content: string }>)[0]).toEqual({ role: "system", content: "Answer with one JSON object." });
+  });
+
+  it("a prompt that already names JSON, or a json_schema request, is sent byte for byte", () => {
+    const schema = { type: "object" };
+    const named = buildVendorRequestBody({
+      vendor: "deepseek", apiKey: "k", model: "deepseek-flash", systemPrompt: "Return JSON only.", message: "m", responseSchema: schema,
+    });
+    expect(named.messages).toEqual([{ role: "system", content: "Return JSON only." }, { role: "user", content: "m" }]);
+    const strict = buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "glm-5.2", systemPrompt: "S", message: "m", responseSchema: schema });
+    expect(strict.messages).toEqual([{ role: "system", content: "S" }, { role: "user", content: "m" }]);
+    const text = buildVendorRequestBody({ vendor: "deepseek", apiKey: "k", model: "deepseek-flash", systemPrompt: "S", message: "m" });
+    expect(text.messages).toEqual([{ role: "system", content: "S" }, { role: "user", content: "m" }]);
   });
 
   it("leaves the json_schema vendors untouched — only DeepSeek downgrades", () => {
