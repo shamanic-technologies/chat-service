@@ -4,9 +4,11 @@ import request from "supertest";
 // Every platform call states whose work it is (COST-SUPPORT-1024): these tests are support calls.
 const TEST_PLATFORM_SUPPORT = { kind: "staff_experiment", reason: "chat-service test" };
 
-// VENDOR-CREDIT-1030: a vendor out of credit reroutes to its declared fallback
-// (deepseek-flash -> GLM-5.3 Flash), the run declares the fallback's own cost
-// names, and calls return to the primary as soon as a call on it succeeds.
+// VENDOR-CREDIT-1030 + LLM-CREDIT-GENERIC-1108: a vendor out of credit reroutes
+// to the cheapest same-tier model on a vendor with credit that takes the request
+// (deepseek-flash JSON-without-schema -> GLM-5.3 Flash; Gemini Flash-Lite the
+// same way), the run declares the fallback's own cost names, and calls return to
+// the primary as soon as a call on it succeeds.
 
 process.env.NODE_ENV = "test";
 process.env.KEY_SERVICE_API_KEY = process.env.KEY_SERVICE_API_KEY || "test-key-svc-key";
@@ -175,7 +177,9 @@ const INTERNAL_AUTH = { "x-api-key": "test-key" };
 const AUTH = { "x-api-key": "test-key", "x-org-id": "org-1", "x-user-id": "user-1", "x-run-id": "parent-run-1" };
 const JUDGE = { message: "Reply: yes please send pricing", systemPrompt: "Label the reply.", provider: "deepseek", model: "deepseek-flash", responseFormat: "json", temperature: 0, disableThinking: true };
 
-describe("out of credit: reroute to the declared fallback", () => {
+import { LIST_PRICES_2026_11_08 } from "../unit/llm-list-prices.fixture.js";
+
+describe("out of credit: reroute to the cheapest model that takes the request", () => {
   let app: Awaited<ReturnType<typeof loadApp>>;
   let credit: typeof import("../../src/lib/vendor-credit.js");
   async function loadApp() {
@@ -191,6 +195,7 @@ describe("out of credit: reroute to the declared fallback", () => {
     fetchCalls = [];
     installFetchMock();
     credit.resetVendorCredit();
+    credit.setFallbackPrices(LIST_PRICES_2026_11_08);
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-29T16:00:00Z"));
   });
@@ -291,6 +296,45 @@ describe("out of credit: reroute to the declared fallback", () => {
     expect(res.status).toBe(200);
     expect(res.body.model).toBe("glm-5.3-flash");
     expect(res.body.fallback).toEqual({ from: "deepseek-flash", reason: "out_of_credit" });
+    const actual = costCap.postedItems.flat().filter((i) => i.status === undefined || i.status === "actual").map((i) => i.costName);
+    expect(actual.every((n) => n.startsWith("zai-glm-5.3-flash"))).toBe(true);
+  });
+
+  it("/complete: Gemini Flash-Lite with an empty prepay balance is rerouted (the 2026-11-07 outage, no declared entry)", async () => {
+    const costCap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+    const zai = { calls: 0 };
+    const gemini = { calls: 0 };
+    routes.push(
+      mockVendorKey("google"),
+      mockVendorKey("zai"),
+      mockBilling(),
+      mockRunsCreate(),
+      mockRunsStatusPatch(),
+      ...[mockRunsCostRoutes(costCap)].flat(),
+      {
+        match: (url: string) => url.startsWith("https://generativelanguage.googleapis.com/"),
+        respond: () => {
+          gemini.calls += 1;
+          return {
+            ok: false,
+            status: 402,
+            body: '{"error":{"code":402,"message":"Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing.","status":"RESOURCE_EXHAUSTED"}}',
+          };
+        },
+      },
+      vendorOk(ZAI_URL, "glm-5.3-flash", zai),
+    );
+    const body = { message: "Read this lead.", systemPrompt: "Answer in JSON.", provider: "google", model: "gemini-flash-lite", responseFormat: "json" };
+    const res = await request(app).post("/complete").set(AUTH).send(body);
+    expect(res.status).toBe(200);
+    expect(res.body.model).toBe("glm-5.3-flash");
+    expect(res.body.fallback).toEqual({ from: "gemini-3.5-flash-lite", reason: "out_of_credit" });
+    expect(credit.isProviderOutOfCredit("google")).toBe(true);
+    // While Google is dry: straight to the fallback, Gemini not asked again.
+    const res2 = await request(app).post("/complete").set(AUTH).send(body);
+    expect(res2.body.model).toBe("glm-5.3-flash");
+    expect(gemini.calls).toBe(1);
+    expect(zai.calls).toBe(2);
     const actual = costCap.postedItems.flat().filter((i) => i.status === undefined || i.status === "actual").map((i) => i.costName);
     expect(actual.every((n) => n.startsWith("zai-glm-5.3-flash"))).toBe(true);
   });

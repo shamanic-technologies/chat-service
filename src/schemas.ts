@@ -714,8 +714,8 @@ export const CompleteResponseSchema = z
       .optional()
       .openapi({
         description:
-          "Present only when the requested model's provider has no credit and the call was served by the declared fallback " +
-          "(VENDOR-CREDIT-1030). `model` is then the fallback that ran, and the run declares the fallback's own cost names.",
+          "Present only when the requested model's provider has no credit and the call was served by another vendor's model: the cheapest of the same tier that takes the request " +
+          "(VENDOR-CREDIT-1030, LLM-CREDIT-GENERIC-1108). `model` is then the fallback that ran, and the run declares the fallback's own cost names.",
         example: { from: "deepseek-flash", reason: "out_of_credit" },
       }),
   })
@@ -1360,8 +1360,8 @@ const VendorCreditVendorSchema = z.object({
   since: z.string().nullable().openapi({ description: "ISO time of the first refused call of the open outage; null when serving." }),
   lastSeenAt: z.string().nullable().openapi({ description: "ISO time of the last refused call of the latest outage; null if never." }),
   recoveredAt: z.string().nullable().openapi({ description: "ISO time the latest outage ended (a call succeeded); null if open or never." }),
-  fallbackModel: z.string().nullable().openapi({ description: "Model ID calls go to while this vendor is out of credit; null = none declared, its calls fail.", example: "glm-5.3-flash" }),
-  fallbackLabel: z.string().nullable().openapi({ description: "Display name of fallbackModel.", example: "GLM-5.3 Flash" }),
+  fallbackModel: z.string().nullable().openapi({ description: "Model ID a PLAIN call on this vendor's cheapest model goes to while it is out of credit: the cheapest model of the same tier on a vendor with credit, ranked by costs-service list price (LLM-CREDIT-GENERIC-1108). A call that model cannot take (an image, JSON without a schema) goes to the next one that can. null = no model qualifies (or list prices unread), its calls fail.", example: "claude-haiku-5-5" }),
+  fallbackLabel: z.string().nullable().openapi({ description: "Display name of fallbackModel.", example: "Claude Haiku 5.5" }),
   refusedCalls: z.number().int().openapi({ description: "Calls refused for an empty balance during the latest outage." }),
   reroutedCalls: z.number().int().openapi({ description: "Calls the fallback served during the latest outage." }),
   sentence: z.string().openapi({ description: "One plain sentence to print as is." }),
@@ -1389,7 +1389,8 @@ registry.registerPath({
   summary: "AI vendors out of credit: verdict per vendor and a daily series (Monitoring)",
   description:
     "Stored from every call refused on our platform key in the vendor's own out-of-credit words, any caller. A vendor stays out of credit " +
-    "until a call on it succeeds. While out, calls on a model with a declared fallback are served by that fallback.",
+    "until a call on it succeeds. While out, a call on ANY of its models is served by the cheapest model of the same capability tier, on a vendor with credit, " +
+      "that takes the request as sent (LLM-CREDIT-GENERIC-1108: one rule, no per-model list).",
   request: {
     headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
     query: VendorCreditQuerySchema,
