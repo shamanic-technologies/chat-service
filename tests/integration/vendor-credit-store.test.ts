@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { sql } from "drizzle-orm";
+import { LIST_PRICES_2026_11_08 } from "../unit/llm-list-prices.fixture.js";
 
 // VENDOR-CREDIT-1030: the out-of-credit fact lands in Postgres (one open outage
 // per provider + a per-day counter) and the staff read serves it.
@@ -18,6 +19,7 @@ describe("vendor credit: stored fact + GET /internal/vendor-credit", () => {
     app = await loadApp();
     db = (await import("../../src/db/index.js")).db;
     storeMod = await import("../../src/lib/vendor-credit-store.js");
+    (await import("../../src/lib/vendor-credit.js")).setFallbackPrices(LIST_PRICES_2026_11_08);
   });
   beforeEach(async () => {
     await db.execute(sql`DELETE FROM vendor_credit_outages`);
@@ -39,7 +41,7 @@ describe("vendor credit: stored fact + GET /internal/vendor-credit", () => {
     const res = await request(app).get("/internal/vendor-credit?days=2").set({ "x-api-key": "test-key" });
     expect(res.status).toBe(200);
     const ds = res.body.vendors[0];
-    expect(ds).toMatchObject({ provider: "deepseek", outOfCredit: true, since: t1.toISOString(), lastSeenAt: t2.toISOString(), refusedCalls: 3, reroutedCalls: 1, fallbackModel: "glm-5.3-flash" });
+    expect(ds).toMatchObject({ provider: "deepseek", outOfCredit: true, since: t1.toISOString(), lastSeenAt: t2.toISOString(), refusedCalls: 3, reroutedCalls: 1, fallbackModel: "claude-haiku-5-5" });
     expect(res.body.vendors).toHaveLength(6);
 
     await store.closeOutage({ provider: "deepseek", at: new Date("2026-10-30T09:00:00Z") });

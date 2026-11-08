@@ -84,6 +84,9 @@ import {
   markProviderServing,
   initVendorCredit,
   buildVendorCreditRead,
+  refreshFallbackPrices,
+  PRICE_REFRESH_MS,
+  type AcceptsRequest,
   type ServingChoice,
 } from "./lib/vendor-credit.js";
 import { createVendorCreditStore, loadVendorCreditRows } from "./lib/vendor-credit-store.js";
@@ -772,7 +775,7 @@ class RetryOnFallback {
 }
 
 /** A refusal for an empty balance on our platform key: store the fact, and say where to retry (if anywhere). */
-function onOutOfCredit(choice: ServingChoice, err: unknown): RetryOnFallback | null {
+function onOutOfCredit(choice: ServingChoice, err: unknown, accepts: AcceptsRequest): RetryOnFallback | null {
   const { resolved } = choice;
   recordOutOfCredit({
     provider: resolved.provider,
@@ -781,14 +784,42 @@ function onOutOfCredit(choice: ServingChoice, err: unknown): RetryOnFallback | n
     message: err instanceof Error ? err.message : String(err),
   });
   if (choice.fallbackFrom) return null; // already the fallback: fail loud
-  const fallback = fallbackModelFor(resolved);
+  const fallback = fallbackModelFor(resolved, accepts);
   if (!fallback || isProviderOutOfCredit(fallback.provider)) return null;
   return new RetryOnFallback(fallback);
 }
 
 /** Which model this attempt calls: the forced fallback on a retry, else the credit-aware pick. */
-function servingChoiceFor(requested: ReturnType<typeof resolveModel>, retry: RetryOnFallback | null): ServingChoice {
-  return retry ? { resolved: retry.model, fallbackFrom: requested } : pickServingModel(requested);
+function servingChoiceFor(requested: ReturnType<typeof resolveModel>, retry: RetryOnFallback | null, accepts: AcceptsRequest): ServingChoice {
+  return retry ? { resolved: retry.model, fallbackFrom: requested } : pickServingModel(requested, Date.now(), accepts);
+}
+
+/**
+ * Whether a candidate model takes this request AS SENT (LLM-CREDIT-GENERIC-1108): the same refusals the routes apply
+ * to the model a caller names, so a detour never trades an empty balance for a 400. Read by the out-of-credit rule.
+ */
+function acceptsRequest(req: {
+  imageUrl?: unknown;
+  webSearch: boolean;
+  responseFormat?: string | null;
+  responseSchema?: unknown;
+  temperature?: number | null;
+  effort?: Parameters<typeof assertAnthropicEffortSupported>[1];
+  disableThinking?: boolean | null;
+}): AcceptsRequest {
+  return (m) => {
+    if (isVendorProvider(m.provider) && (req.webSearch || req.imageUrl)) return false;
+    if (m.provider === "anthropic" && req.responseFormat === "json" && req.responseSchema == null) return false;
+    if (samplingRefusalFor(m.provider, m.apiModelId, m.apiModelId, req.temperature)) return false;
+    if (m.provider === "anthropic") {
+      try {
+        assertAnthropicEffortSupported(m.apiModelId, req.effort, req.disableThinking ?? undefined);
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  };
 }
 
 app.post("/complete", requireAuth, async (req, res) => {
@@ -818,7 +849,8 @@ async function handleComplete(req: express.Request, res: express.Response, retry
   // Resolve versioned model from (provider, alias) pair, then route around a
   // provider that is out of credit (VENDOR-CREDIT-1030): `resolved` is the
   // model this attempt CALLS, so key, cost names and run all follow it.
-  const choice = servingChoiceFor(resolveModel(requestedProvider as Provider, requestedModel as ModelAlias), retry);
+  const accepts = acceptsRequest({ imageUrl, webSearch, responseFormat, responseSchema, temperature, effort, disableThinking: disableThinkingRaw });
+  const choice = servingChoiceFor(resolveModel(requestedProvider as Provider, requestedModel as ModelAlias), retry, accepts);
   const resolved = choice.resolved;
   const effectiveModel = resolved.apiModelId;
   const isGemini = resolved.provider === "google";
@@ -1100,7 +1132,7 @@ async function handleComplete(req: express.Request, res: express.Response, retry
     // on the declared fallback. Nothing ran, so this run closes failed with no
     // cost and the retry opens its own. An org's own key is the org's account.
     if (costSource === "platform" && isOutOfCreditError(provider, err)) {
-      const next = onOutOfCredit(choice, err);
+      const next = onOutOfCredit(choice, err, accepts);
       if (next) return next;
     }
     // A provider that refused the request's SHAPE will refuse it identically
@@ -2579,8 +2611,9 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
   const webSearch = webSearchRaw === true;
   const disableThinking = disableThinkingRaw === true;
 
-  // Same credit-aware routing as /complete (VENDOR-CREDIT-1030).
-  const choice = servingChoiceFor(resolveModel(requestedProvider as Provider, requestedModel as ModelAlias), retry);
+  // Same credit-aware routing as /complete (VENDOR-CREDIT-1030, LLM-CREDIT-GENERIC-1108).
+  const accepts = acceptsRequest({ webSearch, responseFormat, responseSchema, temperature, effort, disableThinking: disableThinkingRaw });
+  const choice = servingChoiceFor(resolveModel(requestedProvider as Provider, requestedModel as ModelAlias), retry, accepts);
   const resolved = choice.resolved;
   const effectiveModel = resolved.apiModelId;
   const isGemini = resolved.provider === "google";
@@ -2788,7 +2821,7 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
     console.error(`[internal/platform-complete] LLM call failed:`, err);
     // Same as /complete: store the empty balance, retry once on the fallback.
     if (isOutOfCreditError(provider, err)) {
-      const next = onOutOfCredit(choice, err);
+      const next = onOutOfCredit(choice, err, accepts);
       if (next) return next;
     }
     // Same split as /complete: a refused request option is a 400, not a 502.
@@ -6122,6 +6155,9 @@ if (process.env.NODE_ENV !== "test") {
       await seedSophieConfig(db);
       // Outages still open survive a restart: the detour and the red stay on.
       await initVendorCredit(createVendorCreditStore(db));
+      // The detour ranks fallbacks by list price: read costs-service now and hourly (fail-soft, logged).
+      await refreshFallbackPrices();
+      setInterval(() => void refreshFallbackPrices(), PRICE_REFRESH_MS).unref();
       // Copilot skill tree: insert absent skills, refresh rows still holding
       // seed content, NEVER touch a human-edited one. ~16 rows, safe to await.
       const skillSeed = await seedSkills(db);
