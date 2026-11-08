@@ -1033,7 +1033,7 @@
               "from",
               "reason"
             ],
-            "description": "Present only when the requested model's provider has no credit and the call was served by the declared fallback (VENDOR-CREDIT-1030). `model` is then the fallback that ran, and the run declares the fallback's own cost names.",
+            "description": "Present only when the requested model's provider has no credit and the call was served by another vendor's model: the cheapest of the same tier that takes the request (VENDOR-CREDIT-1030, LLM-CREDIT-GENERIC-1108). `model` is then the fallback that ran, and the run declares the fallback's own cost names.",
             "example": {
               "from": "deepseek-flash",
               "reason": "out_of_credit"
@@ -1918,14 +1918,14 @@
                 "fallbackModel": {
                   "type": "string",
                   "nullable": true,
-                  "description": "Model ID calls go to while this vendor is out of credit; null = none declared, its calls fail.",
-                  "example": "glm-5.3-flash"
+                  "description": "Model ID a PLAIN call on this vendor's cheapest model goes to while it is out of credit: the cheapest model of the same tier on a vendor with credit, ranked by costs-service list price (LLM-CREDIT-GENERIC-1108). A call that model cannot take (an image, JSON without a schema) goes to the next one that can. null = no model qualifies (or list prices unread), its calls fail.",
+                  "example": "claude-haiku-5-5"
                 },
                 "fallbackLabel": {
                   "type": "string",
                   "nullable": true,
                   "description": "Display name of fallbackModel.",
-                  "example": "GLM-5.3 Flash"
+                  "example": "Claude Haiku 5.5"
                 },
                 "refusedCalls": {
                   "type": "integer",
@@ -5305,7 +5305,7 @@
           "Internal"
         ],
         "summary": "AI vendors out of credit: verdict per vendor and a daily series (Monitoring)",
-        "description": "Stored from every call refused on our platform key in the vendor's own out-of-credit words, any caller. A vendor stays out of credit until a call on it succeeds. While out, calls on a model with a declared fallback are served by that fallback.",
+        "description": "Stored from every call refused on our platform key in the vendor's own out-of-credit words, any caller. A vendor stays out of credit until a call on it succeeds. While out, a call on ANY of its models is served by the cheapest model of the same capability tier, on a vendor with credit, that takes the request as sent (LLM-CREDIT-GENERIC-1108: one rule, no per-model list).",
         "parameters": [
           {
             "schema": {

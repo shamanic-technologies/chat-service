@@ -23,9 +23,9 @@
 //     daily series, so Monitoring shows the vendor red until a call succeeds.
 //
 //  3. DETOUR (machine-fixable fact = auto-heal). While a provider is out of
-//     credit, a call on a model that has a declared fallback goes to that
-//     fallback: same capability tier, the cheapest model we already serve that
-//     takes the same request shape. The run declares the model that ACTUALLY
+//     credit, a call on ANY of its models goes to the cheapest model we already
+//     serve in the same capability tier, on a vendor with credit, that takes the
+//     same request (`fallbackModelFor`: one rule, no per-model list). The run declares the model that ACTUALLY
 //     ran under ITS cost names (the route resolves cost names from the model it
 //     calls), so the fallback is visible in the ledger at its true price. Once
 //     per `PROBE_INTERVAL_MS` one call goes to the primary first (and falls
@@ -36,7 +36,8 @@
 // brings its own key and empties it is that org's account, not the fleet's.
 // ---------------------------------------------------------------------------
 
-import { resolveModel, type Provider } from "./anthropic.js";
+import { modelCatalogue, resolveModel, type Provider } from "./anthropic.js";
+import { buildLlmCostNames } from "./cost-names.js";
 import { MODEL_DISPLAY_NAMES } from "./model-ids.js";
 
 type ResolvedModel = ReturnType<typeof resolveModel>;
@@ -55,39 +56,107 @@ export const PROVIDER_LABELS: Record<Provider, string> = {
 };
 
 /**
- * The declared fallback per concrete model id: same tier, the cheapest model
- * chat-service already serves that accepts the same request.
- *
- * `deepseek-flash` → Z.ai GLM-5.3 Flash (VENDOR-CREDIT-1030). Read off
- * costs-service `SEED_PROVIDERS_COSTS` on 2026-10-30, per 1M tokens:
- *   DeepSeek V4.1 Flash (peak)  $0.30 in / $0.006 cached / $1.20 out
- *   Claude Haiku 5.5            $0.10 in / $0.50 out, but Anthropic refuses
- *                               `responseFormat: "json"` without a schema, the
- *                               exact shape the reply judge sends: excluded
- *   GLM-5.3 Flash               $0.15 in / $0.03 cached / $0.50 out  ← chosen
- *   Gemini 3.5 Flash-Lite       $0.30 in / $2.50 out
- *   Kimi K2.6                   $0.95 in / $4.00 out
- * GLM-5.3 Flash is `cheap` like DeepSeek V4.1 Flash, takes json_object and the
- * json_schema form, publishes 50 in-flight slots, and served in prod on
- * 2026-10-26. Never Claude Haiku 4.5 (owner rule).
+ * ONE rule for every model (LLM-CREDIT-GENERIC-1108, owner 2026-11-08: Gemini ran dry on 2026-11-07 23:05 UTC and
+ * ~520 calls on Gemini 3.5 Flash-Lite were refused in 17 h, none rerouted, because the only detour was a hand-declared
+ * `deepseek-flash` -> GLM-5.3 Flash entry). While a model's vendor is out of credit, its calls go to the CHEAPEST
+ * model we already serve that:
+ *   - sits in the same capability tier (cheap / strong / frontier, MODEL_MAP's recorded decision),
+ *   - belongs to a vendor that is not out of credit itself,
+ *   - takes the request as sent (the route judges that: image input, web search, JSON without a schema, sampling,
+ *     effort), and
+ *   - has a list price in costs-service (`GET /v1/platform-prices`), the same catalogue the run is billed from.
+ * "Cheapest" = list price of a typical call (10k tokens in, 1k out). No vendor, model or caller is named here; a
+ * new model joins the candidates the day MODEL_MAP serves it and costs-service prices it. Never Claude Haiku 4.5.
  */
-export const FALLBACK_MODELS: Record<string, { from: Provider; provider: Provider; model: string }> = {
-  "deepseek-flash": { from: "deepseek", provider: "zai", model: "glm-flash" },
-};
+export type AcceptsRequest = (candidate: ResolvedModel) => boolean;
+
+const ACCEPTS_ANY: AcceptsRequest = () => true;
+const NEVER_A_FALLBACK = "claude-haiku-4-5";
+const TYPICAL_INPUT_TOKENS = 10_000;
+const TYPICAL_OUTPUT_TOKENS = 1_000;
+/** How often the price list is re-read from costs-service. */
+export const PRICE_REFRESH_MS = 60 * 60_000;
+
+/** Cost name -> list price in USD cents per unit (token). Null until costs-service was read once. */
+let prices: Map<string, number> | null = null;
+
+/** Install the list prices (the costs-service read, or a test fixture). */
+export function setFallbackPrices(list: ReadonlyArray<{ name: string; pricePerUnitInUsdCents: string | number | null }>): void {
+  const next = new Map<string, number>();
+  for (const row of list) {
+    const value = row.pricePerUnitInUsdCents === null ? NaN : Number(row.pricePerUnitInUsdCents);
+    if (Number.isFinite(value)) next.set(row.name, value);
+  }
+  prices = next;
+}
+
+/**
+ * Read the list prices from costs-service. Fail-soft and loud: an unreadable list keeps the last one read (prices
+ * barely move); never read at all = no detour, calls on a dry vendor fail as they did before this rule.
+ */
+export async function refreshFallbackPrices(): Promise<void> {
+  const base = process.env.COSTS_SERVICE_URL;
+  if (!base) {
+    console.error("[chat-service] [vendor-credit] COSTS_SERVICE_URL is not set: no list prices, so no detour for a vendor out of credit");
+    return;
+  }
+  try {
+    const res = await fetch(`${base}/v1/platform-prices`);
+    if (!res.ok) throw new Error(`costs-service /v1/platform-prices ${res.status}`);
+    const body = (await res.json()) as unknown;
+    if (!Array.isArray(body)) throw new Error("costs-service /v1/platform-prices: not an array");
+    setFallbackPrices(body as Array<{ name: string; pricePerUnitInUsdCents: string | number | null }>);
+  } catch (err) {
+    console.error(
+      `[chat-service] [vendor-credit] list prices unreadable${prices ? " (keeping the last read)" : ": no detour until they are read"}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
+/** List price of a typical call on `model` at `at`, or null when costs-service prices it not. */
+function typicalCallCents(model: ResolvedModel, at: Date): number | null {
+  if (!prices) return null;
+  let names: { input: string; output: string };
+  try {
+    names = buildLlmCostNames({ provider: model.provider, costPrefix: model.costPrefix, at });
+  } catch {
+    return null;
+  }
+  const input = prices.get(names.input);
+  const output = prices.get(names.output);
+  if (input === undefined || output === undefined) return null;
+  return input * TYPICAL_INPUT_TOKENS + output * TYPICAL_OUTPUT_TOKENS;
+}
+
+/** Every model served today, once each (the heads every callable name resolves to). */
+function servedModels(): ResolvedModel[] {
+  const byId = new Map<string, ResolvedModel>();
+  for (const entry of modelCatalogue()) {
+    const m = resolveModel(entry.provider, entry.model);
+    if (!byId.has(m.apiModelId)) byId.set(m.apiModelId, m);
+  }
+  return [...byId.values()];
+}
+
+/** Where a call on `primary` goes while its vendor is out of credit, or null when no model qualifies. */
+export function fallbackModelFor(primary: ResolvedModel, accepts: AcceptsRequest = ACCEPTS_ANY, at: Date = new Date()): ResolvedModel | null {
+  let best: { model: ResolvedModel; cents: number } | null = null;
+  for (const model of servedModels()) {
+    if (model.provider === primary.provider) continue;
+    if (model.capabilityTier !== primary.capabilityTier) continue;
+    if (model.apiModelId === NEVER_A_FALLBACK) continue;
+    if (outOfCredit.has(model.provider)) continue;
+    if (!accepts(model)) continue;
+    const cents = typicalCallCents(model, at);
+    if (cents === null) continue;
+    if (!best || cents < best.cents || (cents === best.cents && model.apiModelId < best.model.apiModelId)) best = { model, cents };
+  }
+  return best?.model ?? null;
+}
 
 /** How often, while a provider is out of credit, one call tries it first. */
 export const PROBE_INTERVAL_MS = 60_000;
-
-/** The fallback for a resolved model, or null when none is declared. */
-export function fallbackModelFor(primary: ResolvedModel): ResolvedModel | null {
-  const entry = FALLBACK_MODELS[primary.apiModelId];
-  if (!entry) return null;
-  const fallback = resolveModel(entry.provider, entry.model);
-  if (fallback.apiModelId === "claude-haiku-4-5") {
-    throw new Error("Claude Haiku 4.5 may never be a fallback (owner rule)");
-  }
-  return fallback;
-}
 
 // ---------------------------------------------------------------------------
 // Out-of-credit wording for the two native SDK paths. The direct vendors
@@ -175,7 +244,7 @@ export function recordOutOfCredit(input: { provider: Provider; model: string; st
     console.error(
       `[chat-service] [vendor-credit] ${PROVIDER_LABELS[input.provider]} is out of credit ` +
         `(model="${input.model}"${input.status ? `, status=${input.status}` : ""}). Red on Monitoring; ` +
-        `calls with a declared fallback are rerouted until a call succeeds.`,
+        `calls go to the cheapest same-tier model on a vendor with credit until a call succeeds.`,
     );
   } else {
     state.lastProbeAt = at.getTime();
@@ -209,15 +278,15 @@ export interface ServingChoice {
 
 /**
  * Which model this request calls. The primary, unless its provider is out of
- * credit and a fallback is declared (and itself not out of credit). Once per
+ * credit and another model qualifies (`fallbackModelFor`). Once per
  * `PROBE_INTERVAL_MS` the primary is tried anyway: that call is the probe, and
  * the route falls back inline if it is refused again.
  */
-export function pickServingModel(primary: ResolvedModel, now: number = Date.now()): ServingChoice {
+export function pickServingModel(primary: ResolvedModel, now: number = Date.now(), accepts: AcceptsRequest = ACCEPTS_ANY): ServingChoice {
   const state = outOfCredit.get(primary.provider);
   if (!state) return { resolved: primary, fallbackFrom: null };
-  const fallback = fallbackModelFor(primary);
-  if (!fallback || outOfCredit.has(fallback.provider)) return { resolved: primary, fallbackFrom: null };
+  const fallback = fallbackModelFor(primary, accepts, new Date(now));
+  if (!fallback) return { resolved: primary, fallbackFrom: null };
   if (now - state.lastProbeAt >= PROBE_INTERVAL_MS) {
     state.lastProbeAt = now;
     return { resolved: primary, fallbackFrom: null };
@@ -229,6 +298,7 @@ export function pickServingModel(primary: ResolvedModel, now: number = Date.now(
 export function resetVendorCredit(): void {
   outOfCredit.clear();
   store = null;
+  prices = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -273,10 +343,16 @@ export interface VendorCreditDay {
   reroutedCalls: number;
 }
 
-/** The fallback a provider's calls go to (the first of its models that has one). */
-function providerFallback(provider: Provider): ResolvedModel | null {
-  const entry = Object.values(FALLBACK_MODELS).find((fb) => fb.from === provider);
-  return entry ? resolveModel(entry.provider, entry.model) : null;
+/**
+ * The model a provider's calls go to while it is out of credit, as the staff read prints it: the fallback of its
+ * cheapest served model for a plain text call (a call another model cannot take, e.g. an image, may go elsewhere).
+ */
+function providerFallback(provider: Provider, at: Date): ResolvedModel | null {
+  const own = servedModels()
+    .filter((m) => m.provider === provider)
+    .map((m) => ({ m, cents: typicalCallCents(m, at) ?? Number.POSITIVE_INFINITY }))
+    .sort((a, b) => a.cents - b.cents);
+  return own.length > 0 ? fallbackModelFor(own[0].m, ACCEPTS_ANY, at) : null;
 }
 
 function when(d: Date): string {
@@ -290,7 +366,7 @@ function sentenceFor(label: string, latest: OutageRow | undefined, fallbackLabel
   if (latest && !latest.recoveredAt) {
     const head = `${label} has no credit since ${when(latest.firstSeenAt)}.`;
     return fallbackLabel
-      ? `${head} Calls go to ${fallbackLabel} until a ${label} call succeeds.`
+      ? `${head} Calls go to the cheapest model of the same tier on a vendor with credit (${fallbackLabel} for a plain call) until a ${label} call succeeds.`
       : `${head} ${label} calls fail until the account is topped up.`;
   }
   if (latest?.recoveredAt) return `${label} serves calls. The last empty balance ended ${when(latest.recoveredAt)}.`;
@@ -317,7 +393,7 @@ export function buildVendorCreditRead(input: {
       .filter((o) => o.provider === provider)
       .sort((a, b) => b.firstSeenAt.getTime() - a.firstSeenAt.getTime());
     const latest = mine[0];
-    const fallback = providerFallback(provider);
+    const fallback = providerFallback(provider, now);
     const fallbackLabel = fallback ? MODEL_DISPLAY_NAMES[fallback.apiModelId] ?? fallback.apiModelId : null;
     return {
       provider,

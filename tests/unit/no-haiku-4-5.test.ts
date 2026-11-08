@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { PROVIDER_MODELS, resolveModel, type Provider } from "../../src/lib/anthropic.js";
 import { LLM_DYNASTIES } from "../../src/lib/llm-dynasties.js";
-import { FALLBACK_MODELS, fallbackModelFor } from "../../src/lib/vendor-credit.js";
+import { fallbackModelFor, resetVendorCredit, setFallbackPrices } from "../../src/lib/vendor-credit.js";
+import { LIST_PRICES_2026_11_08 } from "./llm-list-prices.fixture.js";
 
 // Owner rule: NOTHING ever goes to Claude Haiku 4.5 (`claude-haiku-4-5`); Haiku 5.5 is allowed.
 // Every name a caller may send (dynasty slug, head id, legacy alias such as `haiku`) and every
@@ -41,7 +42,15 @@ describe("no name and no fallback ever reaches Claude Haiku 4.5 (owner rule)", (
     expect(() => resolveModel("anthropic", HAIKU_45)).toThrow();
   });
 
-  it("no declared fallback names Haiku 4.5", () => {
-    for (const fb of Object.values(FALLBACK_MODELS)) expect(resolveModel(fb.provider, fb.model).apiModelId).not.toBe(HAIKU_45);
+  it("no fallback is Haiku 4.5, even when its price is the lowest on the list", () => {
+    resetVendorCredit();
+    setFallbackPrices([...LIST_PRICES_2026_11_08, { name: "anthropic-haiku-4.5-tokens-input", pricePerUnitInUsdCents: "0" }, { name: "anthropic-haiku-4.5-tokens-output", pricePerUnitInUsdCents: "0" }]);
+    for (const provider of providers) {
+      for (const name of PROVIDER_MODELS[provider]) {
+        const fb = fallbackModelFor(resolveModel(provider, name));
+        if (fb) expect(fb.apiModelId).not.toBe(HAIKU_45);
+      }
+    }
+    resetVendorCredit();
   });
 });
