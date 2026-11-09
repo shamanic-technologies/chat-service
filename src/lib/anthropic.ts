@@ -3605,8 +3605,74 @@ export interface AnthropicOptions {
   systemPrompt: string;
 }
 
+/** Billable web searches and the cited/returned source URLs of one Anthropic message. */
+function readAnthropicSearch(response: Anthropic.Message): { searchCount: number; sources: Array<{ url: string; title?: string }> } {
+  // The Anthropic SDK types lag the server-tool fields, so read them structurally.
+  const usage = response.usage as unknown as {
+    server_tool_use?: { web_search_requests?: number };
+  };
+  const searchCount = usage.server_tool_use?.web_search_requests ?? 0;
+  const sources: Array<{ url: string; title?: string }> = [];
+  const seenUrls = new Set<string>();
+  const addSource = (url: unknown, title: unknown) => {
+    if (typeof url !== "string" || url.length === 0 || seenUrls.has(url)) return;
+    seenUrls.add(url);
+    sources.push({ url, title: typeof title === "string" ? title : undefined });
+  };
+  for (const block of response.content as unknown as Array<Record<string, unknown>>) {
+    if (block.type === "text" && Array.isArray(block.citations)) {
+      for (const c of block.citations as Array<Record<string, unknown>>) {
+        if (c?.type === "web_search_result_location") addSource(c.url, c.title);
+      }
+    } else if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
+      for (const r of block.content as Array<Record<string, unknown>>) {
+        if (r?.type === "web_search_result") addSource(r.url, r.title);
+      }
+    }
+  }
+  return { searchCount, sources };
+}
+
+/** One tool round of an Anthropic /complete tool loop (BRAND-MCP-1109): the whole message, its billed tokens, its searches. */
+export interface AnthropicToolRoundResult {
+  message: Anthropic.Message;
+  billed: AnthropicBilledTokens;
+  searchCount: number;
+  sources: Array<{ url: string; title?: string }>;
+}
+
 export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions) {
   const client = new Anthropic({ apiKey });
+
+  // Streaming transport assembled into the final Message (the SDK refuses a
+  // non-streaming request whose max_tokens implies >10 min), with the transient
+  // retry (overloaded, 429, 5xx). The whole call is non-streaming from the
+  // caller's view, so it is always safe to retry: no partial token is emitted.
+  // The SDK's own maxRetries does NOT cover the overloaded_error event Anthropic
+  // pushes mid-stream after a 200 OK, which is exactly what this loop catches.
+  async function finalMessageWithRetry(params: unknown, effectiveModel: string, timeoutMs: number, label: string): Promise<Anthropic.Message> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const stream = client.messages.stream(
+          params as unknown as Anthropic.MessageStreamParams,
+          { timeout: timeoutMs },
+        );
+        return await stream.finalMessage();
+      } catch (err) {
+        if (isRetryableAnthropicError(err) && attempt < ANTHROPIC_STREAM_MAX_RETRIES) {
+          const delay = anthropicRetryDelayMs(err, attempt);
+          console.warn(
+            `[anthropic] ${label} retry ${attempt + 1}/${ANTHROPIC_STREAM_MAX_RETRIES} ` +
+              `after ${Math.round(delay)}ms | model=${effectiveModel} | ` +
+              `error=${err instanceof Error ? err.message : String(err)}`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+        throw err; // Non-retryable or retries exhausted — propagate (route maps to 502)
+      }
+    }
+  }
 
   return {
     model: MODEL,
@@ -3868,29 +3934,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       // NOT cover the overloaded_error event Anthropic pushes mid-stream after a 200 OK
       // (the stack surfaces in MessageStream._createMessage → Stream.iterator), which is
       // exactly the failure mode this loop catches.
-      let response: Anthropic.Message;
-      for (let attempt = 0; ; attempt++) {
-        try {
-          const stream = client.messages.stream(
-            params as unknown as Anthropic.MessageStreamParams,
-            { timeout: timeoutMs },
-          );
-          response = await stream.finalMessage();
-          break;
-        } catch (err) {
-          if (isRetryableAnthropicError(err) && attempt < ANTHROPIC_STREAM_MAX_RETRIES) {
-            const delay = anthropicRetryDelayMs(err, attempt);
-            console.warn(
-              `[anthropic] complete() retry ${attempt + 1}/${ANTHROPIC_STREAM_MAX_RETRIES} ` +
-                `after ${Math.round(delay)}ms | model=${effectiveModel} | ` +
-                `error=${err instanceof Error ? err.message : String(err)}`,
-            );
-            await new Promise((resolve) => setTimeout(resolve, delay));
-            continue;
-          }
-          throw err; // Non-retryable or retries exhausted — propagate (route maps to 502)
-        }
-      }
+      const response = await finalMessageWithRetry(params, effectiveModel, timeoutMs, "complete()");
 
       if (response.stop_reason === "max_tokens") {
         console.warn(
@@ -3908,32 +3952,10 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       );
       const content = textBlocks.map((b) => b.text).join("");
 
-      // Native web-search accounting. The Anthropic SDK types lag the
-      // server-tool fields, so read them structurally. searchCount is the
-      // billable unit (one per `web_search_requests`); sources are the cited
-      // and returned result URLs (deduped) surfaced for the caller's answer.
-      const usage = response.usage as unknown as {
-        server_tool_use?: { web_search_requests?: number };
-      };
-      const searchCount = usage.server_tool_use?.web_search_requests ?? 0;
-      const sources: Array<{ url: string; title?: string }> = [];
-      const seenUrls = new Set<string>();
-      const addSource = (url: unknown, title: unknown) => {
-        if (typeof url !== "string" || url.length === 0 || seenUrls.has(url)) return;
-        seenUrls.add(url);
-        sources.push({ url, title: typeof title === "string" ? title : undefined });
-      };
-      for (const block of response.content as unknown as Array<Record<string, unknown>>) {
-        if (block.type === "text" && Array.isArray(block.citations)) {
-          for (const c of block.citations as Array<Record<string, unknown>>) {
-            if (c?.type === "web_search_result_location") addSource(c.url, c.title);
-          }
-        } else if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
-          for (const r of block.content as Array<Record<string, unknown>>) {
-            if (r?.type === "web_search_result") addSource(r.url, r.title);
-          }
-        }
-      }
+      // Native web-search accounting: searchCount is the billable unit (one per
+      // `web_search_requests`); sources are the cited and returned result URLs
+      // (deduped) surfaced for the caller's answer.
+      const { searchCount, sources } = readAnthropicSearch(response);
 
       const billed = readAnthropicBilledTokens(response.usage);
       return {
@@ -3945,6 +3967,54 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
         searchCount,
         sources,
       };
+    },
+
+    /**
+     * One round of a /complete TOOL LOOP (BRAND-MCP-1109, `brandTools`): the
+     * conversation so far + the tools, one request, the whole message back
+     * (tool_use and thinking blocks included, so the loop can send them back
+     * verbatim). Same request options and the same no-sampling / effort guards
+     * as `complete()`; the caller's output arrives as a tool call (no
+     * `output_config.format`). `webSearch` adds Anthropic's server-side search
+     * beside the client tools (max 1 per request, as on `complete()`).
+     */
+    async toolRound(
+      messages: Anthropic.MessageParam[],
+      tools: Anthropic.Tool[],
+      options: {
+        model: string;
+        temperature?: number;
+        maxTokens?: number;
+        webSearch?: boolean;
+        disableThinking?: boolean;
+        effort?: AnthropicEffort;
+        cache?: boolean;
+      },
+    ): Promise<AnthropicToolRoundResult> {
+      const effectiveModel = options.model;
+      assertAnthropicSamplingSupported(effectiveModel, options.temperature);
+      assertAnthropicEffortSupported(effectiveModel, options.effort, options.disableThinking);
+      const effort = options.effort
+        ?? (options.disableThinking === true ? anthropicEffortFloor(effectiveModel) : null);
+      const params = {
+        model: effectiveModel,
+        max_tokens: Math.min(options.maxTokens ?? MAX_TOKENS, MAX_TOKENS),
+        system: options.cache === true
+          ? [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }]
+          : systemPrompt,
+        messages,
+        tools: [
+          ...tools,
+          ...(options.webSearch ? [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }] : []),
+        ],
+        ...(options.temperature != null ? { temperature: options.temperature } : {}),
+        ...(options.effort != null ? { thinking: { type: "adaptive" } } : {}),
+        ...(effort != null ? { output_config: { effort } } : {}),
+      };
+      const timeoutMs = ANTHROPIC_TIMEOUT_MS[effectiveModel] ?? DEFAULT_ANTHROPIC_TIMEOUT_MS;
+      const message = await finalMessageWithRetry(params, effectiveModel, timeoutMs, "toolRound()");
+      const { searchCount, sources } = readAnthropicSearch(message);
+      return { message, billed: readAnthropicBilledTokens(message.usage), searchCount, sources };
     },
   };
 }

@@ -160,6 +160,18 @@ export interface StreamGeminiChatOptions {
    * without it is re-asked once to call it.
    */
   endToolName?: string;
+  /**
+   * Images joined to the user message (a /complete `imageUrl` with
+   * `brandTools`), as Gemini inline data. Absent = a text-only message, as on
+   * every /chat turn.
+   */
+  userImages?: ReadonlyArray<{ mimeType: string; data: string }>;
+  /**
+   * Called once per provider request with THAT request's billed lines, as soon
+   * as its usage is read: a loop that later fails still has every round it
+   * spent declared by its caller (BRAND-MCP-1109, no undeclared spend).
+   */
+  onRoundBilled?: (costLines: GeminiCostLine[]) => void;
 }
 
 export interface StreamGeminiChatResult {
@@ -407,6 +419,8 @@ export async function streamGeminiChat(
     thinkingLevel,
     holdTextBesideToolCalls = false,
     endToolName,
+    userImages = [],
+    onRoundBilled,
   } = options;
 
   let totalTokensInput = 0;
@@ -433,7 +447,13 @@ export async function streamGeminiChat(
   // Build turn messages — history + current user message
   const turnMessages: GeminiMessage[] = [
     ...geminiHistory,
-    { role: "user", parts: [{ text: userMessage }] },
+    {
+      role: "user",
+      parts: [
+        { text: userMessage },
+        ...userImages.map((img) => ({ inline_data: { mime_type: img.mimeType, data: img.data } }) as unknown as GeminiPart),
+      ],
+    },
   ];
 
   // Convert tools to Gemini format
@@ -586,6 +606,7 @@ export async function streamGeminiChat(
     lastRequestTokensInput = turnBilled.tokensInput;
     totalTokensOutput += turnBilled.tokensOutput;
     totalCostLines = mergeGeminiCostLines(totalCostLines, turnBilled.costLines);
+    onRoundBilled?.(turnBilled.costLines);
 
     if (heldText) {
       if (functionCalls.length === 0) {

@@ -420,7 +420,7 @@ import {
   serverView as brandMcpServerView,
   type BrandToolset,
 } from "./lib/brand-mcp.js";
-import { NoOutputError, brandToolsRefusalFor, completeWithBrandTools } from "./lib/complete-brand-tools.js";
+import { brandToolsRefusalFor, completeWithBrandTools, newBrandToolsSpend, type BrandToolsSpend } from "./lib/complete-brand-tools.js";
 import type { GeminiCostLine } from "./lib/gemini-usage.js";
 import {
   anthropicCachePriced,
@@ -1036,9 +1036,12 @@ async function handleComplete(req: express.Request, res: express.Response, retry
 
     if (toolset) {
       // A bounded tool loop; every round after the first is held like the
-      // first (provision + authorize), all reconciled to actual below.
+      // first (provision + authorize), all reconciled to actual below. Every
+      // round's billed lines land in `spend` as soon as they are read, so a
+      // loop that fails mid-way still declares what it spent (catch below).
+      const spend = newBrandToolsSpend();
       const loop = await completeWithBrandTools({
-        provider: provider as "google" | VendorId,
+        provider: provider as "google" | "anthropic" | VendorId,
         apiKey: resolvedKey.key,
         model: effectiveModel,
         costPrefix: resolved.costPrefix,
@@ -1046,8 +1049,16 @@ async function handleComplete(req: express.Request, res: express.Response, retry
         message,
         responseSchema: responseSchema ?? (jsonMode ? { type: "object", properties: {} } : null),
         toolset,
+        spend,
         disableThinking: disableThinkingRaw === true,
         ...(thinkingLevel ? { thinkingLevel } : {}),
+        ...(effort ? { effort } : {}),
+        ...(temperature != null ? { temperature } : {}),
+        maxTokens: providerMaxOutputTokens,
+        cache: provider === "anthropic" && anthropicCachePriced(resolved.costPrefix),
+        webSearch,
+        ...(imageUrl ? { imageUrl } : {}),
+        ...(imageContext ? { imageContext } : {}),
         beforeProviderCall: async ({ depth, requestBody }) => {
           if (depth === 0) return;
           provisionedCostIds.push(
@@ -1060,16 +1071,19 @@ async function handleComplete(req: express.Request, res: express.Response, retry
               identity: { orgId, userId, runId: runId! },
               trackingHeaders,
               description: `complete (brand tools, round ${depth + 1}) — ${effectiveModel}`,
+              searchCostName,
+              searchQuantity: webSearch ? WORST_CASE_SEARCHES : undefined,
             })),
           );
         },
       }).catch((err) => {
-        // The rounds that ran were spent even when no output came back.
-        if (err instanceof NoOutputError) geminiCostLines = err.costLines;
+        // The rounds that ran were spent even when the loop failed: declared in `finally`.
+        if (spend.lines.length > 0) geminiCostLines = spend.lines;
+        totalSearchCount = spend.searchCount;
         throw err;
       });
       brandToolCalls = loop.toolCalls;
-      result = { content: loop.content, tokensInput: loop.tokensInput, tokensOutput: loop.tokensOutput, model: loop.model, searchCount: 0, sources: [], costLines: loop.costLines };
+      result = { content: loop.content, tokensInput: loop.tokensInput, tokensOutput: loop.tokensOutput, model: loop.model, searchCount: loop.searchCount, sources: loop.sources, costLines: loop.costLines };
     } else if (isVendor) {
       result = await completeWithVendor({
         vendor: provider as VendorId,
@@ -2774,8 +2788,8 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
 
   let platformFailed = false;
   let brandToolCalls: number | null = null;
-  // Lines of rounds a brand-tools loop spent before it failed (declared in the catch).
-  let spentBeforeFailure: GeminiCostLine[] | null = null;
+  // What a brand-tools loop spent before it failed (declared in the catch).
+  let spentBeforeFailure: BrandToolsSpend | null = null;
   try {
     let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }>; cachedInputTokens?: number; cacheWriteTokens?: number; costLines?: GeminiCostLine[] };
 
@@ -2786,9 +2800,11 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
       : null;
 
     if (toolset) {
-      // Platform spend: no hold; every round's actual lines are posted below.
+      // Platform spend: no hold; every round's actual lines are posted below,
+      // and on a failure the rounds already spent are posted in the catch.
+      const spend = newBrandToolsSpend();
       const loop = await completeWithBrandTools({
-        provider: provider as "google" | VendorId,
+        provider: provider as "google" | "anthropic" | VendorId,
         apiKey,
         model: effectiveModel,
         costPrefix: resolved.costPrefix,
@@ -2796,15 +2812,20 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
         message,
         responseSchema: responseSchema ?? (jsonMode ? { type: "object", properties: {} } : null),
         toolset,
+        spend,
         disableThinking: disableThinkingRaw === true,
         ...(thinkingLevel ? { thinkingLevel } : {}),
+        ...(effort ? { effort } : {}),
+        ...(temperature != null ? { temperature } : {}),
+        cache: provider === "anthropic" && anthropicCachePriced(resolved.costPrefix),
+        webSearch,
         beforeProviderCall: async () => undefined,
       }).catch((err) => {
-        if (err instanceof NoOutputError) spentBeforeFailure = err.costLines;
+        spentBeforeFailure = spend;
         throw err;
       });
       brandToolCalls = loop.toolCalls;
-      result = { content: loop.content, tokensInput: loop.tokensInput, tokensOutput: loop.tokensOutput, model: loop.model, searchCount: 0, sources: [], costLines: loop.costLines };
+      result = { content: loop.content, tokensInput: loop.tokensInput, tokensOutput: loop.tokensOutput, model: loop.model, searchCount: loop.searchCount, sources: loop.sources, costLines: loop.costLines };
     } else if (isVendor) {
       result = await completeWithVendor({
         vendor: provider as VendorId,
@@ -2912,10 +2933,16 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
   } catch (err) {
     platformFailed = true;
     console.error(`[internal/platform-complete] LLM call failed:`, err);
-    // A brand-tools loop that ran rounds and returned nothing still spent them.
-    const spent = spentBeforeFailure as GeminiCostLine[] | null;
-    if (spent && spent.length > 0) {
-      await addPlatformRunCosts(runId, "chat-service", spent.map((l) => ({ ...l, costSource: "platform" as const }))).catch((costErr) =>
+    // A brand-tools loop that failed after spending rounds still spent them.
+    const spent = spentBeforeFailure as BrandToolsSpend | null;
+    const spentItems: CostItem[] = spent
+      ? [
+          ...spent.lines.map((l) => ({ ...l, costSource: "platform" as const })),
+          ...(searchCostName && spent.searchCount > 0 ? [{ costName: searchCostName, quantity: spent.searchCount, costSource: "platform" as const }] : []),
+        ]
+      : [];
+    if (spentItems.length > 0) {
+      await addPlatformRunCosts(runId, "chat-service", spentItems).catch((costErr) =>
         console.error(`[internal/platform-complete] could not declare the spent brand-tools rounds runId="${runId}":`, costErr),
       );
     }
