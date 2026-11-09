@@ -4,10 +4,12 @@ const vendorLoop = vi.hoisted(() => ({ calls: [] as Array<Array<{ name: string; 
 
 // The vendor loop as a script: each round = the tool calls the "model" makes.
 vi.mock("../../src/lib/vendor-chat.js", () => ({
-  streamVendorChat: vi.fn(async (opts: { executeTool: (c: { name: string; args: Record<string, unknown> }) => Promise<unknown>; beforeProviderCall: (d: { depth: number; requestBody: Record<string, unknown>; at: Date }) => Promise<void>; tools: Array<{ name: string }> }) => {
+  streamVendorChat: vi.fn(async (opts: { executeTool: (c: { name: string; args: Record<string, unknown> }) => Promise<unknown>; beforeProviderCall: (d: { depth: number; requestBody: Record<string, unknown>; at: Date }) => Promise<void>; onRoundBilled?: (l: Array<{ costName: string; quantity: number }>) => void; tools: Array<{ name: string }> }) => {
     let depth = 0;
     for (const round of vendorLoop.calls) {
       await opts.beforeProviderCall({ depth: depth++, requestBody: { tools: opts.tools.map((t) => t.name) }, at: new Date() });
+      if (round.length === 1 && round[0].name === "__throw") throw new Error("vendor 503");
+      opts.onRoundBilled?.([{ costName: "deepseek-x-input", quantity: 50 }]);
       for (const call of round) {
         const r = await opts.executeTool(call);
         if (r === "input_request") return { tokensInput: 100, lastRequestTokensInput: 50, tokensOutput: 20, costLines: [{ costName: "deepseek-x-input", quantity: 100 }], fullResponse: "", toolCalls: [], emittedInputRequest: true };
@@ -17,7 +19,7 @@ vi.mock("../../src/lib/vendor-chat.js", () => ({
   }),
 }));
 
-import { brandToolsRefusalFor, buildOutputTool, completeWithBrandTools, NoOutputError, OUTPUT_TOOL_NAME } from "../../src/lib/complete-brand-tools.js";
+import { brandToolsRefusalFor, buildOutputTool, completeWithBrandTools, newBrandToolsSpend, NoOutputError, OUTPUT_TOOL_NAME } from "../../src/lib/complete-brand-tools.js";
 import { BRAND_MCP_TOOL_EVENT, BRAND_MCP_UNAVAILABLE_EVENT, loadBrandToolset, type BrandToolset, type SecretStore } from "../../src/lib/brand-mcp.js";
 import { McpError } from "../../src/lib/mcp-client.js";
 import type { BrandMcpServer } from "../../src/db/schema.js";
@@ -139,18 +141,27 @@ describe("/complete with brandTools", () => {
   it("runs the brand tool, then returns the caller's structured output; every round after the first passes the cost hook", async () => {
     vendorLoop.calls.push([{ name: "distribute__get_lead", args: {} }], [{ name: OUTPUT_TOOL_NAME, args: { decision: "write", body: "Hi" } }]);
     const beforeProviderCall = vi.fn(async () => undefined);
-    const r = await completeWithBrandTools({ ...base, responseSchema: { type: "object", properties: { decision: { type: "string" }, body: { type: "string" } }, required: ["decision"] }, beforeProviderCall });
+    const r = await completeWithBrandTools({ ...base, spend: newBrandToolsSpend(), responseSchema: { type: "object", properties: { decision: { type: "string" }, body: { type: "string" } }, required: ["decision"] }, beforeProviderCall });
     expect(JSON.parse(r.content)).toEqual({ decision: "write", body: "Hi" });
     expect(r.toolCalls).toBe(1);
     expect(beforeProviderCall.mock.calls.map((c) => (c[0] as { depth: number }).depth)).toEqual([0, 1]);
     expect(r.costLines).toEqual([{ costName: "deepseek-x-input", quantity: 100 }]);
   });
 
-  it("the model never returned its output: NoOutputError carrying the spent lines", async () => {
+  it("the model never returned its output: NoOutputError, the spent round is in the caller's ledger", async () => {
     vendorLoop.calls.push([{ name: "distribute__get_lead", args: {} }]);
-    const err = await completeWithBrandTools({ ...base, beforeProviderCall: async () => undefined }).catch((e) => e);
+    const spend = newBrandToolsSpend();
+    const err = await completeWithBrandTools({ ...base, spend, beforeProviderCall: async () => undefined }).catch((e) => e);
     expect(err).toBeInstanceOf(NoOutputError);
-    expect(err.costLines).toEqual([{ costName: "deepseek-x-input", quantity: 100 }]);
+    expect(spend.lines).toEqual([{ costName: "deepseek-x-input", quantity: 50 }]);
+  });
+
+  it("a provider failure mid-loop: the rounds already spent stay in the ledger (never undeclared)", async () => {
+    vendorLoop.calls.push([{ name: "distribute__get_lead", args: {} }], [{ name: "__throw", args: {} }]);
+    const spend = newBrandToolsSpend();
+    const err = await completeWithBrandTools({ ...base, spend, beforeProviderCall: async () => undefined }).catch((e) => e);
+    expect(String(err)).toContain("vendor 503");
+    expect(spend.lines).toEqual([{ costName: "deepseek-x-input", quantity: 50 }]);
   });
 
   it("text mode returns the text; a non-object schema is wrapped and unwrapped", () => {
@@ -162,11 +173,15 @@ describe("/complete with brandTools", () => {
     expect(arr.unwrap({ output: ["a"] })).toEqual(["a"]);
   });
 
-  it("refused before any spend where no tool loop serves it", () => {
-    expect(brandToolsRefusalFor(undefined, "anthropic", { webSearch: true, imageUrl: true })).toBeNull();
-    expect(brandToolsRefusalFor({ brandId: "b" }, "anthropic", { webSearch: false, imageUrl: false })).toMatch(/not on "anthropic"/);
-    expect(brandToolsRefusalFor({ brandId: "b" }, "google", { webSearch: true, imageUrl: false })).toMatch(/webSearch/);
-    expect(brandToolsRefusalFor({ brandId: "b" }, "deepseek", { webSearch: false, imageUrl: true })).toMatch(/imageUrl/);
-    expect(brandToolsRefusalFor({ brandId: "b" }, "deepseek", { webSearch: false, imageUrl: false })).toBeNull();
+  it("served on every provider; the one named refusal is google + webSearch (Gemini cannot ground and call tools in one request)", () => {
+    expect(brandToolsRefusalFor(undefined, "google", { webSearch: true, imageUrl: true })).toBeNull();
+    for (const p of ["anthropic", "google", "deepseek", "zai", "moonshot", "openai"]) {
+      expect(brandToolsRefusalFor({ brandId: "b" }, p, { webSearch: false, imageUrl: false })).toBeNull();
+    }
+    expect(brandToolsRefusalFor({ brandId: "b" }, "anthropic", { webSearch: true, imageUrl: true })).toBeNull();
+    expect(brandToolsRefusalFor({ brandId: "b" }, "google", { webSearch: false, imageUrl: true })).toBeNull();
+    const g = brandToolsRefusalFor({ brandId: "b" }, "google", { webSearch: true, imageUrl: false });
+    expect(g).toMatch(/webSearch on provider "google"/);
+    expect(g).toMatch(/anthropic/);
   });
 });
