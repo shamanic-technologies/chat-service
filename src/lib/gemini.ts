@@ -380,7 +380,7 @@ interface GeminiImageGenerationResult {
 /**
  * Fetch an image from a URL and return base64-encoded data + MIME type.
  */
-async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType: string }> {
+export async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType: string }> {
   const IMAGE_FETCH_TIMEOUT_MS = 30_000;
   let res: Response;
   try {

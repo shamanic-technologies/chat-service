@@ -102,6 +102,12 @@ export interface StreamVendorChatOptions {
    * every /chat turn runs today.
    */
   reasoningDisabled?: boolean;
+  /**
+   * Called once per provider request with THAT request's billed lines, as soon
+   * as its usage is read: a loop that later fails still has every round it
+   * spent declared by its caller (BRAND-MCP-1109, no undeclared spend).
+   */
+  onRoundBilled?: (costLines: VendorCostLine[]) => void;
 }
 
 export interface StreamVendorChatResult {
@@ -253,6 +259,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
     holdTextBesideToolCalls = false,
     endToolName,
     reasoningDisabled = false,
+    onRoundBilled,
   } = options;
 
   let tokensInput = 0;
@@ -322,10 +329,9 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
     tokensInput += promptTokens;
     lastRequestTokensInput = promptTokens;
     tokensOutput += outTokens;
-    costLines = mergeLines(
-      costLines,
-      vendorCostLines({ provider: vendor, costPrefix, at, tokensInput: promptTokens, cachedInputTokens: cached, cacheWriteTokens: 0, tokensOutput: outTokens }),
-    );
+    const roundLines = vendorCostLines({ provider: vendor, costPrefix, at, tokensInput: promptTokens, cachedInputTokens: cached, cacheWriteTokens: 0, tokensOutput: outTokens });
+    costLines = mergeLines(costLines, roundLines);
+    onRoundBilled?.(roundLines);
     console.log(`[vendor-chat] [${vendor}] model="${json.model ?? model}" depth=${depth} in=${promptTokens} cached=${cached} out=${outTokens}`);
 
     const choice = json.choices?.[0];
