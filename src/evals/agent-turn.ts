@@ -16,7 +16,8 @@ import { withAccountSetup } from "../lib/account-setup.js";
 import { buildSystemPrompt, resolveModel, resolveToolSet, type ModelAlias, type Provider } from "../lib/anthropic.js";
 import { buildChannelBlock } from "../lib/channel-copilot.js";
 import { REACH_ELSEWHERE_TOOL, REACH_ELSEWHERE_TOOL_NAME } from "../lib/lead-contact.js";
-import { LEAD_ANSWER_TOOL_NAME, buildLeadAnswerTool, buildLeadTurnBlock, leadTurnToolNames, type LeadTurnFrame } from "../lib/lead-turn.js";
+import { LEAD_ANSWER_TOOL_NAME, brandToolsBlock, buildLeadAnswerTool, buildLeadTurnBlock, leadTurnToolNames, type LeadTurnFrame } from "../lib/lead-turn.js";
+import { namespacedToolName, serverPrefixes, toToolDefinition } from "../lib/brand-mcp.js";
 import { CLIENT_UI_TOOL_NAMES } from "../lib/ui-tools.js";
 import type { LeadTurnRequest } from "../schemas.js";
 import type { ToolDefinition, ToolExecutor } from "../lib/gemini-chat.js";
@@ -92,8 +93,15 @@ export interface AssembledTurn {
   endToolName?: string;
 }
 
-/** A lead turn as /chat builds it: the writer's block, the person's tools (none for a guest), the answer and reach tools. */
-function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string, images: TurnImage[]): AssembledTurn {
+/** The brand's MCP tools of a scenario, named and described exactly as a production turn lists them (BRAND-MCP-1109). */
+export function scenarioBrandTools(scenario: Scenario): ToolDefinition[] {
+  const servers = scenario.brandTools ?? [];
+  const prefixes = serverPrefixes(servers.map((s) => s.server));
+  return servers.flatMap((s, i) => s.tools.map((t) => toToolDefinition(s.server, namespacedToolName(prefixes[i], t.name), t)));
+}
+
+/** A lead turn as /chat builds it: the writer's block, the person's tools (none for a guest), the answer and reach tools, the brand's own tools. */
+function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string, images: TurnImage[], withBrandTools: boolean): AssembledTurn {
   const lead = scenario.lead!;
   const payload = lead.payload as unknown as LeadTurnRequest;
   // The WhatsApp conversation as crm serves it to the turn (SOPHIE-WA-HUMAN-1106).
@@ -102,13 +110,15 @@ function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay
   const sessionTools = lead.guest ? [] : withOurWebsite(def.allowedTools, def.allowedTools.includes("read_skill"));
   const toolNames = leadTurnToolNames(sessionTools, CLIENT_UI_TOOL_NAMES);
   const skillBlock = !lead.guest && toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
+  const brandTools = withBrandTools ? scenarioBrandTools(scenario) : [];
   return {
     systemPrompt: def.systemPrompt + skillBlock + aboutYouBlock(modelDisplay),
-    turnContext: buildLeadTurnBlock(frame),
+    turnContext: buildLeadTurnBlock(frame) + (brandTools.length > 0 ? brandToolsBlock() : ""),
     tools: [
       ...(resolveToolSet(toolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME)) as unknown as ToolDefinition[]),
       REACH_ELSEWHERE_TOOL as unknown as ToolDefinition,
       buildLeadAnswerTool(payload.responseSchema, payload.messageField, { replyTo: (whatsapp?.shown.length ?? 0) > 0 }) as unknown as ToolDefinition,
+      ...brandTools,
     ],
     holdTextBesideToolCalls: true,
     endToolName: LEAD_ANSWER_TOOL_NAME,
@@ -116,8 +126,8 @@ function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay
 }
 
 /** The prompt and tools /chat would build for this scenario under this definition. */
-export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string, brief = "", images: TurnImage[] = []): AssembledTurn {
-  if (scenario.surface === "lead") return assembleLeadTurn(def, scenario, modelDisplay, images);
+export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string, brief = "", images: TurnImage[] = [], withBrandTools = true): AssembledTurn {
+  if (scenario.surface === "lead") return assembleLeadTurn(def, scenario, modelDisplay, images, withBrandTools);
   const toolNames = withOurWebsite(withAccountSetup(def.allowedTools), def.allowedTools.includes("read_skill"));
   const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
   const systemPrompt = def.systemPrompt + skillBlock + aboutYouBlock(modelDisplay);
@@ -174,6 +184,8 @@ export async function replayTurn(args: {
   uiText: () => string;
   /** Direct vendors: send the reasoning-off field (a thinking-level comparison). */
   reasoningDisabled?: boolean;
+  /** False = the turn as it ran before the brand's tools existed (`--no-brand-tools`, the baseline). */
+  brandTools?: boolean;
 }): Promise<ReplayedTurn> {
   const { def, scenario, provider, model, apiKey, executeTool, uiText } = args;
   if (!isVendorProvider(provider) && provider !== "google") {
@@ -189,7 +201,7 @@ export async function replayTurn(args: {
   const modelDisplay = modelDisplayName(resolved.apiModelId);
   const images = await scenarioImages(scenario);
   if (images.length > 0 && provider === "google") throw new Error("[evals] photos are wired on the direct-vendor loop only (Sophie's)");
-  const turn = assembleTurn(def, scenario, modelDisplay, brief, images);
+  const turn = assembleTurn(def, scenario, modelDisplay, brief, images, args.brandTools !== false);
   let llmCalls = 0;
   const started = Date.now();
   const history = scenario.history.map((m) => ({ role: m.role, content: m.content, toolCalls: m.toolCalls as never }));
