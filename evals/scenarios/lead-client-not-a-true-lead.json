@@ -172,7 +172,7 @@
      {
       "id": "6a1c2d0e-0b7f-4c55-9d2e-1f0c8a3b7e41",
       "name": "Marco Diaz",
-      "email": "marco@vendorco.example",
+      "email": "person2@example.com",
       "company": "VendorCo",
       "brand": "Brightline Ops",
       "status": "positive_reply",
@@ -249,7 +249,7 @@
  "prodReplyActions": [
   "answer_person {\"decision\":\"write\"}"
  ],
- "goodReply": "<p>Hi Noah,</p><p>Done: Marco Diaz is removed from your leads and we stopped every follow-up to him.</p><p>Thanks for flagging it, it keeps your numbers clean.</p>",
+ "goodReply": "<p>Hi Noah,</p><p>Done: Marco Diaz is removed from your leads and we stopped every follow-up to him.</p><p>Want me to keep vendors like VendorCo out of your targeting from now on?</p>",
  "goodReplyActions": [
   "distribute__distribute_list_leads {\"query\":\"Marco Diaz\"}",
   "distribute__distribute_call_api {\"method\":\"POST\",\"path\":\"/v1/leads/6a1c2d0e-0b7f-4c55-9d2e-1f0c8a3b7e41/disqualify\",\"body\":{\"reason\":\"A vendor, not a buyer (client's words)\"}} → {\"ok\":true,\"status\":200,\"data\":{\"status\":\"disqualified\",\"followUpsStopped\":true}}",
