@@ -2,8 +2,8 @@
   "kind": "calibration",
   "at": "2026-11-06T18:52:25.914Z",
   "judge": "jev/jev-latest",
-  "cases": 50,
-  "agree": 50,
+  "cases": 54,
+  "agree": 54,
   "passed": true,
   "rows": [
     {
@@ -404,6 +404,40 @@
     },
     {
       "id": "wa-human-quoted-lead",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-check-what-they-have",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "lead-check-what-they-have",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-client-not-a-true-lead",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "lead-client-not-a-true-lead",
       "which": "good",
       "expected": "pass",
       "got": "pass",

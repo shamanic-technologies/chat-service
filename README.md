@@ -1684,6 +1684,27 @@ A campaign step (workflow) calls it when a fact needs the team's decision. Today
 3. **Delivery:** on WhatsApp (crm-service, key `copilot-proactive:<id>`, from the linked account that last answered them) when that thread is tied to a number, else the answer waits in the web thread. A refusal that can clear by waiting (`422 whatsapp_not_connected`, `429`, `5xx`, a network cut) is retried with the SAME text and key over ~7.5 min (15 s, 30 s, 1 min, 2 min, 4 min), never a new turn; after that the row is `failed` with `error` naming the attempts and the last refusal, `replyText` holds the message, and it waits in the web Copilot thread. Out of credits: stored, not sent to a phone.
 4. **Once per fact:** unique on (`orgId`, `idempotencyKey`) in `copilot_proactive_turns`: a retry answers `200 duplicate: true` with the stored row. A turn cut off by a restart is marked `failed`, never re-run.
 
+## A brand's own MCP servers as tools of our AI (BRAND-MCP-1109)
+
+Each brand plugs, in its Integrations, the MCP server(s) it gives to the AI that writes to its leads and clients. Generic: no per-brand, per-channel or per-tool code, and every tool a server lists is offered, read AND write (owner 2026-11-09, « go wild pour now »). Code: `src/lib/mcp-client.ts` (a minimal Streamable HTTP client, spec 2025-06-18: `initialize`, `tools/list`, `tools/call`, JSON or SSE answers, `Mcp-Session-Id`, no SDK), `src/lib/brand-mcp.ts` (store, check, the tools of one turn), `src/lib/complete-brand-tools.ts` (the `/complete` loop).
+
+**Routes** (org tier: `x-api-key`, `x-org-id`, `x-user-id`, `x-run-id`; the dashboard and our MCP reach them through api-service):
+
+| Route | Body | Answer |
+|---|---|---|
+| `GET /orgs/brands/:brandId/mcp-servers` | | `200 {servers: BrandMcpServer[]}` |
+| `POST /orgs/brands/:brandId/mcp-servers` | `{name, url, authorization?}` | `201 {server}`; `400` bad URL (https, public domain; no IP, no bare host) or 10 servers already; `409` URL already plugged |
+| `POST /orgs/brands/:brandId/mcp-servers/:serverId/check` | | `200 {server}`; `404` |
+| `DELETE /orgs/brands/:brandId/mcp-servers/:serverId` | | `200 {deleted: true, id}`; `404` |
+
+`BrandMcpServer` = `{id, brandId, name, url, hasAuthorization, status: "connected" | "error", error (plain words, null when connected), toolCount, toolNames, checkedAt, createdAt}`. Plugging connects and lists the tools; a server that cannot connect is still stored with `status: "error"` and the reason. `authorization` is the exact `Authorization` header value the server expects (`Bearer <key>`): it is a key-service BRAND key (`POST /keys/brands/:brandId`, provider `mcp-server-<id>`), read with the plugging user's id only to call the server, deleted on unplug, and never returned by any read. Table `brand_mcp_servers` (migration 0031) holds no secret.
+
+**Every Lead event turn** (`/internal/copilot/lead-turns`, any brand, guest or account) lists the writing brand's servers live at turn start (10 s per server, in parallel) and offers their tools beside its own, each named `<server>__<tool>` (server name as `a-z0-9_`, `_2` on a clash, 64 chars max), plus one line in the turn context: look up what the person already has with the brand before writing; when the brand's team asks to act on a lead (remove, disqualify, update), act through the tools, then say what was done. A server that cannot be listed is left out for that turn (logged, event `brand-mcp-server-unavailable`, its stored check updated); a call that fails or passes 30 s answers the model an error result and the turn goes on. A tool result shows the server's text, cut at 20,000 characters.
+
+**`/complete` and `/internal/platform-complete` opt in with `brandTools`** (`{brandId}` on `/complete`, the org is `x-org-id`; `{orgId, brandId}` on the platform tier). With a server plugged, the call becomes a bounded tool loop on the `/chat` loops (google and the direct vendors; `anthropic`, `webSearch`, `imageUrl` with it are a 400 before any spend), the brand's tools beside one tool `return_output` whose input IS the request's `responseSchema` (`{text}` in text mode): the response has the same shape as without it, plus `brandToolCalls`. Every round after the first is held like the first on `/complete` (provision + authorize), all reconciled to the actual lines of every round; on the platform tier the actual lines are posted after. No server plugged = the plain one-shot call. Without `brandTools`, both routes are byte-identical to before.
+
+**On the run:** each call is one event `brand-mcp-tool-call` on the turn's (or the call's) run: `{serverId, serverName, brandId, tool, durationMs, ok, error?, argsChars, resultChars}`, level `info` or `warn`; never the secret, never the content. The brand's server bills us nothing: no cost name.
+
 ## Environment Variables
 
 | Variable | Required | Description |
@@ -1710,7 +1731,7 @@ A campaign step (workflow) calls it when a fact needs the team's decision. Today
 
 ## Database
 
-Uses PostgreSQL via Drizzle ORM. Eight tables:
+Uses PostgreSQL via Drizzle ORM. Nine tables:
 
 - **sessions** — conversation sessions scoped by `orgId` and `userId`. Stores all identity/tracking context: `runId` (this service's run), `parentRunId` (caller's run from `x-run-id` header), `campaignId`, `brandIds` (text array for multi-brand support), `workflowSlug`, `featureSlug`, `audienceId`, `configKey` (the chat config the session started under; indexed with org/user/updatedAt for `GET /sessions/latest`)
 - **messages** — chat messages with role, content, optional `toolCalls`, `buttons`, `choices`, `openPages`, `contentBlocks` JSONB (stores full Anthropic content blocks for context management)
@@ -1720,6 +1741,7 @@ Uses PostgreSQL via Drizzle ORM. Eight tables:
 
 - **skills** / **skill_versions** — the Copilot skill tree (see below) and every content each skill has held.
 - **staff_requests** — agent requests (`kind`: bug, feature, skill_upgrade, contact_human), unique on `(org_id, repo, kind, piece_key)`; `repo` is NULL for contact_human (migration 0019), so those never dedupe.
+- **brand_mcp_servers** — the MCP servers a brand gives to our AI (migration 0031): `org_id`, `brand_id`, `name`, `url` (unique per org and brand), `has_auth` (the secret is a key-service brand key), `created_by_user_id`, the last check (`status`, `error`, `tool_names`, `checked_at`).
 
 ## Copilot skill tree (`/internal/skills`)
 
@@ -1760,7 +1782,8 @@ npm run db:generate
 | `/orgs/rag/score` | `run-created`, `rag-score-done`, `rag-score-failed` |
 | `/orgs/rag/embed` | `run-created`, `rag-embed-done`, `rag-embed-failed` |
 | `/complete` | `run-created`, `llm-call-start`, `llm-call-done`, `llm-call-failed` |
-| `/chat` | `run-created`, `stream-start`, `stream-done`, `stream-failed` |
+| `/chat` | `run-created`, `stream-start`, `stream-done`, `stream-failed`; a lead turn with brand tools: `brand-mcp-tool-call`, `brand-mcp-server-unavailable` |
+| `/complete`, `/internal/platform-complete` with `brandTools` | `brand-mcp-tool-call`, `brand-mcp-server-unavailable` |
 
 Body shape: `{ service: "chat-service", event, detail?, level?, data? }`. All identity (`x-org-id`, `x-user-id`, `x-run-id`, `x-api-key`) and tracking headers (`x-brand-id`, `x-campaign-id`, `x-workflow-slug`, `x-feature-slug`) are forwarded.
 

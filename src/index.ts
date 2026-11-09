@@ -347,7 +347,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, BrandMcpServerCreateSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -410,6 +410,17 @@ import { buildAnthropicTurnMessages, lastUserMessage } from "./lib/anthropic-tur
 import { reconcileProvisionedCosts } from "./lib/cost-reconcile.js";
 import { streamGeminiChat, type ToolDefinition } from "./lib/gemini-chat.js";
 import { streamVendorChat } from "./lib/vendor-chat.js";
+import {
+  BrandMcpInputError,
+  createServer as createBrandMcpServer,
+  deleteServer as deleteBrandMcpServer,
+  listServers as listBrandMcpServers,
+  loadBrandToolset,
+  recheckServer as recheckBrandMcpServer,
+  serverView as brandMcpServerView,
+  type BrandToolset,
+} from "./lib/brand-mcp.js";
+import { NoOutputError, brandToolsRefusalFor, completeWithBrandTools } from "./lib/complete-brand-tools.js";
 import type { GeminiCostLine } from "./lib/gemini-usage.js";
 import {
   anthropicCachePriced,
@@ -429,6 +440,7 @@ import {
   leadTurnStoredText,
   buildLeadAnswerTool,
   buildLeadTurnBlock,
+  brandToolsBlock,
   copilotOwnBrandId,
   LEAD_TURN_TASK_NAME,
   leadTurnBody,
@@ -839,7 +851,7 @@ async function handleComplete(req: express.Request, res: express.Response, retry
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, responseSchema, temperature, maxTokens, provider: requestedProvider, model: requestedModel, imageUrl, imageContext, webSearch: webSearchRaw, disableThinking: disableThinkingRaw, thinkingLevel, effort } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, maxTokens, provider: requestedProvider, model: requestedModel, imageUrl, imageContext, webSearch: webSearchRaw, disableThinking: disableThinkingRaw, thinkingLevel, effort, brandTools } = parsed.data;
   const webSearch = webSearchRaw === true;
   const disableThinking = disableThinkingRaw === true;
 
@@ -872,6 +884,11 @@ async function handleComplete(req: express.Request, res: express.Response, retry
         `The direct-vendor paths are text-only; use provider "google" or "anthropic" for that.`,
     });
   }
+
+  // The brand's tools (BRAND-MCP-1109) run on the tool loops of google and the
+  // direct vendors; a request they cannot serve is refused before any spend.
+  const brandToolsRefusal = brandToolsRefusalFor(brandTools, provider, { webSearch, imageUrl: Boolean(imageUrl) });
+  if (brandToolsRefusal) return res.status(400).json({ error: brandToolsRefusal });
 
   // Anthropic JSON mode requires `responseSchema` — Anthropic API has no native
   // standalone JSON-mode flag; enforcement is only available via
@@ -982,7 +999,12 @@ async function handleComplete(req: express.Request, res: express.Response, retry
   // output split below, which only knows the pre-call cost names.
   let geminiCostLines: GeminiCostLine[] | null = null;
   let provisionedCostIds: string[] = [];
+  let brandToolCalls: number | null = null;
   try {
+    // The brand's tools for this call (opt-in): none plugged = the plain call below.
+    const toolset: BrandToolset | null = brandTools
+      ? await loadBrandToolset({ db }, { orgId, brandId: brandTools.brandId, runId, eventIdentity: { orgId, userId }, tracking: workflowTracking })
+      : null;
     // PROVISION worst case → AUTHORIZE (platform) before the LLM call. Fail loud — never
     // spend on an undeclarable or unaffordable cost.
     try {
@@ -1012,7 +1034,43 @@ async function handleComplete(req: express.Request, res: express.Response, retry
       });
     }
 
-    if (isVendor) {
+    if (toolset) {
+      // A bounded tool loop; every round after the first is held like the
+      // first (provision + authorize), all reconciled to actual below.
+      const loop = await completeWithBrandTools({
+        provider: provider as "google" | VendorId,
+        apiKey: resolvedKey.key,
+        model: effectiveModel,
+        costPrefix: resolved.costPrefix,
+        systemPrompt,
+        message,
+        responseSchema: responseSchema ?? (jsonMode ? { type: "object", properties: {} } : null),
+        toolset,
+        disableThinking: disableThinkingRaw === true,
+        ...(thinkingLevel ? { thinkingLevel } : {}),
+        beforeProviderCall: async ({ depth, requestBody }) => {
+          if (depth === 0) return;
+          provisionedCostIds.push(
+            ...(await provisionAndAuthorizeLlmCost({
+              runId: runId!,
+              costNames,
+              inputTokens: Math.ceil(JSON.stringify(requestBody).length / 4),
+              outputTokens: holdOutputTokens,
+              keySource: resolvedKey.keySource,
+              identity: { orgId, userId, runId: runId! },
+              trackingHeaders,
+              description: `complete (brand tools, round ${depth + 1}) — ${effectiveModel}`,
+            })),
+          );
+        },
+      }).catch((err) => {
+        // The rounds that ran were spent even when no output came back.
+        if (err instanceof NoOutputError) geminiCostLines = err.costLines;
+        throw err;
+      });
+      brandToolCalls = loop.toolCalls;
+      result = { content: loop.content, tokensInput: loop.tokensInput, tokensOutput: loop.tokensOutput, model: loop.model, searchCount: 0, sources: [], costLines: loop.costLines };
+    } else if (isVendor) {
       result = await completeWithVendor({
         vendor: provider as VendorId,
         apiKey: resolvedKey.key,
@@ -1108,6 +1166,7 @@ async function handleComplete(req: express.Request, res: express.Response, retry
       tokensOutput: result.tokensOutput,
       model: result.model,
       ...(choice.fallbackFrom ? { fallback: { from: choice.fallbackFrom.apiModelId, reason: "out_of_credit" } } : {}),
+      ...(brandToolCalls !== null ? { brandToolCalls } : {}),
     };
 
     // Parse JSON if requested. Providers can still wrap a complete JSON value
@@ -2607,7 +2666,7 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
 
-  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, webSearch: webSearchRaw, disableThinking: disableThinkingRaw, thinkingLevel, effort } = parsed.data;
+  const { message, systemPrompt, responseFormat, responseSchema, temperature, provider: requestedProvider, model: requestedModel, webSearch: webSearchRaw, disableThinking: disableThinkingRaw, thinkingLevel, effort, brandTools } = parsed.data;
   const webSearch = webSearchRaw === true;
   const disableThinking = disableThinkingRaw === true;
 
@@ -2634,6 +2693,10 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
 
   // Passing a responseSchema implies JSON-mode parsing of the response.
   const jsonMode = responseFormat === "json" || responseSchema != null;
+
+  // Same refusal as /complete for a brandTools request this provider cannot serve.
+  const brandToolsRefusal = brandToolsRefusalFor(brandTools, provider, { webSearch, imageUrl: false });
+  if (brandToolsRefusal) return res.status(400).json({ error: brandToolsRefusal });
 
   // Anthropic JSON mode requires `responseSchema` — see /complete for rationale.
   if (provider === "anthropic" && responseFormat === "json" && responseSchema == null) {
@@ -2710,10 +2773,39 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
   }
 
   let platformFailed = false;
+  let brandToolCalls: number | null = null;
+  // Lines of rounds a brand-tools loop spent before it failed (declared in the catch).
+  let spentBeforeFailure: GeminiCostLine[] | null = null;
   try {
     let result: { content: string; tokensInput: number; tokensOutput: number; model: string; searchCount: number; sources: Array<{ url: string; title?: string }>; cachedInputTokens?: number; cacheWriteTokens?: number; costLines?: GeminiCostLine[] };
 
-    if (isVendor) {
+    // The brand's tools for this call (opt-in, BRAND-MCP-1109): events on this
+    // platform run under the brand's org (an event bills nothing).
+    const toolset: BrandToolset | null = brandTools
+      ? await loadBrandToolset({ db }, { orgId: brandTools.orgId, brandId: brandTools.brandId, runId, eventIdentity: { orgId: brandTools.orgId, userId: "" }, tracking: {} })
+      : null;
+
+    if (toolset) {
+      // Platform spend: no hold; every round's actual lines are posted below.
+      const loop = await completeWithBrandTools({
+        provider: provider as "google" | VendorId,
+        apiKey,
+        model: effectiveModel,
+        costPrefix: resolved.costPrefix,
+        systemPrompt,
+        message,
+        responseSchema: responseSchema ?? (jsonMode ? { type: "object", properties: {} } : null),
+        toolset,
+        disableThinking: disableThinkingRaw === true,
+        ...(thinkingLevel ? { thinkingLevel } : {}),
+        beforeProviderCall: async () => undefined,
+      }).catch((err) => {
+        if (err instanceof NoOutputError) spentBeforeFailure = err.costLines;
+        throw err;
+      });
+      brandToolCalls = loop.toolCalls;
+      result = { content: loop.content, tokensInput: loop.tokensInput, tokensOutput: loop.tokensOutput, model: loop.model, searchCount: 0, sources: [], costLines: loop.costLines };
+    } else if (isVendor) {
       result = await completeWithVendor({
         vendor: provider as VendorId,
         apiKey,
@@ -2808,6 +2900,7 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
       model: result.model,
       runId,
       ...(choice.fallbackFrom ? { fallback: { from: choice.fallbackFrom.apiModelId, reason: "out_of_credit" } } : {}),
+      ...(brandToolCalls !== null ? { brandToolCalls } : {}),
     };
 
     // Same JSON parsing contract as /complete.
@@ -2819,6 +2912,13 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
   } catch (err) {
     platformFailed = true;
     console.error(`[internal/platform-complete] LLM call failed:`, err);
+    // A brand-tools loop that ran rounds and returned nothing still spent them.
+    const spent = spentBeforeFailure as GeminiCostLine[] | null;
+    if (spent && spent.length > 0) {
+      await addPlatformRunCosts(runId, "chat-service", spent.map((l) => ({ ...l, costSource: "platform" as const }))).catch((costErr) =>
+        console.error(`[internal/platform-complete] could not declare the spent brand-tools rounds runId="${runId}":`, costErr),
+      );
+    }
     // Same as /complete: store the empty balance, retry once on the fallback.
     if (isOutOfCreditError(provider, err)) {
       const next = onOutOfCredit(choice, err, accepts);
@@ -3860,6 +3960,34 @@ app.post("/chat", requireAuth, async (req, res) => {
         claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
       }
     }
+    // The writing brand's own MCP tools (BRAND-MCP-1109): every lead turn, any
+    // brand, guest or account, loads the servers that brand plugged. A failure
+    // here never blocks the answer: logged loud, the turn writes without them.
+    let brandToolset: BrandToolset | null = null;
+    if (leadTurn && leadTurnOrgId) {
+      try {
+        brandToolset = await loadBrandToolset(
+          { db },
+          { orgId: leadTurnOrgId, brandId: leadTurn.payload.brandId, runId: runId!, eventIdentity: { orgId, userId }, tracking: workflowTracking },
+        );
+      } catch (err) {
+        console.error(`[chat] session="${currentSessionId}" lead turn ${leadTurnId}: the brand's MCP tools could not be loaded, the turn goes on without them:`, err);
+      }
+      if (brandToolset && brandToolset.tools.length > 0) {
+        for (const t of brandToolset.tools) {
+          allTools.push(t as unknown as Anthropic.Tool);
+          allowedToolSet.add(t.name);
+        }
+        console.log(`[chat] session="${currentSessionId}" lead turn ${leadTurnId}: ${brandToolset.tools.length} brand tool(s) from ${brandToolset.servers.map((x) => `"${x.name}"`).join(", ")}`);
+        turnContextBlock += brandToolsBlock();
+        systemPrompt = stableSystemPrompt + turnContextBlock;
+        if (anthropicCache) anthropicTurnContext = turnContextBlock;
+        else if (claude) {
+          anthropicSystemPrompt = systemPrompt;
+          claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
+        }
+      }
+    }
     const brandProfileWebsiteRefreshIntent =
       configKey === "brand-profile-editor" &&
       isBrandProfileWebsiteRefreshIntent(message);
@@ -3969,6 +4097,15 @@ app.post("/chat", requireAuth, async (req, res) => {
         emittedInputRequest = true;
         // Not replayed as a tool call: the stored answer is the text they got.
         return "input_request";
+      }
+
+      // The writing brand's own tool (BRAND-MCP-1109): runs on its MCP server.
+      // A failure is the tool's error result, never a thrown turn.
+      if (brandToolset?.has(call.name)) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const result = await brandToolset.call(call.name, args);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
       }
 
       // A lead turn: the person asked to be reached elsewhere (CONTACT-REDIRECT-1101).
@@ -6096,6 +6233,64 @@ app.get("/internal/skills/:slug/versions/:version", requireInternalAuth, async (
   } catch (err) {
     const mapped = skillErrorStatus(err);
     return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+// --- Brand MCP servers (BRAND-MCP-1109) ---
+// The MCP servers a brand gives to our conversation AI: list, plug (connects
+// and lists its tools), re-check, unplug. The Authorization value goes to
+// key-service and is never returned.
+const UUID_PARAM = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function brandMcpError(res: express.Response, err: unknown, what: string) {
+  if (err instanceof BrandMcpInputError) return res.status(err.status).json({ error: err.message });
+  console.error(`[chat-service] brand MCP servers: ${what} failed:`, err);
+  return res.status(502).json({ error: `${what} failed: ${err instanceof Error ? err.message : String(err)}` });
+}
+
+app.get("/orgs/brands/:brandId/mcp-servers", requireAuth, async (req, res) => {
+  const { orgId } = res.locals as AuthLocals;
+  if (!UUID_PARAM.test(req.params.brandId)) return res.status(400).json({ error: "brandId must be a UUID" });
+  try {
+    const rows = await listBrandMcpServers(db, orgId, req.params.brandId);
+    return res.json({ servers: rows.map(brandMcpServerView) });
+  } catch (err) {
+    return brandMcpError(res, err, "Listing the brand's MCP servers");
+  }
+});
+
+app.post("/orgs/brands/:brandId/mcp-servers", requireAuth, async (req, res) => {
+  const { orgId, userId, parentRunId } = res.locals as AuthLocals;
+  if (!UUID_PARAM.test(req.params.brandId)) return res.status(400).json({ error: "brandId must be a UUID" });
+  const parsed = BrandMcpServerCreateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  try {
+    const row = await createBrandMcpServer({ db }, { orgId, userId, runId: parentRunId }, req.params.brandId, parsed.data);
+    return res.status(201).json({ server: brandMcpServerView(row) });
+  } catch (err) {
+    return brandMcpError(res, err, "Plugging the MCP server");
+  }
+});
+
+app.post("/orgs/brands/:brandId/mcp-servers/:serverId/check", requireAuth, async (req, res) => {
+  const { orgId, userId, parentRunId } = res.locals as AuthLocals;
+  if (!UUID_PARAM.test(req.params.brandId) || !UUID_PARAM.test(req.params.serverId)) return res.status(400).json({ error: "brandId and serverId must be UUIDs" });
+  try {
+    const row = await recheckBrandMcpServer({ db }, { orgId, userId, runId: parentRunId }, req.params.brandId, req.params.serverId);
+    return res.json({ server: brandMcpServerView(row) });
+  } catch (err) {
+    return brandMcpError(res, err, "Checking the MCP server");
+  }
+});
+
+app.delete("/orgs/brands/:brandId/mcp-servers/:serverId", requireAuth, async (req, res) => {
+  const { orgId, userId, parentRunId } = res.locals as AuthLocals;
+  if (!UUID_PARAM.test(req.params.brandId) || !UUID_PARAM.test(req.params.serverId)) return res.status(400).json({ error: "brandId and serverId must be UUIDs" });
+  try {
+    await deleteBrandMcpServer({ db }, { orgId, userId, runId: parentRunId }, req.params.brandId, req.params.serverId);
+    return res.json({ deleted: true, id: req.params.serverId });
+  } catch (err) {
+    return brandMcpError(res, err, "Unplugging the MCP server");
   }
 });
 

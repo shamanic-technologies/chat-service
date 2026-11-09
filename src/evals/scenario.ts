@@ -87,6 +87,22 @@ export const ScenarioSchema = z
       )
       .optional(),
     /**
+     * The writing brand's own MCP servers (BRAND-MCP-1109), as the turn lists
+     * them: per server its display name and the tools it serves. The model sees
+     * them namespaced exactly as production names them (`<server>__<tool>`);
+     * their answers are `fixtures` under that name.
+     */
+    brandTools: z
+      .array(
+        z
+          .object({
+            server: z.string().min(1),
+            tools: z.array(z.object({ name: z.string().min(1), description: z.string().optional(), inputSchema: z.record(z.string(), z.unknown()).optional() }).strict()).min(1),
+          })
+          .strict(),
+      )
+      .optional(),
+    /**
      * Recorded tool answers, by tool name, in the order the real session got
      * them (the last one repeats). A tool absent here answers that the replay
      * holds no data for it.

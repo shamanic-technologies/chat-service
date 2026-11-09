@@ -362,6 +362,37 @@ export const vendorCreditDays = pgTable(
   (table) => [primaryKey({ name: "vendor_credit_days_pk", columns: [table.day, table.provider] })],
 );
 
+// BRAND-MCP-1109 (migration 0031): the MCP servers a brand gives to our
+// conversation AI. The Authorization value lives in key-service (brand key
+// `mcp-server-<id>`), never here. The last connect check is stored so the
+// list read says connected or why not, with the tools it serves.
+export const brandMcpServers = pgTable(
+  "brand_mcp_servers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    brandId: text("brand_id").notNull(),
+    name: text("name").notNull(),
+    url: text("url").notNull(),
+    // Whether an Authorization value is stored in key-service for it.
+    hasAuth: boolean("has_auth").notNull().default(false),
+    // The user who plugged it: key-service reads the secret as them.
+    createdByUserId: text("created_by_user_id").notNull(),
+    status: text("status").notNull().$type<"connected" | "error">(),
+    error: text("error"),
+    toolNames: text("tool_names").array().notNull().default(sql`ARRAY[]::text[]`),
+    checkedAt: timestamp("checked_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("brand_mcp_servers_org_brand_url_idx").on(table.orgId, table.brandId, table.url),
+    index("brand_mcp_servers_org_brand_idx").on(table.orgId, table.brandId),
+  ],
+);
+
+export type BrandMcpServer = typeof brandMcpServers.$inferSelect;
+
 export interface ToolCallRecord {
   name: string;
   args: Record<string, unknown>;
