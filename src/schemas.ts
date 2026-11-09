@@ -654,6 +654,11 @@ export const CompleteRequestSchema = z
     }).optional().openapi({
       description: "Optional metadata about the image (alt text, title, source page). Injected into the prompt alongside the image to help the model classify and score it more accurately. Only meaningful when imageUrl is provided.",
     }),
+    brandTools: z
+      .object({ brandId: z.string().uuid() })
+      .strict()
+      .optional()
+      .openapi({ description: "Opt-in (BRAND-MCP-1109): run this call with the brand's own MCP tools (the servers the brand plugged under `/orgs/brands/{brandId}/mcp-servers`). The model may call them (read and write) in a bounded tool loop, then answers in this request's `responseSchema` (or text): the response has the same shape as without it, plus `brandToolCalls`. Each tool call is an event `brand-mcp-tool-call` on the call's run; every LLM round is declared on the run. Served on `google` and the direct vendors (`deepseek`, `zai`, `moonshot`, `openai`); `anthropic`, `webSearch` and `imageUrl` with it are refused with a 400. A brand with no server plugged runs the plain one-shot call. Omitted = byte-identical to before." + " The brand belongs to `x-org-id`.", example: { brandId: "4c6b1d3e-2f0a-4b8e-9d7c-1a2b3c4d5e6f" } }),
   })
   .superRefine((data, ctx) => {
     const validModels: Record<string, string[]> = Object.fromEntries(
@@ -718,6 +723,10 @@ export const CompleteResponseSchema = z
           "(VENDOR-CREDIT-1030, LLM-CREDIT-GENERIC-1108). `model` is then the fallback that ran, and the run declares the fallback's own cost names.",
         example: { from: "deepseek-flash", reason: "out_of_credit" },
       }),
+    brandToolCalls: z.number().int().optional().openapi({
+      description: "Present only with `brandTools` and a brand that has a server plugged: how many brand tool calls the model made before answering.",
+      example: 2,
+    }),
   })
   .openapi("CompleteResponse");
 
@@ -1008,6 +1017,11 @@ export const InternalPlatformCompleteRequestSchema = z
         "Same semantics as POST /complete.",
       example: "medium",
     }),
+    brandTools: z
+      .object({ orgId: z.string().uuid(), brandId: z.string().uuid() })
+      .strict()
+      .optional()
+      .openapi({ description: "Opt-in (BRAND-MCP-1109): run this call with the brand's own MCP tools (the servers the brand plugged under `/orgs/brands/{brandId}/mcp-servers`). The model may call them (read and write) in a bounded tool loop, then answers in this request's `responseSchema` (or text): the response has the same shape as without it, plus `brandToolCalls`. Each tool call is an event `brand-mcp-tool-call` on the call's run; every LLM round is declared on the run. Served on `google` and the direct vendors (`deepseek`, `zai`, `moonshot`, `openai`); `anthropic`, `webSearch` and `imageUrl` with it are refused with a 400. A brand with no server plugged runs the plain one-shot call. Omitted = byte-identical to before." + " No org header on this tier: the brand's org is named here.", example: { orgId: "06ffd332-b05d-4468-bc33-fe2789caad95", brandId: "4c6b1d3e-2f0a-4b8e-9d7c-1a2b3c4d5e6f" } }),
   })
   .superRefine((data, ctx) => {
     // Same provider/model pairing check as POST /complete. Without it an
@@ -3695,5 +3709,95 @@ registry.registerPath({
       content: { "application/json": { schema: z.object({ requests: z.array(StaffRequestSchema) }) } },
     },
     ...skillErrors,
+  },
+});
+
+// --- Brand MCP servers (BRAND-MCP-1109) ---
+
+export const BrandMcpServerCreateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80).openapi({ description: "Display name (also the prefix of its tools for the AI).", example: "Distribute" }),
+    url: z.string().min(1).max(2000).openapi({ description: "The server's Streamable HTTP endpoint, public https.", example: "https://mcp.distribute.you/mcp" }),
+    authorization: z.string().max(8000).optional().openapi({
+      description: "The exact `Authorization` header value the server expects (e.g. `Bearer <key>`). Stored in key-service, never returned by any read.",
+      example: "Bearer dy_live_xxx",
+    }),
+  })
+  .strict()
+  .openapi("BrandMcpServerCreate");
+
+export const BrandMcpServerSchema = z
+  .object({
+    id: z.string().uuid(),
+    brandId: z.string(),
+    name: z.string(),
+    url: z.string(),
+    hasAuthorization: z.boolean().openapi({ description: "An Authorization value is stored (never shown)." }),
+    status: z.enum(["connected", "error"]).openapi({ description: "Result of the last connect check (on create, re-check, and each turn that loads the brand's tools)." }),
+    error: z.string().nullable().openapi({ description: "Why the last check failed, in plain words; null when connected." }),
+    toolCount: z.number().int(),
+    toolNames: z.array(z.string()),
+    checkedAt: z.string().openapi({ description: "ISO time of the last check." }),
+    createdAt: z.string(),
+  })
+  .openapi("BrandMcpServer");
+
+const brandMcpHeaders = z.object({
+  "x-api-key": z.string(),
+  "x-org-id": z.string().openapi({ description: "Internal org UUID" }),
+  "x-user-id": z.string().openapi({ description: "Internal user UUID" }),
+  "x-run-id": z.string().openapi({ description: "Caller's run" }),
+});
+const brandMcpParams = z.object({ brandId: z.string().uuid() });
+
+registry.registerPath({
+  method: "get",
+  path: "/orgs/brands/{brandId}/mcp-servers",
+  tags: ["Brand MCP servers"],
+  summary: "The MCP servers this brand gives to our conversation AI",
+  description: "Every server the brand plugged, with its last connect check: connected or the error in plain words, tool count and names. Never the Authorization value.",
+  request: { headers: brandMcpHeaders, params: brandMcpParams },
+  responses: {
+    200: { description: "The servers", content: { "application/json": { schema: z.object({ servers: z.array(BrandMcpServerSchema) }) } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/brands/{brandId}/mcp-servers",
+  tags: ["Brand MCP servers"],
+  summary: "Plug an MCP server for this brand (connects and lists its tools)",
+  description:
+    "Stores the server (its Authorization in key-service), connects over Streamable HTTP and lists its tools. Answers 201 with the stored check: `status: error` with the reason when it could not connect (the server stays plugged; re-check it later). " +
+    "From then on, every Lead event turn of this brand and every `/complete` that opts in with `brandTools` gets its tools.",
+  request: { headers: brandMcpHeaders, params: brandMcpParams, body: { content: { "application/json": { schema: BrandMcpServerCreateSchema } } } },
+  responses: {
+    201: { description: "Plugged", content: { "application/json": { schema: z.object({ server: BrandMcpServerSchema }) } } },
+    400: { description: "Invalid name/URL (https only, public domain), or the brand's limit (10) reached", content: { "application/json": { schema: ErrorResponseSchema } } },
+    409: { description: "This URL is already plugged for the brand", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/brands/{brandId}/mcp-servers/{serverId}/check",
+  tags: ["Brand MCP servers"],
+  summary: "Connect again and refresh the server's tools",
+  request: { headers: brandMcpHeaders, params: brandMcpParams.extend({ serverId: z.string().uuid() }) },
+  responses: {
+    200: { description: "The stored check", content: { "application/json": { schema: z.object({ server: BrandMcpServerSchema }) } } },
+    404: { description: "No such server for this brand", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/orgs/brands/{brandId}/mcp-servers/{serverId}",
+  tags: ["Brand MCP servers"],
+  summary: "Unplug a server (its Authorization is deleted from key-service)",
+  request: { headers: brandMcpHeaders, params: brandMcpParams.extend({ serverId: z.string().uuid() }) },
+  responses: {
+    200: { description: "Deleted", content: { "application/json": { schema: z.object({ deleted: z.literal(true), id: z.string().uuid() }) } } },
+    404: { description: "No such server for this brand", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });

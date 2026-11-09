@@ -218,6 +218,13 @@
       "when": 1792627200000,
       "tag": "0030_lead_thread",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792713600000,
+      "tag": "0031_brand_mcp_servers",
+      "breakpoints": true
     }
   ]
 }

@@ -34,6 +34,7 @@ import type { LeadTurnRequest } from "../schemas.js";
 import { todayLine } from "../agent/situation.js";
 import { AMBIGUITY_LINE, QUOTE_AND_PHOTO_LINES, buildChannelBlock, type PhoneAccount } from "./channel-copilot.js";
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
+import { BRAND_TOOLS_LINE } from "./brand-mcp.js";
 import { REACH_ELSEWHERE_TOOL_NAME, forgetLeadTurnCaller, registerLeadTurnCaller } from "./lead-contact.js";
 import {
   REPLY_TO_FIELD,
@@ -189,6 +190,14 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
   if (moment) lines.push(moment);
   parts.push(lines.join("\n"));
   return parts.join("");
+}
+
+/**
+ * The line a lead turn reads when the writing brand plugged its own MCP tools
+ * (BRAND-MCP-1109): the strategy, never cases or hand-picked fields.
+ */
+export function brandToolsBlock(): string {
+  return `\n\n### The brand's own tools\n${BRAND_TOOLS_LINE}`;
 }
 
 /**

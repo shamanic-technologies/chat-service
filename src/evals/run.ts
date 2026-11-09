@@ -7,6 +7,7 @@
 //   node dist/evals/run.js --definition evals/definitions/<id>.json \
 //     [--scenarios evals/scenarios] [--only id1,id2] [--runs 3] \
 //     [--provider deepseek --model deepseek-flash] [--parallel 4] [--calibrate] [--out file]
+//     [--no-brand-tools]   (lead turns as before BRAND-MCP-1109: the brand's own tools withheld)
 //
 // --calibrate judges the recorded replies only (no model call): every known-bad
 // production reply must FAIL and every hand-written good reply must PASS, or the
@@ -119,7 +120,7 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
       const r = await withRun("sophie-eval-replay", async (runId) => {
        try {
         const fixtures = fixtureExecutor(def, scenario);
-        const turn = await replayTurn({ def, scenario, provider, model, apiKey: modelKey, executeTool: fixtures.executeTool, uiText: fixtures.uiText, ...(process.argv.includes("--reasoning-off") ? { reasoningDisabled: true } : process.argv.includes("--reasoning-on") ? { reasoningDisabled: false } : {}) });
+        const turn = await replayTurn({ def, scenario, provider, model, apiKey: modelKey, executeTool: fixtures.executeTool, uiText: fixtures.uiText, brandTools: !process.argv.includes("--no-brand-tools"), ...(process.argv.includes("--reasoning-off") ? { reasoningDisabled: true } : process.argv.includes("--reasoning-on") ? { reasoningDisabled: false } : {}) });
         const modelCosts = await retryRefused("reply costs", () => addPlatformRunCosts(runId, SERVICE, turn.costLines.map((l) => ({ costName: l.costName, quantity: l.quantity, costSource: "platform" as const }))));
         const actions = turn.toolCalls.map((c) => describeAction(c.name, c.args, c.result));
         const judged = await judge(runId, typesafeKey, scenario, turn.reply, actions, turn.turnContext);
@@ -257,6 +258,7 @@ async function main() {
     definition: def.id,
     ...(def.id.startsWith("sophie-code") ? { codeHash: sophieCodeHash(), definitionSnapshot: def } : {}),
     definitionHash: definitionHash(def, `${provider}/${model}`),
+    ...(process.argv.includes("--no-brand-tools") ? { brandTools: "withheld" } : {}),
     model: `${provider}/${model}${process.argv.includes("--reasoning-off") || (!process.argv.includes("--reasoning-on") && def.reasoning === "off") ? " (reasoning off)" : ""}`,
     judge: `jev/${TYPESAFE_DEFAULT_MODEL}`,
     runsPerScenario: runs,

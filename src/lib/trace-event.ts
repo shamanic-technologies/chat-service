@@ -34,9 +34,10 @@ function buildTraceHeaders(
     "Content-Type": "application/json",
     "x-api-key": RUNS_SERVICE_API_KEY as string,
     "x-org-id": identity.orgId,
-    "x-user-id": identity.userId,
     "x-run-id": runId,
   };
+  // A platform run's event (no user) carries no user header.
+  if (identity.userId) headers["x-user-id"] = identity.userId;
   if (tracking.brandId) headers["x-brand-id"] = tracking.brandId;
   if (tracking.campaignId) headers["x-campaign-id"] = tracking.campaignId;
   if (tracking.workflowSlug) headers["x-workflow-slug"] = tracking.workflowSlug;
