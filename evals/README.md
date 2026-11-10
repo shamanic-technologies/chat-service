@@ -33,7 +33,7 @@ The runner reads platform keys from key-service and declares its spend on platfo
 ```bash
 # local: build and copy into an isolated dir of the container (the live service is untouched)
 npx tsc -p . && COPYFILE_DISABLE=1 tar czf /tmp/evals.tgz dist evals src/agent src/lib/client-brief.ts  # the sources: sophieCodeHash() reads them
-scp -i ~/.ssh/oracle-distribute /tmp/evals.tgz root@167.233.196.79:/tmp/<workspace>-evals.tgz
+scp -i ~/.ssh/oracle-distribute /tmp/evals.tgz root@62.83.93.230:/tmp/<workspace>-evals.tgz
 # box: unpack in /tmp/sophie-evals of distribute-chat-service-1, symlink /app/node_modules, then
 node dist/evals/run.js --definition evals/definitions/<id>.json --runs 3 --parallel 5 --out /tmp/sophie-evals/run.json
 node dist/evals/run.js --definition evals/definitions/<id>.json --calibrate --out /tmp/sophie-evals/calibration.json
