@@ -173,13 +173,14 @@ function campaignLine(c: Obj, next: Obj | null = null): string {
   const bits = [
     str(c.name) ? `"${str(c.name)}"` : "a campaign",
     statusWords(c),
+    ...(next ? heldBits(next) : []),
     str(c.path) ? `does: ${str(c.path)}` : null,
     str(c.runsWhen) ? `runs: ${str(c.runsWhen)}` : null,
     str(c.budget) ? `budget: ${str(c.budget)}` : null,
     str(c.spent) ? `used against its cap: ${str(c.spent)} (this campaign, its cap period, before their discount)` : null,
     str(c.invested) ? `paid: ${str(c.invested)} (this campaign, since it started, after their discount)` : null,
     str(c.return) ? `return: ${str(c.return)} (this campaign, whole history)` : null,
-    ...(next ? nextStepsBits(next) : []),
+    ...(next ? queueBits(next) : []),
   ].filter(Boolean);
   return `- ${bits.join("; ")}`;
 }
@@ -196,7 +197,7 @@ const outcomeWords = (o: string): string => {
  * not run without a brief; the brief held only the cap, and she told the client "today's cap is used, the
  * first emails leave tomorrow"). A held step is stated first: it is the served reason, every other one is a guess.
  */
-function nextStepsBits(next: Obj): string[] {
+function heldBits(next: Obj): string[] {
   const ns = asObj(next.nextSends);
   const held = asObj(ns.heldBy);
   const out: string[] = [];
@@ -207,6 +208,14 @@ function nextStepsBits(next: Obj): string[] {
       `HELD: nothing (more) goes out because its "${outcomeWords(String(held.outcome))}" step cannot run (served reason: ${str(held.reason) ?? "not stated"}${since ? `, since ${since}` : ""})${waiting !== null ? `; ${waiting} ${waiting === 1 ? "lead waits" : "leads wait"} at that step with nothing sent yet` : ""}`,
     );
   }
+  return out;
+}
+
+/** What waits to go out and its earliest send, as served (an unreadable queue is said as unreadable). */
+function queueBits(next: Obj): string[] {
+  const ns = asObj(next.nextSends);
+  const held = asObj(ns.heldBy);
+  const out: string[] = [];
   const queued = num(ns.leadsQueued);
   const nextAt = dayWords(str(ns.nextSendAt));
   const when = nextAt ? `, earliest send ${nextAt}` : str(held.outcome) ? ", no send time planned until that step can run" : "";
@@ -217,7 +226,7 @@ function nextStepsBits(next: Obj): string[] {
 
 /** Said once under the campaigns when one is held: the strategy, never a reply per reason. */
 const HELD_LINE =
-  "A campaign marked HELD has a step that cannot run: that is the whole reason nothing (more) goes out on it, served by the system. Say it first in plain words: which step, why (the served reason, said as what it means for them), how many leads wait; the first send follows once the step can run. Then unblock it with them: ask for what only they know (for a missing campaign brief: who to keep and what the emails should say) and write it from their words. Its cap, budget and time of day are not part of this story unless a served figure makes one the reason.";
+  "A campaign marked HELD has a step that cannot run: that is the whole reason nothing (more) goes out on it, served by the system. Say it first in plain words: which step, why (the served reason, said as what it means for them), how many leads wait. Then unblock it with them: ask for what only they know (for a missing campaign brief: who to keep and what the emails should say) and write it from their words. While it is held, its cap use, budget and the clock explain none of the wait and no send time is known: a cap figure or a day said beside the held step reads to them as a second reason, so that answer leaves them out and says the first emails go once the step can run.";
 
 /** How many running campaigns get their next steps read each turn (one features-service read each). */
 const NEXT_STEPS_READS = 3;
