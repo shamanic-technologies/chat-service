@@ -91,7 +91,8 @@ export async function replayAnthropicTurn(args: {
     let ended = false;
     for (const use of uses) {
       const input = (use.input ?? {}) as Record<string, unknown>;
-      const out = await args.executeTool({ name: use.name, args: input });
+      // A failing tool reaches the model as an error it can correct, as in /chat (formatToolError there).
+      const out = await args.executeTool({ name: use.name, args: input }).catch((err: unknown) => ({ name: use.name, result: { error: err instanceof Error ? err.message : String(err) } }));
       if (out === "input_request") {
         toolCalls.push({ name: use.name, args: input, result: null });
         ended = true;
