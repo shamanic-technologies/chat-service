@@ -11,7 +11,7 @@ import { LEAD_ANSWER_TOOL_NAME } from "../lib/lead-turn.js";
 import { readOurWebsite } from "../lib/our-website.js";
 import { readSkillFrom } from "../lib/skills.js";
 import { parseChoicesArgs, parseChoicesIntro, OPEN_PAGE_TOOL_NAME, PRESENT_CHOICES_TOOL_NAME } from "../lib/ui-tools.js";
-import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, answerForModel, describeApi, findApi, needsYes, operationsForTool, pathParamsFrom, toolsForOperation } from "../agent/catalogue-tools.js";
+import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, answerForModel, describeApi, failedCallAnswer, findApi, needsYes, yesProposal, operationsForTool, pathParamsFrom, toolsForOperation } from "../agent/catalogue-tools.js";
 import { findOperation, getCatalog, matchPath } from "../agent/catalogue.js";
 import type { AgentDefinition } from "./agent-turn.js";
 import type { Scenario } from "./scenario.js";
@@ -26,6 +26,8 @@ export interface FixtureExecutor {
 
 export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): FixtureExecutor {
   const served = new Map<string, number>();
+  /** The gateway acts this replay answered as done ("POST /v1/sales-funnel-campaigns"). */
+  const acted = new Set<string>();
   const missing = new Set<string>();
   let choicesText = "";
 
@@ -66,7 +68,16 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
    * needs, "the conversation of edgar@..."): the first match is served, else the one with no `_when`.
    * Answers without `_when` are served in the order the real session got them.
    */
-  function answerFor(key: string, recorded: unknown[], asked: Record<string, string>): unknown {
+  function answerFor(key: string, all: unknown[], asked: Record<string, string>): unknown {
+    // The account after an act of this turn (`_after: "POST /v1/..."`): once the replay served that
+    // act, its answers replace the ones from before it (a campaign created, then listed).
+    const after = (r: unknown) => (r && typeof r === "object" && "_after" in r ? String((r as { _after: unknown })._after) : null);
+    const later = all.filter((r) => after(r) !== null && acted.has(after(r)!));
+    const recorded = (later.length ? later : all.filter((r) => after(r) === null)).map((r) => {
+      if (after(r) === null) return r;
+      const { _after, ...rest } = r as Record<string, unknown>;
+      return rest;
+    });
     const cond = (r: unknown) => (r && typeof r === "object" && "_when" in r ? ((r as { _when: Record<string, unknown> })._when ?? {}) : null);
     if (!recorded.some((r) => cond(r) !== null)) return nextAnswer(key, recorded);
     const hit =
@@ -104,9 +115,6 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
       const known = operationsForTool(String(a.operationId ?? ""), operations);
       throw new Error(`[run_operation] no operation "${String(a.operationId ?? concretePath)}" in the client API: ${known.length ? `that act is ${known.map((o) => `${o.operationId} (${o.method} ${o.path})`).join(" or ")}` : "use find_operation"}`);
     }
-    if (needsYes(op, a.body)) {
-      return { yesRequired: true, confirmationToken: `replay-${op.operationId}`, request: { operationId: op.operationId }, instruction: "Nothing ran. Ask the person yes or no first." };
-    }
     // The query as production sends it, so the answer names an undocumented filter the same way.
     const query = Object.fromEntries(
       Object.entries((a.query ?? {}) as Record<string, unknown>)
@@ -117,10 +125,25 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
     const direct = `${op.method} ${op.path}`;
     const pathParams: Record<string, unknown> = concretePath && !a.operationId ? pathParamsFrom(op.path, concretePath) : ((a.pathParams ?? {}) as Record<string, unknown>);
     const asked: Record<string, string> = { ...query, ...Object.fromEntries(Object.entries(pathParams).map(([k, v]) => [k, String(v)])) };
+    // As production proposes it: the gateway's own words on what the act does.
+    if (needsYes(op, a.body)) {
+      const path = op.path.replace(/\{([^}]+)\}/g, (_, n: string) => String(pathParams[n] ?? `{${n}}`));
+      return yesProposal(op, { operationId: op.operationId, method: op.method, path, query, body: a.body }, `replay-${op.operationId}`);
+    }
     for (const key of [direct, ...toolsForOperation(op.method, op.path)]) {
       const recorded = scenario.fixtures[key];
       // Same order as the chat tool: a stop then a re-read sees the stopped list. Cut as production cuts it.
-      if (recorded) return answerForModel(op, query, 200, answerFor(key, recorded, asked));
+      if (recorded) {
+        const answer = answerFor(key, recorded, asked);
+        // A recorded refusal (`_status` >= 400: the 503 production got) answers as production answers one.
+        const status = answer && typeof answer === "object" && "_status" in answer ? Number((answer as { _status: unknown })._status) : 200;
+        if (status >= 400) {
+          const { _status, ...error } = answer as Record<string, unknown>;
+          return failedCallAnswer(status, error);
+        }
+        acted.add(key);
+        return answerForModel(op, query, status, answer);
+      }
     }
     missing.add(`run_operation ${op.method} ${op.path}`);
     return { ok: false, status: 404, error: "No data for this request in this account right now." };

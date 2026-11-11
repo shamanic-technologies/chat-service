@@ -14,6 +14,9 @@ const DOC = {
     "/v1/sales-funnel-campaigns/{id}": {
       patch: { operationId: "patchV1SalesFunnelCampaignsById", summary: "Start or stop a campaign", [YES_MARKER]: { because: ["starts_work"], why: "Starts the campaign.", notNeededWhen: [{ status: "stopped" }] }, parameters: [{ name: "id", in: "path", required: true }], requestBody: { content: { "application/json": { schema: { type: "object" } } } } },
     },
+    "/v1/campaigns/{id}/edit": {
+      patch: { operationId: "patchV1CampaignEdit", summary: "Edit a campaign", [YES_MARKER]: { because: ["starts_work"], why: "Starts the campaign.", neededWhen: [{ status: "activate" }] }, parameters: [{ name: "id", in: "path", required: true }], requestBody: { content: { "application/json": { schema: { type: "object" } } } } },
+    },
     "/v1/orgs": { post: { operationId: "postV1Orgs", summary: "Create an organization", "x-staff-only": true } },
     "/v1/prompts": { get: { operationId: "getV1Prompts", summary: "Prompt templates" } },
   },
@@ -40,6 +43,15 @@ describe("find_operation / describe_operation", () => {
   it("says when an operation needs the person's yes", async () => {
     expect(await describeApi({ operationId: "patchV1SalesFunnelCampaignsById" })).toMatchObject({ needsTheirYes: { why: "Starts the campaign." } });
     expect(await describeApi({ operationId: "getV1BillingAccounts" })).toMatchObject({ needsTheirYes: false });
+  });
+});
+
+describe("needsYes reads the gateway's neededWhen (SOPHIE-NO-FALSE-READY-1111)", () => {
+  it("asks the yes only for a body that can start work", async () => {
+    const brief = await callApi({ operationId: "patchV1CampaignEdit", pathParams: { id: "c-1" }, body: { brief: "Goal" } }, PARAMS, []);
+    expect(brief).toMatchObject({ ok: true });
+    const activate = await callApi({ operationId: "patchV1CampaignEdit", pathParams: { id: "c-1" }, body: { status: "activate" } }, PARAMS, []);
+    expect(activate).toMatchObject({ yesRequired: true, why: "Starts the campaign." });
   });
 });
 
