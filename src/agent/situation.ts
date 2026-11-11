@@ -37,7 +37,7 @@ export interface SituationReader {
    * the step of the campaign that cannot run, THE reason nothing goes out. Absent = not read (a replay
    * that recorded no answer for it).
    */
-  getCampaignNextSteps?(brandId: string, campaignId: string): Promise<unknown>;
+  getCampaignNextSteps?(brandId: string, campaignId: string): Promise<unknown | null>;
 }
 
 type Obj = Record<string, unknown>;
@@ -289,7 +289,8 @@ async function readNextSteps(reader: SituationReader, brandId: string, campaigns
     running.map(async (c) => {
       const id = String(c.id);
       const body = await settle(`next steps of "${str(c.name) ?? id}"`, () => read(brandId, id), failed);
-      if (body !== null) out.set(id, asObj(body));
+      // null = nothing recorded for this campaign (a replay): nothing to add, no failed read.
+      if (body !== null && body !== undefined) out.set(id, asObj(body));
     }),
   );
   return out;
