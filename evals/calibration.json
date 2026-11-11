@@ -1,9 +1,9 @@
 {
   "kind": "calibration",
-  "at": "2026-11-11T11:50:05.184Z",
+  "at": "2026-11-11T17:41:49.801Z",
   "judge": "jev/jev-latest",
-  "cases": 60,
-  "agree": 60,
+  "cases": 64,
+  "agree": 64,
   "passed": true,
   "rows": [
     {
@@ -82,6 +82,39 @@
       "failed": []
     },
     {
+      "id": "false-ready-preview-fails",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "form"
+      ]
+    },
+    {
+      "id": "false-ready-preview-fails",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "false-ready-where-is-template",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true"
+      ]
+    },
+    {
+      "id": "false-ready-where-is-template",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
       "id": "jarygo-cost-at-7am",
       "which": "good",
       "expected": "pass",
@@ -131,7 +164,6 @@
       "expected": "fail",
       "got": "fail",
       "failed": [
-        "true",
         "proactive",
         "answers"
       ]
@@ -296,8 +328,7 @@
       "expected": "fail",
       "got": "fail",
       "failed": [
-        "respectful",
-        "answers"
+        "respectful"
       ]
     },
     {
@@ -372,7 +403,7 @@
       "failed": [
         "true",
         "answers",
-        "form"
+        "nextAction"
       ]
     },
     {
@@ -485,8 +516,7 @@
         "respectful",
         "proactive",
         "answers",
-        "nextAction",
-        "form"
+        "nextAction"
       ]
     },
     {

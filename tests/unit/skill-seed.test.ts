@@ -667,3 +667,15 @@ describe("a campaign rule reaches the brief from every door (SOPHIE-TRUTH-1105 e
     expect(by.get("client-profiles")!).toMatch(/write it into the campaign's brief first/);
   });
 });
+
+// SOPHIE-NO-FALSE-READY-1111 (prod 2026-11-11): every email preview failed, a bug was filed, and the
+// reply still called the campaign "fully set up" and offered to start it. The skills state the system
+// fact the agent lacked: the preview runs the campaign's own writer, so a refused preview means the
+// campaign cannot send, and the start waits for it.
+describe("a step that cannot run holds the start (SOPHIE-NO-FALSE-READY-1111)", () => {
+  it("new-account and campaigns say a refused preview means no email can go out and the start waits", () => {
+    const by = new Map(SEED_SKILLS.map((s) => [s.slug, s.content]));
+    expect(by.get("new-account")!).toMatch(/The preview runs the same writer as the campaign: a refused preview .* no email can go out yet.* step 8 waits until a preview works/s);
+    expect(by.get("campaigns")!).toMatch(/A step that cannot run today .* the start waits for it/s);
+  });
+});
