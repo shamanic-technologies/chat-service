@@ -60,6 +60,7 @@ describe("seeded skill tree", () => {
       "email_pushed_via_api", "push_email", "campaign_off",
       // Data values and path segments (an API reader needs them verbatim).
       "prepaid_checkout", "prepaid_status", "payment_required", "not_built_yet", "topup_amount_cents",
+      "balance_cents", "auto_topup", "amount_cents", "threshold_cents", "monthly_charge_limit", "topup_threshold_cents", "topup_minimums", "monthly_charge_limit_cents",
       "auto_topup_amount_cents", "auto_topup_threshold_cents", "positive_reply", "skill_upgrade", "reactive_pipe_from_lead_found", "pipe_in_use",
       "sales_interest", "not_built_yet", "not_prepaid",
       // WhatsApp line values (crm-service link status, account types).
@@ -96,6 +97,8 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     expect(voice.content).toMatch(/goes to the team silently/);
     expect(voice.content).toMatch(/wins over any other wording rule/);
     expect(voice.content).toMatch(/Never say what you could not read/);
+    // SOPHIE-CORE-1111 (owner 2026-11-11): understand first, Carnegie, truth, in the one voice every surface reads.
+    for (const w of ["## Understand first", "Unibox timeline", "Dale Carnegie", "## Truth", "never tell them what they already know"]) expect(voice.content).toContain(w);
     expect(voice.content).not.toMatch(/[\u2014\u2013]/);
     expect(bySlug.get("index")!.content).toContain("`client-comms`");
   });
@@ -120,12 +123,13 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     }
   });
 
-  it("every message moves the person one step from where they stopped, never a stalling open question (COPILOT-WA-REPEAT-1027)", () => {
+  it("a next step closes the message, offered once, never a stalling open question (COPILOT-WA-REPEAT-1027, SOPHIE-CORE-1111)", () => {
     // Prod 2026-10-27 (Joshua, stopped at the card step): "Take your time... ask me here", "Any question about the site?".
+    // Prod 2026-11-11 (Instirio): the same "raise the cap" push every turn; owner « suggest, never push ».
     const voice = bySlug.get("client-comms")!.content;
-    expect(voice).toMatch(/take the person one step down their path from where they stopped/);
-    expect(voice).toMatch(/end on that next step, concrete and one click away, with its link/);
-    expect(voice).toMatch(/an ask or a line they have not answered is not sent again/);
+    expect(voice).toMatch(/A next step that serves what they want closes the message, concrete, with its link/);
+    expect(voice).toMatch(/An ask or a line they have not answered is not sent again/);
+    expect(voice).toMatch(/You suggest, you never push: an idea is offered once/);
     for (const sk of SEED_SKILLS) expect(sk.content, sk.slug).not.toMatch(/Any other question\?/);
   });
 
