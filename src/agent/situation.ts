@@ -32,6 +32,12 @@ export interface SituationReader {
   getBillingAccount(): Promise<unknown>;
   /** billing's payment outlook: whether billing holds the org NOW (the dashboard's payment band). */
   getPaymentOutlook(): Promise<unknown>;
+  /**
+   * features-service's next steps of one campaign: what waits to go out, when, and (`nextSends.heldBy`)
+   * the step of the campaign that cannot run, THE reason nothing goes out. Absent = not read (a replay
+   * that recorded no answer for it).
+   */
+  getCampaignNextSteps?(brandId: string, campaignId: string): Promise<unknown | null>;
 }
 
 type Obj = Record<string, unknown>;
@@ -163,19 +169,67 @@ function dashboardNotices(campaigns: Obj[] | null, outlook: Obj | null, billing:
  * month" (billing's count against the cap, before their discount) beside "$152.86 invested since
  * start" (what they pay, after it) with no word saying which was which).
  */
-function campaignLine(c: Obj): string {
+function campaignLine(c: Obj, next: Obj | null = null): string {
   const bits = [
     str(c.name) ? `"${str(c.name)}"` : "a campaign",
     statusWords(c),
+    ...(next ? heldBits(next) : []),
     str(c.path) ? `does: ${str(c.path)}` : null,
     str(c.runsWhen) ? `runs: ${str(c.runsWhen)}` : null,
     str(c.budget) ? `budget: ${str(c.budget)}` : null,
     str(c.spent) ? `used against its cap: ${str(c.spent)} (this campaign, its cap period, before their discount)` : null,
     str(c.invested) ? `paid: ${str(c.invested)} (this campaign, since it started, after their discount)` : null,
     str(c.return) ? `return: ${str(c.return)} (this campaign, whole history)` : null,
+    ...(next ? queueBits(next) : []),
   ].filter(Boolean);
   return `- ${bits.join("; ")}`;
 }
+
+/** "message_written" → "Message written": the Engine named by the outcome it makes. */
+const outcomeWords = (o: string): string => {
+  const w = o.replace(/[_-]+/g, " ").trim();
+  return w.charAt(0).toUpperCase() + w.slice(1);
+};
+
+/**
+ * What waits to go out on one running campaign, as features-service serves it (NEXT-STEPS-TRUE-REASON-1111,
+ * prod 2026-11-11: 123 leads served, no email written because the campaign's « Message written » step could
+ * not run without a brief; the brief held only the cap, and she told the client "today's cap is used, the
+ * first emails leave tomorrow"). A held step is stated first: it is the served reason, every other one is a guess.
+ */
+function heldBits(next: Obj): string[] {
+  const ns = asObj(next.nextSends);
+  const held = asObj(ns.heldBy);
+  const out: string[] = [];
+  if (str(held.outcome)) {
+    const waiting = num(ns.leadsWaitingOnHeldEngine);
+    const since = dayWords(str(held.heldSince));
+    out.push(
+      `HELD: nothing (more) goes out because its "${outcomeWords(String(held.outcome))}" step cannot run (served reason: ${str(held.reason) ?? "not stated"}${since ? `, since ${since}` : ""})${waiting !== null ? `; ${waiting} ${waiting === 1 ? "lead waits" : "leads wait"} at that step with nothing sent yet` : ""}`,
+    );
+  }
+  return out;
+}
+
+/** What waits to go out and its earliest send, as served (an unreadable queue is said as unreadable). */
+function queueBits(next: Obj): string[] {
+  const ns = asObj(next.nextSends);
+  const held = asObj(ns.heldBy);
+  const out: string[] = [];
+  const queued = num(ns.leadsQueued);
+  const nextAt = dayWords(str(ns.nextSendAt));
+  const when = nextAt ? `, earliest send ${nextAt}` : str(held.outcome) ? ", no send time planned until that step can run" : "";
+  if (queued !== null) out.push(`queued to go out: ${queued} ${queued === 1 ? "lead" : "leads"}${when}`);
+  else if (str(ns.unavailableReason)) out.push(`queue not readable right now (${str(ns.unavailableReason)}): say you cannot see it, not that nothing is queued`);
+  return out;
+}
+
+/** Said once under the campaigns when one is held: the strategy, never a reply per reason. */
+const HELD_LINE =
+  "A campaign marked HELD has a step that cannot run: that is the whole reason nothing (more) goes out on it, served by the system. Say it first in plain words: which step, why (the served reason, said as what it means for them), how many leads wait. Then unblock it with them: ask for what only they know (for a missing campaign brief: who to keep and what the emails should say) and write it from their words. While it is held, its cap use, budget and the clock explain none of the wait and no send time is known: a cap figure or a day said beside the held step reads to them as a second reason, so that answer leaves them out and says the first emails go once the step can run.";
+
+/** How many running campaigns get their next steps read each turn (one features-service read each). */
+const NEXT_STEPS_READS = 3;
 
 /** The dashboard's "Spent" tile: billed since they started, net of their discount, served by features-service. */
 function spentLine(perf: unknown, offerName: string | null): string | null {
@@ -246,6 +300,23 @@ function moneyLine(billing: unknown, held: boolean): string {
   return parts.length ? parts.join(", ") : "not read";
 }
 
+/** The next steps of the first running campaigns, by campaign id (a failed read is named, never a gate). */
+async function readNextSteps(reader: SituationReader, brandId: string, campaigns: Obj[], failed: string[]): Promise<Map<string, Obj>> {
+  const read = reader.getCampaignNextSteps?.bind(reader);
+  const out = new Map<string, Obj>();
+  if (!read) return out;
+  const running = campaigns.filter((c) => RUNNING.has(str(c.status) ?? "") && str(c.id)).slice(0, NEXT_STEPS_READS);
+  await Promise.all(
+    running.map(async (c) => {
+      const id = String(c.id);
+      const body = await settle(`next steps of "${str(c.name) ?? id}"`, () => read(brandId, id), failed);
+      // null = nothing recorded for this campaign (a replay): nothing to add, no failed read.
+      if (body !== null && body !== undefined) out.set(id, asObj(body));
+    }),
+  );
+  return out;
+}
+
 /** "Today: Sunday 1 November 2026 (UTC)." A reply that guessed the day promised a Sunday send (2026-11-01). */
 export function todayLine(now: Date): string {
   return `Today: ${now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).replace(",", "")} (UTC).`;
@@ -292,6 +363,7 @@ export async function buildSituationBrief(
     : [null, null, null];
 
   const campaigns = asArr(asObj(campaignsBody).campaigns);
+  const nextSteps = await readNextSteps(reader, brandId, campaigns, failed);
   const notices = dashboardNotices(campaignsBody === null ? null : campaigns, outlook === null ? null : asObj(outlook), billing === null ? null : asObj(billing));
   lines.push(
     notices.length
@@ -313,7 +385,8 @@ export async function buildSituationBrief(
 
   if (campaignsBody !== null) {
     lines.push(campaigns.length ? `**Campaigns** (${campaigns.length}):` : "**Campaigns**: none yet, so nobody is being reached.");
-    lines.push(...campaigns.slice(0, 8).map(campaignLine));
+    lines.push(...campaigns.slice(0, 8).map((c) => campaignLine(c, nextSteps.get(String(c.id)) ?? null)));
+    if ([...nextSteps.values()].some((n) => str(asObj(asObj(n.nextSends).heldBy).outcome))) lines.push(HELD_LINE);
   }
 
   const spent = spentLine(perf, offer ? str(offer.name) : null);
