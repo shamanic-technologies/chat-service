@@ -1,9 +1,9 @@
 {
   "kind": "calibration",
-  "at": "2026-11-11T11:50:05.184Z",
+  "at": "2026-11-11T18:09:24.426Z",
   "judge": "jev/jev-latest",
-  "cases": 60,
-  "agree": 60,
+  "cases": 64,
+  "agree": 64,
   "passed": true,
   "rows": [
     {
@@ -107,7 +107,6 @@
         "true",
         "respectful",
         "proactive",
-        "answers",
         "form"
       ]
     },
@@ -296,8 +295,7 @@
       "expected": "fail",
       "got": "fail",
       "failed": [
-        "respectful",
-        "answers"
+        "respectful"
       ]
     },
     {
@@ -348,6 +346,44 @@
       "failed": []
     },
     {
+      "id": "next-steps-held-no-brief-proactive",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers",
+        "nextAction",
+        "form"
+      ]
+    },
+    {
+      "id": "next-steps-held-no-brief-proactive",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "next-steps-held-no-brief",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "next-steps-held-no-brief",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
       "id": "novemiq-explain-campaigns",
       "which": "good",
       "expected": "pass",
@@ -371,8 +407,7 @@
       "got": "fail",
       "failed": [
         "true",
-        "answers",
-        "form"
+        "answers"
       ]
     },
     {
@@ -465,7 +500,6 @@
       "got": "fail",
       "failed": [
         "true",
-        "proactive",
         "answers"
       ]
     },

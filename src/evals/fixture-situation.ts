@@ -42,6 +42,16 @@ export function fixtureSituationReader(scenario: Scenario): SituationReader {
     listRepliesToHandle: async () => recorded(scenario, "list_replies_to_handle"),
     getBillingAccount: async () => recorded(scenario, "get_billing_account"),
     getPaymentOutlook: async () => recorded(scenario, "get_payment_outlook"),
+    // Only the answer recorded for THAT campaign (a session recorded it for the campaign its tool asked about);
+    // none = nothing to add, as when production's brief did not read it yet.
+    ...(scenario.fixtures.get_campaign_next_steps
+      ? {
+          getCampaignNextSteps: async (_brandId: string, campaignId: string) =>
+            (scenario.fixtures.get_campaign_next_steps ?? []).find(
+              (a) => (a as { salesFunnelCampaignId?: unknown } | null)?.salesFunnelCampaignId === campaignId,
+            ) ?? null,
+        }
+      : {}),
   };
 }
 
