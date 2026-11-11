@@ -7,13 +7,14 @@
 // - budget-and-billing: the seed's "Their money" job skill (SOPHIE-BRIEF-EQUALS-DASHBOARD-1103: no
 //   "never mention" rule; a payment notice the dashboard shows is said in its words).
 // - legs, triggers: under `staff`, the seed's text (SOPHIE-TURN-LOST-1103: no removed pipes or plays).
+// - SOPHIE-CORE-1111: budget-and-billing on today's prepaid offer (refill, monthly limit), no canned replies.
 // - SOPHIE-TRUTH-1105: any row a chat-service script wrote takes the seed's text (person facts from
 //   their own record, money with its scope, framework v10 only); a person's edit is listed, never overwritten.
 import { SEED_SKILLS } from "../dist/lib/skill-seed.js";
 
 const base = `http://localhost:${process.env.PORT ?? 8080}`;
 const headers = { "content-type": "application/json", "x-api-key": process.env.CHAT_SERVICE_API_KEY ?? "" };
-const editedBy = "chat-service SOPHIE-TRUTH-1105";
+const editedBy = "chat-service SOPHIE-CORE-1111";
 const apply = process.argv.includes("--apply");
 
 async function read(slug) {

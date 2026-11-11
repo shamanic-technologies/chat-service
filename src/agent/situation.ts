@@ -214,7 +214,19 @@ function paymentWords(b: Obj, held: boolean): string | null {
     const when = held ? "" : step ? `, charged to their card each time it reaches ${step} and at month end` : ", charged at month end";
     return `postpaid: work is billed as it runs${due !== null ? `; balance due ${due}${when}` : ""}`;
   }
-  if (mode === "prepaid") return `prepaid: work is paid from a balance they add money to${b.has_auto_topup === true ? ", topped up automatically from their card" : ""}`;
+  if (mode === "prepaid") {
+    // The refill is money that lands on THEIR card: its amount and trigger level, as billing serves them
+    // (SOPHIE-CORE-1111, prod 2026-11-11: a client set $10 and asked "why did you bill extra 15?").
+    const amount = dollars(b.topup_amount_cents);
+    const under = dollars(b.topup_threshold_cents);
+    const refill =
+      b.has_auto_topup === true
+        ? `; automatic refill ON: their card adds ${amount ?? "an amount not read"} to the balance each time it falls under ${under ?? "a level not read"} (balance to spend, not spent)`
+        : b.has_auto_topup === false
+          ? "; automatic refill off: once the balance is used, nothing more is spent until they add money"
+          : "";
+    return `prepaid: work is paid from a balance they add money to${refill}`;
+  }
   return mode ? `payment: ${mode}` : null;
 }
 

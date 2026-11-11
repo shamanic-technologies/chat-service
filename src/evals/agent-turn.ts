@@ -27,6 +27,7 @@ import { aboutYouBlock, withOurWebsite } from "../lib/person-facing.js";
 import { skillIndexBlockFrom } from "../lib/skills.js";
 import { streamVendorChat } from "../lib/vendor-chat.js";
 import { streamGeminiChat } from "../lib/gemini-chat.js";
+import { replayAnthropicTurn } from "./anthropic-replay.js";
 import type { VendorCostLine } from "../lib/cost-names.js";
 import { buildSituationBrief } from "../agent/situation.js";
 import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS } from "../agent/sophie.js";
@@ -186,12 +187,17 @@ export async function replayTurn(args: {
   reasoningDisabled?: boolean;
   /** False = the turn as it ran before the brand's tools existed (`--no-brand-tools`, the baseline). */
   brandTools?: boolean;
+  /**
+   * A vendor model no alias serves yet, measured before it gets one (`--api-model` + `--cost-prefix`,
+   * SOPHIE-CORE-1111: DeepSeek V4 Pro is listed again by the vendor, chat-service has no alias for it).
+   */
+  rawModel?: { apiModelId: string; costPrefix: string };
 }): Promise<ReplayedTurn> {
   const { def, scenario, provider, model, apiKey, executeTool, uiText } = args;
-  if (!isVendorProvider(provider) && provider !== "google") {
-    throw new Error(`[evals] provider "${provider}" is not wired in the replay yet (direct vendors and google; the Anthropic loop lives inside the /chat handler)`);
+  if (!isVendorProvider(provider) && provider !== "google" && provider !== "anthropic") {
+    throw new Error(`[evals] provider "${provider}" is not wired in the replay yet (direct vendors, google, anthropic)`);
   }
-  const resolved = resolveModel(provider as Provider, model as ModelAlias);
+  const resolved = args.rawModel ?? resolveModel(provider as Provider, model as ModelAlias);
   // Same order as /chat: the client brief, then where the account stands. A lead
   // turn carries neither here (it runs in the writing brand's thread; its
   // context is the writer's message).
@@ -200,7 +206,7 @@ export async function replayTurn(args: {
     (def.situationBrief ? await buildSituationBrief(fixtureSituationReader(scenario), { now: scenarioDay(scenario) }) : "");
   const modelDisplay = modelDisplayName(resolved.apiModelId);
   const images = await scenarioImages(scenario);
-  if (images.length > 0 && provider === "google") throw new Error("[evals] photos are wired on the direct-vendor loop only (Sophie's)");
+  if (images.length > 0 && (provider === "google" || provider === "anthropic")) throw new Error("[evals] photos are wired on the direct-vendor loop only (Sophie's)");
   const turn = assembleTurn(def, scenario, modelDisplay, brief, images, args.brandTools !== false);
   let llmCalls = 0;
   const started = Date.now();
@@ -215,7 +221,24 @@ export async function replayTurn(args: {
   };
   // Gemini reads the stable prompt and the turn's context joined, as /chat sends it.
   const result =
-    provider === "google"
+    provider === "anthropic"
+      ? await replayAnthropicTurn({
+          apiKey,
+          model: resolved.apiModelId,
+          costPrefix: resolved.costPrefix,
+          systemPrompt: turn.systemPrompt,
+          turnContext: turn.turnContext,
+          history: scenario.history.map((m) => ({ role: m.role, content: m.content })),
+          userMessage: scenario.message,
+          tools: turn.tools,
+          executeTool,
+          holdTextBesideToolCalls: turn.holdTextBesideToolCalls,
+          ...(turn.endToolName ? { endToolName: turn.endToolName } : {}),
+          beforeProviderCall: async () => {
+            llmCalls++;
+          },
+        })
+      : provider === "google"
       ? await streamGeminiChat({
           ...hooks,
           apiKey,

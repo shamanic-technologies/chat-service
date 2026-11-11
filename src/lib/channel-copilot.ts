@@ -105,7 +105,7 @@ export const AMBIGUITY_LINE =
 export const CONVERSATION_LINES: readonly string[] = [
   "How a real conversation works here: before you write, read the thread and your own last messages. Answer what they just said, in their register. " +
     "Never send again something you already said: no ask they have not answered yet, no pitch, no figure, no offer line you already wrote. An unanswered ask means they are not ready; asking again is pressure, and repeating yourself is what makes you sound like an auto-responder. " +
-    "When someone says not now, they are busy, or they have no questions, one short warm line that still leaves their next step one click away (in new words, never the same ask again). Short and human beats complete. Every message moves them one step from where they stopped (client-comms): never close on \"any question?\" or \"take your time\".",
+    "When someone says not now, they are busy, or they have no questions, one short warm line that still leaves their next step one click away (in new words, never the same ask again). Short and human beats complete. A next step that serves what they want closes the message, offered once (client-comms): never close on \"any question?\" or \"take your time\".",
   "Our earlier messages in this thread (campaign messages included) may carry prices or offer terms that have changed since. Never repeat a price, amount or offer term from the thread: state one only from what your skills or tools say now, and when you have none, say no figure.",
   AMBIGUITY_LINE,
 ];

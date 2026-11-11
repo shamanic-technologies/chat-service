@@ -1,0 +1,304 @@
+{
+ "id": "core-no-email-queued-proactive",
+ "title": "Speak first while contacts are found and no email is queued",
+ "source": "client Instirio, web, 2026-11-11",
+ "surface": "web",
+ "person": {
+  "name": "Sam"
+ },
+ "history": [
+  {
+   "role": "user",
+   "content": "campain status ?"
+  },
+  {
+   "role": "assistant",
+   "content": "Your campaign is running: $0.86 used of its $5 a day cap today, and no email out yet while it finds and checks the first contacts at Shopify brands."
+  }
+ ],
+ "message": "(Not written by the user. The dashboard asked you to speak first: the user has the Copilot open and seems stuck or looking for something. Read `currentPage` and `recentActions` in the context, and the conversation so far, to guess what they are trying to do. Answer that in one or two short sentences, then call present_choices with 2 or 3 options that move them forward: open the right page, start the action, or answer what they look for. Never pushy, never a sales pitch, no greeting, and do not say you noticed their clicks.)",
+ "fixtures": {
+  "list_brands": [
+   {
+    "brands": [
+     {
+      "id": "f25037e6-8a25-44e5-96de-856fb5f5c401",
+      "name": "Instirio",
+      "domain": "instirio.com",
+      "brandUrl": "https://instirio.com"
+     }
+    ]
+   }
+  ],
+  "list_offers": [
+   {
+    "offers": [
+     {
+      "offerId": "8c9985d7-25df-4b8e-b631-963f7f28cf95",
+      "brandId": "f25037e6-8a25-44e5-96de-856fb5f5c401",
+      "name": "Revenue Leak Audit",
+      "status": "active",
+      "description": "Maps an online brand's order, fulfilment and shipping stack and puts a monthly dollar figure on what leaks."
+     }
+    ]
+   }
+  ],
+  "get_offer_settings": [
+   {
+    "lifetimeRevenueUsd": null,
+    "bookingUrl": "https://calendly.com/example/30min"
+   }
+  ],
+  "get_offer_performance": [
+   {
+    "brandId": "f25037e6-8a25-44e5-96de-856fb5f5c401",
+    "offerId": "8c9985d7-25df-4b8e-b631-963f7f28cf95",
+    "recipientsContacted": 0,
+    "recipientsClicked": {
+     "total": 0
+    },
+    "recipientsRepliesPositive": {
+     "total": 0
+    },
+    "spent": {
+     "actualSpentCents": 87,
+     "totalSpentCents": 87
+    }
+   }
+  ],
+  "list_replies_to_handle": [
+   {
+    "leads": [],
+    "total": 0,
+    "nextCursor": null
+   }
+  ],
+  "get_billing_account": [
+   {
+    "org_id": "b4a43279-275c-430e-9d36-eb698dcb28fd",
+    "payment_mode": "prepaid",
+    "free_credit_offer": "prepaid_at_cost",
+    "balance_cents": "1028.4000000000",
+    "actual_balance_cents": "1028.4000000000",
+    "credited_cents": "2500.0000000000",
+    "cash_paid_cents": "2500.0000000000",
+    "has_payment_method": true,
+    "card_brand": "visa",
+    "card_last4": "4720",
+    "has_auto_topup": true,
+    "topup_amount_cents": 1500,
+    "topup_threshold_cents": 500,
+    "auto_reload_supported": true,
+    "amount_owed_cents": null,
+    "usage_discount_pct": null
+   }
+  ],
+  "get_payment_outlook": [
+   {
+    "orgId": "b4a43279-275c-430e-9d36-eb698dcb28fd",
+    "paymentMode": "prepaid",
+    "state": "autopay_armed",
+    "blockedReason": null,
+    "nextChargeAttemptAt": null,
+    "trigger": null
+   }
+  ],
+  "list_campaigns": [
+   {
+    "campaignCount": 1,
+    "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+    "campaigns": [
+     {
+      "id": "3cfc2aaa-f5ad-4457-b5ef-26c0cd78cba7",
+      "name": "Email Replies",
+      "type": "proactive",
+      "status": "ongoing",
+      "stopReason": null,
+      "offerId": "8c9985d7-25df-4b8e-b631-963f7f28cf95",
+      "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client@your-team-reply-closing",
+      "path": "Start → Lead Sourcing → Lead found → Sales Cold Email Outreach → Positive reply → Your Team Reply Closing → Paid client",
+      "runsWhen": "On its own, within its caps (no trigger)",
+      "budget": "Max $5/day",
+      "volume": null,
+      "spent": "$4.98 of $5 today",
+      "invested": null,
+      "return": "no return served yet",
+      "steps": []
+     }
+    ]
+   }
+  ],
+  "GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{salesFunnelCampaignId}/next-steps": [
+   {
+    "name": "Email Replies",
+    "status": "ongoing",
+    "brandId": "f25037e6-8a25-44e5-96de-856fb5f5c401",
+    "offerId": "8c9985d7-25df-4b8e-b631-963f7f28cf95",
+    "salesFunnelCampaignId": "3cfc2aaa-f5ad-4457-b5ef-26c0cd78cba7",
+    "nextSends": {
+     "dueNow": 0,
+     "nextSendAt": null,
+     "leadsQueued": 0,
+     "unavailableReason": null
+    },
+    "emailSendQueue": {
+     "queuedEmails": 0,
+     "firstEmailsFrom": null,
+     "leadsAwaitingFirstEmail": 0,
+     "leadsWithFollowUpQueued": 0,
+     "sendWindow": {
+      "startHour": 7,
+      "endHour": 19,
+      "timezoneRule": "lead_local",
+      "weekdays": [
+       "monday",
+       "tuesday",
+       "wednesday",
+       "thursday",
+       "friday",
+       "saturday"
+      ]
+     }
+    },
+    "scheduledFollowups": {
+     "due": 0,
+     "leads": 0,
+     "upcoming": 0,
+     "nextAt": null
+    },
+    "timeToFirstPositiveReply": {
+     "basis": "pipe_fleet",
+     "medianDays": 6.2,
+     "sampleSize": 68,
+     "learning": false,
+     "unavailableReason": null,
+     "campaign": {
+      "medianDays": null,
+      "sampleSize": 0
+     },
+     "pipeFleet": {
+      "medianDays": 6.2,
+      "sampleSize": 68
+     }
+    }
+   }
+  ],
+  "GET /v1/billing/accounts": [
+   {
+    "org_id": "b4a43279-275c-430e-9d36-eb698dcb28fd",
+    "payment_mode": "prepaid",
+    "free_credit_offer": "prepaid_at_cost",
+    "balance_cents": "1028.4000000000",
+    "actual_balance_cents": "1028.4000000000",
+    "credited_cents": "2500.0000000000",
+    "cash_paid_cents": "2500.0000000000",
+    "has_payment_method": true,
+    "card_brand": "visa",
+    "card_last4": "4720",
+    "has_auto_topup": true,
+    "topup_amount_cents": 1500,
+    "topup_threshold_cents": 500,
+    "auto_reload_supported": true,
+    "amount_owed_cents": null,
+    "usage_discount_pct": null
+   }
+  ],
+  "GET /v1/billing/accounts/prepaid_status": [
+   {
+    "org_id": "b4a43279-275c-430e-9d36-eb698dcb28fd",
+    "state": "active",
+    "payment_mode": "prepaid",
+    "free_credit_offer": "prepaid_at_cost",
+    "paid_cents": "2500.0000000000",
+    "balance_cents": "1028.4000000000",
+    "auto_topup": {
+     "enabled": true,
+     "amount_cents": 1500,
+     "threshold_cents": 500
+    },
+    "card": {
+     "saved": true,
+     "reloadable": true,
+     "not_reloadable_reason": null
+    }
+   }
+  ],
+  "GET /v1/billing/accounts/topup_minimums": [
+   {
+    "min_topup_amount_cents": 1000,
+    "min_auto_topup_amount_cents": 1500,
+    "min_auto_topup_threshold_cents": 500
+   }
+  ],
+  "GET /v1/billing/accounts/monthly_charge_limit": [
+   {
+    "org_id": "b4a43279-275c-430e-9d36-eb698dcb28fd",
+    "monthly_charge_limit_cents": null,
+    "period": "calendar_month_utc",
+    "charged_this_period_cents": 2500,
+    "remaining_cents": null,
+    "limit_reached": false
+   }
+  ],
+  "DELETE /v1/billing/accounts/auto_topup": [
+   {
+    "org_id": "b4a43279-275c-430e-9d36-eb698dcb28fd",
+    "payment_mode": "prepaid",
+    "free_credit_offer": "prepaid_at_cost",
+    "balance_cents": "1028.4000000000",
+    "actual_balance_cents": "1028.4000000000",
+    "credited_cents": "2500.0000000000",
+    "cash_paid_cents": "2500.0000000000",
+    "has_payment_method": true,
+    "card_brand": "visa",
+    "card_last4": "4720",
+    "has_auto_topup": false,
+    "topup_amount_cents": null,
+    "topup_threshold_cents": null,
+    "auto_reload_supported": true,
+    "amount_owed_cents": null,
+    "usage_discount_pct": null
+   }
+  ],
+  "GET /v1/billing/payments": [
+   {
+    "payments": [
+     {
+      "id": "pi_1",
+      "amount": 1000,
+      "currency": "usd",
+      "status": "succeeded",
+      "created": "2026-11-11T05:54:00Z"
+     },
+     {
+      "id": "pi_2",
+      "amount": 1500,
+      "currency": "usd",
+      "status": "succeeded",
+      "created": "2026-11-11T10:31:00Z"
+     }
+    ]
+   }
+  ]
+ },
+ "facts": [
+  "The campaign (Email Replies, Max $5/day) has found and checked 359 contacts so far: e-commerce and operations leads at online brands.",
+  "No email has gone out yet and none is queued: leadsQueued 0, queuedEmails 0, leadsAwaitingFirstEmail 0, nextSendAt null. Nothing served says when a first email will leave.",
+  "Today's $5 cap ($4.98 used) went on finding and checking contacts. Raising the cap would buy more contacts found, not an email sent: what holds the first email back is not the budget.",
+  "The account is prepaid: balance $10.28, automatic refill on ($15 from the card ending 4720 each time the balance falls under $5)."
+ ],
+ "expect": "Says what the page shows (359 contacts found) and, truthfully, that no email is queued yet, without promising a send date or blaming the cap; never suggests raising the budget to get emails out. Ends on 2 or 3 cards that help.",
+ "context": {
+  "currentPage": "sourcing",
+  "recentActions": []
+ },
+ "prodReply": "That page counts the contacts your campaign found: 359 e-commerce directors at Shopify brands so far. No email has gone out yet and today's $5 cap is used, so the first emails leave tomorrow morning in each lead's own business hours.",
+ "badReplyFails": true,
+ "prodReplyActions": [
+  "present_choices"
+ ],
+ "goodReply": "That page shows the 359 e-commerce and operations leads your campaign has found and checked so far. No email is queued for them yet, so there is no send date to give you today. Shall I show you a few of them now, so you can check they are the buyers you want?\n1. Yes, show me a few leads",
+ "goodReplyActions": [
+  "present_choices"
+ ]
+}
