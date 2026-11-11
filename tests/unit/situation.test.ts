@@ -52,8 +52,16 @@ describe("buildSituationBrief", () => {
     const brief = await buildSituationBrief(
       reader({ getBillingAccount: async () => ({ payment_mode: "prepaid", balance_cents: "-174.75", usage_cents: "1174.75", has_payment_method: false, has_auto_topup: false }) }),
     );
-    expect(brief).toContain("prepaid: work is paid from a balance they add money to, balance -$1.75, no card on file");
+    expect(brief).toContain("prepaid: work is paid from a balance they add money to; automatic refill off: once the balance is used, nothing more is spent until they add money, balance -$1.75, no card on file");
     expect(brief).toContain('Billing page: "Your credit has run out. Add credit to keep your campaigns running."');
+  });
+
+  it("states the automatic refill's amount and trigger level, as billing serves them (SOPHIE-CORE-1111)", async () => {
+    // Prod 2026-11-11: a client set a $10 test budget, was refilled $15 under $5 and asked "why did you bill extra 15?".
+    const brief = await buildSituationBrief(
+      reader({ getBillingAccount: async () => ({ payment_mode: "prepaid", balance_cents: "1853.84", has_payment_method: true, card_last4: "4720", has_auto_topup: true, topup_amount_cents: 1500, topup_threshold_cents: 500 }) }),
+    );
+    expect(brief).toContain("automatic refill ON: their card adds $15.00 to the balance each time it falls under $5.00 (balance to spend, not spent)");
   });
 
   it("names a read that failed instead of reporting it as empty", async () => {

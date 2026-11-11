@@ -1,0 +1,296 @@
+{
+ "id": "core-refill-on-small-budget",
+ "title": "Client sets a $10 test budget while the automatic refill is on",
+ "source": "client Instirio, web, 2026-11-11",
+ "surface": "web",
+ "person": {
+  "name": "Sam"
+ },
+ "history": [],
+ "message": "show me the result with 10 dollars then i will let you know to increase or top up",
+ "fixtures": {
+  "list_brands": [
+   {
+    "brands": [
+     {
+      "id": "f25037e6-8a25-44e5-96de-856fb5f5c401",
+      "name": "Instirio",
+      "domain": "instirio.com",
+      "brandUrl": "https://instirio.com"
+     }
+    ]
+   }
+  ],
+  "list_offers": [
+   {
+    "offers": [
+     {
+      "offerId": "8c9985d7-25df-4b8e-b631-963f7f28cf95",
+      "brandId": "f25037e6-8a25-44e5-96de-856fb5f5c401",
+      "name": "Revenue Leak Audit",
+      "status": "active",
+      "description": "Maps an online brand's order, fulfilment and shipping stack and puts a monthly dollar figure on what leaks."
+     }
+    ]
+   }
+  ],
+  "get_offer_settings": [
+   {
+    "lifetimeRevenueUsd": null,
+    "bookingUrl": "https://calendly.com/example/30min"
+   }
+  ],
+  "get_offer_performance": [
+   {
+    "brandId": "f25037e6-8a25-44e5-96de-856fb5f5c401",
+    "offerId": "8c9985d7-25df-4b8e-b631-963f7f28cf95",
+    "recipientsContacted": 0,
+    "recipientsClicked": {
+     "total": 0
+    },
+    "recipientsRepliesPositive": {
+     "total": 0
+    },
+    "spent": {
+     "actualSpentCents": 87,
+     "totalSpentCents": 87
+    }
+   }
+  ],
+  "list_replies_to_handle": [
+   {
+    "leads": [],
+    "total": 0,
+    "nextCursor": null
+   }
+  ],
+  "get_billing_account": [
+   {
+    "org_id": "b4a43279-275c-430e-9d36-eb698dcb28fd",
+    "payment_mode": "prepaid",
+    "free_credit_offer": "prepaid_at_cost",
+    "balance_cents": "928.0000000000",
+    "actual_balance_cents": "928.0000000000",
+    "credited_cents": "2500.0000000000",
+    "cash_paid_cents": "2500.0000000000",
+    "has_payment_method": true,
+    "card_brand": "visa",
+    "card_last4": "4720",
+    "has_auto_topup": true,
+    "topup_amount_cents": 1500,
+    "topup_threshold_cents": 500,
+    "auto_reload_supported": true,
+    "amount_owed_cents": null,
+    "usage_discount_pct": null
+   }
+  ],
+  "get_payment_outlook": [
+   {
+    "orgId": "b4a43279-275c-430e-9d36-eb698dcb28fd",
+    "paymentMode": "prepaid",
+    "state": "autopay_armed",
+    "blockedReason": null,
+    "nextChargeAttemptAt": null,
+    "trigger": null
+   }
+  ],
+  "list_campaigns": [
+   {
+    "campaignCount": 1,
+    "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+    "campaigns": [
+     {
+      "id": "3cfc2aaa-f5ad-4457-b5ef-26c0cd78cba7",
+      "name": "Email Replies",
+      "type": "proactive",
+      "status": "ongoing",
+      "stopReason": null,
+      "offerId": "8c9985d7-25df-4b8e-b631-963f7f28cf95",
+      "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client@your-team-reply-closing",
+      "path": "Start → Lead Sourcing → Lead found → Sales Cold Email Outreach → Positive reply → Your Team Reply Closing → Paid client",
+      "runsWhen": "On its own, within its caps (no trigger)",
+      "budget": "Max $5/day",
+      "volume": null,
+      "spent": "$0.66 of $5 today",
+      "invested": null,
+      "return": "no return served yet",
+      "steps": []
+     }
+    ]
+   }
+  ],
+  "GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{salesFunnelCampaignId}/next-steps": [
+   {
+    "name": "Email Replies",
+    "status": "ongoing",
+    "brandId": "f25037e6-8a25-44e5-96de-856fb5f5c401",
+    "offerId": "8c9985d7-25df-4b8e-b631-963f7f28cf95",
+    "salesFunnelCampaignId": "3cfc2aaa-f5ad-4457-b5ef-26c0cd78cba7",
+    "nextSends": {
+     "dueNow": 0,
+     "nextSendAt": null,
+     "leadsQueued": 0,
+     "unavailableReason": null
+    },
+    "emailSendQueue": {
+     "queuedEmails": 0,
+     "firstEmailsFrom": null,
+     "leadsAwaitingFirstEmail": 0,
+     "leadsWithFollowUpQueued": 0,
+     "sendWindow": {
+      "startHour": 7,
+      "endHour": 19,
+      "timezoneRule": "lead_local",
+      "weekdays": [
+       "monday",
+       "tuesday",
+       "wednesday",
+       "thursday",
+       "friday",
+       "saturday"
+      ]
+     }
+    },
+    "scheduledFollowups": {
+     "due": 0,
+     "leads": 0,
+     "upcoming": 0,
+     "nextAt": null
+    },
+    "timeToFirstPositiveReply": {
+     "basis": "pipe_fleet",
+     "medianDays": 6.2,
+     "sampleSize": 68,
+     "learning": false,
+     "unavailableReason": null,
+     "campaign": {
+      "medianDays": null,
+      "sampleSize": 0
+     },
+     "pipeFleet": {
+      "medianDays": 6.2,
+      "sampleSize": 68
+     }
+    }
+   }
+  ],
+  "GET /v1/billing/accounts": [
+   {
+    "org_id": "b4a43279-275c-430e-9d36-eb698dcb28fd",
+    "payment_mode": "prepaid",
+    "free_credit_offer": "prepaid_at_cost",
+    "balance_cents": "928.0000000000",
+    "actual_balance_cents": "928.0000000000",
+    "credited_cents": "2500.0000000000",
+    "cash_paid_cents": "2500.0000000000",
+    "has_payment_method": true,
+    "card_brand": "visa",
+    "card_last4": "4720",
+    "has_auto_topup": true,
+    "topup_amount_cents": 1500,
+    "topup_threshold_cents": 500,
+    "auto_reload_supported": true,
+    "amount_owed_cents": null,
+    "usage_discount_pct": null
+   }
+  ],
+  "GET /v1/billing/accounts/prepaid_status": [
+   {
+    "org_id": "b4a43279-275c-430e-9d36-eb698dcb28fd",
+    "state": "active",
+    "payment_mode": "prepaid",
+    "free_credit_offer": "prepaid_at_cost",
+    "paid_cents": "2500.0000000000",
+    "balance_cents": "928.0000000000",
+    "auto_topup": {
+     "enabled": true,
+     "amount_cents": 1500,
+     "threshold_cents": 500
+    },
+    "card": {
+     "saved": true,
+     "reloadable": true,
+     "not_reloadable_reason": null
+    }
+   }
+  ],
+  "GET /v1/billing/accounts/topup_minimums": [
+   {
+    "min_topup_amount_cents": 1000,
+    "min_auto_topup_amount_cents": 1500,
+    "min_auto_topup_threshold_cents": 500
+   }
+  ],
+  "GET /v1/billing/accounts/monthly_charge_limit": [
+   {
+    "org_id": "b4a43279-275c-430e-9d36-eb698dcb28fd",
+    "monthly_charge_limit_cents": null,
+    "period": "calendar_month_utc",
+    "charged_this_period_cents": 2500,
+    "remaining_cents": null,
+    "limit_reached": false
+   }
+  ],
+  "DELETE /v1/billing/accounts/auto_topup": [
+   {
+    "org_id": "b4a43279-275c-430e-9d36-eb698dcb28fd",
+    "payment_mode": "prepaid",
+    "free_credit_offer": "prepaid_at_cost",
+    "balance_cents": "928.0000000000",
+    "actual_balance_cents": "928.0000000000",
+    "credited_cents": "2500.0000000000",
+    "cash_paid_cents": "2500.0000000000",
+    "has_payment_method": true,
+    "card_brand": "visa",
+    "card_last4": "4720",
+    "has_auto_topup": false,
+    "topup_amount_cents": null,
+    "topup_threshold_cents": null,
+    "auto_reload_supported": true,
+    "amount_owed_cents": null,
+    "usage_discount_pct": null
+   }
+  ],
+  "GET /v1/billing/payments": [
+   {
+    "payments": [
+     {
+      "id": "pi_1",
+      "amount": 1000,
+      "currency": "usd",
+      "status": "succeeded",
+      "created": "2026-11-11T05:54:00Z"
+     },
+     {
+      "id": "pi_2",
+      "amount": 1500,
+      "currency": "usd",
+      "status": "succeeded",
+      "created": "2026-11-11T10:31:00Z"
+     }
+    ]
+   }
+  ]
+ },
+ "facts": [
+  "The account is prepaid. Balance $9.28. Automatic refill is ON: each time the balance falls under $5, the card ending 4720 is charged $15 and that money is added to the balance. The client accepted it at checkout.",
+  "The campaign runs at Max $5/day, so the balance falls under $5 within about a day and the card is then charged $15: on today's settings, more than $10 lands on their card before they decide.",
+  "To keep it at $10 the client has their own levers: turn the automatic refill off (DELETE /v1/billing/accounts/auto_topup, takes effect at once, the balance stays) or set a monthly limit on card charges (PUT /v1/billing/accounts/monthly_charge_limit). With the refill off, once the balance is used the campaign spends nothing until money is added.",
+  "No email has gone out yet; a first positive reply comes about 6 days after the first email (our clients sending the same way)."
+ ],
+ "expect": "Takes their $10 decision as given and says plainly that the automatic refill will charge their card $15 once the balance falls under $5, then offers the lever that keeps it at $10 (turn the refill off, or a monthly limit). No upsell, no invented outcome for $10.",
+ "context": {
+  "currentPage": "today",
+  "recentActions": []
+ },
+ "prodReply": "$10 at your $5 a day cap is two days of reaching e-commerce directors at Shopify brands: at our published price (about 3 cents to find and check one contact) that is roughly 250 contacts. You're at $9.28 in balance and $0.66 spent since you started. Replies take about 6 days after the first email, so $10 gets the first wave out but the campaign pauses before that window closes.",
+ "badReplyFails": true,
+ "prodReplyActions": [
+  "read_skill budget-and-billing",
+  "run_operation GET /v1/public/features/cost-per-outcome-lifetime",
+  "read_our_website /catalog",
+  "present_choices"
+ ],
+ "goodReply": "Happy to keep it at $10. One thing to know first: your automatic refill is on, so when your balance ($9.28) drops under $5, your card is charged $15. Want me to turn the refill off, so you spend only what is there now? Your campaign keeps its $5 a day until the balance is used.",
+ "goodReplyActions": []
+}
