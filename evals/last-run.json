@@ -1,147 +1,159 @@
 {
- "note": "SOPHIE-WA-HUMAN-1106: WhatsApp lead turns read the conversation from crm (labelled messages, the message each quotes, photos as images), can quote back (answer_person replyTo), show typing; ambiguity + quote/photo strategy lines in every WhatsApp block. Model unchanged: DeepSeek V4.1 Flash reads images natively (probed live 2026-11-06, a green '749' read right 3/3). Three scenarios added (wa-human-*: Kevin's 2026-11-04 'lui' on the cleaned timeline, the same with the 11:47 proposal quoted, a photo with no words). Both sides replayed the same 42 scenarios once (3 replays each) in the same 20 minutes on the same judge: baseline = origin/main code (photos/quotes stripped from its scenarios, as prod sees them today), run = this code. The DeepSeek balance hit $0 at 18:40Z near the end: 8 baseline replies and 1 run reply failed on the vendor (out of credit / rate limit) and count as failing, as the harness rules; on answered replies only: run 47.2% vs baseline 49.2% (noise band ~7 pts; web scenarios, untouched code, moved 'true' 78% -> 70% between the sides). Second pair after the top-up (21:48Z, no vendor failure): run 54.8% vs baseline 41.3%. Pooled over both pairs below.",
+ "note": "NEXT-STEPS-TRUE-REASON-1111: the situation brief reads features-service next steps for up to 3 running campaigns and marks a campaign HELD (step, served reason, leads waiting) with one strategy line; skill costs-roi-stats names heldBy. Two scenarios added (next-steps-held-no-brief, asked + proactive nudge, staff test org). Both sides replayed the same 46 scenarios, 3 replays each, twice, launched together at 2026-11-11 ~18:30Z on the same judge: baseline = origin/main code (82b432f) in a fresh directory. Earlier pairs where the baseline ran from an older directory read 4-5 points apart even on scenarios with byte-identical inputs (lead, WhatsApp, guest); an A/A pair (13:07Z) put origin/main code in a fresh directory level with this branch (149 vs 150 of 276), so pairs are compared fresh directory against fresh directory. The asked held-step scenario passed 6/6 with no cap, budget or 'tomorrow' in any reply; the proactive nudge variant fails nextAction on both sides (0/6 here, 0/12 baseline earlier): a nudge ending on cards, the known tension.",
  "model": "deepseek/deepseek-flash (reasoning off)",
  "judge": "jev/jev-latest",
- "codeHash": "d37a4931ff0b7297",
+ "codeHash": "fad30ff66f6f2783",
  "runs": [
   {
-   "at": "2026-11-06T18:20:58.282Z",
+   "at": "2026-11-11T18:03:06.026Z",
    "runsPerScenario": 3,
-   "scenariosPassed": 20
+   "scenariosPassed": 26
   },
   {
-   "at": "2026-11-06T21:48:04.760Z",
+   "at": "2026-11-11T18:02:54.650Z",
    "runsPerScenario": 3,
-   "scenariosPassed": 24
+   "scenariosPassed": 27
   }
  ],
  "pooled": {
-  "replays": 252,
-  "passRate": 0.5079,
+  "replays": 276,
+  "passRate": 0.5471,
   "criterionRate": {
-   "true": 0.7579,
-   "respectful": 0.9365,
-   "proactive": 0.9206,
-   "answers": 0.881,
-   "nextAction": 0.8889,
-   "form": 0.9484
+   "true": 0.8514,
+   "respectful": 0.9565,
+   "proactive": 0.9058,
+   "answers": 0.8913,
+   "nextAction": 0.8551,
+   "form": 0.9493
   },
-  "failedReplies": 1,
-  "passRateAnsweredOnly": 0.51,
-  "medianCostPerReplyUsd": 0.00162549516,
-  "medianLlmCalls": 3,
-  "medianLatencyMs": 13289
+  "failedReplies": 0,
+  "passRateAnsweredOnly": 0.5471,
+  "medianCostPerReplyUsd": 0.0014888600999999999,
+  "medianLlmCalls": 3.0,
+  "medianLatencyMs": 12219.0
  },
  "baseline": {
-  "definition": "sophie-code origin/main 0fc4379 (live skills), same harness, same hour",
+  "definition": "sophie-code origin/main 82b432f (seeded skills), fresh directory, same hour",
   "runs": [
    {
-    "at": "2026-11-06T18:20:57.993Z",
+    "at": "2026-11-11T18:03:05.354Z",
     "runsPerScenario": 3,
-    "scenariosPassed": 19
+    "scenariosPassed": 26
    },
    {
-    "at": "2026-11-06T21:48:29.592Z",
+    "at": "2026-11-11T18:02:50.526Z",
     "runsPerScenario": 3,
-    "scenariosPassed": 17
+    "scenariosPassed": 26
    }
   ],
   "pooled": {
-   "replays": 252,
-   "passRate": 0.4365,
+   "replays": 276,
+   "passRate": 0.5254,
    "criterionRate": {
-    "true": 0.7579,
-    "respectful": 0.9087,
-    "proactive": 0.8254,
-    "answers": 0.8611,
-    "nextAction": 0.8413,
-    "form": 0.9167
+    "true": 0.7826,
+    "respectful": 0.9565,
+    "proactive": 0.8986,
+    "answers": 0.8986,
+    "nextAction": 0.8659,
+    "form": 0.942
    },
-   "failedReplies": 8,
-   "passRateAnsweredOnly": 0.4508,
-   "medianCostPerReplyUsd": 0.00160749318,
+   "failedReplies": 0,
+   "passRateAnsweredOnly": 0.5254,
+   "medianCostPerReplyUsd": 0.00154504752,
    "medianLlmCalls": 3.0,
-   "medianLatencyMs": 13021.0
+   "medianLatencyMs": 11672.5
   }
  },
  "scenarios": [
   {
    "id": "aba-diagnose-results",
    "surface": "whatsapp",
-   "baseline": "TTFTTT",
-   "sophie": "FFTTTT"
+   "baseline": "FFFFFT",
+   "sophie": "FTTFFT"
   },
   {
    "id": "clinic-cancel-trial",
    "surface": "web",
-   "baseline": "TTTTFT",
-   "sophie": "TFTTFT"
+   "baseline": "TTFTTT",
+   "sophie": "FTTTTT"
   },
   {
    "id": "clinic-find-me-clients",
-   "surface": "web",
-   "baseline": "FFFFTF",
-   "sophie": "FFFFFF"
-  },
-  {
-   "id": "jarygo-cost-at-7am",
-   "surface": "web",
-   "baseline": "TTTTTT",
-   "sophie": "TTTTTT"
-  },
-  {
-   "id": "jarygo-when-booked-leads",
-   "surface": "web",
-   "baseline": "FFTFFF",
-   "sophie": "FTFFFF"
-  },
-  {
-   "id": "jcurve-new-chat-empty-profile",
    "surface": "web",
    "baseline": "FFFFFF",
    "sophie": "FFFFFF"
   },
   {
+   "id": "jarygo-cost-at-7am",
+   "surface": "web",
+   "baseline": "TTTFFT",
+   "sophie": "FTTFTF"
+  },
+  {
+   "id": "jarygo-when-booked-leads",
+   "surface": "web",
+   "baseline": "TFTTFF",
+   "sophie": "TTTFTF"
+  },
+  {
+   "id": "jcurve-new-chat-empty-profile",
+   "surface": "web",
+   "baseline": "FFTFFF",
+   "sophie": "FFFFFF"
+  },
+  {
    "id": "lead-autoreply-then-visit",
    "surface": "lead",
-   "baseline": "TTFTTF",
-   "sophie": "TFTTTT"
+   "baseline": "TTTTTT",
+   "sophie": "TTTTTT"
+  },
+  {
+   "id": "lead-check-what-they-have",
+   "surface": "lead",
+   "baseline": "FTFTTF",
+   "sophie": "TTFTFT"
+  },
+  {
+   "id": "lead-client-not-a-true-lead",
+   "surface": "lead",
+   "baseline": "TTTTTT",
+   "sophie": "TTTTTT"
   },
   {
    "id": "lead-cold-newsletter-click",
    "surface": "lead",
-   "baseline": "FFFFFT",
-   "sophie": "TTTTTT"
+   "baseline": "FTTTFT",
+   "sophie": "FFTTTT"
   },
   {
    "id": "lead-newsletter-reader-old-autoreply",
    "surface": "lead",
-   "baseline": "FFTTFT",
-   "sophie": "FFTTFT"
+   "baseline": "TFFFTF",
+   "sophie": "TFFFTT"
   },
   {
    "id": "lead-reply-partnership-ask",
    "surface": "lead",
-   "baseline": "TTTTFT",
-   "sophie": "TFFTTT"
+   "baseline": "TFTTTT",
+   "sophie": "TTFFFT"
   },
   {
    "id": "lead-signup-card-declined",
    "surface": "lead",
-   "baseline": "TTTTTF",
-   "sophie": "TFTFTF"
+   "baseline": "TFTTTT",
+   "sophie": "FTTTFT"
   },
   {
    "id": "lead-student-first-client",
    "surface": "lead",
-   "baseline": "FTFTFF",
-   "sophie": "TFTTFF"
+   "baseline": "TTTTFT",
+   "sophie": "TTTTTT"
   },
   {
    "id": "lead-whatsapp-signed-up-live",
    "surface": "lead",
-   "baseline": "FFFFTF",
-   "sophie": "FFFTFT"
+   "baseline": "FTFTFF",
+   "sophie": "FFTFTF"
   },
   {
    "id": "lead-whatsapp-unanswered-asks",
@@ -152,104 +164,116 @@
   {
    "id": "martian-angry-no-list",
    "surface": "web",
-   "baseline": "FFFFFF",
-   "sophie": "FFTTFF"
+   "baseline": "TTFTTF",
+   "sophie": "FTTFTT"
   },
   {
    "id": "martian-close-account",
    "surface": "web",
-   "baseline": "TTTFTT",
-   "sophie": "TTTTTT"
+   "baseline": "FTTTTF",
+   "sophie": "TTFTTT"
   },
   {
    "id": "martian-cost-per-email",
    "surface": "web",
-   "baseline": "TTTTTF",
-   "sophie": "FTTTTT"
+   "baseline": "TTFFTF",
+   "sophie": "TTFTTF"
   },
   {
    "id": "martian-exclude-leads",
    "surface": "web",
-   "baseline": "TTFTTT",
-   "sophie": "TTFTTT"
+   "baseline": "TTTTTF",
+   "sophie": "TTTTFT"
   },
   {
    "id": "martian-force-send",
    "surface": "web",
-   "baseline": "TTTFTT",
-   "sophie": "TFTTFT"
+   "baseline": "TTTTFT",
+   "sophie": "FTFTTF"
   },
   {
    "id": "martian-give-me-the-list",
    "surface": "web",
-   "baseline": "FFTFTF",
-   "sophie": "TTTTFF"
+   "baseline": "TTTFTT",
+   "sophie": "TFFFTF"
   },
   {
    "id": "martian-how-many-left",
    "surface": "web",
-   "baseline": "TFTFTF",
+   "baseline": "FTFTFT",
    "sophie": "TTTTTT"
   },
   {
    "id": "martian-refund",
    "surface": "web",
-   "baseline": "FFFFTF",
+   "baseline": "FFFFFF",
    "sophie": "FFTFFF"
   },
   {
    "id": "martian-scam",
    "surface": "web",
-   "baseline": "TFTFFF",
-   "sophie": "FFFFFF"
+   "baseline": "TTFFFF",
+   "sophie": "TFFTTF"
   },
   {
    "id": "martian-which-ai",
    "surface": "web",
-   "baseline": "TTTFTT",
-   "sophie": "TTFFTF"
+   "baseline": "TFFTTT",
+   "sophie": "TFFFTT"
   },
   {
    "id": "martian-why-3-dollars",
    "surface": "web",
-   "baseline": "FFFTFF",
-   "sophie": "TFTTFT"
+   "baseline": "FTFFTT",
+   "sophie": "FTFFFT"
   },
   {
    "id": "martian-zero-balance",
    "surface": "web",
-   "baseline": "FTFFTF",
-   "sophie": "FFFTFF"
+   "baseline": "TFTTFF",
+   "sophie": "FFTTFT"
+  },
+  {
+   "id": "next-steps-held-no-brief",
+   "surface": "web",
+   "baseline": "TTFTTT",
+   "sophie": "TTTTTT"
+  },
+  {
+   "id": "next-steps-held-no-brief-proactive",
+   "surface": "web",
+   "baseline": "FFFFFF",
+   "sophie": "FFFFFF"
   },
   {
    "id": "novemiq-explain-campaigns",
    "surface": "web",
-   "baseline": "FFFFFF",
-   "sophie": "TFTTTF"
+   "baseline": "TTTTFT",
+   "sophie": "TFTTFT"
   },
   {
    "id": "prospect-free-trial-pricing",
    "surface": "whatsapp",
-   "baseline": "FFTFFF",
-   "sophie": "FTFFFF"
+   "baseline": "FFFFFF",
+   "sophie": "TTFFTF"
   },
   {
    "id": "state-declined-asked",
    "surface": "web",
    "baseline": "TTTTTT",
-   "sophie": "FTFFTT"
+   "sophie": "TTTTTT"
   },
   {
    "id": "state-declined-proactive",
    "surface": "web",
    "baseline": "FFFFFF",
-   "sophie": "FFFFFT"
+   "sophie": "FFFFFF"
   },
   {
    "id": "state-no-card-asked",
    "surface": "whatsapp",
-   "baseline": "TTTTTT",
-   "sophie": "TTFTTT"
+   "baseline": "TTTFTT",
+   "sophie": "TTTTTT"
   },
   {
    "id": "state-no-card-proactive",
@@ -260,8 +284,8 @@
   {
    "id": "state-out-of-credit-asked",
    "surface": "whatsapp",
-   "baseline": "TTTTTF",
-   "sophie": "TFFTTT"
+   "baseline": "FTTTTT",
+   "sophie": "TTTFTT"
   },
   {
    "id": "state-out-of-credit-proactive",
@@ -272,49 +296,49 @@
   {
    "id": "truth-campaign-rule",
    "surface": "web",
-   "baseline": "FFFFTF",
-   "sophie": "FTFFFF"
+   "baseline": "FFFTFT",
+   "sophie": "FFFTFT"
   },
   {
    "id": "truth-evaluate-results",
    "surface": "web",
    "baseline": "FFFFFF",
-   "sophie": "FFFFFF"
+   "sophie": "FFTFFF"
   },
   {
    "id": "truth-how-much-spent",
    "surface": "whatsapp",
-   "baseline": "TTTTTF",
-   "sophie": "TTTTTT"
+   "baseline": "TFTTTT",
+   "sophie": "FTTTTT"
   },
   {
    "id": "truth-off-target",
    "surface": "web",
-   "baseline": "TFFFFT",
-   "sophie": "FTFTTT"
+   "baseline": "TFFFTT",
+   "sophie": "TFTTFF"
   },
   {
    "id": "truth-who-is-waiting",
    "surface": "web",
-   "baseline": "TFFFFF",
-   "sophie": "FTFFTT"
+   "baseline": "FFTFTT",
+   "sophie": "FTTFTF"
   },
   {
    "id": "wa-human-ambiguous-him",
    "surface": "lead",
-   "baseline": "TFTTFT",
-   "sophie": "FTTFTT"
+   "baseline": "TTTFFT",
+   "sophie": "FFFTFT"
   },
   {
    "id": "wa-human-photo-no-words",
    "surface": "lead",
-   "baseline": "FTTFTF",
-   "sophie": "FTTTFT"
+   "baseline": "TTTFFF",
+   "sophie": "FTTTTT"
   },
   {
    "id": "wa-human-quoted-lead",
    "surface": "lead",
-   "baseline": "FFFFTF",
+   "baseline": "TTTTTT",
    "sophie": "TTTTTT"
   }
  ]
