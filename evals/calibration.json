@@ -1,9 +1,9 @@
 {
   "kind": "calibration",
-  "at": "2026-11-06T18:52:25.914Z",
+  "at": "2026-11-11T12:06:11.227Z",
   "judge": "jev/jev-latest",
-  "cases": 54,
-  "agree": 54,
+  "cases": 58,
+  "agree": 58,
   "passed": true,
   "rows": [
     {
@@ -65,6 +65,41 @@
     },
     {
       "id": "lead-autoreply-then-visit",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-check-what-they-have",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "lead-check-what-they-have",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-client-not-a-true-lead",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "lead-client-not-a-true-lead",
       "which": "good",
       "expected": "pass",
       "got": "pass",
@@ -206,7 +241,8 @@
       "expected": "fail",
       "got": "fail",
       "failed": [
-        "respectful"
+        "respectful",
+        "answers"
       ]
     },
     {
@@ -257,6 +293,44 @@
       "failed": []
     },
     {
+      "id": "next-steps-held-no-brief-proactive",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers",
+        "nextAction",
+        "form"
+      ]
+    },
+    {
+      "id": "next-steps-held-no-brief-proactive",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "next-steps-held-no-brief",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "next-steps-held-no-brief",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
       "id": "novemiq-explain-campaigns",
       "which": "good",
       "expected": "pass",
@@ -280,7 +354,8 @@
       "got": "fail",
       "failed": [
         "true",
-        "answers"
+        "answers",
+        "form"
       ]
     },
     {
@@ -404,40 +479,6 @@
     },
     {
       "id": "wa-human-quoted-lead",
-      "which": "good",
-      "expected": "pass",
-      "got": "pass",
-      "failed": []
-    },
-    {
-      "id": "lead-check-what-they-have",
-      "which": "prod-bad",
-      "expected": "fail",
-      "got": "fail",
-      "failed": [
-        "proactive",
-        "answers"
-      ]
-    },
-    {
-      "id": "lead-check-what-they-have",
-      "which": "good",
-      "expected": "pass",
-      "got": "pass",
-      "failed": []
-    },
-    {
-      "id": "lead-client-not-a-true-lead",
-      "which": "prod-bad",
-      "expected": "fail",
-      "got": "fail",
-      "failed": [
-        "proactive",
-        "answers"
-      ]
-    },
-    {
-      "id": "lead-client-not-a-true-lead",
       "which": "good",
       "expected": "pass",
       "got": "pass",

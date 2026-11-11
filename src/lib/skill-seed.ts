@@ -482,7 +482,7 @@ The brief already says what runs, its spend and its results. Read deeper only fo
 
 ## Read (all free)
 - Each campaign, its cap, spend this period and results: GET /v1/sales-funnel-campaigns?brandId=.
-- What comes next in one campaign: GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{campaignId}/next-steps. Leads waiting to be contacted (nextSends.leadsQueued), the earliest next send (nextSends.nextSendAt, in each lead's own working hours), and the measured days from a first email to a first positive reply (timeToFirstPositiveReply).
+- What comes next in one campaign: GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{campaignId}/next-steps. A step that cannot run (nextSends.heldBy, leadsWaitingOnHeldEngine), leads waiting to be contacted (nextSends.leadsQueued), the earliest next send (nextSends.nextSendAt, in each lead's own working hours), and the measured days from a first email to a first positive reply (timeToFirstPositiveReply).
 - The offer's figures: GET /v1/offers/{offerId}/revenue?brandId= (sent, replies, return). Per source: GET /v1/offers/{offerId}/sourcing?brandId=.
 - People who replied with interest: GET /v1/leads?brandId=&offerId=&bucket=positive_reply&standing=sales_interest. Answered or not: this list never says who still waits.
 - Spend per campaign: GET /v1/runs/stats/costs?brandId=&groupBy=campaignId.
@@ -496,7 +496,7 @@ Never call someone waiting, interested or replied from the list alone, nor from 
 
 ## "How are my campaigns doing?" as a short story, one running campaign at a time
 1. It runs, its cap, what it used this period.
-2. What waits and when it leaves: "47 leads are queued, the next go out Monday morning in their own working hours." leadsQueued null = you cannot see the queue right now, never "nothing queued".
+2. What waits and when it leaves: "47 leads are queued, the next go out Monday morning in their own working hours." leadsQueued null = you cannot see the queue right now, never "nothing queued". A held step (HELD in your brief) is THE reason: say it first (which step, why, how many wait) and unblock it with them (no campaign brief: write it together, \`campaigns\`). A cap or timing explains a wait only when a served figure says so.
 3. When replies come: ALWAYS say it, never skip this line. Measured: "Expect a reply about <that figure> after the first email", and whose figure it is (this campaign, or our clients sending the same way). Not measured: "It is too early to say how long replies take on this campaign." No number, no guess, no word "learning".
 4. A reactive campaign acts on its trigger: say what starts it.
 5. End on the one move that helps most (answer the replies waiting, raise the cap, narrow who we reach).

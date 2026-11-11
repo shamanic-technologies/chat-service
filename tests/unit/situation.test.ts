@@ -62,6 +62,47 @@ describe("buildSituationBrief", () => {
     expect(brief).toContain("(Not read this turn: offers.");
   });
 
+  describe("a running campaign's next steps (NEXT-STEPS-TRUE-REASON-1111, prod 2026-11-11)", () => {
+    const running = { campaigns: [{ id: "c1", name: "Ops Leaders", status: "ongoing", budget: "Max $5/day", spent: "$4.91 of $5 today" }, { id: "c2", name: "Old", status: "stopped", stopReason: "manual" }] };
+    const held = {
+      nextSends: {
+        leadsQueued: 123, dueNow: 0, nextSendAt: null, unavailableReason: null, leadsWaitingOnHeldEngine: 123,
+        heldBy: { outcome: "message_written", pipeCampaignId: "p1", reason: "campaign_states_no_brief", heldSince: "2026-11-11T05:52:00.000Z", lastAnsweredAt: "2026-11-11T09:51:00.000Z" },
+      },
+    };
+
+    it("states the held step, its served reason and the leads waiting, then the strategy line", async () => {
+      const read = vi.fn(async () => held);
+      const brief = await buildSituationBrief(reader({ listCampaigns: async () => running, getCampaignNextSteps: read }));
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(read).toHaveBeenCalledWith("b1", "c1");
+      expect(brief).toContain('HELD: nothing (more) goes out because its "Message written" step cannot run (served reason: campaign_states_no_brief, since Wednesday 11 November, 05:52 UTC); 123 leads wait at that step with nothing sent yet');
+      expect(brief).toContain("queued to go out: 123 leads, no send time planned until that step can run");
+      expect(brief).toContain("A campaign marked HELD has a step that cannot run");
+    });
+
+    it("says nothing about a hold when no step is held, and gives the queue with its earliest send", async () => {
+      const brief = await buildSituationBrief(
+        reader({ listCampaigns: async () => running, getCampaignNextSteps: async () => ({ nextSends: { leadsQueued: 47, nextSendAt: "2026-11-16T08:00:00.000Z", heldBy: null, leadsWaitingOnHeldEngine: null } }) }),
+      );
+      expect(brief).not.toContain("HELD");
+      expect(brief).toContain("queued to go out: 47 leads, earliest send Monday 16 November, 08:00 UTC");
+    });
+
+    it("an unreadable queue is said as unreadable, never as nothing queued", async () => {
+      const brief = await buildSituationBrief(
+        reader({ listCampaigns: async () => running, getCampaignNextSteps: async () => ({ nextSends: { leadsQueued: null, unavailableReason: "engine_answers_unreadable", heldBy: null } }) }),
+      );
+      expect(brief).toContain("queue not readable right now (engine_answers_unreadable)");
+    });
+
+    it("a failed read is named, the brief still builds", async () => {
+      const brief = await buildSituationBrief(reader({ listCampaigns: async () => running, getCampaignNextSteps: async () => { throw new Error("502"); } }));
+      expect(brief).toContain('(Not read this turn: next steps of "Ops Leaders"');
+      expect(brief).toContain('"Ops Leaders"; ongoing');
+    });
+  });
+
   it("an account with nothing set up says so", async () => {
     const brief = await buildSituationBrief(reader({ listBrands: async () => ({ brands: [] }) }));
     expect(brief).toContain("Nothing set up yet: no brand, no campaign.");

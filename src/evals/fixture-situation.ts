@@ -42,6 +42,10 @@ export function fixtureSituationReader(scenario: Scenario): SituationReader {
     listRepliesToHandle: async () => recorded(scenario, "list_replies_to_handle"),
     getBillingAccount: async () => recorded(scenario, "get_billing_account"),
     getPaymentOutlook: async () => recorded(scenario, "get_payment_outlook"),
+    // Read only when the scenario recorded it (older scenarios predate this read, as production did).
+    ...(scenario.fixtures.get_campaign_next_steps
+      ? { getCampaignNextSteps: async () => recorded(scenario, "get_campaign_next_steps") }
+      : {}),
   };
 }
 
