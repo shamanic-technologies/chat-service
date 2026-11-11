@@ -169,7 +169,7 @@ describe("buildChannelBlock", () => {
     const block = buildChannelBlock(known, true);
     expect(block).toContain("Never send again something you already said");
     expect(block).toContain("one short warm line that still leaves their next step one click away");
-    expect(block).toContain("Every message moves them one step from where they stopped");
+    expect(block).toContain("A next step that serves what they want closes the message, offered once");
     expect(block).toContain("Never repeat a price, amount or offer term from the thread");
   });
 
@@ -218,9 +218,10 @@ describe("buildChannelBlock", () => {
     const sha = (g: boolean, c: ChatChannelContext) => createHash("sha256").update(buildChannelBlock(c, g)).digest("hex");
     // Signed-in block re-pinned by SOPHIE-WA-ONBOARD-1101 (the chat sets up an account end to end, never a dashboard hand-off).
     // Both re-pinned by SOPHIE-WA-HUMAN-1106 (ambiguity, quote and photo lines, every chat-app block).
-    expect(sha(false, legacy)).toBe("768159c2a8eb7342ff5cb89c80811da2e917babbf6bb2c2942a12fe73ff7e1f6");
-    expect(sha(true, legacy)).toBe("8efb54f32f529a608691f85599a7c18435d03c9906cb4fba67f5a7190767a3e8");
-    expect(sha(true, { ...legacy, receivedOn: null })).toBe("8efb54f32f529a608691f85599a7c18435d03c9906cb4fba67f5a7190767a3e8");
+    // Both re-pinned by SOPHIE-CORE-1111 (a next step offered once, never a push).
+    expect(sha(false, legacy)).toBe("c28fc2ef7442cc632cac98742e7d7c5f373e743f0d1182d09f14c153d7823ded");
+    expect(sha(true, legacy)).toBe("ee2a2334d7af3629b52d9d40748676acb3c3eb1755613e3803ddf00bed3b7b85");
+    expect(sha(true, { ...legacy, receivedOn: null })).toBe("ee2a2334d7af3629b52d9d40748676acb3c3eb1755613e3803ddf00bed3b7b85");
   });
 
   it("carries no hard-coded assistant name", () => {

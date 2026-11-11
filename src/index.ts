@@ -334,6 +334,7 @@ import {
 } from "./lib/key-client.js";
 import { authorizeCredits, BillingError, isAgentApiOrg, type AuthorizeCreditResult, type BillingRefusalReason, type SalesFunnelCap } from "./lib/billing-client.js";
 import { holdSseUntilOpen } from "./lib/held-sse.js";
+import { oneTurnAtATime, turnKeyOf } from "./lib/turn-queue.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
 import {
   createBrandFromUrl,
@@ -3359,7 +3360,13 @@ app.get("/sessions/:sessionId", requireAuth, async (req, res) => {
   return res.json(serializeSessionHistory(session, history));
 });
 
+// One turn at a time per conversation (SOPHIE-CORE-1111): a second message waits for the first turn.
 app.post("/chat", requireAuth, async (req, res) => {
+  const { orgId, userId } = res.locals as AuthLocals;
+  await oneTurnAtATime(turnKeyOf(req.body, { orgId, userId }), () => handleChatTurn(req, res));
+});
+
+async function handleChatTurn(req: express.Request, res: express.Response): Promise<unknown> {
   const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
 
   // Build tracking headers to forward to downstream services
@@ -5899,7 +5906,7 @@ app.post("/chat", requireAuth, async (req, res) => {
       }
     }
   }
-});
+}
 
 /**
  * Extract button suggestions from the AI response.

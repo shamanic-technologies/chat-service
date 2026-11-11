@@ -1,9 +1,9 @@
 {
   "kind": "calibration",
-  "at": "2026-11-06T18:52:25.914Z",
+  "at": "2026-11-11T11:50:05.184Z",
   "judge": "jev/jev-latest",
-  "cases": 54,
-  "agree": 54,
+  "cases": 60,
+  "agree": 60,
   "passed": true,
   "rows": [
     {
@@ -22,6 +22,60 @@
     },
     {
       "id": "clinic-find-me-clients",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "core-no-email-queued-proactive",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "nextAction",
+        "form"
+      ]
+    },
+    {
+      "id": "core-no-email-queued-proactive",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "core-refill-on-small-budget",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "nextAction"
+      ]
+    },
+    {
+      "id": "core-refill-on-small-budget",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "core-turn-refill-off",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "respectful",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "core-turn-refill-off",
       "which": "good",
       "expected": "pass",
       "got": "pass",
@@ -53,6 +107,7 @@
         "true",
         "respectful",
         "proactive",
+        "answers",
         "form"
       ]
     },
@@ -65,6 +120,41 @@
     },
     {
       "id": "lead-autoreply-then-visit",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-check-what-they-have",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "lead-check-what-they-have",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-client-not-a-true-lead",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "lead-client-not-a-true-lead",
       "which": "good",
       "expected": "pass",
       "got": "pass",
@@ -206,7 +296,8 @@
       "expected": "fail",
       "got": "fail",
       "failed": [
-        "respectful"
+        "respectful",
+        "answers"
       ]
     },
     {
@@ -280,7 +371,8 @@
       "got": "fail",
       "failed": [
         "true",
-        "answers"
+        "answers",
+        "form"
       ]
     },
     {
@@ -373,6 +465,7 @@
       "got": "fail",
       "failed": [
         "true",
+        "proactive",
         "answers"
       ]
     },
@@ -392,7 +485,8 @@
         "respectful",
         "proactive",
         "answers",
-        "nextAction"
+        "nextAction",
+        "form"
       ]
     },
     {
@@ -404,40 +498,6 @@
     },
     {
       "id": "wa-human-quoted-lead",
-      "which": "good",
-      "expected": "pass",
-      "got": "pass",
-      "failed": []
-    },
-    {
-      "id": "lead-check-what-they-have",
-      "which": "prod-bad",
-      "expected": "fail",
-      "got": "fail",
-      "failed": [
-        "proactive",
-        "answers"
-      ]
-    },
-    {
-      "id": "lead-check-what-they-have",
-      "which": "good",
-      "expected": "pass",
-      "got": "pass",
-      "failed": []
-    },
-    {
-      "id": "lead-client-not-a-true-lead",
-      "which": "prod-bad",
-      "expected": "fail",
-      "got": "fail",
-      "failed": [
-        "proactive",
-        "answers"
-      ]
-    },
-    {
-      "id": "lead-client-not-a-true-lead",
       "which": "good",
       "expected": "pass",
       "got": "pass",
