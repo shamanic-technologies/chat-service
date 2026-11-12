@@ -148,6 +148,25 @@ describe("/complete with brandTools", () => {
     expect(r.costLines).toEqual([{ costName: "deepseek-x-input", quantity: 100 }]);
   });
 
+  it("reasoning as the plain call decides it: off for a structured answer, the caller's word otherwise (VENDOR-TOOLS-FOLLOWUP-1112)", async () => {
+    const { streamVendorChat } = await import("../../src/lib/vendor-chat.js");
+    const loop = vi.mocked(streamVendorChat);
+    const schema = { type: "object", properties: { decision: { type: "string" } } };
+    const cases: Array<[Record<string, unknown>, boolean]> = [
+      [{ responseSchema: schema }, true],
+      [{ responseSchema: null }, false],
+      [{ responseSchema: schema, disableThinking: false }, false],
+      [{ responseSchema: null, disableThinking: true }, true],
+    ];
+    for (const [extra, expected] of cases) {
+      loop.mockClear();
+      vendorLoop.calls.splice(0);
+      vendorLoop.calls.push([{ name: OUTPUT_TOOL_NAME, args: { decision: "write", text: "Hi" } }]);
+      await completeWithBrandTools({ ...base, spend: newBrandToolsSpend(), beforeProviderCall: async () => undefined, ...extra });
+      expect((loop.mock.calls[0][0] as { reasoningDisabled?: boolean }).reasoningDisabled).toBe(expected);
+    }
+  });
+
   it("the model never returned its output: NoOutputError, the spent round is in the caller's ledger", async () => {
     vendorLoop.calls.push([{ name: "distribute__get_lead", args: {} }]);
     const spend = newBrandToolsSpend();

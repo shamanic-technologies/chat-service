@@ -77,6 +77,9 @@ describe("streamVendorChat: the vendor's own request fields (SOPHIE-REFONTE-1102
     await run().out;
     expect(post.mock.calls[0][0].body.max_tokens).toBeGreaterThan(0);
     expect(post.mock.calls[0][0].reasoningDisabled).toBe(false);
+    // Not asked: the model's default, no reasoning field on the wire.
+    expect(post.mock.calls[0][0].body.thinking).toBeUndefined();
+    expect(post.mock.calls[0][0].body.reasoning_effort).toBeUndefined();
 
     post.mockReset();
     post.mockResolvedValue({ ...reply({ content: "Done." }), model: "gpt-6.1-sol" });
@@ -101,6 +104,19 @@ describe("streamVendorChat: the vendor's own request fields (SOPHIE-REFONTE-1102
     expect(body.max_completion_tokens).toBeGreaterThan(0);
     expect(body.max_tokens).toBeUndefined();
     expect(post.mock.calls[0][0].reasoningDisabled).toBe(true);
+    // GPT-6.1 Sol's floor, beside its tools (sent through the Responses API).
+    expect(body.reasoning_effort).toBe("low");
+  });
+
+  it("puts DeepSeek's reasoning-off field in the body when asked (VENDOR-TOOLS-FOLLOWUP-1112: it was never sent)", async () => {
+    post.mockReset();
+    post.mockResolvedValue(reply({ content: "Done." }));
+    await streamVendorChat({
+      vendor: "deepseek", apiKey: "k", model: "deepseek-flash", costPrefix: "deepseek-v4.1-flash", systemPrompt: "SYS",
+      turnContext: "", history: [], userMessage: "Hi", tools: TOOLS, res: {} as never, sendSSE: () => {},
+      executeTool: vi.fn(), signal: new AbortController().signal, beforeProviderCall: async () => {}, reasoningDisabled: true,
+    });
+    expect(post.mock.calls[0][0].body.thinking).toEqual({ type: "disabled" });
   });
 });
 

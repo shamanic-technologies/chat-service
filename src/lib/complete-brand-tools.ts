@@ -218,7 +218,9 @@ export async function completeWithBrandTools(args: BrandToolsCompleteArgs): Prom
       userMessage: args.message,
       tools,
       beforeProviderCall: args.beforeProviderCall,
-      reasoningDisabled: args.disableThinking === true,
+      // As the plain call decides it (shouldDisableVendorReasoning): the
+      // caller's word, else off for a structured answer.
+      reasoningDisabled: args.disableThinking ?? args.responseSchema != null,
     });
     tokensInput = r.tokensInput;
     tokensOutput = r.tokensOutput;
