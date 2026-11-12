@@ -207,9 +207,24 @@ async function send(req: PreparedRequest, params: ApiCallParams): Promise<unknow
   return answerForModel({ params: req.params ?? [] }, req.params ? req.query : {}, res.status, data);
 }
 
-/** A refused call as the model reads it (production and the eval replay share it). */
+/**
+ * A refused call as the model reads it (production and the eval replay share it).
+ * `meaning` states in words what the HTTP status class means for the person
+ * (SOPHIE-SAYS-FAILED-1112, prod 2026-11-11: every email preview answered 503
+ * with an internal error string, and Sophie told the client "the first email
+ * isn't written yet" and offered to start spending). Keyed on the status class
+ * only: never on an operation, a service or an error text.
+ */
 export function failedCallAnswer(status: number, data: unknown): unknown {
-  return { ok: false, status, error: clip(data, 2_000) };
+  return { ok: false, status, meaning: failureMeaning(status), error: clip(data, 2_000) };
+}
+
+export function failureMeaning(status: number): string {
+  if (status === 429) return "Too busy right now: nothing ran. The same call can be tried again in a moment.";
+  if (status >= 500) {
+    return "Failed on our side: this step did not run, and it is not pending or in progress. It is a failure of ours, told to the person as one, with what still works; whatever depends on this step cannot happen until it works again.";
+  }
+  return "Refused: nothing ran. The error says what in the request to change.";
 }
 
 /** The proposal an operation needing the person's yes answers instead of running (production and the eval replay share it). */

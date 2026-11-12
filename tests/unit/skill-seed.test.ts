@@ -94,9 +94,14 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     const voice = bySlug.get("client-comms")!;
     expect(voice.parentSlug).toBe("index");
     expect(voice.content).toMatch(/reassured, knowing what happens next/);
-    expect(voice.content).toMatch(/goes to the team silently/);
     expect(voice.content).toMatch(/wins over any other wording rule/);
-    expect(voice.content).toMatch(/Never say what you could not read/);
+    // SOPHIE-SAYS-FAILED-1112 (prod 2026-11-11): "anything broken on our side goes to the team
+    // silently" licensed "the first email isn't written yet" over a 503 on every preview, and
+    // an offer to start spending. Our inside stays ours; a step of their service that failed is told.
+    expect(voice.content).toMatch(/Our inside: which app or person gets a request, issue links, error words/);
+    expect(voice.content).toMatch(/A failure of ours that stops what they asked for is told as one: what fails, that our team has it, what works/);
+    expect(voice.content).toMatch(/never what you could not read/);
+    expect(voice.content).not.toMatch(/goes to the team silently/);
     // SOPHIE-CORE-1111 (owner 2026-11-11): understand first, Carnegie, truth, in the one voice every surface reads.
     for (const w of ["## Understand first", "Unibox timeline", "Dale Carnegie", "## Truth", "never tell them what they already know"]) expect(voice.content).toContain(w);
     expect(voice.content).not.toMatch(/[\u2014\u2013]/);
@@ -115,7 +120,6 @@ describe("chat-first walk (owner 2026-10-10)", () => {
     expect(voice).toMatch(/today's fact and the next step replace it by themselves/);
     expect(voice).toMatch(/never name, quote or warn about what was said before/);
     expect(voice).toMatch(/the history of your own answers \(what you said before, that it was wrong, that this corrects it\)/);
-    expect(voice).toMatch(/an earlier answer of yours they may have acted on\. It goes to the team silently/);
     // No skill may license announcing a correction to the client.
     for (const s of SEED_SKILLS) {
       expect(s.content, s.slug).not.toMatch(/\b(correct|admit|acknowledge) (your|the) (earlier|previous|mistake)/i);

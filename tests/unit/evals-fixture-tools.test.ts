@@ -8,7 +8,7 @@ const fetchMock = vi.fn();
 vi.mock("../../src/lib/api-client.js", () => ({ apiServiceFetch: (...a: unknown[]) => fetchMock(...a) }));
 
 const { loadCatalogFromDocument, resetCatalog } = await import("../../src/agent/catalogue.js");
-const { callApi, YES_MARKER } = await import("../../src/agent/catalogue-tools.js");
+const { callApi, failedCallAnswer, YES_MARKER } = await import("../../src/agent/catalogue-tools.js");
 const { fixtureExecutor } = await import("../../src/evals/fixture-tools.js");
 
 const PARAMS = { orgId: "org-1", userId: "user-1", runId: "run-1" };
@@ -48,6 +48,16 @@ describe("eval replay of run_operation", () => {
     const prod = await callApi({ operationId: "postV1ContentPreviewEmail", body: {} }, PARAMS, []);
     expect(await run({ operationId: "postV1ContentPreviewEmail", body: {} })).toEqual(prod);
     expect(prod).toMatchObject({ ok: false, status: 503 });
+  });
+
+  it("says in words what a refusal means, by status class only (SOPHIE-SAYS-FAILED-1112)", () => {
+    const meaningOf = (s: number) => (failedCallAnswer(s, { error: "x" }) as { meaning: string }).meaning;
+    expect(meaningOf(503)).toMatch(/^Failed on our side/);
+    expect(meaningOf(503)).toMatch(/not pending or in progress/);
+    expect(meaningOf(500)).toBe(meaningOf(503));
+    expect(meaningOf(429)).toMatch(/tried again/);
+    expect(meaningOf(400)).toMatch(/^Refused: nothing ran/);
+    expect(meaningOf(404)).toBe(meaningOf(400));
   });
 
   it("proposes an act needing the person's yes with the gateway's own words, like production", async () => {
