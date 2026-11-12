@@ -723,6 +723,21 @@ One dynasty = one vendor line x tier, named as the vendor names it, no version (
 - 17 dynasties: `claude-haiku`, `claude-sonnet`, `claude-opus`, `claude-fable`, `gemini-flash-lite`, `gemini-flash`, `gemini-pro`, `gemini-argon`, `deepseek-flash`, `deepseek-pro` (history only, `deepseek-pro` the NAME redirects to `deepseek-flash`), `glm-flash`, `glm`, `kimi-k2`, `kimi-k3`, `gpt-astra`, `gpt-sol`, `gpt-terra`.
 - Data: `src/lib/llm-dynasties.ts`. Every id on `/internal/model-ids` carries its `dynasty`; `tests/unit/llm-dynasties.test.ts` fails a model with none, or a slug resolving outside its dynasty.
 
+## LLM cost names (`GET /internal/llm-cost-names`)
+
+Every LLM token cost name this service (or a caller before it moved onto `/complete`) ever wrote to runs-service, retired models included, mapped to its LLM dynasty and concrete model id(s) (LLM-RATING-PER-ENGINE-1112). `X-API-Key` only. Look a cost line up by EXACT name, never parse it (prefixes move on a vendor rename and nest: `zai-glm-5.3-` vs `zai-glm-5.3-flash-`).
+
+```json
+{ "costNames": [
+  { "costName": "anthropic-fable-5.1-tokens-output", "dynasty": "claude-fable", "provider": "anthropic", "modelIds": ["claude-fable-5-1"] },
+  { "costName": "deepseek-v4.1-flash-peak-tokens-output", "dynasty": "deepseek-flash", "provider": "deepseek", "modelIds": ["deepseek-flash"] }
+] }
+```
+
+- Data: `MODEL_COST_PREFIXES` (`src/lib/llm-cost-names.ts`), every prefix a model ever billed under; names = prefix x the vendor's segments (regime, long context) x billed dimensions, so a listed name may never have been billed. Never drop a retired model's prefixes.
+- Moving a head: add its new `costPrefix` there; the route throws (and `tests/unit/llm-cost-names.test.ts` fails) when a served head's prefix is missing. The test pins every LLM cost name stored in prod on 2026-11-12 to its dynasty.
+- Not listed: judges (Jev, Clef, Luna), image generation, embeddings, search units.
+
 ## Platform calls on behalf of a caller's run (COST-ACCOUNTING-1023)
 
 `POST /internal/platform-complete` and `POST /internal/platform-judgments` take an optional `x-run-id`: the CALLER's run the call is made for. The platform run chat-service opens becomes that run's child in runs-service, so its spend lands in the caller's run subtree and rolls into the caller's nearest run that declares an outcome (runs-service's rule). Who pays does not change: the run stays platform-billed, no org identity is sent. Both responses carry `runId`, the platform run that carried the call. No header = a root platform run, as before. A malformed id is `400` before any spend; a run runs-service refuses as parent is `400` naming it (`retryable: false`). chat-service produces no outcome here and declares none (`src/lib/platform-parent-run.ts`).
