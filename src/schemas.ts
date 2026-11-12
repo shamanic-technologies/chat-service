@@ -527,7 +527,7 @@ export const CompleteRequestSchema = z
       description:
         "Sampling temperature (0–2). Lower = more deterministic. Rejected with a 400 by the " +
         "reasoning-first models that removed the sampling parameters — today `anthropic`/`fable` " +
-        "(Claude Fable 5.1) and `openai`/`gpt-pro` (GPT-6 Astra). The request is refused before " +
+        "(Claude Fable 5.2) and `openai`/`gpt-pro` (GPT-6 Astra). The request is refused before " +
         "any cost is held; the parameter is never silently dropped.",
       example: 0.3,
     }),
@@ -558,7 +558,7 @@ export const CompleteRequestSchema = z
         "Legacy aliases (version-free, each a redirect to its dynasty's head):\n\n" +
         "**anthropic:** `haiku` → Claude Haiku 5.5 (fast/cheap), `sonnet` \u2192 Claude Sonnet 5.5 (balanced), " +
         "`opus` \u2192 Claude Opus 5.5 (high quality), " +
-        "`fable` \u2192 Claude Fable 5.1, the tier above Opus (1M context, always-on reasoning). " +
+        "`fable` \u2192 Claude Fable 5.2, the tier above Opus (1M context, always-on reasoning). " +
         "`sonnet`, `opus` and `fable` reject `temperature` with a 400 \u2014 Anthropic removed the sampling " +
         "parameters on its always-thinking models, as OpenAI did on its GPT models. On `sonnet` and `opus`, " +
         "`disableThinking: true` minimizes reasoning (effort `low`); thinking cannot be fully disabled there.\n" +
@@ -955,7 +955,7 @@ export const InternalPlatformCompleteRequestSchema = z
       description:
         "Sampling temperature (0–2). Lower = more deterministic. Rejected with a 400 by the " +
         "reasoning-first models that removed the sampling parameters — today `anthropic`/`fable` " +
-        "(Claude Fable 5.1) and `openai`/`gpt-pro` (GPT-6 Astra). The request is refused before " +
+        "(Claude Fable 5.2) and `openai`/`gpt-pro` (GPT-6 Astra). The request is refused before " +
         "any cost is held; the parameter is never silently dropped.",
       example: 0.3,
     }),
@@ -971,7 +971,7 @@ export const InternalPlatformCompleteRequestSchema = z
       description:
         DYNASTY_MODEL_DOC +
         "Legacy aliases, each a redirect to its dynasty's head. Must match the provider: anthropic → haiku|sonnet|opus|fable " +
-        "(`sonnet` = Claude Sonnet 5.5, `opus` = Claude Opus 5.5, `fable` = Claude Fable 5.1; all three reject `temperature` with a 400), " +
+        "(`sonnet` = Claude Sonnet 5.5, `opus` = Claude Opus 5.5, `fable` = Claude Fable 5.2; all three reject `temperature` with a 400), " +
         "google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro " +
         "(both DeepSeek V4.1 Flash; `deepseek-pro` is a deprecated synonym), zai → glm-flash|glm-pro (`glm-5.3-flash` / `glm-5.3`), " +
         "moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`), openai → gpt-pro|gpt-sol|gpt-terra " +
