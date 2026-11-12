@@ -304,6 +304,8 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
       // silent-turn re-ask say to answer now (their notes), and a call the model
       // makes anyway is not run.
       ...(vendorTools.length > 0 ? { tools: vendorTools } : {}),
+      // What THIS model needs beside tools (OpenAI Terra: reasoning_effort none).
+      ...(vendorTools.length > 0 ? (VENDORS[vendor].toolCallRequestFields?.[model] ?? {}) : {}),
     };
 
     const at = new Date();

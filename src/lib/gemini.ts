@@ -620,53 +620,72 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * JSON Schema keywords Gemini's OpenAPI 3.0 subset rejects with HTTP 400
- * (`Unknown name "<field>" at 'generation_config.response_schema'`). Stripped
- * recursively from caller-supplied `responseSchema` before forwarding to the
- * Gemini API. The caller's object is not mutated — a new object is returned.
+ * Gemini's `Schema` (responseSchema AND function-declaration `parameters`) is a
+ * restricted OpenAPI 3.0 subset: any field it does not know is a HTTP 400
+ * (`Unknown name "propertyNames" at 'tools[0].function_declarations[27]...'`).
+ * So the sanitizer is an ALLOW-LIST of the fields Google documents
+ * (https://ai.google.dev/api/caching#Schema), never a deny-list: a deny-list
+ * misses the next JSON Schema keyword a brand's MCP server emits (prod
+ * 2026-11-12, GEMINI-BRAND-TOOLS-1112: Zod's `z.record` emits `propertyNames`,
+ * the distribute.you MCP's `call_api` tool 400'd every Gemini call carrying
+ * the brand's tools). Everything else is dropped and NAMED in `removed`, so
+ * the caller logs it.
+ *
+ * `default` is documented but dropped (it was before; the model loses only a
+ * hint, the tool server applies real defaults). Names under `properties` are
+ * property NAMES, never keywords: a property called `default` or `const`
+ * survives.
  */
-const GEMINI_UNSUPPORTED_SCHEMA_KEYS = new Set([
-  "additionalProperties",
-  "unevaluatedProperties",
-  "patternProperties",
-  "dependentRequired",
-  "dependentSchemas",
-  "$schema",
-  "$id",
-  "$ref",
-  "$defs",
-  "$comment",
-  "definitions",
-  "if",
-  "then",
-  "else",
-  "not",
-  "const",
-  "examples",
-  "default",
-  "readOnly",
-  "writeOnly",
-  "contentEncoding",
-  "contentMediaType",
-  "exclusiveMinimum",
-  "exclusiveMaximum",
-  "multipleOf",
+const GEMINI_SCHEMA_FIELDS = new Set([
+  "type",
+  "format",
+  "title",
+  "description",
+  "nullable",
+  "enum",
+  "maxItems",
+  "minItems",
+  "properties",
+  "required",
+  "minProperties",
+  "maxProperties",
+  "minLength",
+  "maxLength",
+  "pattern",
+  "example",
+  "anyOf",
+  "propertyOrdering",
+  "items",
+  "minimum",
+  "maximum",
 ]);
 
-function sanitizeGeminiSchemaInner(value: unknown, removed: Set<string>): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeGeminiSchemaInner(item, removed));
-  }
-  if (value === null || typeof value !== "object") {
-    return value;
-  }
+function sanitizeGeminiSchemaNode(value: unknown, removed: Set<string>): unknown {
+  if (Array.isArray(value)) return value.map((item) => sanitizeGeminiSchemaNode(item, removed));
+  if (value === null || typeof value !== "object") return value;
+  const node = value as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-    if (GEMINI_UNSUPPORTED_SCHEMA_KEYS.has(key)) {
+  for (const [key, val] of Object.entries(node)) {
+    if (!GEMINI_SCHEMA_FIELDS.has(key)) {
       removed.add(key);
       continue;
     }
-    out[key] = sanitizeGeminiSchemaInner(val, removed);
+    if (key === "properties" && val && typeof val === "object" && !Array.isArray(val)) {
+      const props: Record<string, unknown> = {};
+      for (const [name, sub] of Object.entries(val as Record<string, unknown>)) props[name] = sanitizeGeminiSchemaNode(sub, removed);
+      out.properties = props;
+    } else if (key === "items" || key === "anyOf") {
+      out[key] = sanitizeGeminiSchemaNode(val, removed);
+    } else if (key === "type" && Array.isArray(val)) {
+      // JSON Schema `type: ["string", "null"]`: Gemini takes ONE type + `nullable`.
+      const types = val.filter((t): t is string => typeof t === "string" && t !== "null");
+      if (types.length < val.length) out.nullable = true;
+      if (types.length === 1) out.type = types[0];
+      else if (types.length > 1) out.anyOf = types.map((t) => ({ type: t }));
+      removed.add("type[]");
+    } else {
+      out[key] = val;
+    }
   }
   return out;
 }
@@ -675,7 +694,7 @@ export function sanitizeGeminiSchema(
   schema: Record<string, unknown>,
 ): { schema: Record<string, unknown>; removed: string[] } {
   const removed = new Set<string>();
-  const sanitized = sanitizeGeminiSchemaInner(schema, removed) as Record<string, unknown>;
+  const sanitized = sanitizeGeminiSchemaNode(schema, removed) as Record<string, unknown>;
   return { schema: sanitized, removed: Array.from(removed) };
 }
 

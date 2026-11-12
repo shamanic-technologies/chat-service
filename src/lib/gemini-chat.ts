@@ -198,9 +198,10 @@ export interface StreamGeminiChatResult {
  * `$schema`, `const`, `examples`, `exclusiveMinimum/Maximum`, `multipleOf`, etc.
  * with HTTP 400 (`Unknown name "additionalProperties" at 'tools[0].
  * function_declarations[..].parameters.properties[..].value'`). MCP tool input
- * schemas (JSON-Schema 7) routinely carry these keywords, so strip them
- * recursively before sending — reusing the same deny-list the `/complete`
- * responseSchema path already applies. The supported keys the model needs
+ * schemas (JSON-Schema 7) routinely carry these keywords (`propertyNames` from a
+ * Zod record, GEMINI-BRAND-TOOLS-1112), so keep only Gemini's own fields —
+ * the same allow-list the `/complete` responseSchema path applies — and log
+ * what was dropped per tool. The supported keys the model needs
  * (`type`, `description`, `enum`, `properties`, `required`, `items`, `nullable`,
  * `format`, `pattern`, `minimum/maximum`, `anyOf`) are preserved.
  * See https://ai.google.dev/api/caching#Schema
@@ -214,7 +215,11 @@ export function toGeminiFunctionDeclarations(
       properties: t.input_schema.properties,
       ...(t.input_schema.required?.length ? { required: t.input_schema.required } : {}),
     };
-    const { schema } = sanitizeGeminiSchema(rawParameters);
+    const { schema, removed } = sanitizeGeminiSchema(rawParameters);
+    if (removed.length > 0) {
+      // The tool is kept; only what Gemini's Schema cannot carry is dropped, and said (GEMINI-BRAND-TOOLS-1112).
+      console.warn(`[gemini-chat] tool "${t.name}": schema fields Gemini refuses were dropped: ${removed.join(",")}`);
+    }
     return {
       name: t.name,
       description: t.description,
