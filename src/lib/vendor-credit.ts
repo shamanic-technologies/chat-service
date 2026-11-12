@@ -166,8 +166,14 @@ export const PROBE_INTERVAL_MS = 60_000;
 // rate limit or an auth failure must not read as an empty balance.
 // ---------------------------------------------------------------------------
 
-/** Anthropic: 400 "Your credit balance is too low to access the Anthropic API." */
-const ANTHROPIC_EMPTY_BALANCE = /credit balance is too low/i;
+/**
+ * Anthropic: 400 "Your credit balance is too low to access the Anthropic API.", or the
+ * Console spend limit: 400 "You have reached your specified API usage limits. You will
+ * regain access on <date>." Both refuse every call until money or a setting changes, so
+ * both are the same stored fact (prod 2026-11-12: the limit refused every Anthropic call,
+ * Sophie's Haiku backup included, and nothing on Monitoring said so).
+ */
+const ANTHROPIC_EMPTY_BALANCE = /credit balance is too low|reached your specified API usage limits/i;
 /** Google AI Studio prepay: "Your prepayment credits are depleted." */
 const GOOGLE_EMPTY_BALANCE = /prepayment credits? (?:are|is) depleted/i;
 
