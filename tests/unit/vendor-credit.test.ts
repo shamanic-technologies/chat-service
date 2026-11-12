@@ -288,6 +288,8 @@ describe("completeWithVendor on an empty balance", () => {
 describe("native SDK empty-balance wording", () => {
   it("reads Anthropic's and Google's own words, nothing adjacent", () => {
     expect(isOutOfCreditError("anthropic", new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}'))).toBe(true);
+    // The Console spend limit (prod 2026-11-12: every Anthropic call refused until the 1st of next month).
+    expect(isOutOfCreditError("anthropic", new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC."}}'))).toBe(true);
     expect(isOutOfCreditError("google", new Error("429 Your prepayment credits are depleted. Please go to AI Studio."))).toBe(true);
     expect(isOutOfCreditError("anthropic", new Error("429 rate_limit_error: Number of request tokens has exceeded your per-minute rate limit"))).toBe(false);
     expect(isOutOfCreditError("google", new Error("429 RESOURCE_EXHAUSTED: Quota exceeded for metric generate_content"))).toBe(false);
