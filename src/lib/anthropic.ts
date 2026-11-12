@@ -412,13 +412,13 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       capabilityTier: "cheap",
     },
     // Kimi K3.1 Pro is the K3 line's successor (Moonshot: flagship, K3 "previous
-    // generation") and is priced (`moonshot-kimi-k3.1-pro-*`), but it is NOT the head:
-    // 2026-10-27 Moonshot answered 429 "engine overloaded" to 8 of 8 calls while K3
-    // answered 8 of 8. Concurrency is part of the model choice: move the head only once
-    // K3.1 Pro serves a burst without refusals (re-probe; K3.1 Pro = 3 days old).
+    // generation"). Held back 2026-10-27 (8 of 8 burst calls 429 "engine overloaded");
+    // head moved 2026-11-12 (FABLE-5-2-1112 sweep) after the re-probe on all three axes:
+    // burst 8 of 8 served, `thinking: {type: "disabled"}` still cuts reasoning to 0 with
+    // json_schema accepted, and price $2 / $0.20 cached / $10 per 1M vs K3's $3 / $0.30 / $15.
     "kimi-k3": {
-      apiModelId: "kimi-k3",
-      costPrefix: "moonshot-kimi-k3",
+      apiModelId: "kimi-k3.1-pro",
+      costPrefix: "moonshot-kimi-k3.1-pro",
       provider: "moonshot",
       capabilityTier: "strong",
     },
