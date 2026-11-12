@@ -4,6 +4,7 @@
  */
 export const LIST_PRICES_2026_11_08: Array<{ name: string; pricePerUnitInUsdCents: string }> = [
   ["anthropic-fable-5.1", "0.0010000000", "0.0050000000"],
+  ["anthropic-fable-5.2", "0.0008000000", "0.0040000000"],
   ["anthropic-haiku-5.5", "0.0000100000", "0.0000500000"],
   ["anthropic-opus-5.5", "0.0004000000", "0.0020000000"],
   ["anthropic-sonnet-5.5", "0.0002000000", "0.0010000000"],
