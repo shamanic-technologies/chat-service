@@ -103,3 +103,31 @@ describe("streamVendorChat: the vendor's own request fields (SOPHIE-REFONTE-1102
     expect(post.mock.calls[0][0].reasoningDisabled).toBe(true);
   });
 });
+
+describe("streamVendorChat: cache counts read where each vendor reports them (VENDOR-TOOLS-FOLLOWUP-1112)", () => {
+  beforeEach(() => post.mockReset());
+
+  function turn(vendor: "openai" | "moonshot", model: string, costPrefix: string) {
+    return streamVendorChat({
+      vendor, apiKey: "k", model, costPrefix, systemPrompt: "SYS", turnContext: "", history: [], userMessage: "Hi",
+      tools: [], res: {} as never, sendSSE: () => {}, executeTool: vi.fn(), signal: new AbortController().signal,
+      beforeProviderCall: async () => {},
+    });
+  }
+
+  it("bills an OpenAI cache write under its own row", async () => {
+    post.mockResolvedValue({ model: "gpt-6-astra", choices: [{ message: { content: "Hi." }, finish_reason: "stop" }], usage: { prompt_tokens: 1000, completion_tokens: 5, prompt_tokens_details: { cached_tokens: 600, cache_write_tokens: 300 } } });
+    const r = await turn("openai", "gpt-6-astra", "openai-gpt-6-astra");
+    const byName = Object.fromEntries(r.costLines.map((l) => [l.costName, l.quantity]));
+    expect(byName["openai-gpt-6-astra-tokens-cached-input"]).toBe(600);
+    expect(byName["openai-gpt-6-astra-tokens-cache-write"]).toBe(300);
+    expect(byName["openai-gpt-6-astra-tokens-input"]).toBe(100);
+  });
+
+  it("reads Moonshot's flat cached count", async () => {
+    post.mockResolvedValue({ model: "kimi-k3.1-pro", choices: [{ message: { content: "Hi." }, finish_reason: "stop" }], usage: { prompt_tokens: 1000, completion_tokens: 5, cached_tokens: 800 } });
+    const r = await turn("moonshot", "kimi-k3.1-pro", "moonshot-kimi-k3.1-pro");
+    const byName = Object.fromEntries(r.costLines.map((l) => [l.costName, l.quantity]));
+    expect(byName["moonshot-kimi-k3.1-pro-tokens-cached-input"]).toBe(800);
+  });
+});

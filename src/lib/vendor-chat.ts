@@ -326,12 +326,15 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
 
     const usage = json.usage ?? {};
     const promptTokens = usage.prompt_tokens ?? 0;
-    const cached = Math.max(0, Math.min(usage.prompt_cache_hit_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0, promptTokens));
+    // Where the cache counts sit is vendor data (DeepSeek, Moonshot and OpenAI
+    // each report them elsewhere); OpenAI also bills cache WRITES apart.
+    const cached = Math.max(0, Math.min(VENDORS[vendor].readCachedTokens(usage), promptTokens));
+    const cacheWrites = Math.max(0, Math.min(VENDORS[vendor].readCacheWriteTokens?.(usage) ?? 0, promptTokens - cached));
     const outTokens = usage.completion_tokens ?? 0;
     tokensInput += promptTokens;
     lastRequestTokensInput = promptTokens;
     tokensOutput += outTokens;
-    const roundLines = vendorCostLines({ provider: vendor, costPrefix, at, tokensInput: promptTokens, cachedInputTokens: cached, cacheWriteTokens: 0, tokensOutput: outTokens });
+    const roundLines = vendorCostLines({ provider: vendor, costPrefix, at, tokensInput: promptTokens, cachedInputTokens: cached, cacheWriteTokens: cacheWrites, tokensOutput: outTokens });
     costLines = mergeLines(costLines, roundLines);
     onRoundBilled?.(roundLines);
     console.log(`[vendor-chat] [${vendor}] model="${json.model ?? model}" depth=${depth} in=${promptTokens} cached=${cached} out=${outTokens}`);
