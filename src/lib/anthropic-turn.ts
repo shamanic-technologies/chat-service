@@ -1,3 +1,4 @@
+import { imagesIntro, type TurnImage } from "./turn-images.js";
 import type Anthropic from "@anthropic-ai/sdk";
 
 /**
@@ -24,10 +25,17 @@ export function buildAnthropicTurnMessages(
   userMessage: string,
   turnContext: string,
   cache: boolean,
+  images: readonly TurnImage[] = [],
 ): Anthropic.MessageParam[] {
-  const user: Anthropic.MessageParam = cache
-    ? { role: "user", content: [{ type: "text", text: userMessage, cache_control: { type: "ephemeral" } }] }
-    : { role: "user", content: userMessage };
+  const text: Anthropic.TextBlockParam = cache ? { type: "text", text: userMessage, cache_control: { type: "ephemeral" } } : { type: "text", text: userMessage };
+  // Photos the person sent (SOPHIE-BACKUP-PHOTOS-1112): read natively as images, after their words,
+  // like the direct-vendor loop does. The breakpoint stays on the words: the next turn rebuilds
+  // the history from the stored text, which never carries the pixels.
+  const photos: Anthropic.ContentBlockParam[] = images.length
+    ? [{ type: "text", text: imagesIntro(images) }, ...images.map((img) => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 } }))]
+    : [];
+  const user: Anthropic.MessageParam =
+    cache || photos.length ? { role: "user", content: [text, ...photos] } : { role: "user", content: userMessage };
   const context = turnContext.trim();
   if (!context) return [...history, user];
   // `system` inside messages is the API's mid-conversation system message

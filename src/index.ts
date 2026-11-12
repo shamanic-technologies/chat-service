@@ -5279,8 +5279,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     if (handledBrandProfileRefresh) {
       // The deterministic brand-profile refresh already streamed its concise
       // confirmation and populated fullResponse/toolCalls for persistence.
-    } else if (turnImages.length > 0 && !chatVendor) {
-      throw new Error(`[chat] ${turnImages.length} photo(s) reached a ${chatProvider} turn: photos are read on the direct-vendor loop only (Sophie's model)`);
+    } else if (turnImages.length > 0 && isGeminiChat) {
+      throw new Error(`[chat] ${turnImages.length} photo(s) reached a ${chatProvider} turn: photos are read on the direct-vendor and Anthropic loops only`);
     } else if (chatVendor) {
       // --- Direct vendor path (DeepSeek): one non-streaming request per round ---
       const vendorResult = await streamVendorChat({
@@ -5409,6 +5409,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       message.trim(),
       anthropicTurnContext,
       anthropicCache,
+      turnImages,
     );
 
     let depth = 0;
@@ -5442,13 +5443,10 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         tokensEmitted = false;
         currentBlockType = null;
         iterText = "";
+        const anthropicRequest = { model: resolvedModelInfo.apiModelId, systemPrompt: anthropicSystemPrompt, messages: turnMessages, tools: allTools };
+        // A photo is counted by its pixels, never by its base64 (SOPHIE-BACKUP-PHOTOS-1112).
         await authorizeChatProviderCall(
-          estimateRequestTokens({
-            model: resolvedModelInfo.apiModelId,
-            systemPrompt: anthropicSystemPrompt,
-            messages: turnMessages,
-            tools: allTools,
-          }),
+          turnImages.length > 0 ? estimateRequestTokensWithImages(anthropicRequest, turnImages) : estimateRequestTokens(anthropicRequest),
         );
         stream = claude!.createStream(turnMessages, allTools, abortController.signal, {
           model: resolvedModelInfo.apiModelId,
