@@ -19,7 +19,7 @@ const EXPECTED: Record<string, { head: string; legacy: string[] }> = {
   "glm-flash": { head: "glm-5.3-flash", legacy: ["glm-flash"] },
   glm: { head: "glm-5.3", legacy: ["glm-pro"] },
   "kimi-k2": { head: "kimi-k2.6", legacy: ["kimi-flash"] },
-  "kimi-k3": { head: "kimi-k3", legacy: ["kimi-pro"] },
+  "kimi-k3": { head: "kimi-k3.1-pro", legacy: ["kimi-pro"] },
   "gpt-astra": { head: "gpt-6-astra", legacy: ["gpt-pro"] },
   "gpt-sol": { head: "gpt-6.1-sol", legacy: ["gpt-sol"] },
   "gpt-terra": { head: "gpt-6.1-terra", legacy: ["gpt-terra"] },
@@ -83,7 +83,7 @@ describe("LLM dynasties", () => {
     expect(resolveModel("google", "flash-lite").apiModelId).toBe("gemini-3.5-flash-lite");
     expect(resolveModel("deepseek", "deepseek-pro").apiModelId).toBe("deepseek-flash");
     expect(resolveModel("moonshot", "kimi-flash").apiModelId).toBe("kimi-k2.6");
-    expect(resolveModel("moonshot", "kimi-pro").apiModelId).toBe("kimi-k3");
+    expect(resolveModel("moonshot", "kimi-pro").apiModelId).toBe("kimi-k3.1-pro");
   });
 
   it("accepts the head's exact model id to pin it, under the same cost prefix as the slug", () => {
