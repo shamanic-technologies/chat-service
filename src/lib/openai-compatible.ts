@@ -562,6 +562,18 @@ export interface VendorConfig {
    * A photo handed to a vendor marked false fails the turn loud (vendor-chat).
    */
   imageInput: boolean;
+  /**
+   * Fields a request carrying function TOOLS must add, per concrete model
+   * (GEMINI-BRAND-TOOLS-1112). OpenAI refuses function tools beside its default
+   * reasoning on /v1/chat/completions ("Function tools with reasoning_effort are
+   * not supported for gpt-6.1-terra in /v1/chat/completions. To use function
+   * tools, use /v1/responses or set reasoning_effort to 'none'.", probed live
+   * 2026-11-12, every served OpenAI model). Terra takes `none` (200, tool call
+   * made); Astra and Sol refuse `none` AND tools at any other effort, so they
+   * have no entry and fail loud with the vendor's words until tool calls move
+   * to the Responses API. DeepSeek, Z.ai, Moonshot: tools need nothing added.
+   */
+  toolCallRequestFields?: Record<string, Record<string, unknown>>;
 }
 
 /**
@@ -973,6 +985,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     },
     maxOutputTokensField: "max_completion_tokens",
     imageInput: true,
+    toolCallRequestFields: { "gpt-6.1-terra": { reasoning_effort: "none" } },
     // Structured Outputs is a first-class OpenAI feature, and the non-strict
     // schema form we send is confirmed live (200, valid object, probed
     // 2026-09-09) rather than taken from the model page alone. We do NOT send
