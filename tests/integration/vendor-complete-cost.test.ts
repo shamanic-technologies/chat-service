@@ -466,7 +466,7 @@ describe("POST /complete — direct vendor routing", () => {
       mockBilling(),
       mockVendor(vendor, {
         host: MOONSHOT_URL,
-        model: "kimi-k3",
+        model: "kimi-k3.1-pro",
         usage: { prompt_tokens: 700, completion_tokens: 18, cached_tokens: 640 },
       }),
       ...mockRunsCostRoutes(cap),
@@ -482,9 +482,9 @@ describe("POST /complete — direct vendor routing", () => {
     expect(vendor.calls).toBe(1);
 
     const actual = actualItems(cap.postedItems);
-    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-input")).toBe(60);
-    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-cached-input")).toBe(640);
-    expect(quantityOf(actual, "moonshot-kimi-k3-tokens-output")).toBe(18);
+    expect(quantityOf(actual, "moonshot-kimi-k3.1-pro-tokens-input")).toBe(60);
+    expect(quantityOf(actual, "moonshot-kimi-k3.1-pro-tokens-cached-input")).toBe(640);
+    expect(quantityOf(actual, "moonshot-kimi-k3.1-pro-tokens-output")).toBe(18);
     // No regime segment — that belongs to DeepSeek alone.
     expect(actual.every((i) => !/-(peak|off-peak)-tokens-/.test(i.costName))).toBe(true);
   });
@@ -691,7 +691,7 @@ describe("POST /complete — direct vendor routing", () => {
   it("still sends Z.ai and Moonshot the full json_schema form — only DeepSeek differs", async () => {
     for (const c of [
       { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.3" },
-      { provider: "moonshot", model: "kimi-pro", host: MOONSHOT_URL, wire: "kimi-k3" },
+      { provider: "moonshot", model: "kimi-pro", host: MOONSHOT_URL, wire: "kimi-k3.1-pro" },
     ] as const) {
       routes = [];
       fetchCalls = [];

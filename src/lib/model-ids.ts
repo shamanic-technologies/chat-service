@@ -63,6 +63,7 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "glm-4.7-flashx": "GLM-4.7 FlashX",
   // Moonshot
   "kimi-k2.6": "Kimi K2.6",
+  "kimi-k3.1-pro": "Kimi K3.1 Pro",
   "kimi-k3": "Kimi K3",
   // OpenAI
   "gpt-6-astra": "GPT-6 Astra",
@@ -122,6 +123,8 @@ export const RETIRED_MODELS: Record<string, RetiredModel> = {
   "deepseek-v4-pro": { provider: "deepseek", capabilityTier: "strong", formerAliases: ["deepseek-pro"] },
   "glm-5.2": { provider: "zai", capabilityTier: "strong", formerAliases: ["glm-pro"] },
   "glm-4.7-flashx": { provider: "zai", capabilityTier: "cheap", formerAliases: ["glm-flash"] },
+  // 2026-11-12: head moved to kimi-k3.1-pro.
+  "kimi-k3": { provider: "moonshot", capabilityTier: "strong", formerAliases: ["kimi-pro"] },
   // LLM-HEADS-1027 (2026-10-27): heads moved to gpt-6.1-sol, gpt-6.1-terra.
   "gpt-6-sol": { provider: "openai", capabilityTier: "strong", formerAliases: ["gpt-sol"] },
   "gpt-5.6-terra": { provider: "openai", capabilityTier: "strong", formerAliases: ["gpt-terra"] },
