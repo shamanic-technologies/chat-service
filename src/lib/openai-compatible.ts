@@ -190,9 +190,8 @@ export interface VendorUsage {
   cached_tokens?: number;
   /**
    * Z.ai, OpenAI and the OpenAI convention generally: nested under
-   * `prompt_tokens_details`. Note OpenAI reports it here on CHAT COMPLETIONS —
-   * its Responses API uses `input_tokens_details` instead, which this adapter
-   * never calls.
+   * `prompt_tokens_details`. OpenAI's Responses API (tool rounds on Astra/Sol)
+   * reports `input_tokens_details`, mapped here by `fromResponsesBody`.
    */
   prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
 }
@@ -570,10 +569,26 @@ export interface VendorConfig {
    * tools, use /v1/responses or set reasoning_effort to 'none'.", probed live
    * 2026-11-12, every served OpenAI model). Terra takes `none` (200, tool call
    * made); Astra and Sol refuse `none` AND tools at any other effort, so they
-   * have no entry and fail loud with the vendor's words until tool calls move
-   * to the Responses API. DeepSeek, Z.ai, Moonshot: tools need nothing added.
+   * have no entry: their tool rounds go to the Responses API instead
+   * (`toolRoundsOnResponsesApi`). DeepSeek, Z.ai, Moonshot: tools need nothing added.
    */
   toolCallRequestFields?: Record<string, Record<string, unknown>>;
+  /**
+   * Concrete models whose requests carrying function TOOLS are sent to
+   * `${baseUrl}/responses` instead of `/chat/completions`
+   * (VENDOR-TOOLS-FOLLOWUP-1112). OpenAI gpt-6-astra and gpt-6.1-sol refuse
+   * function tools on /v1/chat/completions at every reasoning effort they
+   * accept ('none' is refused, tools at 'low' are refused: "To use function
+   * tools, use /v1/responses"), while /v1/responses runs the same tools at
+   * `reasoning.effort: "low"` (probed live 2026-11-12: tool call made, 0
+   * reasoning tokens, the follow-up round answered with no reasoning item sent
+   * back). The SAME request body is built either way; `postVendorChatCompletion`
+   * translates it on the way out and the answer on the way back
+   * (`toResponsesRequest` / `fromResponsesBody`), so retries, refusals, cost
+   * names and the model check stay the one contract. A request without tools
+   * stays on /chat/completions.
+   */
+  toolRoundsOnResponsesApi?: readonly string[];
 }
 
 /**
@@ -986,6 +1001,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     maxOutputTokensField: "max_completion_tokens",
     imageInput: true,
     toolCallRequestFields: { "gpt-6.1-terra": { reasoning_effort: "none" } },
+    toolRoundsOnResponsesApi: ["gpt-6-astra", "gpt-6.1-sol"],
     // Structured Outputs is a first-class OpenAI feature, and the non-strict
     // schema form we send is confirmed live (200, valid object, probed
     // 2026-09-09) rather than taken from the model page alone. We do NOT send
@@ -1583,9 +1599,155 @@ export async function completeWithVendor(
   return result;
 }
 
+/** True when this request goes to the vendor's Responses API (a tool round on a listed model). */
+export function usesResponsesApi(vendor: VendorId, model: string, body: Record<string, unknown>): boolean {
+  const tools = body.tools;
+  return Array.isArray(tools) && tools.length > 0 && (vendorConfig(vendor).toolRoundsOnResponsesApi ?? []).includes(model);
+}
+
+type ChatMessageIn = {
+  role?: string;
+  content?: unknown;
+  tool_calls?: VendorToolCall[];
+  tool_call_id?: string;
+};
+
+/** One chat message → its Responses API input item(s). */
+function toResponsesInput(m: ChatMessageIn): Array<Record<string, unknown>> {
+  if (m.role === "tool") {
+    return [{ type: "function_call_output", call_id: m.tool_call_id, output: typeof m.content === "string" ? m.content : JSON.stringify(m.content) }];
+  }
+  if (m.role === "system" || m.role === "user" || m.role === "assistant") {
+    const items: Array<Record<string, unknown>> = [];
+    if (Array.isArray(m.content)) {
+      const parts = (m.content as Array<{ type?: string; text?: string; image_url?: { url?: string } }>).map((p) => {
+        if (p.type === "text") return { type: "input_text", text: p.text ?? "" };
+        if (p.type === "image_url") return { type: "input_image", image_url: p.image_url?.url };
+        throw new VendorProviderError(`[vendor:responses] Unknown message part type "${p.type}"`);
+      });
+      items.push({ role: m.role, content: parts });
+    } else if (typeof m.content === "string" && m.content.length > 0) {
+      items.push({ role: m.role, content: m.content });
+    }
+    // A function_call item is sent WITHOUT its `fc_` id: with an id OpenAI
+    // requires the reasoning item it came with; without one it does not
+    // (probed live 2026-11-12), and the loop keeps no reasoning item.
+    for (const call of m.tool_calls ?? []) {
+      items.push({ type: "function_call", call_id: call.id, name: call.function.name, arguments: call.function.arguments });
+    }
+    return items;
+  }
+  throw new VendorProviderError(`[vendor:responses] Unknown message role "${m.role}"`);
+}
+
+/**
+ * A /chat/completions request body → the same request on the Responses API.
+ * Every field is mapped by name; an unknown field THROWS rather than being
+ * dropped, so a field added to the chat body later cannot vanish silently.
+ */
+export function toResponsesRequest(body: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { store: false };
+  for (const [key, value] of Object.entries(body)) {
+    switch (key) {
+      case "model":
+      case "temperature":
+        out[key] = value;
+        break;
+      case "stream":
+        if (value !== false) throw new VendorProviderError("[vendor:responses] streaming is not served on the Responses transport");
+        break;
+      case "messages":
+        out.input = (value as ChatMessageIn[]).flatMap(toResponsesInput);
+        break;
+      case "tools":
+        out.tools = (value as Array<{ type?: string; function: { name: string; description?: string; parameters?: unknown } }>).map((t) => ({
+          type: "function",
+          name: t.function.name,
+          ...(t.function.description != null ? { description: t.function.description } : {}),
+          parameters: t.function.parameters,
+        }));
+        break;
+      case "max_completion_tokens":
+      case "max_tokens":
+        out.max_output_tokens = value;
+        break;
+      case "reasoning_effort":
+        out.reasoning = { effort: value };
+        break;
+      case "response_format": {
+        const rf = value as { type: string; json_schema?: { name: string; schema: unknown } };
+        out.text = {
+          format: rf.type === "json_schema"
+            ? { type: "json_schema", name: rf.json_schema?.name ?? "response", schema: rf.json_schema?.schema }
+            : { type: rf.type },
+        };
+        break;
+      }
+      default:
+        throw new VendorProviderError(`[vendor:responses] Request field "${key}" has no Responses API mapping`);
+    }
+  }
+  return out;
+}
+
+interface ResponsesApiBody {
+  model?: string;
+  status?: string;
+  incomplete_details?: { reason?: string } | null;
+  output?: Array<{
+    type?: string;
+    content?: Array<{ type?: string; text?: string }>;
+    call_id?: string;
+    name?: string;
+    arguments?: string;
+  }>;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+  };
+  error?: { message?: string; type?: string; code?: string } | null;
+}
+
+/**
+ * A Responses API answer → the chat-completions body every reader here takes.
+ * `output_tokens` already counts reasoning (as `completion_tokens` does), and
+ * the cache counts keep their meaning under the chat-completions names.
+ */
+export function fromResponsesBody(json: ResponsesApiBody): VendorResponseBody {
+  const output = json.output ?? [];
+  const text = output
+    .filter((o) => o.type === "message")
+    .flatMap((o) => o.content ?? [])
+    .filter((c) => c.type === "output_text")
+    .map((c) => c.text ?? "")
+    .join("");
+  const toolCalls: VendorToolCall[] = output
+    .filter((o) => o.type === "function_call")
+    .map((o) => ({ id: o.call_id ?? "", type: "function" as const, function: { name: o.name ?? "", arguments: o.arguments ?? "" } }));
+  const finish = json.status === "incomplete" && json.incomplete_details?.reason === "max_output_tokens"
+    ? "length"
+    : toolCalls.length > 0 ? "tool_calls" : "stop";
+  const usage = json.usage ?? {};
+  return {
+    ...(json.model ? { model: json.model } : {}),
+    ...(json.error ? { error: json.error } : {}),
+    choices: [{ message: { content: text, ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}) }, finish_reason: finish }],
+    usage: {
+      prompt_tokens: usage.input_tokens ?? 0,
+      completion_tokens: usage.output_tokens ?? 0,
+      prompt_tokens_details: {
+        cached_tokens: usage.input_tokens_details?.cached_tokens ?? 0,
+        cache_write_tokens: usage.input_tokens_details?.cache_write_tokens ?? 0,
+      },
+    },
+  };
+}
+
 /**
  * POST one request body to a vendor's `/chat/completions` and return the parsed
- * 200 body. The retry and refusal contract of every direct-vendor call lives
+ * 200 body. A tool round on a model listed in `toolRoundsOnResponsesApi` goes to
+ * `/responses` instead, translated both ways (same retries and refusals). The retry and refusal contract of every direct-vendor call lives
  * here, shared by `/complete` and the /chat tool loop (`vendor-chat.ts`): only
  * connect-phase failures and 429s are replayed (nothing ran, nothing billed);
  * an empty balance throws `VendorOutOfCreditError`, a refused shape
@@ -1604,6 +1766,9 @@ export async function postVendorChatCompletion(args: {
 }): Promise<VendorResponseBody> {
   const { vendor, apiKey, model, body, reasoningDisabled, signal } = args;
   const config = vendorConfig(vendor);
+  const responsesApi = usesResponsesApi(vendor, model, body);
+  const url = `${config.baseUrl}${responsesApi ? "/responses" : "/chat/completions"}`;
+  const wireBody = responsesApi ? toResponsesRequest(body) : body;
 
   let lastConnectError: unknown = null;
   let connectAttempt = 0;
@@ -1621,13 +1786,13 @@ export async function postVendorChatCompletion(args: {
 
     let res: Response;
     try {
-      res = await fetch(`${config.baseUrl}/chat/completions`, {
+      res = await fetch(url, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(wireBody),
         signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       });
     } catch (err) {
@@ -1742,7 +1907,8 @@ export async function postVendorChatCompletion(args: {
       );
     }
 
-    return (await res.json()) as VendorResponseBody;
+    const json = await res.json();
+    return responsesApi ? fromResponsesBody(json as ResponsesApiBody) : (json as VendorResponseBody);
   }
 }
 
