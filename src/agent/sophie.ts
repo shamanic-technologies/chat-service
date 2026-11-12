@@ -64,8 +64,11 @@ export function sophieCodeHash(root = process.cwd()): string {
   return createHash("sha256").update(JSON.stringify({ SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS, SOPHIE_MODEL, briefs })).digest("hex").slice(0, 16);
 }
 
-/** The source files whose text decides what Sophie reads before each turn. */
-export const SOPHIE_BRIEF_SOURCES = ["src/agent/situation.ts", "src/lib/client-brief.ts"] as const;
+/**
+ * The source files whose text decides what Sophie reads each turn: the briefs,
+ * and the shape her API calls answer in (a refusal's words, a yes proposal).
+ */
+export const SOPHIE_BRIEF_SOURCES = ["src/agent/situation.ts", "src/lib/client-brief.ts", "src/agent/catalogue-tools.ts"] as const;
 
 /**
  * The tools Sophie calls (SOPHIE-REFONTE-1102): the gateway's served API (find /
