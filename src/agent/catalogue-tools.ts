@@ -40,6 +40,8 @@ interface YesMarker {
   because?: string[];
   why?: string;
   notNeededWhen?: Array<Record<string, unknown>>;
+  /** The only bodies that can start, spend or send on an edit (absent = every body not excepted above). */
+  neededWhen?: Array<Record<string, unknown>>;
 }
 
 /** Tool results stay small (owner rule: no tool result above ~2k tokens). */
@@ -130,8 +132,11 @@ export function needsYes(op: CatalogOperation, body?: unknown): boolean {
   const m = yesMarker(op);
   if (!m) return false;
   const b = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-  const harmless = (m.notNeededWhen ?? []).some((entry) => Object.entries(entry).every(([k, v]) => JSON.stringify(b[k]) === JSON.stringify(v)));
-  return !harmless;
+  const matches = (entry: Record<string, unknown>) => Object.entries(entry).every(([k, v]) => JSON.stringify(b[k]) === JSON.stringify(v));
+  if ((m.notNeededWhen ?? []).some(matches)) return false;
+  // An edit that starts work only for some bodies (activate): any other body needs no yes.
+  if (m.neededWhen && !m.neededWhen.some(matches)) return false;
+  return true;
 }
 
 export async function findApi(args: Record<string, unknown>): Promise<unknown> {
@@ -158,7 +163,7 @@ export async function describeApi(args: Record<string, unknown>): Promise<unknow
     body: op.hasBody ? clip(resolveSchema(op.bodySchema, components, 3), MAX_SCHEMA_CHARS) : null,
     answers: op.successResponses.map((r) => ({ status: r.status, description: r.description, schema: clip(resolveSchema(r.schema, components, 2), MAX_SCHEMA_CHARS) })),
     needsTheirYes: yesMarker(op)
-      ? { why: yesMarker(op)!.why ?? null, because: yesMarker(op)!.because ?? [], notNeededWhen: yesMarker(op)!.notNeededWhen ?? [] }
+      ? { why: yesMarker(op)!.why ?? null, because: yesMarker(op)!.because ?? [], notNeededWhen: yesMarker(op)!.notNeededWhen ?? [], ...(yesMarker(op)!.neededWhen ? { neededWhen: yesMarker(op)!.neededWhen } : {}) }
       : false,
   };
 }
@@ -198,8 +203,26 @@ async function send(req: PreparedRequest, params: ApiCallParams): Promise<unknow
   } catch {
     // a non-JSON answer is returned as text
   }
-  if (!res.ok) return { ok: false, status: res.status, error: clip(data, 2_000) };
+  if (!res.ok) return failedCallAnswer(res.status, data);
   return answerForModel({ params: req.params ?? [] }, req.params ? req.query : {}, res.status, data);
+}
+
+/** A refused call as the model reads it (production and the eval replay share it). */
+export function failedCallAnswer(status: number, data: unknown): unknown {
+  return { ok: false, status, error: clip(data, 2_000) };
+}
+
+/** The proposal an operation needing the person's yes answers instead of running (production and the eval replay share it). */
+export function yesProposal(op: CatalogOperation, req: Pick<PreparedRequest, "operationId" | "method" | "path" | "query" | "body">, token: string): unknown {
+  return {
+    yesRequired: true,
+    why: yesMarker(op)?.why ?? null,
+    confirmationToken: token,
+    // The proposal carries the request only (its parameter list stays out of the history).
+    request: { operationId: req.operationId, method: req.method, path: req.path, query: req.query, body: req.body },
+    instruction:
+      "Nothing ran. Tell the person in plain words exactly what this will do (what starts, spends or is sent, to whom, how much) and ask yes or no. Only after their yes, in a later message, call run_operation with just this confirmationToken.",
+  };
 }
 
 export class CallApiConfirmationError extends Error {}
@@ -251,17 +274,7 @@ export async function callApi(
   if (op.staffOnly || isPlatformInternal(op.path)) throw new Error(`[run_operation] ${op.operationId} is not a client operation`);
   if (opts.readOnly && op.method !== "GET") throw new Error(`[run_operation] this turn only reads: ${op.operationId} (${op.method}) waits for a normal turn`);
   const req = byId || !concretePath ? prepare(op, args) : { ...prepare(op, { ...args, pathParams: pathParamsFrom(op.path, concretePath) }) };
-  if (needsYes(op, req.body)) {
-    return {
-      yesRequired: true,
-      why: yesMarker(op)?.why ?? null,
-      confirmationToken: randomUUID(),
-      // The proposal carries the request only (its parameter list stays out of the history).
-      request: { operationId: req.operationId, method: req.method, path: req.path, query: req.query, body: req.body },
-      instruction:
-        "Nothing ran. Tell the person in plain words exactly what this will do (what starts, spends or is sent, to whom, how much) and ask yes or no. Only after their yes, in a later message, call run_operation with just this confirmationToken.",
-    };
-  }
+  if (needsYes(op, req.body)) return yesProposal(op, req, randomUUID());
   return send(req, params);
 }
 
