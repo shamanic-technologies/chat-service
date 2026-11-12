@@ -1,0 +1,233 @@
+{
+ "id": "next-steps-held-no-brief",
+ "title": "Why has no email gone out yet, and when will one? (step held: no brief)",
+ "source": "client C (staff test org replay), web, 2026-11-11",
+ "surface": "web",
+ "person": {
+  "name": "Sam"
+ },
+ "history": [
+  {
+   "role": "user",
+   "content": "is my campaign live?"
+  },
+  {
+   "role": "assistant",
+   "content": "Yes, your Ops Leaders campaign went live this morning and is finding operations directors at mid-size logistics firms. Nothing has been emailed yet."
+  }
+ ],
+ "message": "why has no email gone out yet, and when will one?",
+ "fixtures": {
+  "list_brands": [
+   {
+    "brands": [
+     {
+      "id": "e98cd83a-f39e-46a4-ad11-ea750f252ba7",
+      "name": "Reed",
+      "domain": "reed.co.uk",
+      "brandUrl": "https://reed.co.uk"
+     }
+    ]
+   }
+  ],
+  "list_offers": [
+   {
+    "offers": [
+     {
+      "offerId": "0ffe0000-0000-4000-8000-000000001111",
+      "brandId": "e98cd83a-f39e-46a4-ad11-ea750f252ba7",
+      "name": "Operations Hiring",
+      "status": "active",
+      "description": "Recruiting operations managers and directors for mid-size logistics firms, paid on placement."
+     }
+    ]
+   }
+  ],
+  "get_offer_settings": [
+   {
+    "lifetimeRevenueUsd": 12000,
+    "bookingUrl": null
+   }
+  ],
+  "get_offer_performance": [
+   {
+    "brandId": "e98cd83a-f39e-46a4-ad11-ea750f252ba7",
+    "offerId": "0ffe0000-0000-4000-8000-000000001111",
+    "recipientsContacted": 0,
+    "recipientsClicked": {
+     "total": 0
+    },
+    "recipientsRepliesPositive": {
+     "total": 0
+    },
+    "spent": {
+     "actualSpentCents": 491,
+     "totalSpentCents": 491
+    },
+    "return": "Expected 5x · no paid client yet ($4.91 spent)"
+   }
+  ],
+  "list_replies_to_handle": [
+   {
+    "leads": [],
+    "total": 0,
+    "nextCursor": null
+   }
+  ],
+  "get_billing_account": [
+   {
+    "org_id": "06ffd332-b05d-4468-bc33-fe2789caad95",
+    "payment_mode": "prepaid",
+    "balance_cents": "1354.0000000000",
+    "usage_cents": "491.0000000000",
+    "credited_cents": "1845.0000000000",
+    "has_auto_topup": true,
+    "has_payment_method": true,
+    "card_brand": "visa",
+    "card_last4": "4242",
+    "usage_discount_pct": null
+   }
+  ],
+  "get_payment_outlook": [
+   {
+    "orgId": "06ffd332-b05d-4468-bc33-fe2789caad95",
+    "paymentMode": "prepaid",
+    "state": "autopay_ready",
+    "blockedReason": null,
+    "nextChargeAttemptAt": null,
+    "trigger": null
+   }
+  ],
+  "list_campaigns": [
+   {
+    "campaignCount": 1,
+    "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+    "campaigns": [
+     {
+      "id": "ca000000-0000-4000-8000-000000001111",
+      "name": "Ops Leaders",
+      "path": "Start → Lead Sourcing → Lead found → Sales Cold Email Outreach → Positive reply → Paid client",
+      "runsWhen": "On its own, within its caps (no trigger)",
+      "type": "proactive",
+      "status": "ongoing",
+      "stopReason": null,
+      "budget": "Max $5/day",
+      "volume": null,
+      "spent": "$4.91 of $5 today",
+      "invested": "$4.91 invested since start",
+      "return": "Expected 5x · no paid client yet ($4.91 spent)",
+      "offerId": "0ffe0000-0000-4000-8000-000000001111",
+      "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client",
+      "steps": []
+     }
+    ]
+   }
+  ],
+  "get_campaign_next_steps": [
+   {
+    "salesFunnelCampaignId": "ca000000-0000-4000-8000-000000001111",
+    "name": "Ops Leaders",
+    "status": "ongoing",
+    "brandId": "e98cd83a-f39e-46a4-ad11-ea750f252ba7",
+    "offerId": "0ffe0000-0000-4000-8000-000000001111",
+    "requestedPipeCampaignId": null,
+    "emailSendQueue": {
+     "asOf": "2026-11-11T09:54:00.000Z",
+     "leadsAwaitingFirstEmail": 0,
+     "leadsWithFollowUpQueued": 0,
+     "queuedEmails": 0,
+     "firstEmailsFrom": null,
+     "sendWindow": {
+      "weekdays": [
+       "Mon",
+       "Tue",
+       "Wed",
+       "Thu",
+       "Fri"
+      ],
+      "startHour": 8,
+      "endHour": 18,
+      "timezoneRule": "lead_local"
+     },
+     "timezones": []
+    },
+    "emailSendQueueUnavailableReason": null,
+    "scheduledFollowups": {
+     "asOf": "2026-11-11T09:54:00.000Z",
+     "leads": 0,
+     "due": 0,
+     "upcoming": 0,
+     "nextAt": null,
+     "oldestDueAt": null,
+     "byDay": [],
+     "laterThanHorizon": 0
+    },
+    "scheduledFollowupsUnavailableReason": null,
+    "nextSends": {
+     "leadsQueued": 123,
+     "dueNow": 0,
+     "nextSendAt": null,
+     "unavailableReason": null,
+     "heldBy": {
+      "outcome": "message_written",
+      "pipeCampaignId": "be000000-0000-4000-8000-000000001111",
+      "reason": "campaign_states_no_brief",
+      "heldSince": "2026-11-11T05:52:00.000Z",
+      "lastAnsweredAt": "2026-11-11T09:51:00.000Z"
+     },
+     "leadsWaitingOnHeldEngine": 123
+    },
+    "heldEngines": [
+     {
+      "outcome": "message_written",
+      "pipeCampaignId": "be000000-0000-4000-8000-000000001111",
+      "reason": "campaign_states_no_brief",
+      "heldSince": "2026-11-11T05:52:00.000Z",
+      "lastAnsweredAt": "2026-11-11T09:51:00.000Z"
+     }
+    ],
+    "heldEnginesUnavailableReason": null,
+    "timeToFirstPositiveReply": {
+     "medianDays": 6,
+     "averageDays": 7.2,
+     "sampleSize": 41,
+     "basis": "pipe_fleet",
+     "learning": false,
+     "minSample": 20,
+     "campaign": null
+    }
+   }
+  ],
+  "GET /v1/sales-funnel-campaigns/{id}": [
+   {
+    "id": "ca000000-0000-4000-8000-000000001111",
+    "name": "Ops Leaders",
+    "status": "ongoing",
+    "brandId": "e98cd83a-f39e-46a4-ad11-ea750f252ba7",
+    "offerId": "0ffe0000-0000-4000-8000-000000001111",
+    "brief": null,
+    "target": "Paid client"
+   }
+  ]
+ },
+ "facts": [
+  "No email has gone out on the Ops Leaders campaign because its « Message written » step cannot run: the campaign states no brief (the text that tells our AI who to keep and what to say), served reason campaign_states_no_brief, since 05:52 UTC today.",
+  "123 leads were found for the campaign and wait at that step with nothing sent yet; nothing is queued in the email sender and no send time is planned (nextSendAt is empty) until the step can run.",
+  "Writing the campaign's brief unblocks it: the brief is set on the campaign (PATCH /v1/sales-funnel-campaigns/{id}, brief), with the client's yes on the text. Then emails are written and go out in each lead's own business hours (Monday to Friday, 08:00 to 18:00 local).",
+  "The $5/day cap and the $4.91 used today are not the blocker: they paid for finding and checking contacts. Nothing says the cap stops emails, nor that emails leave tomorrow; raising the budget would not send any email.",
+  "Measured on our clients sending the same way, a first positive reply comes about 6 days after the first email (median).",
+  "The account is prepaid with $13.54 left and auto top-up from a card: money does not block anything."
+ ],
+ "expect": "Names the blocked step (the campaign cannot write its emails because it has no brief) and the 123 leads waiting, offers to write the brief with them now (or asks what to put in it). Never says the cap is used, never offers to raise the budget or cap, never says emails leave tomorrow or at a set time.",
+ "context": {
+  "currentPage": "campaign",
+  "recentActions": []
+ },
+ "prodReply": "That page counts the contacts your campaign found: 123 operations directors so far. No email has gone out yet and today's $5 cap is used, so the first emails leave tomorrow morning in each lead's own business hours.",
+ "badReplyFails": true,
+ "prodReplyActions": [],
+ "goodReply": "No email has gone out because your Ops Leaders campaign can't write them yet: it has no brief, the text that tells our AI who to keep and what to say. 123 operations leaders are found and waiting. Shall we write the brief together now? Tell me what you want them to hear about Operations Hiring, and the first emails go out in their next business hours.",
+ "goodReplyActions": [
+  "run_operation GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{campaignId}/next-steps"
+ ]
+}

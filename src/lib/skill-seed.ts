@@ -486,7 +486,7 @@ The brief already says what runs, its spend and its results. Read deeper only fo
 
 ## Read (all free)
 - Each campaign, its cap, spend this period and results: GET /v1/sales-funnel-campaigns?brandId=.
-- What comes next in one campaign: GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{campaignId}/next-steps. Leads waiting to be contacted (nextSends.leadsQueued), the earliest next send (nextSends.nextSendAt, in each lead's own working hours), and the measured days from a first email to a first positive reply (timeToFirstPositiveReply).
+- What comes next in one campaign: GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{campaignId}/next-steps. A step that cannot run (nextSends.heldBy, leadsWaitingOnHeldEngine), leads waiting to be contacted (nextSends.leadsQueued), the earliest next send (nextSends.nextSendAt, in each lead's own working hours), and the measured days from a first email to a first positive reply (timeToFirstPositiveReply).
 - The offer's figures: GET /v1/offers/{offerId}/revenue?brandId= (sent, replies, return). Per source: GET /v1/offers/{offerId}/sourcing?brandId=.
 - People who replied with interest: GET /v1/leads?brandId=&offerId=&bucket=positive_reply&standing=sales_interest. Answered or not: this list never says who still waits.
 - Spend per campaign: GET /v1/runs/stats/costs?brandId=&groupBy=campaignId.
@@ -500,7 +500,7 @@ Never call someone waiting, interested or replied from the list alone, nor from 
 
 ## "How are my campaigns doing?" as a short story, one running campaign at a time
 1. It runs, its cap, what it used this period.
-2. What leaves next, from next-steps as served: leadsQueued and nextSendAt give the first send ("47 leads are queued, the next go out Monday morning in their own working hours"). No send date served (nextSendAt null, nothing queued) = no date to give: say what the campaign does now (finding and checking contacts) and that no email is queued yet. leadsQueued null = the queue cannot be seen right now.
+2. What leaves next, from next-steps as served: leadsQueued and nextSendAt give the first send ("47 leads are queued, the next go out Monday morning in their own working hours"). No send date served (nextSendAt null, nothing queued) = no date to give: say what the campaign does now (finding and checking contacts) and that no email is queued yet. leadsQueued null = the queue cannot be seen right now. A held step (heldBy, HELD in your brief) is the reason nothing goes out: say which step, why and how many wait, then unblock it with them (no campaign brief: write it together, \`campaigns\`).
 3. When replies come: ALWAYS say it, never skip this line. From timeToFirstPositiveReply as served, with whose figure it is (this campaign, or our clients sending the same way). Not served: "It is too early to say how long replies take on this campaign."
 4. A reactive campaign acts on its trigger: say what starts it.
 5. Close on the move that helps what they want, when a served fact shows it helps (answer a reply waiting, narrow who we reach). More budget only helps when the cap is what holds sends back.
