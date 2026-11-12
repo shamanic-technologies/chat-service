@@ -24,6 +24,7 @@ import { readTranscription, runTranscriptionJob, toTranscriptionBody } from "./l
 import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions, channelInboundMessages, copilotProactiveTurns, copilotLeadTurns } from "./db/schema.js";
 import { transferBrand } from "./lib/transfer-brand.js";
 import { dynastyCatalogue, modelDisplayName, modelIdCatalogue } from "./lib/model-ids.js";
+import { llmCostNameCatalogue } from "./lib/llm-cost-names.js";
 import { readOurWebsite } from "./lib/our-website.js";
 import { aboutYouBlock, withOurWebsite } from "./lib/person-facing.js";
 import { stripLongDashes } from "./lib/long-dash.js";
@@ -623,6 +624,15 @@ app.get("/internal/model-ids", requireInternalAuth, (_req, res) => {
  */
 app.get("/internal/model-dynasties", requireInternalAuth, (_req, res) => {
   res.json({ dynasties: dynastyCatalogue() });
+});
+
+/**
+ * Every LLM cost name this service ever wrote → its dynasty + concrete model(s),
+ * retired ones included (LLM-RATING-PER-ENGINE-1112). Exact names, so a
+ * consumer filing runs-service cost lines per LLM never parses a cost name.
+ */
+app.get("/internal/llm-cost-names", requireInternalAuth, (_req, res) => {
+  res.json({ costNames: llmCostNameCatalogue() });
 });
 
 // --- App Config Registration ---
