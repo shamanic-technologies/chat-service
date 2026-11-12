@@ -21,11 +21,15 @@ import { join } from "node:path";
 export const SOPHIE_CONFIG_KEY = "copilot";
 
 /**
- * Her model and its reasoning, chosen by the evals (2026-11-02, 112 replays a
- * side): DeepSeek V4.1 Flash with reasoning OFF passed 40% of replies vs 35%
- * with it on, "true" 65% vs 55%, cheaper and faster. Moving either is an eval run.
+ * Her model and its reasoning, chosen by the evals. Reasoning is ON
+ * (VENDOR-TOOLS-FOLLOWUP-1112, 2026-11-12, 306 replays a side): the 2026-11-02
+ * "off" pick compared two identical wires (the /chat vendor loop never sent the
+ * reasoning-off field, so every turn ran with reasoning on). With the field
+ * really sent, OFF passed 21 and 25 of 51 scenarios vs 29 and 30 with it on
+ * (proactive 81% vs 89%, next step 77% vs 87%), at a third of the cost. What is
+ * stated here is what the wire carries. Moving either is an eval run.
  */
-export const SOPHIE_MODEL = { provider: "deepseek", model: "deepseek-flash", reasoning: "off" } as const;
+export const SOPHIE_MODEL: { readonly provider: "deepseek"; readonly model: "deepseek-flash"; readonly reasoning: "on" | "off" } = { provider: "deepseek", model: "deepseek-flash", reasoning: "on" };
 
 export const SOPHIE_ROLE = `You are Sophie, the account manager of distribute.you. distribute.you is "Revenue made easy.": we find the client's buyers, write to them, follow up and hand the interested ones to the client, so the client gets revenue without doing the sales outreach. You do that work for them and keep them informed.
 

@@ -31,6 +31,7 @@ import {
   postVendorChatCompletion,
   VendorProviderError,
   VENDORS,
+  vendorReasoningFields,
   type VendorId,
   type VendorResponseBody,
   type VendorToolCall,
@@ -97,9 +98,8 @@ export interface StreamVendorChatOptions {
   /** A turn that must END by calling this tool (a Lead event turn's answer_person). */
   endToolName?: string;
   /**
-   * Send the vendor's reasoning-off field (evals measure a model with and
-   * without reasoning, SOPHIE-REFONTE-1102). Absent = the model's default, as
-   * every /chat turn runs today.
+   * Send the vendor's reasoning-off field (`vendorReasoningFields`: this
+   * model's own spelling). Absent or false = the model's default.
    */
   reasoningDisabled?: boolean;
   /**
@@ -304,6 +304,12 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
       // silent-turn re-ask say to answer now (their notes), and a call the model
       // makes anyway is not run.
       ...(vendorTools.length > 0 ? { tools: vendorTools } : {}),
+      // Reasoning off, in THIS model's own words, when the caller says so
+      // (VENDOR-TOOLS-FOLLOWUP-1112: the flag used to word refusals only, and
+      // every turn ran with reasoning on). Absent = the model's default.
+      ...(reasoningDisabled && VENDORS[vendor].reasoning.kind === "disablable"
+        ? vendorReasoningFields(VENDORS[vendor].reasoning, model)
+        : {}),
       // What THIS model needs beside tools (OpenAI Terra: reasoning_effort none).
       ...(vendorTools.length > 0 ? (VENDORS[vendor].toolCallRequestFields?.[model] ?? {}) : {}),
     };
@@ -313,8 +319,6 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
 
     let json: VendorResponseBody;
     try {
-      // Reasoning stays at the model's default for chat (free text): the
-      // request carries no reasoning-off field.
       json = await postVendorChatCompletion({ vendor, apiKey, model, body, reasoningDisabled, signal });
     } catch (err) {
       if (signal.aborted) break;
