@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 
-// Regression for the `fable` alias (Claude Fable 5.1, added 2026-09-09).
+// Regression for the `fable` alias (Claude Fable 5.2, added 2026-09-09).
 //
 // Anthropic removed the sampling parameters on its always-thinking models, so
 // `temperature` is a hard 400 there while it stays a live, honoured field on
@@ -38,7 +38,7 @@ const ROUTES = [
 ] as const;
 
 for (const { path, headers, extra } of ROUTES) {
-  describe(`POST ${path} — Claude Fable 5.1 rejects sampling parameters`, () => {
+  describe(`POST ${path} — Claude Fable 5.2 rejects sampling parameters`, () => {
     it("returns 400, not retryable, naming the field and the aliases that accept it", async () => {
       const { default: app } = await import("../../src/index.js");
       const res = await request(app)
@@ -54,7 +54,7 @@ for (const { path, headers, extra } of ROUTES) {
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain("claude-fable-5-1");
+      expect(res.body.error).toContain("claude-fable-5-2");
       expect(res.body.error).toContain("temperature");
       // Every Anthropic alias is a 5.x model that refuses sampling since Haiku
       // moved to 5.5 (2026-10-09), so there is no Anthropic alias to suggest.

@@ -904,7 +904,7 @@ async function handleComplete(req: express.Request, res: express.Response, retry
   }
 
   // Some models REMOVED the sampling parameters — Anthropic on its
-  // always-thinking family (Fable 5.1), OpenAI on its reasoning models
+  // always-thinking family (Fable 5.2), OpenAI on its reasoning models
   // (GPT-6 Astra) — and answer 400 to `temperature`. Checked here, ahead of the
   // cost hold, so a caller A/B-ing an existing request body against a new alias
   // is refused for free and told exactly which field to drop, instead of paying
@@ -2723,7 +2723,7 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
   }
 
   // Some models REMOVED the sampling parameters — Anthropic on its
-  // always-thinking family (Fable 5.1), OpenAI on its reasoning models
+  // always-thinking family (Fable 5.2), OpenAI on its reasoning models
   // (GPT-6 Astra) — and answer 400 to `temperature`. Checked here, ahead of the
   // cost hold, so a caller A/B-ing an existing request body against a new alias
   // is refused for free and told exactly which field to drop, instead of paying

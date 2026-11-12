@@ -30,6 +30,7 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "claude-haiku-5-5": "Claude Haiku 5.5",
   "claude-sonnet-5-5": "Claude Sonnet 5.5",
   "claude-opus-5-5": "Claude Opus 5.5",
+  "claude-fable-5-2": "Claude Fable 5.2",
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-haiku-4-5": "Claude Haiku 4.5",
   "claude-sonnet-4-6": "Claude Sonnet 4.6",
@@ -101,6 +102,8 @@ export const RETIRED_MODELS: Record<string, RetiredModel> = {
   "claude-haiku-4-5": { provider: "anthropic", capabilityTier: "cheap", formerAliases: ["haiku"] },
   "claude-sonnet-4-6": { provider: "anthropic", capabilityTier: "strong", formerAliases: ["sonnet"] },
   "claude-opus-4-6": { provider: "anthropic", capabilityTier: "frontier", formerAliases: ["opus"] },
+  // FABLE-5-2-1112 (2026-11-12): head moved to claude-fable-5-2.
+  "claude-fable-5-1": { provider: "anthropic", capabilityTier: "frontier", formerAliases: ["fable"] },
   "gemini-3.1-flash-lite": { provider: "google", capabilityTier: "cheap", formerAliases: ["flash-lite"] },
   "gemini-3.1-flash-lite-preview": { provider: "google", capabilityTier: "cheap", formerAliases: ["flash-lite"] },
   "gemini-3-flash-preview": { provider: "google", capabilityTier: "cheap", formerAliases: ["flash"] },

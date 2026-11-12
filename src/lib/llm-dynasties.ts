@@ -83,7 +83,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "Claude Fable",
     provider: "anthropic",
     capabilityTier: "frontier",
-    models: ["claude-fable-5-1"],
+    models: ["claude-fable-5-2", "claude-fable-5-1"],
     servedToday: true,
     legacyAliases: ["fable"],
   },

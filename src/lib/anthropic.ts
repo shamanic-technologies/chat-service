@@ -27,6 +27,7 @@ const ANTHROPIC_TIMEOUT_MS: Record<string, number> = {
   // Fable 5.1 reasons on every request and Anthropic's own guidance is that a
   // single request on a hard task can run many minutes — so it gets the longest
   // budget of the four, not the 10-minute fallback.
+  "claude-fable-5-2": 20 * 60_000,   // 20 min — Fable
   "claude-fable-5-1": 20 * 60_000,   // 20 min — Fable
   "claude-opus-5-5": 15 * 60_000,    // 15 min — Opus
   "claude-sonnet-5-5": 10 * 60_000,  // 10 min — Sonnet
@@ -224,7 +225,11 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     //     `temperature` is refused before any spend rather than after.
     //   • Forced tool use and assistant prefill are removed. Neither is on the
     //     `/complete` path, which sends no tools and no prefill.
-    "claude-fable": { apiModelId: "claude-fable-5-1", costPrefix: "anthropic-fable-5.1", provider: "anthropic", capabilityTier: "frontier" },
+    //
+    // FABLE-5-2-1112 (owner 2026-11-12 « upgrade fable à 5.2 »): head moved 5.1 → 5.2
+    // (released 2026-11-09, $8 / $0.20 cache read / $10 cache write / $40 per 1M,
+    // 20% below 5.1). Same three API facts, re-probed live before the move.
+    "claude-fable": { apiModelId: "claude-fable-5-2", costPrefix: "anthropic-fable-5.2", provider: "anthropic", capabilityTier: "frontier" },
   },
   google: {
     // Gemini Flash-Lite → 3.5 Flash-Lite (GA). The `flash` alias moved here 2026-07-24; `flash-lite`
@@ -580,7 +585,7 @@ export function modelCatalogue(): ModelCatalogueEntry[] {
  * `temperature`, `top_p` and `top_k` were removed on the always-thinking
  * models: Fable 5 / 5.1, Opus 5.5 / 5 / 4.8 / 4.7 and Sonnet 5.5 / 5 each answer
  * 400 when one is sent. Only the models reachable from this service are listed
- * (Fable 5.1, Sonnet 5.5, Opus 5.5) — the set records what we actually serve, exactly like
+ * (Fable 5.2, Sonnet 5.5, Opus 5.5) — the set records what we actually serve, exactly like
  * `GEMINI_3_THINKING_FLOOR`, and a model is added here when its alias is.
  *
  * Recorded rather than worked around, and it is a real behaviour change to be
@@ -601,7 +606,7 @@ export function modelCatalogue(): ModelCatalogueEntry[] {
  * with it.
  */
 const ANTHROPIC_SAMPLING_UNSUPPORTED = new Set([
-  "claude-fable-5-1",
+  "claude-fable-5-2",
   // Probed live 2026-09-29: temperature 0.3 → 400 on both; only the default (1) passes.
   "claude-sonnet-5-5",
   "claude-opus-5-5",
@@ -649,7 +654,7 @@ const ANTHROPIC_EFFORT_MODELS: ReadonlySet<string> = new Set([
   "claude-opus-5-5",
   "claude-sonnet-5-5",
   "claude-haiku-5-5",
-  "claude-fable-5-1",
+  "claude-fable-5-2",
 ]);
 
 /** True when this Anthropic model honours a caller-stated `effort` on /complete. */
@@ -730,6 +735,7 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "claude-haiku-5-5": "anthropic-haiku-5.5",
   "claude-opus-4-6": "anthropic-opus-4.6",
   "claude-fable-5-1": "anthropic-fable-5.1",
+  "claude-fable-5-2": "anthropic-fable-5.2",
   "claude-sonnet-5-5": "anthropic-sonnet-5.5",
   "claude-opus-5-5": "anthropic-opus-5.5",
   "gemini-3.1-flash-lite": "google-flash-lite-3.1",
