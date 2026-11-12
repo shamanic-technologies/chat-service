@@ -1929,6 +1929,55 @@ Rules: thinking level is a call parameter (same dynasty); preview and GA are one
   },
 });
 
+// --- LLM cost names ---
+
+export const LlmCostNameSchema = z
+  .object({
+    costName: z.string().openapi({
+      description: "Exact cost name as stored on runs-service cost lines.",
+      example: "deepseek-v4.1-flash-peak-tokens-output",
+    }),
+    dynasty: z.string().openapi({ description: "LLM dynasty slug (GET /internal/model-dynasties).", example: "deepseek-flash" }),
+    provider: z.string().openapi({ description: "Vendor slug.", example: "deepseek" }),
+    modelIds: z.array(z.string()).openapi({
+      description:
+        "Concrete model id(s) billed under this name. Several only when a vendor's preview and GA of one model shared a name (same dynasty).",
+      example: ["deepseek-flash"],
+    }),
+  })
+  .openapi("LlmCostName");
+
+export const LlmCostNameCatalogueResponseSchema = z
+  .object({ costNames: z.array(LlmCostNameSchema) })
+  .openapi("LlmCostNameCatalogueResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/llm-cost-names",
+  tags: ["Internal"],
+  summary: "Every LLM cost name ever written, mapped to its model and LLM dynasty",
+  description: `Every LLM token cost name this service (or a caller before it moved onto /complete) ever wrote to runs-service, retired models included, with the concrete model id(s) and the LLM dynasty that made it (LLM-RATING-PER-ENGINE-1112). Look a cost line up by EXACT name: never parse a cost name (prefixes move when a vendor renames a model, and they nest).
+
+**Auth:** Requires only \`x-api-key\` (no identity headers).
+
+Not listed (not an LLM dynasty): judges (\`typesafe-jev-*\`, \`cloudflare-clef-*\`, \`openai-gpt-6-luna-decisions-*\`), image generation (\`google-flash-image-*\`), embeddings, search and grounding units. A name may be listed and never billed (every dimension a vendor prices is listed).`,
+  request: {
+    headers: z.object({
+      "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Every LLM cost name, sorted by name",
+      content: { "application/json": { schema: LlmCostNameCatalogueResponseSchema } },
+    },
+    401: {
+      description: "Missing or invalid x-api-key header",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // --- Chat ---
 
 export const ChatRequestSchema = z
