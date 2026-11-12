@@ -57,3 +57,22 @@ describe("lastUserMessage", () => {
     expect(lastUserMessage(out)).toBe(out[2]);
   });
 });
+
+// SOPHIE-BACKUP-PHOTOS-1112: on her backup model (Claude Haiku 5.5) Sophie reads a WhatsApp photo
+// natively, like on DeepSeek; before, the Anthropic loop threw and the person got no answer.
+describe("photos join the user message as images", () => {
+  const photo = { mimeType: "image/png" as const, base64: "iVBORw0KGgo=", width: 40, height: 20, at: "2026-11-12T06:00:00Z", caption: null };
+
+  it("puts the words, a line saying what the photos are, then each photo, with the cache breakpoint on the words", () => {
+    const [user] = buildAnthropicTurnMessages([], "what is this?", "", true, [photo]);
+    const blocks = user.content as Array<Record<string, unknown>>;
+    expect(blocks[0]).toMatchObject({ type: "text", text: "what is this?", cache_control: { type: "ephemeral" } });
+    expect(blocks[1]).toMatchObject({ type: "text" });
+    expect(String(blocks[1].text)).toMatch(/sent this photo/);
+    expect(blocks[2]).toEqual({ type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" } });
+  });
+
+  it("keeps a photo-less, uncached message a plain string (byte-equal to before)", () => {
+    expect(buildAnthropicTurnMessages([], "hi", "", false)).toEqual([{ role: "user", content: "hi" }]);
+  });
+});
