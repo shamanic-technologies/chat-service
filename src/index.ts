@@ -161,6 +161,7 @@ import { seedPlatformConfigs, seedSophieConfig, holdTextBesideToolCallsFor, isSe
 import { buildSituationBrief } from "./agent/situation.js";
 import { gatewaySituationReader } from "./agent/situation-reader.js";
 import { SOPHIE_CONFIG_KEY, SOPHIE_MODEL } from "./agent/sophie.js";
+import { sophieTurnModel } from "./agent/sophie-backup.js";
 import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi } from "./agent/catalogue-tools.js";
 import {
   SkillNotFoundError,
@@ -3604,7 +3605,13 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
 
   // Resolve provider/model from config (NULL = default: google/pro — Gemini is
   // the platform default; the Anthropic platform key has no credit balance).
-  const { provider: chatProvider, modelAlias: chatModelAlias } = resolveChatProviderModel(appConfig);
+  // Sophie's backup (SOPHIE-HAIKU-BACKUP-1112): while her vendor is out of credit, the turn runs on Haiku.
+  const turnModel = sophieTurnModel(configKey, resolveChatProviderModel(appConfig));
+  const { provider: chatProvider, modelAlias: chatModelAlias } = turnModel;
+  if (turnModel.backupFor) {
+    console.warn(`[chat] org="${orgId}" config="${configKey}" ${turnModel.backupFor} is out of credit: this turn runs on the backup ${chatProvider}/${chatModelAlias}`);
+    recordReroute(turnModel.backupFor);
+  }
   const resolvedModelInfo = resolveModel(chatProvider, chatModelAlias);
   if (appConfig.effort && chatProvider !== "anthropic") {
     // A stored effort on a Gemini config would be silently ignored: refuse it.
@@ -5788,6 +5795,16 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
 
     sendSSE(res, "[DONE]");
   } catch (err) {
+    // Our platform key refused for an empty balance (SOPHIE-HAIKU-BACKUP-1112): store the fact, so the
+    // next Sophie turn runs on her backup and Monitoring shows it red. This turn still fails loud.
+    if (resolvedKey.keySource !== "org" && isOutOfCreditError(chatProvider, err)) {
+      recordOutOfCredit({
+        provider: chatProvider,
+        model: resolvedModelInfo.apiModelId,
+        status: err instanceof VendorOutOfCreditError ? err.status : undefined,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
     // Out of credits (billing refused the turn BEFORE the model was called):
     // not an error, a fixed message with an "Add credits" action (owner
     // 2026-10-10). Streamed as text for any client, plus `credits_required`
