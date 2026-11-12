@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Claude Fable 5.1 (`fable`) and GPT-6 Astra (`gpt-pro`)
+// Claude Fable 5.2 (`fable`) and GPT-6 Astra (`gpt-pro`)
 //
 // Two aliases added together on 2026-09-09 so a cold-email template could be
 // A/B'd against two frontier models this service could not previously reach.
@@ -49,14 +49,14 @@ import { CompleteRequestSchema, InternalPlatformCompleteRequestSchema } from "..
 const AT = new Date("2026-09-09T12:00:00Z");
 
 describe("alias resolution", () => {
-  it("resolves `fable` to Claude Fable 5.1 on the native Anthropic path", () => {
+  it("resolves `fable` to Claude Fable 5.2 on the native Anthropic path", () => {
     const resolved = resolveModel("anthropic", "fable");
     // toMatchObject, not toEqual: ResolvedModel also carries `capabilityTier`,
     // which has its own test (tests/unit/capability-tier.test.ts). This test is
     // about WHERE the alias resolves, and stays about that.
     expect(resolved).toMatchObject({
-      apiModelId: "claude-fable-5-1",
-      costPrefix: "anthropic-fable-5.1",
+      apiModelId: "claude-fable-5-2",
+      costPrefix: "anthropic-fable-5.2",
       provider: "anthropic",
     });
   });
@@ -104,7 +104,7 @@ describe("alias resolution", () => {
   });
 
   it("keeps the deprecated model-id → prefix map in step with both new models", () => {
-    expect(costPrefixForModel("claude-fable-5-1")).toBe("anthropic-fable-5.1");
+    expect(costPrefixForModel("claude-fable-5-2")).toBe("anthropic-fable-5.2");
     expect(costPrefixForModel("gpt-6-astra")).toBe("openai-gpt-6-astra");
   });
 });
@@ -113,10 +113,10 @@ describe("cost names", () => {
   it("declares Fable on the flat Anthropic shape", () => {
     // Anthropic's catalog rows carry input and output only — its path reports
     // no cached count, so the cached name is built but never declared.
-    expect(buildLlmCostNames({ provider: "anthropic", costPrefix: "anthropic-fable-5.1", at: AT })).toEqual({
-      input: "anthropic-fable-5.1-tokens-input",
-      cachedInput: "anthropic-fable-5.1-tokens-cached-input",
-      output: "anthropic-fable-5.1-tokens-output",
+    expect(buildLlmCostNames({ provider: "anthropic", costPrefix: "anthropic-fable-5.2", at: AT })).toEqual({
+      input: "anthropic-fable-5.2-tokens-input",
+      cachedInput: "anthropic-fable-5.2-tokens-cached-input",
+      output: "anthropic-fable-5.2-tokens-output",
     });
   });
 
@@ -142,26 +142,26 @@ describe("cost names", () => {
 
 describe("Anthropic sampling support — Fable rejects temperature", () => {
   it("records Fable and every 5.5 alias (Sonnet, Opus, Haiku) as sampling-less", () => {
-    expect(anthropicRejectsSampling("claude-fable-5-1")).toBe(true);
+    expect(anthropicRejectsSampling("claude-fable-5-2")).toBe(true);
     for (const alias of ["sonnet", "opus", "haiku"] as const) {
       expect(anthropicRejectsSampling(resolveModel("anthropic", alias).apiModelId)).toBe(true);
     }
   });
 
   it("throws before any spend when temperature is paired with Fable", () => {
-    expect(() => assertAnthropicSamplingSupported("claude-fable-5-1", 0.3)).toThrow(
+    expect(() => assertAnthropicSamplingSupported("claude-fable-5-2", 0.3)).toThrow(
       AnthropicUnsupportedOptionError,
     );
     // The message has to be actionable: it names the field to drop and the
     // aliases that accept it, and says retrying will not help.
-    expect(() => assertAnthropicSamplingSupported("claude-fable-5-1", 0)).toThrow(
+    expect(() => assertAnthropicSamplingSupported("claude-fable-5-2", 0)).toThrow(
       /temperature.*\(a Gemini alias.*will not help/s,
     );
   });
 
   it("is a no-op when no sampling parameter was sent, or on a model that takes one", () => {
-    expect(() => assertAnthropicSamplingSupported("claude-fable-5-1", undefined)).not.toThrow();
-    expect(() => assertAnthropicSamplingSupported("claude-fable-5-1", null)).not.toThrow();
+    expect(() => assertAnthropicSamplingSupported("claude-fable-5-2", undefined)).not.toThrow();
+    expect(() => assertAnthropicSamplingSupported("claude-fable-5-2", null)).not.toThrow();
     expect(() => assertAnthropicSamplingSupported("claude-sonnet-4-6", 0.7)).not.toThrow();
   });
 });
@@ -241,7 +241,7 @@ describe("sampling support — the reasoning-first models that removed it", () =
     // Anthropic did it per MODEL on its always-thinking family, OpenAI per
     // VENDOR on its reasoning models. Neither is evidence about the other, so
     // they are recorded separately and only read together at the route.
-    expect(anthropicRejectsSampling("claude-fable-5-1")).toBe(true);
+    expect(anthropicRejectsSampling("claude-fable-5-2")).toBe(true);
     expect(vendorRejectsSampling("openai")).toBe(true);
     expect(anthropicRejectsSampling("claude-sonnet-4-6")).toBe(false);
   });

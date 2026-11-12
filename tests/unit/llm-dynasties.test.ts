@@ -9,7 +9,7 @@ const EXPECTED: Record<string, { head: string; legacy: string[] }> = {
   "claude-haiku": { head: "claude-haiku-5-5", legacy: ["haiku"] },
   "claude-sonnet": { head: "claude-sonnet-5-5", legacy: ["sonnet"] },
   "claude-opus": { head: "claude-opus-5-5", legacy: ["opus"] },
-  "claude-fable": { head: "claude-fable-5-1", legacy: ["fable"] },
+  "claude-fable": { head: "claude-fable-5-2", legacy: ["fable"] },
   "gemini-flash-lite": { head: "gemini-3.5-flash-lite", legacy: ["flash", "flash-lite"] },
   "gemini-flash": { head: "gemini-3.8-flash", legacy: ["flash-pro"] },
   "gemini-pro": { head: "gemini-3.1-pro-preview", legacy: ["pro"] },

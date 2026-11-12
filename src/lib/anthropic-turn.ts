@@ -39,7 +39,7 @@ export function buildAnthropicTurnMessages(
   const context = turnContext.trim();
   if (!context) return [...history, user];
   // `system` inside messages is the API's mid-conversation system message
-  // (Sonnet 5.5, Opus 5.5, Fable 5.1); the SDK's MessageParam type lists it.
+  // (Sonnet 5.5, Opus 5.5, Fable 5.2); the SDK's MessageParam type lists it.
   const system = { role: "system", content: context } as unknown as Anthropic.MessageParam;
   return [...history, user, system];
 }

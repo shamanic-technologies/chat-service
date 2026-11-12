@@ -210,7 +210,7 @@ Request body:
 - `systemPrompt` (required) — inline system prompt (no pre-registered config needed). Empty string is allowed: the provider receives no system prompt and falls back to its default behavior. The value is forwarded byte-equal to the provider.
 - `provider` (required) — LLM provider: `"anthropic"`, `"google"`, `"deepseek"`, `"zai"`, `"moonshot"`, or `"openai"` (see [Direct vendor models](#direct-vendor-models))
 - `model` (required) — version-free model alias. The service resolves the current versioned model internally. Valid combinations:
-  - **anthropic**: `haiku` (fast/cheap, Claude Haiku 4.5), `sonnet` (balanced, **Claude Sonnet 5.5**), `opus` (high quality, **Claude Opus 5.5**), `fable` (Claude Fable 5.1 — the tier above Opus; 1M context, always-on reasoning). **`sonnet`, `opus` and `fable` reject `temperature` with a 400** — see below. `sonnet`/`opus` moved from the 4.6 models on 2026-09-29 — see [Claude Sonnet 5.5 / Opus 5.5](#claude-sonnet-55--opus-55-sonnet--opus).
+  - **anthropic**: `haiku` (fast/cheap, Claude Haiku 4.5), `sonnet` (balanced, **Claude Sonnet 5.5**), `opus` (high quality, **Claude Opus 5.5**), `fable` (Claude Fable 5.2 — the tier above Opus; 1M context, always-on reasoning). **`sonnet`, `opus` and `fable` reject `temperature` with a 400** — see below. `sonnet`/`opus` moved from the 4.6 models on 2026-09-29 — see [Claude Sonnet 5.5 / Opus 5.5](#claude-sonnet-55--opus-55-sonnet--opus).
   - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.8 Flash), `pro` (most powerful, Gemini 3.1 Pro), `gemini-argon` (Gemini 4 Argon, its own dynasty since 2026-10-27; floor `low`). All require a Google API key in key-service.
   - **deepseek**: `deepseek-flash` (DeepSeek V4.1 Flash — 1M context, 2500 concurrent requests). `deepseek-pro` is a **deprecated synonym** for the same model: DeepSeek discontinued V4 Pro on 2026-09-14 and routes it to V4.1 Flash at the Flash price (see [The 2026-09-10 DeepSeek collapse](#the-2026-09-10-deepseek-collapse))
   - **zai**: `glm-flash` (`glm-5.3-flash` — fast and cheap, 50 concurrent requests), `glm-pro` (`glm-5.3` — Z.ai's flagship, 15 concurrent requests)
@@ -310,7 +310,9 @@ Probed live the same day with the exact `/complete` request shape: plain text, `
 - **Sampling removed** — `temperature: 0.3` answers `400 "\`temperature\` is deprecated for this model."` on both, so they join Fable in `ANTHROPIC_SAMPLING_UNSUPPORTED` and the pair is refused at the route before any cost is held. Since `haiku` moved to Haiku 5.5 (2026-10-09) no Anthropic alias accepts `temperature`.
 - **Thinking always on** — `disableThinking: true` sends `output_config.effort: "low"` (`ANTHROPIC_EFFORT_FLOOR`) rather than a `thinking` block, which would 400.
 
-### Claude Fable 5.1 (`fable`)
+### Claude Fable 5.2 (`fable`)
+
+**Since 2026-11-12 (FABLE-5-2-1112) `fable` resolves to `claude-fable-5-2`, cost prefix `anthropic-fable-5.2`** ($8 / $0.20 cache read / $10 cache write / $40 per 1M, 20% below 5.1, released 2026-11-09). `claude-fable-5-1` is a retired id (still priced, so past spend resolves). The three API facts below were re-probed live on 5.2 before the move. Original 5.1 notes:
 
 `provider: "anthropic"`, `model: "fable"` → `claude-fable-5-1`, cost prefix `anthropic-fable-5.1`. Added 2026-09-09; the tier **above** Opus and priced there ($10 / $50 per 1M, against Opus 4.6's rates), 1M context. It runs on the existing native Anthropic client — no new transport — but three of its API behaviours differ from `haiku` / `sonnet` / `opus`, and all three are 400s rather than degradations:
 

@@ -165,7 +165,7 @@ describe("Haiku 5.5 prompt-length tier (100k)", () => {
 describe("cache-priced models", () => {
   it("caches exactly the four models with cache-write rows, never a legacy prefix", () => {
     expect([...ANTHROPIC_CACHE_PRICED_PREFIXES].sort()).toEqual([
-      "anthropic-fable-5.1",
+      "anthropic-fable-5.2",
       "anthropic-haiku-5.5",
       "anthropic-opus-5.5",
       "anthropic-sonnet-5.5",

@@ -7,7 +7,7 @@
  *   • `input_tokens`                → `<prefix>-tokens-input` (only the tokens
  *     AFTER the last cache breakpoint — it excludes both cache counts)
  *   • `cache_read_input_tokens`     → `<prefix>-tokens-cached-input` (0.1x input;
- *     0.05x on Opus 5.5, 0.025x on Fable 5.1 — the catalog row carries the rate)
+ *     0.05x on Opus 5.5, 0.025x on Fable 5.1 / 5.2 — the catalog row carries the rate)
  *   • `cache_creation_input_tokens` → `<prefix>-tokens-cache-write-5m` (1.25x
  *     input, 5-minute TTL — the only TTL this service ever requests)
  *   • `output_tokens`               → `<prefix>-tokens-output` (includes thinking)
@@ -78,7 +78,7 @@ export interface AnthropicCostLine {
  * first (`GET /v1/platform-prices/{name}` → 200), or runs-service 422s.
  */
 export const ANTHROPIC_CACHE_PRICED_PREFIXES: ReadonlySet<string> = new Set([
-  "anthropic-fable-5.1",
+  "anthropic-fable-5.2",
   "anthropic-sonnet-5.5",
   "anthropic-opus-5.5",
   "anthropic-haiku-5.5",

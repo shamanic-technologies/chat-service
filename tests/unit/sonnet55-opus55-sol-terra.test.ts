@@ -68,7 +68,7 @@ describe("alias resolution", () => {
 
   it("does not move gpt-pro or fable", () => {
     expect(resolveModel("openai", "gpt-pro").apiModelId).toBe("gpt-6-astra");
-    expect(resolveModel("anthropic", "fable").apiModelId).toBe("claude-fable-5-1");
+    expect(resolveModel("anthropic", "fable").apiModelId).toBe("claude-fable-5-2");
   });
 });
 
@@ -108,7 +108,7 @@ describe("Anthropic 5.5 — disableThinking lowers effort, never disables thinki
     expect(anthropicEffortFloor("claude-sonnet-5-5")).toBe("low");
     expect(anthropicEffortFloor("claude-opus-5-5")).toBe("low");
     // Fable and Haiku keep the no-op they always had.
-    expect(anthropicEffortFloor("claude-fable-5-1")).toBeNull();
+    expect(anthropicEffortFloor("claude-fable-5-2")).toBeNull();
     expect(anthropicEffortFloor("claude-haiku-5-5")).toBeNull();
   });
 
@@ -132,7 +132,7 @@ describe("Anthropic 5.5 — disableThinking lowers effort, never disables thinki
     const claude = createAnthropicClient({ apiKey: "k", systemPrompt: "s" });
     await claude.complete("m", { model: "claude-sonnet-5-5" });
     expect(capturedParams!.output_config).toBeUndefined();
-    await claude.complete("m", { model: "claude-fable-5-1", disableThinking: true });
+    await claude.complete("m", { model: "claude-fable-5-2", disableThinking: true });
     expect(capturedParams!.output_config).toBeUndefined();
   });
 });
