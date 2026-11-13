@@ -1,0 +1,228 @@
+{
+ "id": "not-good-pushy-followup-whatsapp",
+ "title": "Same complaint on WhatsApp: the report is recorded there too",
+ "source": "staff test org (hypothetical client turn), whatsapp, 2026-11-12",
+ "surface": "whatsapp",
+ "person": {
+  "name": "Sam"
+ },
+ "history": [],
+ "message": "honestly the 2nd email Dana Whitfield got from you is embarrassing, way too aggressive. I would never write that",
+ "fixtures": {
+  "list_brands": [
+   {
+    "brands": [
+     {
+      "id": "e98cd83a-f39e-46a4-ad11-ea750f252ba7",
+      "name": "Reed",
+      "domain": "reed.co.uk",
+      "brandUrl": "https://reed.co.uk"
+     }
+    ]
+   }
+  ],
+  "list_offers": [
+   {
+    "offers": [
+     {
+      "offerId": "0ffe0000-0000-4000-8000-000000001113",
+      "brandId": "e98cd83a-f39e-46a4-ad11-ea750f252ba7",
+      "name": "Operations Hiring",
+      "status": "active",
+      "description": "Recruiting operations managers and directors for mid-size logistics firms, paid on placement."
+     }
+    ]
+   }
+  ],
+  "get_offer_settings": [
+   {
+    "lifetimeRevenueUsd": 12000,
+    "bookingUrl": "https://cal.example/reed"
+   }
+  ],
+  "get_offer_performance": [
+   {
+    "brandId": "e98cd83a-f39e-46a4-ad11-ea750f252ba7",
+    "offerId": "0ffe0000-0000-4000-8000-000000001113",
+    "recipientsContacted": 212,
+    "recipientsClicked": {
+     "total": 3
+    },
+    "recipientsRepliesPositive": {
+     "total": 1
+    },
+    "spent": {
+     "actualSpentCents": 3140,
+     "totalSpentCents": 3140
+    },
+    "return": "Expected 5x · no paid client yet ($31 spent)"
+   }
+  ],
+  "list_replies_to_handle": [
+   {
+    "leads": [],
+    "total": 0,
+    "nextCursor": null
+   }
+  ],
+  "get_billing_account": [
+   {
+    "org_id": "06ffd332-b05d-4468-bc33-fe2789caad95",
+    "payment_mode": "prepaid",
+    "balance_cents": "2860.0000000000",
+    "usage_cents": "3140.0000000000",
+    "credited_cents": "6000.0000000000",
+    "has_auto_topup": true,
+    "has_payment_method": true,
+    "card_brand": "visa",
+    "card_last4": "4242",
+    "usage_discount_pct": null
+   }
+  ],
+  "get_payment_outlook": [
+   {
+    "orgId": "06ffd332-b05d-4468-bc33-fe2789caad95",
+    "paymentMode": "prepaid",
+    "state": "autopay_ready",
+    "blockedReason": null,
+    "nextChargeAttemptAt": null,
+    "trigger": null
+   }
+  ],
+  "list_campaigns": [
+   {
+    "campaignCount": 1,
+    "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+    "campaigns": [
+     {
+      "id": "ca000000-0000-4000-8000-000000001113",
+      "name": "Ops Leaders",
+      "path": "Start → Lead Sourcing → Lead found → Sales Cold Email Outreach → Positive reply → Paid client",
+      "runsWhen": "On its own, within its caps (no trigger)",
+      "type": "proactive",
+      "status": "ongoing",
+      "stopReason": null,
+      "budget": "Max $5/day",
+      "volume": null,
+      "spent": "$3.10 of $5 today",
+      "invested": "$31.40 invested since start",
+      "return": "Expected 5x · no paid client yet ($31 spent)",
+      "offerId": "0ffe0000-0000-4000-8000-000000001113",
+      "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_paid_client",
+      "steps": []
+     }
+    ]
+   }
+  ],
+  "GET /v1/leads": [
+   {
+    "leads": [
+     {
+      "id": "1ead0000-0000-4000-8000-000000001113",
+      "leadId": "5eed0000-0000-4000-8000-000000001113",
+      "lead": {
+       "firstName": "Dana",
+       "lastName": "Whitfield",
+       "email": "dana@example.com",
+       "title": "Operations Director",
+       "organizationName": "Kestrel Freight"
+      },
+      "replyClassification": null,
+      "lastActivityAt": "2026-11-10T14:05:00Z"
+     }
+    ],
+    "total": 1,
+    "nextCursor": null
+   }
+  ],
+  "GET /v1/leads/{id}/timeline": [
+   {
+    "_when": {
+     "id": "1ead0000-0000-4000-8000-000000001113"
+    },
+    "leadId": "5eed0000-0000-4000-8000-000000001113",
+    "brandId": "e98cd83a-f39e-46a4-ad11-ea750f252ba7",
+    "offerId": null,
+    "items": [
+     {
+      "id": "outreach:initial_email:2026-11-06T14:05:00Z",
+      "label": "initial_email",
+      "source": "outreach",
+      "occurredAt": "2026-11-06T14:05:00Z",
+      "attributable": true,
+      "campaignId": "be000000-0000-4000-8000-000000001113"
+     },
+     {
+      "id": "outreach:followup:2026-11-10T14:05:00Z",
+      "label": "followup",
+      "source": "outreach",
+      "occurredAt": "2026-11-10T14:05:00Z",
+      "attributable": true,
+      "campaignId": "be000000-0000-4000-8000-000000001113"
+     }
+    ],
+    "tags": {
+     "lastWord": "no_reply",
+     "lastWordAt": null,
+     "furthestStep": "contacted",
+     "furthestStepAttributable": true,
+     "disqualified": false
+    },
+    "disqualification": null
+   }
+  ],
+  "GET /v1/conversations": [
+   {
+    "campaignId": "be000000-0000-4000-8000-000000001113",
+    "email": "dana@example.com",
+    "messages": [
+     {
+      "direction": "outbound",
+      "from": "sender@example.com",
+      "timestamp": "2026-11-06T14:05:00Z",
+      "subject": "Operations hires at Kestrel Freight",
+      "text": "Hi Dana, Kestrel Freight opened two depots this year. Reed places operations managers for mid-size logistics firms and is paid only on placement. Worth a short call?"
+     },
+     {
+      "direction": "outbound",
+      "from": "sender@example.com",
+      "timestamp": "2026-11-10T14:05:00Z",
+      "subject": "Re: Operations hires at Kestrel Freight",
+      "text": "Dana, I have written twice now. Every week without an operations manager costs Kestrel money, and your competitors are not waiting. Book a call today before our shortlist goes to someone else."
+     }
+    ]
+   }
+  ],
+  "GET /v1/sales-funnel-campaigns/{id}": [
+   {
+    "id": "ca000000-0000-4000-8000-000000001113",
+    "name": "Ops Leaders",
+    "status": "ongoing",
+    "brandId": "e98cd83a-f39e-46a4-ad11-ea750f252ba7",
+    "offerId": "0ffe0000-0000-4000-8000-000000001113",
+    "brief": "Operations directors and managers at mid-size logistics firms in the UK. Say we are paid only on placement.",
+    "target": "Paid client"
+   }
+  ]
+ },
+ "facts": [
+  "We sent Dana Whitfield (Operations Director, Kestrel Freight) two emails on the Ops Leaders campaign: a first email on 6 November 2026 and a follow-up on 10 November 2026. She has not replied.",
+  "The 10 November follow-up is the pushy one: it says every week without an operations manager costs Kestrel money, that competitors are not waiting, and to book a call today before the shortlist goes to someone else.",
+  "A message already sent cannot be changed, unsent, rewritten or sent again: it stays as it was sent.",
+  "Sophie can record that a piece of our work is not good (the tool report_not_good). It only lowers how often the writer of that message is picked for the next ones, so what we write next gets better. It sends nothing to Dana or anyone, changes nothing the client sees, and needs no confirmation from the client.",
+  "The report was made in this turn only if the turn's tool calls include report_not_good; it names Dana's message as outcomeKey message_written, subjectService lead-service, subjectId 5eed0000-0000-4000-8000-000000001113 (her leadId, on her row and in her timeline), unitAt 2026-11-10T14:05:00Z.",
+  "What a campaign's emails say can also be steered from now on by a rule in the campaign's brief (for example: never pressure, no urgency); writing it changes the brief and applies from the next emails.",
+  "The Ops Leaders campaign is running at $5 a day; the account is prepaid with $28.60 left."
+ ],
+ "expect": "Takes the client's side in one line, records the report on the 10 November follow-up to Dana in this same turn (report_not_good on message_written / lead-service / her leadId, with his words) without asking him first, and tells him it counts for what we write next. Never promises that the email will be rewritten, corrected or sent again, never says Dana was told anything. Closes on one step that serves him, such as offering to add a no-pressure rule to the campaign's brief.",
+ "prodReply": "I'm sorry about that follow-up to Dana. I'll rewrite it in a softer tone and send her the corrected version today, so she gets the right impression of Reed. Would you like me to go ahead?",
+ "badReplyFails": true,
+ "prodReplyActions": [],
+ "goodReply": "You're right, that follow-up to Dana on 10 November pushed far too hard: \"book a call today before our shortlist goes to someone else\" is not how Reed speaks. I've flagged that message as not good, which counts for what we write next for you; the email itself stays as it was sent. Want me to add a rule to your Ops Leaders campaign so no email uses pressure or urgency?",
+ "goodReplyActions": [
+  "run_operation GET /v1/leads",
+  "run_operation GET /v1/leads/{id}/timeline",
+  "run_operation GET /v1/conversations",
+  "report_not_good {outcomeKey: message_written, subjectService: lead-service, subjectId: 5eed0000-0000-4000-8000-000000001113, kind: reported, unitAt: 2026-11-10T14:05:00Z}"
+ ]
+}

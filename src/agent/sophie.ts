@@ -81,13 +81,17 @@ export const SOPHIE_BRIEF_SOURCES = ["src/agent/situation.ts", "src/lib/client-b
  * The tools Sophie calls (SOPHIE-REFONTE-1102): the gateway's served API (find /
  * describe / run_operation, as the person, the yes gated by the gateway's
  * `x-needs-user-yes`) plus a small core the API does not carry: the screen
- * (cards, pages, a field), the skills, a request to our team, and the
+ * (cards, pages, a field), the skills, a request to our team, the report of a
+ * piece of our work the client says is not good (its body is free-form in the
+ * gateway's document, so its fields live in the tool), and the
  * Copilot's own follow-ups (they run on OUR brand). Measured against the
  * 97 hand-written tools it replaces: evals/last-run.json.
  */
 export const SOPHIE_TOOLS: readonly string[] = [
   "find_operation", "describe_operation", "run_operation",
   "read_skill", "present_choices", "open_page", "request_user_input",
+  // The client says something we made is not good: one report to the Rating (SCRIPT-VALUE-RATING-1113).
+  "report_not_good",
   "contact_human", "request_staff", "request_skill_upgrade", "list_staff_requests",
   "create_followup", "update_followup", "cancel_followup", "list_followups", "fire_followup",
 ];

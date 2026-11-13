@@ -224,7 +224,10 @@ async function codeDefinition(): Promise<AgentDefinition> {
     const seed = fromSeed.has(r.slug) ? SEED_SKILLS.find((x) => x.slug === r.slug) : undefined;
     return seed ? { slug: seed.slug, parentSlug: seed.parentSlug, title: seed.title, description: seed.description, content: seed.content } : r;
   });
-  return sophieDefinition(merged);
+  // A seed skill the live table does not hold yet (a new skill measured before it ships) joins the tree.
+  const held = new Set(rows.map((r) => r.slug));
+  const added = SEED_SKILLS.filter((x) => fromSeed.has(x.slug) && !held.has(x.slug)).map((x) => ({ slug: x.slug, parentSlug: x.parentSlug, title: x.title, description: x.description, content: x.content }));
+  return sophieDefinition([...merged, ...added]);
 }
 
 async function main() {
