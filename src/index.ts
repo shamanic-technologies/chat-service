@@ -161,8 +161,8 @@ import {
 import { seedPlatformConfigs, seedSophieConfig, holdTextBesideToolCallsFor, isSelfSeededConfigKey } from "./lib/seed-platform-configs.js";
 import { buildSituationBrief } from "./agent/situation.js";
 import { gatewaySituationReader } from "./agent/situation-reader.js";
-import { SOPHIE_CONFIG_KEY, SOPHIE_MODEL } from "./agent/sophie.js";
-import { sophieTurnModel } from "./agent/sophie-backup.js";
+import { SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
+import { SOPHIE_BACKUP_MODEL, sophieTurnModel } from "./agent/sophie-backup.js";
 import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi } from "./agent/catalogue-tools.js";
 import {
   SkillNotFoundError,
@@ -3615,7 +3615,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
 
   // Resolve provider/model from config (NULL = default: google/pro — Gemini is
   // the platform default; the Anthropic platform key has no credit balance).
-  // Sophie's backup (SOPHIE-HAIKU-BACKUP-1112): while her vendor is out of credit, the turn runs on Haiku.
+  // Sophie's backup (SOPHIE-HAIKU-BACKUP-1112): while her vendor is out of credit, the turn runs on her backup model.
   const turnModel = sophieTurnModel(configKey, resolveChatProviderModel(appConfig));
   const { provider: chatProvider, modelAlias: chatModelAlias } = turnModel;
   if (turnModel.backupFor) {
@@ -3623,7 +3623,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     recordReroute(turnModel.backupFor);
   }
   const resolvedModelInfo = resolveModel(chatProvider, chatModelAlias);
-  if (appConfig.effort && chatProvider !== "anthropic") {
+  // A backup turn runs on another vendor: the config's Anthropic effort is not its setting.
+  if (appConfig.effort && chatProvider !== "anthropic" && !turnModel.backupFor) {
     // A stored effort on a Gemini config would be silently ignored: refuse it.
     return res.status(500).json({
       error: `Chat config "${configKey}" sets effort "${appConfig.effort}" but runs on ${chatProvider}; effort applies to Anthropic configs only (Gemini uses thinkingLevel).`,
@@ -5322,8 +5323,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         signal: abortController.signal,
         holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),
         ...(leadTurn ? { endToolName: LEAD_ANSWER_TOOL_NAME } : {}),
-        // Sophie's reasoning is part of her definition (src/agent/sophie.ts), chosen by the evals.
-        reasoningDisabled: configKey === SOPHIE_CONFIG_KEY && SOPHIE_MODEL.reasoning === "off",
+        // On the vendor loop Sophie only runs as her backup (sophie-backup.ts), with its measured reasoning.
+        reasoningDisabled: configKey === SOPHIE_CONFIG_KEY && SOPHIE_BACKUP_MODEL.reasoning !== "on",
         beforeProviderCall: async ({ requestBody, at }) => {
           await authorizeChatProviderCall(
             turnImages.length > 0 ? estimateRequestTokensWithImages(requestBody, turnImages) : estimateRequestTokens(requestBody),
@@ -5532,7 +5533,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       lastContentBlocks = finalMessage.content;
 
       if (holdTextBesideTools) {
-        if (finalMessage.stop_reason !== "tool_use") bufferToken(iterText);
+        // No long dash in client text (owner rule), as the vendor loop strips it (SOPHIE-ON-HAIKU-1113).
+        if (finalMessage.stop_reason !== "tool_use") bufferToken(stripLongDashes(iterText));
         else if (iterText.trim()) {
           console.log(`[chat] session="${currentSessionId}" dropped ${iterText.length} chars written beside a tool call (working note, not an answer)`);
         }

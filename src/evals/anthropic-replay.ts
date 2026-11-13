@@ -35,6 +35,7 @@ import type { ToolDefinition, ToolExecutor } from "../lib/gemini-chat.js";
 import { mergeConsecutiveMessages, rebuildAnthropicHistory, type RebuildableMessage } from "../lib/merge-messages.js";
 import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, MAX_TOOL_CHAIN_DEPTH, endToolFinalNote, endToolNudgeNote, isFinalToolRound, needsAnswerNudge } from "../lib/tool-budget.js";
 import { formatToolError } from "../lib/tool-errors.js";
+import { stripLongDashes } from "../lib/long-dash.js";
 import type { TurnImage } from "../lib/turn-images.js";
 
 export interface AnthropicReplayResult {
@@ -112,7 +113,8 @@ export async function replayAnthropicTurn(args: {
         last.content = [...last.content, { type: "text", text: EMPTY_ANSWER_NOTE }];
         continue;
       }
-      shown += text;
+      // /chat strips long dashes from the held answer (owner rule: none in client text).
+      shown += args.holdTextBesideToolCalls ? stripLongDashes(text) : text;
       break;
     }
     if (!args.holdTextBesideToolCalls) shown += text;
