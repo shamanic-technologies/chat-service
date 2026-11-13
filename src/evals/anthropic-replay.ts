@@ -1,27 +1,41 @@
 // ---------------------------------------------------------------------------
-// A Claude model in the eval replay (SOPHIE-CORE-1111: pick Sophie's model by
-// evals, Claude Haiku 5.5 and Sonnet 5.5 beside DeepSeek).
+// A Claude model in the eval replay, on the SAME request /chat sends
+// (SOPHIE-MODEL-BAKEOFF-1113, owner 2026-11-13 « tu es sûr que tu as comparé
+// toutes choses étant égales ? »).
 //
-// The /chat Anthropic loop lives inside the /chat handler (index.ts) and cannot
-// be called from here, so this is the same contract, small: the stable system
-// prompt (cached), the history as text, the user's message (cached) then the
-// turn's context as a mid-conversation system message (`buildAnthropicTurnMessages`,
-// as /chat sends it), the same tool budget (10 rounds, then a final round told
-// to answer), text beside a tool call held when the config holds it, a turn-
-// ending UI tool or end tool closing the turn. No thinking block: the
-// comparison is against DeepSeek with reasoning off. Billed lines come from
-// `readAnthropicBilledTokens` / `anthropicCostLines`, per request, merged.
+// The first version (SOPHIE-CORE-1111) was a mini-loop written for the eval: no
+// thinking block at all, the history as plain text, photos refused. So the
+// 2026-11-11 bake-off compared DeepSeek on the real /chat vendor loop with
+// Claude on a different, thinking-less request. Now:
+//  - every request is built by `createAnthropicClient().createStream`, the
+//    function the /chat Anthropic loop calls (Sophie's Haiku backup runs it,
+//    SOPHIE-HAIKU-BACKUP-1112): adaptive thinking + block binding, context
+//    management, prompt cache, max_tokens, and `output_config.effort` only when
+//    an effort is stated (the copilot config states none: the model's default);
+//  - the history is rebuilt with its tool_use / tool_result pairs
+//    (`rebuildAnthropicHistory` + `mergeConsecutiveMessages`), as /chat does;
+//  - the person's photos go in as image blocks (`buildAnthropicTurnMessages`);
+//  - the loop control mirrors index.ts's Anthropic path: 10 tool rounds, the
+//    final-round note beside the last tool results and tools off for that
+//    round, one re-ask when a turn that ran tools ends silent, a lead turn
+//    re-asked once to call its end tool (tools never off for it), tool errors
+//    through `formatToolError` with `is_error`, working notes beside a tool
+//    call held. That control flow is the one part copied, not shared: it lives
+//    inline in the /chat handler.
+// Billed lines come from `readAnthropicBilledTokens` / `anthropicCostLines`,
+// per request, merged (Haiku 5.5's long-context tier is per request).
 // ---------------------------------------------------------------------------
 
-import Anthropic from "@anthropic-ai/sdk";
-import { buildAnthropicTurnMessages } from "../lib/anthropic-turn.js";
+import type Anthropic from "@anthropic-ai/sdk";
+import { createAnthropicClient } from "../lib/anthropic.js";
+import type { AnthropicEffort } from "../schemas.js";
+import { buildAnthropicTurnMessages, lastUserMessage } from "../lib/anthropic-turn.js";
 import { anthropicCachePriced, anthropicCostLines, mergeCostLines, readAnthropicBilledTokens, type AnthropicCostLine } from "../lib/anthropic-usage.js";
 import type { ToolDefinition, ToolExecutor } from "../lib/gemini-chat.js";
-import { FINAL_ROUND_NOTE } from "../lib/tool-budget.js";
-
-/** Tool rounds before the final round, as /chat. */
-const MAX_TOOL_ROUNDS = 10;
-const MAX_OUTPUT_TOKENS = 8_000;
+import { mergeConsecutiveMessages, rebuildAnthropicHistory, type RebuildableMessage } from "../lib/merge-messages.js";
+import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, MAX_TOOL_CHAIN_DEPTH, endToolFinalNote, endToolNudgeNote, isFinalToolRound, needsAnswerNudge } from "../lib/tool-budget.js";
+import { formatToolError } from "../lib/tool-errors.js";
+import type { TurnImage } from "../lib/turn-images.js";
 
 export interface AnthropicReplayResult {
   fullResponse: string;
@@ -37,75 +51,106 @@ export async function replayAnthropicTurn(args: {
   costPrefix: string;
   systemPrompt: string;
   turnContext: string;
-  history: Array<{ role: "user" | "assistant"; content: string }>;
+  history: RebuildableMessage[];
   userMessage: string;
+  images?: readonly TurnImage[];
   tools: ToolDefinition[];
   executeTool: ToolExecutor;
   holdTextBesideToolCalls: boolean;
   endToolName?: string;
+  /** `output_config.effort`; omitted = none sent (the copilot config's NULL effort). */
+  effort?: AnthropicEffort;
   beforeProviderCall: () => Promise<void>;
 }): Promise<AnthropicReplayResult> {
-  const client = new Anthropic({ apiKey: args.apiKey });
+  const claude = createAnthropicClient({ apiKey: args.apiKey, systemPrompt: args.systemPrompt });
   const cache = anthropicCachePriced(args.costPrefix);
-  const system: Anthropic.TextBlockParam[] = [
-    { type: "text", text: args.systemPrompt, ...(cache ? { cache_control: { type: "ephemeral" as const } } : {}) },
-  ];
-  const history: Anthropic.MessageParam[] = args.history
-    .filter((m) => m.content.trim())
-    .map((m) => ({ role: m.role, content: m.content }));
-  const messages = buildAnthropicTurnMessages(history, args.userMessage, args.turnContext, cache);
-  const tools: Anthropic.Tool[] = args.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema as Anthropic.Tool.InputSchema }));
+  const history = mergeConsecutiveMessages(rebuildAnthropicHistory(args.history));
+  const messages = buildAnthropicTurnMessages(history, args.userMessage.trim(), args.turnContext, cache, args.images ?? []);
+  const tools = args.tools as unknown as Anthropic.Tool[];
+  const leadTurn = Boolean(args.endToolName);
 
   const toolCalls: AnthropicReplayResult["toolCalls"] = [];
   let costLines: AnthropicCostLine[] = [];
   let tokensInput = 0;
   let tokensOutput = 0;
   let shown = "";
+  let answerNudged = false;
+  let ended = false;
+  let depth = 0;
 
-  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
-    const final = round === MAX_TOOL_ROUNDS;
-    if (final) messages.push({ role: "user", content: FINAL_ROUND_NOTE });
+  while (depth <= MAX_TOOL_CHAIN_DEPTH && !ended) {
     await args.beforeProviderCall();
-    const res = await client.messages.create({
+    const stream = claude.createStream(messages, tools, undefined, {
       model: args.model,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      system,
-      tools,
-      messages,
-      ...(final ? { tool_choice: { type: "none" as const } } : {}),
+      cache,
+      ...(args.effort ? { effort: args.effort } : {}),
+      ...((isFinalToolRound(depth) || answerNudged) && !leadTurn ? { toolChoice: "none" as const } : {}),
     });
+    const res = await stream.finalMessage();
     const billed = readAnthropicBilledTokens(res.usage);
     costLines = mergeCostLines(costLines, anthropicCostLines(args.costPrefix, billed));
     tokensInput += billed.tokensInput + billed.cacheReadTokens + billed.cacheWriteTokens;
     tokensOutput += billed.tokensOutput;
 
     const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("");
-    const uses = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-    if (uses.length === 0) {
+    if (res.stop_reason !== "tool_use") {
+      if (leadTurn && !toolCalls.some((c) => c.name === args.endToolName) && !answerNudged) {
+        answerNudged = true;
+        const note = { type: "text" as const, text: endToolNudgeNote(args.endToolName!) };
+        if (res.content.length > 0) {
+          messages.push({ role: "assistant", content: res.content });
+          messages.push({ role: "user", content: [note] });
+        } else {
+          const lastUser = lastUserMessage(messages);
+          if (lastUser) lastUser.content = Array.isArray(lastUser.content) ? [...lastUser.content, note] : [{ type: "text", text: lastUser.content }, note];
+        }
+        continue;
+      }
+      const last = messages[messages.length - 1];
+      if (last?.role === "user" && Array.isArray(last.content) && needsAnswerNudge({ toolsRan: depth > 0, answerText: text, alreadyNudged: answerNudged })) {
+        answerNudged = true;
+        last.content = [...last.content, { type: "text", text: EMPTY_ANSWER_NOTE }];
+        continue;
+      }
       shown += text;
       break;
     }
     if (!args.holdTextBesideToolCalls) shown += text;
+
     messages.push({ role: "assistant", content: res.content });
     const results: Anthropic.ToolResultBlockParam[] = [];
-    let ended = false;
-    for (const use of uses) {
+    for (const use of res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")) {
       const input = (use.input ?? {}) as Record<string, unknown>;
-      // A failing tool reaches the model as an error it can correct, as in /chat (formatToolError there).
-      const out = await args.executeTool({ name: use.name, args: input }).catch((err: unknown) => ({ name: use.name, result: { error: err instanceof Error ? err.message : String(err) } }));
-      if (out === "input_request") {
-        toolCalls.push({ name: use.name, args: input, result: null });
-        ended = true;
-        results.push({ type: "tool_result", tool_use_id: use.id, content: "Shown to the person." });
-        continue;
+      try {
+        const out = await args.executeTool({ name: use.name, args: input });
+        if (out === "input_request") {
+          // A turn-ending UI tool (present_choices, request_user_input): /chat stops the turn here.
+          toolCalls.push({ name: use.name, args: input, result: null });
+          ended = true;
+          break;
+        }
+        if (out === null) {
+          toolCalls.push({ name: use.name, args: input, result: { error: "Unknown tool" } });
+          results.push({ type: "tool_result", tool_use_id: use.id, content: JSON.stringify({ error: "Unknown tool" }), is_error: true });
+          continue;
+        }
+        toolCalls.push({ name: use.name, args: input, result: out.result });
+        results.push({ type: "tool_result", tool_use_id: use.id, content: JSON.stringify(out.result) });
+        if (args.endToolName && use.name === args.endToolName) ended = true;
+      } catch (err) {
+        const friendly = formatToolError(use.name, err instanceof Error ? err.message : String(err));
+        toolCalls.push({ name: use.name, args: input, result: friendly });
+        results.push({ type: "tool_result", tool_use_id: use.id, content: JSON.stringify(friendly), is_error: true });
       }
-      const result = out === null ? { error: `Unknown tool ${use.name}` } : out.result;
-      toolCalls.push({ name: use.name, args: input, result });
-      results.push({ type: "tool_result", tool_use_id: use.id, content: JSON.stringify(result ?? null) });
-      if (args.endToolName && use.name === args.endToolName) ended = true;
     }
     if (ended) break;
-    messages.push({ role: "user", content: results });
+    depth++;
+    messages.push({
+      role: "user",
+      content: isFinalToolRound(depth)
+        ? [...results, { type: "text", text: leadTurn ? endToolFinalNote(args.endToolName!) : FINAL_ROUND_NOTE }]
+        : results,
+    });
   }
   return { fullResponse: shown, toolCalls, tokensInput, tokensOutput, costLines };
 }

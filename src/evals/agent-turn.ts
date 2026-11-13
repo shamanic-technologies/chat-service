@@ -36,6 +36,7 @@ import { prepareTurnImage, type TurnImage } from "../lib/turn-images.js";
 import { labelLines } from "../lib/lead-whatsapp.js";
 import { fixtureClientBrief, fixtureSituationReader } from "./fixture-situation.js";
 import { scenarioDay, type Scenario } from "./scenario.js";
+import type { AnthropicEffort } from "../schemas.js";
 
 export const AgentDefinitionSchema = z
   .object({
@@ -170,9 +171,9 @@ function silentResponse(): ExpressResponse {
 }
 
 /**
- * Run the turn through the real tool loop. Only the direct OpenAI-compatible
- * vendors (DeepSeek today) are wired here: the Anthropic and Gemini loops live
- * inside the /chat handler and join the matrix when the agent core moves out.
+ * Run the turn through the real tool loop: the /chat vendor loop (DeepSeek and
+ * the other direct vendors), the Gemini loop, or Claude on the request /chat's
+ * Anthropic path sends (anthropic-replay.ts: same `createStream` body).
  */
 export async function replayTurn(args: {
   def: AgentDefinition;
@@ -185,6 +186,8 @@ export async function replayTurn(args: {
   uiText: () => string;
   /** Direct vendors: send the reasoning-off field (a thinking-level comparison). */
   reasoningDisabled?: boolean;
+  /** Anthropic: `output_config.effort` (omitted = none sent, the copilot config's NULL effort). */
+  effort?: AnthropicEffort;
   /** False = the turn as it ran before the brand's tools existed (`--no-brand-tools`, the baseline). */
   brandTools?: boolean;
   /**
@@ -206,7 +209,8 @@ export async function replayTurn(args: {
     (def.situationBrief ? await buildSituationBrief(fixtureSituationReader(scenario), { now: scenarioDay(scenario) }) : "");
   const modelDisplay = modelDisplayName(resolved.apiModelId);
   const images = await scenarioImages(scenario);
-  if (images.length > 0 && (provider === "google" || provider === "anthropic")) throw new Error("[evals] photos are wired on the direct-vendor loop only (Sophie's)");
+  // Gemini's /chat loop takes no photo (it throws in production too); Claude reads them as /chat sends them.
+  if (images.length > 0 && provider === "google") throw new Error("[evals] photos are not wired on the Gemini loop (as in /chat)");
   const turn = assembleTurn(def, scenario, modelDisplay, brief, images, args.brandTools !== false);
   let llmCalls = 0;
   const started = Date.now();
@@ -228,8 +232,11 @@ export async function replayTurn(args: {
           costPrefix: resolved.costPrefix,
           systemPrompt: turn.systemPrompt,
           turnContext: turn.turnContext,
-          history: scenario.history.map((m) => ({ role: m.role, content: m.content })),
+          // The stored tool calls replay as tool_use / tool_result pairs, as /chat rebuilds them.
+          history: scenario.history.map((m) => ({ role: m.role, content: m.content, toolCalls: m.toolCalls as never })),
           userMessage: scenario.message,
+          images,
+          ...(args.effort ? { effort: args.effort } : {}),
           tools: turn.tools,
           executeTool,
           holdTextBesideToolCalls: turn.holdTextBesideToolCalls,
