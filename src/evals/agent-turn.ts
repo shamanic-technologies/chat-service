@@ -236,7 +236,8 @@ export async function replayTurn(args: {
           history: scenario.history.map((m) => ({ role: m.role, content: m.content, toolCalls: m.toolCalls as never })),
           userMessage: scenario.message,
           images,
-          ...(args.effort ? { effort: args.effort } : {}),
+          // The run's --effort, else the definition's (Sophie's stated effort).
+          ...((args.effort ?? def.effort) ? { effort: (args.effort ?? def.effort) as AnthropicEffort } : {}),
           tools: turn.tools,
           executeTool,
           holdTextBesideToolCalls: turn.holdTextBesideToolCalls,
@@ -312,7 +313,7 @@ export function sophieDefinition(skills: AgentDefinition["skills"]): AgentDefini
     allowedTools: [...SOPHIE_TOOLS],
     clientBrief: true,
     situationBrief: true,
-    reasoning: SOPHIE_MODEL.reasoning,
+    effort: SOPHIE_MODEL.effort,
     skills,
   };
 }

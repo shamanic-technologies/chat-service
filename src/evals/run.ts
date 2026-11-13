@@ -278,7 +278,7 @@ async function main() {
     ...(def.id.startsWith("sophie-code") ? { codeHash: sophieCodeHash(), definitionSnapshot: def } : {}),
     definitionHash: definitionHash(def, `${provider}/${model}`),
     ...(process.argv.includes("--no-brand-tools") ? { brandTools: "withheld" } : {}),
-    model: `${provider}/${model}${provider === "anthropic" ? ` (effort ${EFFORT ?? "not sent"})` : process.argv.includes("--reasoning-off") || (!process.argv.includes("--reasoning-on") && def.reasoning === "off") ? " (reasoning off)" : ""}`,
+    model: `${provider}/${model}${provider === "anthropic" ? ` (effort ${EFFORT ?? def.effort ?? "not sent"})` : process.argv.includes("--reasoning-off") || (!process.argv.includes("--reasoning-on") && def.reasoning === "off") ? " (reasoning off)" : ""}`,
     wire: wireReport,
     judge: `jev/${TYPESAFE_DEFAULT_MODEL}`,
     runsPerScenario: runs,

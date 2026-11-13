@@ -339,6 +339,8 @@ export const SOPHIE_CONFIG = {
   allowedTools: SOPHIE_TOOLS,
   provider: SOPHIE_MODEL.provider,
   model: SOPHIE_MODEL.model,
+  /** Haiku 5.5's `output_config.effort` (SOPHIE-ON-HAIKU-1113). */
+  effort: SOPHIE_MODEL.effort,
   supportKind: "copilot" as const,
   thinkingLevel: null,
 };
@@ -406,7 +408,7 @@ export async function seedSophieConfig(database: typeof db): Promise<void> {
     provider: c.provider,
     model: c.model,
     thinkingLevel: c.thinkingLevel,
-    effort: null,
+    effort: c.effort,
     supportKind: c.supportKind,
   };
   await database

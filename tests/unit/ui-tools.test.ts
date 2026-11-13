@@ -144,7 +144,8 @@ describe("the text above the cards is an ANSWER, never a working note (prod 2026
     const { join } = await import("path");
     const src = readFileSync(join(__dirname, "../../src/index.ts"), "utf-8");
     expect(src).toContain('const holdTextBesideTools = holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices");');
-    expect(src).toContain('if (finalMessage.stop_reason !== "tool_use") bufferToken(iterText);');
+    // The held answer is flushed with its long dashes stripped (owner rule; SOPHIE-ON-HAIKU-1113).
+    expect(src).toContain('if (finalMessage.stop_reason !== "tool_use") bufferToken(stripLongDashes(iterText));');
     expect(src).toContain('holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),');
   });
 });
