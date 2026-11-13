@@ -1,575 +1,611 @@
 {
- "kind": "calibration",
- "at": "2026-11-11T18:09:24.426Z",
- "judge": "jev/jev-latest",
- "cases": 68,
- "agree": 68,
- "passed": true,
- "rows": [
-  {
-   "id": "aba-diagnose-results",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "clinic-cancel-trial",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "clinic-find-me-clients",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "core-no-email-queued-proactive",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "nextAction",
-    "form"
-   ]
-  },
-  {
-   "id": "core-no-email-queued-proactive",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "core-refill-on-small-budget",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "nextAction"
-   ]
-  },
-  {
-   "id": "core-refill-on-small-budget",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "core-turn-refill-off",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "respectful",
-    "proactive",
-    "answers"
-   ]
-  },
-  {
-   "id": "core-turn-refill-off",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "jarygo-cost-at-7am",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "jarygo-when-booked-leads",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "respectful",
-    "nextAction"
-   ]
-  },
-  {
-   "id": "jcurve-new-chat-empty-profile",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "respectful",
-    "proactive",
-    "form"
-   ]
-  },
-  {
-   "id": "jcurve-new-chat-empty-profile",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "lead-autoreply-then-visit",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "lead-check-what-they-have",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "proactive",
-    "answers"
-   ]
-  },
-  {
-   "id": "lead-check-what-they-have",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "lead-client-not-a-true-lead",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "proactive",
-    "answers"
-   ]
-  },
-  {
-   "id": "lead-client-not-a-true-lead",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "lead-cold-newsletter-click",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "lead-newsletter-reader-old-autoreply",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "lead-reply-partnership-ask",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "lead-signup-card-declined",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true"
-   ]
-  },
-  {
-   "id": "lead-signup-card-declined",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "lead-student-first-client",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "lead-whatsapp-signed-up-live",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "lead-whatsapp-unanswered-asks",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "martian-angry-no-list",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "proactive",
-    "answers"
-   ]
-  },
-  {
-   "id": "martian-angry-no-list",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "martian-close-account",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "martian-cost-per-email",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "respectful",
-    "proactive",
-    "answers"
-   ]
-  },
-  {
-   "id": "martian-exclude-leads",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "martian-force-send",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "martian-give-me-the-list",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "nextAction"
-   ]
-  },
-  {
-   "id": "martian-give-me-the-list",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "martian-how-many-left",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "martian-refund",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "respectful"
-   ]
-  },
-  {
-   "id": "martian-refund",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "martian-scam",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "respectful"
-   ]
-  },
-  {
-   "id": "martian-which-ai",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "respectful"
-   ]
-  },
-  {
-   "id": "martian-which-ai",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "martian-why-3-dollars",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "martian-zero-balance",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "next-steps-held-no-brief-proactive",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "proactive",
-    "answers",
-    "nextAction",
-    "form"
-   ]
-  },
-  {
-   "id": "next-steps-held-no-brief-proactive",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "next-steps-held-no-brief",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "proactive",
-    "answers"
-   ]
-  },
-  {
-   "id": "next-steps-held-no-brief",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "novemiq-explain-campaigns",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "prospect-free-trial-pricing",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "proactive",
-    "answers"
-   ]
-  },
-  {
-   "id": "state-declined-proactive",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "answers"
-   ]
-  },
-  {
-   "id": "state-declined-proactive",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "truth-campaign-rule",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "truth-evaluate-results",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "nextAction"
-   ]
-  },
-  {
-   "id": "truth-evaluate-results",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "truth-how-much-spent",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "nextAction"
-   ]
-  },
-  {
-   "id": "truth-how-much-spent",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "truth-off-target",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "proactive",
-    "answers"
-   ]
-  },
-  {
-   "id": "truth-off-target",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "truth-who-is-waiting",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "proactive",
-    "answers"
-   ]
-  },
-  {
-   "id": "truth-who-is-waiting",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "wa-human-ambiguous-him",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "answers"
-   ]
-  },
-  {
-   "id": "wa-human-ambiguous-him",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "wa-human-photo-no-words",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "respectful",
-    "proactive",
-    "answers",
-    "nextAction",
-    "form"
-   ]
-  },
-  {
-   "id": "wa-human-photo-no-words",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "wa-human-quoted-lead",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "false-ready-preview-fails",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true",
-    "form"
-   ]
-  },
-  {
-   "id": "false-ready-preview-fails",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  },
-  {
-   "id": "false-ready-where-is-template",
-   "which": "prod-bad",
-   "expected": "fail",
-   "got": "fail",
-   "failed": [
-    "true"
-   ]
-  },
-  {
-   "id": "false-ready-where-is-template",
-   "which": "good",
-   "expected": "pass",
-   "got": "pass",
-   "failed": []
-  }
- ],
- "note": ""
+  "kind": "calibration",
+  "at": "2026-11-13T18:11:52.254Z",
+  "judge": "jev/jev-latest",
+  "cases": 72,
+  "agree": 72,
+  "passed": true,
+  "rows": [
+    {
+      "id": "aba-diagnose-results",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "clinic-cancel-trial",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "clinic-find-me-clients",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "core-no-email-queued-proactive",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "nextAction",
+        "form"
+      ]
+    },
+    {
+      "id": "core-no-email-queued-proactive",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "core-refill-on-small-budget",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "nextAction"
+      ]
+    },
+    {
+      "id": "core-refill-on-small-budget",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "core-turn-refill-off",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "respectful",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "core-turn-refill-off",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "false-ready-preview-fails",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "form"
+      ]
+    },
+    {
+      "id": "false-ready-preview-fails",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "false-ready-where-is-template",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true"
+      ]
+    },
+    {
+      "id": "false-ready-where-is-template",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "jarygo-cost-at-7am",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "jarygo-when-booked-leads",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "respectful",
+        "nextAction"
+      ]
+    },
+    {
+      "id": "jcurve-new-chat-empty-profile",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "respectful",
+        "proactive",
+        "answers",
+        "form"
+      ]
+    },
+    {
+      "id": "jcurve-new-chat-empty-profile",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-autoreply-then-visit",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-check-what-they-have",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "lead-check-what-they-have",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-client-not-a-true-lead",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "lead-client-not-a-true-lead",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-cold-newsletter-click",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-newsletter-reader-old-autoreply",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-reply-partnership-ask",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-signup-card-declined",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true"
+      ]
+    },
+    {
+      "id": "lead-signup-card-declined",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-student-first-client",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-whatsapp-signed-up-live",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "lead-whatsapp-unanswered-asks",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-angry-no-list",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "martian-angry-no-list",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-close-account",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-cost-per-email",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "respectful",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "martian-exclude-leads",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-force-send",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-give-me-the-list",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "nextAction"
+      ]
+    },
+    {
+      "id": "martian-give-me-the-list",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-how-many-left",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-refund",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "respectful",
+        "answers"
+      ]
+    },
+    {
+      "id": "martian-refund",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-scam",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "respectful"
+      ]
+    },
+    {
+      "id": "martian-which-ai",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "respectful"
+      ]
+    },
+    {
+      "id": "martian-which-ai",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-why-3-dollars",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "martian-zero-balance",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "next-steps-held-no-brief-proactive",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers",
+        "nextAction",
+        "form"
+      ]
+    },
+    {
+      "id": "next-steps-held-no-brief-proactive",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "next-steps-held-no-brief",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "next-steps-held-no-brief",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "not-good-pushy-followup-whatsapp",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "not-good-pushy-followup-whatsapp",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "not-good-pushy-followup",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "not-good-pushy-followup",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "novemiq-explain-campaigns",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "prospect-free-trial-pricing",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "state-declined-proactive",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "answers"
+      ]
+    },
+    {
+      "id": "state-declined-proactive",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "truth-campaign-rule",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "truth-evaluate-results",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "nextAction"
+      ]
+    },
+    {
+      "id": "truth-evaluate-results",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "truth-how-much-spent",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "nextAction"
+      ]
+    },
+    {
+      "id": "truth-how-much-spent",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "truth-off-target",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "truth-off-target",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "truth-who-is-waiting",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "proactive",
+        "answers"
+      ]
+    },
+    {
+      "id": "truth-who-is-waiting",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "wa-human-ambiguous-him",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "answers"
+      ]
+    },
+    {
+      "id": "wa-human-ambiguous-him",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "wa-human-photo-no-words",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "respectful",
+        "proactive",
+        "answers",
+        "nextAction"
+      ]
+    },
+    {
+      "id": "wa-human-photo-no-words",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "wa-human-quoted-lead",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    }
+  ]
 }

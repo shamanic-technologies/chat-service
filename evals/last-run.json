@@ -1,16 +1,16 @@
 {
-  "note": "SOPHIE-ON-HAIKU-1113: Sophie moves to Claude Haiku 5.5, adaptive thinking at effort low, on the /chat Anthropic loop; DeepSeek V4.1 Flash (reasoning on) becomes her backup. Chosen by the owner on the equal-conditions bake-off (evals/results/2026-11-13-sophie-model-bakeoff.md: Haiku low 51.0% vs DeepSeek 54.9%, cheaper, 2.7x faster). Gate run on this code, live skills table, same hour, same judge, wire checked on every request: Haiku low (this code) vs DeepSeek reasoning on (same code, --provider deepseek, the previous production setting).",
+  "note": "SCRIPT-VALUE-RATING-1113-SOPHIE: Sophie gets report_not_good (one report of a Unit the client says is not good, through POST /v1/features/unit-reports) and the not-good skill explaining the game. Gate run on this code with the skills this change seeds over the live table (--seed-skills index,not-good) vs the code before it (origin/main, live table), same 53 scenarios (the 51 before + not-good-pushy-followup on web and WhatsApp), launched the same hour, same judge, Haiku 5.5 effort low on both sides.",
   "model": "anthropic/claude-haiku (effort low)",
   "judge": "jev/jev-latest",
-  "codeHash": "cba699ab7ee6e2a4",
+  "codeHash": "1674ac2eb904faca",
   "runs": [
     {
-      "at": "2026-11-13T12:23:42.357Z",
+      "at": "2026-11-13T18:00:07.409Z",
       "runsPerScenario": 3,
-      "scenariosPassed": 27
+      "scenariosPassed": 30
     },
     {
-      "at": "2026-11-13T12:23:40.637Z",
+      "at": "2026-11-13T18:00:06.557Z",
       "runsPerScenario": 3,
       "scenariosPassed": 26
     }
@@ -33,69 +33,144 @@
     "betas": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01"
   },
   "pooled": {
-    "replays": 306,
-    "passRate": 0.5065,
+    "replays": 318,
+    "passRate": 0.5031,
     "criterionRate": {
-      "true": 0.8954,
-      "respectful": 0.8529,
-      "proactive": 0.8627,
-      "answers": 0.8595,
-      "nextAction": 0.8235,
+      "true": 0.9182,
+      "respectful": 0.8491,
+      "proactive": 0.8208,
+      "answers": 0.8679,
+      "nextAction": 0.8145,
+      "form": 0.978
+    },
+    "failedReplies": 0,
+    "medianCostPerReplyUsd": 0.0008504724999999999,
+    "meanCostPerReplyUsd": 0.00135,
+    "medianLlmCalls": 1.0,
+    "medianLatencyMs": 5719.5,
+    "meanLatencyMs": 6321
+  },
+  "pooledOnScenariosBeforeThisChange": {
+    "replays": 306,
+    "passRate": 0.4837,
+    "criterionRate": {
+      "true": 0.915,
+      "respectful": 0.8431,
+      "proactive": 0.8137,
+      "answers": 0.8627,
+      "nextAction": 0.8072,
       "form": 0.9771
     },
     "failedReplies": 0,
-    "medianCostPerReplyUsd": 0.0008452500000000001,
-    "meanCostPerReplyUsd": 0.0013,
+    "medianCostPerReplyUsd": 0.00082388,
+    "meanCostPerReplyUsd": 0.00134,
     "medianLlmCalls": 1.0,
-    "medianLatencyMs": 5234.5,
-    "meanLatencyMs": 5740
+    "medianLatencyMs": 5631.0,
+    "meanLatencyMs": 6176
+  },
+  "notGoodScenarios": {
+    "replays": 12,
+    "passRate": 1.0,
+    "criterionRate": {
+      "true": 1.0,
+      "respectful": 1.0,
+      "proactive": 1.0,
+      "answers": 1.0,
+      "nextAction": 1.0,
+      "form": 1.0
+    },
+    "failedReplies": 0,
+    "medianCostPerReplyUsd": 0.0016309425,
+    "meanCostPerReplyUsd": 0.00157,
+    "medianLlmCalls": 5.0,
+    "medianLatencyMs": 8810.5,
+    "meanLatencyMs": 10020,
+    "repliesThatReported": 12
   },
   "baseline": {
-    "definition": "same code with --provider deepseek --model deepseek-flash (reasoning on, no reasoning field sent: the production setting until this change), launched the same hour",
+    "definition": "the code before this change (origin/main, codeHash cba699ab7ee6e2a4, live skills table), same scenarios, launched the same hour. Its second run was relaunched at 18:11 UTC: the first attempt hung on one scenario's model request (wa-human-ambiguous-him) and wrote no result",
     "wire": {
-      "host": "api.deepseek.com",
-      "model": "deepseek-flash",
-      "thinking": null,
-      "outputConfig": null,
+      "host": "api.anthropic.com",
+      "model": "claude-haiku-5-5",
+      "thinking": {
+        "type": "adaptive",
+        "block_binding": {
+          "prefix_mismatch_behavior": "drop_block"
+        }
+      },
+      "outputConfig": {
+        "effort": "low"
+      },
       "reasoningEffort": null,
-      "maxOutputTokens": 32000,
-      "contextManagement": false,
-      "betas": null
+      "maxOutputTokens": 64000,
+      "contextManagement": true,
+      "betas": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01"
     },
     "runs": [
       {
-        "at": "2026-11-13T12:30:10.222Z",
+        "at": "2026-11-13T17:59:53.261Z",
         "runsPerScenario": 3,
-        "scenariosPassed": 23
+        "scenariosPassed": 25
       },
       {
-        "at": "2026-11-13T12:29:33.336Z",
+        "at": "2026-11-13T18:15:20.463Z",
         "runsPerScenario": 3,
-        "scenariosPassed": 27
+        "scenariosPassed": 22
       }
     ],
     "pooled": {
-      "replays": 306,
-      "passRate": 0.4837,
+      "replays": 318,
+      "passRate": 0.434,
       "criterionRate": {
-        "true": 0.8333,
-        "respectful": 0.9118,
-        "proactive": 0.8889,
-        "answers": 0.9118,
-        "nextAction": 0.8399,
+        "true": 0.8899,
+        "respectful": 0.827,
+        "proactive": 0.8113,
+        "answers": 0.8396,
+        "nextAction": 0.7893,
+        "form": 0.9686
+      },
+      "failedReplies": 0,
+      "medianCostPerReplyUsd": 0.000923745,
+      "meanCostPerReplyUsd": 0.00144,
+      "medianLlmCalls": 1.0,
+      "medianLatencyMs": 5524.5,
+      "meanLatencyMs": 5845
+    },
+    "pooledOnScenariosBeforeThisChange": {
+      "replays": 306,
+      "passRate": 0.451,
+      "criterionRate": {
+        "true": 0.8856,
+        "respectful": 0.8497,
+        "proactive": 0.8366,
+        "answers": 0.8497,
+        "nextAction": 0.781,
         "form": 0.9673
       },
       "failedReplies": 0,
-      "medianCostPerReplyUsd": 0.0015068779800000002,
-      "meanCostPerReplyUsd": 0.00209,
-      "medianLlmCalls": 3.0,
-      "medianLatencyMs": 11535.0,
-      "meanLatencyMs": 15201
+      "medianCostPerReplyUsd": 0.00090859,
+      "meanCostPerReplyUsd": 0.00144,
+      "medianLlmCalls": 1.0,
+      "medianLatencyMs": 5423.5,
+      "meanLatencyMs": 5762
+    },
+    "notGoodScenarios": {
+      "replays": 12,
+      "passRate": 0.0,
+      "criterionRate": {
+        "true": 1.0,
+        "respectful": 0.25,
+        "proactive": 0.1667,
+        "answers": 0.5833,
+        "nextAction": 1.0,
+        "form": 1.0
+      },
+      "failedReplies": 0,
+      "medianCostPerReplyUsd": 0.001454495,
+      "meanCostPerReplyUsd": 0.00136,
+      "medianLlmCalls": 5.0,
+      "medianLatencyMs": 8081.5,
+      "meanLatencyMs": 7971
     }
-  },
-  "ownerDecision": {
-    "at": "2026-11-13",
-    "words": "Go on Haiku if almost the same and cheaper and faster",
-    "codeHash": "cba699ab7ee6e2a4"
   }
 }

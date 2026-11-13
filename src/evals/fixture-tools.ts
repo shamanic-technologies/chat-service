@@ -7,6 +7,7 @@
 
 import type { ToolExecutor } from "../lib/gemini-chat.js";
 import { REACH_ELSEWHERE_TOOL_NAME } from "../lib/lead-contact.js";
+import { REPORT_NOT_GOOD_TOOL_NAME, buildUnitReportBody, storedReportForModel } from "../lib/unit-report.js";
 import { LEAD_ANSWER_TOOL_NAME } from "../lib/lead-turn.js";
 import { readOurWebsite } from "../lib/our-website.js";
 import { readSkillFrom } from "../lib/skills.js";
@@ -52,6 +53,11 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
       return "input_request";
     }
     if (name === REACH_ELSEWHERE_TOOL_NAME) return { name, result: { stated: true, note: "Recorded (replay: nothing written)." } };
+    // A report in a replay is validated as production validates it and answered as stored: nothing is written.
+    if (name === REPORT_NOT_GOOD_TOOL_NAME) {
+      const body = buildUnitReportBody(a, scenario.surface === "whatsapp" ? "whatsapp" : "web");
+      return { name, result: storedReportForModel({ ...body, id: "replay-report", reportedAt: new Date().toISOString() }) };
+    }
     if (name === FIND_API_TOOL_NAME) return { name, result: await findApi(a) };
     if (name === DESCRIBE_API_TOOL_NAME) return { name, result: await describeApi(a) };
     if (name === CALL_API_TOOL_NAME) return { name, result: await replayCallApi(a) };

@@ -164,6 +164,7 @@ import { gatewaySituationReader } from "./agent/situation-reader.js";
 import { SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
 import { SOPHIE_BACKUP_MODEL, sophieTurnModel } from "./agent/sophie-backup.js";
 import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi } from "./agent/catalogue-tools.js";
+import { REPORT_NOT_GOOD_TOOL_NAME, reportNotGood } from "./lib/unit-report.js";
 import {
   SkillNotFoundError,
   SkillValidationError,
@@ -4385,6 +4386,18 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
             : call.name === DESCRIBE_API_TOOL_NAME
               ? await describeApi(args)
               : await callApi(args, featureCallParams, history, { readOnly: proactiveTurn });
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Sophie: the client says a piece of our work is not good (SCRIPT-VALUE-RATING-1113) ---
+      // One report of that Unit, as the person, through the route every surface uses. It sends,
+      // changes and re-sends nothing, so no yes is asked; a proactive turn (reads only) never holds it.
+      if (call.name === REPORT_NOT_GOOD_TOOL_NAME) {
+        const args = (call.args as Record<string, unknown>) || {};
+        if (proactiveTurn) throw new Error(`[${REPORT_NOT_GOOD_TOOL_NAME}] this turn only reads: a report waits for the person's own words`);
+        const surface = telegramTurn ? "telegram" : leadTurn ? leadTurn.payload.medium : channelTurn ? "whatsapp" : "web";
+        const result = await reportNotGood(args, featureCallParams, surface);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }

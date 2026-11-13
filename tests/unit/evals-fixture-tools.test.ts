@@ -77,3 +77,18 @@ describe("eval replay of run_operation", () => {
     expect(await call({ operationId: "getV1SalesFunnelCampaignsById", pathParams: { id: "c-1" } })).toMatchObject({ data: { status: "stopped" } });
   });
 });
+
+describe("report_not_good in a replay (SCRIPT-VALUE-RATING-1113-SOPHIE)", () => {
+  it("answers as stored, on the scenario's surface, and writes nothing", async () => {
+    const ex = fixtureExecutor(def, scenario);
+    const r = (await ex.executeTool({ name: "report_not_good", args: { outcomeKey: "message_written", subjectService: "lead-service", subjectId: "lead-9", kind: "reported", unitAt: "2026-11-10T14:05:00Z" } })) as { result: Record<string, unknown> };
+    expect(r.result).toMatchObject({ reported: true, report: { outcomeKey: "message_written", subjectId: "lead-9", kind: "reported", unitAt: "2026-11-10T14:05:00.000Z" } });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(ex.missing()).toEqual([]);
+  });
+
+  it("refuses what production refuses (a kind that is no report)", async () => {
+    const ex = fixtureExecutor(def, scenario);
+    await expect(ex.executeTool({ name: "report_not_good", args: { outcomeKey: "message_written", subjectService: "lead-service", subjectId: "lead-9", kind: "liked" } })).rejects.toThrow(/no positive vote/);
+  });
+});
