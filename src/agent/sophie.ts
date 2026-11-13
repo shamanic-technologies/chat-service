@@ -21,15 +21,18 @@ import { join } from "node:path";
 export const SOPHIE_CONFIG_KEY = "copilot";
 
 /**
- * Her model and its reasoning, chosen by the evals. Reasoning is ON
- * (VENDOR-TOOLS-FOLLOWUP-1112, 2026-11-12, 306 replays a side): the 2026-11-02
- * "off" pick compared two identical wires (the /chat vendor loop never sent the
- * reasoning-off field, so every turn ran with reasoning on). With the field
- * really sent, OFF passed 21 and 25 of 51 scenarios vs 29 and 30 with it on
- * (proactive 81% vs 89%, next step 77% vs 87%), at a third of the cost. What is
- * stated here is what the wire carries. Moving either is an eval run.
+ * Her model and its thinking, chosen by the owner on the evals
+ * (SOPHIE-ON-HAIKU-1113, owner 2026-11-13 « Go on Haiku if almost the same and
+ * cheaper and faster »): Claude Haiku 5.5, adaptive thinking at effort low, on
+ * the /chat Anthropic loop. The equal-conditions bake-off
+ * (evals/results/2026-11-13-sophie-model-bakeoff.md, 306 replies a side, same
+ * hour, same judge, wire checked) measured Haiku low at 51.0% of replies
+ * passing vs 54.9% for DeepSeek V4.1 Flash reasoning on, at $0.0015 vs $0.0021
+ * per reply and 5.6 s vs 15.4 s. Effort low beat medium (46.4%) and the
+ * model's default (48.7%). What is stated here is what the wire carries
+ * (`output_config.effort`, seeded on the copilot config). Moving it is an eval run.
  */
-export const SOPHIE_MODEL: { readonly provider: "deepseek"; readonly model: "deepseek-flash"; readonly reasoning: "on" | "off" } = { provider: "deepseek", model: "deepseek-flash", reasoning: "on" };
+export const SOPHIE_MODEL: { readonly provider: "anthropic"; readonly model: "claude-haiku"; readonly effort: "low" } = { provider: "anthropic", model: "claude-haiku", effort: "low" };
 
 export const SOPHIE_ROLE = `You are Sophie, the account manager of distribute.you. distribute.you is "Revenue made easy.": we find the client's buyers, write to them, follow up and hand the interested ones to the client, so the client gets revenue without doing the sales outreach. You do that work for them and keep them informed.
 

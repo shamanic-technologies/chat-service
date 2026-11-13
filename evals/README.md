@@ -20,7 +20,7 @@ Jev (`src/evals/judge.ts`) answers one yes/no question per criterion: **true** (
 
 A scenario passes when a majority of its replays pass every criterion. A suite passes when every scenario passes, **true** holds on every replay, and the median reply costs under **$0.03**.
 
-**The merge gate** (`evals/last-run.json`, pinned by `tests/unit/evals.test.ts`): on the current `sophieCodeHash()`, the pooled share of replies passing every criterion, over at least 3 replies per scenario (100+) a side, is at least the baseline's, measured the same hour on the same judge. One 60-replay run swings by about two scenarios, so a single run decides nothing.
+**The merge gate** (`evals/last-run.json`, pinned by `tests/unit/evals.test.ts`): on the current `sophieCodeHash()`, the pooled share of replies passing every criterion, over at least 3 replies per scenario (100+) a side, is at least the baseline's, measured the same hour on the same judge. One 60-replay run swings by about two scenarios, so a single run decides nothing. A run below its baseline ships only with `ownerDecision` (the owner's words verbatim, the date, and the `codeHash` it was given for): a cost/speed trade-off is the owner's call, and it never carries to the next change (SOPHIE-ON-HAIKU-1113).
 
 ## How far the judge's "true" can be trusted (2026-11-02)
 

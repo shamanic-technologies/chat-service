@@ -202,6 +202,8 @@ describe("Sophie's definition is chat-service's", () => {
     const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
     await seedSophieConfig({ insert: vi.fn().mockReturnValue({ values }) } as never);
     expect(values.mock.calls[0][0]).toMatchObject({ key: SOPHIE_CONFIG_KEY, systemPrompt: SOPHIE_SYSTEM_PROMPT, supportKind: "copilot" });
+    // SOPHIE-ON-HAIKU-1113: Haiku 5.5 at effort low, the effort seeded on the row (/chat sends it as output_config.effort).
+    expect(values.mock.calls[0][0]).toMatchObject({ provider: "anthropic", model: "claude-haiku", effort: "low" });
     const seeded = SOPHIE_CONFIG;
     expect(seeded.systemPrompt).toBe(SOPHIE_SYSTEM_PROMPT);
     expect(seeded.allowedTools).toEqual(SOPHIE_TOOLS);

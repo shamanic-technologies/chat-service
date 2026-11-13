@@ -183,11 +183,18 @@ describe("Sophie changes only with a fresh eval run (merge gate)", () => {
       codeHash: string;
       pooled: { replays: number; passRate: number };
       baseline: { pooled: { replays: number; passRate: number } };
+      ownerDecision?: { at: string; words: string; codeHash: string };
     };
     expect(run.codeHash, "Sophie's prompt, tools, model or briefs changed: run evals/ and record the run in evals/last-run.json").toBe(sophieCodeHash());
     // One 60-replay run swings by about two scenarios: the gate pools at least 3 replies per scenario, 100+ a side.
     expect(run.pooled.replays).toBeGreaterThanOrEqual(100);
     expect(run.baseline.pooled.replays).toBeGreaterThanOrEqual(100);
-    expect(run.pooled.passRate).toBeGreaterThanOrEqual(run.baseline.pooled.passRate);
+    // A lower pass rate ships only on the owner's own decision for THIS code (SOPHIE-ON-HAIKU-1113: « Go on
+    // Haiku if almost the same and cheaper and faster »), quoted verbatim, never carried to the next change.
+    if (run.pooled.passRate < run.baseline.pooled.passRate) {
+      expect(run.ownerDecision, "the run passes fewer replies than the baseline: only the owner's decision on this code ships it").toBeDefined();
+      expect(run.ownerDecision!.words.trim().length).toBeGreaterThan(0);
+      expect(run.ownerDecision!.codeHash).toBe(sophieCodeHash());
+    }
   });
 });
