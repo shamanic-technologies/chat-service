@@ -63,6 +63,7 @@ Reading this through the API or the MCP? Every act below is an API operation (ME
 - Their WhatsApp number answers people by itself, hands a chat to them when stuck: \`whatsapp-line\`.
 - Our team, a bug, a missing feature: \`staff-requests\`.
 - Their emails should say or do something else ("my emails never mention our flat rate", attach a document): \`offers\`, "What the emails say".
+- Something we made for them is wrong or not good (a message we sent, a text we drafted), or they have you change it: \`not-good\`.
 Building scripts, tactics and strategies is staff work: \`staff\`.
 
 ## Rules that never bend
@@ -355,6 +356,36 @@ The client pushes from their own system with their API key, one POST /v1/trigger
 
 ## Where do the leads come from?
 The client brings them: each push names the person. No source runs, no lead is bought.
+`),
+  },
+  {
+    // SCRIPT-VALUE-RATING-1113-SOPHIE (owner 2026-11-13): the client is the Rating's second signal,
+    // on every surface. The game is explained so she judges alone; no reply to recite.
+    slug: "not-good",
+    parentSlug: "index",
+    title: "The client says our work is not good",
+    description:
+      "Use when the client says something we made for them (a message we sent a lead, an email, a text we drafted) is wrong, off or not what they want, or has you change what we wrote.",
+    position: 93,
+    content: t(`
+# The client says our work is not good
+Each piece we make for a client (a message to one of their leads, the texts of their offer) is made by one of several writers competing for that job. We keep picking the writers whose work brings results and whose work clients keep. The client is the best judge of what speaks for their business: when they say a piece is wrong or not good, or have you change what we wrote, one report on that piece makes its writer picked less. That is how what we write next for them gets better.
+
+## What a report does, and what it does not
+- It teaches our pick of writers, for this client and every other. Nothing else: no message goes to anyone, nothing the client sees changes, the piece is not rewritten and not re-sent. A sent message stays sent.
+- So it needs no question before it: report in the same turn, as part of listening. What you tell them stays true to that: it counts for what we write next.
+- Only what they criticised or had changed is reported. Silence says nothing and praise is not recorded: there is no positive vote.
+- A change they also want is its own act, done beside the report: a rule for what a campaign says goes into its brief (\`campaigns\`), what the offer says (\`offers\`), something broken goes to the team (\`staff-requests\`).
+
+## Name the piece
+report_not_good (API: POST /v1/features/unit-reports, same fields, plus source: where it was said) names the piece as our ledger does, from a record read this turn:
+- **A message we wrote to one person**: outcomeKey message_written, subjectService lead-service, subjectId = the leadId their timeline serves (GET /v1/leads/{id}/timeline?brandId=, the id of their row in GET /v1/leads?brandId=&q=), unitAt = the date that message went out (its item's occurredAt in the timeline, or its date in their conversation). One person holds several messages: the date names the one they mean. kind reported.
+- **The offer's texts we drafted** (what they sell, who buys), changed at their request: outcomeKey offer_fields_drafted, subjectService brand-service, subjectId = the offerId. kind edited, once the change is written.
+- note = what is wrong with it, in their own words.
+One report per piece they point at. Several messages could be the one they mean and their words do not settle it: ask which.
+
+## Method on one ask
+"That email to Dana was way too pushy": find Dana's row, read her timeline, find the message they mean among the ones we sent, report it with their words. Then answer the person: that it counts for what we write next, and the one step that serves what they want now.
 `),
   },
   {

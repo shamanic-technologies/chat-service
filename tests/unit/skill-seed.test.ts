@@ -7,7 +7,7 @@ import { COPILOT_TOOL_API_OPS, skillApiGaps } from "../../src/lib/skill-api-ops.
 
 // The client's jobs, one level under the index (SOPHIE-REFONTE-1102); staff work sits under `staff`.
 const TOPICS = [
-  "new-account", "offers", "client-profiles", "campaigns", "emails-you-wrote", "connected-accounts", "whatsapp-line",
+  "new-account", "offers", "client-profiles", "campaigns", "emails-you-wrote", "not-good", "connected-accounts", "whatsapp-line",
   "budget-and-billing", "costs-roi-stats", "staff-requests", "choices", "staff",
 ];
 const STAFF_TOPICS = ["gtm-factory", "catalogue", "infra", "triggers"];
@@ -67,10 +67,37 @@ describe("seeded skill tree", () => {
       "not_linked", "pro_ai", "personal_human",
       // GET /v1/conversations query parameter.
       "campaign_id",
+      // Outcome keys of the ledger, named in a report (SCRIPT-VALUE-RATING-1113).
+      "message_written", "offer_fields_drafted",
     ]);
     const named = new Set(all.match(/\b[a-z]+(?:_[a-z]+)+\b/g) ?? []);
     const unknown = [...named].filter((n) => !notTools.has(n) && !TOOL_REGISTRY[n] && !n.startsWith("lead_found_to") && !n.startsWith("start_to"));
     expect(unknown).toEqual([]);
+  });
+});
+
+describe("the client says our work is not good (SCRIPT-VALUE-RATING-1113-SOPHIE, owner 2026-11-13)", () => {
+  const skill = SEED_SKILLS.find((s) => s.slug === "not-good")!;
+  const index = SEED_SKILLS.find((s) => s.slug === INDEX_SKILL_SLUG)!;
+
+  it("the index sends a complaint about our work to the skill, in the client's words", () => {
+    expect(index.content).toContain("`not-good`");
+    expect(skill.description).toMatch(/^Use when the client says something we made for them/);
+  });
+
+  it("explains the game: a report teaches the pick of writers and does nothing else", () => {
+    for (const w of ["competing", "picked less", "no message goes to anyone", "not rewritten and not re-sent", "no positive vote", "no question before it"]) {
+      expect(skill.content, w).toContain(w);
+    }
+  });
+
+  it("names the tool beside its API operation and how a message is named, for both readers", () => {
+    expect(skill.content).toContain("report_not_good (API: POST /v1/features/unit-reports");
+    for (const w of ["message_written", "lead-service", "leadId", "unitAt", "offer_fields_drafted", "brand-service"]) expect(skill.content, w).toContain(w);
+  });
+
+  it("promises no rewrite or re-send and asks no confirmation (the brief's no-gos)", () => {
+    expect(skill.content).not.toMatch(/we will rewrite|will be rewritten|will be re-sent|ask (them|the client) (first|before)|their yes/i);
   });
 });
 

@@ -11,6 +11,7 @@ import { ACCOUNT_SETUP_TOOLS } from "./account-setup.js";
 import type { AnthropicEffort } from "../schemas.js";
 import { STAFF_REQUEST_REPOS } from "./staff-requests.js";
 import { CATALOGUE_TOOLS } from "../agent/catalogue-tools.js";
+import { REPORT_NOT_GOOD_TOOL, REPORT_NOT_GOOD_TOOL_NAME } from "./unit-report.js";
 
 export const MODEL = "claude-sonnet-4-6";
 /** Cost-name prefix used by costs-service: {provider}-{model} */
@@ -3473,6 +3474,7 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   open_page: OPEN_PAGE_TOOL,
   read_skill: READ_SKILL_TOOL,
   read_our_website: READ_OUR_WEBSITE_TOOL,
+  [REPORT_NOT_GOOD_TOOL_NAME]: REPORT_NOT_GOOD_TOOL,
   get_leg_rates: GET_LEG_RATES_TOOL,
   set_leg_rates: SET_LEG_RATES_TOOL,
   get_offer_steps: GET_OFFER_STEPS_TOOL,

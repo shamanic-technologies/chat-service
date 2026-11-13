@@ -118,6 +118,8 @@ export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> =
   request_staff: ["POST /v1/staff-requests"],
   request_skill_upgrade: ["POST /v1/staff-requests"],
   contact_human: ["POST /v1/staff-requests"],
+  // the client says a piece of our work is not good (SCRIPT-VALUE-RATING-1113)
+  report_not_good: ["POST /v1/features/unit-reports"],
   list_staff_requests: ["GET /v1/staff-requests"],
 
   // exploring the API itself
