@@ -139,7 +139,7 @@ describe("direct-vendor model resolution", () => {
   });
 
   it("leaves the native provider maps untouched", () => {
-    expect(resolveModel("google", "flash-pro").costPrefix).toBe("google-flash-3.8");
+    expect(resolveModel("google", "flash-pro").costPrefix).toBe("google-hydrogen-4");
     expect(resolveModel("anthropic", "sonnet").costPrefix).toBe("anthropic-sonnet-5.5");
   });
 });

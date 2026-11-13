@@ -70,6 +70,7 @@ function installFetchMock() {
  * 400, exactly as production did.
  */
 const MODELS_REJECTING_MINIMAL = [
+  "gemini-4-hydrogen",
   "gemini-3.8-flash",
   "gemini-3.7-flash",
   "gemini-3.1-pro-preview",
@@ -216,7 +217,7 @@ function thinkingConfigOf(body: Record<string, unknown>): Record<string, unknown
 const ALIAS_FLOOR: Array<[string, string]> = [
   ["flash-lite", "minimal"], // gemini-3.5-flash-lite (moved from 3.1, LLM-DYNASTY-1022)
   ["flash", "minimal"], // gemini-3.5-flash-lite
-  ["flash-pro", "low"], // gemini-3.8-flash — rejects minimal
+  ["flash-pro", "low"], // gemini-4-hydrogen — rejects minimal (probed 2026-11-13)
   ["pro", "low"], // gemini-3.1-pro-preview — rejects minimal
 ];
 

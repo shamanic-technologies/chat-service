@@ -211,7 +211,7 @@ Request body:
 - `provider` (required) — LLM provider: `"anthropic"`, `"google"`, `"deepseek"`, `"zai"`, `"moonshot"`, or `"openai"` (see [Direct vendor models](#direct-vendor-models))
 - `model` (required) — version-free model alias. The service resolves the current versioned model internally. Valid combinations:
   - **anthropic**: `haiku` (fast/cheap, Claude Haiku 4.5), `sonnet` (balanced, **Claude Sonnet 5.5**), `opus` (high quality, **Claude Opus 5.5**), `fable` (Claude Fable 5.2 — the tier above Opus; 1M context, always-on reasoning). **`sonnet`, `opus` and `fable` reject `temperature` with a 400** — see below. `sonnet`/`opus` moved from the 4.6 models on 2026-09-29 — see [Claude Sonnet 5.5 / Opus 5.5](#claude-sonnet-55--opus-55-sonnet--opus).
-  - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 3.8 Flash), `pro` (most powerful, Gemini 3.1 Pro), `gemini-argon` (Gemini 4 Argon, its own dynasty since 2026-10-27; floor `low`). All require a Google API key in key-service.
+  - **google**: `flash-lite` (cheapest, vision, Gemini 3.1 Flash-Lite), `flash` (Gemini 3.5 Flash-Lite), `flash-pro` (mid-tier default, Gemini 4 Hydrogen, head of the Gemini Flash dynasty since 2026-11-13; floor `low`), `pro` (most powerful, Gemini 3.1 Pro), `gemini-argon` (Gemini 4 Argon, its own dynasty since 2026-10-27; floor `low`). All require a Google API key in key-service.
   - **deepseek**: `deepseek-flash` (DeepSeek V4.1 Flash — 1M context, 2500 concurrent requests). `deepseek-pro` is a **deprecated synonym** for the same model: DeepSeek discontinued V4 Pro on 2026-09-14 and routes it to V4.1 Flash at the Flash price (see [The 2026-09-10 DeepSeek collapse](#the-2026-09-10-deepseek-collapse))
   - **zai**: `glm-flash` (`glm-5.3-flash` — fast and cheap, 50 concurrent requests), `glm-pro` (`glm-5.3` — Z.ai's flagship, 15 concurrent requests)
   - **moonshot**: `kimi-flash` (`kimi-k2.6` — value tier), `kimi-pro` (`kimi-k3.1-pro` — flagship, since 2026-11-12; K3 retired). **Every `moonshot` alias rejects `temperature`** (Kimi K3 / K3.1 Pro fix it at 0.6)
@@ -237,7 +237,7 @@ Request body:
     |---|---|---|---|
     | `flash-lite` | `gemini-3.1-flash-lite` | minimal, low, medium, high | `minimal` |
     | `flash` | `gemini-3.5-flash-lite` | minimal, low, medium, high | `minimal` |
-    | `flash-pro` | `gemini-3.8-flash` | **low**, medium, high | `low` |
+    | `flash-pro` | `gemini-4-hydrogen` | **low**, medium, high | `low` |
     | `pro` | `gemini-3.1-pro-preview` | **low**, medium, high | `low` |
     | `gemini-argon` | `gemini-4-argon` | **low**, medium, high | `low` |
 
@@ -654,7 +654,7 @@ Who reads it: features-service ranks the workflows a campaign can run, and the c
 
 | Alias | Resolves to | Tier | Why a substring rule gets it wrong |
 |---|---|---|---|
-| `google` / `flash-pro` | `gemini-3.8-flash` | `cheap` | contains "pro", **is a Flash model**. The alias is named for where it sits among the Gemini aliases; the tier describes the model. |
+| `google` / `flash-pro` | `gemini-4-hydrogen` | `cheap` | contains "pro", **is a Flash model**. The alias is named for where it sits among the Gemini aliases; the tier describes the model. |
 | `deepseek` / `deepseek-pro` | `deepseek-flash` | `cheap` | a deprecated synonym kept for callers, pointing at V4.1 Flash since 2026-09-10 |
 | `openai` / `gpt-pro` vs `zai` / `glm-pro` | `gpt-6-astra` vs `glm-5.3` | `frontier` vs `strong` | same suffix, 7x apart on output price |
 

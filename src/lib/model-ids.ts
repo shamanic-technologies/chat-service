@@ -43,6 +43,7 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "gemini-3.8-flash": "Gemini 3.8 Flash",
   "gemini-3.1-pro-preview": "Gemini 3.1 Pro",
   "gemini-4-argon": "Gemini 4 Argon",
+  "gemini-4-hydrogen": "Gemini 4 Hydrogen",
   "gemini-3.1-flash-lite-preview": "Gemini 3.1 Flash-Lite (preview)",
   "gemini-3-flash-preview": "Gemini 3 Flash",
   "gemini-3.1-flash-preview": "Gemini 3.1 Flash (preview)",
@@ -112,6 +113,8 @@ export const RETIRED_MODELS: Record<string, RetiredModel> = {
   "gemini-3.5-flash": { provider: "google", capabilityTier: "cheap", formerAliases: ["flash-pro"] },
   "gemini-3.6-flash": { provider: "google", capabilityTier: "cheap", formerAliases: ["flash-pro"] },
   "gemini-3.7-flash": { provider: "google", capabilityTier: "cheap", formerAliases: ["flash-pro"] },
+  // HYDROGEN-FLASH-HEAD-1113 (2026-11-13): gemini-flash head moved to gemini-4-hydrogen.
+  "gemini-3.8-flash": { provider: "google", capabilityTier: "cheap", formerAliases: ["flash-pro", "gemini-flash"] },
   "gemini-2.5-flash": {
     provider: "google",
     capabilityTier: "cheap",

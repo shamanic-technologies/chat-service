@@ -30,6 +30,7 @@ const EXPECTED_FLOOR: Record<string, string> = {
   "gemini-3.5-flash": "minimal",
   "gemini-3.6-flash": "minimal",
   "gemini-3-flash-preview": "minimal",
+  "gemini-4-hydrogen": "low",
   "gemini-3.8-flash": "low",
   "gemini-3.7-flash": "low",
   "gemini-3.1-pro-preview": "low",
