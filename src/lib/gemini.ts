@@ -58,6 +58,7 @@ export const GEMINI_MODELS: Record<string, string> = {
   "gemini-3.5-flash-lite": "google-flash-lite-3.5",
   "gemini-3.6-flash": "google-flash-3.6",
   "gemini-3.7-flash": "google-flash-3.7",
+  "gemini-4-hydrogen": "google-hydrogen-4",
   "gemini-3.8-flash": "google-flash-3.8",
   "gemini-3-flash-preview": "google-flash-3",
   "gemini-3.1-pro-preview": "google-pro-3.1",
@@ -70,7 +71,8 @@ export const GEMINI_MODELS: Record<string, string> = {
 const GEMINI_TIMEOUT_MS: Record<string, number> = {
   "gemini-3.1-pro-preview": 15 * 60_000,       // 15 min — Pro
   "gemini-4-argon": 15 * 60_000,               // 15 min — Gemini 4 Argon
-  "gemini-3.8-flash": 10 * 60_000,              // 10 min — Flash (flash-pro alias)
+  "gemini-4-hydrogen": 10 * 60_000,             // 10 min — Gemini 4 Hydrogen (gemini-flash head)
+  "gemini-3.8-flash": 10 * 60_000,              // 10 min — Flash 3.8 (previous flash-pro, transcription)
   "gemini-3.7-flash": 10 * 60_000,              // 10 min — Flash 3.7 (previous flash-pro)
   "gemini-3.6-flash": 10 * 60_000,              // 10 min — Flash 3.6
   "gemini-3-flash-preview": 10 * 60_000,        // 10 min — Flash 3 (legacy)
@@ -171,6 +173,9 @@ const GEMINI_3_THINKING_FLOOR: Record<string, GeminiThinkingLevel> = {
   // Gemini 4 Argon: docs table "On (medium)", levels low | medium | high; the live
   // API refuses MINIMAL with 400 (probed 2026-10-27).
   "gemini-4-argon": "low",
+  // Gemini 4 Hydrogen: low | medium | high (+ xhigh); the live API refuses MINIMAL with 400
+  // "Thinking level MINIMAL is not supported for this model" (probed 2026-11-13).
+  "gemini-4-hydrogen": "low",
 };
 const GEMINI_25_THINKING_OFF = 0;
 

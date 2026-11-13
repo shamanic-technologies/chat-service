@@ -35,7 +35,7 @@ describe("capability tier", () => {
   // consumer choosing a model by capability. The tier is a decision recorded
   // per alias; if a later refactor re-derives it from the name, this fails.
   it("reports flash-pro as cheap — it resolves to a Flash model despite the alias name", () => {
-    expect(resolveModel("google", "flash-pro").apiModelId).toBe("gemini-3.8-flash");
+    expect(resolveModel("google", "flash-pro").apiModelId).toBe("gemini-4-hydrogen");
     expect(capabilityTierFor("google", "flash-pro")).toBe("cheap");
   });
 

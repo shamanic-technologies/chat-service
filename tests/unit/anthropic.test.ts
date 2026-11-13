@@ -93,14 +93,14 @@ describe("costPrefixForModel", () => {
   });
 });
 
-describe("flash-pro alias (Gemini 3.8 Flash, DIS-130 upgraded 2026-09-05)", () => {
-  it("resolveModel google/flash-pro → gemini-3.8-flash + google-flash-3.8 cost prefix", () => {
+describe("flash-pro alias (Gemini 4 Hydrogen, HYDROGEN-FLASH-HEAD-1113 upgraded 2026-11-13)", () => {
+  it("resolveModel google/flash-pro → gemini-4-hydrogen + google-hydrogen-4 cost prefix", () => {
     // toMatchObject, not toEqual: ResolvedModel also carries `capabilityTier`
     // (covered by tests/unit/capability-tier.test.ts, which pins flash-pro to
     // the cheap tier). This test is about where the alias resolves.
     expect(resolveModel("google", "flash-pro")).toMatchObject({
-      apiModelId: "gemini-3.8-flash",
-      costPrefix: "google-flash-3.8",
+      apiModelId: "gemini-4-hydrogen",
+      costPrefix: "google-hydrogen-4",
       provider: "google",
     });
   });
@@ -108,12 +108,15 @@ describe("flash-pro alias (Gemini 3.8 Flash, DIS-130 upgraded 2026-09-05)", () =
   it("declared cost names are byte-equal to the costs-service catalog rows", () => {
     const { costPrefix } = resolveModel("google", "flash-pro");
     // Must match costs-service catalog exactly or runs-service 422-rejects.
-    expect(`${costPrefix}-tokens-input`).toBe("google-flash-3.8-tokens-input");
-    expect(`${costPrefix}-tokens-output`).toBe("google-flash-3.8-tokens-output");
+    expect(`${costPrefix}-tokens-input`).toBe("google-hydrogen-4-tokens-input");
+    expect(`${costPrefix}-tokens-output`).toBe("google-hydrogen-4-tokens-output");
+    expect(`${costPrefix}-tokens-cached-input`).toBe("google-hydrogen-4-tokens-cached-input");
   });
 
   it("flash-pro is a valid google alias and SUPPORTED_MODELS maps the real model ID", () => {
     expect(PROVIDER_MODELS.google).toContain("flash-pro");
+    expect(SUPPORTED_MODELS["gemini-4-hydrogen"]).toBe("google-hydrogen-4");
+    // The superseded head stays mapped so its past spend keeps resolving.
     expect(SUPPORTED_MODELS["gemini-3.8-flash"]).toBe("google-flash-3.8");
   });
 

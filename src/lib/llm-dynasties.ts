@@ -102,7 +102,10 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "Gemini Flash",
     provider: "google",
     capabilityTier: "cheap",
+    // Gemini 4 Hydrogen replaces 3.8 Flash (Google retired the Flash brand with it,
+    // HYDROGEN-FLASH-HEAD-1113): same line, new head.
     models: [
+      "gemini-4-hydrogen",
       "gemini-3.8-flash",
       "gemini-3.7-flash",
       "gemini-3.6-flash",
