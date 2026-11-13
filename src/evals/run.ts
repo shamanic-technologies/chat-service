@@ -8,6 +8,10 @@
 //     [--scenarios evals/scenarios] [--only id1,id2] [--runs 3] \
 //     [--provider deepseek --model deepseek-flash] [--parallel 4] [--calibrate] [--out file]
 //     [--no-brand-tools]   (lead turns as before BRAND-MCP-1109: the brand's own tools withheld)
+//     [--effort low|medium|high|...]   (Claude: output_config.effort; omitted = none sent, as the copilot config)
+//
+// Every model request is read at the fetch boundary (wire.ts) and the run stores
+// the settings the requests really carried (`wire`): a result names its wire.
 //
 // --calibrate judges the recorded replies only (no model call): every known-bad
 // production reply must FAIL and every hand-written good reply must PASS, or the
@@ -31,6 +35,8 @@ import { CRITERIA, QUESTIONS, describeAction, judgeState, verdictFrom, type Crit
 import { LabelFileSchema, trueAgreement, type JudgedRow } from "./labels.js";
 import { loadScenarios, type Scenario } from "./scenario.js";
 import { summarise, type ScenarioResult, type ReplayResult } from "./report.js";
+import { recordWire } from "./wire.js";
+import { ANTHROPIC_EFFORTS, type AnthropicEffort } from "../schemas.js";
 
 const SERVICE = "chat-service";
 const SUPPORT = { kind: "staff_experiment" as const, reason: "Sophie eval replay (SOPHIE-REFONTE-1102): replays a recorded conversation on fixtures, no client reached" };
@@ -39,6 +45,14 @@ function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
+
+/** --effort: Claude's `output_config.effort` for this run (omitted = none sent). */
+const EFFORT: AnthropicEffort | undefined = (() => {
+  const e = arg("effort");
+  if (e === undefined) return undefined;
+  if (!(ANTHROPIC_EFFORTS as readonly string[]).includes(e)) throw new Error(`[evals] --effort must be one of ${ANTHROPIC_EFFORTS.join(", ")}`);
+  return e as AnthropicEffort;
+})();
 
 const cents = (costs: RunCost[]) => costs.reduce((s, c) => s + Number(c.totalCostInUsdCents), 0);
 
@@ -120,7 +134,7 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
       const r = await withRun("sophie-eval-replay", async (runId) => {
        try {
         const fixtures = fixtureExecutor(def, scenario);
-        const turn = await replayTurn({ def, scenario, provider, model, apiKey: modelKey, executeTool: fixtures.executeTool, uiText: fixtures.uiText, brandTools: !process.argv.includes("--no-brand-tools"), ...(arg("api-model") ? { rawModel: { apiModelId: arg("api-model")!, costPrefix: arg("cost-prefix") ?? arg("api-model")! } } : {}), ...(process.argv.includes("--reasoning-off") ? { reasoningDisabled: true } : process.argv.includes("--reasoning-on") ? { reasoningDisabled: false } : {}) });
+        const turn = await replayTurn({ def, scenario, provider, model, apiKey: modelKey, executeTool: fixtures.executeTool, uiText: fixtures.uiText, brandTools: !process.argv.includes("--no-brand-tools"), ...(EFFORT ? { effort: EFFORT } : {}), ...(arg("api-model") ? { rawModel: { apiModelId: arg("api-model")!, costPrefix: arg("cost-prefix") ?? arg("api-model")! } } : {}), ...(process.argv.includes("--reasoning-off") ? { reasoningDisabled: true } : process.argv.includes("--reasoning-on") ? { reasoningDisabled: false } : {}) });
         const modelCosts = await retryRefused("reply costs", () => addPlatformRunCosts(runId, SERVICE, turn.costLines.map((l) => ({ costName: l.costName, quantity: l.quantity, costSource: "platform" as const }))));
         const actions = turn.toolCalls.map((c) => describeAction(c.name, c.args, c.result));
         const judged = await judge(runId, typesafeKey, scenario, turn.reply, actions, turn.turnContext);
@@ -250,7 +264,12 @@ async function main() {
     return;
   }
 
+  if (EFFORT && provider !== "anthropic") throw new Error("[evals] --effort is Claude's output_config.effort: use it with --provider anthropic");
+  const wire = recordWire();
   const results = await replay(def, scenarios, provider, model, runs, Number(arg("parallel") ?? "4"), typesafeKey);
+  const wireReport = wire.report();
+  // A run whose model requests never crossed fetch has no wire to state: refuse it rather than report an unchecked setting.
+  if (wireReport.requests === 0) throw new Error("[evals] no model request was seen on the wire: the run's settings cannot be stated");
   const summary = summarise(results);
   const body = {
     kind: "replay",
@@ -259,7 +278,8 @@ async function main() {
     ...(def.id.startsWith("sophie-code") ? { codeHash: sophieCodeHash(), definitionSnapshot: def } : {}),
     definitionHash: definitionHash(def, `${provider}/${model}`),
     ...(process.argv.includes("--no-brand-tools") ? { brandTools: "withheld" } : {}),
-    model: `${provider}/${model}${process.argv.includes("--reasoning-off") || (!process.argv.includes("--reasoning-on") && def.reasoning === "off") ? " (reasoning off)" : ""}`,
+    model: `${provider}/${model}${provider === "anthropic" ? ` (effort ${EFFORT ?? "not sent"})` : process.argv.includes("--reasoning-off") || (!process.argv.includes("--reasoning-on") && def.reasoning === "off") ? " (reasoning off)" : ""}`,
+    wire: wireReport,
     judge: `jev/${TYPESAFE_DEFAULT_MODEL}`,
     runsPerScenario: runs,
     summary,

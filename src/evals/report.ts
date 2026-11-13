@@ -67,6 +67,10 @@ export function summarise(results: ScenarioResult[]) {
     medianLlmCalls: median(ran.map((x) => x.llmCalls)),
     medianInputTokens: median(ran.map((x) => x.tokensInput)),
     medianLatencyMs: median(ran.map((x) => x.latencyMs)),
+    // Pooled over every reply (a failed reply counts as failing): what the merge gate and a bake-off compare.
+    replyPassRate: replays.length ? replays.filter((x) => x.verdict.pass).length / replays.length : 0,
+    meanCostPerReplyUsd: ran.length ? Number((ran.reduce((s, x) => s + x.replyCostUsd, 0) / ran.length).toFixed(5)) : 0,
+    meanLatencyMs: ran.length ? Math.round(ran.reduce((s, x) => s + x.latencyMs, 0) / ran.length) : 0,
     passed: results.length > 0 && scenariosPassed === results.length && alwaysTrue && medianCost < COST_PER_REPLY_TARGET_USD,
   };
 }
