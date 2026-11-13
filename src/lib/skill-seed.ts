@@ -379,7 +379,7 @@ Each piece we make for a client (a message to one of their leads, the texts of t
 
 ## Name the piece
 report_not_good (API: POST /v1/features/unit-reports, same fields, plus source: where it was said) names the piece as our ledger does, from a record read this turn:
-- **A message we wrote to one person**: outcomeKey message_written, subjectService lead-service, subjectId = the leadId their timeline serves (GET /v1/leads/{id}/timeline?brandId=, the id of their row in GET /v1/leads?brandId=&q=), unitAt = the date that message went out (its item's occurredAt in the timeline, or its date in their conversation). One person holds several messages: the date names the one they mean. kind reported.
+- **A message we wrote to one person**: outcomeKey message_written, subjectService lead-service, subjectId = the leadId on their row (GET /v1/leads?brandId=&q= their name; their timeline serves the same leadId), unitAt = the date that message went out (its item's occurredAt in their timeline, GET /v1/leads/{id}/timeline?brandId= read by the row's id, or its date in their conversation). One person holds several messages: the date names the one they mean. kind reported.
 - **The offer's texts we drafted** (what they sell, who buys), changed at their request: outcomeKey offer_fields_drafted, subjectService brand-service, subjectId = the offerId. kind edited, once the change is written.
 - note = what is wrong with it, in their own words.
 One report per piece they point at. Several messages could be the one they mean and their words do not settle it: ask which.

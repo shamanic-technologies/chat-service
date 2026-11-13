@@ -22,7 +22,7 @@ CONVERSATION = {"campaignId": UNIT, "email": "dana@example.com", "messages": [
   msg(FIRST, "Operations hires at Kestrel Freight", "Hi Dana, Kestrel Freight opened two depots this year. Reed places operations managers for mid-size logistics firms and is paid only on placement. Worth a short call?"),
   msg(FOLLOWUP, "Re: Operations hires at Kestrel Freight", "Dana, I have written twice now. Every week without an operations manager costs Kestrel money, and your competitors are not waiting. Book a call today before our shortlist goes to someone else."),
 ]}
-TIMELINE = {"leadId": LEAD, "brandId": BRAND, "offerId": None, "items": [
+TIMELINE = {"_when": {"id": ROW}, "leadId": LEAD, "brandId": BRAND, "offerId": None, "items": [
   {"id": f"outreach:initial_email:{FIRST}", "label": "initial_email", "source": "outreach", "occurredAt": FIRST, "attributable": True, "campaignId": UNIT},
   {"id": f"outreach:followup:{FOLLOWUP}", "label": "followup", "source": "outreach", "occurredAt": FOLLOWUP, "attributable": True, "campaignId": UNIT},
 ], "tags": {"lastWord": "no_reply", "lastWordAt": None, "furthestStep": "contacted", "furthestStepAttributable": True, "disqualified": False}, "disqualification": None}
@@ -48,7 +48,7 @@ FACTS = [
   "The 10 November follow-up is the pushy one: it says every week without an operations manager costs Kestrel money, that competitors are not waiting, and to book a call today before the shortlist goes to someone else.",
   "A message already sent cannot be changed, unsent, rewritten or sent again: it stays as it was sent.",
   "Sophie can record that a piece of our work is not good (the tool report_not_good). It only lowers how often the writer of that message is picked for the next ones, so what we write next gets better. It sends nothing to Dana or anyone, changes nothing the client sees, and needs no confirmation from the client.",
-  "The report was made in this turn only if the turn's tool calls include report_not_good; it names Dana's message as outcomeKey message_written, subjectService lead-service, subjectId 5eed0000-0000-4000-8000-000000001113 (the leadId her timeline serves), unitAt 2026-11-10T14:05:00Z.",
+  "The report was made in this turn only if the turn's tool calls include report_not_good; it names Dana's message as outcomeKey message_written, subjectService lead-service, subjectId 5eed0000-0000-4000-8000-000000001113 (her leadId, on her row and in her timeline), unitAt 2026-11-10T14:05:00Z.",
   "What a campaign's emails say can also be steered from now on by a rule in the campaign's brief (for example: never pressure, no urgency); writing it changes the brief and applies from the next emails.",
   "The Ops Leaders campaign is running at $5 a day; the account is prepaid with $28.60 left.",
 ]

@@ -47,13 +47,13 @@ export const REPORT_NOT_GOOD_TOOL: Anthropic.Tool = {
     "What it does: one report on that one piece. Several writers compete to do each job for them and the ones whose work clients keep are picked more, so the writer that made this piece is picked less and what we write next for them gets better. " +
     "What it does not do: it sends nothing to anyone, changes nothing the client sees, and rewrites or re-sends nothing; the piece stays as it is. So report in the same turn, with no question before it, and what you tell them stays true to that: we learn from it for what we write next. A change they also want is its own act. " +
     "There is no positive vote and silence means nothing: report only a piece they criticised or had changed. " +
-    "Name the piece from a record you read this turn (the not-good skill says how). A message we wrote to a person: outcomeKey message_written, subjectService lead-service, subjectId the leadId their timeline serves (GET /v1/leads/{id}/timeline), unitAt the date that message went out. A refusal comes back with its status and meaning.",
+    "Name the piece from a record you read this turn (the not-good skill says how). A message we wrote to a person: outcomeKey message_written, subjectService lead-service, subjectId the leadId on the person's row (GET /v1/leads?brandId=&q= their name), unitAt the date that message went out (occurredAt in their timeline: GET /v1/leads/{id}/timeline?brandId=, read by the row's id). A refusal comes back with its status and meaning.",
   input_schema: {
     type: "object" as const,
     properties: {
       outcomeKey: { type: "string", description: "What the piece is, as our ledger names it: message_written (a message we wrote to a person), offer_fields_drafted (the offer's texts we drafted)." },
       subjectService: { type: "string", description: "The service holding the piece's subject: lead-service for a message, brand-service for an offer's drafted texts." },
-      subjectId: { type: "string", description: "The subject's id, as read this turn: the person's leadId for a message, the offerId for an offer's drafted texts." },
+      subjectId: { type: "string", description: "The subject's id, as read this turn: the person's leadId (not their row id) for a message, the offerId for an offer's drafted texts." },
       kind: { type: "string", enum: [...UNIT_REPORT_KINDS], description: "reported = they say it is not good (a sent message cannot be edited). edited = what we wrote was changed at their request." },
       note: { type: "string", description: "What they said is wrong with it, in their own words." },
       unitAt: { type: "string", description: "When the piece they point at was made, as its record dates it (ISO date-time): the date a message went out. One person holds several messages, the date names the one they mean. Omit for a subject holding one piece." },
