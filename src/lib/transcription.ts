@@ -33,6 +33,9 @@ export const MAX_TRANSCRIPTION_BYTES = 2 * 1024 * 1024 * 1024;
 /** Aliases a caller may pick; the default is the one that keeps every word. */
 export const TRANSCRIPTION_MODELS = {
   flash: "gemini-3.5-flash-lite",
+  // Stays on 3.8 Flash after the gemini-flash dynasty moved to Gemini 4 Hydrogen
+  // (HYDROGEN-FLASH-HEAD-1113): a transcript's lost words are invisible to any
+  // check, so this model moves only after its own measured re-run (see below).
   "flash-pro": "gemini-3.8-flash",
 } as const;
 export type TranscriptionModelAlias = keyof typeof TRANSCRIPTION_MODELS;

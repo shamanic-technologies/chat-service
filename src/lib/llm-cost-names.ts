@@ -41,6 +41,7 @@ export const MODEL_COST_PREFIXES: Record<string, readonly string[]> = {
   "gemini-3.1-flash-lite": ["google-flash-lite-3.1"],
   "gemini-3.1-flash-lite-preview": ["google-flash-lite-3.1"],
   "gemini-2.5-flash-lite": ["google-flash-lite-2.5"],
+  "gemini-4-hydrogen": ["google-hydrogen-4"],
   "gemini-3.8-flash": ["google-flash-3.8"],
   "gemini-3.7-flash": ["google-flash-3.7"],
   "gemini-3.6-flash": ["google-flash-3.6"],

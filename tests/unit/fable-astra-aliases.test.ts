@@ -84,7 +84,7 @@ describe("alias resolution", () => {
       // flash-lite moved 3.1 → 3.5 Flash-Lite with LLM dynasties (owner 2026-10-22).
       ["google", "flash-lite", "gemini-3.5-flash-lite", "google-flash-lite-3.5"],
       ["google", "flash", "gemini-3.5-flash-lite", "google-flash-lite-3.5"],
-      ["google", "flash-pro", "gemini-3.8-flash", "google-flash-3.8"],
+      ["google", "flash-pro", "gemini-4-hydrogen", "google-hydrogen-4"],
       ["google", "pro", "gemini-3.1-pro-preview", "google-pro-3.1"],
       ["deepseek", "deepseek-flash", "deepseek-flash", "deepseek-v4.1-flash"],
       ["deepseek", "deepseek-pro", "deepseek-flash", "deepseek-v4.1-flash"],

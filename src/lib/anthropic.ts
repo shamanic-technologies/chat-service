@@ -247,7 +247,14 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
     // for where it sits among the Gemini aliases (above `flash`), while the tier
     // describes the MODEL, which is a Flash. Do not "correct" this to "strong",
     // and do not derive any tier from an alias string.
-    "gemini-flash": { apiModelId: "gemini-3.8-flash", costPrefix: "google-flash-3.8", provider: "google", capabilityTier: "cheap" },
+    //
+    // HYDROGEN-FLASH-HEAD-1113 (owner 2026-11-13): head moved 3.8 Flash → Gemini 4 Hydrogen.
+    // Google retired the Flash brand with it and gives it as the path for teams "migrating from
+    // Gemini 3.8 Flash" = a REPLACEMENT, so it joins this dynasty. Same full list price as 3.8
+    // ($1.50/$7.50, cache $0.075 per MTok, flat over 1M context). Probed live 2026-11-13 before
+    // the move: `minimal` refused 400 (floor low), responseSchema + JSON mode, function calls
+    // (thought signature returned), googleSearch grounding, temperature, implicit cache hits.
+    "gemini-flash": { apiModelId: "gemini-4-hydrogen", costPrefix: "google-hydrogen-4", provider: "google", capabilityTier: "cheap" },
     "gemini-pro": { apiModelId: "gemini-3.1-pro-preview", costPrefix: "google-pro-3.1", provider: "google", capabilityTier: "strong" },
     // Gemini 4 Argon (LLM-HEADS-1027): its own line, Google keeps `gemini-pro-latest` on
     // 3.1 Pro. Priced at the full $4 / $0.20 / $20 per MTok (the $2/$10 until 2026-11-30 is
@@ -745,6 +752,7 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "gemini-3.6-flash": "google-flash-3.6",
   "gemini-3.7-flash": "google-flash-3.7",
   "gemini-3.8-flash": "google-flash-3.8",
+  "gemini-4-hydrogen": "google-hydrogen-4",
   "gemini-3.1-pro-preview": "google-pro-3.1",
   "gemini-4-argon": "google-argon-4",
   "gemini-2.5-pro": "google-pro-2.5",

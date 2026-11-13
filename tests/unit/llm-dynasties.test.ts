@@ -11,7 +11,7 @@ const EXPECTED: Record<string, { head: string; legacy: string[] }> = {
   "claude-opus": { head: "claude-opus-5-5", legacy: ["opus"] },
   "claude-fable": { head: "claude-fable-5-2", legacy: ["fable"] },
   "gemini-flash-lite": { head: "gemini-3.5-flash-lite", legacy: ["flash", "flash-lite"] },
-  "gemini-flash": { head: "gemini-3.8-flash", legacy: ["flash-pro"] },
+  "gemini-flash": { head: "gemini-4-hydrogen", legacy: ["flash-pro"] },
   "gemini-pro": { head: "gemini-3.1-pro-preview", legacy: ["pro"] },
   "gemini-argon": { head: "gemini-4-argon", legacy: [] },
   "deepseek-flash": { head: "deepseek-flash", legacy: ["deepseek-flash", "deepseek-pro"] },
@@ -94,9 +94,11 @@ describe("LLM dynasties", () => {
   });
 
   it("declares spend under the concrete model whatever name called it", () => {
-    expect(resolveModel("google", "gemini-flash").costPrefix).toBe("google-flash-3.8");
-    expect(resolveModel("google", "flash-pro").costPrefix).toBe("google-flash-3.8");
-    expect(resolveModel("google", "gemini-3.8-flash").costPrefix).toBe("google-flash-3.8");
+    expect(resolveModel("google", "gemini-flash").costPrefix).toBe("google-hydrogen-4");
+    expect(resolveModel("google", "flash-pro").costPrefix).toBe("google-hydrogen-4");
+    expect(resolveModel("google", "gemini-4-hydrogen").costPrefix).toBe("google-hydrogen-4");
+    // The superseded head is no longer callable by its id (no live price/probes).
+    expect(() => resolveModel("google", "gemini-3.8-flash")).toThrow();
     expect(resolveModel("zai", "glm").costPrefix).toBe("zai-glm-5.3");
   });
 
@@ -124,12 +126,12 @@ describe("LLM dynasties", () => {
   it("serves the dynasty list with versions newest first and the old-alias mapping", () => {
     const list = dynastyCatalogue();
     const flash = list.find((d) => d.slug === "gemini-flash")!;
-    expect(flash).toMatchObject({ name: "Gemini Flash", provider: "google", headModelId: "gemini-3.8-flash", servedToday: true, legacyAliases: ["flash-pro"] });
+    expect(flash).toMatchObject({ name: "Gemini Flash", provider: "google", headModelId: "gemini-4-hydrogen", servedToday: true, legacyAliases: ["flash-pro"] });
     expect(flash.models.map((m) => m.modelId)).toEqual([
-      "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash",
+      "gemini-4-hydrogen", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash",
       "gemini-3.1-flash-preview", "gemini-3-flash-preview", "gemini-2.5-flash",
     ]);
-    expect(flash.models.filter((m) => m.servedToday).map((m) => m.modelId)).toEqual(["gemini-3.8-flash"]);
+    expect(flash.models.filter((m) => m.servedToday).map((m) => m.modelId)).toEqual(["gemini-4-hydrogen"]);
     const dsPro = list.find((d) => d.slug === "deepseek-pro")!;
     expect(dsPro).toMatchObject({ servedToday: false, headModelId: "deepseek-v4-pro", legacyAliases: [] });
     expect(dsPro.models[0].servedToday).toBe(false);

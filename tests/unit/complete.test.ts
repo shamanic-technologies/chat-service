@@ -578,10 +578,10 @@ describe("resolveModel", () => {
     expect(resolved.provider).toBe("google");
   });
 
-  it("resolves google + flash-pro to gemini-3.8-flash", () => {
+  it("resolves google + flash-pro to gemini-4-hydrogen", () => {
     const resolved = resolveModel("google", "flash-pro");
-    expect(resolved.apiModelId).toBe("gemini-3.8-flash");
-    expect(resolved.costPrefix).toBe("google-flash-3.8");
+    expect(resolved.apiModelId).toBe("gemini-4-hydrogen");
+    expect(resolved.costPrefix).toBe("google-hydrogen-4");
     expect(resolved.provider).toBe("google");
   });
 

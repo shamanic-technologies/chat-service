@@ -488,7 +488,7 @@ const DYNASTY_MODEL_DOC =
   "served version): anthropic → claude-haiku|claude-sonnet|claude-opus|claude-fable, google → " +
   "gemini-flash-lite|gemini-flash|gemini-pro, deepseek → deepseek-flash, zai → glm-flash|glm, " +
   "moonshot → kimi-k2|kimi-k3, openai → gpt-astra|gpt-sol|gpt-terra. The head's exact model id " +
-  "(e.g. `gemini-3.8-flash`) is also accepted, to pin that version. Spend is declared under the " +
+  "(e.g. `gemini-4-hydrogen`) is also accepted, to pin that version. Spend is declared under the " +
   "concrete model that ran, whatever name called it.\n\n";
 
 export const CompleteRequestSchema = z
@@ -1847,7 +1847,7 @@ registry.registerPath({
 
 **Tier vocabulary** (same as \`GET /internal/models\`): \`cheap\` = the vendor's small/fast volume tier (every Flash, Flash-Lite, Haiku, GLM Flash, Kimi K2.6); \`strong\` = its main flagship (Gemini Pro, Sonnet, GLM-5.x, Kimi K3, DeepSeek V4 Pro); \`frontier\` = above that flagship (Opus, Fable, GPT-6 Astra). A Flash / Pro split reads \`cheap\` as Flash and \`strong\` + \`frontier\` as Pro.
 
-The tier describes the MODEL, never the alias string: \`gemini-3.8-flash\` is \`cheap\` although its alias is \`flash-pro\`. Rows served today are derived from the same map \`/complete\` resolves through; retired rows are recorded facts.`,
+The tier describes the MODEL, never the alias string: \`gemini-4-hydrogen\` is \`cheap\` although its alias is \`flash-pro\`. Rows served today are derived from the same map \`/complete\` resolves through; retired rows are recorded facts.`,
   request: {
     headers: z.object({
       "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
@@ -1875,7 +1875,7 @@ export const LlmDynastySchema = z
     capabilityTier: CapabilityTierSchema,
     headModelId: z.string().openapi({
       description: "The newest version a current name serves (the slug runs it). For a line nothing serves any more, its last version.",
-      example: "gemini-3.8-flash",
+      example: "gemini-4-hydrogen",
     }),
     servedToday: z.boolean().openapi({
       description: "True when the slug answers /complete. False for a line kept only for its history (deepseek-pro).",
