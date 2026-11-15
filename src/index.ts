@@ -326,6 +326,7 @@ import {
 import { scrapeUrl } from "./lib/scraping-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import { ModelJsonOutputError, parseModelJsonOutput } from "./lib/json-output.js";
+import { NOT_JSON, buildSchemaConformanceRead, checkResponseSchema, loadSchemaConformanceRows, recordSchemaConformance } from "./lib/response-schema.js";
 import {
   resolveKey,
   resolvePlatformKey,
@@ -351,7 +352,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, BrandMcpServerCreateSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, BrandMcpServerCreateSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -1200,7 +1201,17 @@ async function handleComplete(req: express.Request, res: express.Response, retry
     // in fences or append prose despite JSON-mode metadata; accept the first
     // complete JSON value, but fail loud when no valid JSON value is present.
     if (jsonMode) {
-      response.json = parseModelJsonOutput(result.content);
+      // Whether the answer follows the caller's schema is MEASURED, never refused yet (SCHEMA-HONOURED-1115):
+      // counted per model per day for the Monitoring chart; the answer is served unchanged.
+      try {
+        response.json = parseModelJsonOutput(result.content);
+      } catch (parseErr) {
+        if (responseSchema != null) recordSchemaConformance(db, { provider, model: result.model, route: "complete", check: NOT_JSON });
+        throw parseErr;
+      }
+      if (responseSchema != null) {
+        recordSchemaConformance(db, { provider, model: result.model, route: "complete", check: checkResponseSchema(response.json, responseSchema) });
+      }
     }
 
     res.json(response);
@@ -2939,7 +2950,17 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
 
     // Same JSON parsing contract as /complete.
     if (jsonMode) {
-      response.json = parseModelJsonOutput(result.content);
+      // Whether the answer follows the caller's schema is MEASURED, never refused yet (SCHEMA-HONOURED-1115):
+      // counted per model per day for the Monitoring chart; the answer is served unchanged.
+      try {
+        response.json = parseModelJsonOutput(result.content);
+      } catch (parseErr) {
+        if (responseSchema != null) recordSchemaConformance(db, { provider, model: result.model, route: "platform-complete", check: NOT_JSON });
+        throw parseErr;
+      }
+      if (responseSchema != null) {
+        recordSchemaConformance(db, { provider, model: result.model, route: "platform-complete", check: checkResponseSchema(response.json, responseSchema) });
+      }
     }
 
     res.json(response);
@@ -4141,6 +4162,17 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         if (text !== undefined && text !== null && typeof text !== "string") {
           throw new Error(`${LEAD_ANSWER_TOOL_NAME}: ${leadTurn.payload.messageField} must be the text they receive (a string, empty when you write nothing now).`);
         }
+        // Whether the answer follows the writer's schema (the tool's own input schema) is MEASURED, never
+        // refused yet (SCHEMA-HONOURED-1115).
+        const answerTool = buildLeadAnswerTool(leadTurn.payload.responseSchema, leadTurn.payload.messageField, {
+          replyTo: (leadTurn.whatsapp?.shown.length ?? 0) > 0,
+        });
+        recordSchemaConformance(db, {
+          provider: resolvedModelInfo.provider,
+          model: resolvedModelInfo.apiModelId,
+          route: "lead-turn",
+          check: checkResponseSchema(args, answerTool.input_schema as Record<string, unknown>),
+        });
         if (typeof text === "string") args[leadTurn.payload.messageField] = stripLongDashes(text);
         // The label of the message she quotes back becomes its event id (the send's replyToEventId).
         const moment = leadTurnId && leadTurn.whatsapp ? leadTurnMoment(leadTurnId) : null;
@@ -5989,6 +6021,15 @@ app.get("/internal/vendor-credit", requireInternalAuth, async (req, res) => {
   const now = new Date();
   const rows = await loadVendorCreditRows(db, parsed.data.days, now);
   res.json(buildVendorCreditRead({ ...rows, days: parsed.data.days, now }));
+});
+
+app.get("/internal/schema-conformance", requireInternalAuth, async (req, res) => {
+  const parsed = SchemaConformanceQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const rows = await loadSchemaConformanceRows(db, parsed.data.days);
+  res.json(buildSchemaConformanceRead(rows, parsed.data.days));
 });
 
 app.get("/internal/copilot/channel-replies/daily", requireInternalAuth, async (req, res) => {

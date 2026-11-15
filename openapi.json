@@ -2050,6 +2050,133 @@
           "days"
         ]
       },
+      "SchemaConformanceResponse": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "integer"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "broken"
+            ],
+            "description": "broken when any model is broken."
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "example": "moonshot"
+                },
+                "model": {
+                  "type": "string",
+                  "description": "The concrete model id that answered.",
+                  "example": "kimi-k3"
+                },
+                "answeredCalls": {
+                  "type": "integer",
+                  "description": "Schema'd answers on the window (all routes)."
+                },
+                "nonConformingCalls": {
+                  "type": "integer",
+                  "description": "Of them, answers that did not follow the caller's responseSchema (or were not JSON)."
+                },
+                "conformingShare": {
+                  "type": "number",
+                  "description": "Share of answers that followed the schema, 0..1."
+                },
+                "verdict": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "broken",
+                    "not_enough_answers"
+                  ],
+                  "description": "broken (red) = more than 5% of at least 20 answers missed the schema; not_enough_answers = under 20 answers, normal colours."
+                },
+                "sentence": {
+                  "type": "string",
+                  "description": "One plain sentence to print as is."
+                },
+                "lastViolations": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "What the latest non-conforming answer got wrong, e.g. '(root) is missing required key \"message\"'."
+                },
+                "lastNonConformingAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "ISO time of the latest non-conforming answer."
+                }
+              },
+              "required": [
+                "provider",
+                "model",
+                "answeredCalls",
+                "nonConformingCalls",
+                "conformingShare",
+                "verdict",
+                "sentence",
+                "lastViolations",
+                "lastNonConformingAt"
+              ]
+            },
+            "description": "One row per model that answered a schema'd call on the window, broken first."
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "string",
+                  "description": "UTC day, YYYY-MM-DD."
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "route": {
+                  "type": "string",
+                  "enum": [
+                    "complete",
+                    "platform-complete",
+                    "lead-turn"
+                  ]
+                },
+                "answeredCalls": {
+                  "type": "integer"
+                },
+                "nonConformingCalls": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "day",
+                "provider",
+                "model",
+                "route",
+                "answeredCalls",
+                "nonConformingCalls"
+              ]
+            },
+            "description": "Stored rows (UTC day x provider x model x route), oldest first; a day with no schema'd answer has no row."
+          }
+        },
+        "required": [
+          "days",
+          "verdict",
+          "models",
+          "series"
+        ]
+      },
       "TelegramMessageResponse": {
         "type": "object",
         "properties": {
@@ -5529,6 +5656,72 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/VendorCreditResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid days",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/schema-conformance": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Answers that do not follow the caller's responseSchema, per model per day (Monitoring)",
+        "description": "Every schema'd answer on /complete, /internal/platform-complete and a lead turn's answer is checked against the caller's own responseSchema (shape only: types, required keys, enums, bounds, forbidden keys; never the content of a text) and counted. MEASURED, never refused yet: the answer is served unchanged either way (SCHEMA-HONOURED-1115).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90,
+              "default": 30,
+              "description": "How many UTC days, today included (1..90, default 30)."
+            },
+            "required": false,
+            "description": "How many UTC days, today included (1..90, default 30).",
+            "name": "days",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verdicts and the daily series",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaConformanceResponse"
                 }
               }
             }

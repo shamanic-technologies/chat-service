@@ -27,6 +27,7 @@ const { state } = vi.hoisted(() => ({
     turns: [] as Array<Record<string, unknown>>,
     leadTurns: [] as Array<Record<string, unknown>>,
     messageInserts: [] as Array<Record<string, unknown>>,
+    executes: [] as unknown[],
     tables: {} as Record<string, unknown>,
   },
 }));
@@ -101,6 +102,10 @@ vi.mock("../../src/db/index.js", async () => {
         })),
       })),
       query: { messages: { findMany: vi.fn(() => Promise.resolve([])) } },
+      execute: vi.fn((q: unknown) => {
+        state.executes.push(q);
+        return Promise.resolve([]);
+      }),
     },
   };
 });
@@ -218,6 +223,7 @@ describe("POST /internal/copilot/lead-turns: the Copilot writes the Lead event a
     state.turns.length = 0;
     state.leadTurns.length = 0;
     state.messageInserts.length = 0;
+    state.executes.length = 0;
     delete process.env.COPILOT_FOLLOWUP_BRAND_ID;
     installFetchMock();
   });
@@ -266,6 +272,22 @@ describe("POST /internal/copilot/lead-turns: the Copilot writes the Lead event a
     expect(declaredNames(gemini.bodies[0])).toEqual(["list_workflows", "launch_campaign", "propose_switch_on", "confirm_switch_on", "create_followup", "reach_person_elsewhere", "answer_person"]);
     // SOPHIE-JCURVE-1102: the answer is the campaign's, stored hidden, never a line of their chat.
     expect(state.messageInserts.filter((m) => m.role === "assistant")).toEqual([expect.objectContaining({ content: ANSWER.message, proactiveTrigger: true })]);
+  }, 30_000);
+
+  // SCHEMA-HONOURED-1115: whether the answer follows the writer's schema is MEASURED (one counted row), never
+  // refused yet: the answer is served as the model gave it.
+  it("an answer_person call outside the writer's schema is counted, and served unchanged", async () => {
+    const app = (await import("../../src/index.js")).default;
+    const bad = { decision: "cold_email_followup", message: "M3" };
+    const gemini = { bodies: [] as Array<Record<string, unknown>>, replies: [{ call: { name: "answer_person", args: bad } }] as GeminiReply[] };
+    routes.push(...baseRoutes(gemini, app, null));
+    const res = await request(app).post("/internal/copilot/lead-turns").set(HEADERS).send(BODY);
+    expect(res.status).toBe(200);
+    expect(res.body.json).toMatchObject(bad);
+    const recorded = JSON.stringify(state.executes);
+    expect(recorded).toContain("schema_conformance_days");
+    expect(recorded).toContain("lead-turn");
+    expect(recorded).toContain("/decision must be one of");
   }, 30_000);
 
   it("a turn that never answers fails loud (502), the key can run again", async () => {

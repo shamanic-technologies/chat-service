@@ -192,6 +192,30 @@ const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const AUTH = { "x-api-key": "test-key", "x-org-id": "org-1", "x-user-id": "user-1", "x-run-id": "parent-run-1" };
 const INTERNAL_AUTH = { "x-api-key": "test-key" };
 
+
+// The stored conformance counters for a model + route on the (faked) current UTC day, read from the test
+// database. The write is fire-and-forget beside the call, so `conformanceAfter` waits for the counter to move.
+type Counts = { answered: number; nonConforming: number; lastViolations: string | null };
+async function conformanceCounts(model: string, route: string): Promise<Counts> {
+  const { db } = await import("../../src/db/index.js");
+  const { sql } = await import("drizzle-orm");
+  const day = new Date().toISOString().slice(0, 10);
+  const r = (await db.execute(sql`SELECT answered_calls, non_conforming_calls, last_violations FROM schema_conformance_days
+    WHERE day = ${day}::date AND provider = 'zai' AND model = ${model} AND route = ${route}`)) as unknown as Array<Record<string, unknown>>;
+  const row = r[0];
+  return row
+    ? { answered: Number(row.answered_calls), nonConforming: Number(row.non_conforming_calls), lastViolations: row.last_violations as string | null }
+    : { answered: 0, nonConforming: 0, lastViolations: null };
+}
+async function conformanceAfter(model: string, route: string, before: Counts): Promise<{ nonConforming: number; lastViolations: string | null }> {
+  for (let i = 0; i < 100; i++) {
+    const now = await conformanceCounts(model, route);
+    if (now.answered > before.answered) return { nonConforming: now.nonConforming - before.nonConforming, lastViolations: now.lastViolations };
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error("no schema conformance row was recorded");
+}
+
 function actualItems(posted: CostItem[][]): CostItem[] {
   const found = posted.find((items) => items.some((i) => i.status === undefined));
   expect(found).toBeDefined();
@@ -688,6 +712,47 @@ describe("POST /complete — direct vendor routing", () => {
     });
   }
 
+  // SCHEMA-HONOURED-1115 (prod 2026-11-15): GLM-5.3 Flash answered the lead answerer with empty objects and
+  // garbage beside the decision. Whether an answer follows the caller's schema is MEASURED (a row per day x
+  // model, red on Monitoring when broken), never refused yet: the answer is served unchanged.
+  const LEAD_SCHEMA = {
+    type: "object",
+    properties: { decision: { type: "string", enum: ["now", "later", "nothing"] }, message: { type: "string" } },
+    required: ["decision", "message"],
+    additionalProperties: false,
+  };
+  for (const c of [
+    { content: "{}", conforming: false, violation: 'missing required key "decision"' },
+    { content: '{"decision":"cold_email_followup","message":"m"}', conforming: false, violation: "/decision must be one of" },
+    { content: '{"decision":"later","message":""}', conforming: true, violation: null },
+  ]) {
+    it(`serves ${c.content} unchanged and counts it ${c.conforming ? "conforming" : "non-conforming"}`, async () => {
+      const before = await conformanceCounts("glm-5.3-flash", "complete");
+      const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+      const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+      routes.push(
+        mockRunsCreate(),
+        mockVendorKey("zai"),
+        mockBilling(),
+        mockVendor(vendor, { host: ZAI_URL, model: "glm-5.3-flash", usage: { prompt_tokens: 30, completion_tokens: 9 }, content: c.content }),
+        ...mockRunsCostRoutes(cap),
+        mockRunsStatusPatch(),
+      );
+      const res = await request(app)
+        .post("/complete")
+        .set(AUTH)
+        .send({ message: "answer the lead", systemPrompt: "be brief", provider: "zai", model: "glm-flash", responseSchema: LEAD_SCHEMA });
+      expect(res.status).toBe(200);
+      expect(res.body.json).toEqual(JSON.parse(c.content));
+      expect(vendor.calls).toBe(1);
+      // The schema also rode the system prompt: Z.ai does not enforce it.
+      expect(JSON.stringify(vendor.bodies[0].messages)).toContain("decision");
+      const row = await conformanceAfter("glm-5.3-flash", "complete", before);
+      expect(row.nonConforming).toBe(c.conforming ? 0 : 1);
+      if (c.violation) expect(row.lastViolations).toContain(c.violation);
+    });
+  }
+
   it("still sends Z.ai and Moonshot the full json_schema form — only DeepSeek differs", async () => {
     for (const c of [
       { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.3" },
@@ -977,6 +1042,39 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     // Platform runs post actuals only — no provision, no hold.
     expect(actual.every((i) => i.status === undefined)).toBe(true);
     expect(actual.every((i) => i.costSource === "platform")).toBe(true);
+  });
+
+  it("serves a non-conforming answer unchanged and counts it (SCHEMA-HONOURED-1115)", async () => {
+    const before = await conformanceCounts("glm-5.3-flash", "platform-complete");
+    const costCap = { postedItems: [] as CostItem[][] };
+    const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+    routes.push(
+      mockVendorPlatformKey("zai"),
+      mockPlatformRunCreate(),
+      mockPlatformRunCosts(costCap),
+      mockPlatformRunStatus(),
+      mockVendor(vendor, { host: ZAI_URL, model: "glm-5.3-flash", usage: { prompt_tokens: 40, completion_tokens: 2 }, content: "{}" }),
+    );
+    const res = await request(app)
+      .post("/internal/platform-complete")
+      .set(INTERNAL_AUTH)
+      .send({
+        message: "hi",
+        systemPrompt: "be brief",
+        provider: "zai",
+        model: "glm-flash",
+        responseSchema: { type: "object", properties: { message: { type: "string" } }, required: ["message"] },
+        support: TEST_PLATFORM_SUPPORT,
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.json).toEqual({});
+    const row = await conformanceAfter("glm-5.3-flash", "platform-complete", before);
+    expect(row.nonConforming).toBe(1);
+    expect(row.lastViolations).toContain('missing required key "message"');
+
+    const read = await request(app).get("/internal/schema-conformance?days=7").set(INTERNAL_AUTH);
+    expect(read.status).toBe(200);
+    expect(read.body.models.some((m: { model: string }) => m.model === "glm-5.3-flash")).toBe(true);
   });
 
   it("declares Z.ai cached input with no regime segment", async () => {

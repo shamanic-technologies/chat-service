@@ -527,8 +527,26 @@ export interface VendorConfig {
    *
    * A fourth vendor states its own value here after probing the live API;
    * `tests/unit/openai-compatible.test.ts` asserts every vendor declares one.
+   *
+   * Accepting the form is NOT enforcing it (SCHEMA-HONOURED-1115). Live probe
+   * 2026-11-16, one rich lead-answer schema (enum, integer, required, no extra
+   * keys), 10 calls each, conforming answers: glm-5.3-flash 10/10, glm-5.3 9/10
+   * (+1 truncated JSON), kimi-k3 0/10, gpt-6.1-terra 0/10 (both dropped a
+   * required key), deepseek-flash 10/10 with the schema line in its prompt and
+   * 0/5 without it. So every answer is measured against the caller's schema
+   * after the parse (`response-schema.ts`), whatever this value says.
    */
   structuredOutput: "json_schema" | "json_object";
+  /**
+   * True only when a live probe showed THIS vendor holds its models to the
+   * schema (every answer conforming on a rich schema, N >= 10). A 200 on the
+   * json_schema form is not that. While false, a caller's `responseSchema`
+   * also rides the system prompt (`jsonObjectPromptLine`) on EVERY schema'd
+   * request, so the model reads the field names, descriptions and enums even
+   * when the vendor drops the response_format (SCHEMA-HONOURED-1115).
+   * All four direct vendors are false (probe 2026-11-16, see above).
+   */
+  schemaEnforced: boolean;
   /**
    * Whether reasoning can be turned off on THIS vendor, and how. See
    * `VendorReasoning` — it decides what a generation costs, so it sits next to
@@ -684,6 +702,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     maxOutputTokensField: "max_tokens",
     imageInput: true,
     structuredOutput: "json_object",
+    schemaEnforced: false,
     // Reasoning is disablable, and it is the SAME field on all three vendors —
     // which is a fact about these three, not a rule: it is recorded per vendor
     // because a fourth may spell it differently, and because DeepSeek proves a
@@ -774,6 +793,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     maxOutputTokensField: "max_tokens",
     imageInput: true,
     structuredOutput: "json_schema",
+    schemaEnforced: false,
     // Z.ai is the vendor this was measured on and the one it saves most on.
     // `thinking: {type:"disabled"}` on glm-5.2 took a probe from 703 to 389
     // output tokens with the answer intact (1,955 → 1,565 chars — the same
@@ -880,6 +900,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     maxOutputTokensField: "max_tokens",
     imageInput: false,
     structuredOutput: "json_schema",
+    schemaEnforced: false,
     // Moonshot reasons the hardest of the three and answers the shortest while
     // doing it: kimi-k2.6 spent 1,173 output tokens on 3,808 chars of reasoning
     // and 1,140 chars of answer. With `thinking: {type:"disabled"}` it spent 452
@@ -1013,6 +1034,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // is what the vendor serves without a schema rewrite; parseModelJsonOutput
     // still fails loud on output it cannot read.
     structuredOutput: "json_schema",
+    schemaEnforced: false,
     // Reasoning is BOUNDED here, never off — and that is a fact about the
     // model, stated by the vendor rather than inferred: `reasoning_effort`
     // accepts low | medium | high | xhigh | max on gpt-6-astra, and the
@@ -1391,7 +1413,9 @@ export function vendorReasoningFields(
  * rule). A caller that sends a `responseSchema` reasonably says nothing about JSON in its prose, and on a
  * `json_schema` vendor it never has to; the day the Rating picked DeepSeek for such a step (ai-meeting-booking
  * draft_reply, 2026-11-05 04:30 UTC) every call 400'd. The schema rides along because a `json_object` vendor has
- * nowhere else to receive it. A prompt that already names JSON is sent byte for byte as before.
+ * nowhere else to receive it. With a schema on a vendor that does not enforce it (`schemaEnforced: false`), the
+ * line is ALWAYS added (SCHEMA-HONOURED-1115); a schema-less request whose prompt already names JSON is sent byte
+ * for byte.
  */
 export function jsonObjectPromptLine(responseSchema: Record<string, unknown> | undefined): string {
   return responseSchema != null
@@ -1403,10 +1427,14 @@ export function buildVendorRequestBody(options: VendorCompleteOptions): Record<s
   const { model, message, responseFormat, responseSchema, temperature, maxOutputTokens } = options;
   let { systemPrompt } = options;
 
-  const jsonObjectMode =
-    (responseSchema != null && vendorConfig(options.vendor).structuredOutput === "json_object") ||
-    (responseSchema == null && responseFormat === "json");
-  if (jsonObjectMode && !/json/i.test(`${systemPrompt ?? ""}\n${message}`)) {
+  // A schema sent to a vendor that does not enforce it (`schemaEnforced: false`, every direct vendor today) also
+  // rides this line, whatever the prompt says (SCHEMA-HONOURED-1115): a `json_object` vendor has no other place
+  // for it, and a caller prompt that already said "JSON" used to suppress it (DeepSeek answered 0/5 in the
+  // schema's keys on a live probe, inventing its own). Without a schema, the bare line is added only when no
+  // prompt names JSON (the vendor's own 400 rule).
+  const schemaRidesPrompt = responseSchema != null && !vendorConfig(options.vendor).schemaEnforced;
+  const bareJsonMode = responseSchema == null && responseFormat === "json";
+  if (schemaRidesPrompt || (bareJsonMode && !/json/i.test(`${systemPrompt ?? ""}\n${message}`))) {
     const line = jsonObjectPromptLine(responseSchema ?? undefined);
     systemPrompt = systemPrompt ? `${systemPrompt}\n\n${line}` : line;
   }

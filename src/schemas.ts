@@ -1416,6 +1416,64 @@ registry.registerPath({
   },
 });
 
+// --- Internal: answers that do not follow the caller's responseSchema (SCHEMA-HONOURED-1115) ---
+
+export const SchemaConformanceQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(30).openapi({ description: "How many UTC days, today included (1..90, default 30)." }),
+});
+
+const SchemaConformanceModelSchema = z.object({
+  provider: z.string().openapi({ example: "moonshot" }),
+  model: z.string().openapi({ description: "The concrete model id that answered.", example: "kimi-k3" }),
+  answeredCalls: z.number().int().openapi({ description: "Schema'd answers on the window (all routes)." }),
+  nonConformingCalls: z.number().int().openapi({ description: "Of them, answers that did not follow the caller's responseSchema (or were not JSON)." }),
+  conformingShare: z.number().openapi({ description: "Share of answers that followed the schema, 0..1." }),
+  verdict: z.enum(["ok", "broken", "not_enough_answers"]).openapi({
+    description: "broken (red) = more than 5% of at least 20 answers missed the schema; not_enough_answers = under 20 answers, normal colours.",
+  }),
+  sentence: z.string().openapi({ description: "One plain sentence to print as is." }),
+  lastViolations: z.string().nullable().openapi({ description: "What the latest non-conforming answer got wrong, e.g. '(root) is missing required key \"message\"'." }),
+  lastNonConformingAt: z.string().nullable().openapi({ description: "ISO time of the latest non-conforming answer." }),
+});
+
+const SchemaConformanceDaySchema = z.object({
+  day: z.string().openapi({ description: "UTC day, YYYY-MM-DD." }),
+  provider: z.string(),
+  model: z.string(),
+  route: z.enum(["complete", "platform-complete", "lead-turn"]),
+  answeredCalls: z.number().int(),
+  nonConformingCalls: z.number().int(),
+});
+
+const SchemaConformanceResponseSchema = z
+  .object({
+    days: z.number().int(),
+    verdict: z.enum(["ok", "broken"]).openapi({ description: "broken when any model is broken." }),
+    models: z.array(SchemaConformanceModelSchema).openapi({ description: "One row per model that answered a schema'd call on the window, broken first." }),
+    series: z.array(SchemaConformanceDaySchema).openapi({ description: "Stored rows (UTC day x provider x model x route), oldest first; a day with no schema'd answer has no row." }),
+  })
+  .openapi("SchemaConformanceResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/schema-conformance",
+  tags: ["Internal"],
+  summary: "Answers that do not follow the caller's responseSchema, per model per day (Monitoring)",
+  description:
+    "Every schema'd answer on /complete, /internal/platform-complete and a lead turn's answer is checked against the caller's own responseSchema " +
+    "(shape only: types, required keys, enums, bounds, forbidden keys; never the content of a text) and counted. MEASURED, never refused yet: " +
+    "the answer is served unchanged either way (SCHEMA-HONOURED-1115).",
+  request: {
+    headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
+    query: SchemaConformanceQuerySchema,
+  },
+  responses: {
+    200: { description: "Verdicts and the daily series", content: { "application/json": { schema: SchemaConformanceResponseSchema } } },
+    400: { description: "Invalid days", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing x-api-key header", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 // --- Internal: the Copilot writes the Lead event answer (ONE-AI-CONVERSES-1029) ---
 
 export const LeadTurnRequestSchema = z
