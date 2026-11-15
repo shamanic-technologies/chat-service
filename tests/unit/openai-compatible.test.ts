@@ -345,16 +345,41 @@ describe("buildVendorRequestBody", () => {
     expect((noSystem.messages as Array<{ role: string; content: string }>)[0]).toEqual({ role: "system", content: "Answer with one JSON object." });
   });
 
-  it("a prompt that already names JSON, or a json_schema request, is sent byte for byte", () => {
-    const schema = { type: "object" };
+  // SCHEMA-HONOURED-1115 (live probe 2026-11-16): a DeepSeek caller whose prompt said "Answer in JSON." never
+  // received its schema and answered 0/5 in the schema's keys. The schema line rides every schema'd request.
+  it("a json_object request carries its schema even when the prompt already names JSON", () => {
+    const schema = { type: "object", properties: { zq7_decision: { type: "string" } } };
     const named = buildVendorRequestBody({
       vendor: "deepseek", apiKey: "k", model: "deepseek-flash", systemPrompt: "Return JSON only.", message: "m", responseSchema: schema,
     });
+    expect(named.messages).toEqual([
+      { role: "system", content: `Return JSON only.\n\n${jsonObjectPromptLine(schema)}` },
+      { role: "user", content: "m" },
+    ]);
+  });
+
+  it("a schema-less prompt that already names JSON is sent byte for byte", () => {
+    const named = buildVendorRequestBody({
+      vendor: "deepseek", apiKey: "k", model: "deepseek-flash", systemPrompt: "Return JSON only.", message: "m", responseFormat: "json",
+    });
     expect(named.messages).toEqual([{ role: "system", content: "Return JSON only." }, { role: "user", content: "m" }]);
-    const strict = buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "glm-5.2", systemPrompt: "S", message: "m", responseSchema: schema });
-    expect(strict.messages).toEqual([{ role: "system", content: "S" }, { role: "user", content: "m" }]);
     const text = buildVendorRequestBody({ vendor: "deepseek", apiKey: "k", model: "deepseek-flash", systemPrompt: "S", message: "m" });
     expect(text.messages).toEqual([{ role: "system", content: "S" }, { role: "user", content: "m" }]);
+  });
+
+  // SCHEMA-HONOURED-1115: no direct vendor proved it enforces a schema (Kimi K3 / GPT-6.1 Terra 0/10 on a live
+  // probe), so the schema also rides the system prompt beside the json_schema response_format.
+  it("a json_schema vendor that does not enforce the schema also gets it in the system prompt", () => {
+    const schema = { type: "object", properties: { decision: { type: "string", enum: ["now", "later"] } } };
+    for (const [vendor, model] of [["zai", "glm-5.3-flash"], ["moonshot", "kimi-k3"], ["openai", "gpt-6.1-terra"]] as const) {
+      expect(VENDORS[vendor].schemaEnforced).toBe(false);
+      const body = buildVendorRequestBody({ vendor, apiKey: "k", model, systemPrompt: "Answer in JSON.", message: "m", responseSchema: schema });
+      expect(body.messages).toEqual([
+        { role: "system", content: `Answer in JSON.\n\n${jsonObjectPromptLine(schema)}` },
+        { role: "user", content: "m" },
+      ]);
+      expect((body.response_format as { type: string }).type).toBe("json_schema");
+    }
   });
 
   it("leaves the json_schema vendors untouched — only DeepSeek downgrades", () => {
