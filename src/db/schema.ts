@@ -362,6 +362,23 @@ export const vendorCreditDays = pgTable(
   (table) => [primaryKey({ name: "vendor_credit_days_pk", columns: [table.day, table.provider] })],
 );
 
+// SCHEMA-HONOURED-1115 (migration 0032): schema'd answers per UTC day x provider x model x route, and how many
+// did not follow the caller's responseSchema (`src/lib/response-schema.ts`).
+export const schemaConformanceDays = pgTable(
+  "schema_conformance_days",
+  {
+    day: date("day").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    route: text("route").notNull(),
+    answeredCalls: integer("answered_calls").notNull().default(0),
+    nonConformingCalls: integer("non_conforming_calls").notNull().default(0),
+    lastViolations: text("last_violations"),
+    lastNonConformingAt: timestamp("last_non_conforming_at", { withTimezone: true }),
+  },
+  (table) => [primaryKey({ name: "schema_conformance_days_pk", columns: [table.day, table.provider, table.model, table.route] })],
+);
+
 // BRAND-MCP-1109 (migration 0031): the MCP servers a brand gives to our
 // conversation AI. The Authorization value lives in key-service (brand key
 // `mcp-server-<id>`), never here. The last connect check is stored so the
