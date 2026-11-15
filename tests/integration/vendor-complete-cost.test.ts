@@ -688,6 +688,72 @@ describe("POST /complete — direct vendor routing", () => {
     });
   }
 
+  // SCHEMA-HONOURED-1115 (prod 2026-11-15): GLM-5.3 Flash answered the lead answerer with empty objects and
+  // garbage beside the decision, all served as 200 and sent to prospects. A schema'd answer that does not
+  // follow the schema is a vendor failure: 502 naming the violations, never a success.
+  const LEAD_SCHEMA = {
+    type: "object",
+    properties: { decision: { type: "string", enum: ["now", "later", "nothing"] }, message: { type: "string" } },
+    required: ["decision", "message"],
+    additionalProperties: false,
+  };
+  for (const c of [
+    { content: "{}", violation: 'missing required key "decision"' },
+    { content: '{"decision":"cold_email_followup","message":"m"}', violation: "/decision must be one of" },
+    { content: '{"decision":"now","message":"m","subject":"s"}', violation: '"subject"' },
+  ]) {
+    it(`fails loud (502) on a non-conforming answer ${c.content}`, async () => {
+      const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+      const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+      routes.push(
+        mockRunsCreate(),
+        mockVendorKey("zai"),
+        mockBilling(),
+        mockVendor(vendor, { host: ZAI_URL, model: "glm-5.3-flash", usage: { prompt_tokens: 30, completion_tokens: 9 }, content: c.content }),
+        ...mockRunsCostRoutes(cap),
+        mockRunsStatusPatch(),
+      );
+      const res = await request(app)
+        .post("/complete")
+        .set(AUTH)
+        .send({ message: "answer the lead", systemPrompt: "be brief", provider: "zai", model: "glm-flash", responseSchema: LEAD_SCHEMA });
+      expect(res.status).toBe(502);
+      expect(res.body.error).toBe("LLM answer does not follow the responseSchema.");
+      expect(res.body.detail).toContain(c.violation);
+      expect(res.body.json).toBeUndefined();
+      expect(vendor.calls).toBe(1); // no silent retry
+    });
+  }
+
+  it("serves a conforming answer unchanged", async () => {
+    const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+    const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+    routes.push(
+      mockRunsCreate(),
+      mockVendorKey("zai"),
+      mockBilling(),
+      mockVendor(vendor, { host: ZAI_URL, model: "glm-5.3-flash", usage: { prompt_tokens: 30, completion_tokens: 9 }, content: '{"decision":"later","message":""}' }),
+      ...mockRunsCostRoutes(cap),
+      mockRunsStatusPatch(),
+    );
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "answer the lead", systemPrompt: "be brief", provider: "zai", model: "glm-flash", responseSchema: LEAD_SCHEMA });
+    expect(res.status).toBe(200);
+    expect(res.body.json).toEqual({ decision: "later", message: "" });
+  });
+
+  it("refuses a schema that cannot be compiled, before any spend", async () => {
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "m", systemPrompt: "s", provider: "zai", model: "glm-flash", responseSchema: { type: "object", properties: { a: { $ref: "#/nowhere" } } } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/responseSchema cannot be compiled/);
+    expect(fetchCalls).toEqual([]);
+  });
+
   it("still sends Z.ai and Moonshot the full json_schema form — only DeepSeek differs", async () => {
     for (const c of [
       { provider: "zai", model: "glm-pro", host: ZAI_URL, wire: "glm-5.3" },
@@ -977,6 +1043,34 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
     // Platform runs post actuals only — no provision, no hold.
     expect(actual.every((i) => i.status === undefined)).toBe(true);
     expect(actual.every((i) => i.costSource === "platform")).toBe(true);
+  });
+
+  it("fails loud (502) on an answer that does not follow the responseSchema (SCHEMA-HONOURED-1115)", async () => {
+    const costCap = { postedItems: [] as CostItem[][] };
+    const vendor = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
+    routes.push(
+      mockVendorPlatformKey("zai"),
+      mockPlatformRunCreate(),
+      mockPlatformRunCosts(costCap),
+      mockPlatformRunStatus(),
+      mockVendor(vendor, { host: ZAI_URL, model: "glm-5.3-flash", usage: { prompt_tokens: 40, completion_tokens: 2 }, content: "{}" }),
+    );
+    const res = await request(app)
+      .post("/internal/platform-complete")
+      .set(INTERNAL_AUTH)
+      .send({
+        message: "hi",
+        systemPrompt: "be brief",
+        provider: "zai",
+        model: "glm-flash",
+        responseSchema: { type: "object", properties: { message: { type: "string" } }, required: ["message"] },
+        support: TEST_PLATFORM_SUPPORT,
+      });
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe("LLM answer does not follow the responseSchema.");
+    expect(res.body.detail).toContain('missing required key "message"');
+    // The vendor ran and billed: the spend is still declared.
+    expect(costCap.postedItems.length).toBeGreaterThan(0);
   });
 
   it("declares Z.ai cached input with no regime segment", async () => {

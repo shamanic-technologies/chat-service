@@ -527,6 +527,14 @@ export interface VendorConfig {
    *
    * A fourth vendor states its own value here after probing the live API;
    * `tests/unit/openai-compatible.test.ts` asserts every vendor declares one.
+   *
+   * Accepting the form is NOT enforcing it (SCHEMA-HONOURED-1115). Live probe
+   * 2026-11-16, one rich lead-answer schema (enum, integer, required, no extra
+   * keys), 10 calls each, conforming answers: glm-5.3-flash 10/10, glm-5.3 9/10
+   * (+1 truncated JSON), kimi-k3 0/10, gpt-6.1-terra 0/10 (both dropped a
+   * required key), deepseek-flash 10/10 with the schema line in its prompt and
+   * 0/5 without it. So every answer is checked against the caller's schema
+   * after the parse (`response-schema.ts`), whatever this value says.
    */
   structuredOutput: "json_schema" | "json_object";
   /**
@@ -1391,7 +1399,8 @@ export function vendorReasoningFields(
  * rule). A caller that sends a `responseSchema` reasonably says nothing about JSON in its prose, and on a
  * `json_schema` vendor it never has to; the day the Rating picked DeepSeek for such a step (ai-meeting-booking
  * draft_reply, 2026-11-05 04:30 UTC) every call 400'd. The schema rides along because a `json_object` vendor has
- * nowhere else to receive it. A prompt that already names JSON is sent byte for byte as before.
+ * nowhere else to receive it, so with a schema the line is ALWAYS added (SCHEMA-HONOURED-1115); a schema-less
+ * request whose prompt already names JSON is sent byte for byte.
  */
 export function jsonObjectPromptLine(responseSchema: Record<string, unknown> | undefined): string {
   return responseSchema != null
@@ -1403,10 +1412,14 @@ export function buildVendorRequestBody(options: VendorCompleteOptions): Record<s
   const { model, message, responseFormat, responseSchema, temperature, maxOutputTokens } = options;
   let { systemPrompt } = options;
 
-  const jsonObjectMode =
-    (responseSchema != null && vendorConfig(options.vendor).structuredOutput === "json_object") ||
-    (responseSchema == null && responseFormat === "json");
-  if (jsonObjectMode && !/json/i.test(`${systemPrompt ?? ""}\n${message}`)) {
+  // A schema sent to a `json_object` vendor reaches the model ONLY through this line: the vendor has no other
+  // place for it. So it rides whenever there is a schema, whatever the prompt says (SCHEMA-HONOURED-1115:
+  // a caller prompt that already said "JSON" used to suppress it, and DeepSeek answered 0/5 in the schema's
+  // shape on a live probe, inventing its own keys). Without a schema, the bare line is added only when no
+  // prompt names JSON (the vendor's own 400 rule).
+  const schemaRidesPrompt = responseSchema != null && vendorConfig(options.vendor).structuredOutput === "json_object";
+  const bareJsonMode = responseSchema == null && responseFormat === "json";
+  if (schemaRidesPrompt || (bareJsonMode && !/json/i.test(`${systemPrompt ?? ""}\n${message}`))) {
     const line = jsonObjectPromptLine(responseSchema ?? undefined);
     systemPrompt = systemPrompt ? `${systemPrompt}\n\n${line}` : line;
   }

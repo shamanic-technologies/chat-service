@@ -268,6 +268,30 @@ describe("POST /internal/copilot/lead-turns: the Copilot writes the Lead event a
     expect(state.messageInserts.filter((m) => m.role === "assistant")).toEqual([expect.objectContaining({ content: ANSWER.message, proactiveTrigger: true })]);
   }, 30_000);
 
+  // SCHEMA-HONOURED-1115: an answer outside the writer's schema never reaches the send; the model is told what
+  // is wrong, and only a conforming answer is served.
+  it("an answer_person call outside the writer's schema is refused back to the model, never served", async () => {
+    const app = (await import("../../src/index.js")).default;
+    const bad = { decision: "cold_email_followup", message: "M3" };
+    const gemini = { bodies: [] as Array<Record<string, unknown>>, replies: [{ call: { name: "answer_person", args: bad } }, { call: { name: "answer_person", args: ANSWER } }] as GeminiReply[] };
+    routes.push(...baseRoutes(gemini, app, null));
+    const res = await request(app).post("/internal/copilot/lead-turns").set(HEADERS).send(BODY);
+    expect(res.status).toBe(200);
+    expect(res.body.json).toMatchObject(ANSWER);
+    expect(JSON.stringify(gemini.bodies[1].contents)).toContain("/decision must be one of");
+  }, 30_000);
+
+  it("refuses a writer schema that cannot be compiled, before any turn", async () => {
+    const app = (await import("../../src/index.js")).default;
+    const res = await request(app)
+      .post("/internal/copilot/lead-turns")
+      .set(HEADERS)
+      .send({ ...BODY, responseSchema: { ...SCHEMA, properties: { ...SCHEMA.properties, x: { $ref: "#/nowhere" } } } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/responseSchema cannot be compiled/);
+    expect(state.leadTurns).toEqual([]);
+  });
+
   it("a turn that never answers fails loud (502), the key can run again", async () => {
     const app = (await import("../../src/index.js")).default;
     const gemini = { bodies: [] as Array<Record<string, unknown>>, replies: [{ text: "a" }, { text: "b" }] as GeminiReply[] };

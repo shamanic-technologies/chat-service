@@ -282,7 +282,7 @@ Response:
 ```
 
 - `content` — raw text response (always present).
-- `json` — parsed JSON object (present when `responseFormat: "json"` or when `responseSchema` is set). Populated by a strict `JSON.parse(content)` fast path, with a **first-complete-value recovery** for two provider quirks: a value wrapped in a markdown ```` ``` ```` fence, or a complete value followed by trailing prose (Gemini 3 thinking models leak trailing content despite JSON-mode metadata). Recovery is a balanced, string-aware scan only — no jsonrepair, no LLM-assisted repair. Genuinely broken output (empty, leading non-fence prose, truncated/unbalanced JSON) still returns **502**.
+- `json` — parsed JSON object (present when `responseFormat: "json"` or when `responseSchema` is set). Populated by a strict `JSON.parse(content)` fast path, with a **first-complete-value recovery** for two provider quirks: a value wrapped in a markdown ```` ``` ```` fence, or a complete value followed by trailing prose (Gemini 3 thinking models leak trailing content despite JSON-mode metadata). Recovery is a balanced, string-aware scan only — no jsonrepair, no LLM-assisted repair. Genuinely broken output (empty, leading non-fence prose, truncated/unbalanced JSON) still returns **502**. **When the request carried a `responseSchema`, the parsed value must also follow it** (types, required keys, enums, bounds, keys the schema forbids; `format` is an annotation and is not asserted): a non-conforming answer, an empty object included, is **502** `{error: "LLM answer does not follow the responseSchema.", detail}` naming each violation, never a 200. Only the shape is checked, never the content of a text field. A `responseSchema` that cannot be compiled (a `$ref` to nowhere) is **400** before any spend (SCHEMA-HONOURED-1115).
 - `tokensInput` / `tokensOutput` — token usage
 - `model` — the versioned model ID that was actually used (resolved from the provider + alias)
 
@@ -436,6 +436,8 @@ There is likewise **no cross-vendor fallback**. A vendor being down fails loud: 
 chat-service does **not** send OpenAI's `strict: true`. Strict mode additionally requires `additionalProperties: false` on every object node and every property listed in `required` — that is the *Anthropic* dialect (`prepareAnthropicSchema`), not the shape a caller's schema arrives in here, and the two normalizers are deliberately mirror images that must not be merged. Non-strict `json_schema` is what the vendor serves without rewriting the caller's schema; `parseModelJsonOutput` still fails loud (502) on output it cannot read.
 
 A caller's `responseSchema` is forwarded as `json_schema` to a vendor that implements it, and as that vendor's own `json_object` mode to one that does not. The second case is **not a fallback**: the caller gets the model it asked for, under the strongest enforcement that vendor offers, and the schema simply has nowhere to travel — the vendor has no field for it. What we must never do is send a form the vendor refuses, which is not stricter, it is zero completions.
+
+On a `json_object` vendor the schema reaches the model only as a line added to the system prompt, so with a `responseSchema` that line is **always** added, even when the caller's prompt already says "JSON" (it used to be skipped then, and DeepSeek answered 0/5 in the schema's keys on a live probe, 2026-11-16). Whatever the vendor, the answer is then checked against the caller's schema (502 on a mismatch, see `json` above): provider enforcement is a strong hint, never the guarantee (live probe 2026-11-16, rich lead-answer schema, 10 calls each: Kimi K3 and GPT-6.1 Terra dropped a required key 10/10 while answering 200).
 
 Enforcement strength therefore varies by vendor and model, and a request may reach a model that treats JSON mode as a hint. This is still not silent: `parseModelJsonOutput` fails loud (**502**) on output it cannot read, and a schema mismatch surfaces to the caller rather than being repaired. It is also precisely what a bake-off has to measure before any existing caller is migrated onto one of these models.
 
@@ -1145,7 +1147,7 @@ Everything else — the pinned release on the wire, the refusal to flatten an an
 
 ## JSON Mode
 
-`/complete` and `/internal/platform-complete` support JSON output via `responseFormat: "json"` and/or `responseSchema`. Enforcement is provider-native only — no system-prompt injection, no jsonrepair fallback, no LLM repair rounds.
+`/complete` and `/internal/platform-complete` support JSON output via `responseFormat: "json"` and/or `responseSchema`. Enforcement is provider-native (plus the schema line a `json_object` vendor needs to see the schema at all), then CHECKED: the parsed answer is validated against the caller's `responseSchema` and a mismatch is a 502 (SCHEMA-HONOURED-1115). No jsonrepair fallback, no LLM repair rounds, no retry, no default filled in.
 
 | Provider | `responseFormat: "json"` alone | `responseSchema` (with or without `responseFormat`) |
 |----------|-------------------------------|------------------------------------------------------|

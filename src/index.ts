@@ -326,6 +326,7 @@ import {
 import { scrapeUrl } from "./lib/scraping-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import { ModelJsonOutputError, parseModelJsonOutput } from "./lib/json-output.js";
+import { ModelSchemaMismatchError, ResponseSchemaInvalidError, assertFollowsResponseSchema, compileResponseSchema } from "./lib/response-schema.js";
 import {
   resolveKey,
   resolvePlatformKey,
@@ -871,6 +872,17 @@ async function handleComplete(req: express.Request, res: express.Response, retry
   // Passing a responseSchema implies JSON-mode parsing of the response.
   const jsonMode = responseFormat === "json" || responseSchema != null;
 
+  // The caller's schema is the contract every answer is checked against (SCHEMA-HONOURED-1115): one that
+  // cannot be compiled could never be checked, so it is refused here, before any spend.
+  if (responseSchema != null) {
+    try {
+      compileResponseSchema(responseSchema);
+    } catch (err) {
+      if (err instanceof ResponseSchemaInvalidError) return res.status(400).json({ error: err.message });
+      throw err;
+    }
+  }
+
   // Resolve versioned model from (provider, alias) pair, then route around a
   // provider that is out of credit (VENDOR-CREDIT-1030): `resolved` is the
   // model this attempt CALLS, so key, cost names and run all follow it.
@@ -1201,6 +1213,8 @@ async function handleComplete(req: express.Request, res: express.Response, retry
     // complete JSON value, but fail loud when no valid JSON value is present.
     if (jsonMode) {
       response.json = parseModelJsonOutput(result.content);
+      // The answer follows the caller's schema, or the call failed (SCHEMA-HONOURED-1115).
+      if (responseSchema != null) assertFollowsResponseSchema(response.json, responseSchema);
     }
 
     res.json(response);
@@ -1244,7 +1258,12 @@ async function handleComplete(req: express.Request, res: express.Response, retry
       });
     } else {
       res.status(502).json({
-        error: err instanceof ModelJsonOutputError ? "LLM returned invalid JSON." : "LLM call failed. Please try again.",
+        error:
+          err instanceof ModelSchemaMismatchError
+            ? "LLM answer does not follow the responseSchema."
+            : err instanceof ModelJsonOutputError
+              ? "LLM returned invalid JSON."
+              : "LLM call failed. Please try again.",
         ...(err instanceof ModelJsonOutputError ? { detail: err.message } : {}),
       });
     }
@@ -2721,6 +2740,17 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
   // Passing a responseSchema implies JSON-mode parsing of the response.
   const jsonMode = responseFormat === "json" || responseSchema != null;
 
+  // The caller's schema is the contract every answer is checked against (SCHEMA-HONOURED-1115): one that
+  // cannot be compiled could never be checked, so it is refused here, before any spend.
+  if (responseSchema != null) {
+    try {
+      compileResponseSchema(responseSchema);
+    } catch (err) {
+      if (err instanceof ResponseSchemaInvalidError) return res.status(400).json({ error: err.message });
+      throw err;
+    }
+  }
+
   // Same refusal as /complete for a brandTools request this provider cannot serve.
   const brandToolsRefusal = brandToolsRefusalFor(brandTools, provider, { webSearch, imageUrl: false });
   if (brandToolsRefusal) return res.status(400).json({ error: brandToolsRefusal });
@@ -2940,6 +2970,8 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
     // Same JSON parsing contract as /complete.
     if (jsonMode) {
       response.json = parseModelJsonOutput(result.content);
+      // The answer follows the caller's schema, or the call failed (SCHEMA-HONOURED-1115).
+      if (responseSchema != null) assertFollowsResponseSchema(response.json, responseSchema);
     }
 
     res.json(response);
@@ -2980,7 +3012,12 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
       });
     } else {
       res.status(502).json({
-        error: err instanceof ModelJsonOutputError ? "LLM returned invalid JSON." : "LLM call failed. Please try again.",
+        error:
+          err instanceof ModelSchemaMismatchError
+            ? "LLM answer does not follow the responseSchema."
+            : err instanceof ModelJsonOutputError
+              ? "LLM returned invalid JSON."
+              : "LLM call failed. Please try again.",
         ...(err instanceof ModelJsonOutputError ? { detail: err.message } : {}),
       });
     }
@@ -4141,6 +4178,12 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         if (text !== undefined && text !== null && typeof text !== "string") {
           throw new Error(`${LEAD_ANSWER_TOOL_NAME}: ${leadTurn.payload.messageField} must be the text they receive (a string, empty when you write nothing now).`);
         }
+        // The answer follows the writer's schema (the tool's own input schema), or the call is refused
+        // back to the model naming what is wrong; it never reaches the send (SCHEMA-HONOURED-1115).
+        const answerTool = buildLeadAnswerTool(leadTurn.payload.responseSchema, leadTurn.payload.messageField, {
+          replyTo: (leadTurn.whatsapp?.shown.length ?? 0) > 0,
+        });
+        assertFollowsResponseSchema(args, answerTool.input_schema as Record<string, unknown>);
         if (typeof text === "string") args[leadTurn.payload.messageField] = stripLongDashes(text);
         // The label of the message she quotes back becomes its event id (the send's replyToEventId).
         const moment = leadTurnId && leadTurn.whatsapp ? leadTurnMoment(leadTurnId) : null;
@@ -6075,6 +6118,14 @@ app.post("/internal/copilot/lead-turns", requireInternalAuth, async (req, res) =
     return res.status(400).json({ error: "x-org-id, x-user-id and x-run-id headers are required (the writer's run)" });
   }
   const turn = parsed.data;
+  // The answer is checked against the writer's schema (SCHEMA-HONOURED-1115): one that cannot be compiled is
+  // refused here, before any turn or spend.
+  try {
+    compileResponseSchema(turn.responseSchema);
+  } catch (err) {
+    if (err instanceof ResponseSchemaInvalidError) return res.status(400).json({ error: err.message });
+    throw err;
+  }
   const [existing] = await db
     .select()
     .from(copilotLeadTurns)

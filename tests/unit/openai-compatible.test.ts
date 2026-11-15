@@ -345,10 +345,23 @@ describe("buildVendorRequestBody", () => {
     expect((noSystem.messages as Array<{ role: string; content: string }>)[0]).toEqual({ role: "system", content: "Answer with one JSON object." });
   });
 
-  it("a prompt that already names JSON, or a json_schema request, is sent byte for byte", () => {
-    const schema = { type: "object" };
+  // SCHEMA-HONOURED-1115 (live probe 2026-11-16): a DeepSeek caller whose prompt said "Answer in JSON." never
+  // received its schema and answered 0/5 in the schema's keys. The schema line rides every schema'd request.
+  it("a json_object request carries its schema even when the prompt already names JSON", () => {
+    const schema = { type: "object", properties: { zq7_decision: { type: "string" } } };
     const named = buildVendorRequestBody({
       vendor: "deepseek", apiKey: "k", model: "deepseek-flash", systemPrompt: "Return JSON only.", message: "m", responseSchema: schema,
+    });
+    expect(named.messages).toEqual([
+      { role: "system", content: `Return JSON only.\n\n${jsonObjectPromptLine(schema)}` },
+      { role: "user", content: "m" },
+    ]);
+  });
+
+  it("a schema-less prompt that already names JSON, or a json_schema request, is sent byte for byte", () => {
+    const schema = { type: "object" };
+    const named = buildVendorRequestBody({
+      vendor: "deepseek", apiKey: "k", model: "deepseek-flash", systemPrompt: "Return JSON only.", message: "m", responseFormat: "json",
     });
     expect(named.messages).toEqual([{ role: "system", content: "Return JSON only." }, { role: "user", content: "m" }]);
     const strict = buildVendorRequestBody({ vendor: "zai", apiKey: "k", model: "glm-5.2", systemPrompt: "S", message: "m", responseSchema: schema });
