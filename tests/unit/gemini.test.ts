@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { completeWithGemini } from "../../src/lib/gemini.js";
+import { VendorUnsupportedOptionError } from "../../src/lib/openai-compatible.js";
 
 describe("completeWithGemini", () => {
   const fetchSpy = vi.fn();
@@ -252,26 +253,51 @@ describe("completeWithGemini", () => {
     expect(requestBody.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 8192 });
   });
 
-  // --- responseSchema passthrough ---
+  // --- responseSchema rides Google's JSON Schema field (SCHEMA-ANY-VENDOR-1116) ---
 
-  it("includes generationConfig.responseSchema when caller supplies a schema", async () => {
+  it("sends the caller's schema as generationConfig.responseJsonSchema, never the OpenAPI responseSchema", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     const schema = {
       type: "object",
       properties: { urls: { type: "array", items: { type: "string" } } },
       required: ["urls"],
+      additionalProperties: false,
     };
     await runWithTimers({ ...baseOptions, responseSchema: schema });
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.responseSchema).toEqual(schema);
+    expect(requestBody.generationConfig.responseJsonSchema).toEqual(schema);
+    expect(requestBody.generationConfig.responseSchema).toBeUndefined();
     expect(requestBody.generationConfig.responseMimeType).toBe("application/json");
   });
 
-  it("omits responseSchema when caller does not supply one", async () => {
+  it("accepts an enum holding the empty string and serves the answer unchanged (prod 2026-11-16, lead answerer)", async () => {
+    // Google's OpenAPI responseSchema answered 400 `properties[replyTo].enum[2]: cannot be empty` to this
+    // valid JSON Schema; its JSON Schema field takes it (probed live 2026-11-16).
+    const answer = JSON.stringify({ decision: "now", replyTo: "", message: "Hi" });
+    fetchSpy.mockResolvedValueOnce(okResponse(answer));
+    const schema = {
+      type: "object",
+      properties: {
+        decision: { type: "string", enum: ["now", "later", "nothing"] },
+        replyTo: { type: "string", enum: ["thread-a", "thread-b", ""] },
+        message: { type: "string" },
+      },
+      required: ["decision", "replyTo", "message"],
+      additionalProperties: false,
+    };
+    const result = await runWithTimers({ ...baseOptions, responseSchema: schema });
+    const sent = JSON.parse(fetchSpy.mock.calls[0][1].body).generationConfig.responseJsonSchema;
+    expect(sent.properties.replyTo.enum).toEqual(["thread-a", "thread-b", ""]);
+    expect(result.content).toBe(answer);
+    expect(JSON.parse(result.content).replyTo).toBe("");
+  });
+
+  it("omits both schema fields when the caller does not supply one", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     await runWithTimers(baseOptions);
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(requestBody.generationConfig.responseSchema).toBeUndefined();
+    expect(requestBody.generationConfig.responseJsonSchema).toBeUndefined();
   });
 
   it("forces responseMimeType: application/json when responseSchema is set even if responseFormat is omitted", async () => {
@@ -284,69 +310,30 @@ describe("completeWithGemini", () => {
     });
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
     expect(requestBody.generationConfig.responseMimeType).toBe("application/json");
-    expect(requestBody.generationConfig.responseSchema).toEqual(schema);
+    expect(requestBody.generationConfig.responseJsonSchema).toEqual(schema);
   });
 
-  // --- responseSchema sanitization (Gemini OpenAPI 3.0 subset) ---
-
-  it("strips additionalProperties from the root of responseSchema", async () => {
-    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
-    const schema = {
-      type: "object",
-      additionalProperties: false,
-      properties: { urls: { type: "array", items: { type: "string" } } },
-      required: ["urls"],
-    };
-    await runWithTimers({ ...baseOptions, responseSchema: schema });
-    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    expect(requestBody.generationConfig.responseSchema.additionalProperties).toBeUndefined();
-    expect(requestBody.generationConfig.responseSchema.type).toBe("object");
-    expect(requestBody.generationConfig.responseSchema.properties).toBeDefined();
-  });
-
-  it("strips additionalProperties from nested items (reproduces upstream 400 error path)", async () => {
-    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
-    // Mirrors Gemini's reported failure path: properties[0].value.items.additionalProperties
-    const schema = {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        outlets: {
-          type: "array",
-          items: {
-            type: "object",
-            additionalProperties: false,
-            properties: { name: { type: "string" } },
-          },
-        },
-      },
-    };
-    await runWithTimers({ ...baseOptions, responseSchema: schema });
-    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-    const sent = requestBody.generationConfig.responseSchema;
-    expect(sent.additionalProperties).toBeUndefined();
-    expect(sent.properties.outlets.items.additionalProperties).toBeUndefined();
-    expect(sent.properties.outlets.items.type).toBe("object");
-    expect(sent.properties.outlets.items.properties.name.type).toBe("string");
-  });
-
-  it("strips $schema, $ref, $defs, definitions, patternProperties from responseSchema", async () => {
+  it("keeps the keywords the old allow-list dropped ($defs/$ref, const, additionalProperties) and rewrites the tuple form", async () => {
     fetchSpy.mockResolvedValueOnce(okResponse("{}"));
     const schema = {
       $schema: "http://json-schema.org/draft-07/schema#",
       $defs: { Foo: { type: "string" } },
-      definitions: { Bar: { type: "number" } },
       type: "object",
-      patternProperties: { "^x-": { type: "string" } },
-      properties: { ref: { $ref: "#/$defs/Foo" } },
+      additionalProperties: false,
+      properties: {
+        ref: { $ref: "#/$defs/Foo" },
+        kind: { type: "string", const: "lead" },
+        pair: { type: "array", items: [{ type: "string" }, { type: "number" }] },
+      },
     };
     await runWithTimers({ ...baseOptions, responseSchema: schema });
-    const sent = JSON.parse(fetchSpy.mock.calls[0][1].body).generationConfig.responseSchema;
-    expect(sent.$schema).toBeUndefined();
-    expect(sent.$defs).toBeUndefined();
-    expect(sent.definitions).toBeUndefined();
-    expect(sent.patternProperties).toBeUndefined();
-    expect(sent.properties.ref.$ref).toBeUndefined();
+    const sent = JSON.parse(fetchSpy.mock.calls[0][1].body).generationConfig.responseJsonSchema;
+    expect(sent.$defs).toEqual({ Foo: { type: "string" } });
+    expect(sent.properties.ref.$ref).toBe("#/$defs/Foo");
+    expect(sent.properties.kind.const).toBe("lead");
+    expect(sent.additionalProperties).toBe(false);
+    // Google refuses `items: [...]` ("must be a boolean or an object"): the same tuple as prefixItems.
+    expect(sent.properties.pair).toEqual({ type: "array", prefixItems: [{ type: "string" }, { type: "number" }] });
   });
 
   it("does not mutate the caller-provided schema", async () => {
@@ -354,100 +341,11 @@ describe("completeWithGemini", () => {
     const schema = {
       type: "object",
       additionalProperties: false,
-      properties: {
-        outlets: {
-          type: "array",
-          items: { type: "object", additionalProperties: false, properties: { name: { type: "string" } } },
-        },
-      },
+      properties: { pair: { type: "array", items: [{ type: "string" }] } },
     };
     const before = JSON.parse(JSON.stringify(schema));
     await runWithTimers({ ...baseOptions, responseSchema: schema });
     expect(schema).toEqual(before);
-  });
-
-  it("preserves Gemini-supported fields (anyOf, propertyOrdering, enum, format, nullable, minItems, maxItems)", async () => {
-    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
-    const schema = {
-      type: "object",
-      propertyOrdering: ["urls", "status"],
-      properties: {
-        urls: {
-          type: "array",
-          minItems: 1,
-          maxItems: 10,
-          items: { type: "string", format: "uri" },
-        },
-        status: {
-          anyOf: [
-            { type: "string", enum: ["ok", "fail"] },
-            { type: "null" },
-          ],
-          nullable: true,
-          description: "status string or null",
-        },
-      },
-      required: ["urls"],
-    };
-    await runWithTimers({ ...baseOptions, responseSchema: schema });
-    const sent = JSON.parse(fetchSpy.mock.calls[0][1].body).generationConfig.responseSchema;
-    expect(sent.propertyOrdering).toEqual(["urls", "status"]);
-    expect(sent.properties.urls.minItems).toBe(1);
-    expect(sent.properties.urls.maxItems).toBe(10);
-    expect(sent.properties.urls.items.format).toBe("uri");
-    expect(sent.properties.status.anyOf).toHaveLength(2);
-    expect(sent.properties.status.anyOf[0].enum).toEqual(["ok", "fail"]);
-    expect(sent.properties.status.nullable).toBe(true);
-    expect(sent.properties.status.description).toBe("status string or null");
-    expect(sent.required).toEqual(["urls"]);
-  });
-
-  it("recursively descends into anyOf / oneOf / allOf arrays", async () => {
-    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
-    const schema = {
-      anyOf: [
-        { type: "object", additionalProperties: false, properties: { a: { type: "string" } } },
-        { type: "object", additionalProperties: false, properties: { b: { type: "number" } } },
-      ],
-    };
-    await runWithTimers({ ...baseOptions, responseSchema: schema });
-    const sent = JSON.parse(fetchSpy.mock.calls[0][1].body).generationConfig.responseSchema;
-    expect(sent.anyOf[0].additionalProperties).toBeUndefined();
-    expect(sent.anyOf[1].additionalProperties).toBeUndefined();
-    expect(sent.anyOf[0].properties.a.type).toBe("string");
-    expect(sent.anyOf[1].properties.b.type).toBe("number");
-  });
-
-  it("warns once with [chat-service] prefix when fields are stripped", async () => {
-    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
-    const schema = {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        x: { type: "array", items: { type: "object", additionalProperties: false } },
-      },
-    };
-    await runWithTimers({ ...baseOptions, responseSchema: schema });
-    const warnCalls = (console.warn as ReturnType<typeof vi.fn>).mock.calls
-      .map((c) => c[0] as string)
-      .filter((msg) => msg.includes("schema sanitized"));
-    expect(warnCalls).toHaveLength(1);
-    expect(warnCalls[0]).toMatch(/^\[chat-service\]/);
-    expect(warnCalls[0]).toContain("additionalProperties");
-  });
-
-  it("does not warn when responseSchema is already Gemini-compatible", async () => {
-    fetchSpy.mockResolvedValueOnce(okResponse("{}"));
-    const schema = {
-      type: "object",
-      properties: { x: { type: "string" } },
-      required: ["x"],
-    };
-    await runWithTimers({ ...baseOptions, responseSchema: schema });
-    const warnCalls = (console.warn as ReturnType<typeof vi.fn>).mock.calls
-      .map((c) => c[0] as string)
-      .filter((msg) => msg.includes("schema sanitized"));
-    expect(warnCalls).toHaveLength(0);
   });
 
   // Was "does not send thinkingConfig" — that omission IS the #316 bug: a Gemini 3
@@ -474,9 +372,21 @@ describe("completeWithGemini", () => {
     await expect(runWithTimers(baseOptions)).rejects.toThrow("fetch failed");
   });
 
-  it("re-throws non-retryable HTTP errors (e.g. 400) without retrying", async () => {
-    fetchSpy.mockResolvedValueOnce(errorResponse(400, "bad request"));
-    await expect(runWithTimers(baseOptions)).rejects.toThrow("[gemini] API error 400: bad request");
+  it("a 400 shape refusal is a VendorUnsupportedOptionError carrying Google's message, never retried", async () => {
+    const vendorBody = '{"error":{"code":400,"message":"* GenerateContentRequest.generation_config.response_schema.properties[replyTo].enum[2]: cannot be empty","status":"INVALID_ARGUMENT"}}';
+    fetchSpy.mockResolvedValueOnce(errorResponse(400, vendorBody));
+    const err = await runWithTimers(baseOptions).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(VendorUnsupportedOptionError);
+    expect((err as VendorUnsupportedOptionError).status).toBe(400);
+    expect((err as VendorUnsupportedOptionError).vendorMessage).toBe(vendorBody);
+    expect((err as Error).message).toContain("enum[2]: cannot be empty");
+    expect((err as Error).message).toContain("retrying will not help");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-throws other non-retryable HTTP errors (e.g. 403) as-is without retrying", async () => {
+    fetchSpy.mockResolvedValueOnce(errorResponse(403, "forbidden"));
+    await expect(runWithTimers(baseOptions)).rejects.toThrow("[gemini] API error 403: forbidden");
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 

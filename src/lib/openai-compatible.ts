@@ -24,6 +24,8 @@
 // ---------------------------------------------------------------------------
 
 
+import { toPortableJsonSchema } from "./vendor-schema.js";
+
 /** Request timeout. Matches the Gemini Flash-tier budget. */
 const VENDOR_TIMEOUT_MS = 10 * 60_000;
 
@@ -1029,9 +1031,9 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     // `strict: true`: strict mode additionally
     // requires `additionalProperties: false` on every object node and every
     // property in `required`, which is the Anthropic dialect, not what a
-    // caller's schema arrives as here (see prepareAnthropicSchema — the
-    // mirror-image normalizer, deliberately not shared). Non-strict json_schema
-    // is what the vendor serves without a schema rewrite; parseModelJsonOutput
+    // caller's schema arrives as here (see vendor-schema.ts — the Anthropic
+    // dialect is its own translation). Non-strict json_schema is what the
+    // vendor serves with only the portable rewrite; parseModelJsonOutput
     // still fails loud on output it cannot read.
     structuredOutput: "json_schema",
     schemaEnforced: false,
@@ -1464,9 +1466,11 @@ export function buildVendorRequestBody(options: VendorCompleteOptions): Record<s
   // stops being enforced provider-side; the strict parse downstream still is.
   if (responseSchema != null) {
     if (vendorConfig(options.vendor).structuredOutput === "json_schema") {
+      // Lossless rewrites every JSON-Schema vendor accepts (SCHEMA-ANY-VENDOR-1116): OpenAI and Moonshot
+      // refuse the draft-07 tuple form, Moonshot an untyped enum.
       body.response_format = {
         type: "json_schema",
-        json_schema: { name: "response", schema: responseSchema },
+        json_schema: { name: "response", schema: toPortableJsonSchema(responseSchema) },
       };
     } else {
       body.response_format = { type: "json_object" };

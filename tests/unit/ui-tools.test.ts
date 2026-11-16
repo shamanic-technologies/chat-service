@@ -9,7 +9,7 @@ import {
   parseOpenPageArgs,
 } from "../../src/lib/ui-tools.js";
 import { REQUEST_USER_INPUT_TOOL, TOOL_REGISTRY } from "../../src/lib/anthropic.js";
-import { sanitizeGeminiSchema } from "../../src/lib/gemini.js";
+import { toPortableJsonSchema } from "../../src/lib/vendor-schema.js";
 
 describe("present_choices — parseChoicesArgs", () => {
   it("keeps every visual kind and sends the label when a card has no value", () => {
@@ -117,9 +117,8 @@ describe("rich-UI tool registration", () => {
     expect([...CLIENT_UI_TOOL_NAMES].sort()).toEqual(["open_page", "present_choices", "request_user_input"]);
   });
 
-  it("survives the Gemini schema sanitizer with its fields intact", () => {
-    const { schema, removed } = sanitizeGeminiSchema(PRESENT_CHOICES_TOOL.input_schema as unknown as Record<string, unknown>);
-    expect(removed).toEqual([]);
+  it("reaches Gemini with its fields intact", () => {
+    const schema = toPortableJsonSchema(PRESENT_CHOICES_TOOL.input_schema as unknown as Record<string, unknown>);
     const params = schema as { properties: { choices: { items: { properties: Record<string, unknown> } } } };
     expect(Object.keys(params.properties.choices.items.properties).sort()).toEqual([
       "description",

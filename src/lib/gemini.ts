@@ -4,6 +4,8 @@
 // ---------------------------------------------------------------------------
 
 import { readGeminiBilledTokens, type GeminiCostLine, type GeminiUsageMetadata } from "./gemini-usage.js";
+import { isUnsupportedOptionRefusal, VendorUnsupportedOptionError } from "./openai-compatible.js";
+import { toPortableJsonSchema } from "./vendor-schema.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -309,7 +311,7 @@ interface GeminiCompleteOptions {
   responseFormat?: "json";
   /**
    * Optional JSON Schema enforced server-side by Gemini via
-   * `generationConfig.responseSchema`. When present, JSON mode is implied
+   * `generationConfig.responseJsonSchema`. When present, JSON mode is implied
    * (responseMimeType: "application/json") even if responseFormat is unset.
    * Supported on all Gemini 2.5+ models (pro / flash / flash-lite).
    */
@@ -418,6 +420,23 @@ class GeminiRetryableError extends Error {
   }
 }
 
+/**
+ * A non-retryable Gemini refusal. A 400 / 422 refuses the request as SENT and will refuse it identically
+ * forever, so it is the same `VendorUnsupportedOptionError` the direct-vendor paths throw: the routes answer
+ * 400, retryable:false, with Google's own words — never "502, please try again" (SCHEMA-ANY-VENDOR-1116).
+ */
+export function geminiRequestError(status: number, model: string, errorText: string): Error {
+  if (isUnsupportedOptionRefusal(status)) {
+    return new VendorUnsupportedOptionError(
+      `[gemini] Google rejected the request as sent (${status} from ${model}): ${errorText.slice(0, 500)}. ` +
+        `This is a request-configuration error — retrying will not help.`,
+      status,
+      errorText,
+    );
+  }
+  return new Error(`[gemini] API error ${status}: ${errorText}`);
+}
+
 export class GeminiProviderError extends Error {
   constructor(
     public readonly status: number,
@@ -465,7 +484,7 @@ async function callGeminiOnce(
     if (RETRYABLE_STATUS_CODES.has(res.status)) {
       throw new GeminiRetryableError(res.status, `[gemini] API error ${res.status}: ${errorText}`);
     }
-    throw new Error(`[gemini] API error ${res.status}: ${errorText}`);
+    throw geminiRequestError(res.status, model, errorText);
   }
 
   const data = (await res.json()) as {
@@ -625,85 +644,6 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Gemini's `Schema` (responseSchema AND function-declaration `parameters`) is a
- * restricted OpenAPI 3.0 subset: any field it does not know is a HTTP 400
- * (`Unknown name "propertyNames" at 'tools[0].function_declarations[27]...'`).
- * So the sanitizer is an ALLOW-LIST of the fields Google documents
- * (https://ai.google.dev/api/caching#Schema), never a deny-list: a deny-list
- * misses the next JSON Schema keyword a brand's MCP server emits (prod
- * 2026-11-12, GEMINI-BRAND-TOOLS-1112: Zod's `z.record` emits `propertyNames`,
- * the distribute.you MCP's `call_api` tool 400'd every Gemini call carrying
- * the brand's tools). Everything else is dropped and NAMED in `removed`, so
- * the caller logs it.
- *
- * `default` is documented but dropped (it was before; the model loses only a
- * hint, the tool server applies real defaults). Names under `properties` are
- * property NAMES, never keywords: a property called `default` or `const`
- * survives.
- */
-const GEMINI_SCHEMA_FIELDS = new Set([
-  "type",
-  "format",
-  "title",
-  "description",
-  "nullable",
-  "enum",
-  "maxItems",
-  "minItems",
-  "properties",
-  "required",
-  "minProperties",
-  "maxProperties",
-  "minLength",
-  "maxLength",
-  "pattern",
-  "example",
-  "anyOf",
-  "propertyOrdering",
-  "items",
-  "minimum",
-  "maximum",
-]);
-
-function sanitizeGeminiSchemaNode(value: unknown, removed: Set<string>): unknown {
-  if (Array.isArray(value)) return value.map((item) => sanitizeGeminiSchemaNode(item, removed));
-  if (value === null || typeof value !== "object") return value;
-  const node = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(node)) {
-    if (!GEMINI_SCHEMA_FIELDS.has(key)) {
-      removed.add(key);
-      continue;
-    }
-    if (key === "properties" && val && typeof val === "object" && !Array.isArray(val)) {
-      const props: Record<string, unknown> = {};
-      for (const [name, sub] of Object.entries(val as Record<string, unknown>)) props[name] = sanitizeGeminiSchemaNode(sub, removed);
-      out.properties = props;
-    } else if (key === "items" || key === "anyOf") {
-      out[key] = sanitizeGeminiSchemaNode(val, removed);
-    } else if (key === "type" && Array.isArray(val)) {
-      // JSON Schema `type: ["string", "null"]`: Gemini takes ONE type + `nullable`.
-      const types = val.filter((t): t is string => typeof t === "string" && t !== "null");
-      if (types.length < val.length) out.nullable = true;
-      if (types.length === 1) out.type = types[0];
-      else if (types.length > 1) out.anyOf = types.map((t) => ({ type: t }));
-      removed.add("type[]");
-    } else {
-      out[key] = val;
-    }
-  }
-  return out;
-}
-
-export function sanitizeGeminiSchema(
-  schema: Record<string, unknown>,
-): { schema: Record<string, unknown>; removed: string[] } {
-  const removed = new Set<string>();
-  const sanitized = sanitizeGeminiSchemaNode(schema, removed) as Record<string, unknown>;
-  return { schema: sanitized, removed: Array.from(removed) };
-}
-
-/**
  * Compute delay for exponential backoff with jitter.
  * delay = min(base * 2^attempt, max) + random jitter [0, 500ms]
  */
@@ -762,21 +702,11 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     });
   }
 
-  // Sanitize caller-supplied JSON Schema for Gemini's OpenAPI 3.0 subset.
-  // Gemini rejects unknown fields (e.g. `additionalProperties`, `$schema`,
-  // `$ref`) with HTTP 400. Stripping them lets Zod/JSON-Schema-7 schemas pass
-  // through without forcing every caller to maintain a Gemini-only variant.
-  let sanitizedSchema: Record<string, unknown> | undefined;
-  if (responseSchema != null) {
-    const result = sanitizeGeminiSchema(responseSchema);
-    sanitizedSchema = result.schema;
-    if (result.removed.length > 0) {
-      console.warn(
-        `[chat-service] Gemini schema sanitized | model=${model}` +
-        ` | removed=${result.removed.join(",")}`,
-      );
-    }
-  }
+  // The caller's JSON Schema rides Google's JSON Schema field (`responseJsonSchema`), translated only by the
+  // lossless rewrites every vendor accepts (SCHEMA-ANY-VENDOR-1116). The older OpenAPI `responseSchema` field
+  // refused valid schemas (an enum holding "": `enum[2]: cannot be empty`) and its allow-list dropped keywords
+  // the caller meant (`additionalProperties`, `const`, `$ref`).
+  const jsonSchema = responseSchema != null ? toPortableJsonSchema(responseSchema) : undefined;
 
   // Build request body. When webSearch is on, attach the native googleSearch
   // grounding tool so Gemini answers from live web results. Omitted entirely
@@ -789,7 +719,7 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
       thinkingConfig: buildThinkingConfig(model, disableThinking, thinkingLevel),
       ...(temperature != null ? { temperature } : {}),
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
-      ...(sanitizedSchema != null ? { responseSchema: sanitizedSchema } : {}),
+      ...(jsonSchema != null ? { responseJsonSchema: jsonSchema } : {}),
     },
     ...(webSearch ? { tools: [{ googleSearch: {} }] } : {}),
   };

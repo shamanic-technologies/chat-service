@@ -29,12 +29,13 @@ describe("toGeminiFunctionDeclarations", () => {
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe("get_weather");
     expect(result[0].description).toBe("Get the weather for a city");
-    expect(result[0].parameters.type).toBe("object");
-    expect(result[0].parameters.properties).toEqual({
+    expect(result[0].parametersJsonSchema.type).toBe("object");
+    expect(result[0].parametersJsonSchema.properties).toEqual({
       city: { type: "string", description: "City name" },
       units: { type: "string", enum: ["celsius", "fahrenheit"] },
     });
-    expect(result[0].parameters.required).toEqual(["city"]);
+    expect(result[0].parametersJsonSchema.required).toEqual(["city"]);
+    expect(result[0]).not.toHaveProperty("parameters");
   });
 
   it("omits required when empty", () => {
@@ -50,7 +51,7 @@ describe("toGeminiFunctionDeclarations", () => {
     ];
 
     const result = toGeminiFunctionDeclarations(tools);
-    expect(result[0].parameters.required).toBeUndefined();
+    expect(result[0].parametersJsonSchema.required).toBeUndefined();
   });
 
   it("converts multiple tools", () => {
@@ -77,13 +78,9 @@ describe("toGeminiFunctionDeclarations", () => {
     expect(toGeminiFunctionDeclarations([])).toEqual([]);
   });
 
-  // Regression: Gemini's function-declaration `parameters` is the restricted
-  // OpenAPI-3.0 Schema type and 400s on `additionalProperties` (and `$ref`,
-  // `$schema`, etc.) carried by MCP tool input schemas. They must be stripped
-  // recursively before sending. Reproduces the prod error:
-  // `Unknown name "additionalProperties" at
-  //  'tools[0].function_declarations[1].parameters.properties[0].value'`.
-  it("strips additionalProperties nested in a property value", () => {
+  // SCHEMA-ANY-VENDOR-1116: the tool's JSON Schema rides `parametersJsonSchema`, which takes JSON Schema
+  // (probed live 2026-11-16). Keywords the old OpenAPI `parameters` allow-list dropped now reach the model.
+  it("keeps additionalProperties, propertyNames and an enum holding the empty string", () => {
     const tools: ToolDefinition[] = [
       {
         name: "search_endpoints",
@@ -91,29 +88,20 @@ describe("toGeminiFunctionDeclarations", () => {
         input_schema: {
           type: "object",
           properties: {
-            filters: {
-              type: "object",
-              additionalProperties: { type: "string" },
-            },
+            filters: { type: "object", propertyNames: { type: "string" }, additionalProperties: { type: "string" } },
+            thread: { type: "string", enum: ["a", ""] },
           },
           required: ["filters"],
         },
       },
     ];
-
     const result = toGeminiFunctionDeclarations(tools);
-    const filters = result[0].parameters.properties.filters as Record<string, unknown>;
-
-    expect(filters).not.toHaveProperty("additionalProperties");
-    expect(filters.type).toBe("object");
-    // Whole declaration must be free of the rejected keyword.
-    expect(JSON.stringify(result)).not.toContain("additionalProperties");
-    // required is preserved.
-    expect(result[0].parameters.required).toEqual(["filters"]);
+    expect(result[0].parametersJsonSchema.properties).toEqual(tools[0].input_schema.properties);
+    expect(result[0].parametersJsonSchema.required).toEqual(["filters"]);
   });
 
-  it("strips $ref / $schema recursively from tool param schemas", () => {
-    const tools: ToolDefinition[] = [
+  it("drops a $ref the schema cannot resolve (Google: 'reference to undefined schema'), keeps one it can", () => {
+    const tools = [
       {
         name: "call_api",
         description: "Call an API",
@@ -121,46 +109,32 @@ describe("toGeminiFunctionDeclarations", () => {
           type: "object",
           properties: {
             body: { $ref: "#/components/schemas/OrgId", type: "object" },
+            id: { $ref: "#/$defs/Id" },
           },
-        },
-        // @ts-expect-error — JSON-Schema 7 keyword not on the typed shape but present at runtime
-        $schema: "http://json-schema.org/draft-07/schema#",
-      } as ToolDefinition,
-    ];
-
-    const result = toGeminiFunctionDeclarations(tools);
-    const serialized = JSON.stringify(result);
-
-    expect(serialized).not.toContain("$ref");
-    expect(serialized).not.toContain("$schema");
-    const body = result[0].parameters.properties.body as Record<string, unknown>;
-    expect(body.type).toBe("object");
-  });
-
-  it("preserves Gemini-supported keys (enum, description, nullable, items)", () => {
-    const tools: ToolDefinition[] = [
-      {
-        name: "filter_list",
-        description: "Filter a list",
-        input_schema: {
-          type: "object",
-          properties: {
-            status: { type: "string", enum: ["open", "closed"], description: "Status" },
-            tags: { type: "array", items: { type: "string" } },
-            note: { type: "string", nullable: true },
-          },
-          required: ["status"],
+          $defs: { Id: { type: "string" } },
         },
       },
-    ];
-
+    ] as unknown as ToolDefinition[];
     const result = toGeminiFunctionDeclarations(tools);
-    expect(result[0].parameters.properties).toEqual({
-      status: { type: "string", enum: ["open", "closed"], description: "Status" },
-      tags: { type: "array", items: { type: "string" } },
-      note: { type: "string", nullable: true },
+    const props = result[0].parametersJsonSchema.properties as Record<string, Record<string, unknown>>;
+    expect(props.body).toEqual({ type: "object" });
+    expect(props.id).toEqual({ $ref: "#/$defs/Id" });
+    expect(result[0].parametersJsonSchema.$defs).toEqual({ Id: { type: "string" } });
+  });
+
+  it("turns the tuple form into prefixItems (Google refuses `items: [...]`)", () => {
+    const tools: ToolDefinition[] = [
+      {
+        name: "pair",
+        description: "Pair",
+        input_schema: { type: "object", properties: { p: { type: "array", items: [{ type: "string" }, { type: "number" }] } } },
+      },
+    ];
+    const result = toGeminiFunctionDeclarations(tools);
+    expect((result[0].parametersJsonSchema.properties as Record<string, unknown>).p).toEqual({
+      type: "array",
+      prefixItems: [{ type: "string" }, { type: "number" }],
     });
-    expect(result[0].parameters.required).toEqual(["status"]);
   });
 });
 

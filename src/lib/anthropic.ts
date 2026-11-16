@@ -86,40 +86,16 @@ function anthropicRetryDelayMs(err: unknown, attempt: number): number {
 }
 
 /**
- * Normalize a caller-supplied JSON Schema for Anthropic's strict structured-output
- * dialect before sending it via `output_config.format`.
+ * The caller's JSON Schema in Anthropic's strict structured-output dialect (`output_config.format`).
  *
- * Anthropic's `json_schema` enforcement REQUIRES every `type: "object"` node to
- * carry an explicit `additionalProperties: false`. A permissive schema that omits
- * it returns HTTP 400 (`output_config.format.schema: For 'object' type,
- * 'additionalProperties' must be explicitly set to false`) and — because /complete
- * has no fallback parsing — kills the chat turn. Standard JSON-Schema-7 / Zod output
- * does not emit the key, so we stamp it onto every object node here.
- *
- * This is the mirror image of `sanitizeGeminiSchema` (which STRIPS the key, since
- * Gemini's OpenAPI-3.0 subset rejects it). Schema normalization for a provider's
- * dialect — NOT prompt enrichment; the caller's prompt is untouched.
- *
- * Walks `properties`, `items`, `anyOf`/`allOf`/`oneOf`, and `$defs`/`definitions`.
- * Preserves an `additionalProperties` value the caller set explicitly (no clobber).
- * Returns a new object; the caller's schema is not mutated.
+ * Kept as this module's entry point; the translation lives in `vendor-schema.ts` beside the other vendors'
+ * (SCHEMA-ANY-VENDOR-1116). Every `type: "object"` node gets `additionalProperties: false` (Anthropic 400s
+ * without it), a constraint keyword Anthropic refuses moves into the description, and a node it cannot express
+ * is asked for as a JSON-encoded string that `complete()` decodes back. Returns a new object; the caller's
+ * schema is not mutated.
  */
-export function prepareAnthropicSchema<T>(schema: T): T {
-  if (Array.isArray(schema)) {
-    return schema.map((item) => prepareAnthropicSchema(item)) as unknown as T;
-  }
-  if (schema === null || typeof schema !== "object") {
-    return schema;
-  }
-  const source = schema as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(source)) {
-    out[key] = prepareAnthropicSchema(value);
-  }
-  if (out.type === "object" && !("additionalProperties" in out)) {
-    out.additionalProperties = false;
-  }
-  return out as unknown as T;
+export function prepareAnthropicSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  return toAnthropicJsonSchema(schema).schema;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +105,7 @@ export function prepareAnthropicSchema<T>(schema: T): T {
 // ---------------------------------------------------------------------------
 
 import { LLM_DYNASTIES, callableModelNames, dynastyOfModel } from "./llm-dynasties.js";
+import { decodeSchemaAnswerText, toAnthropicJsonSchema } from "./vendor-schema.js";
 
 export type Provider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai";
 /**
@@ -3896,15 +3873,15 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       // `responseFormat:"json"` without a schema upfront.
       const effort = options?.effort
         ?? (options?.disableThinking === true ? anthropicEffortFloor(effectiveModel) : null);
+      // The caller's schema in Anthropic's strict dialect (vendor-schema.ts, SCHEMA-ANY-VENDOR-1116); `plan`
+      // turns the answer back into what the caller's own schema describes.
+      const anthropicSchema = options?.responseSchema != null ? toAnthropicJsonSchema(options.responseSchema) : null;
       const outputConfig = {
-        ...(options?.responseSchema != null
+        ...(anthropicSchema != null
           ? {
               format: {
                 type: "json_schema",
-                // Anthropic strict mode requires `additionalProperties: false`
-                // on every object node — stamp it on before sending (mirror of
-                // the Gemini sanitizer, which strips it). See prepareAnthropicSchema.
-                schema: prepareAnthropicSchema(options.responseSchema),
+                schema: anthropicSchema.schema,
               },
             }
           : {}),
@@ -3950,7 +3927,21 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       // NOT cover the overloaded_error event Anthropic pushes mid-stream after a 200 OK
       // (the stack surfaces in MessageStream._createMessage → Stream.iterator), which is
       // exactly the failure mode this loop catches.
-      const response = await finalMessageWithRetry(params, effectiveModel, timeoutMs, "complete()");
+      let response: Anthropic.Message;
+      try {
+        response = await finalMessageWithRetry(params, effectiveModel, timeoutMs, "complete()");
+      } catch (err) {
+        // A 400 refuses the request as SENT and will refuse it identically forever: the routes answer 400,
+        // retryable:false, in Anthropic's own words (SCHEMA-ANY-VENDOR-1116). The message is kept verbatim so
+        // an empty balance (also a 400) is still recognised as one.
+        if (err instanceof Anthropic.APIError && err.status === 400) {
+          throw new AnthropicUnsupportedOptionError(
+            `Anthropic rejected the request as sent (400 from ${effectiveModel}): ${err.message}. ` +
+              `This is a request-configuration error — retrying will not help.`,
+          );
+        }
+        throw err;
+      }
 
       if (response.stop_reason === "max_tokens") {
         console.warn(
@@ -3966,7 +3957,7 @@ export function createAnthropicClient({ apiKey, systemPrompt }: AnthropicOptions
       const textBlocks = response.content.filter(
         (b): b is Anthropic.TextBlock => b.type === "text",
       );
-      const content = textBlocks.map((b) => b.text).join("");
+      const content = decodeSchemaAnswerText(textBlocks.map((b) => b.text).join(""), anthropicSchema?.plan ?? null);
 
       // Native web-search accounting: searchCount is the billable unit (one per
       // `web_search_requests`); sources are the cited and returned result URLs

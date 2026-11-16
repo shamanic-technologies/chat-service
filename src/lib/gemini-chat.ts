@@ -6,7 +6,8 @@
 import type { Response as ExpressResponse } from "express";
 import type { ToolCallRecord } from "../db/schema.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
-import { sanitizeGeminiSchema, buildThinkingConfig, geminiCostPrefix, type GeminiThinkingLevel } from "./gemini.js";
+import { buildThinkingConfig, geminiCostPrefix, geminiRequestError, type GeminiThinkingLevel } from "./gemini.js";
+import { toPortableJsonSchema } from "./vendor-schema.js";
 import { buildToolResultFallback } from "./tool-fallback.js";
 import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, endToolFinalNote, endToolNudgeNote, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH, needsAnswerNudge } from "./tool-budget.js";
 import { mergeGeminiCostLines, readGeminiBilledTokens, type GeminiCostLine, type GeminiUsageMetadata } from "./gemini-usage.js";
@@ -71,15 +72,11 @@ export interface ToolDefinition {
   };
 }
 
-/** Gemini function declaration format. */
+/** Gemini function declaration format: the tool's JSON Schema rides `parametersJsonSchema`. */
 interface GeminiFunctionDeclaration {
   name: string;
   description: string;
-  parameters: {
-    type: "object";
-    properties: Record<string, unknown>;
-    required?: string[];
-  };
+  parametersJsonSchema: Record<string, unknown>;
 }
 
 /** Gemini message part types. */
@@ -194,37 +191,29 @@ export interface StreamGeminiChatResult {
 /**
  * Convert Anthropic-style tool definitions to Gemini functionDeclarations.
  *
- * Gemini's function-declaration `parameters` is the same restricted OpenAPI-3.0
- * `Schema` type as `responseSchema` — it rejects `additionalProperties`, `$ref`,
- * `$schema`, `const`, `examples`, `exclusiveMinimum/Maximum`, `multipleOf`, etc.
- * with HTTP 400 (`Unknown name "additionalProperties" at 'tools[0].
- * function_declarations[..].parameters.properties[..].value'`). MCP tool input
- * schemas (JSON-Schema 7) routinely carry these keywords (`propertyNames` from a
- * Zod record, GEMINI-BRAND-TOOLS-1112), so keep only Gemini's own fields —
- * the same allow-list the `/complete` responseSchema path applies — and log
- * what was dropped per tool. The supported keys the model needs
- * (`type`, `description`, `enum`, `properties`, `required`, `items`, `nullable`,
- * `format`, `pattern`, `minimum/maximum`, `anyOf`) are preserved.
- * See https://ai.google.dev/api/caching#Schema
+ * The tool's JSON Schema rides `parametersJsonSchema` (Google's JSON Schema field), translated only by the
+ * lossless rewrites every vendor accepts (SCHEMA-ANY-VENDOR-1116, `toPortableJsonSchema`). The older OpenAPI
+ * `parameters` field refused valid JSON Schema (`propertyNames` from a Zod record, GEMINI-BRAND-TOOLS-1112; an
+ * enum holding "") and its allow-list dropped what it could not carry. Measured live 2026-11-16: every JSON
+ * Schema keyword is accepted there except the tuple form `items: [...]`, which the rewrite turns into
+ * `prefixItems`. A root `$defs` / `definitions` travels with the properties so their `$ref`s resolve.
  */
 export function toGeminiFunctionDeclarations(
   tools: ToolDefinition[],
 ): GeminiFunctionDeclaration[] {
   return tools.map((t) => {
+    const input = t.input_schema as ToolDefinition["input_schema"] & { $defs?: unknown; definitions?: unknown };
     const rawParameters: Record<string, unknown> = {
       type: "object",
-      properties: t.input_schema.properties,
-      ...(t.input_schema.required?.length ? { required: t.input_schema.required } : {}),
+      properties: input.properties ?? {},
+      ...(input.required?.length ? { required: input.required } : {}),
+      ...(input.$defs !== undefined ? { $defs: input.$defs } : {}),
+      ...(input.definitions !== undefined ? { definitions: input.definitions } : {}),
     };
-    const { schema, removed } = sanitizeGeminiSchema(rawParameters);
-    if (removed.length > 0) {
-      // The tool is kept; only what Gemini's Schema cannot carry is dropped, and said (GEMINI-BRAND-TOOLS-1112).
-      console.warn(`[gemini-chat] tool "${t.name}": schema fields Gemini refuses were dropped: ${removed.join(",")}`);
-    }
     return {
       name: t.name,
       description: t.description,
-      parameters: schema as GeminiFunctionDeclaration["parameters"],
+      parametersJsonSchema: toPortableJsonSchema(rawParameters),
     };
   });
 }
@@ -514,7 +503,8 @@ export async function streamGeminiChat(
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "unknown error");
-      throw new Error(`[gemini-chat] API error ${response.status}: ${errorText}`);
+      // A refused request shape (400/422) is non-retryable, in Google's own words (SCHEMA-ANY-VENDOR-1116).
+      throw geminiRequestError(response.status, model, errorText);
     }
 
     // Parse SSE stream from Gemini

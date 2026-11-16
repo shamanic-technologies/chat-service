@@ -10,7 +10,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
  *
  * Probed live 2026-11-12 with HEAVY below: DeepSeek V4.1 Flash, GLM-5.3 Flash,
  * Kimi K2.6 and GPT-6.1 Terra accept every keyword (200, tool call made), so
- * their tools pass through untouched; Gemini takes only its own Schema fields.
+ * their tools pass through untouched. Since SCHEMA-ANY-VENDOR-1116 Gemini gets
+ * the tool on `parametersJsonSchema`, which took HEAVY and CALL_API whole
+ * (200, probed live 2026-11-16): nothing is dropped any more.
  */
 const post = vi.fn();
 vi.mock("../../src/lib/openai-compatible.js", async (importOriginal) => {
@@ -19,7 +21,6 @@ vi.mock("../../src/lib/openai-compatible.js", async (importOriginal) => {
 });
 
 const { toGeminiFunctionDeclarations } = await import("../../src/lib/gemini-chat.js");
-const { sanitizeGeminiSchema } = await import("../../src/lib/gemini.js");
 const { toVendorTools, streamVendorChat } = await import("../../src/lib/vendor-chat.js");
 
 /** The distribute.you MCP `call_api` tool as listed live (index 27 of 28). */
@@ -63,70 +64,27 @@ const HEAVY = {
   },
 };
 
-const GEMINI_FIELDS = new Set([
-  "type", "format", "title", "description", "nullable", "enum", "maxItems", "minItems", "properties", "required",
-  "minProperties", "maxProperties", "minLength", "maxLength", "pattern", "example", "anyOf", "propertyOrdering",
-  "items", "minimum", "maximum",
-]);
-
-/** Every key of a schema node that is not a property NAME. */
-function keywordsOf(node: unknown, out: string[] = []): string[] {
-  if (Array.isArray(node)) {
-    for (const n of node) keywordsOf(n, out);
-    return out;
-  }
-  if (!node || typeof node !== "object") return out;
-  for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
-    out.push(k);
-    if (k === "properties" && v && typeof v === "object") for (const sub of Object.values(v as Record<string, unknown>)) keywordsOf(sub, out);
-    else if (k === "items" || k === "anyOf") keywordsOf(v, out);
-  }
-  return out;
-}
-
-describe("google: brand tool schemas carry only Gemini's Schema fields", () => {
+describe("google: brand tool schemas reach Gemini whole (parametersJsonSchema)", () => {
   let warn: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
     warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
   afterEach(() => warn.mockRestore());
 
-  it("drops propertyNames from the call_api tool, keeps the tool, and logs it by name", () => {
+  it("keeps the call_api tool's propertyNames / additionalProperties (the 2026-11-12 400 is gone with the field)", () => {
     const [decl] = toGeminiFunctionDeclarations([CALL_API]);
     expect(decl.name).toBe(CALL_API.name);
-    expect(JSON.stringify(decl.parameters)).not.toContain("propertyNames");
-    expect(JSON.stringify(decl.parameters)).not.toContain("additionalProperties");
-    expect((decl.parameters.properties as Record<string, unknown>).headers).toEqual({ type: "object" });
-    expect(decl.parameters.required).toEqual(["method", "path"]);
-    const line = warn.mock.calls.map((c) => String(c[0])).join("\n");
-    expect(line).toContain(CALL_API.name);
-    expect(line).toContain("propertyNames");
+    expect(decl.parametersJsonSchema).toEqual({ type: "object", properties: CALL_API.input_schema.properties, required: ["method", "path"] });
   });
 
-  it("leaves no keyword Gemini refuses, at any depth", () => {
+  it("sends HEAVY as is, only its dangling $ref dropped and its untyped const typed", () => {
     const [decl] = toGeminiFunctionDeclarations([HEAVY]);
-    const unknown = keywordsOf(decl.parameters).filter((k) => !GEMINI_FIELDS.has(k));
-    expect(unknown).toEqual([]);
-  });
-
-  it("keeps a property NAMED like a keyword (default, const)", () => {
-    const [decl] = toGeminiFunctionDeclarations([HEAVY]);
-    const props = decl.parameters.properties as Record<string, Record<string, unknown>>;
-    expect(props.default).toEqual({ type: "string" });
-    expect(props.const).toEqual({ type: "string" });
-  });
-
-  it("turns a JSON Schema type array into one type + nullable, or anyOf", () => {
-    const [decl] = toGeminiFunctionDeclarations([HEAVY]);
-    const props = decl.parameters.properties as Record<string, Record<string, unknown>>;
-    expect(props.maybe).toEqual({ nullable: true, type: "string" });
-    expect(props.either).toEqual({ anyOf: [{ type: "string" }, { type: "number" }] });
-  });
-
-  it("is the same pass on /complete's responseSchema, and names what it removed", () => {
-    const { schema, removed } = sanitizeGeminiSchema(HEAVY.input_schema as unknown as Record<string, unknown>);
-    expect(keywordsOf(schema).filter((k) => !GEMINI_FIELDS.has(k))).toEqual([]);
-    expect(removed).toEqual(expect.arrayContaining(["propertyNames", "additionalProperties", "const", "$ref", "if", "not", "oneOf", "allOf", "multipleOf"]));
+    const props = decl.parametersJsonSchema.properties as Record<string, Record<string, unknown>>;
+    expect(props.ref).toEqual({});
+    expect(props.mode).toEqual({ const: "x", type: "string" });
+    const { ref: _r, mode: _m, ...rest } = HEAVY.input_schema.properties;
+    const { ref: _r2, mode: _m2, ...sentRest } = props;
+    expect(sentRest).toEqual(rest);
   });
 });
 
