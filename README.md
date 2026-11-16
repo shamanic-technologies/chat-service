@@ -1137,6 +1137,19 @@ Everything else — the pinned release on the wire, the refusal to flatten an an
 
 **Model pinning:** whichever of the three values a caller asks for, the id sent on the wire is always the pinned release `jev-1.13.0`, and an answer served by anything else is refused rather than billed. The cost name is keyed on the release for the same reason: an alias moves to a new model without notice, and since the vendor echoes the id it was asked for, forwarding `jev-latest` would bill a new model under the old release's name with nothing to show for it. A loud outage on a rename is the cheap failure, exactly as with DeepSeek's 2026-09-10 rename (see above). A new Jev release is a deliberate edit here, after its own catalog row exists.
 
+## Local LLM: an org's calls on the user's own Claude Code (LOCAL-CLAUDE-1116)
+
+An org can declare that its LLM runs on the user's own Claude Code subscription, on their machine: the org then pays **$0** for its LLM calls (owner 2026-11-16: « le user dépense $0, car tout depuis sa subscription Claude Code »). Org-level: every campaign, script and the Copilot at once, no per-campaign setting.
+
+| Route (user tier: `x-org-id`, `x-user-id`, `x-run-id`) | What |
+|---|---|
+| `GET /orgs/local-llm` | `declared`, `runner {connected, lastSeenAt, name, version}` (connected = a claim in the last 60 s), `pendingCalls`, `usageLast30Days` (calls, tokens, `notionalCostUsd` the CLI reported, `chargedUsd: 0`), `runsLocally`, `stillOnPlatform` (families that cannot run locally, with why) |
+| `PUT /orgs/local-llm` `{enabled}` | Declare / stop. Answers the state |
+| `POST /orgs/local-llm/work/claim` `{waitMs?, max?, runner?}` | Runner: long poll (≤25 s) for the org's waiting calls; each item to ONE claim only (`FOR UPDATE SKIP LOCKED`). 409 `local_llm_not_declared` |
+| `POST /orgs/local-llm/work/:id/result` `{leaseId, ok, model, text? \| structured?, usage?, notionalCostUsd?, durationMs?, error?}` | Runner: the answer. 409 wrong lease / already answered, 410 `local_job_expired` (the caller stopped waiting) |
+
+**While declared**, `/complete` (text, JSON schema, `webSearch` → the runner's `WebSearch` tool), `/orgs/judgments` (and the Copilot's nudge) and every `/chat` round (Sophie with her tools, Lead event answers) become work items; nothing reaches a vendor key, no hold, no affordability check, no cost line (the run exists, $0). The item is everything one `claude -p` needs: `claude {systemPrompt, prompt, jsonSchema, model, tools}`. A `/complete` keeps the caller's prompt byte-equal; a judgment asks a probability per option and is served in the judge's own answer shapes; a chat round sends the transcript + tool schemas and gets `{text, toolCalls}` back, the tools still run here. Model: a Claude model asked stays itself, any other maps to its tier's Claude model (cheap Haiku 5.5, strong Sonnet 5.5, frontier Opus 5.5); never Haiku 4.5 (refused both ways). Answers carry `servedBy: "local-claude-code"` and the `model` the runner reported. **Runner away**: the call waits `LOCAL_LLM_PICKUP_WAIT_MS`, then 503 `local_runner_waiting` (504 `local_runner_timeout` once picked up, 502 `local_runner_failed`), never a platform key. **Still on a platform key** (served in `stillOnPlatform`): image generation, transcription, embeddings/rag, calls with an image input, `/complete` with `brandTools`.
+
 ## Campaign Context Enrichment
 
 **Applies to `/chat` only.** When the `x-campaign-id` header is present on a `/chat` request, the service fetches the campaign's `featureInputs` from campaign-service and injects them into the system prompt as a `## Campaign Context` block.
@@ -1577,6 +1590,9 @@ data: {"type":"error","code":"model_overloaded","message":"Claude is temporarily
 | `model_error` | Transient upstream error (empty response, 5xx) | Show message + "Retry" button |
 | `internal_error` | Unexpected server error | Show message |
 | `session_not_found` | Provided `sessionId` does not exist or belongs to another user (another org, or a teammate in the same org) | Drop the cached `sessionId` and retry with `sessionId: null` to start a new session |
+| `local_runner_waiting` | The org runs its LLM on its own Claude Code and no runner picked the turn up (the Mac app is closed) | Show message: open the app, send again |
+| `local_runner_timeout` | The runner picked the turn up but sent no answer in time | Show message + "Retry" |
+| `local_runner_failed` | The runner's Claude Code reported a failure (message says what) | Show message |
 
 The frontend should display the `message` to the user and use `code` to decide whether to offer a retry action. An `error` event is always followed by `[DONE]`.
 
@@ -1754,6 +1770,8 @@ Each brand plugs, in its Integrations, the MCP server(s) it gives to the AI that
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_OWNER_CHAT_ID` | For `request_staff` | Same bot + chat as billing-service and the dashboard. Unset → no ping (`telegramError` recorded) |
 | `FEATURES_SERVICE_URL` / `FEATURES_SERVICE_API_KEY` | For the `declare_*` / `list_declared_*` / `list_trigger_types` / catalogue (`find_*`, `create_*`) tools | features-service base URL and its service key (`/internal/declarations/*`, `/internal/catalogue/*`). Unset → those tools fail loud (`not configured`) |
 | `API_REGISTRY_SERVICE_URL` / `API_REGISTRY_SERVICE_API_KEY` | For `discover_*` / `test_endpoint` | api-registry-service base URL and its key. Unset → those tools fail loud |
+| `LOCAL_LLM_PICKUP_WAIT_MS` | No | How long a local-LLM call waits for the org's runner to pick it up before `local_runner_waiting` (default `45000`) |
+| `LOCAL_LLM_ANSWER_WAIT_MS` | No | How long a picked-up local-LLM call may run on the user's machine before `local_runner_timeout` (default `240000`) |
 | `PORT` | No | Server port (default: `3002`) |
 
 ## Database
