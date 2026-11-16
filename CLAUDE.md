@@ -387,6 +387,10 @@ WhatsApp turns (and a web turn with no page context) carry no `context.brandId`;
 
 Postgres refuses NUL in text and jsonb; one tool result carrying it (a mailbox body) failed the whole assistant save AFTER the answer streamed ("An unexpected error occurred"). `tests/unit/strip-nul.test.ts` pins every `db.insert(messages).values(` call site.
 
+## A page load reads the newest messages only (MON-PAGE-SPEED-1114)
+
+The Copilot panel loads `GET /sessions/latest` on every dashboard page; the full history was 1.3 MB for the staff user (1,010 messages) and grew with every turn. Both session reads take `limit` (+ `before` = the served `olderCursor`) and serve the newest page (`src/lib/session-history-page.ts`, cursor compared IN SQL on the stored row: a JS Date drops the microseconds). Never make a page-load caller read the whole history again; the full read (no `limit`) stays for callers that need it.
+
 ## A chat session is private to its user (owner 2026-10-11)
 
 Every user-scoped path touching a session BY ID (`GET /sessions/:id`, `POST /chat` continue) asks `isSessionOwner` (`session-errors.ts`): org AND user, a miss is the same not-found as an unknown id. Legacy rows with NULL `user_id` (22, all before 2026-02-04) are nobody's. Never relax it to org-only "for teammates".

@@ -58,8 +58,13 @@ export interface SessionHistoryResponse {
   configKey: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Full ordered conversation, oldest turn first (a Copilot nudge's hidden trigger left out). */
+  /** Ordered conversation, oldest turn first (a Copilot nudge's hidden trigger left out): the whole
+   * history, or the newest page when the caller asked for a `limit`. */
   messages: SessionHistoryMessage[];
+  /** True when older shown messages exist than the first one served (always false on a full read). */
+  hasOlder: boolean;
+  /** Pass back as `before` to read the previous page; null when nothing older exists. */
+  olderCursor: string | null;
 }
 
 /**
@@ -81,7 +86,9 @@ export function isShownMessage(m: Pick<Message, "role" | "content" | "proactiveT
 export function serializeSessionHistory(
   session: Session,
   messages: Message[],
+  page: { hasOlder: boolean } = { hasOlder: false },
 ): SessionHistoryResponse {
+  const shown = messages.filter(isShownMessage);
   return {
     sessionId: session.id,
     orgId: session.orgId,
@@ -94,7 +101,7 @@ export function serializeSessionHistory(
     createdAt: session.createdAt.toISOString(),
     updatedAt: session.updatedAt.toISOString(),
     // A Copilot nudge's trigger is the user's turn on paper only: never shown.
-    messages: messages.filter(isShownMessage).map((m) => ({
+    messages: shown.map((m) => ({
       id: m.id,
       role: m.role,
       content: m.content,
@@ -113,5 +120,7 @@ export function serializeSessionHistory(
       tokenCount: m.tokenCount ?? null,
       createdAt: m.createdAt.toISOString(),
     })),
+    hasOlder: page.hasOlder,
+    olderCursor: page.hasOlder && shown.length > 0 ? shown[0].id : null,
   };
 }

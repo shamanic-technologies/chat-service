@@ -352,7 +352,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, BrandMcpServerCreateSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, BrandMcpServerCreateSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -459,6 +459,7 @@ import {
 import { REACH_ELSEWHERE_TOOL, REACH_ELSEWHERE_TOOL_NAME, leadTurnCaller, reachPersonElsewhere } from "./lib/lead-contact.js";
 import { SESSION_NOT_FOUND_EVENT, SESSION_NOT_FOUND_MESSAGE, isSessionOwner } from "./lib/session-errors.js";
 import { serializeSessionHistory } from "./lib/session-history.js";
+import { readHistoryPage, type ReadOlderRows } from "./lib/session-history-page.js";
 import { buildContextUsageEvent } from "./lib/context-usage.js";
 
 // ---------------------------------------------------------------------------
@@ -3332,47 +3333,63 @@ app.get("/sessions/latest", requireAuth, async (req, res) => {
       .status(400)
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
-  const { configKey } = parsed.data;
+  const { configKey, limit, before } = parsed.data;
+  if (before !== undefined && limit === undefined) {
+    return res.status(400).json({ error: "`before` requires `limit`" });
+  }
 
-  const [session] = await db
-    .select()
-    .from(sessions)
-    .where(
-      and(
-        eq(sessions.orgId, orgId),
-        eq(sessions.userId, userId),
-        eq(sessions.configKey, configKey),
-        // A guest WhatsApp thread runs under the number owner's user: not theirs.
-        eq(sessions.guest, false),
-        // Lead event turns run in their own thread: never the person's chat.
-        eq(sessions.leadThread, false),
-      ),
-    )
-    .orderBy(desc(sessions.updatedAt))
-    .limit(1);
+  // Paging older turns: the cursor names its own session, so a scroll keeps reading the
+  // conversation on screen even if a newer session started since (MON-PAGE-SPEED-1114).
+  const isListedSession = (s: typeof sessions.$inferSelect) =>
+    isSessionOwner(s, { orgId, userId }) && s.configKey === configKey && !s.guest && !s.leadThread;
+  let session: typeof sessions.$inferSelect | undefined;
+  if (before !== undefined) {
+    session = await sessionOfMessage(before);
+    if (!session || !isListedSession(session)) {
+      return res.status(404).json({ error: `No message "${before}" in this user's sessions for configKey="${configKey}".` });
+    }
+  } else {
+    [session] = await db
+      .select()
+      .from(sessions)
+      .where(
+        and(
+          eq(sessions.orgId, orgId),
+          eq(sessions.userId, userId),
+          eq(sessions.configKey, configKey),
+          // A guest WhatsApp thread runs under the number owner's user: not theirs.
+          eq(sessions.guest, false),
+          // Lead event turns run in their own thread: never the person's chat.
+          eq(sessions.leadThread, false),
+        ),
+      )
+      .orderBy(desc(sessions.updatedAt))
+      .limit(1);
+  }
 
   if (!session) {
     return res.status(404).json({ error: `No session for configKey="${configKey}" for this user.` });
   }
 
-  const history = await db.query.messages.findMany({
-    where: eq(messages.sessionId, session.id),
-    orderBy: (m, { asc }) => [asc(m.createdAt)],
-  });
-
-  return res.json(serializeSessionHistory(session, history));
+  const { rows, hasOlder } = await readSessionMessages(session.id, { limit, before });
+  return res.json(serializeSessionHistory(session, rows, { hasOlder }));
 });
 
 app.get("/sessions/:sessionId", requireAuth, async (req, res) => {
   const { orgId, userId } = res.locals as AuthLocals;
 
   const parsed = GetSessionParamsSchema.safeParse(req.params);
-  if (!parsed.success) {
+  const page = SessionHistoryPageQuerySchema.safeParse(req.query);
+  if (!parsed.success || !page.success) {
     return res
       .status(400)
-      .json({ error: "Invalid request", details: parsed.error.flatten() });
+      .json({ error: "Invalid request", details: (parsed.success ? page.error : parsed.error)?.flatten() });
   }
   const { sessionId } = parsed.data;
+  const { limit, before } = page.data;
+  if (before !== undefined && limit === undefined) {
+    return res.status(400).json({ error: "`before` requires `limit`" });
+  }
 
   const [session] = await db
     .select()
@@ -3384,14 +3401,63 @@ app.get("/sessions/:sessionId", requireAuth, async (req, res) => {
   if (!session || !isSessionOwner(session, { orgId, userId })) {
     return res.status(404).json({ error: SESSION_NOT_FOUND_MESSAGE });
   }
+  if (before !== undefined) {
+    const cursorSession = await sessionOfMessage(before);
+    if (cursorSession?.id !== sessionId) {
+      return res.status(404).json({ error: `No message "${before}" in this session.` });
+    }
+  }
 
-  const history = await db.query.messages.findMany({
-    where: eq(messages.sessionId, sessionId),
-    orderBy: (m, { asc }) => [asc(m.createdAt)],
-  });
-
-  return res.json(serializeSessionHistory(session, history));
+  const { rows, hasOlder } = await readSessionMessages(sessionId, { limit, before });
+  return res.json(serializeSessionHistory(session, rows, { hasOlder }));
 });
+
+/** The session a stored message belongs to (a paging cursor), or undefined. */
+async function sessionOfMessage(messageId: string): Promise<typeof sessions.$inferSelect | undefined> {
+  const [row] = await db
+    .select({ session: sessions })
+    .from(messages)
+    .innerJoin(sessions, eq(messages.sessionId, sessions.id))
+    .where(eq(messages.id, messageId))
+    .limit(1);
+  return row?.session;
+}
+
+/**
+ * A session's visible messages: the whole history without `limit`, else the newest page older
+ * than `before` (MON-PAGE-SPEED-1114: a page load reads what the panel shows first, never 1 MB).
+ */
+async function readSessionMessages(
+  sessionId: string,
+  page: { limit?: number; before?: string },
+): Promise<{ rows: (typeof messages.$inferSelect)[]; hasOlder: boolean }> {
+  if (page.limit === undefined) {
+    const rows = await db.query.messages.findMany({
+      where: eq(messages.sessionId, sessionId),
+      // Same order as the paged read, so a page and the full read never disagree on a tie.
+      orderBy: (m, { asc }) => [asc(m.createdAt), asc(m.id)],
+    });
+    return { rows, hasOlder: false };
+  }
+  const readOlderRows: ReadOlderRows = (before, n) =>
+    db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.sessionId, sessionId),
+          eq(messages.proactiveTrigger, false),
+          // Compared in SQL on the stored row: a JS Date would drop the microseconds.
+          before === null
+            ? undefined
+            : sql`(${messages.createdAt}, ${messages.id}) < (SELECT c.created_at, c.id FROM messages c WHERE c.id = ${before})`,
+        ),
+      )
+      .orderBy(desc(messages.createdAt), desc(messages.id))
+      .limit(n);
+  const { messages: rows, hasOlder } = await readHistoryPage(readOlderRows, page.limit, page.before ?? null);
+  return { rows, hasOlder };
+}
 
 // One turn at a time per conversation (SOPHIE-CORE-1111): a second message waits for the first turn.
 app.post("/chat", requireAuth, async (req, res) => {

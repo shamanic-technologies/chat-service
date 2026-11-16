@@ -232,6 +232,13 @@
       "when": 1792800000000,
       "tag": "0032_schema_conformance",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792886400000,
+      "tag": "0033_messages_session_idx",
+      "breakpoints": true
     }
   ]
 }
