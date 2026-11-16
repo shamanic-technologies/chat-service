@@ -8,6 +8,8 @@ import {
   judgmentCall,
   localClaudeModelFor,
   localFailureResponse,
+  localCostItems,
+  servedLlmsFor,
   LocalRunnerError,
   resetLocalLlm,
   runLocally,
@@ -17,6 +19,8 @@ import {
 } from "../../src/lib/local-llm.js";
 import { createMemoryLocalLlmStore, type LocalJobRow } from "../../src/lib/local-llm-store.js";
 import { resolveModel } from "../../src/lib/anthropic.js";
+
+const USAGE = { inputTokens: 100, outputTokens: 20 };
 
 const jobWith = (request: unknown): LocalJobRow => ({
   id: "j1",
@@ -105,8 +109,11 @@ describe("local LLM — answers", () => {
     const schemaJob = jobWith({ jsonSchema: { type: "object" } });
     expect(answerOutcome(schemaJob, { ok: true, structured: { a: 1 } }).ok).toBe(false);
     expect(answerOutcome(schemaJob, { ok: true, model: "claude-haiku-4-5-20251001", structured: { a: 1 } }).ok).toBe(false);
-    expect(answerOutcome(schemaJob, { ok: true, model: "claude-sonnet-5-5", text: "x" }).ok).toBe(false);
-    expect(answerOutcome(schemaJob, { ok: true, model: "claude-sonnet-5-5", structured: { a: 1 } })).toMatchObject({ ok: true, result: { structured: { a: 1 } } });
+    expect(answerOutcome(schemaJob, { ok: true, model: "claude-sonnet-5-5", text: "x", usage: USAGE }).ok).toBe(false);
+    expect(answerOutcome(schemaJob, { ok: true, model: "claude-sonnet-5-5", structured: { a: 1 }, usage: USAGE })).toMatchObject({ ok: true, result: { structured: { a: 1 } } });
+    // LOCAL-CLAUDE-RATING-1116: an answer that cannot be stated under the model that ran is refused.
+    expect(answerOutcome(schemaJob, { ok: true, model: "claude-sonnet-5-5", structured: { a: 1 } })).toMatchObject({ ok: false });
+    expect(answerOutcome(schemaJob, { ok: true, model: "claude-opus-4-6", structured: { a: 1 }, usage: USAGE })).toMatchObject({ ok: false });
     expect(answerOutcome(jobWith({ jsonSchema: null }), { ok: false, error: "CLI not signed in" })).toMatchObject({ ok: false, error: "CLI not signed in" });
   });
 
@@ -136,5 +143,53 @@ describe("local LLM — answers", () => {
   it("refuses to ask the runner for Haiku 4.5", async () => {
     await startLocalLlm(createMemoryLocalLlmStore(), { refresh: false });
     await expect(runLocally({ orgId: "o", kind: "complete", route: "/complete", runId: null, call: { systemPrompt: "", prompt: "", jsonSchema: null, model: "claude-haiku-4-5", tools: [] } })).rejects.toThrow(/owner rule/);
+  });
+});
+
+describe("LOCAL-CLAUDE-RATING-1116 — a local call states the model that ran", () => {
+  const usage = (u: Partial<LocalJobRow["usage"]>): LocalJobRow["usage"] => ({
+    inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, notionalCostUsd: null, durationMs: null, ...u,
+  });
+
+  it("names the Claude model's own catalog lines, as the org's own account, idempotent per job", () => {
+    const items = localCostItems({ jobId: "j9", model: "claude-sonnet-5-5", usage: usage({ inputTokens: 500, outputTokens: 40, cacheReadTokens: 1000, cacheWriteTokens: 0 }) });
+    expect(items).toEqual([
+      { costName: "anthropic-sonnet-5.5-tokens-input", quantity: 500, costSource: "org", status: "actual", idempotencyKey: "local-llm:j9:anthropic-sonnet-5.5-tokens-input" },
+      { costName: "anthropic-sonnet-5.5-tokens-cached-input", quantity: 1000, costSource: "org", status: "actual", idempotencyKey: "local-llm:j9:anthropic-sonnet-5.5-tokens-cached-input" },
+      { costName: "anthropic-sonnet-5.5-tokens-output", quantity: 40, costSource: "org", status: "actual", idempotencyKey: "local-llm:j9:anthropic-sonnet-5.5-tokens-output" },
+    ]);
+    expect(items.every((i) => i.costSource === "org")).toBe(true);
+  });
+
+  it("refuses a model it cannot price and an answer without usage", () => {
+    expect(() => localCostItems({ jobId: "j", model: "claude-haiku-4-5", usage: usage({ inputTokens: 1, outputTokens: 1 }) })).toThrow(/not a Claude model/);
+    expect(() => localCostItems({ jobId: "j", model: "deepseek-flash", usage: usage({ inputTokens: 1, outputTokens: 1 }) })).toThrow(/not a Claude model/);
+    expect(() => localCostItems({ jobId: "j", model: "claude-haiku-5-5", usage: usage({}) })).toThrow(/no token usage/);
+  });
+
+  it("served LLMs: a non-local org runs every LLM as stated", () => {
+    const rows = servedLlmsFor(["openai/gpt-sol", "deepseek/deepseek-flash", "anthropic/claude-haiku"], false);
+    expect(rows.map((r) => r.runsAsStated)).toEqual([true, true, true]);
+    expect(rows[1].servedBy).toMatchObject({ llm: "deepseek/deepseek-flash", provider: "deepseek", dynasty: "deepseek-flash" });
+  });
+
+  it("served LLMs: a local org runs Claude models as themselves, every other LLM on the Claude model of its tier", () => {
+    const rows = servedLlmsFor(["anthropic/claude-opus", "anthropic/claude-haiku", "deepseek/deepseek-flash", "openai/gpt-sol"], true);
+    expect(rows[0]).toMatchObject({ runsAsStated: true, servedBy: { llm: "anthropic/claude-opus", modelId: "claude-opus-5-5" } });
+    expect(rows[1]).toMatchObject({ runsAsStated: true, servedBy: { modelId: "claude-haiku-5-5" } });
+    // The same mapping the calls use (tier is data per alias).
+    for (const [i, llm] of [[2, "deepseek/deepseek-flash"], [3, "openai/gpt-sol"]] as const) {
+      const [p, m] = llm.split("/");
+      const expected = localClaudeModelFor(resolveModel(p as "deepseek", m), p as "deepseek", m);
+      expect(rows[i]).toMatchObject({ runsAsStated: false, servedBy: { provider: "anthropic", modelId: expected } });
+      expect(rows[i].servedBy!.modelId).not.toMatch(/haiku-4-5/);
+    }
+  });
+
+  it("served LLMs: an LLM this service does not serve is named, the others still answer", () => {
+    const rows = servedLlmsFor(["nope/x", "bad", "anthropic/claude-sonnet"], true);
+    expect(rows[0]).toMatchObject({ runsAsStated: null, error: expect.any(String) });
+    expect(rows[1]).toMatchObject({ runsAsStated: null, error: expect.stringContaining("provider/model") });
+    expect(rows[2].runsAsStated).toBe(true);
   });
 });

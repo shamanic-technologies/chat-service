@@ -4104,6 +4104,60 @@ registry.registerPath({
   },
 });
 
+export const LocalLlmServedLlmsQuerySchema = z
+  .object({
+    orgId: z.string().uuid().openapi({ description: "Internal org id (UUID) the script would run for." }),
+    llms: z
+      .string()
+      .min(1)
+      .openapi({
+        description:
+          "Comma-separated LLMs as script tactics state them: provider + chat-service LLM dynasty slug, e.g. `openai/gpt-sol,deepseek/deepseek-flash,anthropic/claude-sonnet`. Max 50.",
+      }),
+  })
+  .openapi("LocalLlmServedLlmsQuery");
+
+export const LocalLlmServedLlmSchema = z
+  .object({
+    llm: z.string().openapi({ description: "The LLM as asked, byte-equal." }),
+    runsAsStated: z
+      .boolean()
+      .nullable()
+      .openapi({ description: "true = this org's calls on that LLM run on it; false = another model runs (`servedBy`); null = not an LLM this service serves (`error`)." }),
+    servedBy: z
+      .object({
+        llm: z.string().openapi({ description: "The model that runs, in the same provider/dynasty form, e.g. `anthropic/claude-sonnet`." }),
+        provider: z.string(),
+        dynasty: z.string(),
+        modelId: z.string().openapi({ description: "The concrete model id asked for (the runner reports the one that ran on each call's run)." }),
+      })
+      .optional(),
+    error: z.string().optional(),
+  })
+  .openapi("LocalLlmServedLlm");
+
+export const LocalLlmServedLlmsResponseSchema = z
+  .object({
+    orgId: z.string(),
+    local: z.boolean().openapi({ description: "Whether the org declared its LLM local (runs on the user's own Claude Code)." }),
+    llms: z.array(LocalLlmServedLlmSchema).openapi({ description: "One row per asked LLM, in the order asked." }),
+  })
+  .openapi("LocalLlmServedLlmsResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/local-llm/served-llms",
+  tags: ["Local LLM"],
+  summary: "Which model serves each stated LLM for one org (LOCAL-CLAUDE-RATING-1116)",
+  description:
+    "For the script pick (workflow-service): one read per pick says, for one org and the LLMs scripts state, whether that org runs each AS STATED or which model runs instead. A non-local org runs every LLM as stated. An org that declared its LLM local runs a Claude model it names as itself, and any other LLM on the Claude model of that LLM's capability tier (the mapping its calls use; never Haiku 4.5). An LLM this service does not serve answers `runsAsStated: null` + `error`, the other rows still answer. **Auth:** `x-api-key` only.",
+  request: { headers: z.object({ "x-api-key": z.string() }), query: LocalLlmServedLlmsQuerySchema },
+  responses: {
+    200: { description: "One row per asked LLM", content: { "application/json": { schema: LocalLlmServedLlmsResponseSchema } } },
+    400: { description: "orgId not a UUID, llms empty or over 50", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 registry.registerPath({
   method: "post",
   path: "/orgs/local-llm/work/claim",

@@ -353,7 +353,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -436,6 +436,8 @@ import {
   localLlmStore,
   LocalRunnerError,
   runLocally,
+  localCostItems,
+  servedLlmsFor,
   startLocalLlm,
   type RoundMessage,
 } from "./lib/local-llm.js";
@@ -1396,6 +1398,8 @@ async function handleLocalComplete(
       runId,
       call: completeCall({ systemPrompt: a.systemPrompt, message: a.message, responseSchema: a.responseSchema, jsonMode: a.jsonMode, webSearch: a.webSearch, model: a.model }),
     });
+    // LOCAL-CLAUDE-RATING-1116: the model that ran, stated on the run (never charged: costSource org).
+    await addRunCosts(runId, localCostItems(answer), { ...identity, runId }, trackingHeaders);
     const response: Record<string, unknown> = {
       content: a.jsonMode ? JSON.stringify(answer.structured) : (answer.text ?? ""),
       tokensInput: answer.usage.inputTokens ?? 0,
@@ -2643,6 +2647,7 @@ async function runLocalJudgment(args: {
   let failed = false;
   try {
     const answer = await runLocally({ orgId, kind: "judgment", route: `/${taskName}`, runId, call: judgmentCall(args.state, questions) });
+    await addRunCosts(runId, localCostItems(answer), { orgId, userId, runId }, trackingHeaders);
     const answers = judgmentAnswers(questions, answer.structured);
     traceEvent(runId, "judgments-done", { orgId, userId }, workflowTracking, {
       data: { judge: "local-claude-code", model: answer.model, questionCount: Object.keys(questions).length, inputTokens: answer.usage.inputTokens, localJobId: answer.jobId },
@@ -5631,6 +5636,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
             signal,
           });
           localModelsUsed.add(answer.model);
+          if (!runId) throw new Error("[chat] a local round answered with no run to state it on");
+          await addRunCosts(runId, localCostItems(answer), { orgId, userId, runId }, trackingHeaders);
           const step = chatRoundAnswer(answer, roundTools.length > 0);
           return { ...step, model: answer.model, inputTokens: answer.usage.inputTokens ?? 0, outputTokens: answer.usage.outputTokens ?? 0 };
         },
@@ -6782,6 +6789,16 @@ app.get("/internal/local-llm/orgs", requireInternalAuth, async (req, res) => {
   const bad = orgIds?.find((id) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id));
   if (bad) return res.status(400).json({ error: `orgIds: "${bad}" is not an internal org id (UUID)` });
   res.json({ orgs: await declaredLocalOrgs(orgIds) });
+});
+
+// LOCAL-CLAUDE-RATING-1116: the script pick asks which model will really serve each stated LLM for one org.
+app.get("/internal/local-llm/served-llms", requireInternalAuth, async (req, res) => {
+  const parsed = LocalLlmServedLlmsQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  const llms = parsed.data.llms.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  if (llms.length === 0 || llms.length > 50) return res.status(400).json({ error: `llms: between 1 and 50 entries (got ${llms.length})` });
+  const local = await isLocalLlmOrg(parsed.data.orgId);
+  res.json({ orgId: parsed.data.orgId, local, llms: servedLlmsFor(llms, local) });
 });
 
 app.post("/orgs/local-llm/work/claim", requireAuth, async (req, res) => {
