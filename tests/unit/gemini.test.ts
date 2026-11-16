@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { completeWithGemini } from "../../src/lib/gemini.js";
-import { VendorUnsupportedOptionError } from "../../src/lib/openai-compatible.js";
+import { completeWithGemini, GeminiUnsupportedOptionError } from "../../src/lib/gemini.js";
 
 describe("completeWithGemini", () => {
   const fetchSpy = vi.fn();
@@ -372,15 +371,14 @@ describe("completeWithGemini", () => {
     await expect(runWithTimers(baseOptions)).rejects.toThrow("fetch failed");
   });
 
-  it("a 400 shape refusal is a VendorUnsupportedOptionError carrying Google's message, never retried", async () => {
+  it("a 400 shape refusal is a GeminiUnsupportedOptionError carrying Google's message, never retried", async () => {
     const vendorBody = '{"error":{"code":400,"message":"* GenerateContentRequest.generation_config.response_schema.properties[replyTo].enum[2]: cannot be empty","status":"INVALID_ARGUMENT"}}';
     fetchSpy.mockResolvedValueOnce(errorResponse(400, vendorBody));
     const err = await runWithTimers(baseOptions).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(VendorUnsupportedOptionError);
-    expect((err as VendorUnsupportedOptionError).status).toBe(400);
-    expect((err as VendorUnsupportedOptionError).vendorMessage).toBe(vendorBody);
+    expect(err).toBeInstanceOf(GeminiUnsupportedOptionError);
+    expect((err as GeminiUnsupportedOptionError).status).toBe(400);
+    expect((err as GeminiUnsupportedOptionError).vendorMessage).toContain("enum[2]: cannot be empty");
     expect((err as Error).message).toContain("enum[2]: cannot be empty");
-    expect((err as Error).message).toContain("retrying will not help");
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 

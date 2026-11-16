@@ -4,8 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import { readGeminiBilledTokens, type GeminiCostLine, type GeminiUsageMetadata } from "./gemini-usage.js";
-import { isUnsupportedOptionRefusal, VendorUnsupportedOptionError } from "./openai-compatible.js";
-import { toPortableJsonSchema } from "./vendor-schema.js";
+import { toGeminiJsonSchema } from "./vendor-schema.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -420,23 +419,6 @@ class GeminiRetryableError extends Error {
   }
 }
 
-/**
- * A non-retryable Gemini refusal. A 400 / 422 refuses the request as SENT and will refuse it identically
- * forever, so it is the same `VendorUnsupportedOptionError` the direct-vendor paths throw: the routes answer
- * 400, retryable:false, with Google's own words — never "502, please try again" (SCHEMA-ANY-VENDOR-1116).
- */
-export function geminiRequestError(status: number, model: string, errorText: string): Error {
-  if (isUnsupportedOptionRefusal(status)) {
-    return new VendorUnsupportedOptionError(
-      `[gemini] Google rejected the request as sent (${status} from ${model}): ${errorText.slice(0, 500)}. ` +
-        `This is a request-configuration error — retrying will not help.`,
-      status,
-      errorText,
-    );
-  }
-  return new Error(`[gemini] API error ${status}: ${errorText}`);
-}
-
 export class GeminiProviderError extends Error {
   constructor(
     public readonly status: number,
@@ -446,6 +428,37 @@ export class GeminiProviderError extends Error {
     super(message);
     this.name = "GeminiProviderError";
   }
+}
+
+/**
+ * Gemini refused the request SHAPE (400 INVALID_ARGUMENT, e.g. a schema form
+ * its dialect cannot carry). The identical request is refused forever, so the
+ * routes answer 400 `{retryable: false}` with Google's own words, never "502,
+ * please try again" (SCHEMA-ANY-VENDOR-1116; same rule as
+ * `VendorUnsupportedOptionError`). An invalid API key is also a 400 at Google
+ * but is not the request's shape: it stays a provider failure.
+ */
+export class GeminiUnsupportedOptionError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly vendorMessage: string,
+  ) {
+    super(`[gemini] API error ${status}: ${vendorMessage}`);
+    this.name = "GeminiUnsupportedOptionError";
+  }
+}
+
+export function throwIfGeminiRefusedShape(status: number, errorText: string): void {
+  if (status !== 400) return;
+  if (/API_KEY_INVALID|API key not valid/i.test(errorText)) return;
+  let message = errorText;
+  try {
+    const parsed = JSON.parse(errorText) as { error?: { message?: unknown } };
+    if (typeof parsed.error?.message === "string") message = parsed.error.message;
+  } catch {
+    // Not JSON: Google's raw text is the message.
+  }
+  throw new GeminiUnsupportedOptionError(status, message);
 }
 
 /**
@@ -484,7 +497,8 @@ async function callGeminiOnce(
     if (RETRYABLE_STATUS_CODES.has(res.status)) {
       throw new GeminiRetryableError(res.status, `[gemini] API error ${res.status}: ${errorText}`);
     }
-    throw geminiRequestError(res.status, model, errorText);
+    throwIfGeminiRefusedShape(res.status, errorText);
+    throw new Error(`[gemini] API error ${res.status}: ${errorText}`);
   }
 
   const data = (await res.json()) as {
@@ -702,11 +716,12 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
     });
   }
 
-  // The caller's JSON Schema rides Google's JSON Schema field (`responseJsonSchema`), translated only by the
-  // lossless rewrites every vendor accepts (SCHEMA-ANY-VENDOR-1116). The older OpenAPI `responseSchema` field
-  // refused valid schemas (an enum holding "": `enum[2]: cannot be empty`) and its allow-list dropped keywords
-  // the caller meant (`additionalProperties`, `const`, `$ref`).
-  const jsonSchema = responseSchema != null ? toPortableJsonSchema(responseSchema) : undefined;
+  // The caller's JSON Schema rides Google's JSON Schema field (`responseJsonSchema`), translated only where
+  // Google refuses valid JSON Schema (SCHEMA-ANY-VENDOR-1116, `toGeminiJsonSchema`). The older OpenAPI
+  // `responseSchema` field refused valid schemas (an enum holding "": `enum[2]: cannot be empty`, number and
+  // boolean enums, an array with no `items`) and its allow-list dropped keywords the caller meant. Nothing to
+  // decode: the answer already follows the caller's own schema.
+  const jsonSchema = responseSchema != null ? toGeminiJsonSchema(responseSchema) : undefined;
 
   // Build request body. When webSearch is on, attach the native googleSearch
   // grounding tool so Gemini answers from live web results. Omitted entirely

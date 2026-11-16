@@ -6,8 +6,8 @@
 import type { Response as ExpressResponse } from "express";
 import type { ToolCallRecord } from "../db/schema.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
-import { buildThinkingConfig, geminiCostPrefix, geminiRequestError, type GeminiThinkingLevel } from "./gemini.js";
-import { toPortableJsonSchema } from "./vendor-schema.js";
+import { buildThinkingConfig, geminiCostPrefix, throwIfGeminiRefusedShape, type GeminiThinkingLevel } from "./gemini.js";
+import { toGeminiJsonSchema } from "./vendor-schema.js";
 import { buildToolResultFallback } from "./tool-fallback.js";
 import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, endToolFinalNote, endToolNudgeNote, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH, needsAnswerNudge } from "./tool-budget.js";
 import { mergeGeminiCostLines, readGeminiBilledTokens, type GeminiCostLine, type GeminiUsageMetadata } from "./gemini-usage.js";
@@ -72,7 +72,7 @@ export interface ToolDefinition {
   };
 }
 
-/** Gemini function declaration format: the tool's JSON Schema rides `parametersJsonSchema`. */
+/** Gemini function declaration format. */
 interface GeminiFunctionDeclaration {
   name: string;
   description: string;
@@ -191,12 +191,12 @@ export interface StreamGeminiChatResult {
 /**
  * Convert Anthropic-style tool definitions to Gemini functionDeclarations.
  *
- * The tool's JSON Schema rides `parametersJsonSchema` (Google's JSON Schema field), translated only by the
- * lossless rewrites every vendor accepts (SCHEMA-ANY-VENDOR-1116, `toPortableJsonSchema`). The older OpenAPI
- * `parameters` field refused valid JSON Schema (`propertyNames` from a Zod record, GEMINI-BRAND-TOOLS-1112; an
- * enum holding "") and its allow-list dropped what it could not carry. Measured live 2026-11-16: every JSON
- * Schema keyword is accepted there except the tuple form `items: [...]`, which the rewrite turns into
- * `prefixItems`. A root `$defs` / `definitions` travels with the properties so their `$ref`s resolve.
+ * The tool's JSON Schema rides `parametersJsonSchema` (Google's JSON Schema field), translated only where Google
+ * refuses valid JSON Schema (SCHEMA-ANY-VENDOR-1116, `toGeminiJsonSchema`). The older OpenAPI `parameters` field
+ * refused valid JSON Schema (`propertyNames` from a Zod record, GEMINI-BRAND-TOOLS-1112; an enum holding "") and
+ * its allow-list dropped what it could not carry. Measured live 2026-11-16: every JSON Schema keyword is accepted
+ * there; the translation is lossless, so the call's arguments need no decoding. A root `$defs` / `definitions`
+ * travels with the properties so their `$ref`s resolve.
  */
 export function toGeminiFunctionDeclarations(
   tools: ToolDefinition[],
@@ -213,7 +213,7 @@ export function toGeminiFunctionDeclarations(
     return {
       name: t.name,
       description: t.description,
-      parametersJsonSchema: toPortableJsonSchema(rawParameters),
+      parametersJsonSchema: toGeminiJsonSchema(rawParameters),
     };
   });
 }
@@ -503,8 +503,9 @@ export async function streamGeminiChat(
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "unknown error");
-      // A refused request shape (400/422) is non-retryable, in Google's own words (SCHEMA-ANY-VENDOR-1116).
-      throw geminiRequestError(response.status, model, errorText);
+      // A refused request shape is non-retryable, in Google's own words (SCHEMA-ANY-VENDOR-1116).
+      throwIfGeminiRefusedShape(response.status, errorText);
+      throw new Error(`[gemini-chat] API error ${response.status}: ${errorText}`);
     }
 
     // Parse SSE stream from Gemini

@@ -10,7 +10,9 @@
  * - Google (`responseJsonSchema` and function `parametersJsonSchema`) takes JSON Schema as is, including an
  *   enum holding "" — which its older OpenAPI `responseSchema` field refused (`enum[2]: cannot be empty`,
  *   11 of 11 lead-answerer runs on 2026-11-16). It refuses only the draft-07 tuple form `items: [...]` and a
- *   `$ref` the schema cannot resolve (`#/components/...`: "reference to undefined schema").
+ *   `$ref` the schema cannot resolve (`#/components/...`: "reference to undefined schema"), and a `required`
+ *   name with no property ("requires unspecified property"). Number/boolean enums and an array with no `items`,
+ *   refused by its OpenAPI field, are accepted there.
  * - OpenAI (non-strict json_schema) refuses only the tuple form. Moonshot refuses the tuple form and an
  *   `enum` with no `type` ("type is not defined"). Z.ai answered a 500 to the tuple form.
  * - Anthropic (`output_config.format`, strict) refuses much more: `oneOf`, `not`, `if`, `minimum`/`maximum`/
@@ -22,7 +24,8 @@
  * 1. `toPortableJsonSchema` — LOSSLESS rewrites every vendor that takes JSON Schema accepts: the tuple form
  *    becomes `prefixItems`, an untyped `enum`/`const` gets its type(s), OpenAPI `nullable` becomes a `"null"`
  *    type, a `$ref` that resolves nowhere is dropped (no one can check it). Same instances valid before and
- *    after. Google, OpenAI, Z.ai and Moonshot get this.
+ *    after. OpenAI, Z.ai and Moonshot get this; Google gets it via `toGeminiJsonSchema` (+ undefined `required`
+ *    names declared as any-value properties).
  * 2. `toAnthropicJsonSchema` — Anthropic's strict dialect on top: a refused CONSTRAINT keyword moves into the
  *    node's `description` (the model still reads it; what Anthropic's own SDK does), `oneOf` becomes `anyOf`,
  *    local `$ref`s are inlined, every object gets `additionalProperties: false`. A node the dialect cannot
@@ -150,6 +153,37 @@ function portableNode(value: unknown, root: Node): unknown {
 /** Lossless rewrites every JSON-Schema vendor accepts. Returns a new schema; the caller's is not mutated. */
 export function toPortableJsonSchema(schema: Record<string, unknown>): Record<string, unknown> {
   return portableNode(schema, schema) as Record<string, unknown>;
+}
+
+function geminiNode(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(geminiNode);
+  if (!isNode(value)) return value;
+  const out: Node = {};
+  for (const [key, val] of Object.entries(value)) {
+    if ((SCHEMA_MAP_KEYWORDS as readonly string[]).includes(key) && isNode(val)) {
+      out[key] = Object.fromEntries(Object.entries(val).map(([name, sub]) => [name, geminiNode(sub)]));
+    } else if ((SCHEMA_KEYWORDS as readonly string[]).includes(key) || (SCHEMA_ARRAY_KEYWORDS as readonly string[]).includes(key)) {
+      out[key] = geminiNode(val);
+    } else {
+      out[key] = val;
+    }
+  }
+  // `required` naming a key `properties` does not define: Google refuses it ("requires unspecified property").
+  // JSON Schema means "this key must be present, any value", so the key is declared as any value: same instances.
+  if (Array.isArray(out.required) && isNode(out.properties)) {
+    const missing = out.required.filter((r): r is string => typeof r === "string" && !(r in (out.properties as Node)));
+    if (missing.length > 0) out.properties = { ...(out.properties as Node), ...Object.fromEntries(missing.map((r) => [r, {}])) };
+  }
+  return out;
+}
+
+/**
+ * The caller's schema for Google's JSON Schema fields (`responseJsonSchema`, function `parametersJsonSchema`):
+ * the portable rewrites, plus the one form only Google refuses (measured live 2026-11-16): a `required` name with
+ * no property, declared as an any-value property. Lossless: nothing to decode.
+ */
+export function toGeminiJsonSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  return geminiNode(toPortableJsonSchema(schema)) as Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
