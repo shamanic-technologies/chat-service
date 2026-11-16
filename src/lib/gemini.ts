@@ -430,6 +430,37 @@ export class GeminiProviderError extends Error {
 }
 
 /**
+ * Gemini refused the request SHAPE (400 INVALID_ARGUMENT, e.g. a schema form
+ * its dialect cannot carry). The identical request is refused forever, so the
+ * routes answer 400 `{retryable: false}` with Google's own words, never "502,
+ * please try again" (SCHEMA-ANY-VENDOR-1116; same rule as
+ * `VendorUnsupportedOptionError`). An invalid API key is also a 400 at Google
+ * but is not the request's shape: it stays a provider failure.
+ */
+export class GeminiUnsupportedOptionError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly vendorMessage: string,
+  ) {
+    super(`[gemini] API error ${status}: ${vendorMessage}`);
+    this.name = "GeminiUnsupportedOptionError";
+  }
+}
+
+export function throwIfGeminiRefusedShape(status: number, errorText: string): void {
+  if (status !== 400) return;
+  if (/API_KEY_INVALID|API key not valid/i.test(errorText)) return;
+  let message = errorText;
+  try {
+    const parsed = JSON.parse(errorText) as { error?: { message?: unknown } };
+    if (typeof parsed.error?.message === "string") message = parsed.error.message;
+  } catch {
+    // Not JSON: Google's raw text is the message.
+  }
+  throw new GeminiUnsupportedOptionError(status, message);
+}
+
+/**
  * Single attempt to call the Gemini API. Throws GeminiRetryableError for
  * retryable status codes so the caller can decide whether to retry.
  */
@@ -465,6 +496,7 @@ async function callGeminiOnce(
     if (RETRYABLE_STATUS_CODES.has(res.status)) {
       throw new GeminiRetryableError(res.status, `[gemini] API error ${res.status}: ${errorText}`);
     }
+    throwIfGeminiRefusedShape(res.status, errorText);
     throw new Error(`[gemini] API error ${res.status}: ${errorText}`);
   }
 
@@ -665,22 +697,104 @@ const GEMINI_SCHEMA_FIELDS = new Set([
   "maximum",
 ]);
 
-function sanitizeGeminiSchemaNode(value: unknown, removed: Set<string>): unknown {
-  if (Array.isArray(value)) return value.map((item) => sanitizeGeminiSchemaNode(item, removed));
-  if (value === null || typeof value !== "object") return value;
-  const node = value as Record<string, unknown>;
+/**
+ * Gemini refuses some VALID JSON Schema outright (HTTP 400), where every other
+ * vendor we call accepts it (SCHEMA-ANY-VENDOR-1116, probed live 2026-11-16 on
+ * gemini-3.5-flash-lite + gemini-3.1-pro-preview; Z.ai, Moonshot, OpenAI and
+ * Anthropic answered 200 to the same four schemas):
+ *
+ *   - an enum member that is the empty string (`enum[2]: cannot be empty`):
+ *     prod 2026-11-15/16, the lead answerer's `replyTo` ("" = new thread)
+ *     failed 11 of 11 Gemini calls;
+ *   - a number / boolean enum member (`Invalid value ... (TYPE_STRING)`):
+ *     Gemini enums are strings only;
+ *   - `required` naming a property `properties` does not define
+ *     (`required[1]: property is not defined`);
+ *   - an array with no `items` (`items: missing field`).
+ *
+ * The caller's schema is TRANSLATED, never refused, and the caller gets back
+ * exactly what its own schema describes: an enum is sent as strings (the empty
+ * string as a visible placeholder) and the answer is DECODED back to the
+ * caller's value ("" stays "", 2 stays the number 2). A `required` name with
+ * no property is dropped (Gemini cannot express it; named in `removed`), an
+ * array without `items` gets `items: {}` (accepted, any item).
+ */
+type GeminiDecoder = (value: unknown) => unknown;
+
+const EMPTY_ENUM_PLACEHOLDER = "(empty)";
+
+function translateGeminiEnum(
+  values: unknown[],
+  out: Record<string, unknown>,
+  removed: Set<string>,
+): GeminiDecoder | undefined {
+  const needsCodec = values.some((v) => v === "" || typeof v === "number" || typeof v === "boolean");
+  if (!needsCodec) {
+    out.enum = values;
+    return undefined;
+  }
+  const taken = new Set(values.filter((v): v is string => typeof v === "string"));
+  let placeholder = EMPTY_ENUM_PLACEHOLDER;
+  for (let i = 1; taken.has(placeholder); i++) placeholder = `${EMPTY_ENUM_PLACEHOLDER.slice(0, -1)} ${i})`;
+  const wire = new Map<string, unknown>();
+  for (const v of values) {
+    if (v === null) {
+      out.nullable = true;
+      continue;
+    }
+    if (typeof v === "object") {
+      removed.add("enum[object]");
+      continue;
+    }
+    const sent = v === "" ? placeholder : String(v);
+    if (!wire.has(sent)) wire.set(sent, v);
+  }
+  out.enum = Array.from(wire.keys());
+  // Gemini enums are strings: a number/boolean enum is sent as type string.
+  out.type = "string";
+  return (value) => (typeof value === "string" && wire.has(value) ? wire.get(value) : value);
+}
+
+function sanitizeGeminiSchemaNode(
+  value: unknown,
+  removed: Set<string>,
+): { node: unknown; decode?: GeminiDecoder } {
+  if (Array.isArray(value)) {
+    const items = value.map((item) => sanitizeGeminiSchemaNode(item, removed));
+    return { node: items.map((i) => i.node) };
+  }
+  if (value === null || typeof value !== "object") return { node: value };
+  const source = value as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(node)) {
+  const propDecoders: Record<string, GeminiDecoder> = {};
+  let itemsDecode: GeminiDecoder | undefined;
+  const anyOfDecoders: GeminiDecoder[] = [];
+  let enumDecode: GeminiDecoder | undefined;
+  for (const [key, val] of Object.entries(source)) {
     if (!GEMINI_SCHEMA_FIELDS.has(key)) {
       removed.add(key);
       continue;
     }
     if (key === "properties" && val && typeof val === "object" && !Array.isArray(val)) {
       const props: Record<string, unknown> = {};
-      for (const [name, sub] of Object.entries(val as Record<string, unknown>)) props[name] = sanitizeGeminiSchemaNode(sub, removed);
+      for (const [name, sub] of Object.entries(val as Record<string, unknown>)) {
+        const t = sanitizeGeminiSchemaNode(sub, removed);
+        props[name] = t.node;
+        if (t.decode) propDecoders[name] = t.decode;
+      }
       out.properties = props;
-    } else if (key === "items" || key === "anyOf") {
-      out[key] = sanitizeGeminiSchemaNode(val, removed);
+    } else if (key === "items") {
+      const t = sanitizeGeminiSchemaNode(val, removed);
+      out.items = t.node;
+      itemsDecode = t.decode;
+    } else if (key === "anyOf" && Array.isArray(val)) {
+      out.anyOf = val.map((branch) => {
+        const t = sanitizeGeminiSchemaNode(branch, removed);
+        if (t.decode) anyOfDecoders.push(t.decode);
+        return t.node;
+      });
+    } else if (key === "enum" && Array.isArray(val)) {
+      enumDecode = translateGeminiEnum(val, out, removed);
     } else if (key === "type" && Array.isArray(val)) {
       // JSON Schema `type: ["string", "null"]`: Gemini takes ONE type + `nullable`.
       const types = val.filter((t): t is string => typeof t === "string" && t !== "null");
@@ -688,19 +802,62 @@ function sanitizeGeminiSchemaNode(value: unknown, removed: Set<string>): unknown
       if (types.length === 1) out.type = types[0];
       else if (types.length > 1) out.anyOf = types.map((t) => ({ type: t }));
       removed.add("type[]");
+    } else if (key === "type" && enumDecode && out.type === "string") {
+      // A number/boolean enum already set the wire type to string.
+      continue;
     } else {
       out[key] = val;
     }
   }
-  return out;
+  if (enumDecode) out.type = "string";
+  if (Array.isArray(out.required)) {
+    const props = out.properties as Record<string, unknown> | undefined;
+    const kept = (out.required as unknown[]).filter((name) => typeof name === "string" && props != null && name in props);
+    if (kept.length < out.required.length) removed.add("required[undefined property]");
+    if (kept.length > 0) out.required = kept;
+    else delete out.required;
+  }
+  if (out.type === "array" && out.items == null) out.items = {};
+
+  const hasProps = Object.keys(propDecoders).length > 0;
+  if (!enumDecode && !hasProps && !itemsDecode && anyOfDecoders.length === 0) return { node: out };
+  const decode: GeminiDecoder = (answer) => {
+    let v = answer;
+    if (enumDecode) v = enumDecode(v);
+    if (hasProps && v !== null && typeof v === "object" && !Array.isArray(v)) {
+      const obj = { ...(v as Record<string, unknown>) };
+      for (const [name, d] of Object.entries(propDecoders)) if (name in obj) obj[name] = d(obj[name]);
+      v = obj;
+    }
+    if (itemsDecode && Array.isArray(v)) v = v.map(itemsDecode);
+    for (const d of anyOfDecoders) v = d(v);
+    return v;
+  };
+  return { node: out, decode };
 }
 
 export function sanitizeGeminiSchema(
   schema: Record<string, unknown>,
-): { schema: Record<string, unknown>; removed: string[] } {
+): { schema: Record<string, unknown>; removed: string[]; decode?: GeminiDecoder } {
   const removed = new Set<string>();
-  const sanitized = sanitizeGeminiSchemaNode(schema, removed) as Record<string, unknown>;
-  return { schema: sanitized, removed: Array.from(removed) };
+  const t = sanitizeGeminiSchemaNode(schema, removed);
+  return { schema: t.node as Record<string, unknown>, removed: Array.from(removed), ...(t.decode ? { decode: t.decode } : {}) };
+}
+
+/**
+ * Map a Gemini JSON answer back to the caller's schema values (see
+ * `sanitizeGeminiSchema`). Unreadable JSON is returned untouched: the route's
+ * strict parse then fails loud on it, as before.
+ */
+export function decodeGeminiAnswer(content: string, decode: GeminiDecoder | undefined): string {
+  if (!decode) return content;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return content;
+  }
+  return JSON.stringify(decode(parsed));
 }
 
 /**
@@ -767,9 +924,11 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
   // `$ref`) with HTTP 400. Stripping them lets Zod/JSON-Schema-7 schemas pass
   // through without forcing every caller to maintain a Gemini-only variant.
   let sanitizedSchema: Record<string, unknown> | undefined;
+  let decodeAnswer: ((value: unknown) => unknown) | undefined;
   if (responseSchema != null) {
     const result = sanitizeGeminiSchema(responseSchema);
     sanitizedSchema = result.schema;
+    decodeAnswer = result.decode;
     if (result.removed.length > 0) {
       console.warn(
         `[chat-service] Gemini schema sanitized | model=${model}` +
@@ -805,7 +964,9 @@ export async function completeWithGemini(options: GeminiCompleteOptions): Promis
       await sleep(delay);
     }
     try {
-      return await callGeminiOnce(model, apiKey, body, jsonMode);
+      const result = await callGeminiOnce(model, apiKey, body, jsonMode);
+      // The caller gets its own schema's values back ("" stays "", 2 stays 2).
+      return decodeAnswer ? { ...result, content: decodeGeminiAnswer(result.content, decodeAnswer) } : result;
     } catch (err: unknown) {
       if (err instanceof GeminiRetryableError) {
         lastError = err;
