@@ -77,8 +77,15 @@ export interface LocalUsageTotals {
   notionalCostUsd: number;
 }
 
+/** One declaring org, with the calls waiting for its runner right now. */
+export interface DeclaredLocalOrg extends LocalOrgRow {
+  pendingCalls: number;
+}
+
 export interface LocalLlmStore {
   listDeclaredOrgIds(): Promise<string[]>;
+  /** Every org that declared, oldest declaration first; `orgIds` narrows to those ids (empty array = none). */
+  listDeclaredOrgs(at: Date, orgIds?: string[]): Promise<DeclaredLocalOrg[]>;
   getOrg(orgId: string): Promise<LocalOrgRow | null>;
   setDeclared(orgId: string, declared: boolean, userId: string, at: Date): Promise<LocalOrgRow>;
   touchRunner(orgId: string, at: Date, runner: { name: string | null; version: string | null }): Promise<void>;
@@ -123,6 +130,16 @@ export function createMemoryLocalLlmStore(): LocalLlmStore & { jobs: Map<string,
     jobs,
     async listDeclaredOrgIds() {
       return [...orgs.values()].filter((o) => o.declared).map((o) => o.orgId);
+    },
+    async listDeclaredOrgs(at, orgIds) {
+      const only = orgIds ? new Set(orgIds) : null;
+      return [...orgs.values()]
+        .filter((o) => o.declared && (!only || only.has(o.orgId)))
+        .sort((a, b) => (a.declaredAt?.getTime() ?? 0) - (b.declaredAt?.getTime() ?? 0))
+        .map((o) => ({
+          ...o,
+          pendingCalls: [...jobs.values()].filter((j) => j.orgId === o.orgId && j.status === "pending" && j.pickupDeadlineAt > at).length,
+        }));
     },
     async getOrg(orgId) {
       return orgs.get(orgId) ?? null;
@@ -297,6 +314,17 @@ export function createPgLocalLlmStore(db: SqlExecutor): LocalLlmStore {
   return {
     async listDeclaredOrgIds() {
       return (await run(sql`SELECT org_id FROM local_llm_orgs WHERE declared = true`)).map((r) => String(r.org_id));
+    },
+    async listDeclaredOrgs(at, orgIds) {
+      if (orgIds && orgIds.length === 0) return [];
+      const only = orgIds ? sql` AND o.org_id IN (${sql.join(orgIds.map((id) => sql`${id}`), sql`, `)})` : sql``;
+      const rows = await run(sql`
+        SELECT o.*, (SELECT count(*)::int FROM local_llm_jobs j
+          WHERE j.org_id = o.org_id AND j.status = 'pending' AND j.pickup_deadline_at > ${iso(at)}) AS pending_calls
+        FROM local_llm_orgs o
+        WHERE o.declared = true${only}
+        ORDER BY o.declared_at ASC NULLS FIRST, o.org_id ASC`);
+      return rows.map((r) => ({ ...toOrg(r), pendingCalls: Number(r.pending_calls ?? 0) }));
     },
     async getOrg(orgId) {
       const [r] = await run(sql`SELECT * FROM local_llm_orgs WHERE org_id = ${orgId}`);

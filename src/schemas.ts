@@ -4058,6 +4058,52 @@ registry.registerPath({
   },
 });
 
+export const LocalLlmOrgsQuerySchema = z
+  .object({
+    orgIds: z
+      .string()
+      .optional()
+      .openapi({
+        description:
+          "Comma-separated internal org ids: answer only for these (the orgs the caller's key can reach). Omitted = every declaring org (staff reach). Present but empty = none.",
+        example: "06ffd332-0000-4000-8000-000000000000,1a2b3c4d-0000-4000-8000-000000000000",
+      }),
+  })
+  .openapi("LocalLlmOrgsQuery");
+
+export const LocalLlmOrgsResponseSchema = z
+  .object({
+    orgs: z.array(
+      z.object({
+        orgId: z.string(),
+        declaredAt: z.string().nullable(),
+        declaredByUserId: z.string().nullable().openapi({ description: "The user who declared it (a runner may prefer the orgs its own user declared)." }),
+        runner: z.object({
+          connected: z.boolean().openapi({ description: "A runner asked for this org's work in the last 60 s." }),
+          lastSeenAt: z.string().nullable(),
+          name: z.string().nullable(),
+          version: z.string().nullable(),
+        }),
+        pendingCalls: z.number().int().openapi({ description: "Calls waiting for a runner right now." }),
+      }),
+    ),
+  })
+  .openapi("LocalLlmOrgsResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/local-llm/orgs",
+  tags: ["Local LLM"],
+  summary: "Every org that declared its LLM local, in one read (LOCAL-CLAUDE-ORGS-1116)",
+  description:
+    "For the gateway's `GET /v1/local-llm/orgs`: a runner learns in ONE call which orgs it can serve, so a declaration made anywhere (dashboard, MCP, Conductor) is followed within its refresh. **Auth:** `x-api-key` only. Who may see which org is the gateway's decision: it passes the key's reachable orgs as `orgIds` (staff: omitted = all). Oldest declaration first.",
+  request: { headers: z.object({ "x-api-key": z.string() }), query: LocalLlmOrgsQuerySchema },
+  responses: {
+    200: { description: "The declaring orgs", content: { "application/json": { schema: LocalLlmOrgsResponseSchema } } },
+    400: { description: "An org id that is not a UUID", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 registry.registerPath({
   method: "post",
   path: "/orgs/local-llm/work/claim",

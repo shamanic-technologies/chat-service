@@ -4575,6 +4575,72 @@
         ],
         "additionalProperties": false
       },
+      "LocalLlmOrgsResponse": {
+        "type": "object",
+        "properties": {
+          "orgs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orgId": {
+                  "type": "string"
+                },
+                "declaredAt": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "declaredByUserId": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "The user who declared it (a runner may prefer the orgs its own user declared)."
+                },
+                "runner": {
+                  "type": "object",
+                  "properties": {
+                    "connected": {
+                      "type": "boolean",
+                      "description": "A runner asked for this org's work in the last 60 s."
+                    },
+                    "lastSeenAt": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "name": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "version": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "connected",
+                    "lastSeenAt",
+                    "name",
+                    "version"
+                  ]
+                },
+                "pendingCalls": {
+                  "type": "integer",
+                  "description": "Calls waiting for a runner right now."
+                }
+              },
+              "required": [
+                "orgId",
+                "declaredAt",
+                "declaredByUserId",
+                "runner",
+                "pendingCalls"
+              ]
+            }
+          }
+        },
+        "required": [
+          "orgs"
+        ]
+      },
       "LocalLlmWorkItem": {
         "type": "object",
         "properties": {
@@ -9010,6 +9076,58 @@
           },
           "400": {
             "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/local-llm/orgs": {
+      "get": {
+        "tags": [
+          "Local LLM"
+        ],
+        "summary": "Every org that declared its LLM local, in one read (LOCAL-CLAUDE-ORGS-1116)",
+        "description": "For the gateway's `GET /v1/local-llm/orgs`: a runner learns in ONE call which orgs it can serve, so a declaration made anywhere (dashboard, MCP, Conductor) is followed within its refresh. **Auth:** `x-api-key` only. Who may see which org is the gateway's decision: it passes the key's reachable orgs as `orgIds` (staff: omitted = all). Oldest declaration first.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated internal org ids: answer only for these (the orgs the caller's key can reach). Omitted = every declaring org (staff reach). Present but empty = none.",
+              "example": "06ffd332-0000-4000-8000-000000000000,1a2b3c4d-0000-4000-8000-000000000000"
+            },
+            "required": false,
+            "description": "Comma-separated internal org ids: answer only for these (the orgs the caller's key can reach). Omitted = every declaring org (staff reach). Present but empty = none.",
+            "name": "orgIds",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The declaring orgs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalLlmOrgsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An org id that is not a UUID",
             "content": {
               "application/json": {
                 "schema": {

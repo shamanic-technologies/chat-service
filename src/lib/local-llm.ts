@@ -255,6 +255,37 @@ export async function localLlmState(orgId: string, now = new Date()): Promise<Lo
   };
 }
 
+/**
+ * LOCAL-CLAUDE-ORGS-1116: the orgs that declared, in one read, so a runner follows a
+ * declaration made anywhere (dashboard, MCP, Conductor) within its refresh instead of
+ * asking `GET /orgs/local-llm` once per org. Who may SEE which org is the gateway's
+ * call (it knows the key's memberships and staff reach); `orgIds` narrows the answer
+ * to the orgs it allows, an empty list = none.
+ */
+export interface DeclaredLocalOrgView {
+  orgId: string;
+  declaredAt: string | null;
+  declaredByUserId: string | null;
+  runner: { connected: boolean; lastSeenAt: string | null; name: string | null; version: string | null };
+  pendingCalls: number;
+}
+
+export async function declaredLocalOrgs(orgIds?: string[], now = new Date()): Promise<DeclaredLocalOrgView[]> {
+  const rows = await localLlmStore().listDeclaredOrgs(now, orgIds);
+  return rows.map((o) => ({
+    orgId: o.orgId,
+    declaredAt: o.declaredAt?.toISOString() ?? null,
+    declaredByUserId: o.declaredByUserId,
+    runner: {
+      connected: o.runnerLastSeenAt !== null && now.getTime() - o.runnerLastSeenAt.getTime() <= RUNNER_CONNECTED_WITHIN_MS,
+      lastSeenAt: o.runnerLastSeenAt?.toISOString() ?? null,
+      name: o.runnerName,
+      version: o.runnerVersion,
+    },
+    pendingCalls: o.pendingCalls,
+  }));
+}
+
 // --- model choice ------------------------------------------------------------------
 
 const TIER_MODEL: Record<CapabilityTier, string> = {
