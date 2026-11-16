@@ -62,7 +62,10 @@ export const messages = pgTable("messages", {
   proactiveTrigger: boolean("proactive_trigger").notNull().default(false),
   tokenCount: integer("token_count"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  // GET /sessions/* reads one session's messages, newest page first (migration 0033, MON-PAGE-SPEED-1114).
+  index("messages_session_created_idx").on(table.sessionId, table.createdAt, table.id),
+]);
 
 export const appConfigs = pgTable(
   "app_configs",
