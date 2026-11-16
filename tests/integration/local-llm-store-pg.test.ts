@@ -79,4 +79,17 @@ describe("local LLM store on Postgres", { timeout: 30_000 }, () => {
     await store.enqueue({ ...job(200), pickupDeadlineAt: new Date(Date.now() - 1000) });
     expect(await store.claim(ORG, 5, new Date())).toEqual([]);
   });
+
+  it("LOCAL-CLAUDE-ORGS-1116: lists declaring orgs with their waiting calls, narrowed by id", async () => {
+    const at = new Date();
+    await store.setDeclared(ORG, true, "user-pg", at);
+    await store.enqueue(job(900));
+    const all = await store.listDeclaredOrgs(new Date());
+    const mine = all.find((o) => o.orgId === ORG);
+    expect(mine).toMatchObject({ declared: true, declaredByUserId: "user-pg" });
+    expect(mine!.pendingCalls).toBeGreaterThanOrEqual(1);
+    expect((await store.listDeclaredOrgs(new Date(), [ORG])).map((o) => o.orgId)).toEqual([ORG]);
+    expect(await store.listDeclaredOrgs(new Date(), [])).toEqual([]);
+    expect(await store.listDeclaredOrgs(new Date(), [`${ORG}-nobody`])).toEqual([]);
+  });
 });
