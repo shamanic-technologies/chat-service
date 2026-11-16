@@ -117,11 +117,18 @@ interface WorkItem {
 function startRunner(app: App, answer: (item: WorkItem) => Record<string, unknown>) {
   const executed = new Map<string, number>();
   const seen: WorkItem[] = [];
+  const claimRefusals: string[] = [];
   let stop = false;
   const loop = (async () => {
     while (!stop) {
       const res = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 200, max: 5, runner: { name: "test-runner", version: "0.0.1" } });
-      expect(res.status).toBe(200);
+      if (res.status !== 200) {
+        // Logged, never thrown: a throw here would kill the runner and hang the caller until the test timeout.
+        claimRefusals.push(`${res.status} ${JSON.stringify(res.body)}`);
+        console.warn(`[test-runner] claim refused: ${res.status} ${res.text}`);
+        await new Promise((r) => setTimeout(r, 50));
+        continue;
+      }
       await Promise.all(
         (res.body.items as WorkItem[]).map(async (item) => {
           seen.push(item);
@@ -135,7 +142,7 @@ function startRunner(app: App, answer: (item: WorkItem) => Record<string, unknow
       );
     }
   })();
-  return { executed, seen, stop: async () => { stop = true; await loop; } };
+  return { executed, seen, claimRefusals, stop: async () => { stop = true; await loop; } };
 }
 
 async function boot() {
