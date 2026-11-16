@@ -4434,6 +4434,305 @@
           "url"
         ],
         "additionalProperties": false
+      },
+      "LocalLlmState": {
+        "type": "object",
+        "properties": {
+          "declared": {
+            "type": "boolean"
+          },
+          "declaredAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "declaredByUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "runner": {
+            "type": "object",
+            "properties": {
+              "connected": {
+                "type": "boolean",
+                "description": "A runner asked for work in the last 60 s."
+              },
+              "lastSeenAt": {
+                "type": "string",
+                "nullable": true
+              },
+              "name": {
+                "type": "string",
+                "nullable": true
+              },
+              "version": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "connected",
+              "lastSeenAt",
+              "name",
+              "version"
+            ]
+          },
+          "pendingCalls": {
+            "type": "integer",
+            "description": "Calls waiting for the runner right now."
+          },
+          "usageLast30Days": {
+            "type": "object",
+            "properties": {
+              "calls": {
+                "type": "integer"
+              },
+              "inputTokens": {
+                "type": "number"
+              },
+              "outputTokens": {
+                "type": "number"
+              },
+              "notionalCostUsd": {
+                "type": "number",
+                "description": "What Claude Code says these calls would cost at API prices. Measured, never charged."
+              },
+              "chargedUsd": {
+                "type": "number",
+                "enum": [
+                  0
+                ]
+              }
+            },
+            "required": [
+              "calls",
+              "inputTokens",
+              "outputTokens",
+              "notionalCostUsd",
+              "chargedUsd"
+            ]
+          },
+          "runsLocally": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Call families that run on the runner for a declaring org."
+          },
+          "stillOnPlatform": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "family": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "family",
+                "reason"
+              ]
+            },
+            "description": "Call families that still run on a platform key for a declaring org, and why."
+          }
+        },
+        "required": [
+          "declared",
+          "declaredAt",
+          "declaredByUserId",
+          "runner",
+          "pendingCalls",
+          "usageLast30Days",
+          "runsLocally",
+          "stillOnPlatform"
+        ]
+      },
+      "LocalLlmDeclare": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "true = every LLM call chat-service makes for this org runs on the user's own Claude Code, on their machine, through a runner (the org pays $0 for those calls). false = back to the platform.",
+            "example": true
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "additionalProperties": false
+      },
+      "LocalLlmWorkItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "leaseId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Send it back with the answer: only this claim may answer."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "judgment",
+              "chat_round"
+            ]
+          },
+          "answerBy": {
+            "type": "string",
+            "description": "After this instant the caller has stopped waiting (an answer then gets 410)."
+          },
+          "claude": {
+            "type": "object",
+            "properties": {
+              "systemPrompt": {
+                "type": "string",
+                "description": "→ `--system-prompt`, verbatim."
+              },
+              "prompt": {
+                "type": "string",
+                "description": "→ the prompt of `claude -p`, verbatim."
+              },
+              "jsonSchema": {
+                "type": "object",
+                "nullable": true,
+                "additionalProperties": {
+                  "nullable": true
+                },
+                "description": "→ `--json-schema` (JSON-encoded) when not null; answer with the CLI's `structured_output`."
+              },
+              "model": {
+                "type": "string",
+                "description": "→ `--model`.",
+                "example": "claude-sonnet-5-5"
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Claude Code built-in tools this call may use → `--tools` + `--allowedTools`; [] = `--tools \"\"`.",
+                "example": []
+              }
+            },
+            "required": [
+              "systemPrompt",
+              "prompt",
+              "jsonSchema",
+              "model",
+              "tools"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "leaseId",
+          "kind",
+          "answerBy",
+          "claude"
+        ]
+      },
+      "LocalLlmClaim": {
+        "type": "object",
+        "properties": {
+          "waitMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 25000,
+            "description": "Hold the request open up to this long waiting for work (default 20000, max 25000)."
+          },
+          "max": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Most items to take at once (default 1, max 10)."
+          },
+          "runner": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "version": {
+                "type": "string",
+                "maxLength": 100
+              }
+            },
+            "description": "Shown in the org's state (e.g. the Mac app and its version)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "LocalLlmResult": {
+        "type": "object",
+        "properties": {
+          "leaseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "model": {
+            "type": "string",
+            "description": "The model the CLI says ran: the `model` of its `system`/`init` line. Required when ok."
+          },
+          "text": {
+            "type": "string",
+            "description": "The CLI's `result`, for an item with no jsonSchema."
+          },
+          "structured": {
+            "nullable": true,
+            "description": "The CLI's `structured_output`, for an item with a jsonSchema."
+          },
+          "error": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "When ok is false: what went wrong, in plain words."
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "inputTokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "outputTokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cacheReadTokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cacheWriteTokens": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "description": "From the CLI's `result` line `usage` (input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens)."
+          },
+          "notionalCostUsd": {
+            "type": "number",
+            "minimum": 0,
+            "description": "The CLI's `total_cost_usd` (what it would cost at API prices; never charged)."
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "leaseId",
+          "ok"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -8513,6 +8812,362 @@
           },
           "404": {
             "description": "No such server for this brand",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/local-llm": {
+      "get": {
+        "tags": [
+          "Local LLM"
+        ],
+        "summary": "Whether this org's LLM runs on the user's own Claude Code, and its runner's state",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID"
+            },
+            "required": true,
+            "description": "Internal org UUID",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID"
+            },
+            "required": true,
+            "description": "Internal user UUID",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Caller's run"
+            },
+            "required": true,
+            "description": "Caller's run",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalLlmState"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Local LLM"
+        ],
+        "summary": "Declare (or stop) running this org's LLM on the user's own Claude Code",
+        "description": "Org-level, for every campaign and the Copilot at once. While declared, text and structured completions, judgments and chat turns made for this org become work items a runner on the user's machine executes with `claude -p`; the org is charged $0 for them, no affordability check runs, and usage is measured per call. A runner that is away makes calls WAIT, then fail with a named state (`local_runner_waiting`), never a platform key.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID"
+            },
+            "required": true,
+            "description": "Internal org UUID",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID"
+            },
+            "required": true,
+            "description": "Internal user UUID",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Caller's run"
+            },
+            "required": true,
+            "description": "Caller's run",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalLlmDeclare"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The state after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LocalLlmState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/local-llm/work/claim": {
+      "post": {
+        "tags": [
+          "Local LLM"
+        ],
+        "summary": "Runner: take this org's waiting LLM calls (long poll)",
+        "description": "Answers as soon as work exists, or `items: []` after `waitMs`. Each item is handed to ONE claim only (a parallel claim never gets the same item). Each call marks the runner seen (connected = a claim in the last 60 s). Run each item with `claude -p` as its `claude` field says, then POST the answer to `/orgs/local-llm/work/{id}/result`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID"
+            },
+            "required": true,
+            "description": "Internal org UUID",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID"
+            },
+            "required": true,
+            "description": "Internal user UUID",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Caller's run"
+            },
+            "required": true,
+            "description": "Caller's run",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalLlmClaim"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Work to run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LocalLlmWorkItem"
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This org has not declared its LLM local (`local_llm_not_declared`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/local-llm/work/{id}/result": {
+      "post": {
+        "tags": [
+          "Local LLM"
+        ],
+        "summary": "Runner: send the answer of one claimed call",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID"
+            },
+            "required": true,
+            "description": "Internal org UUID",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID"
+            },
+            "required": true,
+            "description": "Internal user UUID",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Caller's run"
+            },
+            "required": true,
+            "description": "Caller's run",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LocalLlmResult"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored; the caller gets it now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stored": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "done",
+                        "failed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "stored",
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such item for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already answered, not claimed, or another claim's lease",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The caller stopped waiting (`local_job_expired`): drop it",
             "content": {
               "application/json": {
                 "schema": {

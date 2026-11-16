@@ -3908,3 +3908,152 @@ registry.registerPath({
     404: { description: "No such server for this brand", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
+
+// --- Local LLM: an org's calls on the user's own Claude Code (LOCAL-CLAUDE-1116) ---
+
+export const LocalLlmDeclareSchema = z
+  .object({
+    enabled: z.boolean().openapi({
+      description: "true = every LLM call chat-service makes for this org runs on the user's own Claude Code, on their machine, through a runner (the org pays $0 for those calls). false = back to the platform.",
+      example: true,
+    }),
+  })
+  .strict()
+  .openapi("LocalLlmDeclare");
+
+export const LocalLlmStateSchema = z
+  .object({
+    declared: z.boolean(),
+    declaredAt: z.string().nullable(),
+    declaredByUserId: z.string().nullable(),
+    runner: z.object({
+      connected: z.boolean().openapi({ description: "A runner asked for work in the last 60 s." }),
+      lastSeenAt: z.string().nullable(),
+      name: z.string().nullable(),
+      version: z.string().nullable(),
+    }),
+    pendingCalls: z.number().int().openapi({ description: "Calls waiting for the runner right now." }),
+    usageLast30Days: z.object({
+      calls: z.number().int(),
+      inputTokens: z.number(),
+      outputTokens: z.number(),
+      notionalCostUsd: z.number().openapi({ description: "What Claude Code says these calls would cost at API prices. Measured, never charged." }),
+      chargedUsd: z.literal(0),
+    }),
+    runsLocally: z.array(z.string()).openapi({ description: "Call families that run on the runner for a declaring org." }),
+    stillOnPlatform: z.array(z.object({ family: z.string(), reason: z.string() })).openapi({ description: "Call families that still run on a platform key for a declaring org, and why." }),
+  })
+  .openapi("LocalLlmState");
+
+export const LocalLlmClaimSchema = z
+  .object({
+    waitMs: z.number().int().min(0).max(25_000).optional().openapi({ description: "Hold the request open up to this long waiting for work (default 20000, max 25000)." }),
+    max: z.number().int().min(1).max(10).optional().openapi({ description: "Most items to take at once (default 1, max 10)." }),
+    runner: z
+      .object({ name: z.string().max(100).optional(), version: z.string().max(100).optional() })
+      .optional()
+      .openapi({ description: "Shown in the org's state (e.g. the Mac app and its version)." }),
+  })
+  .strict()
+  .openapi("LocalLlmClaim");
+
+export const LocalLlmWorkItemSchema = z
+  .object({
+    id: z.string().uuid(),
+    leaseId: z.string().uuid().openapi({ description: "Send it back with the answer: only this claim may answer." }),
+    kind: z.enum(["complete", "judgment", "chat_round"]),
+    answerBy: z.string().openapi({ description: "After this instant the caller has stopped waiting (an answer then gets 410)." }),
+    claude: z.object({
+      systemPrompt: z.string().openapi({ description: "→ `--system-prompt`, verbatim." }),
+      prompt: z.string().openapi({ description: "→ the prompt of `claude -p`, verbatim." }),
+      jsonSchema: z.record(z.string(), z.unknown()).nullable().openapi({ description: "→ `--json-schema` (JSON-encoded) when not null; answer with the CLI's `structured_output`." }),
+      model: z.string().openapi({ description: "→ `--model`.", example: "claude-sonnet-5-5" }),
+      tools: z.array(z.string()).openapi({ description: "Claude Code built-in tools this call may use → `--tools` + `--allowedTools`; [] = `--tools \"\"`.", example: [] }),
+    }),
+  })
+  .openapi("LocalLlmWorkItem");
+
+export const LocalLlmResultSchema = z
+  .object({
+    leaseId: z.string().uuid(),
+    ok: z.boolean(),
+    model: z.string().optional().openapi({ description: "The model the CLI says ran: the `model` of its `system`/`init` line. Required when ok." }),
+    text: z.string().optional().openapi({ description: "The CLI's `result`, for an item with no jsonSchema." }),
+    structured: z.unknown().optional().openapi({ description: "The CLI's `structured_output`, for an item with a jsonSchema." }),
+    error: z.string().max(4000).optional().openapi({ description: "When ok is false: what went wrong, in plain words." }),
+    usage: z
+      .object({
+        inputTokens: z.number().int().min(0).optional(),
+        outputTokens: z.number().int().min(0).optional(),
+        cacheReadTokens: z.number().int().min(0).optional(),
+        cacheWriteTokens: z.number().int().min(0).optional(),
+      })
+      .optional()
+      .openapi({ description: "From the CLI's `result` line `usage` (input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens)." }),
+    notionalCostUsd: z.number().min(0).optional().openapi({ description: "The CLI's `total_cost_usd` (what it would cost at API prices; never charged)." }),
+    durationMs: z.number().int().min(0).optional(),
+  })
+  .strict()
+  .openapi("LocalLlmResult");
+
+const localLlmHeaders = z.object({
+  "x-api-key": z.string(),
+  "x-org-id": z.string().openapi({ description: "Internal org UUID" }),
+  "x-user-id": z.string().openapi({ description: "Internal user UUID" }),
+  "x-run-id": z.string().openapi({ description: "Caller's run" }),
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/orgs/local-llm",
+  tags: ["Local LLM"],
+  summary: "Whether this org's LLM runs on the user's own Claude Code, and its runner's state",
+  request: { headers: localLlmHeaders },
+  responses: { 200: { description: "The state", content: { "application/json": { schema: LocalLlmStateSchema } } } },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/orgs/local-llm",
+  tags: ["Local LLM"],
+  summary: "Declare (or stop) running this org's LLM on the user's own Claude Code",
+  description:
+    "Org-level, for every campaign and the Copilot at once. While declared, text and structured completions, judgments and chat turns made for this org become work items a runner on the user's machine executes with `claude -p`; the org is charged $0 for them, no affordability check runs, and usage is measured per call. A runner that is away makes calls WAIT, then fail with a named state (`local_runner_waiting`), never a platform key.",
+  request: { headers: localLlmHeaders, body: { content: { "application/json": { schema: LocalLlmDeclareSchema } } } },
+  responses: {
+    200: { description: "The state after the change", content: { "application/json": { schema: LocalLlmStateSchema } } },
+    400: { description: "Invalid body", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/local-llm/work/claim",
+  tags: ["Local LLM"],
+  summary: "Runner: take this org's waiting LLM calls (long poll)",
+  description:
+    "Answers as soon as work exists, or `items: []` after `waitMs`. Each item is handed to ONE claim only (a parallel claim never gets the same item). Each call marks the runner seen (connected = a claim in the last 60 s). Run each item with `claude -p` as its `claude` field says, then POST the answer to `/orgs/local-llm/work/{id}/result`.",
+  request: { headers: localLlmHeaders, body: { content: { "application/json": { schema: LocalLlmClaimSchema } } } },
+  responses: {
+    200: { description: "Work to run", content: { "application/json": { schema: z.object({ items: z.array(LocalLlmWorkItemSchema) }) } } },
+    409: { description: "This org has not declared its LLM local (`local_llm_not_declared`)", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/local-llm/work/{id}/result",
+  tags: ["Local LLM"],
+  summary: "Runner: send the answer of one claimed call",
+  request: {
+    headers: localLlmHeaders,
+    params: z.object({ id: z.string().uuid() }),
+    body: { content: { "application/json": { schema: LocalLlmResultSchema } } },
+  },
+  responses: {
+    200: { description: "Stored; the caller gets it now", content: { "application/json": { schema: z.object({ stored: z.literal(true), status: z.enum(["done", "failed"]) }) } } },
+    404: { description: "No such item for this org", content: { "application/json": { schema: ErrorResponseSchema } } },
+    409: { description: "Already answered, not claimed, or another claim's lease", content: { "application/json": { schema: ErrorResponseSchema } } },
+    410: { description: "The caller stopped waiting (`local_job_expired`): drop it", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});

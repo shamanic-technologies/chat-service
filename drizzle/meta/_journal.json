@@ -232,6 +232,20 @@
       "when": 1792800000000,
       "tag": "0032_schema_conformance",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792886400000,
+      "tag": "0033_messages_session_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792972800000,
+      "tag": "0034_local_llm",
+      "breakpoints": true
     }
   ]
 }

@@ -440,3 +440,51 @@ export type Skill = typeof skills.$inferSelect;
 export type SkillVersion = typeof skillVersions.$inferSelect;
 export type StaffRequest = typeof staffRequests.$inferSelect;
 export type Transcription = typeof transcriptions.$inferSelect;
+
+// LOCAL-CLAUDE-1116 (migration 0034): an org whose LLM calls run on the user's
+// own Claude Code subscription, on their machine (src/lib/local-llm.ts).
+export const localLlmOrgs = pgTable("local_llm_orgs", {
+  orgId: text("org_id").primaryKey(),
+  declared: boolean("declared").notNull().default(false),
+  declaredByUserId: text("declared_by_user_id"),
+  declaredAt: timestamp("declared_at", { withTimezone: true }),
+  runnerLastSeenAt: timestamp("runner_last_seen_at", { withTimezone: true }),
+  runnerName: text("runner_name"),
+  runnerVersion: text("runner_version"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const localLlmJobs = pgTable(
+  "local_llm_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    /** complete | judgment | chat_round */
+    kind: text("kind").notNull(),
+    /** The chat-service route that made the call (/complete, /orgs/judgments, /chat). */
+    route: text("route").notNull(),
+    runId: uuid("run_id"),
+    /** The work item the runner executes, verbatim (src/lib/local-llm.ts `LocalWork`). */
+    request: jsonb("request").notNull(),
+    /** pending | claimed | done | failed | expired */
+    status: text("status").notNull().default("pending"),
+    leaseId: uuid("lease_id"),
+    pickupDeadlineAt: timestamp("pickup_deadline_at", { withTimezone: true }).notNull(),
+    answerDeadlineAt: timestamp("answer_deadline_at", { withTimezone: true }).notNull(),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    result: jsonb("result"),
+    error: text("error"),
+    /** The model the CLI says wrote the answer. */
+    model: text("model"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    cacheReadTokens: integer("cache_read_tokens"),
+    cacheWriteTokens: integer("cache_write_tokens"),
+    /** What the CLI says the call WOULD cost at API prices: measured, never billed. */
+    notionalCostUsd: real("notional_cost_usd"),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("local_llm_jobs_org_status_idx").on(table.orgId, table.status, table.createdAt)],
+);

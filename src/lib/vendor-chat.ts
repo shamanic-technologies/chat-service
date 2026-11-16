@@ -64,8 +64,18 @@ export type VendorChatMessage =
 
 type SendSSE = (res: ExpressResponse, data: unknown) => void;
 
+/** One round answered by the org's local runner (LOCAL-CLAUDE-1116), already translated back. */
+export interface LocalRoundResult {
+  text: string;
+  toolCalls: Array<{ name: string; input: Record<string, unknown> }>;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface StreamVendorChatOptions {
-  vendor: VendorId;
+  /** null only with `localRound`: the turn runs on the org's own Claude Code. */
+  vendor: VendorId | null;
   apiKey: string;
   /** Vendor model id (`deepseek-flash`). */
   model: string;
@@ -108,6 +118,11 @@ export interface StreamVendorChatOptions {
    * spent declared by its caller (BRAND-MCP-1109, no undeclared spend).
    */
   onRoundBilled?: (costLines: VendorCostLine[]) => void;
+  /**
+   * LOCAL-CLAUDE-1116: every round goes to the org's runner instead of a vendor
+   * (no key, no cost line: the org pays $0). Same loop, same tools, same events.
+   */
+  localRound?: (args: { messages: VendorChatMessage[]; tools: ToolDefinition[]; depth: number; signal: AbortSignal }) => Promise<LocalRoundResult>;
 }
 
 export interface StreamVendorChatResult {
@@ -260,7 +275,9 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
     endToolName,
     reasoningDisabled = false,
     onRoundBilled,
+    localRound,
   } = options;
+  if (!vendor && !localRound) throw new Error("[vendor-chat] a turn needs a vendor or a local runner");
 
   let tokensInput = 0;
   let lastRequestTokensInput = 0;
@@ -270,7 +287,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
   const toolCalls: ToolCallRecord[] = [];
   let emittedInputRequest = false;
 
-  if (images.length > 0 && !VENDORS[vendor].imageInput) {
+  if (images.length > 0 && vendor && !localRound && !VENDORS[vendor].imageInput) {
     throw new Error(`[vendor-chat] ${vendor} model="${model}" was handed ${images.length} photo(s) and does not take image input`);
   }
 
@@ -287,70 +304,14 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
   });
   const vendorTools = toVendorTools(tools);
 
-  let answerNudged = false;
-  for (let depth = 0; depth <= MAX_TOOL_CHAIN_DEPTH; depth++) {
-    if (signal.aborted) break;
-
-    const body: Record<string, unknown> = {
-      model,
-      messages,
-      stream: false,
-      // The output cap's field name is vendor data (OpenAI: max_completion_tokens).
-      [VENDORS[vendor].maxOutputTokensField]: VENDOR_CHAT_MAX_OUTPUT_TOKENS,
-      // Tools are ALWAYS declared, `tool_choice: "none"` is never sent: with it
-      // DeepSeek drops the tool definitions and the model writes fake tool-call
-      // markup (`<｜DSML｜ invoke ...>`) into the text the person receives
-      // (probed live 2026-11-01, CHAT-COST-1101). The final round and the
-      // silent-turn re-ask say to answer now (their notes), and a call the model
-      // makes anyway is not run.
-      ...(vendorTools.length > 0 ? { tools: vendorTools } : {}),
-      // Reasoning off, in THIS model's own words, when the caller says so
-      // (VENDOR-TOOLS-FOLLOWUP-1112: the flag used to word refusals only, and
-      // every turn ran with reasoning on). Absent = the model's default.
-      ...(reasoningDisabled && VENDORS[vendor].reasoning.kind === "disablable"
-        ? vendorReasoningFields(VENDORS[vendor].reasoning, model)
-        : {}),
-      // What THIS model needs beside tools (OpenAI Terra: reasoning_effort none).
-      ...(vendorTools.length > 0 ? (VENDORS[vendor].toolCallRequestFields?.[model] ?? {}) : {}),
-    };
-
-    const at = new Date();
-    await beforeProviderCall({ depth, requestBody: body, at });
-
-    let json: VendorResponseBody;
-    try {
-      json = await postVendorChatCompletion({ vendor, apiKey, model, body, reasoningDisabled, signal });
-    } catch (err) {
-      if (signal.aborted) break;
-      throw err;
-    }
-    const inBand = inBandError(json);
-    if (inBand) throw new VendorProviderError(`[vendor-chat:${vendor}] Provider returned an error: ${inBand}`);
-    assertModelMatches(model, json.model);
-
-    const usage = json.usage ?? {};
-    const promptTokens = usage.prompt_tokens ?? 0;
-    // Where the cache counts sit is vendor data (DeepSeek, Moonshot and OpenAI
-    // each report them elsewhere); OpenAI also bills cache WRITES apart.
-    const cached = Math.max(0, Math.min(VENDORS[vendor].readCachedTokens(usage), promptTokens));
-    const cacheWrites = Math.max(0, Math.min(VENDORS[vendor].readCacheWriteTokens?.(usage) ?? 0, promptTokens - cached));
-    const outTokens = usage.completion_tokens ?? 0;
-    tokensInput += promptTokens;
-    lastRequestTokensInput = promptTokens;
-    tokensOutput += outTokens;
-    const roundLines = vendorCostLines({ provider: vendor, costPrefix, at, tokensInput: promptTokens, cachedInputTokens: cached, cacheWriteTokens: cacheWrites, tokensOutput: outTokens });
-    costLines = mergeLines(costLines, roundLines);
-    onRoundBilled?.(roundLines);
-    console.log(`[vendor-chat] [${vendor}] model="${json.model ?? model}" depth=${depth} in=${promptTokens} cached=${cached} out=${outTokens}`);
-
-    const choice = json.choices?.[0];
-    const reply = choice?.message ?? {};
-    const text = stripLongDashes(typeof reply.content === "string" ? reply.content : "");
-    const reasoning = typeof reply.reasoning_content === "string" ? reply.reasoning_content : "";
+  // What one round wrote, whoever answered it (a vendor or the local runner):
+  // its text, its tool calls run, the re-asks decided. "reask" = not a tool round.
+  const handleRound = async (round: { text: string; reasoning: string; finishReason: string | null | undefined; calls: VendorToolCall[]; depth: number }): Promise<"next" | "break" | "reask" | "return"> => {
+    const { text, reasoning, finishReason, calls: proposed, depth } = round;
     // The final round and the re-ask run no tool (a turn that must end on a
     // tool, a Lead event's answer_person, keeps calling it).
     const toolsOff = (isFinalToolRound(depth) || answerNudged) && !endToolName;
-    const calls = toolsOff ? [] : (reply.tool_calls ?? []);
+    const calls = toolsOff ? [] : proposed;
 
     if (reasoning.trim()) {
       sse(res, { type: "thinking_start" });
@@ -373,18 +334,16 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
         answerNudged = true;
         if (text.trim()) messages.push({ role: "assistant", content: text });
         pushNote(messages, endToolNudgeNote(endToolName));
-        depth--; // the re-ask is not a tool round
-        continue;
+        return "reask"; // the re-ask is not a tool round
       }
       if (needsAnswerNudge({ toolsRan: depth > 0, answerText: text, alreadyNudged: answerNudged })) {
         console.warn(`[vendor-chat] model=${model} ended silent after ${toolCalls.length} tool(s); asking it to answer now`);
         answerNudged = true;
         pushNote(messages, EMPTY_ANSWER_NOTE);
-        depth--; // the re-ask is not a tool round
-        continue;
+        return "reask"; // the re-ask is not a tool round
       }
-      if (choice?.finish_reason === "length") console.warn(`[vendor-chat] model=${model} answer truncated (finish_reason=length)`);
-      break;
+      if (finishReason === "length") console.warn(`[vendor-chat] model=${model} answer truncated (finish_reason=length)`);
+      return "break";
     }
 
     // The round as the model wrote it, its reasoning included (sent back
@@ -411,7 +370,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
         const toolResult = await executeTool({ name, args });
         if (toolResult === "input_request") {
           emittedInputRequest = true;
-          return { tokensInput, lastRequestTokensInput, tokensOutput, costLines, fullResponse, toolCalls, emittedInputRequest };
+          return "return";
         }
         if (toolResult === null) {
           messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify({ error: "Unknown tool" }) });
@@ -433,6 +392,108 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
     if (isFinalToolRound(depth + 1)) {
       messages.push({ role: "user", content: endToolName ? endToolFinalNote(endToolName) : FINAL_ROUND_NOTE });
     }
+    return "next";
+  };
+
+  let answerNudged = false;
+  for (let depth = 0; depth <= MAX_TOOL_CHAIN_DEPTH; depth++) {
+    if (signal.aborted) break;
+
+    if (localRound) {
+      const at = new Date();
+      await beforeProviderCall({ depth, requestBody: { model, messages }, at });
+      let local: LocalRoundResult;
+      try {
+        local = await localRound({ messages, tools, depth, signal });
+      } catch (err) {
+        if (signal.aborted) break;
+        throw err;
+      }
+      tokensInput += local.inputTokens;
+      lastRequestTokensInput = local.inputTokens;
+      tokensOutput += local.outputTokens;
+      console.log(`[vendor-chat] [local] model="${local.model}" depth=${depth} in=${local.inputTokens} out=${local.outputTokens}`);
+      const step = await handleRound({
+        text: stripLongDashes(local.text),
+        reasoning: "",
+        finishReason: null,
+        calls: local.toolCalls.map((c, i) => ({
+          id: `call_l${depth}_${i}`,
+          type: "function" as const,
+          function: { name: c.name, arguments: JSON.stringify(c.input) },
+        })),
+        depth,
+      });
+      if (step === "return") return { tokensInput, lastRequestTokensInput, tokensOutput, costLines, fullResponse, toolCalls, emittedInputRequest };
+      if (step === "break") break;
+      if (step === "reask") depth--;
+      continue;
+    }
+    const v = vendor!;
+    const body: Record<string, unknown> = {
+      model,
+      messages,
+      stream: false,
+      // The output cap's field name is vendor data (OpenAI: max_completion_tokens).
+      [VENDORS[v].maxOutputTokensField]: VENDOR_CHAT_MAX_OUTPUT_TOKENS,
+      // Tools are ALWAYS declared, `tool_choice: "none"` is never sent: with it
+      // DeepSeek drops the tool definitions and the model writes fake tool-call
+      // markup (`<｜DSML｜ invoke ...>`) into the text the person receives
+      // (probed live 2026-11-01, CHAT-COST-1101). The final round and the
+      // silent-turn re-ask say to answer now (their notes), and a call the model
+      // makes anyway is not run.
+      ...(vendorTools.length > 0 ? { tools: vendorTools } : {}),
+      // Reasoning off, in THIS model's own words, when the caller says so
+      // (VENDOR-TOOLS-FOLLOWUP-1112: the flag used to word refusals only, and
+      // every turn ran with reasoning on). Absent = the model's default.
+      ...(reasoningDisabled && VENDORS[v].reasoning.kind === "disablable"
+        ? vendorReasoningFields(VENDORS[v].reasoning, model)
+        : {}),
+      // What THIS model needs beside tools (OpenAI Terra: reasoning_effort none).
+      ...(vendorTools.length > 0 ? (VENDORS[v].toolCallRequestFields?.[model] ?? {}) : {}),
+    };
+
+    const at = new Date();
+    await beforeProviderCall({ depth, requestBody: body, at });
+
+    let json: VendorResponseBody;
+    try {
+      json = await postVendorChatCompletion({ vendor: v, apiKey, model, body, reasoningDisabled, signal });
+    } catch (err) {
+      if (signal.aborted) break;
+      throw err;
+    }
+    const inBand = inBandError(json);
+    if (inBand) throw new VendorProviderError(`[vendor-chat:${v}] Provider returned an error: ${inBand}`);
+    assertModelMatches(model, json.model);
+
+    const usage = json.usage ?? {};
+    const promptTokens = usage.prompt_tokens ?? 0;
+    // Where the cache counts sit is vendor data (DeepSeek, Moonshot and OpenAI
+    // each report them elsewhere); OpenAI also bills cache WRITES apart.
+    const cached = Math.max(0, Math.min(VENDORS[v].readCachedTokens(usage), promptTokens));
+    const cacheWrites = Math.max(0, Math.min(VENDORS[v].readCacheWriteTokens?.(usage) ?? 0, promptTokens - cached));
+    const outTokens = usage.completion_tokens ?? 0;
+    tokensInput += promptTokens;
+    lastRequestTokensInput = promptTokens;
+    tokensOutput += outTokens;
+    const roundLines = vendorCostLines({ provider: v, costPrefix, at, tokensInput: promptTokens, cachedInputTokens: cached, cacheWriteTokens: cacheWrites, tokensOutput: outTokens });
+    costLines = mergeLines(costLines, roundLines);
+    onRoundBilled?.(roundLines);
+    console.log(`[vendor-chat] [${v}] model="${json.model ?? model}" depth=${depth} in=${promptTokens} cached=${cached} out=${outTokens}`);
+
+    const choice = json.choices?.[0];
+    const reply = choice?.message ?? {};
+    const step = await handleRound({
+      text: stripLongDashes(typeof reply.content === "string" ? reply.content : ""),
+      reasoning: typeof reply.reasoning_content === "string" ? reply.reasoning_content : "",
+      finishReason: choice?.finish_reason,
+      calls: reply.tool_calls ?? [],
+      depth,
+    });
+    if (step === "return") return { tokensInput, lastRequestTokensInput, tokensOutput, costLines, fullResponse, toolCalls, emittedInputRequest };
+    if (step === "break") break;
+    if (step === "reask") depth--;
   }
 
   return { tokensInput, lastRequestTokensInput, tokensOutput, costLines, fullResponse, toolCalls, emittedInputRequest };

@@ -352,7 +352,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, BrandMcpServerCreateSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmClaimSchema, LocalLlmResultSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -415,6 +415,28 @@ import { buildAnthropicTurnMessages, lastUserMessage } from "./lib/anthropic-tur
 import { reconcileProvisionedCosts } from "./lib/cost-reconcile.js";
 import { streamGeminiChat, type ToolDefinition } from "./lib/gemini-chat.js";
 import { streamVendorChat } from "./lib/vendor-chat.js";
+import { createPgLocalLlmStore } from "./lib/local-llm-store.js";
+import {
+  answerOutcome,
+  CLAIM_DEFAULT_WAIT_MS,
+  chatRoundAnswer,
+  chatRoundCall,
+  claimWork,
+  completeCall,
+  declareLocalLlm,
+  isLocalLlmOrg,
+  judgmentAnswers,
+  judgmentCall,
+  localClaudeModelFor,
+  localFailureChatMessage,
+  localFailureResponse,
+  localLlmState,
+  localLlmStore,
+  LocalRunnerError,
+  runLocally,
+  startLocalLlm,
+  type RoundMessage,
+} from "./lib/local-llm.js";
 import {
   BrandMcpInputError,
   createServer as createBrandMcpServer,
@@ -535,6 +557,8 @@ function samplingRefusalFor(
 }
 
 function classifyErrorForClient(err: unknown): { message: string; code: string } {
+  // The org's own Claude Code is away or failed (LOCAL-CLAUDE-1116): a named state, told plainly.
+  if (err instanceof LocalRunnerError) return { code: err.code, message: localFailureChatMessage(err) };
   if (err instanceof ChatCostGateError) {
     return {
       code: err.statusCode !== 402 ? "internal_error" : typeof err.body.reason === "string" ? err.body.reason : "insufficient_credits",
@@ -871,6 +895,17 @@ async function handleComplete(req: express.Request, res: express.Response, retry
 
   // Passing a responseSchema implies JSON-mode parsing of the response.
   const jsonMode = responseFormat === "json" || responseSchema != null;
+
+  // LOCAL-CLAUDE-1116: an org that declared its LLM local gets this call answered
+  // by its own Claude Code, never a vendor key. Image input and the brand's MCP
+  // tools are not carried by a work item yet (served in GET /orgs/local-llm).
+  if (!retry && !imageUrl && !brandTools && (await isLocalLlmOrg(orgId))) {
+    return handleLocalComplete(res, {
+      orgId, userId, parentRunId, workflowTracking,
+      systemPrompt, message, responseSchema: responseSchema as Record<string, unknown> | undefined, jsonMode, webSearch,
+      model: localClaudeModelFor(resolveModel(requestedProvider as Provider, requestedModel as ModelAlias), requestedProvider as Provider, requestedModel as ModelAlias),
+    });
+  }
 
   // Resolve versioned model from (provider, alias) pair, then route around a
   // provider that is out of credit (VENDOR-CREDIT-1030): `resolved` is the
@@ -1316,6 +1351,77 @@ async function handleComplete(req: express.Request, res: express.Response, retry
     }
   }
   return undefined;
+}
+
+/**
+ * /complete for an org whose LLM runs on its own Claude Code (LOCAL-CLAUDE-1116):
+ * a child run with NO cost (the org pays $0, no hold, no affordability check),
+ * the call handed to the runner, the answer in /complete's own shape plus
+ * `servedBy`, with the model the runner says ran.
+ */
+async function handleLocalComplete(
+  res: express.Response,
+  a: {
+    orgId: string; userId: string; parentRunId: string; workflowTracking: AuthLocals["workflowTracking"];
+    systemPrompt: string | undefined; message: string; responseSchema: Record<string, unknown> | undefined;
+    jsonMode: boolean; webSearch: boolean; model: string;
+  },
+): Promise<unknown> {
+  const trackingHeaders = buildTrackingHeaders(a.workflowTracking);
+  const identity = { orgId: a.orgId, userId: a.userId };
+  let runId: string;
+  try {
+    const run = await createRun({ serviceName: "chat-service", taskName: "complete" }, { ...identity, runId: a.parentRunId }, trackingHeaders);
+    runId = run.id;
+    traceEvent(runId, "run-created", identity, a.workflowTracking, {
+      data: { taskName: "complete", parentRunId: a.parentRunId, provider: "local-claude-code", model: a.model },
+    });
+  } catch (runErr) {
+    console.error(`[complete] org="${a.orgId}" run creation failed:`, runErr);
+    return res.status(502).json({ error: "Service temporarily unavailable (run tracking). Please try again." });
+  }
+  let failed = false;
+  try {
+    const answer = await runLocally({
+      orgId: a.orgId,
+      kind: "complete",
+      route: "/complete",
+      runId,
+      call: completeCall({ systemPrompt: a.systemPrompt, message: a.message, responseSchema: a.responseSchema, jsonMode: a.jsonMode, webSearch: a.webSearch, model: a.model }),
+    });
+    const response: Record<string, unknown> = {
+      content: a.jsonMode ? JSON.stringify(answer.structured) : (answer.text ?? ""),
+      tokensInput: answer.usage.inputTokens ?? 0,
+      tokensOutput: answer.usage.outputTokens ?? 0,
+      model: answer.model,
+      servedBy: "local-claude-code",
+      localJobId: answer.jobId,
+    };
+    if (a.jsonMode) {
+      response.json = answer.structured;
+      if (a.responseSchema != null) {
+        recordSchemaConformance(db, { provider: "local-claude-code", model: answer.model, route: "complete", check: checkResponseSchema(answer.structured, a.responseSchema) });
+      }
+    }
+    traceEvent(runId, "llm-call-done", identity, a.workflowTracking, {
+      data: { provider: "local-claude-code", model: answer.model, tokensInput: response.tokensInput, tokensOutput: response.tokensOutput, localJobId: answer.jobId },
+    });
+    return res.json(response);
+  } catch (err) {
+    failed = true;
+    if (err instanceof LocalRunnerError) {
+      const r = localFailureResponse(err);
+      return res.status(r.status).json(r.body);
+    }
+    console.error(`[complete] org="${a.orgId}" local call error:`, err);
+    return res.status(502).json({ error: "Local LLM call failed.", detail: err instanceof Error ? err.message : String(err) });
+  } finally {
+    try {
+      await updateRunStatus(runId, failed ? "failed" : "completed", { ...identity, runId }, trackingHeaders);
+    } catch (runErr) {
+      console.error(`[complete] failed to finalize local run runId="${runId}":`, runErr);
+    }
+  }
 }
 
 // --- Image Generation ---
@@ -2280,7 +2386,7 @@ app.post("/orgs/rag/embed", requireAuth, async (req, res) => {
 // --- Typed judgments (TypeSafe) — org-billed, input tokens only -------------
 
 type OrgJudgmentOutcome =
-  | { ok: true; result: JudgeResult }
+  | { ok: true; result: JudgeResult; servedBy?: "local-claude-code"; localJobId?: string }
   | { ok: false; status: number; body: Record<string, unknown> };
 
 /**
@@ -2311,6 +2417,11 @@ async function runOrgJudgment(args: {
   const provider = JUDGE_PROVIDERS[judge];
   const holdCostName = judgeHoldCostName(judge);
   const trackingHeaders = buildTrackingHeaders(workflowTracking);
+
+  // LOCAL-CLAUDE-1116: the org's own Claude Code answers (no key, no hold, $0).
+  if (!image && (await isLocalLlmOrg(orgId))) {
+    return runLocalJudgment({ orgId, userId, parentRunId, workflowTracking, taskName, state, questions, support: args.support });
+  }
 
   let runId: string | null = null;
   try {
@@ -2501,6 +2612,57 @@ async function runOrgJudgment(args: {
   }
 }
 
+/** A judgment for an org whose LLM runs on its own Claude Code: same run, same answer shapes, no cost. */
+async function runLocalJudgment(args: {
+  orgId: string;
+  userId: string;
+  parentRunId: string;
+  workflowTracking: AuthLocals["workflowTracking"];
+  taskName: string;
+  state: unknown;
+  questions: Record<string, TypeSafeQuestion>;
+  support?: RunSupport;
+}): Promise<OrgJudgmentOutcome> {
+  const { orgId, userId, parentRunId, workflowTracking, taskName, questions } = args;
+  const trackingHeaders = buildTrackingHeaders(workflowTracking);
+  let runId: string;
+  try {
+    const run = await createRun({ serviceName: "chat-service", taskName, support: args.support }, { orgId, userId, runId: parentRunId }, trackingHeaders);
+    runId = run.id;
+  } catch (runErr) {
+    console.error(`[${taskName}] org="${orgId}" run creation failed:`, runErr);
+    return { ok: false, status: 502, body: { error: "Service temporarily unavailable (run tracking). Please try again." } };
+  }
+  let failed = false;
+  try {
+    const answer = await runLocally({ orgId, kind: "judgment", route: `/${taskName}`, runId, call: judgmentCall(args.state, questions) });
+    const answers = judgmentAnswers(questions, answer.structured);
+    traceEvent(runId, "judgments-done", { orgId, userId }, workflowTracking, {
+      data: { judge: "local-claude-code", model: answer.model, questionCount: Object.keys(questions).length, inputTokens: answer.usage.inputTokens, localJobId: answer.jobId },
+    });
+    return {
+      ok: true,
+      servedBy: "local-claude-code",
+      localJobId: answer.jobId,
+      result: { model: answer.model, answers, inputTokens: answer.usage.inputTokens ?? 0, outputTokens: answer.usage.outputTokens ?? 0 },
+    };
+  } catch (err) {
+    failed = true;
+    if (err instanceof LocalRunnerError) {
+      const r = localFailureResponse(err);
+      return { ok: false, status: r.status, body: r.body };
+    }
+    console.error(`[${taskName}] org="${orgId}" local judgment error:`, err);
+    return { ok: false, status: 502, body: { error: "Local judgment failed.", detail: err instanceof Error ? err.message : String(err) } };
+  } finally {
+    try {
+      await updateRunStatus(runId, failed ? "failed" : "completed", { orgId, userId, runId }, trackingHeaders);
+    } catch (runErr) {
+      console.error(`[${taskName}] failed to finalize local run runId="${runId}":`, runErr);
+    }
+  }
+}
+
 app.post("/orgs/judgments", requireAuth, async (req, res) => {
   const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
 
@@ -2550,6 +2712,7 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
     model: result.model,
     answers: result.answers,
     usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+    ...(outcome.servedBy ? { servedBy: outcome.servedBy, localJobId: outcome.localJobId } : {}),
   });
 });
 
@@ -3653,9 +3816,19 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     });
   }
 
+  // LOCAL-CLAUDE-1116: an org that declared its LLM local runs every round of
+  // this turn on its own Claude Code (same tools, same events), with no vendor
+  // key and no cost: `keySource: "org"` = the org pays its provider directly.
+  const localChat = await isLocalLlmOrg(orgId);
+  const localChatModel = localChat ? localClaudeModelFor(resolvedModelInfo, chatProvider, chatModelAlias) : null;
+  // The model(s) the runner says wrote this turn (never the one asked for).
+  const localModelsUsed = new Set<string>();
+
   // Resolve API key for the configured provider
   let resolvedKey: ResolvedKey;
-  try {
+  if (localChat) {
+    resolvedKey = { provider: "local-claude-code", key: "", keySource: "org" };
+  } else try {
     resolvedKey = await resolveKey({
       provider: resolvedModelInfo.provider,
       orgId,
@@ -3723,7 +3896,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // Anthropic caches the first and sends the second after the user's message
   // (anthropic-turn.ts, CHAT-COST-1101).
   const stableSystemPrompt =
-    appConfig.systemPrompt + skillIndexBlock + (speaksForUs ? aboutYouBlock(modelDisplayName(resolvedModelInfo.apiModelId)) : "");
+    appConfig.systemPrompt + skillIndexBlock + (speaksForUs ? aboutYouBlock(modelDisplayName(localChatModel ?? resolvedModelInfo.apiModelId)) : "");
   // `let`: the client brief joins it once the turn's run exists (it reads with that run).
   let turnContextBlock =
     buildSystemPrompt("", promptContext, campaignFeatureInputs) +
@@ -3737,7 +3910,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   const anthropicCache = !isGeminiChat && !chatVendor && anthropicCachePriced(resolvedModelInfo.costPrefix);
   let anthropicSystemPrompt = anthropicCache ? stableSystemPrompt : systemPrompt;
   let anthropicTurnContext = anthropicCache ? turnContextBlock : "";
-  let claude = isGeminiChat || chatVendor ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
+  let claude = isGeminiChat || chatVendor || localChat ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
 
   let runId: string | null = null;
   let chatFailed = false;
@@ -3853,6 +4026,11 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     // prices by time of day (DeepSeek peak / off-peak); Anthropic and Google
     // keep their flat names.
     const authorizeChatProviderCall = async (estimatedInputTokens: number, at: Date = new Date()): Promise<void> => {
+      // The org's own Claude Code: nothing to hold, nothing to check ($0 to the org).
+      if (localChat) {
+        sse.open();
+        return;
+      }
       try {
         const costIds = await provisionAndAuthorizeLlmCost({
           runId: runId!,
@@ -5335,6 +5513,57 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     if (handledBrandProfileRefresh) {
       // The deterministic brand-profile refresh already streamed its concise
       // confirmation and populated fullResponse/toolCalls for persistence.
+    } else if (localChat && localChatModel) {
+      // --- The org's own Claude Code (LOCAL-CLAUDE-1116): the vendor loop, each round a local call ---
+      const localResult = await streamVendorChat({
+        vendor: null,
+        apiKey: "",
+        model: localChatModel,
+        costPrefix: "",
+        systemPrompt: stableSystemPrompt,
+        turnContext: turnContextBlock,
+        history: history
+          .filter((m) => m.role !== "tool")
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as string, toolCalls: m.toolCalls })),
+        userMessage: message.trim(),
+        images: turnImages,
+        tools: allTools.map((t) => ({
+          name: t.name,
+          description: t.description ?? "",
+          input_schema: t.input_schema as ToolDefinition["input_schema"],
+        })),
+        res,
+        sendSSE: (r: express.Response, data: unknown) => {
+          const d = data as { type?: string; content?: unknown };
+          if (d && d.type === "token" && typeof d.content === "string" && d.content.trim()) turnText.streamed = true;
+          sendSSE(r, data);
+        },
+        executeTool,
+        signal: abortController.signal,
+        holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),
+        ...(leadTurn ? { endToolName: LEAD_ANSWER_TOOL_NAME } : {}),
+        beforeProviderCall: async () => {
+          await authorizeChatProviderCall(0);
+        },
+        localRound: async ({ messages: roundMessages, tools: roundTools, signal }) => {
+          const answer = await runLocally({
+            orgId,
+            kind: "chat_round",
+            route: "/chat",
+            runId,
+            call: chatRoundCall(roundMessages as RoundMessage[], roundTools, localChatModel),
+            signal,
+          });
+          localModelsUsed.add(answer.model);
+          const step = chatRoundAnswer(answer, roundTools.length > 0);
+          return { ...step, model: answer.model, inputTokens: answer.usage.inputTokens ?? 0, outputTokens: answer.usage.outputTokens ?? 0 };
+        },
+      });
+      fullResponse = localResult.fullResponse;
+      emittedInputRequest = localResult.emittedInputRequest;
+      totalPromptTokens = localResult.tokensInput;
+      lastPromptTokens = localResult.lastRequestTokensInput;
+      totalOutputTokens = localResult.tokensOutput;
     } else if (turnImages.length > 0 && isGeminiChat) {
       throw new Error(`[chat] ${turnImages.length} photo(s) reached a ${chatProvider} turn: photos are read on the direct-vendor and Anthropic loops only`);
     } else if (chatVendor) {
@@ -5832,8 +6061,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     if (runId) {
       traceEvent(runId, "stream-done", { orgId, userId }, workflowTracking, {
         data: {
-          provider: chatProvider,
-          model: resolvedModelInfo.apiModelId,
+          provider: localChat ? "local-claude-code" : chatProvider,
+          model: localChat ? [...localModelsUsed].join(",") : resolvedModelInfo.apiModelId,
           tokensInput: totalPromptTokens,
           tokensOutput: totalOutputTokens,
           toolCallCount: toolCalls.length,
@@ -6453,6 +6682,70 @@ app.get("/internal/staff-requests", requireInternalAuth, async (req, res) => {
   }
 });
 
+// --- Local LLM: an org's calls on the user's own Claude Code (LOCAL-CLAUDE-1116) ---
+
+app.get("/orgs/local-llm", requireAuth, async (_req, res) => {
+  const { orgId } = res.locals as AuthLocals;
+  res.json(await localLlmState(orgId));
+});
+
+app.put("/orgs/local-llm", requireAuth, async (req, res) => {
+  const { orgId, userId } = res.locals as AuthLocals;
+  const parsed = LocalLlmDeclareSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  await declareLocalLlm(orgId, parsed.data.enabled, userId);
+  console.log(`[local-llm] org="${orgId}" user="${userId}" declared=${parsed.data.enabled}`);
+  res.json(await localLlmState(orgId));
+});
+
+app.post("/orgs/local-llm/work/claim", requireAuth, async (req, res) => {
+  const { orgId } = res.locals as AuthLocals;
+  const parsed = LocalLlmClaimSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  if (!(await isLocalLlmOrg(orgId))) {
+    return res.status(409).json({
+      error: "This org has not declared its LLM local: PUT /orgs/local-llm {enabled: true} first.",
+      code: "local_llm_not_declared",
+    });
+  }
+  const left = new AbortController();
+  res.on("close", () => left.abort());
+  const items = await claimWork(orgId, {
+    max: parsed.data.max ?? 1,
+    waitMs: parsed.data.waitMs ?? CLAIM_DEFAULT_WAIT_MS,
+    runner: { name: parsed.data.runner?.name ?? null, version: parsed.data.runner?.version ?? null },
+    signal: left.signal,
+  });
+  res.json({ items });
+});
+
+app.post("/orgs/local-llm/work/:id/result", requireAuth, async (req, res) => {
+  const { orgId } = res.locals as AuthLocals;
+  const parsed = LocalLlmResultSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  const id = req.params.id;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(404).json({ error: "No such work item for this org" });
+  const store = localLlmStore();
+  const job = await store.getJob(id);
+  if (!job || job.orgId !== orgId) return res.status(404).json({ error: "No such work item for this org" });
+  const outcome = answerOutcome(job, parsed.data);
+  const verdict = await store.submit(id, orgId, parsed.data.leaseId, outcome, new Date());
+  if (verdict === "stored") {
+    console.log(`[local-llm] org="${orgId}" job="${id}" answered ok=${outcome.ok} model=${outcome.model ?? "?"} in=${outcome.usage.inputTokens ?? "?"} out=${outcome.usage.outputTokens ?? "?"}`);
+    return res.json({ stored: true, status: outcome.ok ? "done" : "failed" });
+  }
+  if (verdict === "not_found") return res.status(404).json({ error: "No such work item for this org" });
+  if (verdict === "expired") {
+    return res.status(410).json({ error: "The caller stopped waiting for this call: drop it.", code: "local_job_expired" });
+  }
+  const words: Record<string, string> = {
+    already_answered: "This call was already answered.",
+    not_claimed: "This call was not claimed: claim it first.",
+    lease_mismatch: "This call belongs to another claim (leaseId does not match).",
+  };
+  return res.status(409).json({ error: words[verdict], code: `local_job_${verdict}` });
+});
+
 // Only start server if not in test environment
 if (process.env.NODE_ENV !== "test") {
   migrate(db, { migrationsFolder: "./drizzle" })
@@ -6470,6 +6763,13 @@ if (process.env.NODE_ENV !== "test") {
       setInterval(() => void refreshFallbackPrices(), PRICE_REFRESH_MS).unref();
       // Copilot skill tree: insert absent skills, refresh rows still holding
       // seed content, NEVER touch a human-edited one. ~16 rows, safe to await.
+      // LOCAL-CLAUDE-1116: the orgs whose LLM runs on their own Claude Code (a handful of rows),
+      // loaded before any call is served so none slips onto a platform key; calls the previous
+      // process was waiting on are ended (their callers are gone).
+      const localStore = createPgLocalLlmStore(db);
+      const abandoned = await localStore.expireAbandoned(new Date(), new Date());
+      if (abandoned > 0) console.log(`[local-llm] ${abandoned} local call(s) cut off by a restart ended`);
+      await startLocalLlm(localStore);
       const skillSeed = await seedSkills(db);
       console.log(
         `[chat-service] Skill seed: inserted=[${skillSeed.inserted.join(",")}] refreshed=[${skillSeed.refreshed.join(",")}] keptHumanEdit=[${skillSeed.keptHumanEdit.join(",")}] removedMerged=[${skillSeed.removedMerged.join(",")}]`,
