@@ -603,6 +603,85 @@ describe("POST /complete — direct vendor routing", () => {
     expect(quantityOf(actual, "google-flash-lite-3.5-tokens-input")).toBe(10);
   });
 
+  // SCHEMA-ANY-VENDOR-1116 (prod 2026-11-16: the lead answerer's replyTo enum
+  // holds "" = new thread; Gemini 400'd 11 of 11 calls, served as 502).
+  function mockGeminiRoutes(generate: MockRoute["respond"], cap: { postedItems: CostItem[][]; patchedStatuses: string[] }) {
+    return [
+      mockRunsCreate(),
+      {
+        match: (url: string) => url.includes("/keys/google/decrypt"),
+        respond: () => ({ ok: true, body: { provider: "google", key: "fake-google-key", keySource: "platform" } }),
+      },
+      mockBilling(),
+      { match: (url: string) => url.includes(":generateContent"), respond: generate },
+      ...mockRunsCostRoutes(cap),
+      mockRunsStatusPatch(),
+    ];
+  }
+
+  it("sends Gemini an empty enum member it accepts and hands the caller its own \"\" back", async () => {
+    const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+    let sentSchema: Record<string, unknown> | undefined;
+    routes.push(
+      ...mockGeminiRoutes((_url, init) => {
+        sentSchema = JSON.parse(init!.body as string).generationConfig.responseSchema;
+        return {
+          ok: true,
+          body: {
+            candidates: [{ content: { parts: [{ text: '{"replyTo":"(empty)","message":"hi"}' }] }, finishReason: "STOP" }],
+            usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5 },
+          },
+        };
+      }, cap),
+    );
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({
+        message: "hi",
+        systemPrompt: "",
+        provider: "google",
+        model: "flash",
+        responseSchema: {
+          type: "object",
+          properties: { replyTo: { type: "string", enum: ["m1", "m2", ""] }, message: { type: "string" } },
+          required: ["replyTo", "message"],
+        },
+      });
+
+    expect(res.status).toBe(200);
+    const replyTo = (sentSchema!.properties as Record<string, { enum: string[] }>).replyTo;
+    expect(replyTo.enum).toEqual(["m1", "m2", "(empty)"]);
+    expect(res.body.json).toEqual({ replyTo: "", message: "hi" });
+    expect(JSON.parse(res.body.content)).toEqual({ replyTo: "", message: "hi" });
+  });
+
+  it("answers 400 with Google's words, not 502, when Gemini refuses the request shape", async () => {
+    const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
+    let calls = 0;
+    routes.push(
+      ...mockGeminiRoutes(() => {
+        calls++;
+        return {
+          ok: false,
+          status: 400,
+          body: '{"error":{"code":400,"message":"* GenerateContentRequest.generation_config.response_schema.properties[x].enum[2]: cannot be empty\\n","status":"INVALID_ARGUMENT"}}',
+        };
+      }, cap),
+    );
+
+    const res = await request(app)
+      .post("/complete")
+      .set(AUTH)
+      .send({ message: "hi", systemPrompt: "", provider: "google", model: "flash", responseFormat: "json", responseSchema: { type: "object", properties: { x: { type: "string" } } } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.retryable).toBe(false);
+    expect(res.body.detail).toMatch(/cannot be empty/);
+    expect(calls).toBe(1);
+  });
+
   // -------------------------------------------------------------------------
   // Rejections
   // -------------------------------------------------------------------------

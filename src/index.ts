@@ -58,6 +58,7 @@ import {
   completeWithGemini,
   generateImageWithGemini,
   GeminiProviderError,
+  GeminiUnsupportedOptionError,
   DEFAULT_GEMINI_IMAGE_SIZE,
   GEMINI_IMAGE_COST_PREFIX,
   GEMINI_IMAGE_MODEL,
@@ -1273,7 +1274,11 @@ async function handleComplete(req: express.Request, res: express.Response, retry
     // forever, so it must not be dressed as a transient failure — "please try
     // again" is false advice that turns a configuration bug into hours of
     // silent spend. 400 with the provider's own words instead.
-    if (err instanceof VendorUnsupportedOptionError || err instanceof AnthropicUnsupportedOptionError) {
+    if (
+      err instanceof VendorUnsupportedOptionError ||
+      err instanceof AnthropicUnsupportedOptionError ||
+      err instanceof GeminiUnsupportedOptionError
+    ) {
       res.status(400).json({
         error: "Provider rejected a request option.",
         detail: err.message,
@@ -3151,7 +3156,11 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
       if (next) return next;
     }
     // Same split as /complete: a refused request option is a 400, not a 502.
-    if (err instanceof VendorUnsupportedOptionError || err instanceof AnthropicUnsupportedOptionError) {
+    if (
+      err instanceof VendorUnsupportedOptionError ||
+      err instanceof AnthropicUnsupportedOptionError ||
+      err instanceof GeminiUnsupportedOptionError
+    ) {
       res.status(400).json({
         error: "Provider rejected a request option.",
         detail: err.message,
