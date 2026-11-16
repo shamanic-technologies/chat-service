@@ -97,6 +97,10 @@ const runsRoutes: MockRoute[] = [
     respond: () => ({ ok: true, status: 201, body: { id: "evt-1" } }),
   },
   {
+    match: (url, init) => /\/v1\/runs\/[^/]+\/costs$/.test(url) && init?.method === "POST",
+    respond: () => ({ ok: true, status: 201, body: { costs: [] } }),
+  },
+  {
     match: (url) => url.includes("/v1/workflows"),
     respond: () => ({ ok: true, body: { workflows: [{ id: "wf-1", name: "Workflow" }] } }),
   },
@@ -264,8 +268,18 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     expect(judged.body.answers.severity.score).toBeCloseTo(1.8);
 
     await runner.stop();
-    // $0: no key resolved, no hold, no affordability check, no cost line.
-    expect(fetchCalls.some((c) => c.url.includes("/costs"))).toBe(false);
+    // $0 to the org: no key resolved, no hold, no affordability check. Each answer is still
+    // STATED on its run under the Claude model that ran, as the org's own account (never charged).
+    const costPosts = fetchCalls.filter((c) => c.url.endsWith("/costs") && c.init?.method === "POST");
+    expect(costPosts).toHaveLength(2);
+    for (const post of costPosts) {
+      const items = JSON.parse(String(post.init!.body)).items;
+      expect(items.map((i: { costName: string; quantity: number; costSource: string; status: string }) => [i.costName, i.quantity, i.costSource, i.status])).toEqual([
+        ["anthropic-haiku-5.5-tokens-input", 120, "org", "actual"],
+        ["anthropic-haiku-5.5-tokens-output", 30, "org", "actual"],
+      ]);
+      expect(items.every((i: { idempotencyKey?: string }) => typeof i.idempotencyKey === "string" && i.idempotencyKey.startsWith("local-llm:"))).toBe(true);
+    }
     expect(fetchCalls.some((c) => c.url.includes("key.test.local") || c.url.includes("billing.test.local"))).toBe(false);
     expect(fetchCalls.some((c) => /googleapis|anthropic\.com|deepseek|typesafe/.test(c.url))).toBe(false);
     // Usage is still measured per call.
@@ -293,7 +307,11 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     expect(runner.seen).toHaveLength(2);
     expect(runner.seen[0].claude.model).toBe("claude-haiku-5-5");
     expect(runner.seen[0].claude.systemPrompt).toContain("### list_workflows");
-    expect(fetchCalls.some((c) => c.url.includes("/costs") || c.url.includes("anthropic.com") || c.url.includes("key.test.local"))).toBe(false);
+    expect(fetchCalls.some((c) => c.url.includes("anthropic.com") || c.url.includes("key.test.local") || c.url.includes("billing.test.local"))).toBe(false);
+    // Each round is stated on the turn's run, as the org's own account.
+    const costPosts = fetchCalls.filter((c) => c.url.endsWith("/costs") && c.init?.method === "POST");
+    expect(costPosts).toHaveLength(2);
+    expect(costPosts.flatMap((c) => JSON.parse(String(c.init!.body)).items).every((i: { costSource: string; costName: string }) => i.costSource === "org" && i.costName.startsWith("anthropic-haiku-5.5-"))).toBe(true);
   });
 
   it("with no runner, the call ends in the named waiting state and no provider is called", async () => {
@@ -342,14 +360,59 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     }
     const wrong = await request(app).post(`/orgs/local-llm/work/${item!.id}/result`).set(AUTH).send({ leaseId: crypto.randomUUID(), ok: true, model: "claude-sonnet-5-5", text: "x" });
     expect(wrong.status).toBe(409);
-    const ok = await request(app).post(`/orgs/local-llm/work/${item!.id}/result`).set(AUTH).send({ leaseId: item!.leaseId, ok: true, model: "claude-sonnet-5-5", text: "hello" });
+    const ok = await request(app).post(`/orgs/local-llm/work/${item!.id}/result`).set(AUTH).send({ leaseId: item!.leaseId, ok: true, model: "claude-sonnet-5-5", text: "hello", usage: { inputTokens: 10, outputTokens: 2 } });
     expect(ok.status).toBe(200);
-    const again = await request(app).post(`/orgs/local-llm/work/${item!.id}/result`).set(AUTH).send({ leaseId: item!.leaseId, ok: true, model: "claude-sonnet-5-5", text: "again" });
+    const again = await request(app).post(`/orgs/local-llm/work/${item!.id}/result`).set(AUTH).send({ leaseId: item!.leaseId, ok: true, model: "claude-sonnet-5-5", text: "again", usage: { inputTokens: 10, outputTokens: 2 } });
     expect(again.status).toBe(409);
     expect((await pending).body.content).toBe("hello");
     // Another org never sees this org's items.
     const other = await request(app).get("/orgs/local-llm").set(OTHER);
     expect(other.body.declared).toBe(false);
+  });
+
+  it("LOCAL-CLAUDE-RATING-1116: an answer that cannot be credited to the model that ran is refused", async () => {
+    const { app } = await boot();
+    await request(app).put("/orgs/local-llm").set(AUTH).send({ enabled: true });
+    const pending = request(app).post("/complete").set(AUTH).send({ message: "Hi", systemPrompt: "S.", provider: "google", model: "flash-pro" }).then((r) => r);
+    let item: WorkItem | undefined;
+    for (let i = 0; i < 20 && !item; i++) {
+      const c = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 200 });
+      item = c.body.items[0];
+    }
+    // No usage: the call cannot be stated on its run → the job fails, the caller gets the runner's failure.
+    const noUsage = await request(app).post(`/orgs/local-llm/work/${item!.id}/result`).set(AUTH).send({ leaseId: item!.leaseId, ok: true, model: "claude-haiku-5-5", text: "hello" });
+    expect(noUsage.status).toBe(200);
+    const res = await pending;
+    expect(res.status).toBe(502);
+    expect(res.body.code).toBe("local_runner_failed");
+    expect(res.body.error).toContain("token usage");
+    expect(fetchCalls.some((c) => c.url.endsWith("/costs"))).toBe(false);
+  });
+
+  it("LOCAL-CLAUDE-RATING-1116: the served-llms read says which model runs each stated LLM", async () => {
+    const { app } = await boot();
+    await request(app).put("/orgs/local-llm").set(AUTH).send({ enabled: true });
+    const LOCAL_ORG = "00000000-0000-4000-8000-0000000000aa";
+    const llms = "openai/gpt-sol,deepseek/deepseek-flash,anthropic/claude-sonnet,nope/x";
+    // A non-local org runs every LLM as stated.
+    const other = await request(app).get(`/internal/local-llm/served-llms?orgId=${LOCAL_ORG}&llms=${llms}`).set({ "x-api-key": "test-key" });
+    expect(other.status).toBe(200);
+    expect(other.body.local).toBe(false);
+    expect(other.body.llms.slice(0, 3).map((r: { runsAsStated: boolean }) => r.runsAsStated)).toEqual([true, true, true]);
+    expect(other.body.llms[3]).toMatchObject({ llm: "nope/x", runsAsStated: null });
+    // Once that org declared local: Claude Sonnet runs as itself, every other LLM on the Claude model of its tier.
+    await request(app).put("/orgs/local-llm").set({ ...AUTH, "x-org-id": LOCAL_ORG }).send({ enabled: true });
+    const local = await request(app).get(`/internal/local-llm/served-llms?orgId=${LOCAL_ORG}&llms=${llms}`).set({ "x-api-key": "test-key" });
+    expect(local.body.local).toBe(true);
+    expect(local.body.llms[2]).toEqual({
+      llm: "anthropic/claude-sonnet",
+      runsAsStated: true,
+      servedBy: { llm: "anthropic/claude-sonnet", provider: "anthropic", dynasty: "claude-sonnet", modelId: "claude-sonnet-5-5" },
+    });
+    expect(local.body.llms[1]).toMatchObject({ llm: "deepseek/deepseek-flash", runsAsStated: false, servedBy: { provider: "anthropic" } });
+    expect(local.body.llms[0].runsAsStated).toBe(false);
+    const bad = await request(app).get(`/internal/local-llm/served-llms?orgId=not-a-uuid&llms=${llms}`).set({ "x-api-key": "test-key" });
+    expect(bad.status).toBe(400);
   });
 
   it("an org that did not declare is untouched: its call goes to the vendor as before", async () => {

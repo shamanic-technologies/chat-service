@@ -19,13 +19,20 @@
 // - Never a platform key for a declaring org: a runner that is away makes the
 //   call WAIT, then fail with a NAMED state (`local_runner_waiting`), never a
 //   fallback to a vendor (the $0 promise).
-// - $0 to the org: no cost hold, no affordability check, no cost line. Usage
-//   (tokens, the CLI's notional cost) is still MEASURED per call, on the job row.
+// - $0 to the org: no cost hold, no affordability check, nothing charged. Each
+//   answer is still STATED on its run (LOCAL-CLAUDE-RATING-1116): the Claude
+//   model that ran, its tokens, under that model's own catalog names, as
+//   `costSource: "org"` (the org's own provider account: runs-service and
+//   billing never charge it, like a BYOK key). So the Rating credits the model
+//   that actually wrote, at its list price, never the model the script stated.
 // - The answer names the model the CLI says ran, never the model asked for.
 // - Nothing goes to claude-haiku-4-5 (owner rule): never asked, refused if reported.
 // ---------------------------------------------------------------------------
 
-import { capabilityTierFor, type CapabilityTier, type ModelAlias, type Provider } from "./anthropic.js";
+import { capabilityTierFor, resolveModel, type CapabilityTier, type ModelAlias, type Provider } from "./anthropic.js";
+import { anthropicCostLines } from "./anthropic-usage.js";
+import { dynastyOfModel } from "./llm-dynasties.js";
+import type { CostItem } from "./runs-client.js";
 import type { LocalAnswerOutcome, LocalJobKind, LocalJobRow, LocalLlmStore, LocalUsage } from "./local-llm-store.js";
 import type { TypeSafeAnswer, TypeSafeCriterion, TypeSafeQuestion } from "./typesafe.js";
 
@@ -311,6 +318,86 @@ export function localClaudeModelFor(resolved: { provider: string; apiModelId: st
 /** A judgment asks the cheap tier: classification, input-billed at the vendors it replaces. */
 export const LOCAL_JUDGE_MODEL = TIER_MODEL.cheap;
 
+// --- what a local call is stated as (LOCAL-CLAUDE-RATING-1116) ----------------------
+
+/** The Claude model a runner reported, as this service prices it; null = not a model we can name. */
+function pricedClaudeModel(modelId: string): { apiModelId: string; costPrefix: string } | null {
+  if (BANNED_MODEL.test(modelId)) return null;
+  try {
+    const r = resolveModel("anthropic", modelId);
+    return r.apiModelId === modelId ? { apiModelId: r.apiModelId, costPrefix: r.costPrefix } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The cost lines ONE local answer is stated as on its run: the Claude model the
+ * CLI says ran, its tokens under that model's catalog names, `costSource: "org"`
+ * (the org's own Claude account: never charged, never held). runs-service prices
+ * them at list, so the Rating reads what that writing would cost through a key.
+ * Idempotent per job (a retried post never states a call twice).
+ */
+export function localCostItems(answer: { jobId: string; model: string; usage: LocalUsage }): CostItem[] {
+  const priced = pricedClaudeModel(answer.model);
+  if (!priced) throw new Error(`[local-llm] job ${answer.jobId}: "${answer.model}" is not a Claude model this service prices`);
+  const u = answer.usage;
+  if (typeof u.inputTokens !== "number" || typeof u.outputTokens !== "number") {
+    throw new Error(`[local-llm] job ${answer.jobId}: the runner reported no token usage, the call cannot be stated`);
+  }
+  const cacheRead = u.cacheReadTokens ?? 0;
+  const cacheWrite = u.cacheWriteTokens ?? 0;
+  const lines = anthropicCostLines(priced.costPrefix, {
+    tokensInput: u.inputTokens,
+    cacheReadTokens: cacheRead,
+    cacheWriteTokens: cacheWrite,
+    tokensOutput: u.outputTokens,
+    // The CLI reports one total per call: the largest prompt is at most this, so a
+    // prompt-length tier is never under-stated.
+    requestPromptTokens: u.inputTokens + cacheRead + cacheWrite,
+  });
+  return lines.map((l) => ({ ...l, costSource: "org" as const, status: "actual" as const, idempotencyKey: `local-llm:${answer.jobId}:${l.costName}` }));
+}
+
+/** One LLM as a script states it: provider + chat-service LLM dynasty slug (`openai/gpt-sol`). */
+export interface ServedLlmAnswer {
+  llm: string;
+  /** Whether this org's calls on that LLM run on it. null = the LLM is not one this service serves (`error`). */
+  runsAsStated: boolean | null;
+  /** The model that will run instead / as stated: provider, dynasty slug, model id. Absent when unknown. */
+  servedBy?: { llm: string; provider: string; dynasty: string; modelId: string };
+  error?: string;
+}
+
+/**
+ * Which model serves each stated LLM for one org. A non-local org runs every LLM
+ * as stated. A local org runs a Claude model it names as itself; any other LLM
+ * runs on the Claude model of its tier (the same `localClaudeModelFor` the calls use).
+ */
+export function servedLlmsFor(llms: readonly string[], local: boolean): ServedLlmAnswer[] {
+  return llms.map((llm) => {
+    const slash = llm.indexOf("/");
+    const provider = slash > 0 ? llm.slice(0, slash) : "";
+    const model = slash > 0 ? llm.slice(slash + 1) : "";
+    if (!provider || !model) return { llm, runsAsStated: null, error: "Expected provider/model, e.g. openai/gpt-sol" };
+    let resolved;
+    try {
+      resolved = resolveModel(provider as Provider, model);
+    } catch (err) {
+      return { llm, runsAsStated: null, error: err instanceof Error ? err.message : String(err) };
+    }
+    const modelId = local ? localClaudeModelFor(resolved, provider as Provider, model) : resolved.apiModelId;
+    const servedProvider = local ? "anthropic" : resolved.provider;
+    const dynasty = dynastyOfModel(modelId);
+    if (!dynasty) throw new Error(`[local-llm] model "${modelId}" has no LLM dynasty recorded`);
+    return {
+      llm,
+      runsAsStated: modelId === resolved.apiModelId,
+      servedBy: { llm: `${servedProvider}/${dynasty.slug}`, provider: servedProvider, dynasty: dynasty.slug, modelId },
+    };
+  });
+}
+
 // --- enqueue + wait ------------------------------------------------------------------
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -402,6 +489,10 @@ export function answerOutcome(job: LocalJobRow, a: LocalRunnerAnswer): LocalAnsw
   if (!a.ok) return { ok: false, error: a.error ?? "The local runner reported a failure without a message.", model, usage };
   if (!model) return { ok: false, error: "The runner's answer did not say which model wrote it (the CLI's init `model`).", model, usage };
   if (BANNED_MODEL.test(model)) return { ok: false, error: `The answer was written by ${model}, a model we never use (owner rule).`, model, usage };
+  if (!pricedClaudeModel(model)) return { ok: false, error: `The answer was written by "${model}", not a Claude model this service prices: the call could not be credited to the model that ran.`, model, usage };
+  if (typeof usage.inputTokens !== "number" || typeof usage.outputTokens !== "number") {
+    return { ok: false, error: "The answer carries no token usage (`usage.inputTokens` + `usage.outputTokens`, the CLI's result usage): the call could not be stated on its run.", model, usage };
+  }
   const call = job.request as LocalClaudeCall;
   if (call.jsonSchema) {
     if (a.structured === undefined || a.structured === null) {

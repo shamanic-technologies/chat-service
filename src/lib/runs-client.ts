@@ -48,6 +48,8 @@ export interface CostItem {
   costSource: "platform" | "org";
   /** Defaults to "actual" server-side. Use "provisioned" to reserve before a costly op. */
   status?: "actual" | "provisioned" | "cancelled";
+  /** runs-service skips an item whose key it already holds on this run (a retried post states nothing twice). */
+  idempotencyKey?: string;
 }
 
 export interface RunCost {
