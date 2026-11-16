@@ -1627,6 +1627,8 @@ Headers: `x-api-key`, `x-org-id`, `x-user-id`, `x-run-id` (same auth as `POST /c
 
 `GET /sessions/latest?configKey=<key>` returns the caller's (`x-org-id` + `x-user-id`) most recently active session for that config key, same body — so a client shows the same conversation on any device without storing a sessionId. 404 when the user has none (sessions record their `configKey` since 2026-10-09; older ones stay readable by id only). Lead threads and guest sessions are never served. A session's history never shows a hidden row (nudge or lead turn) nor an assistant row with nothing to read, click or answer (no text, cards, page, credits action, buttons or tool call).
 
+**Paging (MON-PAGE-SPEED-1114).** Both reads take `?limit=<1-200>`: only the newest `limit` visible messages are served (oldest first) with `hasOlder` + `olderCursor`; pass the cursor back as `?before=<olderCursor>&limit=…` to read the previous page (on `/sessions/latest`, the cursor names its own session, so a scroll keeps reading the conversation on screen even if a newer one started). A cursor outside the caller's session is a 404; `before` without `limit` is a 400. Without `limit` the whole history is served, as before (`hasOlder: false`, `olderCursor: null`). The Copilot panel loads on every dashboard page: a full read was 1.3 MB for a 1,010-message session. `messages_session_created_idx` (migration 0033) serves both reads.
+
 Response `200`:
 ```json
 {

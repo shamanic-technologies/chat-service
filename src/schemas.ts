@@ -2541,6 +2541,24 @@ Choices and opened pages are persisted on the assistant message and returned by 
 
 // --- Session History (read) ---
 
+// MON-PAGE-SPEED-1114: a page of the newest messages instead of the whole history.
+const sessionHistoryPageFields = {
+  limit: z.coerce.number().int().min(1).max(200).optional().openapi({
+    description:
+      "Serve only the newest `limit` visible messages (1-200), oldest first, with `hasOlder` + `olderCursor`. " +
+      "Omitted = the whole history (unchanged).",
+    example: 30,
+  }),
+  before: z.string().uuid("before must be a message id").optional().openapi({
+    description:
+      "A message id (`olderCursor` of the previous page): serve the page just older than it. Requires `limit`.",
+  }),
+};
+
+export const SessionHistoryPageQuerySchema = z
+  .object(sessionHistoryPageFields)
+  .openapi("SessionHistoryPageQuery");
+
 export const GetSessionParamsSchema = z
   .object({
     sessionId: z.string().uuid("sessionId must be a valid UUID").openapi({
@@ -2617,7 +2635,13 @@ export const SessionHistoryResponseSchema = z
     createdAt: z.string().openapi({ description: "ISO 8601 session creation timestamp." }),
     updatedAt: z.string().openapi({ description: "ISO 8601 session last-update timestamp." }),
     messages: z.array(SessionHistoryMessageSchema).openapi({
-      description: "Full ordered conversation, oldest turn first.",
+      description: "Ordered conversation, oldest turn first: the whole history, or the newest page when `limit` is set.",
+    }),
+    hasOlder: z.boolean().openapi({
+      description: "True when older visible messages exist than the first one served (always false without `limit`).",
+    }),
+    olderCursor: z.string().uuid().nullable().openapi({
+      description: "Pass back as `before` (with `limit`) to read the previous page. Null when nothing older exists.",
     }),
   })
   .openapi("SessionHistoryResponse");
@@ -2636,9 +2660,12 @@ registry.registerPath({
     "An unknown sessionId, or one belonging to another org or to a teammate in the same org, returns 404 with " +
     "the same message the POST /chat stream emits for `session_not_found` (existence is not leaked).\n\n" +
     "Each message carries its `role`, plain-text `content`, optional provider `contentBlocks` (including " +
-    "`thinking` reasoning blocks), and any `toolCalls` (tool name + input `args` + `result`).",
+    "`thinking` reasoning blocks), and any `toolCalls` (tool name + input `args` + `result`).\n\n" +
+    "**Paging.** With `limit`, only the newest `limit` visible messages are served (oldest first) with `hasOlder` + " +
+    "`olderCursor`; pass the cursor back as `before` to read older ones. Without `limit`, the whole history.",
   request: {
     params: GetSessionParamsSchema,
+    query: SessionHistoryPageQuerySchema,
     headers: z.object({
       "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
       "x-org-id": z.string().openapi({ description: "Internal org UUID from client-service" }),
@@ -2669,6 +2696,7 @@ registry.registerPath({
 
 export const LatestSessionQuerySchema = z
   .object({
+    ...sessionHistoryPageFields,
     configKey: z.string().min(1, "configKey is required").openapi({
       description: "Chat config key the session was started under (the same `configKey` POST /chat takes).",
       example: "copilot",
@@ -2686,7 +2714,11 @@ registry.registerPath({
     "its full history, in the same shape as GET /sessions/{sessionId}. Lets a client show the same conversation on " +
     "any device without holding a sessionId. \"Most recently active\" = the session whose last /chat turn is newest.\n\n" +
     "404 when the user has no session for that key in this org. Only sessions created from 2026-10-09 on record " +
-    "their config key, so an older conversation is not found here (it stays readable by id). Read-only.",
+    "their config key, so an older conversation is not found here (it stays readable by id). Read-only.\n\n" +
+    "**Paging (a chat panel loading on every page).** Pass `limit` to receive only the newest `limit` visible " +
+    "messages with `hasOlder` + `olderCursor`; pass the cursor back as `before` (with `limit` and the same " +
+    "`configKey`) to read older ones of THAT session, even if a newer session started since. An unknown cursor, " +
+    "or one in another user's session, is a 404. Without `limit`, the whole history (unchanged).",
   request: {
     query: LatestSessionQuerySchema,
     headers: z.object({

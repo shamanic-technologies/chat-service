@@ -2954,7 +2954,17 @@
             "items": {
               "$ref": "#/components/schemas/SessionHistoryMessage"
             },
-            "description": "Full ordered conversation, oldest turn first."
+            "description": "Ordered conversation, oldest turn first: the whole history, or the newest page when `limit` is set."
+          },
+          "hasOlder": {
+            "type": "boolean",
+            "description": "True when older visible messages exist than the first one served (always false without `limit`)."
+          },
+          "olderCursor": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "Pass back as `before` (with `limit`) to read the previous page. Null when nothing older exists."
           }
         },
         "required": [
@@ -2968,7 +2978,9 @@
           "configKey",
           "createdAt",
           "updatedAt",
-          "messages"
+          "messages",
+          "hasOlder",
+          "olderCursor"
         ]
       },
       "SessionHistoryMessage": {
@@ -6867,7 +6879,7 @@
           "Chat"
         ],
         "summary": "Read a session's conversation history",
-        "description": "Returns the full ordered visible conversation for a session so a client holding its `sessionId` can rebuild the chat panel exactly as the user last saw it — e.g. after a page refresh. Read-only over the same `sessions`/`messages` tables POST /chat writes; it creates no state and does not change session lifecycle.\n\n**Private to its user.** The session must belong to the caller's org (`x-org-id`) AND user (`x-user-id`). An unknown sessionId, or one belonging to another org or to a teammate in the same org, returns 404 with the same message the POST /chat stream emits for `session_not_found` (existence is not leaked).\n\nEach message carries its `role`, plain-text `content`, optional provider `contentBlocks` (including `thinking` reasoning blocks), and any `toolCalls` (tool name + input `args` + `result`).",
+        "description": "Returns the full ordered visible conversation for a session so a client holding its `sessionId` can rebuild the chat panel exactly as the user last saw it — e.g. after a page refresh. Read-only over the same `sessions`/`messages` tables POST /chat writes; it creates no state and does not change session lifecycle.\n\n**Private to its user.** The session must belong to the caller's org (`x-org-id`) AND user (`x-user-id`). An unknown sessionId, or one belonging to another org or to a teammate in the same org, returns 404 with the same message the POST /chat stream emits for `session_not_found` (existence is not leaked).\n\nEach message carries its `role`, plain-text `content`, optional provider `contentBlocks` (including `thinking` reasoning blocks), and any `toolCalls` (tool name + input `args` + `result`).\n\n**Paging.** With `limit`, only the newest `limit` visible messages are served (oldest first) with `hasOlder` + `olderCursor`; pass the cursor back as `before` to read older ones. Without `limit`, the whole history.",
         "parameters": [
           {
             "schema": {
@@ -6880,6 +6892,30 @@
             "description": "UUID of the session to read back.",
             "name": "sessionId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "description": "Serve only the newest `limit` visible messages (1-200), oldest first, with `hasOlder` + `olderCursor`. Omitted = the whole history (unchanged).",
+              "example": 30
+            },
+            "required": false,
+            "description": "Serve only the newest `limit` visible messages (1-200), oldest first, with `hasOlder` + `olderCursor`. Omitted = the whole history (unchanged).",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "A message id (`olderCursor` of the previous page): serve the page just older than it. Requires `limit`."
+            },
+            "required": false,
+            "description": "A message id (`olderCursor` of the previous page): serve the page just older than it. Requires `limit`.",
+            "name": "before",
+            "in": "query"
           },
           {
             "schema": {
@@ -7024,8 +7060,32 @@
           "Chat"
         ],
         "summary": "Read the caller's latest session for a config key",
-        "description": "Returns the most recently active session of the caller (`x-org-id` + `x-user-id`) for one `configKey`, with its full history, in the same shape as GET /sessions/{sessionId}. Lets a client show the same conversation on any device without holding a sessionId. \"Most recently active\" = the session whose last /chat turn is newest.\n\n404 when the user has no session for that key in this org. Only sessions created from 2026-10-09 on record their config key, so an older conversation is not found here (it stays readable by id). Read-only.",
+        "description": "Returns the most recently active session of the caller (`x-org-id` + `x-user-id`) for one `configKey`, with its full history, in the same shape as GET /sessions/{sessionId}. Lets a client show the same conversation on any device without holding a sessionId. \"Most recently active\" = the session whose last /chat turn is newest.\n\n404 when the user has no session for that key in this org. Only sessions created from 2026-10-09 on record their config key, so an older conversation is not found here (it stays readable by id). Read-only.\n\n**Paging (a chat panel loading on every page).** Pass `limit` to receive only the newest `limit` visible messages with `hasOlder` + `olderCursor`; pass the cursor back as `before` (with `limit` and the same `configKey`) to read older ones of THAT session, even if a newer session started since. An unknown cursor, or one in another user's session, is a 404. Without `limit`, the whole history (unchanged).",
         "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "description": "Serve only the newest `limit` visible messages (1-200), oldest first, with `hasOlder` + `olderCursor`. Omitted = the whole history (unchanged).",
+              "example": 30
+            },
+            "required": false,
+            "description": "Serve only the newest `limit` visible messages (1-200), oldest first, with `hasOlder` + `olderCursor`. Omitted = the whole history (unchanged).",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "A message id (`olderCursor` of the previous page): serve the page just older than it. Requires `limit`."
+            },
+            "required": false,
+            "description": "A message id (`olderCursor` of the previous page): serve the page just older than it. Requires `limit`.",
+            "name": "before",
+            "in": "query"
+          },
           {
             "schema": {
               "type": "string",
