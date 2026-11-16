@@ -207,16 +207,33 @@ export interface StreamGeminiChatResult {
  * `format`, `pattern`, `minimum/maximum`, `anyOf`) are preserved.
  * See https://ai.google.dev/api/caching#Schema
  */
+function toolParameters(t: ToolDefinition): Record<string, unknown> {
+  return {
+    type: "object",
+    properties: t.input_schema.properties,
+    ...(t.input_schema.required?.length ? { required: t.input_schema.required } : {}),
+  };
+}
+
+/**
+ * Per tool, the decoder that maps Gemini's call arguments back to the tool's
+ * own schema values (an enum sent as strings: "" placeholder, numbers,
+ * booleans; SCHEMA-ANY-VENDOR-1116). Only tools whose schema needed it.
+ */
+export function geminiToolArgDecoders(tools: ToolDefinition[]): Map<string, (value: unknown) => unknown> {
+  const decoders = new Map<string, (value: unknown) => unknown>();
+  for (const t of tools) {
+    const { decode } = sanitizeGeminiSchema(toolParameters(t));
+    if (decode) decoders.set(t.name, decode);
+  }
+  return decoders;
+}
+
 export function toGeminiFunctionDeclarations(
   tools: ToolDefinition[],
 ): GeminiFunctionDeclaration[] {
   return tools.map((t) => {
-    const rawParameters: Record<string, unknown> = {
-      type: "object",
-      properties: t.input_schema.properties,
-      ...(t.input_schema.required?.length ? { required: t.input_schema.required } : {}),
-    };
-    const { schema, removed } = sanitizeGeminiSchema(rawParameters);
+    const { schema, removed } = sanitizeGeminiSchema(toolParameters(t));
     if (removed.length > 0) {
       // The tool is kept; only what Gemini's Schema cannot carry is dropped, and said (GEMINI-BRAND-TOOLS-1112).
       console.warn(`[gemini-chat] tool "${t.name}": schema fields Gemini refuses were dropped: ${removed.join(",")}`);
@@ -466,6 +483,7 @@ export async function streamGeminiChat(
   const functionDeclarations = tools.length > 0
     ? toGeminiFunctionDeclarations(tools)
     : [];
+  const toolArgDecoders = geminiToolArgDecoders(tools);
 
   const timeoutMs = GEMINI_TIMEOUT_MS[model] ?? DEFAULT_GEMINI_TIMEOUT_MS;
 
@@ -588,9 +606,11 @@ export async function streamGeminiChat(
             // Function call — capture the part's thoughtSignature so it can be
             // echoed back on the next turn (Gemini 3 requires it on replay).
             if (part.functionCall) {
+              const decodeArgs = toolArgDecoders.get(part.functionCall.name);
+              const rawArgs = part.functionCall.args ?? {};
               functionCalls.push({
                 name: part.functionCall.name,
-                args: part.functionCall.args ?? {},
+                args: decodeArgs ? (decodeArgs(rawArgs) as Record<string, unknown>) : rawArgs,
                 ...(part.functionCall.id ? { id: part.functionCall.id } : {}),
                 ...(part.thoughtSignature ? { thoughtSignature: part.thoughtSignature } : {}),
               });
