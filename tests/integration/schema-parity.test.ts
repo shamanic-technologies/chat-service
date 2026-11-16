@@ -31,6 +31,8 @@ const tables = [
   schema.transcriptions,
   schema.vendorCreditOutages,
   schema.vendorCreditDays,
+  schema.localLlmOrgs,
+  schema.localLlmJobs,
 ];
 
 describe("schema parity — declared schema vs live database", { timeout: 30000 }, () => {
