@@ -32,6 +32,9 @@ export const sessions = pgTable(
     // DISTRY-WEB-CHAT-1117): the site's opaque visitor id, one conversation per
     // visitor. Set only by chat-service (POST /internal/copilot/web-messages).
     webVisitorId: text("web_visitor_id"),
+    // The email a web visitor gave to continue there (migration 0036): the page
+    // conversation is handed to crm-service, whose Lead event campaign writes by email.
+    channelEmail: text("channel_email"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

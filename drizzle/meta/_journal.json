@@ -253,6 +253,13 @@
       "when": 1793059200000,
       "tag": "0035_web_visitor",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793145600000,
+      "tag": "0036_web_visitor_email",
+      "breakpoints": true
     }
   ]
 }
