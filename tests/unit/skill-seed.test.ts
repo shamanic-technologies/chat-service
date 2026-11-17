@@ -710,3 +710,20 @@ describe("a step that cannot run holds the start (SOPHIE-NO-FALSE-READY-1111)", 
     expect(by.get("campaigns")!).toMatch(/A step that cannot run today .* the start waits for it/s);
   });
 });
+
+// DISTRY-WEB-CHAT-1117 (owner 2026-11-17, distribute.you CLAUDE.md Offer): the hosted agent is
+// "Usage based, 0% markup", never free; "free" only for running the open-source agent yourself.
+describe("the offer every guest reads (our-offer)", () => {
+  it("never calls the hosted product free, nor says no monthly fee / $0 a month", () => {
+    const banned = /\b(platform|starting|start|it|agent|product|distribute\.you)\s+is\s+free\b|no monthly fee|\$0\s*(a|per|\/)\s*month/i;
+    for (const skill of SEED_SKILLS) expect({ slug: skill.slug, hit: skill.content.match(banned)?.[0] ?? null }).toEqual({ slug: skill.slug, hit: null });
+  });
+
+  it("states the site's offer: usage based at 0% markup, the $10 prepaid start, the open-source agent and the agency", () => {
+    const offer = SEED_SKILLS.find((s) => s.slug === "our-offer")!.content;
+    expect(offer).toContain("usage based, 0% markup");
+    expect(offer).toContain("$10");
+    expect(offer).toContain("https://github.com/distribute-you/gtm-factory");
+    expect(offer).toContain("https://distribute.you/gtm-agency");
+  });
+});
