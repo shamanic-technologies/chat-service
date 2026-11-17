@@ -246,6 +246,13 @@
       "when": 1792972800000,
       "tag": "0034_local_llm",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793059200000,
+      "tag": "0035_web_visitor",
+      "breakpoints": true
     }
   ]
 }

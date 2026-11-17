@@ -218,6 +218,21 @@ import {
   type TelegramDeps,
 } from "./lib/telegram-copilot.js";
 import {
+  WEB_CHANNEL,
+  WEB_CONTINUE_TOOL,
+  WEB_CONTINUE_TOOL_NAME,
+  WEB_TASK_NAME,
+  VISITOR_ID_PATTERN,
+  acceptWebMessage,
+  buildWebBlock,
+  parseContinueArgs,
+  processWebMessage,
+  readWebConversation,
+  readWebState,
+  webSignals,
+  type WebDeps,
+} from "./lib/web-visitor.js";
+import {
   COMPLETE_SIGN_IN_TOOL_NAME,
   SIGN_IN_TOOL_NAMES,
   START_SIGN_IN_TOOL_NAME,
@@ -353,7 +368,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -3766,21 +3781,35 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // session, unlocks the Telegram form. A proactive turn delivered to the org's
   // linked Telegram asks for the same form through context.channel.
   let telegramTurn = false;
+  // A visitor of our public site (POST /internal/copilot/web-messages,
+  // DISTRY-WEB-CHAT-1117): same unlock, its own form + the WhatsApp hand-off tool.
+  let webTurn: { whatsapp: string | null } | null = null;
   if (parsed.data.channelMessageId) {
     const [m] = await db
-      .select({ channel: channelInboundMessages.channel, status: channelInboundMessages.status, orgId: channelInboundMessages.orgId, userId: channelInboundMessages.userId, sessionId: channelInboundMessages.sessionId })
+      .select({ channel: channelInboundMessages.channel, status: channelInboundMessages.status, orgId: channelInboundMessages.orgId, userId: channelInboundMessages.userId, sessionId: channelInboundMessages.sessionId, senderPhone: channelInboundMessages.senderPhone })
       .from(channelInboundMessages)
       .where(eq(channelInboundMessages.id, parsed.data.channelMessageId));
-    if (nudge || leadTurn || proactiveTurn || !m || m.channel !== TELEGRAM_CHANNEL || m.status !== "processing" || m.orgId !== orgId || m.userId !== userId || !sessionId || m.sessionId !== sessionId) {
-      return res.status(400).json({ error: "channelMessageId names no Telegram message being answered in this session." });
+    if (nudge || leadTurn || proactiveTurn || !m || (m.channel !== TELEGRAM_CHANNEL && m.channel !== WEB_CHANNEL) || m.status !== "processing" || m.orgId !== orgId || m.userId !== userId || !sessionId || m.sessionId !== sessionId) {
+      return res.status(400).json({ error: "channelMessageId names no Telegram or website message being answered in this session." });
     }
-    telegramTurn = true;
+    if ((m.channel === WEB_CHANNEL) !== (parsed.data.webVisitorId !== undefined) || (m.channel === WEB_CHANNEL && m.senderPhone !== parsed.data.webVisitorId)) {
+      return res.status(400).json({ error: "webVisitorId must name the visitor of the website message being answered, and only then." });
+    }
+    if (m.channel === WEB_CHANNEL) {
+      const [s] = await db.select({ channelPhone: sessions.channelPhone }).from(sessions).where(eq(sessions.id, sessionId));
+      webTurn = { whatsapp: s?.channelPhone ?? null };
+    } else {
+      telegramTurn = true;
+    }
   } else if (proactiveTurn && (context?.channel as { kind?: unknown } | undefined)?.kind === TELEGRAM_CHANNEL) {
     telegramTurn = true;
   }
+  if (parsed.data.webVisitorId !== undefined && !parsed.data.channelMessageId) {
+    return res.status(400).json({ error: "webVisitorId is set only with the website message being answered (channelMessageId)." });
+  }
   // Telegram is a whole surface of its own: a WhatsApp number once bound to the
   // same thread neither adds sign-in tools nor writes the WhatsApp form here.
-  if (telegramTurn) channelSession = null;
+  if (telegramTurn || webTurn) channelSession = null;
   // The campaign that asked for a proactive turn is hidden from the turn's reads
   // (withoutAskingCampaign): the turn proposes for the person, never itself.
   let askingCampaign: AskingCampaign | null = null;
@@ -3791,7 +3820,9 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       return res.status(502).json({ error: `The campaign that asked for this proactive turn could not be read: ${err instanceof Error ? err.message : String(err)}` });
     }
   }
-  const sessionToolNames: string[] = channelSession?.guest
+  const sessionToolNames: string[] = webTurn
+    ? [WEB_CONTINUE_TOOL_NAME]
+    : channelSession?.guest
     ? [...SIGN_IN_TOOL_NAMES]
     : channelSession
       ? [...configAllowedToolNames, ...SIGN_IN_TOOL_NAMES]
@@ -3955,7 +3986,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // sub-skills) appended; sub-skills are loaded on demand with read_skill.
   let skillIndexBlock = "";
   // A WhatsApp guest has no read_skill: it still gets the voice (client-comms) and the public offer (our-offer).
-  const wantsVoiceOnly = (channelSession?.guest === true || (leadTurn?.guest === true && leadTurn.ownBrand)) && configAllowedToolNames.includes("read_skill");
+  const wantsVoiceOnly = (webTurn !== null || channelSession?.guest === true || (leadTurn?.guest === true && leadTurn.ownBrand)) && configAllowedToolNames.includes("read_skill");
   if (allowedToolNames.includes("read_skill") || wantsVoiceOnly) {
     try {
       skillIndexBlock = wantsVoiceOnly ? await buildGuestSkillsBlock(db) : await buildSkillIndexBlock(db);
@@ -3981,7 +4012,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // `let`: the client brief joins it once the turn's run exists (it reads with that run).
   let turnContextBlock =
     buildSystemPrompt("", promptContext, campaignFeatureInputs) +
-    (leadTurn ? buildLeadTurnBlock(leadTurn) : telegramTurn ? buildTelegramBlock() : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
+    (leadTurn ? buildLeadTurnBlock(leadTurn) : telegramTurn ? buildTelegramBlock() : webTurn ? buildWebBlock(webTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
   let systemPrompt = stableSystemPrompt + turnContextBlock;
   const isGeminiChat = chatProvider === "google";
   // A direct OpenAI-compatible vendor (DeepSeek, CHAT-DEEPSEEK-FLASH-1101): its own loop, vendor-chat.ts.
@@ -4214,7 +4245,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       }
     }
 
-    const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME));
+    const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME && t !== WEB_CONTINUE_TOOL_NAME));
+    if (webTurn) allTools.push(WEB_CONTINUE_TOOL);
     if (leadTurn) {
       allTools.push(
         REACH_ELSEWHERE_TOOL,
@@ -4461,6 +4493,21 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         if (result.stated === true && result.kind === "phone" && typeof result.handle === "string" && currentSessionId) {
           // The session follows them: a message from the new number finds this conversation.
           await db.update(sessions).set({ channelPhone: result.handle, updatedAt: new Date() }).where(eq(sessions.id, currentSessionId));
+        }
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // A website visitor gave their WhatsApp number (DISTRY-WEB-CHAT-1117): the
+      // session follows them there; the web route sends this turn's answer on it.
+      if (call.name === WEB_CONTINUE_TOOL_NAME && webTurn && currentSessionId) {
+        const args = (call.args as Record<string, unknown>) || {};
+        const parsedArgs = parseContinueArgs(args);
+        const result: Record<string, unknown> = parsedArgs.ok
+          ? { continuing: "whatsapp", phone: parsedArgs.phone, next: "Your answer of this turn is also sent to them on WhatsApp: write it as the next message of the same conversation." }
+          : parsedArgs.refused;
+        if (parsedArgs.ok) {
+          await db.update(sessions).set({ channelPhone: parsedArgs.phone, updatedAt: new Date() }).where(eq(sessions.id, currentSessionId));
         }
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
@@ -6128,7 +6175,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     })).returning({ id: messages.id, createdAt: messages.createdAt });
     // The Copilot is staff: the turn also lands in distribute.you's Unibox (crm-service).
     // A WhatsApp turn is already in crm's WhatsApp thread: never filed twice.
-    if (!channelTurn && !leadTurn) pushCopilotTurnInBackground(configKey, {
+    if (!channelTurn && !leadTurn && !webTurn) pushCopilotTurnInBackground(configKey, {
       orgId, userId, sessionId: currentSessionId,
       messages: [...(hiddenTrigger ? [] : [userTurnMessage]), { messageId: savedAnswer.id, role: "assistant", text: cleanedResponse, at: savedAnswer.createdAt }],
     });
@@ -6210,7 +6257,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           // Stored so a reload draws the "Add credits" button again.
           creditsRequired,
         })).returning({ id: messages.id, createdAt: messages.createdAt });
-        if (!channelTurn && !leadTurn) pushCopilotTurnInBackground(configKey, {
+        if (!channelTurn && !leadTurn && !webTurn) pushCopilotTurnInBackground(configKey, {
           orgId, userId, sessionId: creditsTurn.sessionId,
           messages: [
             ...(creditsTurn.userMessage ? [creditsTurn.userMessage] : []),
@@ -6390,6 +6437,81 @@ app.post("/internal/copilot/telegram-messages", requireInternalAuth, async (req,
   if (accepted.status !== "accepted") return res.status(200).json({ status: accepted.status });
   res.status(202).json({ status: "accepted" });
   void enqueueTelegramMessage(telegramDeps, parsed.data.chatId, accepted.rowId);
+});
+
+const webDeps: WebDeps = {
+  db,
+  copilotLine: () => copilotLineFromEnv(),
+  createRootRun: (identity) => createChannelRootRun(identity, fetch, WEB_TASK_NAME),
+  runChat: async (args) => {
+    const res = await fetch(`http://127.0.0.1:${PORT}/chat`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": process.env.CHAT_SERVICE_API_KEY || "chat-service-self",
+        "x-org-id": args.orgId,
+        "x-user-id": args.userId,
+        "x-run-id": args.runId,
+      },
+      body: JSON.stringify({
+        configKey: COPILOT_CONFIG_KEY,
+        message: args.message,
+        sessionId: args.sessionId,
+        channelMessageId: args.channelMessageId,
+        webVisitorId: args.visitorId,
+      }),
+      signal: AbortSignal.timeout(5 * 60_000),
+    });
+    return { status: res.status, body: await res.text() };
+  },
+  reachWhatsapp: (args) => reachWhatsapp(args),
+  sendWhatsapp: (args) => sendWhatsappReply(args),
+};
+
+// A visitor of our public site talks to the Copilot in the page (DISTRY-WEB-CHAT-1117).
+// Synchronous: the answer is the response. One message at a time per visitor.
+const webVisitorQueues = new Map<string, Promise<unknown>>();
+app.post("/internal/copilot/web-messages", requireInternalAuth, async (req, res) => {
+  const parsed = WebMessageRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const msg = parsed.data;
+  const previous = webVisitorQueues.get(msg.visitorId) ?? Promise.resolve();
+  const mine = previous.catch(() => undefined).then(async () => {
+    const accepted = await acceptWebMessage(webDeps, msg);
+    if (accepted.status === "contact_needed" || accepted.status === "busy") {
+      return { status: accepted.status, reply: null, handOff: null, ...webSignals(await readWebState(db, msg.visitorId)) };
+    }
+    if (accepted.status === "duplicate") {
+      const [row] = await db.select().from(channelInboundMessages).where(eq(channelInboundMessages.id, accepted.rowId));
+      const state = webSignals(await readWebState(db, msg.visitorId));
+      if (!row || row.status === "received" || row.status === "processing") return { status: "in_progress", reply: null, handOff: null, ...state };
+      return { status: row.status === "answered" ? "answered" : "failed", reply: row.replyText, handOff: null, ...state };
+    }
+    const answer = await processWebMessage(webDeps, accepted.rowId);
+    return {
+      status: answer.failed ? "failed" : "answered",
+      reply: answer.reply,
+      handOff: answer.handOff,
+      ...webSignals(await readWebState(db, msg.visitorId)),
+    };
+  });
+  webVisitorQueues.set(msg.visitorId, mine);
+  try {
+    res.status(200).json(await mine);
+  } catch (err) {
+    console.error(`[chat-service] web message from visitor ${msg.visitorId}:`, err);
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  } finally {
+    if (webVisitorQueues.get(msg.visitorId) === mine) webVisitorQueues.delete(msg.visitorId);
+  }
+});
+
+app.get("/internal/copilot/web-conversations/:visitorId", requireInternalAuth, async (req, res) => {
+  const visitorId = String(req.params.visitorId ?? "");
+  if (!VISITOR_ID_PATTERN.test(visitorId)) return res.status(400).json({ error: "visitorId must be 16-128 of A-Z a-z 0-9 _ -" });
+  res.json(await readWebConversation(db, visitorId));
 });
 
 const leadTurnDeps: LeadTurnDeps = {

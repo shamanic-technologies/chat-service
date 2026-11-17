@@ -1701,6 +1701,16 @@ A client who linked their org's Telegram through the platform bot (dashboard car
 - The answer goes back through client-service `POST /internal/orgs/:orgId/owner-telegram/messages` (plain text, ≤4096). Rows live in `channel_inbound_messages` (`channel = 'telegram'`, `sender_phone` = the chat id), so `GET /internal/copilot/channel-replies/daily` counts Telegram replies written vs delivered. Cut off by a restart: answered again within 30 min.
 - Proactive turns (`/internal/copilot/proactive-turns`): an org whose member linked their own Telegram (client-service status read, `linkedByUserId`) hears there, as that member in their own Copilot thread (`delivery: "telegram"`); a refused send leaves the message in the web thread and the row says why.
 
+## The Copilot in our site's pages (DISTRY-WEB-CHAT-1117)
+
+A visitor of distribute.you clicks the assistant's avatar and talks with the Copilot in the page: the same agent, voice (`client-comms`) and public offer (`our-offer`) as a WhatsApp guest; only the form differs (`buildWebBlock`: plain text, no account).
+
+- `POST /internal/copilot/web-messages` `{ visitorId, messageId, text }` (service key, called by the site's SERVER, never the browser). `visitorId` = an opaque id the site mints once and keeps in its own first-party cookie (16-128 of `A-Za-z0-9_-`): it is the identity, one guest Copilot session per visitor (`sessions.web_visitor_id`, migration 0035) under distribute.you's own org (`COPILOT_FOLLOWUP_*`). Synchronous, usually 5-20 s (allow 90 s), one message at a time per visitor: **200** `{status, reply, handOff, askForContact, messagesLeft, continuedOn}`. `status`: `answered` | `failed` (reply = one apology line) | `contact_needed` (no number given after 12 answers: nothing runs) | `busy` (400 web messages answered this UTC day: nothing runs) | `in_progress` (a retry of a message still being answered). A retry of the same `messageId` answers the stored answer.
+- `GET /internal/copilot/web-conversations/:visitorId`: the conversation for a reload, oldest first (`role: visitor | assistant`, plain text), plus the same signals.
+- The turn is `POST /chat` on this process (`channelMessageId` + `webVisitorId` unlock it), on a `copilot-web` Copilot support run under our org; its tools are `continue_on_channel` (+ `read_our_website`), never an account tool, never filed in the staff Unibox. Rows live in `channel_inbound_messages` (`channel = 'web'`, `sender_phone` = the visitor id).
+- Hand-off: when the visitor gives their WhatsApp number, `continue_on_channel` ties it to the conversation (`channel_phone`); that answer and every later one also leave on WhatsApp from the Copilot's own line (crm `whatsapp/reach` + `whatsapp/messages`, `handOff.delivered`), and their WhatsApp reply (a Lead event) runs in the SAME session (`pickLeadSession` finds the guest session by number), so the assistant knows what was said in the page.
+- Anonymous spend bound: `askForContact` turns true after 4 answers (the page may ask for a number), `messagesLeft` counts down from 12.
+
 ## The Copilot on WhatsApp
 
 Since ONE-AI-CONVERSES-1029 crm-service no longer hands WhatsApp messages to chat-service: every message is a Lead event and the Copilot writes the answer through `POST /internal/copilot/lead-turns` (below); the workflow sends it. What stays here:
