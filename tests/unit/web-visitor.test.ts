@@ -27,6 +27,9 @@ describe("web visitor (DISTRY-WEB-CHAT-1117)", () => {
     expect(block).toContain("+33612345678");
     expect(block).toContain("Never ask for it again");
     expect(block).not.toContain(`call continue_on_channel`);
+    const byEmail = buildWebBlock({ whatsapp: null, email: "ann@acme.io" });
+    expect(byEmail).toContain("ann@acme.io");
+    expect(byEmail).not.toContain("call continue_on_channel");
   });
 
   it("a number is read in international form, spaces and 00 prefix included; anything else is refused for the model", () => {
@@ -35,6 +38,9 @@ describe("web visitor (DISTRY-WEB-CHAT-1117)", () => {
     const refused = parseContinueArgs({ phone: "06 12 34 56 78" });
     expect(refused.ok).toBe(false);
     expect(parseContinueArgs({}).ok).toBe(false);
+    expect(parseContinueArgs({ email: " Ann@Acme.io " })).toEqual({ ok: true, email: "ann@acme.io" });
+    expect(parseContinueArgs({ email: "ann at acme" }).ok).toBe(false);
+    expect(parseContinueArgs({ email: "ann@acme.io", phone: "+33612345678" }).ok).toBe(false);
   });
 
   it("the page is told to ask for a number after a few answers, and how many answers are left", () => {
@@ -42,6 +48,7 @@ describe("web visitor (DISTRY-WEB-CHAT-1117)", () => {
     expect(webSignals({ visitorMessages: WEB_ASK_CONTACT_AFTER, whatsapp: null }).askForContact).toBe(true);
     expect(webSignals({ visitorMessages: WEB_MAX_VISITOR_MESSAGES + 3, whatsapp: null }).messagesLeft).toBe(0);
     expect(webSignals({ visitorMessages: 40, whatsapp: "+33612345678" })).toEqual({ askForContact: false, messagesLeft: null, continuedOn: "whatsapp" });
+    expect(webSignals({ visitorMessages: 40, whatsapp: null, email: "ann@acme.io" })).toEqual({ askForContact: false, messagesLeft: null, continuedOn: "email" });
   });
 
   it("the answer reaches the page as plain text; a failed or empty turn is said in one line, never a silent 200", () => {

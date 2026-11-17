@@ -60,7 +60,7 @@ const E164 = /^\+[1-9]\d{6,14}$/;
 const SITE_URL = "https://distribute.you";
 
 /** The turn context block of a web turn: the form of this surface and how to continue elsewhere. */
-export function buildWebBlock(state: { whatsapp: string | null }): string {
+export function buildWebBlock(state: { whatsapp: string | null; email?: string | null }): string {
   const lines = [
     "\n\n---\n## Channel: our website (this turn)",
     `You are answering a visitor of ${SITE_URL}, in the chat window of the page they are reading. You are the distribute.you Copilot: same person, same rules, same personality as on WhatsApp and email.`,
@@ -74,10 +74,14 @@ export function buildWebBlock(state: { whatsapp: string | null }): string {
     lines.push(
       `They gave their WhatsApp number (${state.whatsapp}) earlier in this conversation: your answers here also reach them there. Never ask for it again.`,
     );
-  } else {
+  }
+  if (state.email) {
+    lines.push(`They gave their email (${state.email}) earlier in this conversation: it continues by email too. Never ask for it again.`);
+  }
+  if (!state.whatsapp && !state.email) {
     lines.push(
-      `When the conversation would go on better somewhere they keep (they want to think it over, come back later, be told when something is ready), you may offer once to continue on WhatsApp. ` +
-        `When THEY give their WhatsApp number to continue there, call ${WEB_CONTINUE_TOOL_NAME} with it before you answer: your answer then reaches them on WhatsApp too, as the next message of this same conversation, so say in a few words that you are writing from there now.`,
+      `When the conversation would go on better somewhere they keep (they want to think it over, come back later, be told when something is ready), you may offer once to continue on WhatsApp or by email. ` +
+        `When THEY give their WhatsApp number or their email to continue there, call ${WEB_CONTINUE_TOOL_NAME} with it before you answer. A number: your answer also reaches them on WhatsApp, as the next message of this same conversation, so say in a few words that you are writing from there now. An email: our next message reaches them by email shortly, following up on this conversation, so say that in plain words.`,
     );
   }
   return lines.join("\n");
@@ -86,20 +90,37 @@ export function buildWebBlock(state: { whatsapp: string | null }): string {
 export const WEB_CONTINUE_TOOL: Anthropic.Tool = {
   name: WEB_CONTINUE_TOOL_NAME,
   description:
-    "The visitor gave their WhatsApp number to continue this conversation there. Call it BEFORE your answer, with the number exactly as they wrote it, international form with the country code (+33612345678). " +
-    "It ties the number to this conversation: your answer of this turn is also sent to them on WhatsApp, and when they answer there you read this whole conversation. " +
-    "Only a number THEY gave for themselves, never one you guessed. A refusal comes back as {refused, reason, error}: then answer here and, when it was unreadable, ask for it again once.",
+    "The visitor gave their WhatsApp number or their email to continue this conversation there. Call it BEFORE your answer, with exactly one of phone / email, as they wrote it. " +
+    "A number (international form with the country code, +33612345678): your answer of this turn is also sent to them on WhatsApp, and when they answer there you read this whole conversation. " +
+    "An email: this conversation is handed to our team's thread for them, and our next message reaches them by email shortly, following up on what was said here; their reply continues it. " +
+    "Only a handle THEY gave for themselves, never one you guessed. A refusal comes back as {refused, reason, error}: then answer here and, when it was unreadable, ask for it again once.",
   input_schema: {
     type: "object" as const,
     properties: {
-      phone: { type: "string", description: "Their WhatsApp number, international form with the country code (+33612345678)." },
+      phone: { type: "string", description: "Their WhatsApp number, international form with the country code (+33612345678). One of phone / email." },
+      email: { type: "string", description: "Their email address. One of phone / email." },
     },
-    required: ["phone"],
   },
 };
 
-/** PURE: the number the model passed, normalized, or why it is refused. */
-export function parseContinueArgs(args: Record<string, unknown>): { ok: true; phone: string } | { ok: false; refused: Record<string, unknown> } {
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** PURE: the handle the model passed, normalized, or why it is refused. */
+export function parseContinueArgs(
+  args: Record<string, unknown>,
+): { ok: true; phone: string } | { ok: true; email: string } | { ok: false; refused: Record<string, unknown> } {
+  const rawEmail = typeof args.email === "string" ? args.email.trim() : "";
+  const hasPhone = typeof args.phone === "string" && args.phone.trim() !== "";
+  if (rawEmail && hasPhone) {
+    return { ok: false, refused: { refused: true, reason: "one_handle", error: "Give exactly one of phone or email per call." } };
+  }
+  if (rawEmail) {
+    const email = rawEmail.toLowerCase();
+    if (!EMAIL.test(email) || email.length > 320) {
+      return { ok: false, refused: { refused: true, reason: "unreadable_email", error: `"${rawEmail}" is not an email address. Ask for it once more.` } };
+    }
+    return { ok: true, email };
+  }
   const raw = typeof args.phone === "string" ? args.phone : "";
   const phone = raw.replace(/[\s().-]/g, "").replace(/^00/, "+");
   if (!E164.test(phone)) {
@@ -131,6 +152,8 @@ export interface WebDeps {
   reachWhatsapp: (args: { line: CopilotLine; runId: string; phone: string }) => Promise<WhatsappReach>;
   /** crm-service POST /orgs/whatsapp/messages. Throws when it did not leave. */
   sendWhatsapp: (args: { orgId: string; brandId: string; userId: string; runId: string | null; phone: string; fromAccount: string; text: string; idempotencyKey: string }) => Promise<void>;
+  /** crm-service POST /internal/copilot/web-conversations: the page conversation onto the person's thread (a Lead event writes by email). */
+  handOverByEmail: (body: WebHandOverBody) => Promise<{ status: string }>;
   now?: () => Date;
 }
 
@@ -145,6 +168,15 @@ export interface WebState {
   /** Visitor messages answered so far. */
   visitorMessages: number;
   whatsapp: string | null;
+  email: string | null;
+}
+
+export interface WebHandOverBody {
+  conversationId: string;
+  visitorId: string;
+  email: string;
+  phone?: string;
+  messages: Array<{ messageId: string; role: "user" | "assistant"; text: string; at: string }>;
 }
 
 /** The visitor's conversation: one guest Copilot session under our org, null before their first message. */
@@ -168,16 +200,21 @@ async function answeredCount(db: typeof Db, visitorId: string): Promise<number> 
 
 export async function readWebState(db: typeof Db, visitorId: string): Promise<WebState> {
   const session = await findWebSession(db, visitorId);
-  return { sessionId: session?.id ?? null, visitorMessages: await answeredCount(db, visitorId), whatsapp: session?.channelPhone ?? null };
+  return {
+    sessionId: session?.id ?? null,
+    visitorMessages: await answeredCount(db, visitorId),
+    whatsapp: session?.channelPhone ?? null,
+    email: session?.channelEmail ?? null,
+  };
 }
 
 /** PURE: what the page should do next. */
-export function webSignals(state: Pick<WebState, "visitorMessages" | "whatsapp">) {
-  const handedOver = state.whatsapp !== null;
+export function webSignals(state: Pick<WebState, "visitorMessages" | "whatsapp"> & { email?: string | null }) {
+  const handedOver = state.whatsapp !== null || Boolean(state.email);
   return {
     askForContact: !handedOver && state.visitorMessages >= WEB_ASK_CONTACT_AFTER,
     messagesLeft: handedOver ? null : Math.max(0, WEB_MAX_VISITOR_MESSAGES - state.visitorMessages),
-    continuedOn: handedOver ? ("whatsapp" as const) : null,
+    continuedOn: state.whatsapp !== null ? ("whatsapp" as const) : state.email ? ("email" as const) : null,
   };
 }
 
@@ -198,7 +235,7 @@ export async function acceptWebMessage(deps: Pick<WebDeps, "db" | "copilotLine" 
   const [existing] = await db.select({ id: channelInboundMessages.id }).from(channelInboundMessages).where(eq(channelInboundMessages.messageId, key));
   if (existing) return { status: "duplicate", rowId: existing.id };
   const state = await readWebState(db, msg.visitorId);
-  if (!state.whatsapp && state.visitorMessages >= WEB_MAX_VISITOR_MESSAGES) return { status: "contact_needed" };
+  if (!state.whatsapp && !state.email && state.visitorMessages >= WEB_MAX_VISITOR_MESSAGES) return { status: "contact_needed" };
   const now = deps.now?.() ?? new Date();
   const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const [today] = await db
@@ -233,7 +270,7 @@ export async function pickWebSession(db: typeof Db, line: CopilotLine, visitorId
 export interface WebAnswer {
   reply: string;
   /** Where the answer went beside the page: their WhatsApp, when they gave it in this turn. */
-  handOff: { channel: "whatsapp"; delivered: boolean; reason: string | null } | null;
+  handOff: { channel: "whatsapp" | "email"; delivered: boolean; reason: string | null } | null;
   failed: boolean;
 }
 
@@ -265,8 +302,15 @@ export async function processWebMessage(deps: WebDeps, rowId: string): Promise<W
     await db.update(channelInboundMessages).set({ sessionId, updatedAt: new Date() }).where(eq(channelInboundMessages.id, rowId));
     const { status, body } = await deps.runChat({ orgId: line.orgId, userId: line.userId, runId, sessionId, message: msg.text, channelMessageId: rowId, visitorId: msg.visitorId });
     ({ reply, failure } = webTurnOutcome(status, body));
-    const [after] = await db.select({ channelPhone: sessions.channelPhone }).from(sessions).where(eq(sessions.id, sessionId));
+    const [after] = await db.select({ channelPhone: sessions.channelPhone, channelEmail: sessions.channelEmail }).from(sessions).where(eq(sessions.id, sessionId));
     const phone = after?.channelPhone ?? null;
+    const email = after?.channelEmail ?? null;
+    // An email given (this turn or before): the page conversation so far goes on
+    // their thread in crm, whose Lead event campaign writes them by email. Every
+    // later turn re-hands it (crm keeps one thread, one Lead event).
+    if (!failure && email) {
+      handOff = await handOverConversation(deps, { sessionId, visitorId: msg.visitorId, email, phone });
+    }
     // A number given in THIS turn: the answer is their first message on WhatsApp.
     // A number given earlier: every answer reaches them there too.
     if (!failure && phone) {
@@ -282,6 +326,60 @@ export async function processWebMessage(deps: WebDeps, rowId: string): Promise<W
     .set({ status: failure ? "failed" : "answered", replyText: reply, error: failure, sentAt: failure ? null : new Date(), updatedAt: new Date() })
     .where(eq(channelInboundMessages.id, rowId));
   return { reply, handOff, failed: failure !== null };
+}
+
+/** The conversation as crm-service takes it: every shown message, oldest first, as the page shows it. */
+export async function conversationForHandOver(db: typeof Db, sessionId: string): Promise<WebHandOverBody["messages"]> {
+  const rows = await db.select().from(messages).where(eq(messages.sessionId, sessionId)).orderBy(asc(messages.createdAt), asc(messages.id));
+  return rows
+    .filter((m) => (m.role === "user" || m.role === "assistant") && isShownMessage(m))
+    .map((m) => ({
+      messageId: m.id,
+      role: m.role as "user" | "assistant",
+      text: m.role === "assistant" ? renderChannelReply({ text: m.content, choices: shownChoices(m.choices), inputLabel: null, creditsRequired: null, error: null }, toPlainText) : m.content,
+      at: m.createdAt.toISOString(),
+    }))
+    .filter((m) => m.text.trim())
+    .slice(-500);
+}
+
+async function handOverConversation(
+  deps: Pick<WebDeps, "db" | "handOverByEmail">,
+  args: { sessionId: string; visitorId: string; email: string; phone: string | null },
+): Promise<NonNullable<WebAnswer["handOff"]>> {
+  try {
+    const conversation = await conversationForHandOver(deps.db, args.sessionId);
+    if (conversation.length === 0) return { channel: "email", delivered: false, reason: "empty_conversation" };
+    const out = await deps.handOverByEmail({
+      conversationId: args.sessionId,
+      visitorId: args.visitorId,
+      email: args.email,
+      ...(args.phone ? { phone: args.phone } : {}),
+      messages: conversation,
+    });
+    return { channel: "email", delivered: out.status !== "failed", reason: out.status === "failed" ? "lead_event_failed" : null };
+  } catch (err) {
+    console.error(`[chat-service] web hand-off to ${args.email}: crm-service refused the conversation: ${err instanceof Error ? err.message : String(err)}`);
+    return { channel: "email", delivered: false, reason: "handover_failed" };
+  }
+}
+
+/** crm-service POST /internal/copilot/web-conversations (service key, no identity headers). */
+export async function handOverByEmailToCrm(body: WebHandOverBody, fetchImpl: typeof fetch = fetch): Promise<{ status: string }> {
+  const url = process.env.CRM_SERVICE_URL;
+  const key = process.env.CRM_SERVICE_API_KEY;
+  if (!url || !key) throw new Error("CRM_SERVICE_URL / CRM_SERVICE_API_KEY not configured");
+  const res = await fetchImpl(`${url}/internal/copilot/web-conversations`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": key },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const text = await res.text().catch(() => "");
+  if (!res.ok) throw new Error(`crm-service web-conversations ${res.status}: ${text.slice(0, 500)}`);
+  const json = JSON.parse(text) as { status?: unknown };
+  if (typeof json.status !== "string") throw new Error(`crm-service web-conversations answered no status: ${text.slice(0, 300)}`);
+  return { status: json.status };
 }
 
 async function deliverOnWhatsapp(
