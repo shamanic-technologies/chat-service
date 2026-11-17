@@ -1587,6 +1587,116 @@ registry.registerPath({
   },
 });
 
+// ── The Copilot in our public site's pages (DISTRY-WEB-CHAT-1117) ────────────
+
+const VisitorIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{16,128}$/)
+  .openapi({
+    description:
+      "The visitor's opaque id: a random string the site mints once and keeps in its own first-party cookie (16-128 of A-Z a-z 0-9 _ -). It IS the identity: the same id finds the same conversation after a reload.",
+    example: "v_8f3a2c1e9b7d4a60",
+  });
+
+export const WebMessageRequestSchema = z
+  .object({
+    visitorId: VisitorIdSchema,
+    messageId: z.string().min(1).max(100).openapi({
+      description: "The site's id for this message (unique per visitor): a retry with the same id runs nothing twice and answers the stored answer.",
+      example: "m_1731850000000",
+    }),
+    text: z.string().trim().min(1).max(4000).openapi({ description: "What the visitor wrote." }),
+  })
+  .openapi("WebMessageRequest");
+export type WebMessageRequest = z.infer<typeof WebMessageRequestSchema>;
+
+const WebSignalsShape = {
+  askForContact: z.boolean().openapi({
+    description: "true once the visitor had several answers and gave no WhatsApp number: the page may ask for one (the next answers are limited, see messagesLeft).",
+  }),
+  messagesLeft: z.number().int().nullable().openapi({
+    description: "Answers this visitor can still get before giving a WhatsApp number (0 = the next message is refused with `contact_needed`); null once they gave one.",
+  }),
+  continuedOn: z.enum(["whatsapp"]).nullable().openapi({
+    description: "Where the conversation also goes on since the visitor gave their number: every answer is also sent there, and their reply there continues this conversation. null before.",
+  }),
+};
+
+export const WebMessageResponseSchema = z
+  .object({
+    status: z.enum(["answered", "failed", "contact_needed", "busy", "in_progress"]).openapi({
+      description:
+        "`answered`: `reply` is the assistant's answer. `failed`: the turn failed on our side, `reply` says so in one line (the visitor may send again). " +
+        "`contact_needed`: this visitor used their answers without giving a WhatsApp number, nothing ran (show a field for their number, sent as a normal message). " +
+        "`busy`: the website chat answered its day's messages, nothing ran. `in_progress`: this messageId is still being answered (a retry came early).",
+    }),
+    reply: z.string().nullable().openapi({ description: "The answer to show in the page: plain text, URLs written out, choices as a numbered list. null when nothing ran." }),
+    handOff: z
+      .object({
+        channel: z.enum(["whatsapp"]),
+        delivered: z.boolean().openapi({ description: "true when the answer also left on WhatsApp from our assistant's own number." }),
+        reason: z.string().nullable().openapi({ description: "Why it did not leave (e.g. `not_on_whatsapp`), null when delivered." }),
+      })
+      .nullable()
+      .openapi({ description: "Set when the visitor's number is tied to the conversation: where this answer went beside the page." }),
+    ...WebSignalsShape,
+  })
+  .openapi("WebMessageResponse");
+
+export const WebConversationResponseSchema = z
+  .object({
+    visitorId: z.string(),
+    messages: z
+      .array(
+        z.object({
+          role: z.enum(["visitor", "assistant"]),
+          text: z.string().openapi({ description: "As the page shows it (plain text)." }),
+          at: z.string().openapi({ description: "ISO timestamp." }),
+        }),
+      )
+      .openapi({ description: "The conversation, oldest first; empty for a visitor who never wrote." }),
+    ...WebSignalsShape,
+  })
+  .openapi("WebConversationResponse");
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/copilot/web-messages",
+  tags: ["Internal"],
+  summary: "A visitor of our public site wrote in the page: the Copilot answers (synchronous)",
+  description:
+    "Called by the distribute.you site's SERVER (never the browser: it carries the service key) for every message a visitor types in the page chat. " +
+    "The visitor id is the identity: one guest Copilot conversation per visitor, the same assistant, voice and public offer as on WhatsApp (a guest sees no account). " +
+    "Answers in the response, usually within 5-20 s (allow 90 s). One message at a time per visitor. " +
+    "When the visitor gives their WhatsApp number, the assistant ties it to the conversation: that answer and every later one also reach them on WhatsApp from our assistant's number, and their WhatsApp reply continues the same conversation. " +
+    "Anonymous answers are bounded: `askForContact` turns true after a few answers, `contact_needed` once `messagesLeft` is 0. Spend is a Copilot support run under distribute.you's org.",
+  request: {
+    headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
+    body: { content: { "application/json": { schema: WebMessageRequestSchema } } },
+  },
+  responses: {
+    200: { description: "Answered, failed (said in one line), or refused before any spend", content: { "application/json": { schema: WebMessageResponseSchema } } },
+    400: { description: "Invalid request" },
+    401: { description: "Missing x-api-key" },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/copilot/web-conversations/{visitorId}",
+  tags: ["Internal"],
+  summary: "A site visitor's conversation, to show it again after a reload",
+  request: {
+    headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
+    params: z.object({ visitorId: VisitorIdSchema }),
+  },
+  responses: {
+    200: { description: "The conversation (empty for a new visitor)", content: { "application/json": { schema: WebConversationResponseSchema } } },
+    400: { description: "Invalid visitorId" },
+    401: { description: "Missing x-api-key" },
+  },
+});
+
 registry.registerPath({
   method: "post",
   path: "/internal/copilot/lead-turns",
@@ -2101,9 +2211,13 @@ export const ChatRequestSchema = z
     }),
     channelMessageId: z.string().uuid().optional().openapi({
       description:
-        "Internal: set only by chat-service itself when answering a Telegram message (POST /internal/copilot/telegram-messages). " +
-        "Must name a Telegram message being answered for this org, user and session, or the request is refused (400). " +
-        "The turn then writes for Telegram (plain text).",
+        "Internal: set only by chat-service itself when answering a Telegram message (POST /internal/copilot/telegram-messages) or a website visitor (POST /internal/copilot/web-messages). " +
+        "Must name such a message being answered for this org, user and session, or the request is refused (400). " +
+        "The turn then writes for that surface (plain text).",
+    }),
+    webVisitorId: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/).optional().openapi({
+      description:
+        "Internal: set only by chat-service itself with `channelMessageId` when answering a website visitor: must be the visitor that message came from (400 otherwise). One turn at a time per visitor.",
     }),
     leadTurnId: z.string().uuid().optional().openapi({
       description:

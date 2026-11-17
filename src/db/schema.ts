@@ -28,6 +28,10 @@ export const sessions = pgTable(
     // A thread where Lead event turns run (migration 0030, SOPHIE-JCURVE-1102):
     // the person never sees it, so never served by GET /sessions/latest.
     leadThread: boolean("lead_thread").notNull().default(false),
+    // A visitor of our public site talking in the page (migration 0035,
+    // DISTRY-WEB-CHAT-1117): the site's opaque visitor id, one conversation per
+    // visitor. Set only by chat-service (POST /internal/copilot/web-messages).
+    webVisitorId: text("web_visitor_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -38,6 +42,7 @@ export const sessions = pgTable(
     index("sessions_org_brand_idx").on(table.orgId, table.brandIds),
     index("sessions_org_user_config_updated_idx").on(table.orgId, table.userId, table.configKey, table.updatedAt),
     index("sessions_channel_phone_idx").on(table.channelPhone),
+    index("sessions_web_visitor_idx").on(table.webVisitorId),
   ],
 );
 

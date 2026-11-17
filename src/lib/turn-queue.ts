@@ -25,6 +25,10 @@ export function turnKeyOf(body: unknown, identity: { orgId: string; userId: stri
   if (typeof b.leadTurnId === "string" && b.leadTurnId) {
     return `lead:${typeof b.sessionId === "string" && b.sessionId ? b.sessionId : b.leadTurnId}`;
   }
+  // A website visitor (DISTRY-WEB-CHAT-1117) is a person of their own: every
+  // visitor runs under distribute.you's line identity, so the identity key would
+  // queue every visitor (and our own staff user) behind one another.
+  if (typeof b.webVisitorId === "string" && b.webVisitorId) return `web:${b.webVisitorId}`;
   return `person:${identity.orgId}:${identity.userId}`;
 }
 
