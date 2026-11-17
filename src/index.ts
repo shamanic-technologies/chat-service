@@ -225,6 +225,7 @@ import {
   VISITOR_ID_PATTERN,
   acceptWebMessage,
   buildWebBlock,
+  handOverByEmailToCrm,
   parseContinueArgs,
   processWebMessage,
   readWebConversation,
@@ -3783,7 +3784,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   let telegramTurn = false;
   // A visitor of our public site (POST /internal/copilot/web-messages,
   // DISTRY-WEB-CHAT-1117): same unlock, its own form + the WhatsApp hand-off tool.
-  let webTurn: { whatsapp: string | null } | null = null;
+  let webTurn: { whatsapp: string | null; email: string | null } | null = null;
   if (parsed.data.channelMessageId) {
     const [m] = await db
       .select({ channel: channelInboundMessages.channel, status: channelInboundMessages.status, orgId: channelInboundMessages.orgId, userId: channelInboundMessages.userId, sessionId: channelInboundMessages.sessionId, senderPhone: channelInboundMessages.senderPhone })
@@ -3796,8 +3797,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       return res.status(400).json({ error: "webVisitorId must name the visitor of the website message being answered, and only then." });
     }
     if (m.channel === WEB_CHANNEL) {
-      const [s] = await db.select({ channelPhone: sessions.channelPhone }).from(sessions).where(eq(sessions.id, sessionId));
-      webTurn = { whatsapp: s?.channelPhone ?? null };
+      const [s] = await db.select({ channelPhone: sessions.channelPhone, channelEmail: sessions.channelEmail }).from(sessions).where(eq(sessions.id, sessionId));
+      webTurn = { whatsapp: s?.channelPhone ?? null, email: s?.channelEmail ?? null };
     } else {
       telegramTurn = true;
     }
@@ -4503,11 +4504,16 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       if (call.name === WEB_CONTINUE_TOOL_NAME && webTurn && currentSessionId) {
         const args = (call.args as Record<string, unknown>) || {};
         const parsedArgs = parseContinueArgs(args);
-        const result: Record<string, unknown> = parsedArgs.ok
-          ? { continuing: "whatsapp", phone: parsedArgs.phone, next: "Your answer of this turn is also sent to them on WhatsApp: write it as the next message of the same conversation." }
-          : parsedArgs.refused;
+        const result: Record<string, unknown> = !parsedArgs.ok
+          ? parsedArgs.refused
+          : "phone" in parsedArgs
+            ? { continuing: "whatsapp", phone: parsedArgs.phone, next: "Your answer of this turn is also sent to them on WhatsApp: write it as the next message of the same conversation." }
+            : { continuing: "email", email: parsedArgs.email, next: "This conversation goes to our team's thread for them; our next message reaches them by email shortly, following up on it. Say that in plain words, then answer what they asked." };
         if (parsedArgs.ok) {
-          await db.update(sessions).set({ channelPhone: parsedArgs.phone, updatedAt: new Date() }).where(eq(sessions.id, currentSessionId));
+          await db
+            .update(sessions)
+            .set({ ...("phone" in parsedArgs ? { channelPhone: parsedArgs.phone } : { channelEmail: parsedArgs.email }), updatedAt: new Date() })
+            .where(eq(sessions.id, currentSessionId));
         }
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
@@ -6466,6 +6472,7 @@ const webDeps: WebDeps = {
   },
   reachWhatsapp: (args) => reachWhatsapp(args),
   sendWhatsapp: (args) => sendWhatsappReply(args),
+  handOverByEmail: (body) => handOverByEmailToCrm(body),
 };
 
 // A visitor of our public site talks to the Copilot in the page (DISTRY-WEB-CHAT-1117).

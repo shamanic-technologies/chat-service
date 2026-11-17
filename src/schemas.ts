@@ -1612,13 +1612,13 @@ export type WebMessageRequest = z.infer<typeof WebMessageRequestSchema>;
 
 const WebSignalsShape = {
   askForContact: z.boolean().openapi({
-    description: "true once the visitor had several answers and gave no WhatsApp number: the page may ask for one (the next answers are limited, see messagesLeft).",
+    description: "true once the visitor had several answers and gave no WhatsApp number or email: the page may ask for one (the next answers are limited, see messagesLeft).",
   }),
   messagesLeft: z.number().int().nullable().openapi({
-    description: "Answers this visitor can still get before giving a WhatsApp number (0 = the next message is refused with `contact_needed`); null once they gave one.",
+    description: "Answers this visitor can still get before giving a WhatsApp number or email (0 = the next message is refused with `contact_needed`); null once they gave one.",
   }),
-  continuedOn: z.enum(["whatsapp"]).nullable().openapi({
-    description: "Where the conversation also goes on since the visitor gave their number: every answer is also sent there, and their reply there continues this conversation. null before.",
+  continuedOn: z.enum(["whatsapp", "email"]).nullable().openapi({
+    description: "Where the conversation also goes on since the visitor gave a handle. `whatsapp`: every answer is also sent there, their reply continues this conversation. `email`: the conversation is on their thread with us and our next message reaches them by email shortly. null before.",
   }),
 };
 
@@ -1627,18 +1627,18 @@ export const WebMessageResponseSchema = z
     status: z.enum(["answered", "failed", "contact_needed", "busy", "in_progress"]).openapi({
       description:
         "`answered`: `reply` is the assistant's answer. `failed`: the turn failed on our side, `reply` says so in one line (the visitor may send again). " +
-        "`contact_needed`: this visitor used their answers without giving a WhatsApp number, nothing ran (show a field for their number, sent as a normal message). " +
+        "`contact_needed`: this visitor used their answers without giving a WhatsApp number or email, nothing ran (show a field for it, sent as a normal message). " +
         "`busy`: the website chat answered its day's messages, nothing ran. `in_progress`: this messageId is still being answered (a retry came early).",
     }),
     reply: z.string().nullable().openapi({ description: "The answer to show in the page: plain text, URLs written out, choices as a numbered list. null when nothing ran." }),
     handOff: z
       .object({
-        channel: z.enum(["whatsapp"]),
-        delivered: z.boolean().openapi({ description: "true when the answer also left on WhatsApp from our assistant's own number." }),
+        channel: z.enum(["whatsapp", "email"]),
+        delivered: z.boolean().openapi({ description: "`whatsapp`: the answer also left on WhatsApp from our assistant's own number. `email`: the conversation reached the person's thread with us (our email follows shortly)." }),
         reason: z.string().nullable().openapi({ description: "Why it did not leave (e.g. `not_on_whatsapp`), null when delivered." }),
       })
       .nullable()
-      .openapi({ description: "Set when the visitor's number is tied to the conversation: where this answer went beside the page." }),
+      .openapi({ description: "Set when the visitor's number or email is tied to the conversation: where this answer went beside the page (WhatsApp wins when both)." }),
     ...WebSignalsShape,
   })
   .openapi("WebMessageResponse");

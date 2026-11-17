@@ -55,12 +55,19 @@ vi.mock("../../src/db/index.js", async () => {
   const rowsFor = (table: unknown): unknown[] => {
     if (is(table, "channel_inbound_messages")) return state.channelRows;
     if (is(table, "sessions")) return [state.session];
+    if (is(table, "messages")) {
+      return state.messageInserts.map((m, i) => ({ id: `msg-${i + 1}`, proactiveTrigger: false, choices: null, openPages: null, creditsRequired: null, buttons: null, toolCalls: null, createdAt: new Date(Date.UTC(2026, 10, 17, 18, 0, i)), ...m }));
+    }
     if (is(table, "app_configs") || is(table, "platform_configs")) return [appConfig];
     return [];
   };
   const chain = (rows: unknown[]) => {
     const p = Promise.resolve(rows) as Promise<unknown[]> & { orderBy: () => unknown; limit: () => Promise<unknown[]> };
-    p.orderBy = () => ({ limit: () => Promise.resolve(rows) });
+    p.orderBy = () => {
+      const q = Promise.resolve(rows) as Promise<unknown[]> & { limit: () => Promise<unknown[]> };
+      q.limit = () => Promise.resolve(rows);
+      return q;
+    };
     p.limit = () => Promise.resolve(rows);
     return p;
   };
@@ -144,6 +151,13 @@ function baseRoutes(gemini: { calls: number; bodies: Array<Record<string, unknow
         const headers = init!.headers as Record<string, string>;
         const r = await request(app as Parameters<typeof request>[0]).post("/chat").set(headers).send(JSON.parse(init!.body as string));
         return { ok: r.status === 200, status: r.status, body: r.text, text: r.text };
+      },
+    },
+    {
+      match: (url) => url === `${process.env.CRM_SERVICE_URL}/internal/copilot/web-conversations`,
+      respond: (url, init) => {
+        sends.push({ url, body: JSON.parse(init!.body as string) as Record<string, unknown> });
+        return { ok: true, status: 202, body: { handoffId: "h1", stored: 2, duplicates: 0, duplicate: false, status: "pending" } };
       },
     },
     {
@@ -258,6 +272,31 @@ describe("POST /internal/copilot/web-messages: a visitor of our site talks with 
     expect(state.sessionUpdates.some((u) => u.channelPhone === "+33612345678")).toBe(true);
     expect(sends).toHaveLength(1);
     expect(sends[0].body).toMatchObject({ phone: "+33612345678", fromAccount: "+33700000000", text: "Great, I am writing to you on WhatsApp now." });
+  }, 30_000);
+
+  it("the visitor gives their email: the page conversation goes to their thread in crm (a Lead event writes by email), nothing is emailed from here", async () => {
+    const app = (await import("../../src/index.js")).default;
+    const gemini = {
+      calls: 0,
+      bodies: [] as Array<Record<string, unknown>>,
+      script: [[{ functionCall: { name: "continue_on_channel", args: { email: "K.Lourd+webprobe@Example.com" } }, thoughtSignature: "sig" }], [{ text: "Thanks, our next message reaches you by email shortly." }]],
+    };
+    const sends: Array<{ url: string; body: Record<string, unknown> }> = [];
+    routes.push(...baseRoutes(gemini, app, sends));
+
+    const res = await request(app).post("/internal/copilot/web-messages").set(SERVICE).send({ visitorId: VISITOR, messageId: "m3", text: "write me at K.Lourd+webprobe@Example.com" });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: "answered", handOff: { channel: "email", delivered: true, reason: null }, continuedOn: "email", messagesLeft: null });
+    expect(state.sessionUpdates.some((u) => u.channelEmail === "k.lourd+webprobe@example.com")).toBe(true);
+    expect(sends).toHaveLength(1);
+    expect(sends[0].url).toBe(`${process.env.CRM_SERVICE_URL}/internal/copilot/web-conversations`);
+    const body = sends[0].body as { conversationId: string; visitorId: string; email: string; messages: Array<{ role: string; text: string; messageId: string; at: string }> };
+    expect(body).toMatchObject({ conversationId: SESSION, visitorId: VISITOR, email: "k.lourd+webprobe@example.com" });
+    expect(body.messages.map((m) => [m.role, m.text])).toEqual([
+      ["user", "write me at K.Lourd+webprobe@Example.com"],
+      ["assistant", "Thanks, our next message reaches you by email shortly."],
+    ]);
+    expect(fetchCalls.some((c) => c.url.includes("/orgs/whatsapp/"))).toBe(false);
   }, 30_000);
 
   it("a visitor id that is not one is refused before anything runs", async () => {
