@@ -60,8 +60,11 @@ function cents(name: string, value: unknown, minimum: number): number {
   return value;
 }
 
-/** The gateway's prepay minimums (api-service lib/agent-prepay.ts, owner 2026-10-12); refused here first so the model reads one clear message. */
-export const PREPAY_MINIMUMS_CENTS = { topup: 1000, autoTopup: 1500, threshold: 500 } as const;
+/** The gateway's prepay minimums (api-service lib/agent-prepay.ts); refused here first so the model reads one clear message. */
+// Owner 2026-11-11 replaced the old $15 reload minimum: « +10 dès qu'on arrive sous $5 … c'était
+// exactement ma règle » (each reload ADDS at least $10, whatever the threshold; same as the dashboard
+// checkout and the gateway, AGENT-RELOAD-10-1117). Pay $10, spend down to $4.90, card charged $10, balance $14.90.
+export const PREPAY_MINIMUMS_CENTS = { topup: 1000, autoTopup: 1000, threshold: 500 } as const;
 
 // --- Handlers ------------------------------------------------------------------
 
@@ -314,12 +317,12 @@ export const ACCOUNT_SETUP_TOOLS: Readonly<Record<string, Anthropic.Tool>> = {
     description:
       "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: call it only after the person said yes, in this chat, to these exact amounts; never pay for them, never say it is paid until get_prepaid_status reads active. " +
       SETUP +
-      "Step 7. Returns `url`, a card payment page: give it to the person as written; only they pay it, and nothing is charged until they do. The first payment is at least $10 and reloads automatically (at least $15, when the balance falls under at least $5): say the amounts plainly before asking their yes.",
+      "Step 7. Returns `url`, a card payment page: give it to the person as written; only they pay it, and nothing is charged until they do. The first payment is at least $10 and reloads automatically (at least $10, when the balance falls under at least $5): say the amounts plainly before asking their yes.",
     input_schema: {
       type: "object" as const,
       properties: {
         topupAmountCents: { type: "integer", description: "First payment, in cents (at least 1000 = $10)." },
-        autoTopupAmountCents: { type: "integer", description: "Each automatic reload, in cents (at least 1500 = $15)." },
+        autoTopupAmountCents: { type: "integer", description: "Each automatic reload, in cents (at least 1000 = $10)." },
         autoTopupThresholdCents: { type: "integer", description: "Reload when the balance falls under this, in cents (at least 500 = $5)." },
       },
       required: ["topupAmountCents", "autoTopupAmountCents", "autoTopupThresholdCents"],

@@ -104,7 +104,7 @@ describe("each setup step is the new-account skill's gateway call, with the pers
 });
 
 describe("the payment link: only the person pays, and never for an account that needs none", () => {
-  const amounts = { topupAmountCents: 1000, autoTopupAmountCents: 1500, autoTopupThresholdCents: 500 };
+  const amounts = { topupAmountCents: 1000, autoTopupAmountCents: 1000, autoTopupThresholdCents: 500 };
 
   it("an unpaid account gets the checkout url for the amounts said yes to", async () => {
     fetchMock()
@@ -115,7 +115,7 @@ describe("the payment link: only the person pays, and never for an account that 
     expect(calls()[1]).toMatchObject({
       method: "POST",
       url: "/v1/billing/accounts/prepaid_checkout",
-      body: { topup_amount_cents: 1000, auto_topup_amount_cents: 1500, auto_topup_threshold_cents: 500 },
+      body: { topup_amount_cents: 1000, auto_topup_amount_cents: 1000, auto_topup_threshold_cents: 500 },
     });
   });
 
@@ -138,6 +138,8 @@ describe("the payment link: only the person pays, and never for an account that 
     const { createPrepaidCheckout } = await load();
     await expect(createPrepaidCheckout({ ...amounts, topupAmountCents: 500 }, params)).rejects.toThrow(/at least 1000/);
     await expect(createPrepaidCheckout({ ...amounts, autoTopupAmountCents: 15.5 }, params)).rejects.toThrow(/whole number/);
+    // AGENT-RELOAD-10-1117: the reload minimum is $10 (owner 2026-11-11), not $15.
+    await expect(createPrepaidCheckout({ ...amounts, autoTopupAmountCents: 999 }, params)).rejects.toThrow(/at least 1000/);
     expect(fetchMock()).not.toHaveBeenCalled();
   });
 
