@@ -269,13 +269,13 @@ function paymentWords(b: Obj, held: boolean): string | null {
     return `postpaid: work is billed as it runs${due !== null ? `; balance due ${due}${when}` : ""}`;
   }
   if (mode === "prepaid") {
-    // The refill is money that lands on THEIR card: its amount and trigger level, as billing serves them
-    // (SOPHIE-CORE-1111, prod 2026-11-11: a client set $10 and asked "why did you bill extra 15?").
+    // The refill is money that lands on THEIR card: its amount as billing serves it (SOPHIE-CORE-1111,
+    // prod 2026-11-11: a client set $10 and asked "why did you bill extra 15?"). It fires when the balance
+    // reaches $0, for everyone, editable nowhere (owner 2026-11-18): no trigger level to read.
     const amount = dollars(b.topup_amount_cents);
-    const under = dollars(b.topup_threshold_cents);
     const refill =
       b.has_auto_topup === true
-        ? `; automatic refill ON: their card adds ${amount ?? "an amount not read"} to the balance each time it falls under ${under ?? "a level not read"} (balance to spend, not spent)`
+        ? `; automatic refill ON: each time the balance reaches $0, their card adds ${amount ?? "an amount not read"} (balance to spend, not spent)`
         : b.has_auto_topup === false
           ? "; automatic refill off: once the balance is used, nothing more is spent until they add money"
           : "";
