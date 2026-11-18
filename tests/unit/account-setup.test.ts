@@ -104,7 +104,7 @@ describe("each setup step is the new-account skill's gateway call, with the pers
 });
 
 describe("the payment link: only the person pays, and never for an account that needs none", () => {
-  const amounts = { topupAmountCents: 1000, autoTopupAmountCents: 1000, autoTopupThresholdCents: 500 };
+  const amounts = { topupAmountCents: 1000, autoTopupAmountCents: 1000 };
 
   it("an unpaid account gets the checkout url for the amounts said yes to", async () => {
     fetchMock()
@@ -115,7 +115,7 @@ describe("the payment link: only the person pays, and never for an account that 
     expect(calls()[1]).toMatchObject({
       method: "POST",
       url: "/v1/billing/accounts/prepaid_checkout",
-      body: { topup_amount_cents: 1000, auto_topup_amount_cents: 1000, auto_topup_threshold_cents: 500 },
+      body: { topup_amount_cents: 1000, auto_topup_amount_cents: 1000 },
     });
   });
 
@@ -141,7 +141,7 @@ describe("the payment link: only the person pays, and never for an account that 
     const { createPrepaidCheckout } = await load();
     const r = (await createPrepaidCheckout({ ...amounts, autoTopupAmountCents: 999 }, params)) as Record<string, unknown>;
     expect(r).toMatchObject({ url: null, refused: true, code: "reload_below_minimum", minimum_cents: 1000, error: "Each reload must add at least $10.00" });
-    expect(calls()[1].body).toEqual({ topup_amount_cents: 1000, auto_topup_amount_cents: 999, auto_topup_threshold_cents: 500 });
+    expect(calls()[1].body).toEqual({ topup_amount_cents: 1000, auto_topup_amount_cents: 999 });
   });
 
   it("the reload fields are optional: left out, billing applies its default", async () => {
@@ -174,7 +174,7 @@ describe("the payment link: only the person pays, and never for an account that 
   it("get_prepaid_status serves billing's reload_rules beside the status, the only figures the model quotes", async () => {
     process.env.BILLING_SERVICE_API_KEY = "billing-key";
     process.env.BILLING_SERVICE_URL = "https://billing.test.local";
-    const rules = { org_id: "org-1", first_topup_minimum_cents: 1000, reload_amount_minimum_cents: 1000, reload_threshold_minimum_cents: 500, default_reload_amount_cents: 1000, default_reload_threshold_cents: 500 };
+    const rules = { org_id: "org-1", first_topup_minimum_cents: 1000, reload_amount_minimum_cents: 1000, reload_threshold_minimum_cents: 0, default_reload_amount_cents: 1000, default_reload_threshold_cents: 0 };
     fetchMock().mockResolvedValueOnce(ok({ state: "awaiting_payment" })).mockResolvedValueOnce(ok(rules));
     const { ACCOUNT_SETUP_HANDLERS } = await load();
     const r = (await ACCOUNT_SETUP_HANDLERS.get_prepaid_status({}, params)) as Record<string, unknown>;
@@ -199,8 +199,12 @@ describe("the payment link: only the person pays, and never for an account that 
     expect(d).toContain("only they pay it");
     expect(d).toContain("said yes, in this chat, to these exact amounts");
     expect(d).toContain("reload_rules");
-    expect(d).not.toMatch(/\$\d/);
+    expect(d).not.toMatch(/\$[1-9]/);
     expect(ACCOUNT_SETUP_TOOLS.create_prepaid_checkout.input_schema.required).toEqual(["topupAmountCents"]);
+    // Owner 2026-11-18: the reload fires at $0 for everyone, editable nowhere: no threshold input, no threshold words.
+    expect(Object.keys(ACCOUNT_SETUP_TOOLS.create_prepaid_checkout.input_schema.properties!)).toEqual(["topupAmountCents", "autoTopupAmountCents"]);
+    expect(d).toContain("reaches $0");
+    expect(JSON.stringify(ACCOUNT_SETUP_TOOLS)).not.toMatch(/threshold|falls under/i);
   });
 });
 
@@ -307,5 +311,20 @@ describe("a guest crm knows by an email that is no account's (prod 2026-11-01: a
     expect(await emailHasAccount(" Old@School.edu ", f as unknown as typeof fetch)).toBe(false);
     expect(String(f.mock.calls[0][0])).toBe("https://client.test/internal/users?email=old%40school.edu");
     expect(await emailHasAccount("a@b.co", f as unknown as typeof fetch)).toBe(true);
+  });
+});
+
+describe("the reload threshold is $0 for everyone, editable nowhere (owner 2026-11-18)", () => {
+  it("a threshold the model still passes is never sent to billing", async () => {
+    fetchMock().mockResolvedValueOnce(ok({ state: "awaiting_payment" })).mockResolvedValueOnce(ok({ url: "https://pay" }));
+    const { createPrepaidCheckout } = await load();
+    await createPrepaidCheckout({ topupAmountCents: 1000, autoTopupThresholdCents: 500 }, params);
+    expect(calls()[1].body).toEqual({ topup_amount_cents: 1000 });
+  });
+
+  it("no seed skill speaks of a threshold", async () => {
+    vi.resetModules();
+    const { SEED_SKILLS } = await import("../../src/lib/skill-seed.js");
+    expect(SEED_SKILLS.map((x) => x.content).join("\n")).not.toMatch(/threshold|falls under/i);
   });
 });
