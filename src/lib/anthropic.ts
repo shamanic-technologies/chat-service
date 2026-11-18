@@ -119,6 +119,16 @@ export function prepareAnthropicSchema<T>(schema: T): T {
   if (out.type === "object" && !("additionalProperties" in out)) {
     out.additionalProperties = false;
   }
+  // Anthropic's structured-output dialect does not support maxItems / minItems on
+  // array nodes (HTTP 400: "For 'array' type, property 'maxItems' is not supported").
+  // Callers (workflow scripts, content-generation-service) can supply standard
+  // JSON-Schema-7 schemas with these keywords; strip them here so the request is
+  // accepted. The Gemini adapter already keeps them (its OpenAPI subset allows them);
+  // Anthropic needs them removed. Prod 2026-11-18: 6+ campaigns failing every run.
+  if (out.type === "array") {
+    delete out.maxItems;
+    delete out.minItems;
+  }
   return out as unknown as T;
 }
 
