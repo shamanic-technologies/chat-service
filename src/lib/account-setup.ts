@@ -148,8 +148,8 @@ export const getPrepaidStatus = async (_a: Record<string, unknown>, p: ApiCallPa
 /**
  * The get_prepaid_status TOOL: the status (404 = no billing account yet, the
  * checkout opens it) plus billing's `reload_rules` for this org, the ONLY
- * source of the figures the model quotes (first payment minimum, reload amount
- * and the balance it reloads under). Rules unreadable = null with the reason,
+ * source of the figures the model quotes (first payment minimum, reload
+ * amount). Rules unreadable = null with the reason,
  * never a figure from memory.
  */
 export async function getPrepaidStatusTool(_a: Record<string, unknown>, p: ApiCallParams): Promise<unknown> {
@@ -204,13 +204,11 @@ const NO_CHECKOUT_STATES: Readonly<Record<string, string>> = {
  * an error, so the model moves on).
  */
 export async function createPrepaidCheckout(a: Record<string, unknown>, p: ApiCallParams): Promise<unknown> {
-  // Reload fields are optional: absent = billing's default reload for this org.
+  // The reload amount is optional: absent = billing's default reload for this org. No threshold is
+  // ever sent: the reload fires at $0 for everyone, editable nowhere (owner 2026-11-18).
   const body: Record<string, number> = { topup_amount_cents: cents("topupAmountCents", a.topupAmountCents) };
   if (a.autoTopupAmountCents !== undefined && a.autoTopupAmountCents !== null) {
     body.auto_topup_amount_cents = cents("autoTopupAmountCents", a.autoTopupAmountCents);
-  }
-  if (a.autoTopupThresholdCents !== undefined && a.autoTopupThresholdCents !== null) {
-    body.auto_topup_threshold_cents = cents("autoTopupThresholdCents", a.autoTopupThresholdCents);
   }
   let state: string | null = null;
   try {
@@ -361,7 +359,7 @@ export const ACCOUNT_SETUP_TOOLS: Readonly<Record<string, Anthropic.Tool>> = {
   },
   get_prepaid_status: {
     name: "get_prepaid_status",
-    description: SETUP + "Step 7. Whether the account is paid: active = paid, anything else = not yet. Read it before offering a payment link and after the person says they paid. `reload_rules` = this account's first payment minimum, automatic reload amount and the balance it reloads under: the only figures you quote.",
+    description: SETUP + "Step 7. Whether the account is paid: active = paid, anything else = not yet. Read it before offering a payment link and after the person says they paid. `reload_rules` = this account's first payment minimum, and automatic reload amount: the only figures you quote.",
     input_schema: { type: "object" as const, properties: {} },
   },
   create_prepaid_checkout: {
@@ -369,13 +367,12 @@ export const ACCOUNT_SETUP_TOOLS: Readonly<Record<string, Anthropic.Tool>> = {
     description:
       "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: call it only after the person said yes, in this chat, to these exact amounts; never pay for them, never say it is paid until get_prepaid_status reads active. " +
       SETUP +
-      "Step 7. Returns `url`, a card payment page: give it to the person as written; only they pay it, and nothing is charged until they do. The balance then reloads automatically. Say the first payment and the reload plainly before asking their yes, with the figures get_prepaid_status served in reload_rules (never from memory). Leave the reload fields out to use the account's default reload; send them only for a larger reload the person chose. `refused: true` = billing named its minimum (minimum_cents): say it and ask again.",
+      "Step 7. Returns `url`, a card payment page: give it to the person as written; only they pay it, and nothing is charged until they do. The balance then reloads automatically when it reaches $0, adding at least the minimum billing states. Say the first payment and the reload plainly before asking their yes, with the figures get_prepaid_status served in reload_rules (never from memory). Leave the reload fields out to use the account's default reload; send them only for a larger reload the person chose. `refused: true` = billing named its minimum (minimum_cents): say it and ask again.",
     input_schema: {
       type: "object" as const,
       properties: {
         topupAmountCents: { type: "integer", description: "First payment, in cents (at least reload_rules.first_topup_minimum_cents)." },
         autoTopupAmountCents: { type: "integer", description: "Optional. Each automatic reload, in cents, only when the person chose more than reload_rules.default_reload_amount_cents. Omitted = the default." },
-        autoTopupThresholdCents: { type: "integer", description: "Optional. Reload when the balance falls under this, in cents, only when the person chose it. Omitted = reload_rules.default_reload_threshold_cents." },
       },
       required: ["topupAmountCents"],
     },
