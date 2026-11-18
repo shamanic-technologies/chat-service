@@ -93,6 +93,71 @@ describe("prepareAnthropicSchema", () => {
     expect(out).toEqual({ type: "string", enum: ["a", "b"] });
     expect((input as any).additionalProperties).toBeUndefined();
   });
+
+  // Prod 2026-11-18: 6+ campaigns failing — Anthropic returns 400:
+  //   "output_config.format.schema: For 'array' type, property 'maxItems' is not supported"
+  it("strips maxItems and minItems from array nodes (the 400 case)", () => {
+    const input = {
+      type: "object",
+      properties: {
+        choices: {
+          type: "array",
+          minItems: 2,
+          maxItems: 6,
+          items: { type: "object", properties: { label: { type: "string" } } },
+        },
+      },
+    };
+    const out = prepareAnthropicSchema(input);
+    const choices = (out.properties as any).choices;
+    expect(choices.maxItems).toBeUndefined();
+    expect(choices.minItems).toBeUndefined();
+    // items and type are preserved
+    expect(choices.type).toBe("array");
+    expect(choices.items.additionalProperties).toBe(false);
+    expect(choices.items.properties.label).toEqual({ type: "string" });
+  });
+
+  it("strips maxItems/minItems from deeply nested array nodes", () => {
+    const out = prepareAnthropicSchema({
+      type: "object",
+      properties: {
+        outer: {
+          type: "object",
+          properties: {
+            steps: {
+              type: "array",
+              minItems: 1,
+              maxItems: 10,
+              items: {
+                type: "object",
+                properties: {
+                  tags: {
+                    type: "array",
+                    maxItems: 5,
+                    items: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const steps = (out.properties as any).outer.properties.steps;
+    expect(steps.maxItems).toBeUndefined();
+    expect(steps.minItems).toBeUndefined();
+    const tags = steps.items.properties.tags;
+    expect(tags.maxItems).toBeUndefined();
+  });
+
+  it("does not strip maxItems/minItems from non-array nodes", () => {
+    // maxItems on a non-array type should be left alone (defensive — not standard
+    // JSON Schema but ensures the function only targets arrays).
+    const input = { type: "string", maxItems: 3 } as any;
+    const out = prepareAnthropicSchema(input);
+    expect(out.maxItems).toBe(3);
+  });
 });
 
 // --- Wiring: the schema reaches the provider normalized ---------------------
