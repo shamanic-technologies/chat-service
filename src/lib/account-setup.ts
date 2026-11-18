@@ -26,6 +26,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { apiServiceFetch, type ApiCallParams } from "./api-client.js";
 import { FunnelError } from "./funnel-client.js";
+import { getReloadRules } from "./billing-client.js";
 
 async function call(operation: string, path: string, method: string, params: ApiCallParams, body?: unknown): Promise<unknown> {
   const res = await apiServiceFetch(path, method, params, body);
@@ -53,18 +54,18 @@ function objects(name: string, value: unknown): Record<string, unknown>[] {
   return value as Record<string, unknown>[];
 }
 
-function cents(name: string, value: unknown, minimum: number): number {
-  if (typeof value !== "number" || !Number.isInteger(value) || value < minimum) {
-    throw new Error(`[account-setup] ${name} must be a whole number of cents, at least ${minimum} ($${(minimum / 100).toFixed(2)})`);
+/**
+ * A whole, positive number of cents. Only the SHAPE is checked here: the
+ * minimums live in billing-service alone (RELOAD-RULE-ONE-HOME-1118, a stale
+ * local $15 copy gave clients a $15 reload), which refuses an amount under them
+ * with a 400 this file relays.
+ */
+function cents(name: string, value: unknown): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`[account-setup] ${name} must be a whole, positive number of cents`);
   }
   return value;
 }
-
-/** The gateway's prepay minimums (api-service lib/agent-prepay.ts); refused here first so the model reads one clear message. */
-// Owner 2026-11-11 replaced the old $15 reload minimum: « +10 dès qu'on arrive sous $5 … c'était
-// exactement ma règle » (each reload ADDS at least $10, whatever the threshold; same as the dashboard
-// checkout and the gateway, AGENT-RELOAD-10-1117). Pay $10, spend down to $4.90, card charged $10, balance $14.90.
-export const PREPAY_MINIMUMS_CENTS = { topup: 1000, autoTopup: 1000, threshold: 500 } as const;
 
 // --- Handlers ------------------------------------------------------------------
 
@@ -145,6 +146,48 @@ export const getPrepaidStatus = async (_a: Record<string, unknown>, p: ApiCallPa
   call("get_prepaid_status", "/v1/billing/accounts/prepaid_status", "GET", p);
 
 /**
+ * The get_prepaid_status TOOL: the status (404 = no billing account yet, the
+ * checkout opens it) plus billing's `reload_rules` for this org, the ONLY
+ * source of the figures the model quotes (first payment minimum, reload amount
+ * and the balance it reloads under). Rules unreadable = null with the reason,
+ * never a figure from memory.
+ */
+export async function getPrepaidStatusTool(_a: Record<string, unknown>, p: ApiCallParams): Promise<unknown> {
+  let status: Record<string, unknown>;
+  try {
+    status = (await getPrepaidStatus({}, p)) as Record<string, unknown>;
+  } catch (err) {
+    if (!(err instanceof FunnelError && err.status === 404)) throw err;
+    status = { state: null, billing_account: "none yet: the payment link opens it" };
+  }
+  try {
+    return { ...status, reload_rules: await getReloadRules(p.orgId) };
+  } catch (err) {
+    console.error(`[account-setup] reload rules unreadable org=${p.orgId}: ${err instanceof Error ? err.message : String(err)}`);
+    return { ...status, reload_rules: null, reload_rules_unavailable: "could not be read: state no amount, omit the reload fields (billing applies its default) and quote what the payment page shows" };
+  }
+}
+
+/** billing's refusal of an amount (400 with `code` + `minimum_cents`), relayed as a result the model can say. */
+function refusalOf(err: unknown): Record<string, unknown> | null {
+  if (!(err instanceof FunnelError) || err.status !== 400) return null;
+  let body: Record<string, unknown> = {};
+  try {
+    body = JSON.parse(err.upstreamBody) as Record<string, unknown>;
+  } catch {
+    body = { error: err.upstreamBody };
+  }
+  return {
+    url: null,
+    refused: true,
+    error: body.error ?? null,
+    code: body.code ?? null,
+    minimum_cents: body.minimum_cents ?? null,
+    instruction: "billing refused these amounts: tell the person the minimum it names (minimum_cents), ask their yes on an amount at or above it, then call again.",
+  };
+}
+
+/**
  * Prepaid states that need no payment link (billing-service lib/prepaid-status.ts):
  * `active` is paid; `not_prepaid` pays postpaid or by subscription, and billing's
  * checkout would SWITCH such an org to prepaid, so the link is never opened for it.
@@ -161,11 +204,14 @@ const NO_CHECKOUT_STATES: Readonly<Record<string, string>> = {
  * an error, so the model moves on).
  */
 export async function createPrepaidCheckout(a: Record<string, unknown>, p: ApiCallParams): Promise<unknown> {
-  const body = {
-    topup_amount_cents: cents("topupAmountCents", a.topupAmountCents, PREPAY_MINIMUMS_CENTS.topup),
-    auto_topup_amount_cents: cents("autoTopupAmountCents", a.autoTopupAmountCents, PREPAY_MINIMUMS_CENTS.autoTopup),
-    auto_topup_threshold_cents: cents("autoTopupThresholdCents", a.autoTopupThresholdCents, PREPAY_MINIMUMS_CENTS.threshold),
-  };
+  // Reload fields are optional: absent = billing's default reload for this org.
+  const body: Record<string, number> = { topup_amount_cents: cents("topupAmountCents", a.topupAmountCents) };
+  if (a.autoTopupAmountCents !== undefined && a.autoTopupAmountCents !== null) {
+    body.auto_topup_amount_cents = cents("autoTopupAmountCents", a.autoTopupAmountCents);
+  }
+  if (a.autoTopupThresholdCents !== undefined && a.autoTopupThresholdCents !== null) {
+    body.auto_topup_threshold_cents = cents("autoTopupThresholdCents", a.autoTopupThresholdCents);
+  }
   let state: string | null = null;
   try {
     const status = (await getPrepaidStatus({}, p)) as Record<string, unknown>;
@@ -175,7 +221,13 @@ export async function createPrepaidCheckout(a: Record<string, unknown>, p: ApiCa
     if (!(err instanceof FunnelError && err.status === 404)) throw err;
   }
   if (state && NO_CHECKOUT_STATES[state]) return { url: null, state, instruction: NO_CHECKOUT_STATES[state] };
-  return call("create_prepaid_checkout", "/v1/billing/accounts/prepaid_checkout", "POST", p, body);
+  try {
+    return await call("create_prepaid_checkout", "/v1/billing/accounts/prepaid_checkout", "POST", p, body);
+  } catch (err) {
+    const refusal = refusalOf(err);
+    if (refusal) return refusal;
+    throw err;
+  }
 }
 
 /** POST /v1/orgs/audiences/portfolio { brandId, offerId, targetAudience } — turns the audiences on for the launch (call again until ready). */
@@ -194,7 +246,7 @@ export const ACCOUNT_SETUP_HANDLERS: Readonly<Record<string, (a: Record<string, 
   confirm_audiences: confirmAudiences,
   preview_audience: previewAudience,
   preview_email: previewEmail,
-  get_prepaid_status: getPrepaidStatus,
+  get_prepaid_status: getPrepaidStatusTool,
   create_prepaid_checkout: createPrepaidCheckout,
   build_audience_portfolio: buildAudiencePortfolio,
 };
@@ -309,7 +361,7 @@ export const ACCOUNT_SETUP_TOOLS: Readonly<Record<string, Anthropic.Tool>> = {
   },
   get_prepaid_status: {
     name: "get_prepaid_status",
-    description: SETUP + "Step 7. Whether the account is paid: active = paid, anything else = not yet. Read it before offering a payment link and after the person says they paid.",
+    description: SETUP + "Step 7. Whether the account is paid: active = paid, anything else = not yet. Read it before offering a payment link and after the person says they paid. `reload_rules` = this account's first payment minimum, automatic reload amount and the balance it reloads under: the only figures you quote.",
     input_schema: { type: "object" as const, properties: {} },
   },
   create_prepaid_checkout: {
@@ -317,15 +369,15 @@ export const ACCOUNT_SETUP_TOOLS: Readonly<Record<string, Anthropic.Tool>> = {
     description:
       "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: call it only after the person said yes, in this chat, to these exact amounts; never pay for them, never say it is paid until get_prepaid_status reads active. " +
       SETUP +
-      "Step 7. Returns `url`, a card payment page: give it to the person as written; only they pay it, and nothing is charged until they do. The first payment is at least $10 and reloads automatically (at least $10, when the balance falls under at least $5): say the amounts plainly before asking their yes.",
+      "Step 7. Returns `url`, a card payment page: give it to the person as written; only they pay it, and nothing is charged until they do. The balance then reloads automatically. Say the first payment and the reload plainly before asking their yes, with the figures get_prepaid_status served in reload_rules (never from memory). Leave the reload fields out to use the account's default reload; send them only for a larger reload the person chose. `refused: true` = billing named its minimum (minimum_cents): say it and ask again.",
     input_schema: {
       type: "object" as const,
       properties: {
-        topupAmountCents: { type: "integer", description: "First payment, in cents (at least 1000 = $10)." },
-        autoTopupAmountCents: { type: "integer", description: "Each automatic reload, in cents (at least 1000 = $10)." },
-        autoTopupThresholdCents: { type: "integer", description: "Reload when the balance falls under this, in cents (at least 500 = $5)." },
+        topupAmountCents: { type: "integer", description: "First payment, in cents (at least reload_rules.first_topup_minimum_cents)." },
+        autoTopupAmountCents: { type: "integer", description: "Optional. Each automatic reload, in cents, only when the person chose more than reload_rules.default_reload_amount_cents. Omitted = the default." },
+        autoTopupThresholdCents: { type: "integer", description: "Optional. Reload when the balance falls under this, in cents, only when the person chose it. Omitted = reload_rules.default_reload_threshold_cents." },
       },
-      required: ["topupAmountCents", "autoTopupAmountCents", "autoTopupThresholdCents"],
+      required: ["topupAmountCents"],
     },
   },
   build_audience_portfolio: {

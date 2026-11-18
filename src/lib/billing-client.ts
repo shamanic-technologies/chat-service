@@ -159,3 +159,25 @@ export async function getPaymentOutlook(orgId: string): Promise<unknown> {
   }
   return JSON.parse(text) as unknown;
 }
+
+/**
+ * billing-service's reload rules for the org (RELOAD-RULE-ONE-HOME-1118): the
+ * first top-up minimum, the automatic reload's minimum and default amount, and
+ * the balance it reloads under. billing is the ONE home of these figures (a
+ * stale local copy gave clients a $15 reload): never restate them here. A pure
+ * read keyed on the org in the path, answered for an org with no billing account too.
+ */
+export async function getReloadRules(orgId: string): Promise<Record<string, unknown>> {
+  if (!BILLING_SERVICE_API_KEY) {
+    throw new Error("[billing-client] BILLING_SERVICE_API_KEY is required to read the reload rules");
+  }
+  const res = await fetch(`${BILLING_SERVICE_URL}/internal/accounts/by-org/${encodeURIComponent(orgId)}/reload-rules`, {
+    headers: { "X-API-Key": BILLING_SERVICE_API_KEY },
+    signal: AbortSignal.timeout(15_000),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new BillingError(`[billing-client] GET reload-rules returned ${res.status}: ${text}`, res.status, text);
+  }
+  return JSON.parse(text) as Record<string, unknown>;
+}
