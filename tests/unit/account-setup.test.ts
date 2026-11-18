@@ -134,13 +134,62 @@ describe("the payment link: only the person pays, and never for an account that 
     expect(calls()).toHaveLength(1);
   });
 
-  it("refuses amounts under the gateway minimums before any call", async () => {
+  it("holds no local minimum: an amount under billing's rule reaches billing, whose 400 is relayed (RELOAD-RULE-ONE-HOME-1118)", async () => {
+    fetchMock()
+      .mockResolvedValueOnce(ok({ state: "awaiting_payment" }))
+      .mockResolvedValueOnce(fail(400, JSON.stringify({ error: "Each reload must add at least $10.00", code: "reload_below_minimum", minimum_cents: 1000 })));
     const { createPrepaidCheckout } = await load();
-    await expect(createPrepaidCheckout({ ...amounts, topupAmountCents: 500 }, params)).rejects.toThrow(/at least 1000/);
-    await expect(createPrepaidCheckout({ ...amounts, autoTopupAmountCents: 15.5 }, params)).rejects.toThrow(/whole number/);
-    // AGENT-RELOAD-10-1117: the reload minimum is $10 (owner 2026-11-11), not $15.
-    await expect(createPrepaidCheckout({ ...amounts, autoTopupAmountCents: 999 }, params)).rejects.toThrow(/at least 1000/);
+    const r = (await createPrepaidCheckout({ ...amounts, autoTopupAmountCents: 999 }, params)) as Record<string, unknown>;
+    expect(r).toMatchObject({ url: null, refused: true, code: "reload_below_minimum", minimum_cents: 1000, error: "Each reload must add at least $10.00" });
+    expect(calls()[1].body).toEqual({ topup_amount_cents: 1000, auto_topup_amount_cents: 999, auto_topup_threshold_cents: 500 });
+  });
+
+  it("the reload fields are optional: left out, billing applies its default", async () => {
+    fetchMock().mockResolvedValueOnce(ok({ state: "awaiting_payment" })).mockResolvedValueOnce(ok({ url: "https://pay" }));
+    const { createPrepaidCheckout } = await load();
+    expect(await createPrepaidCheckout({ topupAmountCents: 2500 }, params)).toEqual({ url: "https://pay" });
+    expect(calls()[1].body).toEqual({ topup_amount_cents: 2500 });
+  });
+
+  it("a larger reload the person chose passes through", async () => {
+    fetchMock().mockResolvedValueOnce(ok({ state: "awaiting_payment" })).mockResolvedValueOnce(ok({ url: "https://pay" }));
+    const { createPrepaidCheckout } = await load();
+    await createPrepaidCheckout({ topupAmountCents: 1000, autoTopupAmountCents: 5000 }, params);
+    expect(calls()[1].body).toEqual({ topup_amount_cents: 1000, auto_topup_amount_cents: 5000 });
+  });
+
+  it("refuses only a malformed amount before any call", async () => {
+    const { createPrepaidCheckout } = await load();
+    await expect(createPrepaidCheckout({ ...amounts, autoTopupAmountCents: 15.5 }, params)).rejects.toThrow(/whole, positive/);
+    await expect(createPrepaidCheckout({ autoTopupAmountCents: 1000 }, params)).rejects.toThrow(/topupAmountCents/);
     expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("a non-400 failure still throws", async () => {
+    fetchMock().mockResolvedValueOnce(ok({ state: "awaiting_payment" })).mockResolvedValueOnce(fail(502, "down"));
+    const { createPrepaidCheckout } = await load();
+    await expect(createPrepaidCheckout(amounts, params)).rejects.toThrow(/502/);
+  });
+
+  it("get_prepaid_status serves billing's reload_rules beside the status, the only figures the model quotes", async () => {
+    process.env.BILLING_SERVICE_API_KEY = "billing-key";
+    process.env.BILLING_SERVICE_URL = "https://billing.test.local";
+    const rules = { org_id: "org-1", first_topup_minimum_cents: 1000, reload_amount_minimum_cents: 1000, reload_threshold_minimum_cents: 500, default_reload_amount_cents: 1000, default_reload_threshold_cents: 500 };
+    fetchMock().mockResolvedValueOnce(ok({ state: "awaiting_payment" })).mockResolvedValueOnce(ok(rules));
+    const { ACCOUNT_SETUP_HANDLERS } = await load();
+    const r = (await ACCOUNT_SETUP_HANDLERS.get_prepaid_status({}, params)) as Record<string, unknown>;
+    expect(r).toMatchObject({ state: "awaiting_payment", reload_rules: rules });
+    expect(String(fetchMock().mock.calls[1][0])).toBe("https://billing.test.local/internal/accounts/by-org/org-1/reload-rules");
+  });
+
+  it("get_prepaid_status with rules unreadable says so, with no figure", async () => {
+    process.env.BILLING_SERVICE_API_KEY = "billing-key";
+    fetchMock().mockResolvedValueOnce(fail(404, "no account")).mockResolvedValueOnce(fail(500, "boom"));
+    const { ACCOUNT_SETUP_HANDLERS } = await load();
+    const r = (await ACCOUNT_SETUP_HANDLERS.get_prepaid_status({}, params)) as Record<string, unknown>;
+    expect(r.state).toBeNull();
+    expect(r.reload_rules).toBeNull();
+    expect(typeof r.reload_rules_unavailable).toBe("string");
   });
 
   it("the tool says only the person pays, after their yes on the amounts", async () => {
@@ -149,6 +198,9 @@ describe("the payment link: only the person pays, and never for an account that 
     expect(d).toMatch(/^HARD RULE/);
     expect(d).toContain("only they pay it");
     expect(d).toContain("said yes, in this chat, to these exact amounts");
+    expect(d).toContain("reload_rules");
+    expect(d).not.toMatch(/\$\d/);
+    expect(ACCOUNT_SETUP_TOOLS.create_prepaid_checkout.input_schema.required).toEqual(["topupAmountCents"]);
   });
 });
 

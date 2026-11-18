@@ -61,7 +61,7 @@ describe("seeded skill tree", () => {
       // Data values and path segments (an API reader needs them verbatim).
       "prepaid_checkout", "prepaid_status", "payment_required", "not_built_yet", "topup_amount_cents",
       "balance_cents", "auto_topup", "amount_cents", "threshold_cents", "monthly_charge_limit", "topup_threshold_cents", "topup_minimums", "monthly_charge_limit_cents",
-      "auto_topup_amount_cents", "auto_topup_threshold_cents", "positive_reply", "skill_upgrade", "reactive_pipe_from_lead_found", "pipe_in_use",
+      "auto_topup_amount_cents", "auto_topup_threshold_cents", "minimum_cents", "positive_reply", "skill_upgrade", "reactive_pipe_from_lead_found", "pipe_in_use",
       "sales_interest", "not_built_yet", "not_prepaid",
       // WhatsApp line values (crm-service link status, account types).
       "not_linked", "pro_ai", "personal_human",
