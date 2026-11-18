@@ -61,7 +61,7 @@ describe("buildSituationBrief", () => {
     const brief = await buildSituationBrief(
       reader({ getBillingAccount: async () => ({ payment_mode: "prepaid", balance_cents: "1853.84", has_payment_method: true, card_last4: "4720", has_auto_topup: true, topup_amount_cents: 1500, topup_threshold_cents: 500 }) }),
     );
-    expect(brief).toContain("automatic refill ON: their card adds $15.00 to the balance each time it falls under $5.00 (balance to spend, not spent)");
+    expect(brief).toContain("automatic refill ON: each time the balance reaches $0, their card adds $15.00 (balance to spend, not spent)");
   });
 
   it("names a read that failed instead of reporting it as empty", async () => {
