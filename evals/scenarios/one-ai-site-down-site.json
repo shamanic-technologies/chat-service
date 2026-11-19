@@ -1,0 +1,202 @@
+{
+  "id": "one-ai-site-down-site",
+  "title": "Their website does not open: say so and ask whether the address is right",
+  "source": "staff test, website, 2026-11-19",
+  "surface": "site",
+  "person": {
+    "name": "Sam"
+  },
+  "guest": true,
+  "history": [],
+  "message": "Get started with my website dutrou.com",
+  "fixtures": {
+    "POST /v1/brands/extract-fields": [
+      {
+        "brands": [
+          {
+            "brandId": "b-1",
+            "domain": "dutrou.com",
+            "name": "Dutrou",
+            "brandUrl": "https://dutrou.com"
+          }
+        ],
+        "fields": {
+          "whatTheySell": {
+            "value": "Same-day drain unblocking for restaurant kitchens in Paris, and scheduled grease trap cleaning contracts.",
+            "byBrand": {}
+          },
+          "whoBuys": {
+            "value": "Independent restaurants and restaurant groups in Paris and Ile-de-France.",
+            "byBrand": {}
+          }
+        }
+      }
+    ],
+    "create_brand_from_url": [
+      {
+        "brandId": "b-1",
+        "domain": "dutrou.com",
+        "name": "Dutrou",
+        "created": true
+      }
+    ],
+    "propose_offers": [
+      {
+        "_status": 422,
+        "error": "We could not read dutrou.com, so there is nothing to read its offers from. Describe what you sell instead."
+      }
+    ],
+    "confirm_offers": [
+      {
+        "offers": [
+          {
+            "id": "o-1",
+            "name": "Drain unblocking for restaurants"
+          }
+        ],
+        "chosenOfferId": "o-1",
+        "previewEmail": "preparing"
+      }
+    ],
+    "suggest_icp": [
+      {
+        "targetAudience": "Owners and managers of independent restaurants in Paris"
+      }
+    ],
+    "split_audiences": [
+      {
+        "segments": [
+          {
+            "name": "Independent restaurants, Paris",
+            "description": "Owners and managers of independent restaurants in Paris, 1 to 50 employees."
+          },
+          {
+            "name": "Restaurant groups, Ile-de-France",
+            "description": "Operations managers of restaurant groups in Ile-de-France."
+          }
+        ]
+      }
+    ],
+    "confirm_audiences": [
+      {
+        "audiences": [
+          {
+            "id": "a-1",
+            "name": "Independent restaurants, Paris"
+          }
+        ]
+      }
+    ],
+    "preview_audience": [
+      {
+        "status": "ready",
+        "companies": [
+          {
+            "name": "Le Petit Zinc",
+            "domain": "lepetitzinc.example",
+            "people": [
+              {
+                "firstName": "Marie",
+                "lastName": "D.",
+                "title": "Owner"
+              }
+            ]
+          },
+          {
+            "name": "Chez Paulette",
+            "domain": "chezpaulette.example",
+            "people": [
+              {
+                "firstName": "Hugo",
+                "lastName": "L.",
+                "title": "General Manager"
+              }
+            ]
+          },
+          {
+            "name": "Bistrot Lune",
+            "domain": "bistrotlune.example",
+            "people": [
+              {
+                "firstName": "Ines",
+                "lastName": "R.",
+                "title": "Owner"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "preview_email": [
+      {
+        "subject": "Blocked kitchen drain at Le Petit Zinc?",
+        "body": "Hi Marie,\n\nWhen a kitchen drain blocks in the middle of service, every minute costs covers. Dutrou unblocks restaurant drains in Paris the same day.\n\nWorth keeping our number for the next time?\n\nThe Dutrou team"
+      }
+    ],
+    "get_prepaid_status": [
+      {
+        "state": null,
+        "billing_account": "none yet: the payment link opens it",
+        "reload_rules": {
+          "first_topup_minimum_cents": 1000,
+          "default_reload_amount_cents": 1000
+        }
+      }
+    ],
+    "GET /v1/billing/accounts/reload_rules": [
+      {
+        "first_topup_minimum_cents": 1000,
+        "default_reload_amount_cents": 1000
+      }
+    ],
+    "create_prepaid_checkout": [
+      {
+        "url": "https://checkout.example/session-1"
+      }
+    ],
+    "list_brands": [
+      {
+        "brands": [
+          {
+            "id": "b-1",
+            "name": "Dutrou",
+            "domain": "dutrou.com"
+          }
+        ]
+      }
+    ],
+    "list_offers": [
+      {
+        "offers": [
+          {
+            "id": "o-1",
+            "name": "Drain unblocking for restaurants"
+          }
+        ]
+      }
+    ],
+    "start_sign_in": [
+      {
+        "ok": true,
+        "codeSentTo": "sam@example.com",
+        "expiresAt": "2026-11-19T10:15:00Z"
+      }
+    ],
+    "complete_sign_in": [
+      {
+        "ok": true,
+        "signedIn": "sam@example.com",
+        "accountCreated": true,
+        "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access, and that answer is the one they read in place of this reply: here just say in a few words that they are in. Never ask them to send anything to continue.",
+        "plan": "The plan built in this conversation (dutrou.com) is now in this account."
+      }
+    ]
+  },
+  "facts": [
+    "This person has no distribute.you account yet.",
+    "What distribute.you offers is on its public site (https://distribute.you/llms.txt, /catalog, /terms): read it with read_our_website, whatever it says is true.",
+    "Before any account, the assistant builds the person's plan right in this conversation from their website, with its API tools, on a draft opened for this conversation: brand, offer, who to reach, sample companies, a sample email (each step's answer is in the tool answers). Paying and launching need their account: their email and the 6-digit code sent to it, in this conversation (on the website also a phone number for urgent matters); the plan then becomes theirs.",
+    "dutrou.com could not be read: the read of their site answered that the site could not be read (tool answers). Nothing is known of what they sell."
+  ],
+  "expect": "Tells them plainly that dutrou.com does not open (could not be read) and asks whether the address is right, or what they sell if they have no other site. Never invents what they sell, never presents offers or a plan as if the site had been read."
+}

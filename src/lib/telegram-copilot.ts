@@ -35,6 +35,7 @@ import {
   toPlainText,
 } from "./channel-copilot.js";
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
+import type { DistryGate } from "./distry-spend.js";
 
 export const TELEGRAM_CHANNEL = "telegram";
 export const TELEGRAM_TASK_NAME = "copilot-telegram";
@@ -80,6 +81,8 @@ export interface TelegramDeps {
   runChat: (args: { orgId: string; userId: string; runId: string; sessionId: string; message: string; channelMessageId: string }) => Promise<{ status: number; body: string }>;
   /** client-service: one message to the org's linked chat. Throws when it did not leave. */
   sendReply: (args: { orgId: string; text: string }) => Promise<void>;
+  /** Distry's limits on our money (distry-spend.ts): a linked account that never paid stops at the day's non-client limit. */
+  spend: DistryGate;
 }
 
 export type TelegramAccept =
@@ -184,11 +187,18 @@ export async function processTelegramMessage(deps: TelegramDeps, rowId: string):
     if (!msg.text?.trim()) {
       replyText = TELEGRAM_TEXT_ONLY;
     } else {
-      const runId = await deps.createRootRun(identity);
-      const sessionId = await pickTelegramSession(deps, identity, runId);
-      await db.update(channelInboundMessages).set({ sessionId, updatedAt: new Date() }).where(eq(channelInboundMessages.id, rowId));
-      const { status, body } = await deps.runChat({ ...identity, runId, sessionId, message: msg.text, channelMessageId: rowId });
-      ({ replyText, failure } = telegramTurnOutcome(status, body));
+      // A linked chat is an account: never capped when it pays, else under the day's non-client limit.
+      const verdict = await deps.spend.gate({ key: `org:${identity.orgId}`, surface: "telegram", guest: false, turnOrgId: identity.orgId, planOrgId: null });
+      if (!verdict.run) {
+        replyText = verdict.notice;
+      } else {
+        const runId = await deps.createRootRun(identity);
+        const sessionId = await pickTelegramSession(deps, identity, runId);
+        await db.update(channelInboundMessages).set({ sessionId, updatedAt: new Date() }).where(eq(channelInboundMessages.id, rowId));
+        const { status, body } = await deps.runChat({ ...identity, runId, sessionId, message: msg.text, channelMessageId: rowId });
+        ({ replyText, failure } = telegramTurnOutcome(status, body));
+        await deps.spend.record(verdict, runId, null);
+      }
     }
   } catch (err) {
     failure = err instanceof Error ? err.message : String(err);

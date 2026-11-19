@@ -54,7 +54,9 @@ describe("client brief: what the Copilot knows before the client says a word", (
         throw new Error("brand-service 502");
       },
     });
-    expect(formatClientBrief(brands)).toContain("Their website could not be read for this turn (brand-service 502): read it with your tools");
+    expect(formatClientBrief(brands)).toContain("Their website could not be read for this turn (brand-service 502): read it once with your tools");
+    // Still unreadable: the address is said not to open, and checked with them (DISTRY-GUEST-CAPS-1119, dutrou.com).
+    expect(formatClientBrief(brands)).toContain("tell them plainly that the address does not open and ask whether it is the right one");
   });
 
   it("a slow first read times out into the same sentence; the turn does not wait forever", async () => {

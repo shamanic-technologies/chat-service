@@ -19,6 +19,10 @@ import { AMBIGUITY_LINE, QUOTE_AND_PHOTO_LINES, buildChannelBlock } from "../../
 import { buildVendorTurnMessages, streamVendorChat } from "../../src/lib/vendor-chat.js";
 import { estimateRequestTokensWithImages, imageDataUrl, prepareTurnImage, type TurnImage } from "../../src/lib/turn-images.js";
 import type { LeadTurnRequest } from "../../src/schemas.js";
+import type { DistryGate } from "../../src/lib/distry-spend.js";
+
+/** Distry's limits never reached here (their own tests: distry-spend-pg, and the capped door tests). */
+const PASS_GATE: DistryGate = { gate: async (person) => ({ run: true, tracked: false, person }), record: async () => {} };
 
 // SOPHIE-WA-HUMAN-1106 (prod 2026-11-04 « lui » after four lead proposals; owner
 // 2026-11-06: see what I quote, see my photos, quote back, show typing).
@@ -207,6 +211,7 @@ describe("processLeadTurn on WhatsApp: typing and the conversation", () => {
       resolveEmail: async () => null,
       listBrandIds: async () => [],
       createRootRun: vi.fn(),
+      spend: PASS_GATE,
       setWhatsappTyping: vi.fn(async (a: { state: string; caller: unknown; phone: string }) => {
         log.push(`typing:${a.state}`);
         expect(a.caller).toEqual({ orgId: CALLER.orgId, userId: CALLER.userId, runId: CALLER.runId });
