@@ -56,7 +56,7 @@ describe("calling an Engine waits for the Unit", () => {
     expect(out).toMatchObject({ status: "made", unit: { text: "Hello" } });
     expect(seen[0].path).toBe("/internal/engines/linkedin_post_published/calls");
     expect(seen[0].headers).toMatchObject({ "x-org-id": "org-1", "x-run-id": "run-1", "x-brand-id": "brand-1" });
-    expect(JSON.parse(seen[0].body!)).toMatchObject({ request: { topic: "AI" }, waitSeconds: 60 });
+    expect(JSON.parse(seen[0].body!)).toMatchObject({ request: { topic: "AI" }, waitSeconds: 60, subject: { service: "chat-service", id: "run-1" } });
   });
 
   it("a long Engine: 202, then polled until it ends", async () => {
@@ -87,5 +87,6 @@ describe("calling an Engine waits for the Unit", () => {
     const fetchImpl: WorkflowFetch = async () => new Response(JSON.stringify({ error: "boom" }), { status: 502 });
     await expect(callEngine("x", {}, target, fetchImpl)).rejects.toThrow(/502: boom/);
     await expect(callEngine("x", { request: "nope" }, target, fetchImpl)).rejects.toThrow(/request must be an object/);
+    await expect(callEngine("x", { subject: { service: "lead-service" } }, target, fetchImpl)).rejects.toThrow(/subject must be/);
   });
 });

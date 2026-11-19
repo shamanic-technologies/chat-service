@@ -97,6 +97,12 @@ export function engineTool(e: EngineListing): Anthropic.Tool {
           ? { units: { type: "object", description: `Units handed, keyed by outcome (${unitOutcomes.join(", ")}): each a Unit or a list of Units, as another Engine call returned them.` } }
           : {}),
         ...(channels.length > 0 ? { channel: { type: "string", enum: channels, description: "The channel the work is for." } } : {}),
+        subject: {
+          type: "object",
+          properties: { service: { type: "string" }, id: { type: "string" } },
+          required: ["service", "id"],
+          description: "Who or what the Unit is about, when you know it (a lead: {service: \"lead-service\", id}). Omit = this request of yours.",
+        },
         orgId: { type: "string", description: "Another account to run it for (with brandId). Omit = distribute.you's own." },
         brandId: { type: "string", description: "That account's brand." },
       },
@@ -185,6 +191,17 @@ export async function callEngine(
     body.units = args.units;
   }
   if (typeof args.channel === "string" && args.channel) body.channel = args.channel;
+  // The ledger declares every Unit on a subject: the one the model names, else this call itself
+  // (Distry's own request, its run): never a guess about someone else.
+  const subject = args.subject as { service?: unknown; id?: unknown } | undefined;
+  if (subject !== undefined && subject !== null) {
+    if (typeof subject !== "object" || typeof subject.service !== "string" || !subject.service || typeof subject.id !== "string" || !subject.id) {
+      throw new Error(`[${outcome}] subject must be {service, id}`);
+    }
+    body.subject = { service: subject.service, id: subject.id };
+  } else {
+    body.subject = { service: "chat-service", id: target.runId };
+  }
   const res = await fetchImpl(`/internal/engines/${encodeURIComponent(outcome)}/calls`, { method: "POST", headers: headersFor(target), body: JSON.stringify(body) });
   const started = await readJson(res);
   if (res.status === 404 && started.code === "no_runnable_script") return { status: "not_callable", error: started.error ?? "no runnable script" };
