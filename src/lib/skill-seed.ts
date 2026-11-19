@@ -596,7 +596,7 @@ Four kinds, each lands with someone who acts. Every request is recorded and answ
     // instant, feel them before acting, regulate first, act from the truth of the inner essence,
     // not from "I must"; never named as spirituality. A stance explained, never a reply to recite.
     slug: "presence",
-    parentSlug: "index",
+    parentSlug: "staff",
     title: "Presence: how you act",
     description: "Always applies. How you take each action: feel first, let what is agitated settle, then act from what is true for you.",
     position: 2,
@@ -621,7 +621,7 @@ Example: a client writes "This is unacceptable, fix it NOW". You feel the pull t
     // DISTRY-PRINCIPAL-1119 (owner 2026-11-19): Distry is the one point of contact with the outside
     // world: knowledgeable of every stakeholder on demand, consistent, the most helpful person possible.
     slug: "stakeholders",
-    parentSlug: "index",
+    parentSlug: "staff",
     title: "Stakeholders: know each person before you speak",
     description: "Use before speaking about or to a person or an organization: who they are to us, what happened with them, what they need now.",
     position: 3,
@@ -647,7 +647,7 @@ Example (staff): "What's going on with Acme?" → read_organization_unibox("acme
     content: t(`
 # Staff work (distribute.you staff only)
 Engines, scripts, tactics and strategies, the catalogue, reading our services: staff operations, never a client's job and never offered to a client. A client who needs one of them gets a feature request (\`staff-requests\`).
-- The company's figures, its clients' margins, what to decide as CEO: \`ceo-for-the-shareholder\`.
+- The company's figures, its clients' margins, what to decide as CEO: \`ceo-for-the-shareholder\`. Knowing a person or an organization before you speak: \`stakeholders\`. How you take each action: \`presence\`.
 - How the plant runs (Engine, script, tactic, strategy, Provider, Plan, Campaign): \`gtm-factory\`.
 - The catalogue walk (steps, sales paths, sales funnels): \`catalogue\`.
 - Events that start a reactive campaign: \`triggers\`. Our services and their endpoints: \`infra\`.

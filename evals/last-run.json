@@ -1,32 +1,32 @@
 {
-  "note": "DISTRY-ONE-AI-1118 follow-up (staff test 2026-11-19): the answer right after a sign-in is served IN PLACE of the sign-in turn's words on every channel (web joined both: \u00ab You're in \u00bb twice), one shared AFTER_SIGN_IN_LINE; a step only they take gets the link its operation returns, never the dashboard (PAGE_LINKS_LINE, owner 2026-11-17; new-account step 7 and budget-and-billing name the checkout url). Two pairs, candidate and origin/main a30264d baseline launched the same minute in one throwaway container, same judge, Haiku 5.5 effort low on both sides (wires equal), skills as each code seeds them (--seed-skills all), the same 69 scenarios (two new one-ai-after-sign-in-pay-*; the WhatsApp after-sign-in replays now keep the whole thread, as lead-turn.ts re-runs the lead event on it, instead of grading the hidden sign-in turn; the reload_rules read answered). 437 vs 434 of 828 replies pass; the 4 after-sign-in scenarios 27 vs 21 of 48; a dashboard link in them 0 vs 1. The pay scenarios still pass 3 vs 1 of 24 (both sides ask the amount before the link). A variant adding \u00ab what they asked before signing in is their go \u00bb ran beside it the same minute and was dropped: 210 vs 223 of 414 (evals/results/2026-11-19-distry-signin-one-reply.json). codeHash unchanged: sophieCodeHash() does not read the channel blocks or the skill seed.",
+  "note": "DISTRY-PRINCIPAL-1119: Distry as principal. The role gains a short principal framing (its own goal: the shareholder's long-term value; presence before each action; CEO with staff), SOPHIE_TOOLS gains the staff-only principal tools (stakeholders, finance, engines: never loaded in a client, prospect, guest or Lead event turn, so absent from every replay), three seed skills (presence, stakeholders, ceo-for-the-shareholder) listed under `staff`. Same throwaway container, same judge, Haiku 5.5 effort low both sides, --seed-skills all, 69 scenarios. Recorded run (v6): 451 of 828 replies pass vs the baseline (origin/main fdaf854) launched the same minute 212 of 414. Path to it, all on this day: the same role + tools with presence and stakeholders listed directly under `index` (same codeHash: sophieCodeHash does not read the skill seed) 430/828 vs baseline 447/828 over two rounds; a reworded framing at the end of the role 208/414; no framing at all, skills under index 429/828 (so the framing costs nothing); stakeholders under staff, presence under index 423/828 vs baseline 212/414 the same round; both under staff, no framing 446/828. Baseline across its five rounds: 1089/2070 (52.6%): read 1-2 point gaps as noise (evals/results/2026-11-19-distry-principal.json).",
   "model": "anthropic/claude-haiku (effort low)",
   "judge": "jev/jev-latest",
-  "codeHash": "d17c0bfb73760b2d",
+  "codeHash": "9b9197beb860bcb8",
   "runs": [
     {
-      "at": "2026-11-19T12:56:54.962Z",
-      "runsPerScenario": 3,
-      "scenariosPassed": 37
-    },
-    {
-      "at": "2026-11-19T12:56:50.122Z",
-      "runsPerScenario": 3,
-      "scenariosPassed": 39
-    },
-    {
-      "at": "2026-11-19T13:02:20.959Z",
+      "at": "2026-11-19T16:48:08.431Z",
       "runsPerScenario": 3,
       "scenariosPassed": 35
     },
     {
-      "at": "2026-11-19T13:02:34.362Z",
+      "at": "2026-11-19T16:48:08.047Z",
+      "runsPerScenario": 3,
+      "scenariosPassed": 39
+    },
+    {
+      "at": "2026-11-19T16:48:17.432Z",
+      "runsPerScenario": 3,
+      "scenariosPassed": 36
+    },
+    {
+      "at": "2026-11-19T16:48:09.534Z",
       "runsPerScenario": 3,
       "scenariosPassed": 38
     }
   ],
   "wire": {
-    "requests": 1818,
+    "requests": 447,
     "settings": [
       {
         "settings": {
@@ -46,34 +46,34 @@
           "contextManagement": true,
           "betas": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01"
         },
-        "requests": 1818
+        "requests": 447
       }
     ],
-    "requestsWithImages": 12,
-    "requestsWithToolsOff": 10
+    "requestsWithImages": 3,
+    "requestsWithToolsOff": 2
   },
   "pooled": {
     "replays": 828,
-    "passRate": 0.5278,
+    "passRate": 0.5447,
     "criterionRate": {
-      "true": 0.9034,
-      "respectful": 0.8792,
-      "proactive": 0.8406,
-      "answers": 0.8671,
-      "nextAction": 0.849,
-      "form": 0.9855
+      "true": 0.9215,
+      "respectful": 0.8708,
+      "proactive": 0.8285,
+      "answers": 0.8853,
+      "nextAction": 0.8442,
+      "form": 0.9795
     },
     "failedReplies": 0,
-    "medianCostPerReplyUsd": 0.000844575,
-    "meanCostPerReplyUsd": 0.00112,
+    "medianCostPerReplyUsd": 0.0008643025,
+    "meanCostPerReplyUsd": 0.00119,
     "medianLlmCalls": 1.0,
-    "medianLatencyMs": 4396.5,
-    "meanLatencyMs": 5101
+    "medianLatencyMs": 4397.5,
+    "meanLatencyMs": 5007
   },
   "baseline": {
-    "definition": "the code before this change (origin/main a30264d, skills as main seeds them), same 69 scenarios, launched the same minute",
+    "definition": "the code before this change (origin/main fdaf854, skills as main seeds them), same 69 scenarios, launched the same minute",
     "wire": {
-      "requests": 1835,
+      "requests": 461,
       "settings": [
         {
           "settings": {
@@ -93,51 +93,41 @@
             "contextManagement": true,
             "betas": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01"
           },
-          "requests": 1835
+          "requests": 461
         }
       ],
-      "requestsWithImages": 12,
-      "requestsWithToolsOff": 12
+      "requestsWithImages": 3,
+      "requestsWithToolsOff": 4
     },
     "runs": [
       {
-        "at": "2026-11-19T12:56:46.816Z",
+        "at": "2026-11-19T16:48:10.823Z",
         "runsPerScenario": 3,
-        "scenariosPassed": 40
+        "scenariosPassed": 37
       },
       {
-        "at": "2026-11-19T12:56:48.348Z",
-        "runsPerScenario": 3,
-        "scenariosPassed": 38
-      },
-      {
-        "at": "2026-11-19T13:02:23.580Z",
-        "runsPerScenario": 3,
-        "scenariosPassed": 39
-      },
-      {
-        "at": "2026-11-19T13:02:22.268Z",
+        "at": "2026-11-19T16:48:14.731Z",
         "runsPerScenario": 3,
         "scenariosPassed": 34
       }
     ],
     "pooled": {
-      "replays": 828,
-      "passRate": 0.5242,
+      "replays": 414,
+      "passRate": 0.5121,
       "criterionRate": {
-        "true": 0.901,
-        "respectful": 0.8708,
-        "proactive": 0.8333,
-        "answers": 0.8853,
-        "nextAction": 0.8418,
-        "form": 0.9795
+        "true": 0.9203,
+        "respectful": 0.8768,
+        "proactive": 0.8285,
+        "answers": 0.8671,
+        "nextAction": 0.8309,
+        "form": 0.9734
       },
-      "failedReplies": 1,
-      "medianCostPerReplyUsd": 0.0008560725,
-      "meanCostPerReplyUsd": 0.00115,
+      "failedReplies": 0,
+      "medianCostPerReplyUsd": 0.0008593175,
+      "meanCostPerReplyUsd": 0.00128,
       "medianLlmCalls": 1.0,
-      "medianLatencyMs": 4543.5,
-      "meanLatencyMs": 4979
+      "medianLatencyMs": 4455.5,
+      "meanLatencyMs": 5090
     }
   }
 }
