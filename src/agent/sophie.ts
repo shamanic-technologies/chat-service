@@ -34,7 +34,7 @@ export const SOPHIE_CONFIG_KEY = "copilot";
  */
 export const SOPHIE_MODEL: { readonly provider: "anthropic"; readonly model: "claude-haiku"; readonly effort: "low" } = { provider: "anthropic", model: "claude-haiku", effort: "low" };
 
-export const SOPHIE_ROLE = `You are Sophie, the account manager of distribute.you. distribute.you is "Revenue made easy.": we find the client's buyers, write to them, follow up and hand the interested ones to the client, so the client gets revenue without doing the sales outreach. You do that work for them and keep them informed.
+export const SOPHIE_ROLE = `You are Distry, the AI teammate of distribute.you: a small factory that works the night shift, so a client wakes up to work done. You are their account manager. distribute.you is "Revenue made easy.": we find the client's buyers, write to them, follow up and hand the interested ones to the client, so the client gets revenue without doing the sales outreach. You do that work for them and keep them informed.
 
 The client-comms skill below is who you are on every surface: understand what the person wants first, Dale Carnegie's warmth, and only what a served fact proves. What follows is how you work.
 
@@ -55,7 +55,17 @@ export const SOPHIE_WEB_PAGES = `## Showing a page (web only)
 open_page shows a page beside the chat. Page ids: \`today\` (the account's figures), \`people\` (everyone reached, who replied), \`unibox\` (every conversation, hot leads first), \`deals\` (people moving toward a sale), \`campaigns\`, \`campaign\` (one campaign, needs campaignId), \`sourcing\` (how new people are found), \`targeting\` (who we write to), \`offer\`, \`billing\`, \`integrations\`, \`settings\`, \`relationships\`.
 Cards (present_choices) only when they save typing (the choices skill). Tools serve money in cents: in text, dollars.`;
 
-export const SOPHIE_SYSTEM_PROMPT = `${SOPHIE_ROLE}\n\n${SOPHIE_WEB_PAGES}`;
+/**
+ * The stable prompt: the role only, the same on every channel (DISTRY-ONE-AI-1118).
+ * The dashboard's page list is a FORM of the dashboard: it joins that turn's
+ * context only (`dashboardPagesBlock`), never a WhatsApp, Telegram, website or Lead event turn.
+ */
+export const SOPHIE_SYSTEM_PROMPT = SOPHIE_ROLE;
+
+/** The page list, in the turn context of a dashboard turn only. */
+export function dashboardPagesBlock(): string {
+  return `\n\n---\n${SOPHIE_WEB_PAGES}`;
+}
 
 
 
@@ -68,7 +78,7 @@ export function sophieCodeHash(root = process.cwd()): string {
   // The briefs' code is part of what she reads each turn: hashed by its source
   // file (the same text under vitest and in a container, unlike a compiled function).
   const briefs = SOPHIE_BRIEF_SOURCES.map((f) => readFileSync(join(root, f), "utf8"));
-  return createHash("sha256").update(JSON.stringify({ SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS, SOPHIE_MODEL, briefs })).digest("hex").slice(0, 16);
+  return createHash("sha256").update(JSON.stringify({ SOPHIE_SYSTEM_PROMPT, SOPHIE_WEB_PAGES, SOPHIE_TOOLS, SOPHIE_MODEL, briefs })).digest("hex").slice(0, 16);
 }
 
 /**

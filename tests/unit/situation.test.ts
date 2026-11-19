@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildSituationBrief, type SituationReader } from "../../src/agent/situation.js";
-import { SOPHIE_CONFIG_KEY, SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS } from "../../src/agent/sophie.js";
+import { SOPHIE_CONFIG_KEY, SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS, dashboardPagesBlock } from "../../src/agent/sophie.js";
 import { SOPHIE_CONFIG, isSelfSeededConfigKey, seedSophieConfig } from "../../src/lib/seed-platform-configs.js";
 
 function reader(over: Partial<SituationReader> = {}): SituationReader {
@@ -214,6 +214,11 @@ describe("Sophie's definition is chat-service's", () => {
   it("the role states the strategy and carries no list of prohibitions", () => {
     expect(SOPHIE_SYSTEM_PROMPT).toContain("Revenue made easy.");
     expect(SOPHIE_SYSTEM_PROMPT).not.toMatch(/\bNever\b|## Never/);
+    // DISTRY-ONE-AI-1118: one name on every channel; the dashboard's pages are not in the core prompt.
+    expect(SOPHIE_SYSTEM_PROMPT.startsWith("You are Distry")).toBe(true);
+    expect(SOPHIE_SYSTEM_PROMPT).not.toContain("Sophie");
+    expect(SOPHIE_SYSTEM_PROMPT).not.toContain("open_page shows a page");
+    expect(dashboardPagesBlock()).toContain("open_page shows a page");
   });
 });
 

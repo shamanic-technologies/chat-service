@@ -31,7 +31,7 @@ import { streamGeminiChat } from "../lib/gemini-chat.js";
 import { replayAnthropicTurn } from "./anthropic-replay.js";
 import type { VendorCostLine } from "../lib/cost-names.js";
 import { buildSituationBrief } from "../agent/situation.js";
-import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS } from "../agent/sophie.js";
+import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS, dashboardPagesBlock } from "../agent/sophie.js";
 import { clientBriefUnavailable } from "../lib/client-brief.js";
 import { prepareTurnImage, type TurnImage } from "../lib/turn-images.js";
 import { labelLines } from "../lib/lead-whatsapp.js";
@@ -153,7 +153,7 @@ export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisp
       : "";
   return {
     systemPrompt,
-    turnContext: buildSystemPrompt("", scenario.context) + channelBlock + brief,
+    turnContext: buildSystemPrompt("", scenario.context) + channelBlock + (scenario.surface === "web" && def.id === "sophie-code" ? dashboardPagesBlock() : "") + brief,
     tools: resolveToolSet(toolNames) as unknown as ToolDefinition[],
     holdTextBesideToolCalls: toolNames.includes("present_choices"),
   };

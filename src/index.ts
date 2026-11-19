@@ -163,7 +163,7 @@ import {
 import { seedPlatformConfigs, seedSophieConfig, holdTextBesideToolCallsFor, isSelfSeededConfigKey } from "./lib/seed-platform-configs.js";
 import { buildSituationBrief } from "./agent/situation.js";
 import { gatewaySituationReader } from "./agent/situation-reader.js";
-import { SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
+import { dashboardPagesBlock, SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
 import { SOPHIE_BACKUP_MODEL, sophieTurnModel } from "./agent/sophie-backup.js";
 import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi } from "./agent/catalogue-tools.js";
 import { REPORT_NOT_GOOD_TOOL_NAME, reportNotGood } from "./lib/unit-report.js";
@@ -4014,7 +4014,9 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // `let`: the client brief joins it once the turn's run exists (it reads with that run).
   let turnContextBlock =
     buildSystemPrompt("", promptContext, campaignFeatureInputs) +
-    (leadTurn ? buildLeadTurnBlock(leadTurn) : telegramTurn ? buildTelegramBlock() : webTurn ? buildWebBlock(webTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
+    (leadTurn ? buildLeadTurnBlock(leadTurn) : telegramTurn ? buildTelegramBlock() : webTurn ? buildWebBlock(webTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "") +
+    // The dashboard's pages, on the dashboard only (DISTRY-ONE-AI-1118): a chat app or our website cannot show them.
+    (configKey === SOPHIE_CONFIG_KEY && !leadTurn && !telegramTurn && !webTurn && !channelTurn && !(proactiveTurn && context?.channel !== undefined) ? dashboardPagesBlock() : "");
   let systemPrompt = stableSystemPrompt + turnContextBlock;
   const isGeminiChat = chatProvider === "google";
   // A direct OpenAI-compatible vendor (DeepSeek, CHAT-DEEPSEEK-FLASH-1101): its own loop, vendor-chat.ts.

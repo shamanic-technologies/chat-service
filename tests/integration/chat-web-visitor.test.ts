@@ -263,6 +263,8 @@ describe("POST /internal/copilot/web-messages: a visitor of our site talks with 
     expect([...declared].sort()).toEqual(["complete_sign_in", "continue_on_channel", "present_choices", "read_our_website", "read_skill", "start_sign_in"]);
     // The page's form only: nothing sends them to a page to start.
     expect(sent).not.toMatch(/start button|sign-up/);
+    // The dashboard's page list is the dashboard's form, never in a website turn.
+    expect(sent).not.toContain("open_page shows a page");
     expect(fetchCalls.some((c) => c.url.includes("/internal/copilot/messages"))).toBe(false);
     expect(sends).toEqual([]);
 
