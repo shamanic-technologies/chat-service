@@ -187,8 +187,8 @@ describe("the website block is the page's FORM, nothing else (DISTRY-ONE-AI-1118
     expect(account).toContain("This conversation is tied to the distribute.you account you act for");
     expect(account).toContain(WHOLE_WAY_TO_USE);
     expect(account).not.toContain("NOT tied");
-    expect(account).not.toContain("what they asked before signing in");
-    expect(buildWebBlock({ whatsapp: null, guest: false, afterSignIn: true })).toContain("Answer now, with that access, what they asked before signing in");
+    expect(account).not.toContain("one step further from where they stopped");
+    expect(buildWebBlock({ whatsapp: null, guest: false, afterSignIn: true })).toContain("Take them one step further from where they stopped");
   });
 
   it("the hand-off is a delivery fact: offered once to a guest, stated once tied, never asked again", () => {

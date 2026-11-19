@@ -85,3 +85,50 @@ describe("sign-in is one path on every channel; the channel changes the phone on
     expect(JSON.parse(String(init.body))).toEqual({ email: "ann@acme.io", code: "123456" });
   });
 });
+
+// DISTRY-ONE-AI-1118 B (owner plan 2026-11-19): a guest's plan was built on an unclaimed org; the
+// email proof hands THAT org over (client-service claimOrgId + claimOrgExternalId), never an
+// agent_api org of their own.
+describe("completeSignIn with the plan's org", () => {
+  const claim = { orgId: "11111111-1111-4111-8111-111111111111", externalOrgId: "anon_22222222-2222-4222-8222-222222222222" };
+  const deps = (fetchImpl: unknown) => ({ fetchImpl: fetchImpl as typeof fetch });
+
+  it("sends both ids with the proof and returns the claimed org", async () => {
+    const fetchImpl = vi.fn(async () => json(200, { orgId: claim.orgId, userId: "u", email: "ann@acme.io", created: true, claimedOrgId: claim.orgId, orgClaim: "claimed", billingSettled: true }));
+    const r = await completeSignIn("ann@acme.io", "123456", null, deps(fetchImpl), claim);
+    expect(r).toEqual({ ok: true, account: { orgId: claim.orgId, userId: "u", email: "ann@acme.io", created: true } });
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ email: "ann@acme.io", code: "123456", claimOrgId: claim.orgId, claimOrgExternalId: claim.externalOrgId });
+  });
+
+  it("redeems the same proof again while billing has not settled the handover, then goes on (the org is theirs)", async () => {
+    const answers = [false, false, false].map((settled) => json(200, { orgId: claim.orgId, userId: "u", email: "e", created: false, orgClaim: "already_claimed", billingSettled: settled }));
+    const fetchImpl = vi.fn(async () => answers.shift()!);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const r = await completeSignIn("e@x.io", "123456", null, deps(fetchImpl), claim);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(r).toMatchObject({ ok: true, account: { orgId: claim.orgId } });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("stops redeeming once billing settled", async () => {
+    const answers = [false, true].map((settled) => json(200, { orgId: claim.orgId, userId: "u", email: "e", created: true, orgClaim: "claimed", billingSettled: settled }));
+    const fetchImpl = vi.fn(async () => answers.shift()!);
+    await completeSignIn("e@x.io", "123456", null, deps(fetchImpl), claim);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("relays the handover's refusals (403 / 409) as results the person hears, never a fresh org", async () => {
+    for (const [status, error] of [[403, "org_external_id_mismatch"], [409, "org_already_claimed"], [409, "org_slug_taken"], [404, "org_not_found"]] as const) {
+      const fetchImpl = vi.fn(async () => json(status, { error, message: `refused: ${error}` }));
+      expect(await completeSignIn("e@x.io", "123456", null, deps(fetchImpl), claim)).toEqual({ ok: false, error, message: `refused: ${error}` });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("refuses an answer naming another org than the claimed one", async () => {
+    const fetchImpl = vi.fn(async () => json(200, { orgId: "33333333-3333-4333-8333-333333333333", userId: "u", email: "e", created: true, billingSettled: true }));
+    await expect(completeSignIn("e@x.io", "123456", null, deps(fetchImpl), claim)).rejects.toThrow(/not the claimed plan org/);
+  });
+});

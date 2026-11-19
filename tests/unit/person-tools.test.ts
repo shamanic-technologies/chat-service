@@ -18,13 +18,14 @@ describe("the tools of a turn are keyed on who the person is, never on the chann
   it("a guest gets the same list on WhatsApp and on our website; the website adds its one delivery tool", () => {
     const whatsapp = sessionToolNamesFor({ configTools: CONFIG, guest: true, canSignIn: true, website: false });
     const website = sessionToolNamesFor({ configTools: CONFIG, guest: true, canSignIn: true, website: true });
-    expect(whatsapp).toEqual(["read_skill", "present_choices", "start_sign_in", "complete_sign_in"]);
+    // Their plan (DISTRY-ONE-AI-1118 B): the API tools an account uses, run on the conversation's unclaimed org.
+    expect(whatsapp).toEqual(["read_skill", "present_choices", "find_operation", "describe_operation", "run_operation", "start_sign_in", "complete_sign_in"]);
     expect(website).toEqual([...whatsapp, "continue_on_channel"]);
   });
 
-  it("a guest turn runs under our own identity: no tool that reads or acts on an account is in it", () => {
+  it("a guest turn holds no tool that reads or acts on an account (their plan's calls go through the server's allowlist)", () => {
     const guest = withOurWebsite(sessionToolNamesFor({ configTools: CONFIG, guest: true, canSignIn: true, website: true }), true);
-    for (const banned of ["run_operation", "find_operation", "describe_operation", "request_staff", "contact_human", "create_followup", "list_followups", "report_not_good", "open_page", "create_brand_from_url", "create_prepaid_checkout"]) {
+    for (const banned of ["request_staff", "contact_human", "create_followup", "list_followups", "report_not_good", "open_page", "create_brand_from_url", "create_prepaid_checkout"]) {
       expect(guest, banned).not.toContain(banned);
     }
     expect(guest).toContain("read_our_website");
@@ -43,7 +44,7 @@ describe("the tools of a turn are keyed on who the person is, never on the chann
   it("a guest lead turn on our brand reads the skills; it signs in only where a number ties the session", () => {
     const withNumber = leadTurnToolNames(sessionToolNamesFor({ configTools: CONFIG, guest: true, canSignIn: true, website: false }), CLIENT_UI_TOOL_NAMES);
     const byEmail = leadTurnToolNames(sessionToolNamesFor({ configTools: CONFIG, guest: true, canSignIn: false, website: false }), CLIENT_UI_TOOL_NAMES);
-    expect(withNumber).toEqual(["read_skill", "start_sign_in", "complete_sign_in", "reach_person_elsewhere", "answer_person"]);
+    expect(withNumber).toEqual(["read_skill", "find_operation", "describe_operation", "run_operation", "start_sign_in", "complete_sign_in", "reach_person_elsewhere", "answer_person"]);
     expect(byEmail).toEqual(["read_skill", "reach_person_elsewhere", "answer_person"]);
   });
 

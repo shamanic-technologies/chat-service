@@ -129,10 +129,14 @@ describe("buildChannelBlock", () => {
     }
   });
 
-  it("the turn right after a sign-in answers the pending question, without a new greeting", () => {
+  // DISTRY-ONE-AI-1118 B (eval 2026-11-19: WhatsApp replies stopped at "you're in": what they had
+  // "asked" was the code itself). The turn after a sign-in moves them on, never stops at being in.
+  it("the turn right after a sign-in takes them one step further, without a new greeting", () => {
     const block = buildChannelBlock({ ...channel, afterSignIn: true }, false);
-    expect(block).toContain("Answer now, with that access, what they asked before signing in");
-    expect(buildChannelBlock(channel, false)).not.toContain("what they asked before signing in");
+    expect(block).toContain("Take them one step further from where they stopped");
+    expect(block).toContain("never stop at their being in");
+    expect(block).not.toContain("what they asked before signing in");
+    expect(buildChannelBlock(channel, false)).not.toContain("one step further from where they stopped");
   });
 
   // COPILOT-WA-REPEAT-1027: the prod thread of 2026-10-27 (a signup we wrote to first, then called).
@@ -219,9 +223,10 @@ describe("buildChannelBlock", () => {
     // Signed-in block re-pinned by SOPHIE-WA-ONBOARD-1101 (the chat sets up an account end to end, never a dashboard hand-off).
     // Both re-pinned by SOPHIE-WA-HUMAN-1106 (ambiguity, quote and photo lines, every chat-app block).
     // Both re-pinned by SOPHIE-CORE-1111 (a next step offered once, never a push).
+    // Guest block re-pinned by DISTRY-ONE-AI-1118 B (their plan before any account).
     expect(sha(false, legacy)).toBe("c28fc2ef7442cc632cac98742e7d7c5f373e743f0d1182d09f14c153d7823ded");
-    expect(sha(true, legacy)).toBe("ee2a2334d7af3629b52d9d40748676acb3c3eb1755613e3803ddf00bed3b7b85");
-    expect(sha(true, { ...legacy, receivedOn: null })).toBe("ee2a2334d7af3629b52d9d40748676acb3c3eb1755613e3803ddf00bed3b7b85");
+    expect(sha(true, legacy)).toBe("dbe7d31195f2f2942afb07c9da12170c00fa241556576306909622709f2183ce");
+    expect(sha(true, { ...legacy, receivedOn: null })).toBe("dbe7d31195f2f2942afb07c9da12170c00fa241556576306909622709f2183ce");
   });
 
   it("carries no hard-coded assistant name", () => {
