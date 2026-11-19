@@ -117,7 +117,9 @@ export function formatClientBrief(brands: BriefBrand[]): string {
   for (const b of brands) {
     lines.push(`### ${b.name ?? "Unnamed brand"}${b.website ? ` (${b.website})` : ""}, brandId ${b.id}`);
     if ("error" in b.site) {
-      lines.push(`Their website could not be read for this turn (${b.site.error}): read it with your tools before anything else.`);
+      lines.push(
+        `Their website could not be read for this turn (${b.site.error}): read it once with your tools before anything else. If it still does not open, tell them plainly that the address does not open and ask whether it is the right one.`,
+      );
     } else {
       lines.push(`What they sell: ${b.site.whatTheySell ?? "their website does not say."}`);
       lines.push(`Who buys from them: ${b.site.whoBuys ?? "their website does not say."}`);

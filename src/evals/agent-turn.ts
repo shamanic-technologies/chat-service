@@ -35,7 +35,7 @@ import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS, dashboardPagesBlock }
 import { clientBriefUnavailable } from "../lib/client-brief.js";
 import { prepareTurnImage, type TurnImage } from "../lib/turn-images.js";
 import { labelLines } from "../lib/lead-whatsapp.js";
-import { fixtureClientBrief, fixtureSituationReader } from "./fixture-situation.js";
+import { fixtureClientBrief, fixtureGuestPlanBrief, fixtureSituationReader } from "./fixture-situation.js";
 import { isGuestScenario, scenarioDay, type Scenario } from "./scenario.js";
 import { WEB_CONTINUE_TOOL, WEB_CONTINUE_TOOL_NAME, buildWebBlock } from "../lib/web-visitor.js";
 import type { AnthropicEffort } from "../schemas.js";
@@ -225,8 +225,9 @@ export async function replayTurn(args: {
   // Same order as /chat: the client brief, then where the account stands. A lead
   // turn carries neither here (it runs in the writing brand's thread; its
   // context is the writer's message).
-  // A guest has no account to brief on (as /chat: no client or situation brief for a guest).
-  const brief = scenario.surface === "lead" || isGuestScenario(scenario) ? "" :
+  // A guest has no account to brief on (as /chat: no situation brief); once their website opened their
+  // plan, the client brief of that one brand (as /chat, DISTRY-GUEST-CAPS-1119).
+  const brief = scenario.surface === "lead" ? "" : isGuestScenario(scenario) ? (def.clientBrief ? await fixtureGuestPlanBrief(scenario).catch((err) => clientBriefUnavailable(err)) : "") :
     (def.clientBrief ? await fixtureClientBrief(scenario).catch((err) => clientBriefUnavailable(err)) : "") +
     (def.situationBrief ? await buildSituationBrief(fixtureSituationReader(scenario), { now: scenarioDay(scenario) }) : "");
   const modelDisplay = modelDisplayName(resolved.apiModelId);

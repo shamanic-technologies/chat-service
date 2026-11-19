@@ -14,6 +14,7 @@ process.env.CLIENT_SERVICE_URL = process.env.CLIENT_SERVICE_URL || "https://clie
 process.env.CLIENT_SERVICE_API_KEY = process.env.CLIENT_SERVICE_API_KEY || "test-client-key";
 process.env.CAMPAIGN_SERVICE_URL = process.env.CAMPAIGN_SERVICE_URL || "https://campaign.test.local";
 process.env.CAMPAIGN_SERVICE_API_KEY = process.env.CAMPAIGN_SERVICE_API_KEY || "test-campaign-key";
+process.env.COPILOT_FOLLOWUP_ORG_ID = process.env.COPILOT_FOLLOWUP_ORG_ID || "99999999-9999-4999-8999-999999999990";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const BRAND = "22222222-2222-4222-8222-222222222222";
@@ -161,6 +162,8 @@ function baseRoutes(gemini: { bodies: Array<Record<string, unknown>>; replies: G
       respond: () => (account ? { ok: true, body: account } : { ok: false, status: 404, body: { error: "none" } }),
     },
     { match: (url) => url.includes("/internal/users?email="), respond: () => ({ ok: true, body: { users: [] } }) },
+    // DISTRY-GUEST-CAPS-1119: an account's turn asks billing whether the org pays (a paying client is never capped).
+    { match: (url) => url.includes("/internal/accounts/by-org/") && url.endsWith("/cash"), respond: () => ({ ok: true, body: { cash_paid_cents: 5000, credited_cents: 5000, non_cash_credit_cents: 0 } }) },
     { match: (url) => url.includes("/internal/users/"), respond: () => ({ ok: true, body: { user: { email: "owner@acme.example" } } }) },
     { match: (url) => url.includes("/keys/google/decrypt"), respond: () => ({ ok: true, body: { provider: "google", key: "fake", keySource: "platform" } }) },
     { match: (url, init) => url.endsWith("/v1/runs") && init?.method === "POST", respond: () => ({ ok: true, status: 201, body: { id: RUN, status: "running" } }) },

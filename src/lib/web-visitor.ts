@@ -29,11 +29,12 @@
  *     WhatsApp from the Copilot's own line, or the conversation goes to their
  *     thread in crm (a Lead event writes by email).
  *
- * No answer count walls a visitor (the 12-answer wall protected ~1 cent: an
- * answer costs $0.0003 to $0.0014, measured 2026-11-18). What bounds anonymous
- * spend is a guard: a speed limit per visitor and a daily breaker on GUEST
- * turns (OWASP LLM10, unbounded consumption). Refusals are stored and served
- * in the daily reply series (Monitoring).
+ * No answer COUNT walls a visitor. What bounds anonymous spend is a speed
+ * limit per visitor (OWASP LLM10, unbounded consumption; its refusals are
+ * stored and served in the daily reply series) and Distry's limits in DOLLARS
+ * read from the runs ledger (distry-spend.ts, DISTRY-GUEST-CAPS-1119): $5 per
+ * visitor with no account, $30 a day for every non-client together; past
+ * either, the page shows the limit notice and no model runs.
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { and, asc, count, desc, eq, gte, ne } from "drizzle-orm";
@@ -57,6 +58,7 @@ import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
 import { isShownMessage } from "./session-history.js";
 import type { CopilotLine, WhatsappReach } from "./copilot-proactive.js";
 import { WEB_CONTINUE_TOOL_NAME } from "../agent/person-tools.js";
+import type { DistryGate } from "./distry-spend.js";
 
 export { WEB_CONTINUE_TOOL_NAME };
 
@@ -65,12 +67,6 @@ export const WEB_TASK_NAME = "copilot-web";
 /** The speed guard: a visitor gets at most this many answers per window. A person onboarding never types that fast; a script does. */
 export const WEB_SPEED_MAX_MESSAGES = 20;
 export const WEB_SPEED_WINDOW_MS = 10 * 60_000;
-/**
- * The daily breaker on GUEST turns (they run on our own org's money): at the
- * ~0.1 cent an answer costs (measured), the default bounds a day at about $5.
- * A signed-in visitor's turns are billed to their org and never counted.
- */
-export const WEB_GUEST_DAILY_TURN_CAP_DEFAULT = 5000;
 /** An account-bound web session idle this long is not picked again for its visitor: the cookie alone no longer opens the account. */
 export const WEB_ACCOUNT_IDLE_MAX_MS = 30 * 86_400_000;
 /** A turn still "processing" after this long was cut (a restart): its retry is answered as failed, never `in_progress` forever. */
@@ -80,15 +76,6 @@ export const WEB_AFTER_SIGN_IN_TRIGGER = "(They just signed in, in this same exc
 export const VISITOR_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 const E164 = /^\+[1-9]\d{6,14}$/;
 const SITE_URL = "https://distribute.you";
-
-/** The daily cap on guest answers, tunable without a deploy of code (`WEB_GUEST_DAILY_TURN_CAP`). */
-export function webGuestDailyTurnCap(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.WEB_GUEST_DAILY_TURN_CAP;
-  if (raw === undefined || raw.trim() === "") return WEB_GUEST_DAILY_TURN_CAP_DEFAULT;
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < 0) throw new Error(`WEB_GUEST_DAILY_TURN_CAP must be a whole number of answers a day, got "${raw}"`);
-  return n;
-}
 
 /** What /chat knows of a website turn when it builds the block. */
 export interface WebTurnFacts {
@@ -206,8 +193,8 @@ export interface WebDeps {
   /** crm-service POST /internal/copilot/web-conversations: the page conversation onto the person's thread (a Lead event writes by email). */
   handOverByEmail: (body: WebHandOverBody) => Promise<{ status: string }>;
   now?: () => Date;
-  /** Test hook: the daily cap on guest answers (default: `webGuestDailyTurnCap()`). */
-  guestDailyTurnCap?: () => number;
+  /** Distry's limits on our money (distry-spend.ts). */
+  spend: DistryGate;
 }
 
 export interface WebMessageInput {
@@ -285,13 +272,11 @@ export async function readWebFacts(db: typeof Db, visitorId: string, now: Date =
 export type WebAccept =
   | { status: "accepted"; rowId: string }
   | { status: "duplicate"; rowId: string }
-  | { status: "busy"; reason: "speed" | "daily" };
+  | { status: "busy"; reason: "speed" };
 
-/** PURE: the guard's verdict from the stored counts (null = the message runs). */
-export function webGuardVerdict(a: { visitorRecent: number; guest: boolean; guestToday: number; dailyCap: number }): "speed" | "daily" | null {
-  if (a.visitorRecent >= WEB_SPEED_MAX_MESSAGES) return "speed";
-  if (a.guest && a.guestToday >= a.dailyCap) return "daily";
-  return null;
+/** PURE: the speed guard's verdict from the stored count (null = the message runs). */
+export function webGuardVerdict(a: { visitorRecent: number }): "speed" | null {
+  return a.visitorRecent >= WEB_SPEED_MAX_MESSAGES ? "speed" : null;
 }
 
 /**
@@ -299,7 +284,7 @@ export function webGuardVerdict(a: { visitorRecent: number; guest: boolean; gues
  * twice), or refused by the guard before any spend. A refusal is stored too
  * (status `refused`): the daily series counts it, and its retry answers `busy`.
  */
-export async function acceptWebMessage(deps: Pick<WebDeps, "db" | "copilotLine" | "now" | "guestDailyTurnCap">, msg: WebMessageInput): Promise<WebAccept> {
+export async function acceptWebMessage(deps: Pick<WebDeps, "db" | "copilotLine" | "now">, msg: WebMessageInput): Promise<WebAccept> {
   const { db } = deps;
   const key = `web:${msg.visitorId}:${msg.messageId}`;
   const [existing] = await db.select({ id: channelInboundMessages.id }).from(channelInboundMessages).where(eq(channelInboundMessages.messageId, key));
@@ -318,29 +303,7 @@ export async function acceptWebMessage(deps: Pick<WebDeps, "db" | "copilotLine" 
         gte(channelInboundMessages.createdAt, new Date(now.getTime() - WEB_SPEED_WINDOW_MS)),
       ),
     );
-  let guestToday = 0;
-  if (identity.guest) {
-    const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    // Guest turns run under our line's identity: its org on the row is what marks them.
-    const [today] = await db
-      .select({ n: count() })
-      .from(channelInboundMessages)
-      .where(
-        and(
-          eq(channelInboundMessages.channel, WEB_CHANNEL),
-          eq(channelInboundMessages.orgId, line.orgId),
-          ne(channelInboundMessages.status, "refused"),
-          gte(channelInboundMessages.createdAt, dayStart),
-        ),
-      );
-    guestToday = Number(today?.n ?? 0);
-  }
-  const refusedBy = webGuardVerdict({
-    visitorRecent: Number(recent?.n ?? 0),
-    guest: identity.guest,
-    guestToday,
-    dailyCap: (deps.guestDailyTurnCap ?? webGuestDailyTurnCap)(),
-  });
+  const refusedBy = webGuardVerdict({ visitorRecent: Number(recent?.n ?? 0) });
   const [row] = await db
     .insert(channelInboundMessages)
     .values({
@@ -480,6 +443,14 @@ export function withChoicesList(reply: string, choices: WebChoices | null): stri
   return [reply, choices.question ?? "", list].filter(Boolean).join("\n\n");
 }
 
+/** A turn past Distry's limits: the notice is the answer, no model ran. */
+class DistryLimitReached extends Error {
+  constructor(public readonly notice: string) {
+    super("distry limit reached");
+    this.name = "DistryLimitReached";
+  }
+}
+
 export interface WebAnswer extends WebStoredAnswer {
   failed: boolean;
 }
@@ -500,13 +471,27 @@ export async function processWebMessage(deps: WebDeps, rowId: string): Promise<W
   let choices: WebChoices | null = null;
   let failure: string | null = null;
   let handOff: WebHandOff | null = null;
+  let limited: string | null = null;
   try {
     // The turn runs as the session's identity NOW (a sign-in in the message before this one already moved it).
-    const { guest: asGuest, ...identity } = webIdentityOf(await findWebSession(db, msg.visitorId, now()), line);
+    const current = await findWebSession(db, msg.visitorId, now());
+    const { guest: asGuest, ...identity } = webIdentityOf(current, line);
     await db
       .update(channelInboundMessages)
       .set({ status: "processing", orgId: identity.orgId, userId: identity.userId, updatedAt: now() })
       .where(eq(channelInboundMessages.id, rowId));
+    // Distry's limits on our money: past one, the limit notice and no model call.
+    const verdict = await deps.spend.gate({
+      key: `web:${msg.visitorId}`,
+      surface: "web",
+      guest: asGuest,
+      turnOrgId: identity.orgId,
+      planOrgId: current?.planOrgId ?? null,
+    });
+    if (!verdict.run) {
+      limited = `distry_limit:${verdict.reason}`;
+      throw new DistryLimitReached(verdict.notice);
+    }
     const runId = await deps.createRootRun(identity);
     const sessionId = await pickWebSession(db, line, msg.visitorId, runId, now());
     const [before] = await db.select({ channelPhone: sessions.channelPhone, guest: sessions.guest }).from(sessions).where(eq(sessions.id, sessionId));
@@ -514,9 +499,10 @@ export async function processWebMessage(deps: WebDeps, rowId: string): Promise<W
     const first = await deps.runChat({ orgId: identity.orgId, userId: identity.userId, runId, sessionId, message: msg.text, channelMessageId: rowId, visitorId: msg.visitorId });
     ({ reply, choices, failure } = webTurnOutcome(first.status, first.body));
     let [after] = await db
-      .select({ orgId: sessions.orgId, userId: sessions.userId, guest: sessions.guest, channelPhone: sessions.channelPhone, channelEmail: sessions.channelEmail })
+      .select({ orgId: sessions.orgId, userId: sessions.userId, guest: sessions.guest, channelPhone: sessions.channelPhone, channelEmail: sessions.channelEmail, planOrgId: sessions.planOrgId })
       .from(sessions)
       .where(eq(sessions.id, sessionId));
+    await deps.spend.record(verdict, runId, after?.planOrgId ?? null);
     // They signed up or in during this turn (complete_sign_in re-keyed the
     // session): the answer with their account comes in the SAME response, in a
     // run of their own org, and IN PLACE of the sign-in turn's words (one
@@ -547,7 +533,7 @@ export async function processWebMessage(deps: WebDeps, rowId: string): Promise<W
         console.error(`[chat-service] web message "${row.messageId}": signed in, but the answer with their account failed: ${err instanceof Error ? err.message : String(err)}`);
       }
       [after] = await db
-        .select({ orgId: sessions.orgId, userId: sessions.userId, guest: sessions.guest, channelPhone: sessions.channelPhone, channelEmail: sessions.channelEmail })
+        .select({ orgId: sessions.orgId, userId: sessions.userId, guest: sessions.guest, channelPhone: sessions.channelPhone, channelEmail: sessions.channelEmail, planOrgId: sessions.planOrgId })
         .from(sessions)
         .where(eq(sessions.id, sessionId));
     }
@@ -567,8 +553,13 @@ export async function processWebMessage(deps: WebDeps, rowId: string): Promise<W
       handOff = await deliverOnWhatsapp(deps, { line, runId: lineRunId, phone, text: withChoicesList(reply, choices), key: `${row.messageId}:whatsapp`, firstTime: before?.channelPhone !== phone });
     }
   } catch (err) {
-    failure = err instanceof Error ? err.message : String(err);
-    reply = CHANNEL_FAILURE_TEXT;
+    if (err instanceof DistryLimitReached) {
+      // The limit notice IS the answer the page shows: delivered, never a failure.
+      reply = err.notice;
+    } else {
+      failure = err instanceof Error ? err.message : String(err);
+      reply = CHANNEL_FAILURE_TEXT;
+    }
     choices = null;
   }
   if (failure) console.error(`[chat-service] web message "${row.messageId}": turn failed: ${failure}`);
@@ -581,7 +572,7 @@ export async function processWebMessage(deps: WebDeps, rowId: string): Promise<W
   const answer = orderedAnswer({ reply, choices, handOff, ...facts });
   await db
     .update(channelInboundMessages)
-    .set({ status: failure ? "failed" : "answered", replyText: reply, error: failure, answer, sentAt: failure ? null : now(), updatedAt: now() })
+    .set({ status: failure ? "failed" : "answered", replyText: reply, error: failure ?? limited, answer, sentAt: failure ? null : now(), updatedAt: now() })
     .where(eq(channelInboundMessages.id, rowId));
   return { ...answer, failed: failure !== null };
 }

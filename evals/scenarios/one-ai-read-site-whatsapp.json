@@ -1,0 +1,238 @@
+{
+  "id": "one-ai-read-site-whatsapp",
+  "title": "Asked whether we checked their site: the site is read, never a question about what they sell",
+  "source": "staff test, WhatsApp, 2026-11-19",
+  "surface": "whatsapp",
+  "person": {
+    "name": "Sam"
+  },
+  "guest": true,
+  "history": [
+    {
+      "role": "user",
+      "content": "I want to start, my site is dutrou.com"
+    },
+    {
+      "role": "assistant",
+      "content": "Welcome! I set up Dutrou from dutrou.com.",
+      "toolCalls": [
+        {
+          "name": "run_operation",
+          "args": {
+            "method": "POST",
+            "path": "/v1/brands",
+            "body": {
+              "url": "https://dutrou.com"
+            }
+          },
+          "result": {
+            "ok": true,
+            "status": 200,
+            "data": {
+              "brandId": "b-1",
+              "domain": "dutrou.com",
+              "name": "Dutrou",
+              "created": true
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "message": "You didn't check our site?",
+  "fixtures": {
+    "POST /v1/brands/extract-fields": [
+      {
+        "brands": [
+          {
+            "brandId": "b-1",
+            "domain": "dutrou.com",
+            "name": "Dutrou",
+            "brandUrl": "https://dutrou.com"
+          }
+        ],
+        "fields": {
+          "whatTheySell": {
+            "value": "Same-day drain unblocking for restaurant kitchens in Paris, and scheduled grease trap cleaning contracts.",
+            "byBrand": {}
+          },
+          "whoBuys": {
+            "value": "Independent restaurants and restaurant groups in Paris and Ile-de-France.",
+            "byBrand": {}
+          }
+        }
+      }
+    ],
+    "create_brand_from_url": [
+      {
+        "brandId": "b-1",
+        "domain": "dutrou.com",
+        "name": "Dutrou",
+        "created": true
+      }
+    ],
+    "propose_offers": [
+      {
+        "offers": [
+          {
+            "name": "Drain unblocking for restaurants",
+            "description": "Same-day drain and pipe unblocking for restaurant kitchens in Paris.",
+            "icon": "wrench"
+          },
+          {
+            "name": "Grease trap cleaning",
+            "description": "Scheduled grease trap cleaning contracts for restaurants.",
+            "icon": "droplet"
+          }
+        ]
+      }
+    ],
+    "confirm_offers": [
+      {
+        "offers": [
+          {
+            "id": "o-1",
+            "name": "Drain unblocking for restaurants"
+          }
+        ],
+        "chosenOfferId": "o-1",
+        "previewEmail": "preparing"
+      }
+    ],
+    "suggest_icp": [
+      {
+        "targetAudience": "Owners and managers of independent restaurants in Paris"
+      }
+    ],
+    "split_audiences": [
+      {
+        "segments": [
+          {
+            "name": "Independent restaurants, Paris",
+            "description": "Owners and managers of independent restaurants in Paris, 1 to 50 employees."
+          },
+          {
+            "name": "Restaurant groups, Ile-de-France",
+            "description": "Operations managers of restaurant groups in Ile-de-France."
+          }
+        ]
+      }
+    ],
+    "confirm_audiences": [
+      {
+        "audiences": [
+          {
+            "id": "a-1",
+            "name": "Independent restaurants, Paris"
+          }
+        ]
+      }
+    ],
+    "preview_audience": [
+      {
+        "status": "ready",
+        "companies": [
+          {
+            "name": "Le Petit Zinc",
+            "domain": "lepetitzinc.example",
+            "people": [
+              {
+                "firstName": "Marie",
+                "lastName": "D.",
+                "title": "Owner"
+              }
+            ]
+          },
+          {
+            "name": "Chez Paulette",
+            "domain": "chezpaulette.example",
+            "people": [
+              {
+                "firstName": "Hugo",
+                "lastName": "L.",
+                "title": "General Manager"
+              }
+            ]
+          },
+          {
+            "name": "Bistrot Lune",
+            "domain": "bistrotlune.example",
+            "people": [
+              {
+                "firstName": "Ines",
+                "lastName": "R.",
+                "title": "Owner"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "preview_email": [
+      {
+        "subject": "Blocked kitchen drain at Le Petit Zinc?",
+        "body": "Hi Marie,\n\nWhen a kitchen drain blocks in the middle of service, every minute costs covers. Dutrou unblocks restaurant drains in Paris the same day.\n\nWorth keeping our number for the next time?\n\nThe Dutrou team"
+      }
+    ],
+    "get_prepaid_status": [
+      {
+        "state": null,
+        "billing_account": "none yet: the payment link opens it",
+        "reload_rules": {
+          "first_topup_minimum_cents": 1000,
+          "default_reload_amount_cents": 1000
+        }
+      }
+    ],
+    "GET /v1/billing/accounts/reload_rules": [
+      {
+        "first_topup_minimum_cents": 1000,
+        "default_reload_amount_cents": 1000
+      }
+    ],
+    "create_prepaid_checkout": [
+      {
+        "url": "https://checkout.example/session-1"
+      }
+    ],
+    "list_brands": [
+      {
+        "brands": [
+          {
+            "id": "b-1",
+            "name": "Dutrou",
+            "domain": "dutrou.com"
+          }
+        ]
+      }
+    ],
+    "list_offers": [
+      {
+        "offers": []
+      }
+    ],
+    "start_sign_in": [
+      {
+        "ok": true,
+        "codeSentTo": "sam@example.com",
+        "expiresAt": "2026-11-19T10:15:00Z"
+      }
+    ],
+    "complete_sign_in": [
+      {
+        "ok": true,
+        "signedIn": "sam@example.com",
+        "accountCreated": true,
+        "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access, and that answer is the one they read in place of this reply: here just say in a few words that they are in. Never ask them to send anything to continue.",
+        "plan": "The plan built in this conversation (dutrou.com) is now in this account."
+      }
+    ]
+  },
+  "facts": [
+    "This person has no distribute.you account yet.",
+    "What distribute.you offers is on its public site (https://distribute.you/llms.txt, /catalog, /terms): read it with read_our_website, whatever it says is true.",
+    "Before any account, the assistant builds the person's plan right in this conversation from their website, with its API tools, on a draft opened for this conversation: brand, offer, who to reach, sample companies, a sample email (each step's answer is in the tool answers). Paying and launching need their account: their email and the 6-digit code sent to it, in this conversation (on the website also a phone number for urgent matters); the plan then becomes theirs.",
+    "Their brand Dutrou was set up from dutrou.com this conversation. Their site was read: it sells same-day drain unblocking for restaurant kitchens in Paris and grease trap cleaning contracts, to independent restaurants and restaurant groups in Paris and Ile-de-France (the turn's brief and the offers the site read returns). No offer is confirmed yet."
+  ],
+  "expect": "Reads their site right now (the offers read from dutrou.com) and says back in a few words what they sell and to whom, then moves the plan on. Never asks them what they sell or who buys when the site answered it, never invents what they sell, never a long apology."
+}

@@ -258,6 +258,28 @@
   ],
   "message": "Looks great. Let's launch it.",
   "fixtures": {
+    "POST /v1/brands/extract-fields": [
+      {
+        "brands": [
+          {
+            "brandId": "b-1",
+            "domain": "dutrou.com",
+            "name": "Dutrou",
+            "brandUrl": "https://dutrou.com"
+          }
+        ],
+        "fields": {
+          "whatTheySell": {
+            "value": "Same-day drain unblocking for restaurant kitchens in Paris, and scheduled grease trap cleaning contracts.",
+            "byBrand": {}
+          },
+          "whoBuys": {
+            "value": "Independent restaurants and restaurant groups in Paris and Ile-de-France.",
+            "byBrand": {}
+          }
+        }
+      }
+    ],
     "create_brand_from_url": [
       {
         "brandId": "b-1",

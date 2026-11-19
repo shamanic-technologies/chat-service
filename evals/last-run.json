@@ -1,32 +1,22 @@
 {
-  "note": "DISTRY-ONE-AI-1118 follow-up (staff test 2026-11-19): the answer right after a sign-in is served IN PLACE of the sign-in turn's words on every channel (web joined both: \u00ab You're in \u00bb twice), one shared AFTER_SIGN_IN_LINE; a step only they take gets the link its operation returns, never the dashboard (PAGE_LINKS_LINE, owner 2026-11-17; new-account step 7 and budget-and-billing name the checkout url). Two pairs, candidate and origin/main a30264d baseline launched the same minute in one throwaway container, same judge, Haiku 5.5 effort low on both sides (wires equal), skills as each code seeds them (--seed-skills all), the same 69 scenarios (two new one-ai-after-sign-in-pay-*; the WhatsApp after-sign-in replays now keep the whole thread, as lead-turn.ts re-runs the lead event on it, instead of grading the hidden sign-in turn; the reload_rules read answered). 437 vs 434 of 828 replies pass; the 4 after-sign-in scenarios 27 vs 21 of 48; a dashboard link in them 0 vs 1. The pay scenarios still pass 3 vs 1 of 24 (both sides ask the amount before the link). A variant adding \u00ab what they asked before signing in is their go \u00bb ran beside it the same minute and was dropped: 210 vs 223 of 414 (evals/results/2026-11-19-distry-signin-one-reply.json). codeHash unchanged: sophieCodeHash() does not read the channel blocks or the skill seed.",
+  "note": "DISTRY-GUEST-CAPS-1119 (owner 2026-11-19, prod session 2e62a802: dutrou.com, \u00ab you didn't check our site? \u00bb): a guest whose website opened their plan now gets the client brief of that brand (what their site says they sell and who buys, read as the plan org before the turn, as an account does since SOPHIE-JCURVE-1102); a site still unreadable after one read with the tools is said plainly and the address checked with them (client-brief.ts, shared with accounts); new-account step 2 proposes offers from the site (offers/proposals {source: \"site\"}) and {description} only carries their own words (the {description: what they sell} line that licensed \u00ab Offer described on the website dutrou.com \u00bb is deleted). Two pairs, candidate and origin/main fdaf854 baseline launched the same minute each in one throwaway container (fresh directories), same judge, Haiku 5.5 effort low on both sides (wires equal), skills as each code seeds them (--seed-skills all), the same 73 scenarios (four new: one-ai-read-site-{site,whatsapp}, one-ai-site-down-{site,whatsapp}; the plan scenarios now record the site read their brief makes). 234 vs 224 of 438 replies pass. New scenarios, candidate vs baseline: site-down 12/12 vs 7/12; read-site 2/12 vs 0/12, true 10/12 vs 3/12 (it now says back what the site sells instead of \u00ab I can't open dutrou.com, what do you sell? \u00bb; the remaining fail is proactive: it asks \u00ab is that right? \u00bb before moving the plan on). A first pair on an earlier candidate (skill only, no guest brief, hash d17c0bfb) passed 117 vs 109 of 219 but read-site stayed 0/6 (\u00ab I can't open dutrou.com from here \u00bb): the skill alone never reached that turn, hence the brief.",
   "model": "anthropic/claude-haiku (effort low)",
   "judge": "jev/jev-latest",
-  "codeHash": "d17c0bfb73760b2d",
+  "codeHash": "3fe571ff23869d47",
   "runs": [
     {
-      "at": "2026-11-19T12:56:54.962Z",
-      "runsPerScenario": 3,
-      "scenariosPassed": 37
-    },
-    {
-      "at": "2026-11-19T12:56:50.122Z",
+      "at": "2026-11-19T15:24:06.468Z",
       "runsPerScenario": 3,
       "scenariosPassed": 39
     },
     {
-      "at": "2026-11-19T13:02:20.959Z",
+      "at": "2026-11-19T15:29:43.059Z",
       "runsPerScenario": 3,
-      "scenariosPassed": 35
-    },
-    {
-      "at": "2026-11-19T13:02:34.362Z",
-      "runsPerScenario": 3,
-      "scenariosPassed": 38
+      "scenariosPassed": 42
     }
   ],
   "wire": {
-    "requests": 1818,
+    "requests": 966,
     "settings": [
       {
         "settings": {
@@ -46,34 +36,32 @@
           "contextManagement": true,
           "betas": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01"
         },
-        "requests": 1818
+        "requests": 966
       }
     ],
-    "requestsWithImages": 12,
+    "requestsWithImages": 6,
     "requestsWithToolsOff": 10
   },
   "pooled": {
-    "replays": 828,
-    "passRate": 0.5278,
+    "replays": 438,
+    "passRate": 0.5342,
     "criterionRate": {
-      "true": 0.9034,
-      "respectful": 0.8792,
-      "proactive": 0.8406,
-      "answers": 0.8671,
-      "nextAction": 0.849,
-      "form": 0.9855
+      "true": 0.895,
+      "respectful": 0.863,
+      "proactive": 0.8402,
+      "answers": 0.8721,
+      "nextAction": 0.8402,
+      "form": 0.9795
     },
     "failedReplies": 0,
-    "medianCostPerReplyUsd": 0.000844575,
-    "meanCostPerReplyUsd": 0.00112,
-    "medianLlmCalls": 1.0,
-    "medianLatencyMs": 4396.5,
-    "meanLatencyMs": 5101
+    "medianCostPerReplyUsd": 0.00081857,
+    "meanCostPerReplyUsd": 0.00121,
+    "medianLatencyMs": 4327
   },
   "baseline": {
-    "definition": "the code before this change (origin/main a30264d, skills as main seeds them), same 69 scenarios, launched the same minute",
+    "definition": "the code before this change (origin/main fdaf854, skills as main seeds them), same 73 scenarios, launched the same minute",
     "wire": {
-      "requests": 1835,
+      "requests": 986,
       "settings": [
         {
           "settings": {
@@ -93,51 +81,39 @@
             "contextManagement": true,
             "betas": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01"
           },
-          "requests": 1835
+          "requests": 986
         }
       ],
-      "requestsWithImages": 12,
-      "requestsWithToolsOff": 12
+      "requestsWithImages": 6,
+      "requestsWithToolsOff": 10
     },
     "runs": [
       {
-        "at": "2026-11-19T12:56:46.816Z",
-        "runsPerScenario": 3,
-        "scenariosPassed": 40
-      },
-      {
-        "at": "2026-11-19T12:56:48.348Z",
-        "runsPerScenario": 3,
-        "scenariosPassed": 38
-      },
-      {
-        "at": "2026-11-19T13:02:23.580Z",
+        "at": "2026-11-19T15:24:22.983Z",
         "runsPerScenario": 3,
         "scenariosPassed": 39
       },
       {
-        "at": "2026-11-19T13:02:22.268Z",
+        "at": "2026-11-19T15:29:49.969Z",
         "runsPerScenario": 3,
-        "scenariosPassed": 34
+        "scenariosPassed": 36
       }
     ],
     "pooled": {
-      "replays": 828,
-      "passRate": 0.5242,
+      "replays": 438,
+      "passRate": 0.5114,
       "criterionRate": {
-        "true": 0.901,
-        "respectful": 0.8708,
-        "proactive": 0.8333,
-        "answers": 0.8853,
-        "nextAction": 0.8418,
+        "true": 0.8995,
+        "respectful": 0.8539,
+        "proactive": 0.8037,
+        "answers": 0.8744,
+        "nextAction": 0.8539,
         "form": 0.9795
       },
-      "failedReplies": 1,
-      "medianCostPerReplyUsd": 0.0008560725,
-      "meanCostPerReplyUsd": 0.00115,
-      "medianLlmCalls": 1.0,
-      "medianLatencyMs": 4543.5,
-      "meanLatencyMs": 4979
+      "failedReplies": 0,
+      "medianCostPerReplyUsd": 0.000899435,
+      "meanCostPerReplyUsd": 0.00123,
+      "medianLatencyMs": 4524
     }
   }
 }
