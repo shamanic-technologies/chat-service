@@ -1,7 +1,7 @@
 {
   "id": "one-ai-get-started-site",
   "title": "A guest wants to start with their website",
-  "source": "staff test, website, 2026-11-18",
+  "source": "staff test, website, 2026-11-19",
   "surface": "site",
   "person": {
     "name": "Sam"
@@ -10,11 +10,158 @@
   "history": [],
   "message": "Get started with my website dutrou.com",
   "fixtures": {
+    "create_brand_from_url": [
+      {
+        "brandId": "b-1",
+        "domain": "dutrou.com",
+        "name": "Dutrou",
+        "created": true
+      }
+    ],
+    "propose_offers": [
+      {
+        "offers": [
+          {
+            "name": "Drain unblocking for restaurants",
+            "description": "Same-day drain and pipe unblocking for restaurant kitchens in Paris.",
+            "icon": "wrench"
+          },
+          {
+            "name": "Grease trap cleaning",
+            "description": "Scheduled grease trap cleaning contracts for restaurants.",
+            "icon": "droplet"
+          }
+        ]
+      }
+    ],
+    "confirm_offers": [
+      {
+        "offers": [
+          {
+            "id": "o-1",
+            "name": "Drain unblocking for restaurants"
+          }
+        ],
+        "chosenOfferId": "o-1",
+        "previewEmail": "preparing"
+      }
+    ],
+    "suggest_icp": [
+      {
+        "targetAudience": "Owners and managers of independent restaurants in Paris"
+      }
+    ],
+    "split_audiences": [
+      {
+        "segments": [
+          {
+            "name": "Independent restaurants, Paris",
+            "description": "Owners and managers of independent restaurants in Paris, 1 to 50 employees."
+          },
+          {
+            "name": "Restaurant groups, Ile-de-France",
+            "description": "Operations managers of restaurant groups in Ile-de-France."
+          }
+        ]
+      }
+    ],
+    "confirm_audiences": [
+      {
+        "audiences": [
+          {
+            "id": "a-1",
+            "name": "Independent restaurants, Paris"
+          }
+        ]
+      }
+    ],
+    "preview_audience": [
+      {
+        "status": "ready",
+        "companies": [
+          {
+            "name": "Le Petit Zinc",
+            "domain": "lepetitzinc.example",
+            "people": [
+              {
+                "firstName": "Marie",
+                "lastName": "D.",
+                "title": "Owner"
+              }
+            ]
+          },
+          {
+            "name": "Chez Paulette",
+            "domain": "chezpaulette.example",
+            "people": [
+              {
+                "firstName": "Hugo",
+                "lastName": "L.",
+                "title": "General Manager"
+              }
+            ]
+          },
+          {
+            "name": "Bistrot Lune",
+            "domain": "bistrotlune.example",
+            "people": [
+              {
+                "firstName": "Ines",
+                "lastName": "R.",
+                "title": "Owner"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "preview_email": [
+      {
+        "subject": "Blocked kitchen drain at Le Petit Zinc?",
+        "body": "Hi Marie,\n\nWhen a kitchen drain blocks in the middle of service, every minute costs covers. Dutrou unblocks restaurant drains in Paris the same day.\n\nWorth keeping our number for the next time?\n\nThe Dutrou team"
+      }
+    ],
+    "get_prepaid_status": [
+      {
+        "state": null,
+        "billing_account": "none yet: the payment link opens it",
+        "reload_rules": {
+          "first_topup_minimum_cents": 1000,
+          "default_reload_amount_cents": 1000
+        }
+      }
+    ],
+    "create_prepaid_checkout": [
+      {
+        "url": "https://checkout.example/session-1"
+      }
+    ],
+    "list_brands": [
+      {
+        "brands": [
+          {
+            "id": "b-1",
+            "name": "Dutrou",
+            "domain": "dutrou.com"
+          }
+        ]
+      }
+    ],
+    "list_offers": [
+      {
+        "offers": [
+          {
+            "id": "o-1",
+            "name": "Drain unblocking for restaurants"
+          }
+        ]
+      }
+    ],
     "start_sign_in": [
       {
         "ok": true,
         "codeSentTo": "sam@example.com",
-        "expiresAt": "2026-11-18T10:15:00Z"
+        "expiresAt": "2026-11-19T10:15:00Z"
       }
     ],
     "complete_sign_in": [
@@ -22,15 +169,16 @@
         "ok": true,
         "signedIn": "sam@example.com",
         "accountCreated": true,
-        "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue."
+        "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue.",
+        "plan": "The plan built in this conversation (dutrou.com) is now in this account."
       }
     ]
   },
   "facts": [
-    "This person has no distribute.you account: the assistant sees no account and can change nothing.",
+    "This person has no distribute.you account yet.",
     "What distribute.you offers is on its public site (https://distribute.you/llms.txt, /catalog, /terms): read it with read_our_website, whatever it says is true.",
-    "An account is created right in this conversation: the person's email, the 6-digit code sent to it (on the website also a phone number for urgent matters), then the setup, the first payment through a link and the launch, all here.",
-    "The person wants to start: the next step is their account, created here."
+    "Before any account, the assistant builds the person's plan right in this conversation from their website, with its API tools, on a draft opened for this conversation: brand, offer, who to reach, sample companies, a sample email (each step's answer is in the tool answers). Paying and launching need their account: their email and the 6-digit code sent to it, in this conversation (on the website also a phone number for urgent matters); the plan then becomes theirs.",
+    "The person wants to start with dutrou.com."
   ],
-  "expect": "Starts right here: asks for their email and a phone number for urgent matters, with its country code to create the account in this conversation (or calls start_sign_in when it has them). Never sends them to a sign-up page or the dashboard to start, never asks for the website again."
+  "expect": "Starts their plan from dutrou.com right away (creates the brand from it, then goes on with what they sell), without asking for their email or an account first. Never sends them to a sign-up page or the dashboard, never asks for the website again. Ends on one next step."
 }
