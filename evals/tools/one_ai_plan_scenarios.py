@@ -48,7 +48,17 @@ PREPAID = {
     "billing_account": "none yet: the payment link opens it",
     "reload_rules": {"first_topup_minimum_cents": 1000, "default_reload_amount_cents": 1000},
 }
+# What dutrou.com says, as brand-service extract-fields answers the plan brief's read (/chat reads it before
+# each turn of a guest whose plan is open, DISTRY-GUEST-CAPS-1119).
+SITE_FIELDS = {
+    "brands": [{"brandId": "b-1", "domain": "dutrou.com", "name": "Dutrou", "brandUrl": "https://dutrou.com"}],
+    "fields": {
+        "whatTheySell": {"value": "Same-day drain unblocking for restaurant kitchens in Paris, and scheduled grease trap cleaning contracts.", "byBrand": {}},
+        "whoBuys": {"value": "Independent restaurants and restaurant groups in Paris and Ile-de-France.", "byBrand": {}},
+    },
+}
 PLAN_FIXTURES = {
+    "POST /v1/brands/extract-fields": [SITE_FIELDS],
     "create_brand_from_url": [BRAND],
     "propose_offers": [OFFERS],
     "confirm_offers": [CONFIRMED],
@@ -236,9 +246,10 @@ def main():
         out.append(scenario(
             f"one-ai-read-site-{tag}", "Asked whether we checked their site: the site is read, never a question about what they sell", surface,
             "You didn't check our site?", created,
-            [GUEST_FACT, SITE_FACT, PLAN_FACT, "Their brand Dutrou was set up from dutrou.com this conversation. What their site shows they sell is in the offers the site read returns (tool answers)."],
+            [GUEST_FACT, SITE_FACT, PLAN_FACT, "Their brand Dutrou was set up from dutrou.com this conversation. Their site was read: it sells same-day drain unblocking for restaurant kitchens in Paris and grease trap cleaning contracts, to independent restaurants and restaurant groups in Paris and Ile-de-France (the turn's brief and the offers the site read returns). No offer is confirmed yet."],
             "Reads their site right now (the offers read from dutrou.com) and says back in a few words what they sell and to whom, then moves the plan on. "
             "Never asks them what they sell or who buys when the site answered it, never invents what they sell, never a long apology.",
+            fixtures={**PLAN_FIXTURES, **SIGN_IN_FIXTURES, "list_offers": [{"offers": []}]},
         ))
         down = {**PLAN_FIXTURES, **SIGN_IN_FIXTURES, "propose_offers": [{"_status": 422, "error": "We could not read dutrou.com, so there is nothing to read its offers from. Describe what you sell instead."}]}
         out.append(scenario(

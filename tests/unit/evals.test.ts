@@ -8,6 +8,7 @@ import { COST_PER_REPLY_TARGET_USD, summarise, type ReplayResult } from "../../s
 import { loadScenarios, type Scenario } from "../../src/evals/scenario.js";
 import { readSkillFrom, skillIndexBlockFrom } from "../../src/lib/skills.js";
 import { sophieCodeHash } from "../../src/agent/sophie.js";
+import { EXTRACT_FIELDS_KEY, fixtureGuestPlanBrief } from "../../src/evals/fixture-situation.js";
 
 const ROOT = join(__dirname, "../..");
 const SCENARIOS_DIR = join(ROOT, "evals/scenarios");
@@ -219,5 +220,22 @@ describe("Sophie changes only with a fresh eval run (merge gate)", () => {
       expect(run.ownerDecision!.words.trim().length).toBeGreaterThan(0);
       expect(run.ownerDecision!.codeHash).toBe(sophieCodeHash());
     }
+  });
+});
+
+describe("a guest's plan brief in the replay, as /chat builds it (DISTRY-GUEST-CAPS-1119)", () => {
+  const readSite = scenarios.find((s) => s.id === "one-ai-read-site-site")!;
+  const fresh = scenarios.find((s) => s.id === "one-ai-site-down-site")!;
+
+  it("their brand opened from their website: the brief says what the site says they sell", async () => {
+    const brief = await fixtureGuestPlanBrief(readSite);
+    expect(brief).toContain("brandId b-1");
+    expect(brief).toContain("What they sell: Same-day drain unblocking for restaurant kitchens in Paris");
+  });
+
+  it("an unreadable site is said, with the instruction to check the address; no brand yet = no brief", async () => {
+    const down = { ...readSite, fixtures: { ...readSite.fixtures, [EXTRACT_FIELDS_KEY]: [{ _status: 422, error: "We could not read dutrou.com" }] } } as Scenario;
+    expect(await fixtureGuestPlanBrief(down)).toContain("the address does not open");
+    expect(await fixtureGuestPlanBrief(fresh)).toBe("");
   });
 });

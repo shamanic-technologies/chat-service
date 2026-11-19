@@ -41,6 +41,28 @@
   ],
   "message": "You didn't check our site?",
   "fixtures": {
+    "POST /v1/brands/extract-fields": [
+      {
+        "brands": [
+          {
+            "brandId": "b-1",
+            "domain": "dutrou.com",
+            "name": "Dutrou",
+            "brandUrl": "https://dutrou.com"
+          }
+        ],
+        "fields": {
+          "whatTheySell": {
+            "value": "Same-day drain unblocking for restaurant kitchens in Paris, and scheduled grease trap cleaning contracts.",
+            "byBrand": {}
+          },
+          "whoBuys": {
+            "value": "Independent restaurants and restaurant groups in Paris and Ile-de-France.",
+            "byBrand": {}
+          }
+        }
+      }
+    ],
     "create_brand_from_url": [
       {
         "brandId": "b-1",
@@ -186,12 +208,7 @@
     ],
     "list_offers": [
       {
-        "offers": [
-          {
-            "id": "o-1",
-            "name": "Drain unblocking for restaurants"
-          }
-        ]
+        "offers": []
       }
     ],
     "start_sign_in": [
@@ -215,7 +232,7 @@
     "This person has no distribute.you account yet.",
     "What distribute.you offers is on its public site (https://distribute.you/llms.txt, /catalog, /terms): read it with read_our_website, whatever it says is true.",
     "Before any account, the assistant builds the person's plan right in this conversation from their website, with its API tools, on a draft opened for this conversation: brand, offer, who to reach, sample companies, a sample email (each step's answer is in the tool answers). Paying and launching need their account: their email and the 6-digit code sent to it, in this conversation (on the website also a phone number for urgent matters); the plan then becomes theirs.",
-    "Their brand Dutrou was set up from dutrou.com this conversation. What their site shows they sell is in the offers the site read returns (tool answers)."
+    "Their brand Dutrou was set up from dutrou.com this conversation. Their site was read: it sells same-day drain unblocking for restaurant kitchens in Paris and grease trap cleaning contracts, to independent restaurants and restaurant groups in Paris and Ile-de-France (the turn's brief and the offers the site read returns). No offer is confirmed yet."
   ],
   "expect": "Reads their site right now (the offers read from dutrou.com) and says back in a few words what they sell and to whom, then moves the plan on. Never asks them what they sell or who buys when the site answered it, never invents what they sell, never a long apology."
 }

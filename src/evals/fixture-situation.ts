@@ -8,7 +8,7 @@
 // public page itself and passes its opening text: same source, rawer form.
 // ---------------------------------------------------------------------------
 
-import { formatClientBrief, readClientBrief } from "../lib/client-brief.js";
+import { formatClientBrief, readClientBrief, readSiteFields } from "../lib/client-brief.js";
 import type { SituationReader } from "../agent/situation.js";
 import type { Scenario } from "./scenario.js";
 
@@ -76,3 +76,37 @@ export async function fixtureClientBrief(scenario: Scenario): Promise<string> {
   });
   return formatClientBrief(brands);
 }
+
+/** The extract-fields answer a scenario recorded (the site read as the plan org), keyed as the gateway names it. */
+export const EXTRACT_FIELDS_KEY = "POST /v1/brands/extract-fields";
+
+/**
+ * A guest's plan brief (DISTRY-GUEST-CAPS-1119), as /chat builds it: once their
+ * website opened their brand (a POST /v1/brands in the history), the brand,
+ * its offers and what the site says, from the recorded extract-fields answer
+ * (`_status` >= 400 = the site could not be read). No brand yet: no brief.
+ */
+export async function fixtureGuestPlanBrief(scenario: Scenario): Promise<string> {
+  let brand: { id: string; domain: string | null } | null = null;
+  for (const m of scenario.history) {
+    for (const call of ((m as { toolCalls?: Array<{ args?: Record<string, unknown>; result?: unknown }> }).toolCalls ?? [])) {
+      const a = call.args ?? {};
+      if (String(a.method ?? "").toUpperCase() !== "POST" || String(a.path ?? "").replace(/\/+$/, "") !== "/v1/brands") continue;
+      const data = (call.result as { data?: { brandId?: unknown; domain?: unknown } } | null)?.data;
+      if (typeof data?.brandId === "string") brand = { id: data.brandId, domain: typeof data.domain === "string" ? data.domain : null };
+    }
+  }
+  if (!brand) return "";
+  const site = scenario.fixtures[EXTRACT_FIELDS_KEY]?.[0] as Record<string, unknown> | undefined;
+  const brands = await readClientBrief({
+    listBrands: async () => ({ brands: [{ id: brand!.id, name: null, domain: brand!.domain }] }),
+    listOffers: async () => scenario.fixtures.list_offers?.[0] ?? { offers: [] },
+    readWebsite: async () => {
+      if (!site) throw new Error("no recorded site read");
+      if (typeof site._status === "number" && site._status >= 400) throw new Error(`brand-service extract-fields ${site._status}: ${String(site.error ?? "")}`);
+      return readSiteFields(site);
+    },
+  });
+  return formatClientBrief(brands);
+}
+

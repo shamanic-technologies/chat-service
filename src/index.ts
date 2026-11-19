@@ -545,6 +545,15 @@ import { buildContextUsageEvent } from "./lib/context-usage.js";
  * differently from what the caller asked for is the same quiet wrongness as
  * serving a fallback model.
  */
+/** The client brief's reads for a guest's plan: its one brand, as the plan org (the signup page's own reads). */
+function planBriefReads(brandId: string, domain: string | null, params: { orgId: string; userId: string; runId: string; trackingHeaders: Record<string, string> }) {
+  return {
+    listBrands: async () => ({ brands: [{ id: brandId, name: null, domain }] }),
+    listOffers: (id: string) => listOffers(id, params),
+    readWebsite: async (id: string) => readSiteFields(await extractBrandFields([...CLIENT_BRIEF_FIELDS], [id], params)),
+  };
+}
+
 /** A guest's plan as the session holds it (lib/guest-plan.ts); null until their website opened one, and once it is theirs. */
 async function readSessionPlan(sessionId: string): Promise<PlanOrg | null> {
   const [s] = await db
@@ -4335,8 +4344,11 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     // The client brief (SOPHIE-JCURVE-1102): an account holder's turn on a chat
     // that speaks for us starts knowing their brands, offers and what they sell
     // (read from their website), never asking them for it.
+    // A guest whose website opened their plan gets the same brief, read AS the plan org (the signup
+    // page's reads, billed to its advance): what their site says they sell is read, never asked
+    // (DISTRY-GUEST-CAPS-1119, prod 2026-11-19 dutrou.com: « you didn't check our site? »).
+    let brief: string | null = null;
     if (speaksForUs && !sessionIsGuest && !(leadTurn && (!leadTurn.ownBrand || leadTurn.guest))) {
-      let brief: string;
       try {
         brief = formatClientBrief(
           await readClientBrief({
@@ -4350,6 +4362,20 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         console.error(`[chat] session="${currentSessionId}" client brief unreadable:`, err);
         brief = clientBriefUnavailable(err);
       }
+    } else if (speaksForUs && sessionIsGuest && currentSessionId && !(leadTurn && !leadTurn.ownBrand)) {
+      const plan = await readSessionPlan(currentSessionId);
+      if (plan?.brandId) {
+        const planIdentity = { orgId: plan.orgId, userId: plan.userId };
+        const planParams = { ...planIdentity, runId: await guestPlanDeps({}).runFor(planIdentity), trackingHeaders: { "x-brand-id": plan.brandId } };
+        try {
+          brief = formatClientBrief(await readClientBrief(planBriefReads(plan.brandId, plan.domain, planParams)));
+        } catch (err) {
+          console.error(`[chat] session="${currentSessionId}" guest plan brief unreadable:`, err);
+          brief = clientBriefUnavailable(err);
+        }
+      }
+    }
+    if (brief !== null) {
       turnContextBlock += brief;
       systemPrompt = stableSystemPrompt + turnContextBlock;
       if (anthropicCache) anthropicTurnContext = turnContextBlock;
