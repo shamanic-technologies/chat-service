@@ -14,6 +14,7 @@ process.env.CLIENT_SERVICE_URL = process.env.CLIENT_SERVICE_URL || "https://clie
 process.env.CLIENT_SERVICE_API_KEY = process.env.CLIENT_SERVICE_API_KEY || "test-client-key";
 process.env.CAMPAIGN_SERVICE_URL = process.env.CAMPAIGN_SERVICE_URL || "https://campaign.test.local";
 process.env.CAMPAIGN_SERVICE_API_KEY = process.env.CAMPAIGN_SERVICE_API_KEY || "test-campaign-key";
+process.env.COPILOT_FOLLOWUP_ORG_ID = process.env.COPILOT_FOLLOWUP_ORG_ID || "99999999-9999-4999-8999-999999999990";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const BRAND = "22222222-2222-4222-8222-222222222222";
@@ -128,6 +129,8 @@ const ANSWER = "Hi! **Two** of your campaigns ran today — see [your results](h
 
 function baseRoutes(gemini: { calls: number; bodies: Array<Record<string, unknown>> }, app: unknown, sends: Array<{ url: string; body: Record<string, unknown> }>, linked: boolean): MockRoute[] {
   return [
+    // DISTRY-GUEST-CAPS-1119: an account's turn asks billing whether the org pays (a paying client is never capped).
+    { match: (url) => url.includes("/internal/accounts/by-org/") && url.endsWith("/cash"), respond: () => ({ ok: true, body: { cash_paid_cents: 5000, credited_cents: 5000, non_cash_credit_cents: 0 } }) },
     {
       match: (url) => url.startsWith("http://127.0.0.1:") && url.endsWith("/chat"),
       respond: async (_url, init) => {

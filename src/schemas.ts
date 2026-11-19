@@ -1341,7 +1341,7 @@ const ChannelReplyDaySchema = z.object({
   received: z.number().int().openapi({ description: "Inbound WhatsApp messages the Copilot handled that day." }),
   delivered: z.number().int().openapi({ description: "Of those, replies crm-service accepted (left from the line)." }),
   notDelivered: z.number().int().openapi({ description: "Replies written (or the apology text) that never left: the send was refused. Broken when above zero." }),
-  refused: z.number().int().openapi({ description: "Website messages the guard stopped before any spend (more than 20 from one visitor in 10 minutes, or the day's cap on guest answers). Not counted in `received`. Zero on the other surfaces." }),
+  refused: z.number().int().openapi({ description: "Website messages the guard stopped before any spend (more than 20 from one visitor in 10 minutes). Not counted in `received`. Zero on the other surfaces." }),
 });
 
 const ChannelReplyDaysResponseSchema = z
@@ -1360,6 +1360,48 @@ registry.registerPath({
   },
   responses: {
     200: { description: "The daily series", content: { "application/json": { schema: ChannelReplyDaysResponseSchema } } },
+    400: { description: "Invalid days", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing x-api-key header", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+// --- Internal: Distry's spend on non-clients per day (DISTRY-GUEST-CAPS-1119) ---
+
+export const DistrySpendDaysQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(30).openapi({ description: "How many UTC days, today included (1..90, default 30)." }),
+});
+
+const DistrySpendDaySchema = z.object({
+  day: z.string().openapi({ description: "UTC day, YYYY-MM-DD." }),
+  nonClientSpendUsd: z.number().openapi({
+    description:
+      "What Distry spent of OUR money on non-clients that day, read from the runs ledger (committed cost, gross): guest turns on every surface (their run trees under our org) + what guests' plan orgs spent + what accounts that never paid spent. Re-measured every minute.",
+  }),
+  thresholdUsd: z.number().openapi({ description: "The day's limit for all non-clients together (DISTRY_NONCLIENT_DAILY_USD, default 30). At or above it every non-client gets the limit notice." }),
+  visitorsCut: z.number().int().openapi({ description: "Distinct visitors with no account stopped at their own limit (DISTRY_VISITOR_USD, default 5) that day." }),
+  turnsRefusedByDayCap: z.number().int().openapi({ description: "Messages answered by the limit notice (no model) because the day's limit was reached." }),
+  alertFired: z.boolean().openapi({ description: "The spend reached the limit that day and the owner was alerted (Telegram + email, once per day). Red on Monitoring." }),
+  alertFiredAt: z.string().nullable().openapi({ description: "When the limit was first reached that day (ISO), null when it never was." }),
+  measuredAt: z.string().nullable().openapi({ description: "Last measure of that day (ISO); null = no measure stored that day (the spend reads 0)." }),
+});
+
+const DistrySpendDaysResponseSchema = z
+  .object({ days: z.array(DistrySpendDaySchema).openapi({ description: "One row per UTC day, oldest first, days with no spend at zero." }) })
+  .openapi("DistrySpendDaysResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/copilot/distry-spend/daily",
+  tags: ["Internal"],
+  summary: "Distry's spend on non-clients per day, against the day's limit (Monitoring)",
+  description:
+    "Owner 2026-11-19: a visitor with no account stops at $5, all non-clients together at $30 a day of our money; a paying client is never capped. Each day: the measured spend, the limit, visitors stopped at their own limit, messages refused by the day's limit, and whether the alert fired. A day with `alertFired` is red.",
+  request: {
+    headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
+    query: DistrySpendDaysQuerySchema,
+  },
+  responses: {
+    200: { description: "The daily series", content: { "application/json": { schema: DistrySpendDaysResponseSchema } } },
     400: { description: "Invalid days", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
     401: { description: "Missing x-api-key header", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
@@ -1683,7 +1725,7 @@ registry.registerPath({
     "They can sign up or in right in the chat (their email, a phone number, the code sent to the email): the session then runs with their account, and they set up, pay through a link and launch without leaving the page. " +
     "Answers in the response, usually within 5-20 s; an onboarding step can take minutes. A turn runs to its end even when the caller stops waiting: send the SAME messageId again and it answers `in_progress` at once, then the whole stored answer. One turn at a time per visitor. " +
     "When a guest gives their WhatsApp number or email to continue there, the assistant ties it to the conversation (`continuedOn`, `handOff`). " +
-    "No answer count walls a visitor. A guard bounds abuse (`busy`): 20 messages per visitor per 10 minutes, and a daily cap on guest answers (`WEB_GUEST_DAILY_TURN_CAP`, default 5000). A guest's spend is a Copilot support run under distribute.you's org; a signed-in visitor's turns are their own org's.",
+    "No answer count walls a visitor. A guard bounds abuse (`busy`): 20 messages per visitor per 10 minutes. Spend is bounded in dollars read from the runs ledger: a visitor with no account stops at $5 (`DISTRY_VISITOR_USD`), all non-clients together at $30 a day (`DISTRY_NONCLIENT_DAILY_USD`); past either the answer is the limit notice (status `answered`, no model ran). A guest's spend is a Copilot support run under distribute.you's org; a signed-in visitor's turns are their own org's.",
   request: {
     headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
     body: { content: { "application/json": { schema: WebMessageRequestSchema } } },

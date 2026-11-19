@@ -546,3 +546,61 @@ export const localLlmJobs = pgTable(
   },
   (table) => [index("local_llm_jobs_org_status_idx").on(table.orgId, table.status, table.createdAt)],
 );
+
+// ---------------------------------------------------------------------------
+// Distry's spend on NON-CLIENTS (migration 0039, DISTRY-GUEST-CAPS-1119, owner
+// 2026-11-19): a visitor with no account stops at $5 of OUR money, all
+// non-clients together at $30 a day; a paying client is never capped. Every
+// figure is read from the runs ledger (lib/distry-spend.ts); these rows only
+// say WHICH runs and orgs are non-client spend, and what was refused.
+// ---------------------------------------------------------------------------
+
+/** One non-client turn: run (its root run id) or refused (`person_cap` / `day_cap`, no run). */
+export const distrySpendTurns = pgTable(
+  "distry_spend_turns",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** UTC day, YYYY-MM-DD. */
+    day: text("day").notNull(),
+    /** Who: `web:<visitorId>`, `phone:<e164>`, `email:<address>` for a guest; `org:<orgId>` for an account that never paid. */
+    personKey: text("person_key").notNull(),
+    /** web | whatsapp | email | telegram */
+    surface: text("surface").notNull(),
+    /** The org the turn runs under: ours for a guest, the account's otherwise. */
+    orgId: text("org_id").notNull(),
+    runId: text("run_id"),
+    /** ran | person_cap | day_cap */
+    verdict: text("verdict").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("distry_spend_turns_person_idx").on(table.personKey), index("distry_spend_turns_day_idx").on(table.day)],
+);
+
+/** An org whose spend is non-client spend (a guest's plan org, an account that never paid): its ledger total when first seen that day. */
+export const distrySpendOrgs = pgTable(
+  "distry_spend_orgs",
+  {
+    day: text("day").notNull(),
+    orgId: text("org_id").notNull(),
+    /** plan | account */
+    kind: text("kind").notNull(),
+    /** Ledger total (gross, cents) at first sight that day: the day's spend is the total now minus this. */
+    startCents: text("start_cents").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.orgId] })],
+);
+
+/** One row per UTC day: the measured non-client spend and the alert, once per day. */
+export const distrySpendDays = pgTable("distry_spend_days", {
+  day: text("day").primaryKey(),
+  spendCents: text("spend_cents").notNull(),
+  thresholdCents: text("threshold_cents").notNull(),
+  refreshedAt: timestamp("refreshed_at", { withTimezone: true }).notNull(),
+  /** Set once, the first time the day's spend reached its threshold (the claim that sends the alert). */
+  alertFiredAt: timestamp("alert_fired_at", { withTimezone: true }),
+  alertTelegramAt: timestamp("alert_telegram_at", { withTimezone: true }),
+  alertEmailAt: timestamp("alert_email_at", { withTimezone: true }),
+  /** The last delivery error per channel, null once delivered. */
+  alertError: text("alert_error"),
+});

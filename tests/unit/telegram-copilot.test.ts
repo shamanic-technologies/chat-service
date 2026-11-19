@@ -11,6 +11,10 @@ import {
   type TelegramDeps,
 } from "../../src/lib/telegram-copilot.js";
 import { TelegramMessageRequestSchema } from "../../src/schemas.js";
+import { DISTRY_LIMIT_NOTICE_ACCOUNT, type DistryGate, type DistryPerson } from "../../src/lib/distry-spend.js";
+
+/** Distry's limits never reached here (their own tests: distry-spend-pg, and the capped door tests). */
+const PASS_GATE: DistryGate = { gate: async (person) => ({ run: true, tracked: false, person }), record: async () => {} };
 
 process.env.CLIENT_SERVICE_URL = process.env.CLIENT_SERVICE_URL || "https://client.test.local";
 process.env.CLIENT_SERVICE_API_KEY = process.env.CLIENT_SERVICE_API_KEY || "test-client-key";
@@ -96,6 +100,7 @@ describe("processTelegramMessage", () => {
     createRootRun: vi.fn(async () => "run-1"),
     runChat: vi.fn(async () => ({ status: 200, body: sse({ type: "token", content: "Hi! Your **Outbound** campaign sent 12 emails today." }) })),
     sendReply: vi.fn(async () => {}),
+    spend: PASS_GATE,
     ...over,
   });
 
@@ -142,6 +147,18 @@ describe("processTelegramMessage", () => {
     const d = deps(db, { sendReply: vi.fn(async () => { throw new Error("telegram delivery_failed: blocked"); }) });
     await processTelegramMessage(d, "row-1");
     expect(updates.at(-1)).toMatchObject({ status: "failed", sentAt: null });
+  });
+
+  it("an account that never paid, past the day's non-client limit: the notice in the chat, no run, no model (DISTRY-GUEST-CAPS-1119)", async () => {
+    const { db, updates } = fakeDb([[row({ chatId: "12345", messageId: "7", text: "hi" })]]);
+    const gate = vi.fn(async (person: DistryPerson) => ({ run: false as const, reason: "day_cap" as const, notice: DISTRY_LIMIT_NOTICE_ACCOUNT, person }));
+    const d = deps(db, { spend: { gate, record: vi.fn() } });
+    await processTelegramMessage(d, "row-1");
+    expect(gate).toHaveBeenCalledWith({ key: `org:${ORG}`, surface: "telegram", guest: false, turnOrgId: ORG, planOrgId: null });
+    expect(d.createRootRun).not.toHaveBeenCalled();
+    expect(d.runChat).not.toHaveBeenCalled();
+    expect(d.sendReply).toHaveBeenCalledWith({ orgId: ORG, text: DISTRY_LIMIT_NOTICE_ACCOUNT });
+    expect(updates.at(-1)).toMatchObject({ status: "answered" });
   });
 
   it("an already answered row is never answered twice", async () => {

@@ -220,9 +220,19 @@ import {
   StaffRequestValidationError,
   fetchRequesterEmail,
   isStaffEmail,
+  sendStaffTelegram,
   submitStaffRequest,
   toStaffRequestBody,
 } from "./lib/staff-requests.js";
+import {
+  distryGateOver,
+  distrySpendDaysSeries,
+  isPayingOrgFromBilling,
+  orgTotalCentsFromLedger,
+  refreshDistrySpendDay,
+  runTreeCentsFromLedger,
+  sendDistryAlertEmail,
+} from "./lib/distry-spend.js";
 import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
 import { stripNul } from "./lib/strip-nul.js";
 import { chatTurnSupport, COPILOT_SUPPORT, type RunSupport } from "./lib/support-marks.js";
@@ -400,7 +410,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -566,6 +576,15 @@ import { buildContextUsageEvent } from "./lib/context-usage.js";
  * differently from what the caller asked for is the same quiet wrongness as
  * serving a fallback model.
  */
+/** The client brief's reads for a guest's plan: its one brand, as the plan org (the signup page's own reads). */
+function planBriefReads(brandId: string, domain: string | null, params: { orgId: string; userId: string; runId: string; trackingHeaders: Record<string, string> }) {
+  return {
+    listBrands: async () => ({ brands: [{ id: brandId, name: null, domain }] }),
+    listOffers: (id: string) => listOffers(id, params),
+    readWebsite: async (id: string) => readSiteFields(await extractBrandFields([...CLIENT_BRIEF_FIELDS], [id], params)),
+  };
+}
+
 /** A guest's plan as the session holds it (lib/guest-plan.ts); null until their website opened one, and once it is theirs. */
 async function readSessionPlan(sessionId: string): Promise<PlanOrg | null> {
   const [s] = await db
@@ -4388,8 +4407,11 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     // The client brief (SOPHIE-JCURVE-1102): an account holder's turn on a chat
     // that speaks for us starts knowing their brands, offers and what they sell
     // (read from their website), never asking them for it.
+    // A guest whose website opened their plan gets the same brief, read AS the plan org (the signup
+    // page's reads, billed to its advance): what their site says they sell is read, never asked
+    // (DISTRY-GUEST-CAPS-1119, prod 2026-11-19 dutrou.com: « you didn't check our site? »).
+    let brief: string | null = null;
     if (speaksForUs && !sessionIsGuest && !(leadTurn && (!leadTurn.ownBrand || leadTurn.guest))) {
-      let brief: string;
       try {
         brief = formatClientBrief(
           await readClientBrief({
@@ -4403,6 +4425,20 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         console.error(`[chat] session="${currentSessionId}" client brief unreadable:`, err);
         brief = clientBriefUnavailable(err);
       }
+    } else if (speaksForUs && sessionIsGuest && currentSessionId && !(leadTurn && !leadTurn.ownBrand)) {
+      const plan = await readSessionPlan(currentSessionId);
+      if (plan?.brandId) {
+        const planIdentity = { orgId: plan.orgId, userId: plan.userId };
+        const planParams = { ...planIdentity, runId: await guestPlanDeps({}).runFor(planIdentity), trackingHeaders: { "x-brand-id": plan.brandId } };
+        try {
+          brief = formatClientBrief(await readClientBrief(planBriefReads(plan.brandId, plan.domain, planParams)));
+        } catch (err) {
+          console.error(`[chat] session="${currentSessionId}" guest plan brief unreadable:`, err);
+          brief = clientBriefUnavailable(err);
+        }
+      }
+    }
+    if (brief !== null) {
       turnContextBlock += brief;
       systemPrompt = stableSystemPrompt + turnContextBlock;
       if (anthropicCache) anthropicTurnContext = turnContextBlock;
@@ -6583,6 +6619,27 @@ app.get("/internal/copilot/channel-replies/daily", requireInternalAuth, async (r
   res.json({ days: await channelReplyDays(db, parsed.data.days, new Date(), parsed.data.channel) });
 });
 
+// Distry's limits on our money (DISTRY-GUEST-CAPS-1119): read from the runs ledger and billing.
+const distrySpend = {
+  ourOrgId: () => {
+    const orgId = process.env.COPILOT_FOLLOWUP_ORG_ID;
+    if (!orgId) throw new Error("COPILOT_FOLLOWUP_ORG_ID not configured: Distry cannot tell our own turns from a client's");
+    return orgId;
+  },
+  isPayingOrg: (orgId: string) => isPayingOrgFromBilling(orgId),
+  runTreeCents: (orgId: string, runIds: string[]) => runTreeCentsFromLedger(orgId, runIds),
+  orgTotalCents: (orgId: string) => orgTotalCentsFromLedger(orgId),
+};
+const distryGateLive = distryGateOver({ db, ...distrySpend });
+
+app.get("/internal/copilot/distry-spend/daily", requireInternalAuth, async (req, res) => {
+  const parsed = DistrySpendDaysQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  res.json({ days: await distrySpendDaysSeries(db, parsed.data.days) });
+});
+
 const telegramDeps: TelegramDeps = {
   db,
   resolveChat: (chatId) => resolveTelegramChat(chatId),
@@ -6604,6 +6661,7 @@ const telegramDeps: TelegramDeps = {
     return { status: res.status, body: await res.text() };
   },
   sendReply: (args) => sendTelegramToOrg(args),
+  spend: distryGateLive,
 };
 
 app.post("/internal/copilot/telegram-messages", requireInternalAuth, async (req, res) => {
@@ -6651,6 +6709,7 @@ const webDeps: WebDeps = {
   reachWhatsapp: (args) => reachWhatsapp(args),
   sendWhatsapp: (args) => sendWhatsappReply(args),
   handOverByEmail: (body) => handOverByEmailToCrm(body),
+  spend: distryGateLive,
 };
 
 // A visitor of our public site talks to the Copilot in the page (DISTRY-WEB-CHAT-1117,
@@ -6701,6 +6760,7 @@ const leadTurnDeps: LeadTurnDeps = {
     });
     return { status: res.status, body: await res.text() };
   },
+  spend: distryGateLive,
 };
 
 app.post("/internal/copilot/lead-turns", requireInternalAuth, async (req, res) => {
@@ -7252,6 +7312,19 @@ if (process.env.NODE_ENV !== "test") {
       failInterruptedProactiveTurns(db, bootedAt)
         .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
         .catch((err) => console.error("[chat-service] proactive turn recovery failed:", err));
+
+      // Distry's non-client spend: measured every minute from the runs ledger, the day's alert
+      // sent once (DISTRY-GUEST-CAPS-1119). After listen (network reads), one at a time.
+      let distryMeasuring = false;
+      const measureDistry = () => {
+        if (distryMeasuring) return;
+        distryMeasuring = true;
+        refreshDistrySpendDay({ db, ...distrySpend, sendTelegram: sendStaffTelegram, sendEmail: (f) => sendDistryAlertEmail(f) })
+          .catch((err) => console.error("[chat-service] Distry spend measure failed (the day limit reads the last stored measure):", err))
+          .finally(() => { distryMeasuring = false; });
+      };
+      setTimeout(measureDistry, 20_000).unref();
+      setInterval(measureDistry, 60_000).unref();
 
       // Telegram messages a restart cut off mid-turn: answered once the port is up.
       setTimeout(() => {

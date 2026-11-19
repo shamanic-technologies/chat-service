@@ -557,6 +557,16 @@ describe("campaign next steps: the reply-timing line is always said (CAMPAIGN-NE
     expect(index).not.toContain("find_steps");
   });
 
+  it("the offer is READ from their site before anything is asked (DISTRY-GUEST-CAPS-1119, prod 2026-11-19 dutrou.com)", () => {
+    const c = SEED_SKILLS.find((s) => s.slug === "new-account")!.content;
+    // The site read the signup page makes; an unreadable address is said, never papered over.
+    expect(c).toContain('offers/proposals {source: "site"}');
+    expect(c).toContain("the address does not open");
+    expect(c.indexOf('{source: "site"}')).toBeLessThan(c.indexOf("{description}"));
+    // What licensed « Offer described on the website dutrou.com »: a description to fill with nothing read.
+    expect(c).not.toContain("{description: what they sell}");
+  });
+
   it("the setup skill walks brand, offer, target, audiences, preview, payment, start in order", () => {
     const c = SEED_SKILLS.find((s) => s.slug === "new-account")!.content;
     const order = [
