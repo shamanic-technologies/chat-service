@@ -74,7 +74,12 @@ export async function readCompanyFinancials(args: Record<string, unknown>, fetch
     throw new Error(`[${READ_COMPANY_FINANCIALS_TOOL_NAME}] features-service answered no clients or totals: ${text.slice(0, 300)}`);
   }
   // What the figures stand on (period, basis, exclusions...): every top-level fact but the rows.
-  const basis = Object.fromEntries(Object.entries(body).filter(([k]) => k !== "clients" && k !== "totals"));
+  // Our own orgs' rows (staff, test orgs) are in no total: their totals stay, the rows do not.
+  const basis = Object.fromEntries(
+    Object.entries(body)
+      .filter(([k]) => k !== "clients" && k !== "totals" && k !== "ownOrgs")
+      .map(([k, v]) => (Array.isArray(v) && v.length > 10 ? [k, { first10: v.slice(0, 10), count: v.length }] : [k, v])),
+  );
   const orgId = typeof args.orgId === "string" && args.orgId.trim() ? args.orgId.trim() : null;
   if (orgId) {
     const one = (rows as Row[]).find((r) => r.orgId === orgId);

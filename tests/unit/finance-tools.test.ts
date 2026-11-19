@@ -7,7 +7,7 @@ const row = (orgId: string, name: string, revenue: number, cost: number) => ({
   marginUsd: { net: revenue - cost, beforeDiscount: revenue - cost }, marginPct: { net: revenue > 0 ? (revenue - cost) / revenue : null, beforeDiscount: null },
   marginUnavailableReason: null, cashPaidUsd: revenue, creditGivenUsd: 0, balanceUsd: 0, cardFeesOtherCurrencies: [],
 });
-const served = { since: "inception", basis: "net first", totals: { clients: 3, revenueUsd: { net: 150, beforeDiscount: 160 }, marginUsd: { net: 40, beforeDiscount: 50 } }, clients: [row("a", "Acme", 100, 50), row("b", "Beta", 0, 30), row("c", "Cy", 50, 0)] };
+const served = { since: "inception", basis: "net first", ownOrgs: [{ orgId: "us" }], totals: { clients: 3, revenueUsd: { net: 150, beforeDiscount: 160 }, marginUsd: { net: 40, beforeDiscount: 50 } }, clients: [row("a", "Acme", 100, 50), row("b", "Beta", 0, 30), row("c", "Cy", 50, 0)] };
 const fetchServed: FeaturesFetch = async (path) => {
   expect(path).toBe("/internal/stats/client-financials");
   return new Response(JSON.stringify(served));
@@ -18,6 +18,7 @@ describe("read_company_financials serves features-service's figures, never compu
     const out = await readCompanyFinancials({}, fetchServed);
     expect(out.totals).toEqual(served.totals);
     expect(out).toMatchObject({ since: "inception", basis: "net first", clientsInTotals: 3 });
+    expect(out.ownOrgs).toBeUndefined();
     expect((out.clients as Array<{ client: string }>).map((c) => c.client)).toEqual(["Acme", "Cy", "Beta"]);
   });
 
