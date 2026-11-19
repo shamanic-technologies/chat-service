@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildSituationBrief, type SituationReader } from "../../src/agent/situation.js";
 import { SOPHIE_CONFIG_KEY, SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS, dashboardPagesBlock } from "../../src/agent/sophie.js";
-import { SOPHIE_CONFIG, isSelfSeededConfigKey, seedSophieConfig } from "../../src/lib/seed-platform-configs.js";
+import { SOPHIE_CONFIG, isSelfSeededConfigKey } from "../../src/lib/seed-platform-configs.js";
 
 function reader(over: Partial<SituationReader> = {}): SituationReader {
   return {
@@ -198,12 +198,10 @@ describe("the brief states the account as the dashboard shows it (SOPHIE-BRIEF-E
 
 describe("Sophie's definition is chat-service's", () => {
   it("the copilot config is seeded from code", async () => {
-    const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
-    const values = vi.fn().mockReturnValue({ onConflictDoUpdate });
-    await seedSophieConfig({ insert: vi.fn().mockReturnValue({ values }) } as never);
-    expect(values.mock.calls[0][0]).toMatchObject({ key: SOPHIE_CONFIG_KEY, systemPrompt: SOPHIE_SYSTEM_PROMPT, supportKind: "copilot" });
+    // Seeded through Distry's versions (DISTRY-PRINCIPAL-1119, tests/unit/distry-config.test.ts).
+    expect(SOPHIE_CONFIG).toMatchObject({ key: SOPHIE_CONFIG_KEY, systemPrompt: SOPHIE_SYSTEM_PROMPT, supportKind: "copilot" });
     // SOPHIE-ON-HAIKU-1113: Haiku 5.5 at effort low, the effort seeded on the row (/chat sends it as output_config.effort).
-    expect(values.mock.calls[0][0]).toMatchObject({ provider: "anthropic", model: "claude-haiku", effort: "low" });
+    expect(SOPHIE_CONFIG).toMatchObject({ provider: "anthropic", model: "claude-haiku", effort: "low" });
     const seeded = SOPHIE_CONFIG;
     expect(seeded.systemPrompt).toBe(SOPHIE_SYSTEM_PROMPT);
     expect(seeded.allowedTools).toEqual(SOPHIE_TOOLS);

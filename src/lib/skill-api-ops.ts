@@ -40,6 +40,12 @@ export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> =
   list_declared_sales_paths: [NO_API_ROUTE],
   declare_sales_path: [NO_API_ROUTE],
 
+  // Distry's principal tools (DISTRY-PRINCIPAL-1119): staff conversations only
+  find_stakeholders: ["GET /v1/orgs/people"],
+  read_person_unibox: ["GET /v1/orgs/people/timeline"],
+  read_organization_unibox: ["GET /v1/orgs/people/timeline"],
+  read_company_financials: [NO_API_ROUTE],
+
   // brands, offers, steps, rates
   list_brands: ["GET /v1/brands"],
   list_offers: ["GET /v1/brands/{id}/offers"],

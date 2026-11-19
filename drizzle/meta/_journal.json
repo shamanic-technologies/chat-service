@@ -281,6 +281,13 @@
       "when": 1793404800000,
       "tag": "0039_distry_spend_caps",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793491200000,
+      "tag": "0040_distry_config_versions",
+      "breakpoints": true
     }
   ]
 }
