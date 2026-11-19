@@ -32,6 +32,7 @@ import { replayAnthropicTurn } from "./anthropic-replay.js";
 import type { VendorCostLine } from "../lib/cost-names.js";
 import { buildSituationBrief } from "../agent/situation.js";
 import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS, dashboardPagesBlock } from "../agent/sophie.js";
+import { withoutPrincipalToolsUnlessAllowed } from "../agent/principal-tools.js";
 import { clientBriefUnavailable } from "../lib/client-brief.js";
 import { prepareTurnImage, type TurnImage } from "../lib/turn-images.js";
 import { labelLines } from "../lib/lead-whatsapp.js";
@@ -117,7 +118,8 @@ function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay
     sessionToolNamesFor({ configTools: def.allowedTools, guest: lead.guest, canSignIn: lead.guest && lead.phoneBound, website: false }),
     def.allowedTools.includes("read_skill"),
   );
-  const toolNames = leadTurnToolNames(sessionTools, CLIENT_UI_TOOL_NAMES);
+  // A Lead event turn never holds Distry's principal tools (staff conversations only, principal-tools.ts).
+  const toolNames = withoutPrincipalToolsUnlessAllowed(leadTurnToolNames(sessionTools, CLIENT_UI_TOOL_NAMES), false);
   const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
   const brandTools = withBrandTools ? scenarioBrandTools(scenario) : [];
   return {
@@ -141,12 +143,14 @@ export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisp
   const site = scenario.surface === "site";
   // The list /chat builds, keyed on who the person is (agent/person-tools.ts): a chat app or our
   // website can re-key its conversation (sign-in), the dashboard cannot.
-  const toolNames = guest || site || scenario.surface === "whatsapp"
+  // Every scenario is a client, prospect or guest conversation: Distry's principal tools
+  // (staff conversations only, principal-tools.ts) are never in it, as in /chat.
+  const toolNames = withoutPrincipalToolsUnlessAllowed(guest || site || scenario.surface === "whatsapp"
     ? withOurWebsite(
         sessionToolNamesFor({ configTools: withAccountSetup(def.allowedTools), guest, canSignIn: site || scenario.surface === "whatsapp", website: site }),
         def.allowedTools.includes("read_skill"),
       )
-    : withOurWebsite(withAccountSetup(def.allowedTools), def.allowedTools.includes("read_skill"));
+    : withOurWebsite(withAccountSetup(def.allowedTools), def.allowedTools.includes("read_skill")), false);
   const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
   const systemPrompt = def.systemPrompt + skillBlock + aboutYouBlock(modelDisplay);
   const channelBlock =

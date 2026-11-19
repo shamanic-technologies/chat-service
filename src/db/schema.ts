@@ -165,6 +165,31 @@ export const platformConfigs = pgTable("platform_configs", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Distry's definition, versioned (migration 0039, DISTRY-PRINCIPAL-1119): one
+// row per save, the highest version is current and is written onto the
+// `copilot` platform config (what /chat reads). `skill_slugs` NULL = every
+// skill. Never updated in place: a restore is a new row (`restored_from`).
+export const distryConfigVersions = pgTable(
+  "distry_config_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    version: integer("version").notNull(),
+    systemPrompt: text("system_prompt").notNull(),
+    enabledTools: jsonb("enabled_tools").notNull().$type<string[]>(),
+    skillSlugs: jsonb("skill_slugs").$type<string[] | null>(),
+    provider: text("provider").notNull().$type<"anthropic" | "google" | "deepseek">(),
+    model: text("model").notNull(),
+    effort: text("effort").$type<AnthropicEffort>(),
+    editedBy: text("edited_by").notNull(),
+    note: text("note"),
+    restoredFrom: integer("restored_from"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("distry_config_versions_version_unique").on(table.version)],
+);
+
+export type DistryConfigVersion = typeof distryConfigVersions.$inferSelect;
+
 // Copilot SKILL TREE (migration 0018). One row per skill: the INDEX (slug
 // "index", parent NULL) plus one sub-skill per topic (parent "index", or a
 // deeper parent). Staff edit content live from the dashboard (autosave), so

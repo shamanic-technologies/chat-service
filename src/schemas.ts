@@ -4329,3 +4329,116 @@ registry.registerPath({
     410: { description: "The caller stopped waiting (`local_job_expired`): drop it", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
+
+// --- Distry's definition, versioned (DISTRY-PRINCIPAL-1119) -----------------
+
+export const DistryDefinitionSchema = z
+  .object({
+    systemPrompt: z.string().min(1).max(100_000).openapi({ description: "Distry's whole system prompt (the role). The skill index and the turn's context are added at each turn." }),
+    enabledTools: z.array(z.string().min(1).max(100)).max(300).openapi({
+      description: "The tools Distry may call: names from `availableTools`. `engines` = one tool per callable Engine, built at each turn. Staff-only tools load only in a staff conversation, whatever this list says.",
+    }),
+    skillSlugs: z.array(z.string().min(1).max(100)).max(300).nullable().openapi({
+      description: "The skills Distry reads (each with everything under it); `index` and `client-comms` always. null = every skill.",
+    }),
+    provider: z.enum(CHAT_CONFIG_PROVIDERS),
+    model: z.string().min(1).max(100).openapi({ description: "A model name the provider accepts (see `models`).", example: "claude-haiku" }),
+    effort: z.enum(ANTHROPIC_EFFORTS).nullable().openapi({ description: "Anthropic thinking effort; null on another provider (or the model's default)." }),
+  })
+  .openapi("DistryDefinition");
+
+export const DistryVersionSchema = DistryDefinitionSchema.extend({
+  version: z.number().int().openapi({ description: "1, 2, 3...: the highest is the current one." }),
+  editedBy: z.string().openapi({ description: "Who saved it (staff email); `seed` = written from the code at boot." }),
+  note: z.string().nullable(),
+  restoredFrom: z.number().int().nullable().openapi({ description: "The version this one restored, when it is a restore." }),
+  createdAt: z.string(),
+}).openapi("DistryVersion");
+
+export const DistrySaveRequestSchema = DistryDefinitionSchema.extend({
+  editedBy: z.string().min(1).max(200).refine((v) => v !== "seed", "`seed` is reserved").openapi({ description: "Who saves (staff email).", example: "kevin@distribute.you" }),
+  note: z.string().max(500).optional().openapi({ description: "Why this change (shown in the history)." }),
+}).openapi("DistrySaveRequest");
+
+export const DistryRestoreRequestSchema = z
+  .object({ editedBy: z.string().min(1).max(200).refine((v) => v !== "seed", "`seed` is reserved") })
+  .openapi("DistryRestoreRequest");
+
+export const DistryVersionParamsSchema = z.object({ version: z.coerce.number().int().min(1) });
+
+export const DistryConfigResponseSchema = z
+  .object({
+    current: DistryVersionSchema,
+    code: DistryDefinitionSchema.openapi({ description: "Distry as the code defines it (what version 1 was)." }),
+    codeDiffers: z.boolean().openapi({ description: "true = the current version differs from the code's definition." }),
+    availableTools: z.array(z.object({ name: z.string(), description: z.string(), staffOnly: z.boolean() })),
+    skills: z.array(z.object({ slug: z.string(), parentSlug: z.string().nullable(), title: z.string(), description: z.string() })),
+    models: z.record(z.string(), z.array(z.string())).openapi({ description: "Per provider, the model names accepted." }),
+    efforts: z.array(z.string()),
+  })
+  .openapi("DistryConfigResponse");
+
+const distryErrors = {
+  400: { description: "Invalid definition (unknown tool, skill or model)", content: { "application/json": { schema: ErrorResponseSchema } } },
+  401: { description: "Missing x-api-key", content: { "application/json": { schema: ErrorResponseSchema } } },
+};
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/distry/config",
+  tags: ["Distry"],
+  summary: "Distry's current definition, the code's, and what can be picked",
+  description: "Staff editor (dashboard v2 Monitoring > Distry). The current version (prompt, tools, skills, model), the code's definition beside it, every tool and skill that can be turned on, and the models per provider.",
+  request: { headers: internalKeyHeader },
+  responses: { 200: { description: "Current definition", content: { "application/json": { schema: DistryConfigResponseSchema } } }, ...distryErrors },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/internal/distry/config",
+  tags: ["Distry"],
+  summary: "Save Distry's definition (a new version)",
+  description: "Every save is a new version (current + 1), live from Distry's next turn. 409 when another save landed first.",
+  request: { headers: internalKeyHeader, body: { content: { "application/json": { schema: DistrySaveRequestSchema } } } },
+  responses: {
+    200: { description: "Saved", content: { "application/json": { schema: z.object({ version: DistryVersionSchema }) } } },
+    409: { description: "Another save landed first", content: { "application/json": { schema: ErrorResponseSchema } } },
+    ...distryErrors,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/distry/config/versions",
+  tags: ["Distry"],
+  summary: "Every version of Distry's definition, newest first",
+  request: { headers: internalKeyHeader },
+  responses: { 200: { description: "History", content: { "application/json": { schema: z.object({ versions: z.array(DistryVersionSchema) }) } } }, ...distryErrors },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/distry/config/versions/{version}",
+  tags: ["Distry"],
+  summary: "One version of Distry's definition",
+  request: { headers: internalKeyHeader, params: DistryVersionParamsSchema },
+  responses: {
+    200: { description: "The version", content: { "application/json": { schema: DistryVersionSchema } } },
+    404: { description: "No such version", content: { "application/json": { schema: ErrorResponseSchema } } },
+    ...distryErrors,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/distry/config/versions/{version}/restore",
+  tags: ["Distry"],
+  summary: "Restore an old version (saved as a new version)",
+  request: { headers: internalKeyHeader, params: DistryVersionParamsSchema, body: { content: { "application/json": { schema: DistryRestoreRequestSchema } } } },
+  responses: {
+    200: { description: "Restored as a new version", content: { "application/json": { schema: z.object({ version: DistryVersionSchema }) } } },
+    404: { description: "No such version", content: { "application/json": { schema: ErrorResponseSchema } } },
+    409: { description: "Another save landed first", content: { "application/json": { schema: ErrorResponseSchema } } },
+    ...distryErrors,
+  },
+});
