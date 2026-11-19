@@ -25,6 +25,7 @@ import { modelDisplayName } from "../lib/model-ids.js";
 import { isVendorProvider, type VendorId } from "../lib/openai-compatible.js";
 import { aboutYouBlock, withOurWebsite } from "../lib/person-facing.js";
 import { skillIndexBlockFrom } from "../lib/skills.js";
+import { sessionToolNamesFor } from "../agent/person-tools.js";
 import { streamVendorChat } from "../lib/vendor-chat.js";
 import { streamGeminiChat } from "../lib/gemini-chat.js";
 import { replayAnthropicTurn } from "./anthropic-replay.js";
@@ -109,9 +110,14 @@ function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay
   // The WhatsApp conversation as crm serves it to the turn (SOPHIE-WA-HUMAN-1106).
   const whatsapp = scenario.whatsapp || images.length > 0 ? { shown: labelLines(scenario.whatsapp ?? []), images, unreadablePhotos: [] } : null;
   const frame: LeadTurnFrame = { payload, ownBrand: true, guest: lead.guest, phoneBound: lead.phoneBound, afterSignIn: false, now: scenarioDay(scenario), whatsapp };
-  const sessionTools = lead.guest ? [] : withOurWebsite(def.allowedTools, def.allowedTools.includes("read_skill"));
+  // The guest list is /chat's (agent/person-tools.ts), keyed on who they are; an account's lead
+  // replay keeps the list every earlier run was measured with (the config's tools, no sign-in pair).
+  const sessionTools = withOurWebsite(
+    sessionToolNamesFor({ configTools: def.allowedTools, guest: lead.guest, canSignIn: lead.guest && lead.phoneBound, website: false }),
+    def.allowedTools.includes("read_skill"),
+  );
   const toolNames = leadTurnToolNames(sessionTools, CLIENT_UI_TOOL_NAMES);
-  const skillBlock = !lead.guest && toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
+  const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
   const brandTools = withBrandTools ? scenarioBrandTools(scenario) : [];
   return {
     systemPrompt: def.systemPrompt + skillBlock + aboutYouBlock(modelDisplay),

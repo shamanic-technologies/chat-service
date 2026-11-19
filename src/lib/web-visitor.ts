@@ -45,10 +45,12 @@ import type { ChoicesRecord } from "../schemas.js";
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
 import { isShownMessage } from "./session-history.js";
 import type { CopilotLine, WhatsappReach } from "./copilot-proactive.js";
+import { WEB_CONTINUE_TOOL_NAME } from "../agent/person-tools.js";
+
+export { WEB_CONTINUE_TOOL_NAME };
 
 export const WEB_CHANNEL = "web";
 export const WEB_TASK_NAME = "copilot-web";
-export const WEB_CONTINUE_TOOL_NAME = "continue_on_channel";
 /** From this many answered visitor messages on (no number yet), the page asks for a number. */
 export const WEB_ASK_CONTACT_AFTER = 4;
 /** Answers a visitor gets with no number given: the next message runs nothing (`contact_needed`). */

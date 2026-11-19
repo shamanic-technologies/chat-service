@@ -37,6 +37,12 @@ const { state } = vi.hoisted(() => ({
   },
 }));
 
+// The skill index is read from the table: a stub that carries the voice and the job list, as the real one does.
+vi.mock("../../src/lib/skills.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/lib/skills.js")>("../../src/lib/skills.js");
+  return { ...actual, buildSkillIndexBlock: vi.fn(async () => "\n\n---\n## Skills (test index)\n# How we talk to a person\n- `our-offer`: questions about us, starting") };
+});
+
 vi.mock("../../src/db/index.js", async () => {
   const { getTableName } = await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
   // Tables are compared by NAME: vi.resetModules gives each test a fresh schema module.
@@ -46,7 +52,7 @@ vi.mock("../../src/db/index.js", async () => {
     orgId: ORG,
     key: "copilot",
     systemPrompt: "Be useful.",
-    allowedTools: ["list_workflows", "present_choices", "open_page"],
+    allowedTools: ["list_workflows", "read_skill", "present_choices", "open_page"],
     provider: "google",
     model: "flash",
     createdAt: new Date(),
@@ -245,8 +251,11 @@ describe("POST /internal/copilot/web-messages: a visitor of our site talks with 
     // The model writes for the page, sees no account tool, can hand over to WhatsApp.
     const sent = JSON.stringify(gemini.bodies[0]);
     expect(sent).toContain("Channel: our website");
+    // A guest reads the same skill index as an account, never a guest-only text.
+    expect(sent).toContain("## Skills (test index)");
     const declared = ((gemini.bodies[0].tools as Array<{ functionDeclarations?: Array<{ name: string }> }>) ?? []).flatMap((t) => t.functionDeclarations ?? []).map((d) => d.name);
-    expect(declared).toEqual(["continue_on_channel"]);
+    // The guest's list, the same on every channel (DISTRY-ONE-AI-1118), plus the website's delivery tool.
+    expect(declared).toEqual(["read_skill", "present_choices", "continue_on_channel", "read_our_website"]);
     expect(fetchCalls.some((c) => c.url.includes("/internal/copilot/messages"))).toBe(false);
     expect(sends).toEqual([]);
 

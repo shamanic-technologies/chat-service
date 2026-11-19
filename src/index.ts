@@ -110,6 +110,7 @@ import {
   listWorkflows,
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
+import { sessionToolNamesFor } from "./agent/person-tools.js";
 import { hasStaffOnlyTool, lookupRequester, toolsForRequester, type Requester } from "./lib/staff-only-tools.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
 import { readPlatformCaller, platformRunCreateFailure } from "./lib/platform-parent-run.js";
@@ -170,7 +171,6 @@ import {
   SkillNotFoundError,
   SkillValidationError,
   buildSkillIndexBlock,
-  buildGuestSkillsBlock,
   getSkill,
   listSkillVersions,
   listSkills,
@@ -3821,20 +3821,21 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       return res.status(502).json({ error: `The campaign that asked for this proactive turn could not be read: ${err instanceof Error ? err.message : String(err)}` });
     }
   }
-  const sessionToolNames: string[] = webTurn
-    ? [WEB_CONTINUE_TOOL_NAME]
-    : channelSession?.guest
-    ? [...SIGN_IN_TOOL_NAMES]
-    : channelSession
-      ? [...configAllowedToolNames, ...SIGN_IN_TOOL_NAMES]
-      : configAllowedToolNames;
-  // A lead turn: the person's own tools only on our brand with their account;
-  // a guest on our brand with a number can sign in; anything else, the answer only.
+  // The tools are keyed on WHO the person is, never on the channel
+  // (DISTRY-ONE-AI-1118, agent/person-tools.ts): an account gets the config's
+  // tools, a guest the same short list everywhere (skills, cards, sign-in where
+  // the session can become theirs); the website adds its delivery tool only.
+  const sessionToolNames: string[] = sessionToolNamesFor({
+    configTools: configAllowedToolNames,
+    guest: sessionIsGuest,
+    canSignIn: channelSession !== null,
+    website: webTurn !== null,
+  });
+  // A lead turn: the person's tools only on our brand (their account's, or a
+  // guest's); another brand's lead turn gets the answer only.
   const leadSessionToolNames: string[] = !leadTurn || !leadTurn.ownBrand
     ? []
-    : leadTurn.guest
-      ? channelSession ? [...SIGN_IN_TOOL_NAMES] : []
-      : [...configAllowedToolNames, ...(channelSession ? SIGN_IN_TOOL_NAMES : [])];
+    : sessionToolNamesFor({ configTools: configAllowedToolNames, guest: leadTurn.guest, canSignIn: channelSession !== null, website: false });
   // A config that speaks to a person (it reads our skills) also reads our public
   // site, guests included; another brand's lead turn does not speak for us.
   const speaksForUs = configAllowedToolNames.includes("read_skill") && (!leadTurn || leadTurn.ownBrand);
@@ -3986,11 +3987,10 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // A config that allows read_skill gets the skill INDEX (method + map of
   // sub-skills) appended; sub-skills are loaded on demand with read_skill.
   let skillIndexBlock = "";
-  // A WhatsApp guest has no read_skill: it still gets the voice (client-comms) and the public offer (our-offer).
-  const wantsVoiceOnly = (webTurn !== null || channelSession?.guest === true || (leadTurn?.guest === true && leadTurn.ownBrand)) && configAllowedToolNames.includes("read_skill");
-  if (allowedToolNames.includes("read_skill") || wantsVoiceOnly) {
+  // A guest reads the SAME index as an account (DISTRY-ONE-AI-1118): never a guest-only text.
+  if (allowedToolNames.includes("read_skill")) {
     try {
-      skillIndexBlock = wantsVoiceOnly ? await buildGuestSkillsBlock(db) : await buildSkillIndexBlock(db);
+      skillIndexBlock = await buildSkillIndexBlock(db);
     } catch (err) {
       console.error(`[chat] skill index unavailable for configKey="${configKey}":`, err);
       sendSSE(res, {
