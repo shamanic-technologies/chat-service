@@ -111,6 +111,37 @@ import {
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
 import { sessionToolNamesFor } from "./agent/person-tools.js";
+import {
+  seedDistryConfig,
+  currentDistryVersion,
+  listDistryVersions,
+  getDistryVersion,
+  saveDistryVersion,
+  restoreDistryVersion,
+  availableDistryTools,
+  codeDistryDefinition,
+  toDistryVersionBody,
+  DistryConfigError,
+  distrySkillSet,
+} from "./agent/distry-config.js";
+import {
+  FIND_STAKEHOLDERS_TOOL_NAME,
+  READ_PERSON_UNIBOX_TOOL_NAME,
+  READ_ORGANIZATION_UNIBOX_TOOL_NAME,
+  findStakeholders,
+  readPersonUnibox,
+  readOrganizationUnibox,
+  ourAccountFromEnv,
+  principalToolsAllowed,
+  withoutPrincipalToolsUnlessAllowed,
+  isPrincipalToolName,
+  DISTRY_STAFF_READ_TASK_NAME,
+  DISTRY_ENGINE_CALL_TASK_NAME,
+  ENGINES_TOOL_FAMILY,
+  READ_COMPANY_FINANCIALS_TOOL_NAME,
+} from "./agent/principal-tools.js";
+import { readCompanyFinancials, featuresFetchFromEnv } from "./agent/finance-tools.js";
+import { engineToolsFrom, listEngines, workflowFetchFromEnv, callEngine, readEngineCall, callAnswer, READ_ENGINE_CALL_TOOL_NAME } from "./agent/engine-tools.js";
 import { hasStaffOnlyTool, lookupRequester, toolsForRequester, type Requester } from "./lib/staff-only-tools.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
 import { readPlatformCaller, platformRunCreateFailure } from "./lib/platform-parent-run.js";
@@ -160,7 +191,7 @@ import {
   isBrandProfileWebsiteRefreshIntent,
   refreshBrandProfileFromWebsite,
 } from "./lib/brand-profile-refresh.js";
-import { seedPlatformConfigs, seedSophieConfig, holdTextBesideToolCallsFor, isSelfSeededConfigKey } from "./lib/seed-platform-configs.js";
+import { seedPlatformConfigs, holdTextBesideToolCallsFor, isSelfSeededConfigKey } from "./lib/seed-platform-configs.js";
 import { buildSituationBrief } from "./agent/situation.js";
 import { gatewaySituationReader } from "./agent/situation-reader.js";
 import { dashboardPagesBlock, SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
@@ -379,7 +410,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -3877,10 +3908,22 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // A config that speaks to a person (it reads our skills) also reads our public
   // site, guests included; another brand's lead turn does not speak for us.
   const speaksForUs = configAllowedToolNames.includes("read_skill") && (!leadTurn || leadTurn.ownBrand);
+  // Distry's principal tools (stakeholders, finance, Engines: DISTRY-PRINCIPAL-1119) read across
+  // clients or spend on our account: ONLY distribute.you staff talking for themselves hold them,
+  // never a client, a prospect, a guest, a Lead event or a proactive turn (principal-tools.ts).
+  const principalAllowed = configAllowedToolNames.some(isPrincipalToolName) && principalToolsAllowed({
+    requesterIsStaff: (await getRequester()).isStaff,
+    guest: sessionIsGuest,
+    leadTurn: leadTurn !== null,
+    proactive: proactiveTurn,
+  });
   const allowedToolNames: string[] = withOurWebsite(
-    leadTurn
-      ? leadTurnToolNames(leadSessionToolNames, CLIENT_UI_TOOL_NAMES)
-      : proactiveTurn ? proactiveToolNames(sessionToolNames) : sessionToolNames,
+    withoutPrincipalToolsUnlessAllowed(
+      leadTurn
+        ? leadTurnToolNames(leadSessionToolNames, CLIENT_UI_TOOL_NAMES)
+        : proactiveTurn ? proactiveToolNames(sessionToolNames) : sessionToolNames,
+      principalAllowed,
+    ),
     speaksForUs,
   );
   // This turn came in on WhatsApp: the channel block joins the prompt and the
@@ -4025,10 +4068,13 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // A config that allows read_skill gets the skill INDEX (method + map of
   // sub-skills) appended; sub-skills are loaded on demand with read_skill.
   let skillIndexBlock = "";
+  let turnSkillSet: string[] | null = null;
   // A guest reads the SAME index as an account (DISTRY-ONE-AI-1118): never a guest-only text.
   if (allowedToolNames.includes("read_skill")) {
     try {
-      skillIndexBlock = await buildSkillIndexBlock(db);
+      // Distry's skill set is part of its versioned definition (null = every skill).
+      if (configKey === SOPHIE_CONFIG_KEY) turnSkillSet = distrySkillSet();
+      skillIndexBlock = await buildSkillIndexBlock(db, turnSkillSet);
     } catch (err) {
       console.error(`[chat] skill index unavailable for configKey="${configKey}":`, err);
       sendSSE(res, {
@@ -4039,6 +4085,19 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       sendSSE(res, "[DONE]");
       res.end();
       return;
+    }
+  }
+  // Distry's Engine tools (DISTRY-PRINCIPAL-1119): one per Engine that can run now, from
+  // workflow-service's live list read at this turn; a failed read is named in the turn, never a gate.
+  let engineTools: { tools: Anthropic.Tool[]; outcomeOf: Map<string, string> } = { tools: [], outcomeOf: new Map() };
+  let engineListNote = "";
+  if (principalAllowed && allowedToolNames.includes(ENGINES_TOOL_FAMILY)) {
+    try {
+      engineTools = engineToolsFrom(await listEngines(workflowFetchFromEnv()));
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      console.error(`[chat] Engines could not be listed for this turn: ${why}`);
+      engineListNote = `\n\n---\n(Not read this turn: the list of Engines (${why.slice(0, 200)}). No Engine can be called in this turn.)`;
     }
   }
   // What stays the same across turns (the config's prompt + skills + who it
@@ -4053,7 +4112,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     buildSystemPrompt("", promptContext, campaignFeatureInputs) +
     (leadTurn ? buildLeadTurnBlock(leadTurn) : telegramTurn ? buildTelegramBlock() : webTurn ? buildWebBlock(webTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "") +
     // The dashboard's pages, on the dashboard only (DISTRY-ONE-AI-1118): a chat app or our website cannot show them.
-    (configKey === SOPHIE_CONFIG_KEY && !leadTurn && !telegramTurn && !webTurn && !channelTurn && !(proactiveTurn && context?.channel !== undefined) ? dashboardPagesBlock() : "");
+    (configKey === SOPHIE_CONFIG_KEY && !leadTurn && !telegramTurn && !webTurn && !channelTurn && !(proactiveTurn && context?.channel !== undefined) ? dashboardPagesBlock() : "") +
+    engineListNote;
   let systemPrompt = stableSystemPrompt + turnContextBlock;
   const isGeminiChat = chatProvider === "google";
   // A direct OpenAI-compatible vendor (DeepSeek, CHAT-DEEPSEEK-FLASH-1101): its own loop, vendor-chat.ts.
@@ -4286,7 +4346,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       }
     }
 
-    const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME && t !== WEB_CONTINUE_TOOL_NAME));
+    const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME && t !== WEB_CONTINUE_TOOL_NAME && t !== ENGINES_TOOL_FAMILY));
+    allTools.push(...engineTools.tools);
     if (webTurn && allowedToolNames.includes(WEB_CONTINUE_TOOL_NAME)) allTools.push(WEB_CONTINUE_TOOL);
     if (leadTurn) {
       allTools.push(
@@ -4298,7 +4359,9 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     const turnImages = leadTurn?.whatsapp?.images ?? [];
     // The answer a lead turn ended on (answer_person), in the writer's schema.
     const leadAnswer: { json: Record<string, unknown> | null } = { json: null };
-    const allowedToolSet = new Set(allowedToolNames);
+    const allowedToolSet = new Set([...allowedToolNames, ...engineTools.tools.map((t) => t.name)]);
+    // Distry's reads of our own Unibox ride one run under OUR org, opened on first need.
+    let stakeholderRun: Promise<string> | null = null;
     const downstreamTrackingHeaders = Object.keys(trackingHeaders).length > 0
       ? trackingHeaders as Record<string, string>
       : undefined;
@@ -4782,7 +4845,56 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       // --- Copilot: skill tree ---------------------------------------------
       if (call.name === "read_skill") {
         const args = (call.args as Record<string, unknown>) || {};
-        const result = await readSkillForModel(db, args.slug);
+        const result = await readSkillForModel(db, args.slug, turnSkillSet);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Distry: stakeholders, our own Unibox (DISTRY-PRINCIPAL-1119, staff turns only) ---
+      if (call.name === FIND_STAKEHOLDERS_TOOL_NAME || call.name === READ_PERSON_UNIBOX_TOOL_NAME || call.name === READ_ORGANIZATION_UNIBOX_TOOL_NAME) {
+        const args = (call.args as Record<string, unknown>) || {};
+        if (!principalAllowed) throw new Error(`[${call.name}] reserved to distribute.you staff`);
+        const account = ourAccountFromEnv();
+        stakeholderRun ??= createChannelRootRun(account, fetch, DISTRY_STAFF_READ_TASK_NAME);
+        const deps = { account, runId: () => stakeholderRun! };
+        const result =
+          call.name === FIND_STAKEHOLDERS_TOOL_NAME
+            ? await findStakeholders(args, deps)
+            : call.name === READ_PERSON_UNIBOX_TOOL_NAME
+              ? await readPersonUnibox(args, deps)
+              : await readOrganizationUnibox(args, deps);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Distry: the company's financials, features-service's figures (DISTRY-PRINCIPAL-1119, staff turns only) ---
+      if (call.name === READ_COMPANY_FINANCIALS_TOOL_NAME) {
+        const args = (call.args as Record<string, unknown>) || {};
+        if (!principalAllowed) throw new Error(`[${call.name}] reserved to distribute.you staff`);
+        const result = await readCompanyFinancials(args, featuresFetchFromEnv());
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Distry: one Unit of an Engine, its best script, waited for (DISTRY-PRINCIPAL-1119, staff turns only) ---
+      if (engineTools.outcomeOf.has(call.name) || call.name === READ_ENGINE_CALL_TOOL_NAME) {
+        const args = (call.args as Record<string, unknown>) || {};
+        if (!principalAllowed) throw new Error(`[${call.name}] reserved to distribute.you staff`);
+        const ours = ourAccountFromEnv();
+        const otherOrg = typeof args.orgId === "string" && args.orgId.trim() ? args.orgId.trim() : null;
+        const target = otherOrg
+          ? { orgId: otherOrg, userId, brandId: typeof args.brandId === "string" && args.brandId.trim() ? args.brandId.trim() : null }
+          : { orgId: ours.orgId, userId: ours.userId, brandId: ours.brandId };
+        if (otherOrg && !target.brandId && call.name !== READ_ENGINE_CALL_TOOL_NAME) throw new Error(`[${call.name}] orgId needs its brandId`);
+        const wf = workflowFetchFromEnv();
+        const result = call.name === READ_ENGINE_CALL_TOOL_NAME
+          ? callAnswer(await readEngineCall(String(args.callId ?? ""), target, 60, wf))
+          : await callEngine(
+            engineTools.outcomeOf.get(call.name)!,
+            args,
+            { ...target, runId: await createChannelRootRun({ orgId: target.orgId, userId: target.userId }, fetch, DISTRY_ENGINE_CALL_TASK_NAME, null) },
+            wf,
+          );
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -6835,6 +6947,83 @@ function skillErrorStatus(err: unknown): { status: number; error: string } {
   return { status: 500, error: err instanceof Error ? err.message : String(err) };
 }
 
+// --- Distry's definition, versioned (DISTRY-PRINCIPAL-1119) -----------------
+// Staff editor routes (dashboard v2 Monitoring > Distry, through the gateway).
+function distryErrorStatus(err: unknown): { status: number; error: string } {
+  if (err instanceof DistryConfigError) return { status: err.status, error: err.message };
+  console.error("[distry] unexpected error:", err);
+  return { status: 500, error: err instanceof Error ? err.message : String(err) };
+}
+
+app.get("/internal/distry/config", requireInternalAuth, async (_req, res) => {
+  try {
+    const current = await currentDistryVersion(db);
+    if (!current) return res.status(503).json({ error: "Distry's definition is not seeded yet (boot in progress)." });
+    const code = codeDistryDefinition();
+    const body = toDistryVersionBody(current);
+    const { version: _v, editedBy: _e, note: _n, restoredFrom: _r, createdAt: _c, ...currentDef } = body;
+    const allSkills = await listSkills(db);
+    return res.json({
+      current: body,
+      code,
+      codeDiffers: JSON.stringify(currentDef) !== JSON.stringify(code),
+      availableTools: availableDistryTools(),
+      skills: allSkills.map((s) => ({ slug: s.slug, parentSlug: s.parentSlug, title: s.title, description: s.description })),
+      models: Object.fromEntries(CHAT_CONFIG_PROVIDERS.map((p) => [p, [...PROVIDER_MODELS[p]]])),
+      efforts: [...ANTHROPIC_EFFORTS],
+    });
+  } catch (err) {
+    const mapped = distryErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+app.put("/internal/distry/config", requireInternalAuth, async (req, res) => {
+  const body = DistrySaveRequestSchema.safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "Invalid request", details: body.error.flatten() });
+  const { editedBy, note, ...def } = body.data;
+  try {
+    const saved = await saveDistryVersion(db, def, { editedBy, note: note ?? null });
+    return res.json({ version: toDistryVersionBody(saved) });
+  } catch (err) {
+    const mapped = distryErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+app.get("/internal/distry/config/versions", requireInternalAuth, async (_req, res) => {
+  try {
+    return res.json({ versions: (await listDistryVersions(db)).map(toDistryVersionBody) });
+  } catch (err) {
+    const mapped = distryErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+app.get("/internal/distry/config/versions/:version", requireInternalAuth, async (req, res) => {
+  const params = DistryVersionParamsSchema.safeParse(req.params);
+  if (!params.success) return res.status(400).json({ error: "Invalid request", details: params.error.flatten() });
+  try {
+    return res.json(toDistryVersionBody(await getDistryVersion(db, params.data.version)));
+  } catch (err) {
+    const mapped = distryErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+app.post("/internal/distry/config/versions/:version/restore", requireInternalAuth, async (req, res) => {
+  const params = DistryVersionParamsSchema.safeParse(req.params);
+  if (!params.success) return res.status(400).json({ error: "Invalid request", details: params.error.flatten() });
+  const body = DistryRestoreRequestSchema.safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "Invalid request", details: body.error.flatten() });
+  try {
+    return res.json({ version: toDistryVersionBody(await restoreDistryVersion(db, params.data.version, body.data.editedBy)) });
+  } catch (err) {
+    const mapped = distryErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
 app.get("/internal/skills", requireInternalAuth, async (_req, res) => {
   try {
     const rows = await listSkills(db);
@@ -7094,7 +7283,9 @@ if (process.env.NODE_ENV !== "test") {
       // brand-profile-editor). O(1) — two upserts — safe to await before
       // listen(); fails loud so the configs are guaranteed live.
       await seedPlatformConfigs(db);
-      await seedSophieConfig(db);
+      // Distry's definition is versioned (DISTRY-PRINCIPAL-1119): version 1 from the code, staff
+      // saves kept across deploys; the current version is written onto the `copilot` config.
+      await seedDistryConfig(db);
       // Outages still open survive a restart: the detour and the red stay on.
       await initVendorCredit(createVendorCreditStore(db));
       // The detour ranks fallbacks by list price: read costs-service now and hourly (fail-soft, logged).

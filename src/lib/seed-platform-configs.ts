@@ -396,28 +396,6 @@ export async function seedPlatformConfigs(database: typeof db): Promise<void> {
  * written beside a tool call (see QUALIFICATION_EDITOR_CONFIG). Code-owned, not a
  * DB column: only chat-service's own seeded configs opt in.
  */
-/**
- * Upsert Sophie's `copilot` config from the code (src/agent/sophie.ts), at
- * every boot beside the editors. O(1), safe before listen(). Fails loud.
- */
-export async function seedSophieConfig(database: typeof db): Promise<void> {
-  const c = SOPHIE_CONFIG;
-  const row = {
-    systemPrompt: c.systemPrompt,
-    allowedTools: [...c.allowedTools],
-    provider: c.provider,
-    model: c.model,
-    thinkingLevel: c.thinkingLevel,
-    effort: c.effort,
-    supportKind: c.supportKind,
-  };
-  await database
-    .insert(platformConfigs)
-    .values({ key: c.key, ...row })
-    .onConflictDoUpdate({ target: [platformConfigs.key], set: { ...row, updatedAt: new Date() } });
-  console.log(`[chat-service] Seeded Sophie's "${c.key}" config from code (${c.provider}/${c.model}, ${c.allowedTools.length} tools)`);
-}
-
 /** A key chat-service seeds itself: an app's registration of it is not written. */
 export function isSelfSeededConfigKey(key: string): boolean {
   return key === SOPHIE_CONFIG.key || SELF_SEEDED_CONFIGS.some((c) => c.key === key);

@@ -1,0 +1,175 @@
+{
+  "at": "2026-11-19",
+  "ticket": "DISTRY-PRINCIPAL-1119",
+  "variants": {
+    "v6-recorded": {
+      "codeHash": "9b9197beb860bcb8",
+      "replays": 828,
+      "passRate": 0.5447,
+      "criterionRate": {
+        "true": 0.9215,
+        "respectful": 0.8708,
+        "proactive": 0.8285,
+        "answers": 0.8853,
+        "nextAction": 0.8442,
+        "form": 0.9795
+      }
+    },
+    "skills-under-index+framing": {
+      "codeHash": "9b9197beb860bcb8",
+      "replays": 828,
+      "passRate": 0.5193,
+      "criterionRate": {
+        "true": 0.9215,
+        "respectful": 0.8792,
+        "proactive": 0.8249,
+        "answers": 0.8732,
+        "nextAction": 0.8357,
+        "form": 0.9831
+      }
+    },
+    "framing-reworded": {
+      "codeHash": "77f8e93864813345",
+      "replays": 414,
+      "passRate": 0.5024,
+      "criterionRate": {
+        "true": 0.8889,
+        "respectful": 0.8768,
+        "proactive": 0.8382,
+        "answers": 0.8527,
+        "nextAction": 0.8043,
+        "form": 0.9783
+      }
+    },
+    "no-framing-skills-under-index": {
+      "codeHash": "43d9ab03488701ae",
+      "replays": 828,
+      "passRate": 0.5181,
+      "criterionRate": {
+        "true": 0.8925,
+        "respectful": 0.8659,
+        "proactive": 0.8357,
+        "answers": 0.8744,
+        "nextAction": 0.8213,
+        "form": 0.9795
+      }
+    },
+    "stakeholders-staff-presence-index": {
+      "codeHash": "43d9ab03488701ae",
+      "replays": 828,
+      "passRate": 0.5109,
+      "criterionRate": {
+        "true": 0.901,
+        "respectful": 0.872,
+        "proactive": 0.8309,
+        "answers": 0.8671,
+        "nextAction": 0.8297,
+        "form": 0.9831
+      }
+    },
+    "both-under-staff-no-framing": {
+      "codeHash": "43d9ab03488701ae",
+      "replays": 828,
+      "passRate": 0.5386,
+      "criterionRate": {
+        "true": 0.913,
+        "respectful": 0.8708,
+        "proactive": 0.849,
+        "answers": 0.8925,
+        "nextAction": 0.849,
+        "form": 0.9758
+      }
+    },
+    "baseline-r1": {
+      "codeHash": "d17c0bfb73760b2d",
+      "replays": 414,
+      "passRate": 0.5386,
+      "criterionRate": {
+        "true": 0.9179,
+        "respectful": 0.8816,
+        "proactive": 0.8406,
+        "answers": 0.8768,
+        "nextAction": 0.8406,
+        "form": 0.9831
+      }
+    },
+    "baseline-r2": {
+      "codeHash": "d17c0bfb73760b2d",
+      "replays": 414,
+      "passRate": 0.5411,
+      "criterionRate": {
+        "true": 0.9179,
+        "respectful": 0.872,
+        "proactive": 0.8285,
+        "answers": 0.8768,
+        "nextAction": 0.8357,
+        "form": 0.9831
+      }
+    },
+    "baseline-r3": {
+      "codeHash": "d17c0bfb73760b2d",
+      "replays": 414,
+      "passRate": 0.5266,
+      "criterionRate": {
+        "true": 0.8937,
+        "respectful": 0.8696,
+        "proactive": 0.8502,
+        "answers": 0.8961,
+        "nextAction": 0.8382,
+        "form": 0.9855
+      }
+    },
+    "baseline-r4": {
+      "codeHash": "d17c0bfb73760b2d",
+      "replays": 414,
+      "passRate": 0.5121,
+      "criterionRate": {
+        "true": 0.8816,
+        "respectful": 0.8816,
+        "proactive": 0.8406,
+        "answers": 0.8599,
+        "nextAction": 0.8478,
+        "form": 0.9758
+      }
+    },
+    "baseline-r5": {
+      "codeHash": "d17c0bfb73760b2d",
+      "replays": 414,
+      "passRate": 0.5121,
+      "criterionRate": {
+        "true": 0.9203,
+        "respectful": 0.8768,
+        "proactive": 0.8285,
+        "answers": 0.8671,
+        "nextAction": 0.8309,
+        "form": 0.9734
+      }
+    },
+    "merged-recorded": {
+      "codeHash": "eac18ca309ed15c2",
+      "replays": 876,
+      "passRate": 0.532,
+      "criterionRate": {
+        "true": 0.9053,
+        "respectful": 0.8847,
+        "proactive": 0.8413,
+        "answers": 0.8961,
+        "nextAction": 0.8619,
+        "form": 0.9783
+      }
+    },
+    "main-3faf419": {
+      "codeHash": "3fe571ff23869d47",
+      "replays": 438,
+      "passRate": 0.5297,
+      "criterionRate": {
+        "true": 0.9132,
+        "respectful": 0.8927,
+        "proactive": 0.8402,
+        "answers": 0.8927,
+        "nextAction": 0.8356,
+        "form": 0.9772
+      }
+    }
+  }
+}

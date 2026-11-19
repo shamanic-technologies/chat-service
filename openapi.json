@@ -5173,6 +5173,249 @@
           "ok"
         ],
         "additionalProperties": false
+      },
+      "DistryConfigResponse": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "$ref": "#/components/schemas/DistryVersion"
+          },
+          "code": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DistryDefinition"
+              },
+              {
+                "description": "Distry as the code defines it (what version 1 was)."
+              }
+            ]
+          },
+          "codeDiffers": {
+            "type": "boolean",
+            "description": "true = the current version differs from the code's definition."
+          },
+          "availableTools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "staffOnly": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "description",
+                "staffOnly"
+              ]
+            }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "slug": {
+                  "type": "string"
+                },
+                "parentSlug": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "title": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "slug",
+                "parentSlug",
+                "title",
+                "description"
+              ]
+            }
+          },
+          "models": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Per provider, the model names accepted."
+          },
+          "efforts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "current",
+          "code",
+          "codeDiffers",
+          "availableTools",
+          "skills",
+          "models",
+          "efforts"
+        ]
+      },
+      "DistryVersion": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DistryDefinition"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "version": {
+                "type": "integer",
+                "description": "1, 2, 3...: the highest is the current one."
+              },
+              "editedBy": {
+                "type": "string",
+                "description": "Who saved it (staff email); `seed` = written from the code at boot."
+              },
+              "note": {
+                "type": "string",
+                "nullable": true
+              },
+              "restoredFrom": {
+                "type": "integer",
+                "nullable": true,
+                "description": "The version this one restored, when it is a restore."
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "version",
+              "editedBy",
+              "note",
+              "restoredFrom",
+              "createdAt"
+            ]
+          }
+        ]
+      },
+      "DistryDefinition": {
+        "type": "object",
+        "properties": {
+          "systemPrompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100000,
+            "description": "Distry's whole system prompt (the role). The skill index and the turn's context are added at each turn."
+          },
+          "enabledTools": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "maxItems": 300,
+            "description": "The tools Distry may call: names from `availableTools`. `engines` = one tool per callable Engine, built at each turn. Staff-only tools load only in a staff conversation, whatever this list says."
+          },
+          "skillSlugs": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "maxItems": 300,
+            "description": "The skills Distry reads (each with everything under it); `index` and `client-comms` always. null = every skill."
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "google",
+              "deepseek"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "A model name the provider accepts (see `models`).",
+            "example": "claude-haiku"
+          },
+          "effort": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              null
+            ],
+            "description": "Anthropic thinking effort; null on another provider (or the model's default)."
+          }
+        },
+        "required": [
+          "systemPrompt",
+          "enabledTools",
+          "skillSlugs",
+          "provider",
+          "model",
+          "effort"
+        ]
+      },
+      "DistrySaveRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DistryDefinition"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "editedBy": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Who saves (staff email).",
+                "example": "kevin@distribute.you"
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 500,
+                "description": "Why this change (shown in the history)."
+              }
+            },
+            "required": [
+              "editedBy"
+            ]
+          }
+        ]
+      },
+      "DistryRestoreRequest": {
+        "type": "object",
+        "properties": {
+          "editedBy": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "editedBy"
+        ]
       }
     },
     "parameters": {}
@@ -9978,6 +10221,369 @@
           },
           "410": {
             "description": "The caller stopped waiting (`local_job_expired`): drop it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/distry/config": {
+      "get": {
+        "tags": [
+          "Distry"
+        ],
+        "summary": "Distry's current definition, the code's, and what can be picked",
+        "description": "Staff editor (dashboard v2 Monitoring > Distry). The current version (prompt, tools, skills, model), the code's definition beside it, every tool and skill that can be turned on, and the models per provider.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistryConfigResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid definition (unknown tool, skill or model)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Distry"
+        ],
+        "summary": "Save Distry's definition (a new version)",
+        "description": "Every save is a new version (current + 1), live from Distry's next turn. 409 when another save landed first.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DistrySaveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "$ref": "#/components/schemas/DistryVersion"
+                    }
+                  },
+                  "required": [
+                    "version"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid definition (unknown tool, skill or model)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another save landed first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/distry/config/versions": {
+      "get": {
+        "tags": [
+          "Distry"
+        ],
+        "summary": "Every version of Distry's definition, newest first",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "History",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DistryVersion"
+                      }
+                    }
+                  },
+                  "required": [
+                    "versions"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid definition (unknown tool, skill or model)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/distry/config/versions/{version}": {
+      "get": {
+        "tags": [
+          "Distry"
+        ],
+        "summary": "One version of Distry's definition",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true,
+            "name": "version",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistryVersion"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid definition (unknown tool, skill or model)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/distry/config/versions/{version}/restore": {
+      "post": {
+        "tags": [
+          "Distry"
+        ],
+        "summary": "Restore an old version (saved as a new version)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": true,
+            "name": "version",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DistryRestoreRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Restored as a new version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "$ref": "#/components/schemas/DistryVersion"
+                    }
+                  },
+                  "required": [
+                    "version"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid definition (unknown tool, skill or model)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another save landed first",
             "content": {
               "application/json": {
                 "schema": {
