@@ -219,6 +219,36 @@ def main():
             "Never gives the dashboard address or tells them to find the payment on the dashboard, never stops at their being in, never says twice that they are in.",
             guest=False, after_sign_in=True,
         ))
+    # Prod 2026-11-19 13:40 UTC (DISTRY-GUEST-CAPS-1119): a visitor gave dutrou.com, the brand was created, then
+    # offers were asked from the placeholder « Offer described on the website dutrou.com » (nothing read), a 422,
+    # and Distry asked what they sell; « you didn't check our site? » drew an apology. The site is READ first
+    # (offers/proposals {source: "site"}, the signup page's read); an address that does not open is SAID.
+    for surface, tag in (("site", "site"), ("whatsapp", "whatsapp")):
+        start = "Get started with my website dutrou.com" if surface == "site" else "I want to start, my site is dutrou.com"
+        created = [
+            {"role": "user", "content": start},
+            {
+                "role": "assistant",
+                "content": "Welcome! I set up Dutrou from dutrou.com.",
+                "toolCalls": [run_op("POST", "/v1/brands", {"url": "https://dutrou.com"}, BRAND)],
+            },
+        ]
+        out.append(scenario(
+            f"one-ai-read-site-{tag}", "Asked whether we checked their site: the site is read, never a question about what they sell", surface,
+            "You didn't check our site?", created,
+            [GUEST_FACT, SITE_FACT, PLAN_FACT, "Their brand Dutrou was set up from dutrou.com this conversation. What their site shows they sell is in the offers the site read returns (tool answers)."],
+            "Reads their site right now (the offers read from dutrou.com) and says back in a few words what they sell and to whom, then moves the plan on. "
+            "Never asks them what they sell or who buys when the site answered it, never invents what they sell, never a long apology.",
+        ))
+        down = {**PLAN_FIXTURES, **SIGN_IN_FIXTURES, "propose_offers": [{"_status": 422, "error": "We could not read dutrou.com, so there is nothing to read its offers from. Describe what you sell instead."}]}
+        out.append(scenario(
+            f"one-ai-site-down-{tag}", "Their website does not open: say so and ask whether the address is right", surface,
+            start, [],
+            [GUEST_FACT, SITE_FACT, PLAN_FACT, "dutrou.com could not be read: the read of their site answered that the site could not be read (tool answers). Nothing is known of what they sell."],
+            "Tells them plainly that dutrou.com does not open (could not be read) and asks whether the address is right, or what they sell if they have no other site. "
+            "Never invents what they sell, never presents offers or a plan as if the site had been read.",
+            fixtures=down,
+        ))
     for s in out:
         (OUT / f"{s['id']}.json").write_text(json.dumps(s, indent=2, ensure_ascii=False) + "\n")
         print("wrote", s["id"])
