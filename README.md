@@ -1701,6 +1701,7 @@ Staff routes (`requireInternalAuth`, through the gateway for dashboard v2 Monito
 | `GET /internal/distry/config/versions` | Every version, newest first |
 | `GET /internal/distry/config/versions/{version}` | One version |
 | `POST /internal/distry/config/versions/{version}/restore` | `{editedBy}`: a NEW version carrying that one's values |
+| `GET /internal/distry/models` | The model panel (DISTRY-MODELS-1119): every model Distry's providers accept, once per concrete model, with our catalogue price per 1M input/output tokens, its Artificial Analysis Intelligence Index score, rank among the listed models, run cost, and `intelligencePerDollar` (score / index run cost, else score / our blended 3:1 price, `basis` named), sorted best ratio first, unscored last with a `reason`; `refresh.broken` = red on Monitoring; `source.attribution` must show beside the scores |
 
 Principal tools (`src/agent/principal-tools.ts`), loaded **only in a staff conversation** (requester is staff, not a guest, Lead event or proactive turn; pinned in `tests/unit/principal-tools.test.ts`): `find_stakeholders`, `read_person_unibox`, `read_organization_unibox` (crm-service people + Unibox timeline on our own brand, through the gateway, on a `distry-staff-read` run under our org), `read_company_financials` (features-service `GET /internal/stats/client-financials`, sorted and cut, never recomputed: `finance-tools.ts`), and `engines` = one tool per Engine that can run now, built each turn from workflow-service `GET /internal/engines`; calling one runs `POST /internal/engines/{outcome}/calls` (the Rating's pick, org-billed, on a `distry-engine-call` run) and waits up to 240 s, then `read_engine_call` reads a call still running (`engine-tools.ts`). Skills `presence`, `stakeholders` and `ceo-for-the-shareholder` (under `staff`: listed under `index` they cost ~2 points of client replies, evals 2026-11-19) carry the stance and method; the role's principal paragraph names presence on every surface.
 
@@ -1792,6 +1793,7 @@ Each brand plugs, in its Integrations, the MCP server(s) it gives to the AI that
 | Variable | Required | Description |
 |---|---|---|
 | `ADMIN_DISTRIBUTE_API_KEY` | Yes | Admin API key for api-service gateway (sent as `X-API-Key` header) — all client-facing backend calls (workflows, features, keys, prompts, api-registry) route through api-service |
+| `ARTIFICIAL_ANALYSIS_API_KEY` | No | Artificial Analysis Data API key (free tier, https://artificialanalysis.ai/api-key-management-redirect): the daily Intelligence Index read behind `GET /internal/distry/models`. Unset = scores served null with the reason, nothing read |
 | `API_SERVICE_URL` | No | Api-service endpoint (default: `https://api.distribute.you`) |
 | `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used only for Anthropic API key decryption — infrastructure, not routed via api-service) |
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |

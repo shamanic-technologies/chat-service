@@ -90,6 +90,17 @@ export function setFallbackPrices(list: ReadonlyArray<{ name: string; pricePerUn
   prices = next;
 }
 
+/** The stored list price of one cost name in USD cents per unit, null when unpriced or the list was never read. */
+export function listPriceCentsPerUnit(costName: string): number | null {
+  if (!prices) return null;
+  return prices.get(costName) ?? null;
+}
+
+/** true once costs-service's price list has been read at least once. */
+export function listPricesRead(): boolean {
+  return prices !== null;
+}
+
 /**
  * Read the list prices from costs-service. Fail-soft and loud: an unreadable list keeps the last one read (prices
  * barely move); never read at all = no detour, calls on a dry vendor fail as they did before this rule.
