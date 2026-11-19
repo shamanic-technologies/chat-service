@@ -181,7 +181,7 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
   }
   if (frame.afterSignIn) {
     lines.push(
-      "They signed in a moment ago, in this same exchange, and nothing you wrote before reached them: write the WHOLE message now, with their account's access: say in a few words that they are in, then answer what they asked.",
+      "They signed in a moment ago, in this same exchange, and nothing you wrote before reached them: write the WHOLE message now, with their account's access (any plan built before is in it): say in a few words that they are in, then take them one step further from where they stopped, what they came for or the next step of their setup. Never stop at their being in.",
     );
   }
   lines.push(todayLine(frame.now ?? new Date()));

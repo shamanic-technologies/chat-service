@@ -126,34 +126,61 @@ export async function startSignIn(email: unknown, phone: string, deps: ClientSer
   throw new Error(`client-service agent-signups/start ${status}: ${JSON.stringify(json)}`);
 }
 
+/** The unclaimed org a guest's plan was built on (guest-plan.ts): handed to them by the proof. */
+export interface PlanClaim {
+  orgId: string;
+  /** The throwaway external id we minted when we opened it: proves we did. */
+  externalOrgId: string;
+}
+
+/** How many times the same proof is redeemed when billing did not acknowledge the handover (client-service: redeem again). */
+export const BILLING_SETTLE_ATTEMPTS = 3;
+
 /**
  * Proves the email. On WhatsApp the same call makes the verified number resolve
  * to that account (client-service `whatsappPhone`, taken off any previous
  * holder). `whatsappPhone: null` (our website: the number was typed, nothing
- * verified it) sends none, so no number changes hands. The caller re-keys the session.
+ * verified it) sends none, so no number changes hands. With `claim` (the guest
+ * built their plan before proving it), the proof hands THAT org to them
+ * (client-service `claimOrgId` + `claimOrgExternalId`): no other org is opened,
+ * and a refusal never falls back to one. The caller re-keys the session.
  */
 export async function completeSignIn(
   email: unknown,
   code: unknown,
   whatsappPhone: string | null,
   deps: ClientServiceDeps = defaultDeps,
+  claim: PlanClaim | null = null,
 ): Promise<{ ok: true; account: SignedInAccount } | ReturnType<typeof refusal>> {
   if (typeof email !== "string" || !email.trim()) throw new Error("complete_sign_in requires the email");
   if (typeof code !== "string" && typeof code !== "number") throw new Error("complete_sign_in requires the code");
-  const { status, json } = await post(
-    "/internal/agent-signups/complete",
-    { email: email.trim().toLowerCase(), code: String(code).replace(/\s+/g, ""), ...(whatsappPhone ? { whatsappPhone } : {}) },
-    deps,
-  );
-  if (status === 200) {
+  const body = {
+    email: email.trim().toLowerCase(),
+    code: String(code).replace(/\s+/g, ""),
+    ...(whatsappPhone ? { whatsappPhone } : {}),
+    ...(claim ? { claimOrgId: claim.orgId, claimOrgExternalId: claim.externalOrgId } : {}),
+  };
+  for (let attempt = 1; ; attempt++) {
+    const { status, json } = await post("/internal/agent-signups/complete", body, deps);
+    if (status !== 200) {
+      // 403/409: the handover's own refusals (client-service), told to the person, nothing was made.
+      if ([400, 403, 404, 409, 410, 429].includes(status)) return refusal(json);
+      throw new Error(`client-service agent-signups/complete ${status}: ${JSON.stringify(json)}`);
+    }
     if (typeof json.orgId !== "string" || typeof json.userId !== "string" || (whatsappPhone !== null && json.whatsappPhone !== whatsappPhone)) {
       throw new Error(`client-service agent-signups/complete answered without orgId/userId or without binding the number: ${JSON.stringify(json)}`);
+    }
+    if (claim && json.orgId !== claim.orgId) {
+      throw new Error(`client-service agent-signups/complete answered org ${json.orgId}, not the claimed plan org ${claim.orgId}: ${JSON.stringify(json)}`);
+    }
+    // The org is theirs either way; billing's settle is retried by redeeming the same proof.
+    if (claim && json.billingSettled === false) {
+      if (attempt < BILLING_SETTLE_ATTEMPTS) continue;
+      console.warn(`[chat-service] sign-in claim org=${claim.orgId}: billing did not settle the signup after ${attempt} redemptions; the org is theirs, redeeming the proof again retries it`);
     }
     return {
       ok: true,
       account: { orgId: json.orgId, userId: json.userId, email: String(json.email ?? email), created: json.created === true },
     };
   }
-  if ([400, 404, 410, 429].includes(status)) return refusal(json);
-  throw new Error(`client-service agent-signups/complete ${status}: ${JSON.stringify(json)}`);
 }

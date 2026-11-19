@@ -51,6 +51,11 @@ export const ScenarioSchema = z
      */
     guest: z.boolean().optional(),
     /**
+     * The answer that follows a sign-in at once, in the same exchange (DISTRY-ONE-AI-1118 B): the
+     * turn runs with the account, its block says they just signed in (site and WhatsApp).
+     */
+    afterSignIn: z.boolean().optional(),
+    /**
      * A Lead event turn (surface "lead"): the writer's payload as the Lead event
      * workflow sent it (its prompt, the thread, the answer schema), on our own
      * brand. `guest` = no account of ours is theirs.

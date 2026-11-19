@@ -85,6 +85,15 @@ export const THREAD_MESSAGE_MAX_CHARS = 4000;
 const PUBLIC_FIRST =
   "Answer every question about distribute.you at once, from what we offer everyone (what we do, how pricing works, free trial, how to start): those answers need no account, so never put a sign-in in front of them. ";
 
+/**
+ * Their plan comes before any account (DISTRY-ONE-AI-1118 B, owner plan 2026-11-19): the
+ * server opens a draft for the conversation and refuses what needs an account, so the
+ * line states the strategy and lets the refusals speak.
+ */
+export const PLAN_BEFORE_ACCOUNT =
+  "Their plan comes before any account: once they give their website, build it right here with your API tools, the new-account skill's steps 1 to 5 (their brand from the website, what they sell, who to reach, sample companies, a sample email), on a draft opened for this conversation alone that becomes theirs when they prove their email. " +
+  "A step that needs their account (paying, launching, anything past the plan) is refused by our server: that is when you sign them up or in, and the plan comes with them. A website someone already set up with us is refused too: say so plainly and offer to sign them in. ";
+
 /** The account takes effect in the same exchange: no extra round for the person. */
 const SIGN_IN_ANSWERS_AT_ONCE =
   "Signing in never costs them a message: right after complete_sign_in succeeds, you answer again with their account's access, so in that reply just say in a few words that they are in, and never ask them to send anything (\"ok\", a question) to continue.";
@@ -158,14 +167,16 @@ export function identityLines(id: PersonIdentity): string[] {
         `We already know this person: our own records tie their number to ${knownEmails.join(", ")}. Never ask who they are or for their email. ` +
           "This number is not tied to their distribute.you account yet, so you see no account and can change nothing: never claim to see their brands, campaigns or figures. " +
           PUBLIC_FIRST +
-          "When their next step needs their account (their campaigns, their figures, starting or changing something), call start_sign_in with that email yourself (the one they signed up with, when several), tell them a 6-digit code just went there, then call complete_sign_in with it. " +
+          (id.canSignIn ? PLAN_BEFORE_ACCOUNT : "") +
+          "When their next step needs their account (their campaigns, their figures, paying or starting something), call start_sign_in with that email yourself (the one they signed up with, when several), tell them a 6-digit code just went there, then call complete_sign_in with it. " +
           SIGN_IN_ANSWERS_AT_ONCE,
       );
     } else {
       lines.push(
         `${id.place} is NOT tied to any distribute.you account yet. You see no account and can change nothing: never claim to see their brands, campaigns or figures. ` +
           PUBLIC_FIRST +
-          `When THEY want to start, or say they already have an account and their next step needs it, sign them up or in${id.numberKnown ? "" : ", right here in this conversation"}: ask for their email (once)${id.numberKnown ? "" : " and a phone number for urgent matters, with its country code (once)"}, call start_sign_in, ask for the 6-digit code from that email, call complete_sign_in. ` +
+          (id.canSignIn ? PLAN_BEFORE_ACCOUNT : "") +
+          `When their next step needs an account (paying, launching, their campaigns and figures), or they say they already have one, sign them up or in${id.numberKnown ? "" : ", right here in this conversation"}: ask for their email (once)${id.numberKnown ? "" : " and a phone number for urgent matters, with its country code (once)"}, call start_sign_in, ask for the 6-digit code from that email, call complete_sign_in. ` +
           SIGN_IN_ANSWERS_AT_ONCE,
       );
     }
@@ -180,8 +191,8 @@ export function identityLines(id: PersonIdentity): string[] {
   );
   if (id.afterSignIn) {
     lines.push(
-      "They signed in a moment ago, in this same exchange: you now act with their account. Answer now, with that access, what they asked before signing in (the thread and this conversation tell you what). " +
-        "Do not greet them again, do not repeat that they are signed in, and never ask them to send anything to continue.",
+      "They signed in a moment ago, in this same exchange: you now act with their account, and any plan built before is in it. Take them one step further from where they stopped, with that access: what they came for, the next step of their setup when that is where they are (the thread and this conversation tell you). " +
+        "A code or a yes is never the whole of what they want: never stop at their being in. Do not greet them again, and never ask them to send anything to continue.",
     );
   }
   return lines;

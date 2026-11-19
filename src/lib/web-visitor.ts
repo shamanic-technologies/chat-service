@@ -75,7 +75,7 @@ export const WEB_ACCOUNT_IDLE_MAX_MS = 30 * 86_400_000;
 /** A turn still "processing" after this long was cut (a restart): its retry is answered as failed, never `in_progress` forever. */
 export const WEB_TURN_STALE_MS = 10 * 60_000;
 /** The hidden trigger of the answer that follows a sign-in at once (never the visitor's words). */
-export const WEB_AFTER_SIGN_IN_TRIGGER = "(They just signed in, in this same exchange. Answer now, with their account, what they asked before signing in.)";
+export const WEB_AFTER_SIGN_IN_TRIGGER = "(They just signed in, in this same exchange. With their account, take them one step further from where they stopped.)";
 export const VISITOR_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 const E164 = /^\+[1-9]\d{6,14}$/;
 const SITE_URL = "https://distribute.you";
