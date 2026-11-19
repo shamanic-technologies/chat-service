@@ -136,12 +136,16 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
     const asked: Record<string, string> = { ...query, ...Object.fromEntries(Object.entries(pathParams).map(([k, v]) => [k, String(v)])) };
     // As production proposes it: the gateway's own words on what the act does.
     // A guest's plan (DISTRY-ONE-AI-1118 B): the server's own refusal of a call past the plan, as production
-    // answers it (the brand binding is production's too; a replay holds one brand, so it is not re-checked here).
+    // answers it. A replay holds one brand: the guard is bound to the brand the call names (production binds
+    // it to the conversation's plan brand).
     if (scenario.surface === "lead" ? scenario.lead?.guest === true : isGuestScenario(scenario)) {
-      const concrete = op.path.replace(/\{([^}]+)\}/g, (_, n: string) => (n.toLowerCase().includes("brand") ? "replay-brand" : String(pathParams[n] ?? n)));
-      const body = a.body && typeof a.body === "object" && "brandId" in (a.body as object) ? { ...(a.body as object), brandId: "replay-brand" } : a.body;
+      const concrete = op.path.replace(/\{([^}]+)\}/g, (_, n: string) => encodeURIComponent(String(pathParams[n] ?? n)));
+      const qs = new URLSearchParams(query).toString();
+      const body = a.body as { brandId?: unknown; brandIds?: unknown } | undefined;
+      const named = /^\/v1\/brands\/([^/]+)/.exec(concrete)?.[1];
+      const brand = (named && named !== "extract-fields" ? decodeURIComponent(named) : null) ?? (typeof body?.brandId === "string" ? body.brandId : null) ?? query.brandId ?? null;
       try {
-        planGuard("replay-brand")(op.method, `${concrete}${op.params.some((p) => p.name === "brandId" && p.in === "query") ? "?brandId=replay-brand" : ""}`, body);
+        planGuard(brand)(op.method, `${concrete}${qs ? `?${qs}` : ""}`, a.body);
       } catch (err) {
         if (err instanceof PlanRefusal) return err.toResult();
         throw err;
