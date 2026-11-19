@@ -1331,6 +1331,9 @@ const E164 = z.string().regex(/^\+[1-9]\d{6,14}$/, "phone must be E.164, e.g. +3
 
 export const ChannelReplyDaysQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(90).default(30).openapi({ description: "How many UTC days, today included (1..90, default 30)." }),
+  channel: z.enum(["whatsapp", "telegram", "web"]).optional().openapi({
+    description: "One surface only: `web` = the chat in our site's pages (delivered = answered in the page, refused = stopped by its guard). Omitted = every surface.",
+  }),
 });
 
 const ChannelReplyDaySchema = z.object({
@@ -1338,6 +1341,7 @@ const ChannelReplyDaySchema = z.object({
   received: z.number().int().openapi({ description: "Inbound WhatsApp messages the Copilot handled that day." }),
   delivered: z.number().int().openapi({ description: "Of those, replies crm-service accepted (left from the line)." }),
   notDelivered: z.number().int().openapi({ description: "Replies written (or the apology text) that never left: the send was refused. Broken when above zero." }),
+  refused: z.number().int().openapi({ description: "Website messages the guard stopped before any spend (more than 20 from one visitor in 10 minutes, or the day's cap on guest answers). Not counted in `received`. Zero on the other surfaces." }),
 });
 
 const ChannelReplyDaysResponseSchema = z
@@ -1348,7 +1352,7 @@ registry.registerPath({
   method: "get",
   path: "/internal/copilot/channel-replies/daily",
   tags: ["Internal"],
-  summary: "The Copilot's WhatsApp replies per day: received, delivered, not delivered (Monitoring)",
+  summary: "The Copilot's replies per day, every surface or one: received, delivered, not delivered, refused (Monitoring)",
   description: "Recomputed from the stored inbound rows, so the whole history is served. A day with `notDelivered` above zero is broken: a reply the person never got.",
   request: {
     headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
@@ -1610,27 +1614,36 @@ export const WebMessageRequestSchema = z
   .openapi("WebMessageRequest");
 export type WebMessageRequest = z.infer<typeof WebMessageRequestSchema>;
 
-const WebSignalsShape = {
-  askForContact: z.boolean().openapi({
-    description: "true once the visitor had several answers and gave no WhatsApp number or email: the page may ask for one (the next answers are limited, see messagesLeft).",
-  }),
-  messagesLeft: z.number().int().nullable().openapi({
-    description: "Answers this visitor can still get before giving a WhatsApp number or email (0 = the next message is refused with `contact_needed`); null once they gave one.",
-  }),
+const WebFactsShape = {
   continuedOn: z.enum(["whatsapp", "email"]).nullable().openapi({
     description: "Where the conversation also goes on since the visitor gave a handle. `whatsapp`: every answer is also sent there, their reply continues this conversation. `email`: the conversation is on their thread with us and our next message reaches them by email shortly. null before.",
   }),
+  account: z
+    .object({
+      signedIn: z.boolean().openapi({ description: "true once the visitor proved an email in the chat (sign-up or sign-in by code): their turns then run with their account." }),
+      email: z.string().nullable().openapi({ description: "The email they proved; null while a guest." }),
+    })
+    .openapi({ description: "Whose account acts in this conversation. A signed-in session idle for 30 days is not opened by the visitor id again (they prove the email again)." }),
 };
+
+const WebChoicesSchema = z
+  .object({
+    question: z.string().optional(),
+    choices: z.array(z.object({ label: z.string(), description: z.string().optional() })).openapi({ description: "Draw one button per choice; a click sends its `label` as the visitor's next message." }),
+  })
+  .nullable()
+  .openapi({ description: "Clickable choices the assistant ended its answer on (plain text), null when none. Not repeated in `reply`." });
 
 export const WebMessageResponseSchema = z
   .object({
-    status: z.enum(["answered", "failed", "contact_needed", "busy", "in_progress"]).openapi({
+    status: z.enum(["answered", "failed", "busy", "in_progress"]).openapi({
       description:
         "`answered`: `reply` is the assistant's answer. `failed`: the turn failed on our side, `reply` says so in one line (the visitor may send again). " +
-        "`contact_needed`: this visitor used their answers without giving a WhatsApp number or email, nothing ran (show a field for it, sent as a normal message). " +
-        "`busy`: the website chat answered its day's messages, nothing ran. `in_progress`: this messageId is still being answered (a retry came early).",
+        "`busy`: the guard stopped this message before anything ran (more than 20 messages from this visitor in 10 minutes, or the day's cap on guest answers): ask them to write again in a few minutes. " +
+        "`in_progress`: this messageId is still being answered: send the SAME messageId again in a few seconds; once done it answers the whole stored answer, byte-equal to the first response.",
     }),
-    reply: z.string().nullable().openapi({ description: "The answer to show in the page: plain text, URLs written out, choices as a numbered list. null when nothing ran." }),
+    reply: z.string().nullable().openapi({ description: "The answer to show in the page: plain text, URLs written out (a payment link included), WITHOUT the choices. When the visitor signed up or in during this message, it also carries the answer written with their account. null when nothing ran." }),
+    choices: WebChoicesSchema,
     handOff: z
       .object({
         channel: z.enum(["whatsapp", "email"]),
@@ -1639,7 +1652,7 @@ export const WebMessageResponseSchema = z
       })
       .nullable()
       .openapi({ description: "Set when the visitor's number or email is tied to the conversation: where this answer went beside the page (WhatsApp wins when both)." }),
-    ...WebSignalsShape,
+    ...WebFactsShape,
   })
   .openapi("WebMessageResponse");
 
@@ -1650,12 +1663,12 @@ export const WebConversationResponseSchema = z
       .array(
         z.object({
           role: z.enum(["visitor", "assistant"]),
-          text: z.string().openapi({ description: "As the page shows it (plain text)." }),
+          text: z.string().openapi({ description: "As the page shows it (plain text; past choices as a numbered list)." }),
           at: z.string().openapi({ description: "ISO timestamp." }),
         }),
       )
       .openapi({ description: "The conversation, oldest first; empty for a visitor who never wrote." }),
-    ...WebSignalsShape,
+    ...WebFactsShape,
   })
   .openapi("WebConversationResponse");
 
@@ -1666,16 +1679,17 @@ registry.registerPath({
   summary: "A visitor of our public site wrote in the page: the Copilot answers (synchronous)",
   description:
     "Called by the distribute.you site's SERVER (never the browser: it carries the service key) for every message a visitor types in the page chat. " +
-    "The visitor id is the identity: one guest Copilot conversation per visitor, the same assistant, voice and public offer as on WhatsApp (a guest sees no account). " +
-    "Answers in the response, usually within 5-20 s (allow 90 s). One message at a time per visitor. " +
-    "When the visitor gives their WhatsApp number, the assistant ties it to the conversation: that answer and every later one also reach them on WhatsApp from our assistant's number, and their WhatsApp reply continues the same conversation. " +
-    "Anonymous answers are bounded: `askForContact` turns true after a few answers, `contact_needed` once `messagesLeft` is 0. Spend is a Copilot support run under distribute.you's org.",
+    "The SAME assistant as on WhatsApp and email: same voice, skills and tools, keyed on who the visitor is. The visitor id finds the conversation; until they prove an email they are a guest (no account is read). " +
+    "They can sign up or in right in the chat (their email, a phone number, the code sent to the email): the session then runs with their account, and they set up, pay through a link and launch without leaving the page. " +
+    "Answers in the response, usually within 5-20 s; an onboarding step can take minutes. A turn runs to its end even when the caller stops waiting: send the SAME messageId again and it answers `in_progress` at once, then the whole stored answer. One turn at a time per visitor. " +
+    "When a guest gives their WhatsApp number or email to continue there, the assistant ties it to the conversation (`continuedOn`, `handOff`). " +
+    "No answer count walls a visitor. A guard bounds abuse (`busy`): 20 messages per visitor per 10 minutes, and a daily cap on guest answers (`WEB_GUEST_DAILY_TURN_CAP`, default 5000). A guest's spend is a Copilot support run under distribute.you's org; a signed-in visitor's turns are their own org's.",
   request: {
     headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
     body: { content: { "application/json": { schema: WebMessageRequestSchema } } },
   },
   responses: {
-    200: { description: "Answered, failed (said in one line), or refused before any spend", content: { "application/json": { schema: WebMessageResponseSchema } } },
+    200: { description: "Answered, failed (said in one line), still in progress, or stopped by the guard before any spend", content: { "application/json": { schema: WebMessageResponseSchema } } },
     400: { description: "Invalid request" },
     401: { description: "Missing x-api-key" },
   },

@@ -223,14 +223,12 @@ import {
   WEB_CONTINUE_TOOL_NAME,
   WEB_TASK_NAME,
   VISITOR_ID_PATTERN,
-  acceptWebMessage,
+  answerWebMessage,
   buildWebBlock,
+  type WebTurnFacts,
   handOverByEmailToCrm,
   parseContinueArgs,
-  processWebMessage,
   readWebConversation,
-  readWebState,
-  webSignals,
   type WebDeps,
 } from "./lib/web-visitor.js";
 import {
@@ -238,6 +236,7 @@ import {
   SIGN_IN_TOOL_NAMES,
   START_SIGN_IN_TOOL_NAME,
   completeSignIn,
+  parseTypedPhone,
   startSignIn,
 } from "./lib/channel-sign-in.js";
 import {
@@ -3784,10 +3783,10 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   let telegramTurn = false;
   // A visitor of our public site (POST /internal/copilot/web-messages,
   // DISTRY-WEB-CHAT-1117): same unlock, its own form + the WhatsApp hand-off tool.
-  let webTurn: { whatsapp: string | null; email: string | null } | null = null;
+  let webTurn: WebTurnFacts | null = null;
   if (parsed.data.channelMessageId) {
     const [m] = await db
-      .select({ channel: channelInboundMessages.channel, status: channelInboundMessages.status, orgId: channelInboundMessages.orgId, userId: channelInboundMessages.userId, sessionId: channelInboundMessages.sessionId, senderPhone: channelInboundMessages.senderPhone })
+      .select({ channel: channelInboundMessages.channel, status: channelInboundMessages.status, orgId: channelInboundMessages.orgId, userId: channelInboundMessages.userId, sessionId: channelInboundMessages.sessionId, senderPhone: channelInboundMessages.senderPhone, signedIn: channelInboundMessages.signedIn })
       .from(channelInboundMessages)
       .where(eq(channelInboundMessages.id, parsed.data.channelMessageId));
     if (nudge || leadTurn || proactiveTurn || !m || (m.channel !== TELEGRAM_CHANNEL && m.channel !== WEB_CHANNEL) || m.status !== "processing" || m.orgId !== orgId || m.userId !== userId || !sessionId || m.sessionId !== sessionId) {
@@ -3798,7 +3797,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     }
     if (m.channel === WEB_CHANNEL) {
       const [s] = await db.select({ channelPhone: sessions.channelPhone, channelEmail: sessions.channelEmail }).from(sessions).where(eq(sessions.id, sessionId));
-      webTurn = { whatsapp: s?.channelPhone ?? null, email: s?.channelEmail ?? null };
+      // The turn that follows their sign-in at once runs as the account, on the same message row.
+      webTurn = { whatsapp: s?.channelPhone ?? null, email: s?.channelEmail ?? null, guest: sessionIsGuest, afterSignIn: m.signedIn && !sessionIsGuest };
     } else {
       telegramTurn = true;
     }
@@ -3828,7 +3828,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   const sessionToolNames: string[] = sessionToolNamesFor({
     configTools: configAllowedToolNames,
     guest: sessionIsGuest,
-    canSignIn: channelSession !== null,
+    // Where the session can become theirs: a WhatsApp number or a website visitor is tied to it.
+    canSignIn: channelSession !== null || webTurn !== null,
     website: webTurn !== null,
   });
   // A lead turn: the person's tools only on our brand (their account's, or a
@@ -3857,7 +3858,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // A trigger the user did not write (nudge, proactive turn, the answer right
   // after a WhatsApp sign-in): stored hidden, never filed in the staff Unibox
   // as the user's words.
-  const hiddenTrigger = nudge === true || proactiveTurn || leadTurn !== null || channelTurn?.afterSignIn === true;
+  const hiddenTrigger = nudge === true || proactiveTurn || leadTurn !== null || channelTurn?.afterSignIn === true || webTurn?.afterSignIn === true;
   const promptContext = context && "channel" in context
     ? Object.fromEntries(Object.entries(context).filter(([k]) => k !== "channel"))
     : context;
@@ -4247,7 +4248,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     }
 
     const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME && t !== WEB_CONTINUE_TOOL_NAME));
-    if (webTurn) allTools.push(WEB_CONTINUE_TOOL);
+    if (webTurn && allowedToolNames.includes(WEB_CONTINUE_TOOL_NAME)) allTools.push(WEB_CONTINUE_TOOL);
     if (leadTurn) {
       allTools.push(
         REACH_ELSEWHERE_TOOL,
@@ -4578,13 +4579,27 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       // delivered message), never the model's or the caller's.
       if (call.name === START_SIGN_IN_TOOL_NAME || call.name === COMPLETE_SIGN_IN_TOOL_NAME) {
         const args = (call.args as Record<string, unknown>) || {};
-        if (!channelSession) throw new Error(`${call.name} works only in a WhatsApp conversation.`);
+        if (!channelSession && !webTurn) throw new Error(`${call.name} works only in a conversation tied to the person (WhatsApp or our website).`);
+        // WhatsApp verified the sender's number: it is the session's, and the
+        // completion ties it to the account. On our website nothing verified one:
+        // the visitor types it (every signup leaves a number) and it is never
+        // tied as a WhatsApp identity (DISTRY-ONE-AI-1118).
+        const verifiedPhone = channelSession ? channelSession.channelPhone : null;
         if (call.name === START_SIGN_IN_TOOL_NAME) {
-          const result = await startSignIn(args.email, channelSession.channelPhone);
+          let phone = verifiedPhone;
+          if (!phone) {
+            const typed = parseTypedPhone(args.phone);
+            if (!typed.ok) {
+              toolCalls.push({ name: call.name, args, result: typed.refused });
+              return { name: call.name, result: typed.refused };
+            }
+            phone = typed.phone;
+          }
+          const result = await startSignIn(args.email, phone);
           toolCalls.push({ name: call.name, args, result });
           return { name: call.name, result };
         }
-        const signed = await completeSignIn(args.email, args.code, channelSession.channelPhone);
+        const signed = await completeSignIn(args.email, args.code, verifiedPhone);
         if (!signed.ok) {
           toolCalls.push({ name: call.name, args: { email: args.email }, result: signed });
           return { name: call.name, result: signed };
@@ -4600,6 +4615,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
             userId: signed.account.userId,
             guest: false,
             brandIds: brandIds.length > 0 ? brandIds : null,
+            ...(webTurn ? { webAccountEmail: signed.account.email } : {}),
             updatedAt: new Date(),
           })
           .where(eq(sessions.id, currentSessionId!));
@@ -4607,7 +4623,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           ok: true,
           signedIn: signed.account.email,
           accountCreated: signed.account.created,
-          note: "This WhatsApp number is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue.",
+          note: `${webTurn ? "This conversation" : "This WhatsApp number"} is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue.`,
         };
         toolCalls.push({ name: call.name, args: { email: args.email }, result });
         return { name: call.name, result };
@@ -6236,7 +6252,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         // byte streamed gets an HTTP 402 instead (decided by the org: the
         // gateway forwards no caller type). Every other turn keeps the answer.
         let answerHttp402 = false;
-        if (!sse.isOpen()) {
+        // Nor can a person in the page chat: a website turn keeps the in-chat answer.
+        if (!sse.isOpen() && !webTurn) {
           try {
             answerHttp402 = await isAgentApiOrg(orgId, userId, runId ?? parentRunId);
           } catch (offerErr) {
@@ -6402,7 +6419,7 @@ app.get("/internal/copilot/channel-replies/daily", requireInternalAuth, async (r
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
   }
-  res.json({ days: await channelReplyDays(db, parsed.data.days) });
+  res.json({ days: await channelReplyDays(db, parsed.data.days, new Date(), parsed.data.channel) });
 });
 
 const telegramDeps: TelegramDeps = {
@@ -6475,43 +6492,23 @@ const webDeps: WebDeps = {
   handOverByEmail: (body) => handOverByEmailToCrm(body),
 };
 
-// A visitor of our public site talks to the Copilot in the page (DISTRY-WEB-CHAT-1117).
-// Synchronous: the answer is the response. One message at a time per visitor.
-const webVisitorQueues = new Map<string, Promise<unknown>>();
+// A visitor of our public site talks to the Copilot in the page (DISTRY-WEB-CHAT-1117,
+// DISTRY-ONE-AI-1118). The answer is the response; a turn runs to its end even when
+// the caller's connection drops, and the same messageId sent again answers
+// `in_progress` at once, then the whole stored answer (web-visitor.ts).
 app.post("/internal/copilot/web-messages", requireInternalAuth, async (req, res) => {
   const parsed = WebMessageRequestSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
   }
   const msg = parsed.data;
-  const previous = webVisitorQueues.get(msg.visitorId) ?? Promise.resolve();
-  const mine = previous.catch(() => undefined).then(async () => {
-    const accepted = await acceptWebMessage(webDeps, msg);
-    if (accepted.status === "contact_needed" || accepted.status === "busy") {
-      return { status: accepted.status, reply: null, handOff: null, ...webSignals(await readWebState(db, msg.visitorId)) };
-    }
-    if (accepted.status === "duplicate") {
-      const [row] = await db.select().from(channelInboundMessages).where(eq(channelInboundMessages.id, accepted.rowId));
-      const state = webSignals(await readWebState(db, msg.visitorId));
-      if (!row || row.status === "received" || row.status === "processing") return { status: "in_progress", reply: null, handOff: null, ...state };
-      return { status: row.status === "answered" ? "answered" : "failed", reply: row.replyText, handOff: null, ...state };
-    }
-    const answer = await processWebMessage(webDeps, accepted.rowId);
-    return {
-      status: answer.failed ? "failed" : "answered",
-      reply: answer.reply,
-      handOff: answer.handOff,
-      ...webSignals(await readWebState(db, msg.visitorId)),
-    };
-  });
-  webVisitorQueues.set(msg.visitorId, mine);
   try {
-    res.status(200).json(await mine);
+    const body = await answerWebMessage(webDeps, msg);
+    // The site may have stopped waiting: the answer is on the row for its next call.
+    if (!res.destroyed && !res.writableEnded) res.status(200).json(body);
   } catch (err) {
     console.error(`[chat-service] web message from visitor ${msg.visitorId}:`, err);
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  } finally {
-    if (webVisitorQueues.get(msg.visitorId) === mine) webVisitorQueues.delete(msg.visitorId);
+    if (!res.destroyed && !res.headersSent) res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
