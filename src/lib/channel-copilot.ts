@@ -40,6 +40,16 @@ export const VOICE_NOTE_PREFIX = "🎤 Voice note:";
 export const VOICE_NOTE_UNREADABLE = "🎤 Voice note (could not be understood)";
 const DASHBOARD_URL = process.env.DASHBOARD_URL || "https://dashboard.distribute.you";
 
+/**
+ * Links on a surface that cannot show a page (WhatsApp, the website chat, Telegram). Owner
+ * 2026-11-17: a person who must pay gets a DIRECT checkout link, never "go find it on the
+ * dashboard" (staff test 2026-11-19: right after a sign-in, « add money … here's the link:
+ * https://dashboard.distribute.you », licensed by « when a page helps, give the dashboard »).
+ */
+export const PAGE_LINKS_LINE =
+  "Pages you open (open_page) cannot be shown here. A step only they can take gets the direct link its operation returns (paying: the checkout link POST /v1/billing/accounts/prepaid_checkout gives), never the dashboard to go and find it; " +
+  `give ${DASHBOARD_URL} only when they want to look around their account themselves.`;
+
 /** The `context.channel` block the internal route passes to /chat. */
 export const ChatChannelContextSchema = z.object({
   kind: z.literal("whatsapp"),
@@ -96,7 +106,16 @@ export const PLAN_BEFORE_ACCOUNT =
 
 /** The account takes effect in the same exchange: no extra round for the person. */
 const SIGN_IN_ANSWERS_AT_ONCE =
-  "Signing in never costs them a message: right after complete_sign_in succeeds, you answer again with their account's access, so in that reply just say in a few words that they are in, and never ask them to send anything (\"ok\", a question) to continue.";
+  "Signing in never costs them a message: right after complete_sign_in succeeds, you answer again with their account's access, and that answer is the one they read in place of this reply: so in this reply just say in a few words that they are in, and never ask them to send anything (\"ok\", a question) to continue.";
+
+/**
+ * The answer right after a sign-in, ONE line for every channel (staff test 2026-11-19: the
+ * website joined both turns and the person read « You're in » twice). Every channel serves
+ * this answer IN PLACE of the sign-in turn's own words (web-visitor.ts, lead-turn.ts).
+ */
+export const AFTER_SIGN_IN_LINE =
+  "They signed in a moment ago, in this same exchange, and what you wrote after their code never reached them: this answer is the ONE message they read. Say once, in a few words, that they are in, then take them one step further from where they stopped, with their account's access (any plan built before is in it): what they came for, the next step of their setup when that is where they are (the thread and this conversation tell you). " +
+  "A code or a yes is never the whole of what they want: never stop at their being in. Do not greet them again, and never ask them to send anything to continue.";
 
 /**
  * SOPHIE-WA-HUMAN-1106 (prod 2026-11-04: « lui » right after three lead
@@ -189,12 +208,7 @@ export function identityLines(id: PersonIdentity): string[] {
     // website is the one step I can't do from WhatsApp", sent to the dashboard).
     WHOLE_WAY_TO_USE,
   );
-  if (id.afterSignIn) {
-    lines.push(
-      "They signed in a moment ago, in this same exchange: you now act with their account, and any plan built before is in it. Take them one step further from where they stopped, with that access: what they came for, the next step of their setup when that is where they are (the thread and this conversation tell you). " +
-        "A code or a yes is never the whole of what they want: never stop at their being in. Do not greet them again, and never ask them to send anything to continue.",
-    );
-  }
+  if (id.afterSignIn) lines.push(AFTER_SIGN_IN_LINE);
   return lines;
 }
 
@@ -207,7 +221,7 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
     `You are answering on WhatsApp as ${who}. You are the distribute.you Copilot: same person, same conversation as on the web, same rules, same personality.${name ? ` Here your name is ${name}: say it only when you first greet someone, never as a header.` : ""}`,
     "WhatsApp shows plain text. Write short messages. Use WhatsApp markup only (*bold*, _italic_): no tables, no headings, no markdown links (write the URL itself). Never use the long dash characters.",
     "Clickable choices (present_choices) are shown as a numbered list: the person answers with a number or in words.",
-    `Pages you open (open_page) cannot be shown here: when a page helps, give the link ${DASHBOARD_URL}.`,
+    PAGE_LINKS_LINE,
     `People may send voice notes. ${VOICE_NOTE_PREFIX} followed by words is what they SAID in a voice note, transcribed: treat it as their message and answer it like any written one. ${VOICE_NOTE_UNREADABLE} means a voice note we could not understand: say you could not listen to it and ask them to write it or send it again. Always answer in text: you cannot send voice notes.`,
   ];
   if (channel.assistant.instructions?.trim()) lines.push(`How you speak on this number: ${channel.assistant.instructions.trim()}`);

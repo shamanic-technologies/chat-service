@@ -59,6 +59,8 @@ PLAN_FIXTURES = {
     "preview_email": [EMAIL],
     # Answered only when the turn has an account: a guest's call is refused by the replay's plan guard first.
     "get_prepaid_status": [PREPAID],
+    # The same figures, read alone (the gateway serves them apart too; replays of 2026-11-19 reached for it and got "no data").
+    "GET /v1/billing/accounts/reload_rules": [PREPAID["reload_rules"]],
     "create_prepaid_checkout": [{"url": "https://checkout.example/session-1"}],
     "list_brands": [{"brands": [{"id": "b-1", "name": "Dutrou", "domain": "dutrou.com"}]}],
     "list_offers": [{"offers": [{"id": "o-1", "name": "Drain unblocking for restaurants"}]}],
@@ -70,7 +72,7 @@ SIGN_IN_FIXTURES = {
             "ok": True,
             "signedIn": "sam@example.com",
             "accountCreated": True,
-            "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue.",
+            "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access, and that answer is the one they read in place of this reply: here just say in a few words that they are in. Never ask them to send anything to continue.",
             "plan": "The plan built in this conversation (dutrou.com) is now in this account.",
         }
     ],
@@ -183,8 +185,9 @@ def main():
             },
         ]
         message = "(They just signed in, in this same exchange. With their account, take them one step further from where they stopped.)" if surface == "site" else "482913"
-        if surface == "whatsapp":
-            signed = signed[:-2]
+        # WhatsApp (lead-turn.ts): the answer with the account re-runs the SAME lead event (their code) on the
+        # whole thread, the sign-in turn's hidden words included; the site gets the hidden trigger. Before, the
+        # WhatsApp replay cut the code and graded the sign-in turn itself, which never reaches them.
         out.append(scenario(
             f"one-ai-after-sign-in-{tag}", "Right after the sign-in: the plan is theirs, the next step comes", surface, message, signed,
             [
@@ -195,6 +198,25 @@ def main():
             ],
             "Says in a few words that they are in, then takes them one step further toward the launch they asked for, with their account (the first payment with its figures read from the account, asking their yes, or the campaign to propose). "
             "Never stops at their being in, never asks them to send anything to continue, never asks for the website or what they sell again.",
+            guest=False, after_sign_in=True,
+        ))
+        # Staff test 2026-11-19: right after the sign-in, asked to pay, the answer gave the dashboard home
+        # (« add money … here's the link: https://dashboard.distribute.you ») after « You're in » twice.
+        # Owner 2026-11-17: a person who must pay gets a DIRECT checkout link.
+        pay = [dict(m) for m in signed]
+        ask = next(i for i, m in enumerate(pay) if m["content"] == "Looks great. Let's launch it.")
+        pay[ask]["content"] = "Looks great. How do I pay so it can start?"
+        pay[ask + 1] = {"role": "assistant", "content": "Paying needs your account, and everything we built here comes with it. Which email should it use?"}
+        out.append(scenario(
+            f"one-ai-after-sign-in-pay-{tag}", "Right after the sign-in, they asked how to pay: the payment's own link", surface, message, pay,
+            [
+                "They just proved their email in this conversation: the account is theirs and holds the plan built before (brand Dutrou, offer drain unblocking for restaurants, independent restaurants in Paris, the sample email).",
+                "Nothing is paid or launched yet. The account's payment status and its first payment and reload figures are in the tool answers (get_prepaid_status); the payment link is what create_prepaid_checkout returns, after their yes on the amounts.",
+                SITE_FACT,
+                "They asked how to pay before signing in.",
+            ],
+            "Says once, in a few words, that they are in, then moves to the payment they asked about: the first payment and reload figures read from their account with their yes asked, or the payment link the checkout returns. "
+            "Never gives the dashboard address or tells them to find the payment on the dashboard, never stops at their being in, never says twice that they are in.",
             guest=False, after_sign_in=True,
         ))
     for s in out:

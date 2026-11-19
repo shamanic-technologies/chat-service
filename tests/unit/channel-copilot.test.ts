@@ -133,7 +133,7 @@ describe("buildChannelBlock", () => {
   // "asked" was the code itself). The turn after a sign-in moves them on, never stops at being in.
   it("the turn right after a sign-in takes them one step further, without a new greeting", () => {
     const block = buildChannelBlock({ ...channel, afterSignIn: true }, false);
-    expect(block).toContain("Take them one step further from where they stopped");
+    expect(block).toContain("take them one step further from where they stopped");
     expect(block).toContain("never stop at their being in");
     expect(block).not.toContain("what they asked before signing in");
     expect(buildChannelBlock(channel, false)).not.toContain("one step further from where they stopped");
@@ -224,9 +224,10 @@ describe("buildChannelBlock", () => {
     // Both re-pinned by SOPHIE-WA-HUMAN-1106 (ambiguity, quote and photo lines, every chat-app block).
     // Both re-pinned by SOPHIE-CORE-1111 (a next step offered once, never a push).
     // Guest block re-pinned by DISTRY-ONE-AI-1118 B (their plan before any account).
-    expect(sha(false, legacy)).toBe("c28fc2ef7442cc632cac98742e7d7c5f373e743f0d1182d09f14c153d7823ded");
-    expect(sha(true, legacy)).toBe("dbe7d31195f2f2942afb07c9da12170c00fa241556576306909622709f2183ce");
-    expect(sha(true, { ...legacy, receivedOn: null })).toBe("dbe7d31195f2f2942afb07c9da12170c00fa241556576306909622709f2183ce");
+    // Both re-pinned by the DISTRY-ONE-AI-1118 follow-up (a step only they take gets its direct link; the sign-in reply is replaced).
+    expect(sha(false, legacy)).toBe("6b68c0f35fd3eeb5e522c64c52da08cc99e02042fb547a2a9c9d0553ef09120a");
+    expect(sha(true, legacy)).toBe("56f7c125118d563cfd9b81cf7cc7a3648d66ed8e46772285a5cb0a23fb32a6d3");
+    expect(sha(true, { ...legacy, receivedOn: null })).toBe("56f7c125118d563cfd9b81cf7cc7a3648d66ed8e46772285a5cb0a23fb32a6d3");
   });
 
   it("carries no hard-coded assistant name", () => {
