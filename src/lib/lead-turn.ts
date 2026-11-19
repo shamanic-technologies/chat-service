@@ -36,6 +36,7 @@ import { AFTER_SIGN_IN_LINE, AMBIGUITY_LINE, QUOTE_AND_PHOTO_LINES, buildChannel
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
 import { BRAND_TOOLS_LINE } from "./brand-mcp.js";
 import { REACH_ELSEWHERE_TOOL_NAME, forgetLeadTurnCaller, registerLeadTurnCaller } from "./lead-contact.js";
+import { DISTRY_LIMIT_SUBJECT, type DistryGate, type DistryVerdict } from "./distry-spend.js";
 import {
   REPLY_TO_FIELD,
   forgetLeadTurnMoment,
@@ -270,6 +271,40 @@ export interface LeadTurnDeps {
   readWhatsappMoment?: (args: { caller: CrmCaller; brandId: string; item: Record<string, unknown> | null | undefined }) => Promise<WhatsappMoment>;
   /** crm-service: « typing… » on (`start`) or off (`stop`) in the person's WhatsApp. */
   setWhatsappTyping?: (args: { caller: CrmCaller; brandId: string; phone: string; state: "start" | "stop" }) => Promise<void>;
+  /** Distry's limits on our money (distry-spend.ts): our own brand's turns to non-clients. */
+  spend: DistryGate;
+}
+
+/**
+ * PURE: the writer's answer carrying Distry's limit notice, with no model call
+ * (DISTRY-GUEST-CAPS-1119). Every property the writer's schema declares gets a
+ * value: the notice in the message field (as paragraphs when the field holds
+ * HTML), a `write` decision, the subject on email, the next look tomorrow when
+ * the limit resets, empty for the rest.
+ */
+export function limitNoticeAnswer(payload: Pick<LeadTurnRequest, "responseSchema" | "messageField" | "medium">, notice: string, now: Date): Record<string, unknown> {
+  const props = ((payload.responseSchema as { properties?: Record<string, Record<string, unknown>> }).properties ?? {}) as Record<string, Record<string, unknown>>;
+  const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 9));
+  const out: Record<string, unknown> = {};
+  for (const [key, prop] of Object.entries(props)) {
+    if (key === payload.messageField) {
+      const html = /html/i.test(key) || /html/i.test(String(prop.description ?? ""));
+      out[key] = html ? notice.split("\n").map((line) => `<p>${line.replace(/(https?:\/\/\S+)/g, '<a href="$1">$1</a>')}</p>`).join("") : notice;
+    } else if (Array.isArray(prop.enum)) {
+      out[key] = prop.enum.includes("write") ? "write" : prop.enum[0];
+    } else if (key === "subject") {
+      out[key] = payload.medium === "email" ? DISTRY_LIMIT_SUBJECT : "";
+    } else if (key === "nextFollowUpAt") {
+      out[key] = tomorrow.toISOString();
+    } else if (key === "nextFollowUpWhy") {
+      out[key] = "Distry's free conversation limit for today is reached; it opens again tomorrow.";
+    } else if (key === "reason") {
+      out[key] = "Automatic limit notice: today's free conversation limit is reached (no AI answer).";
+    } else {
+      out[key] = prop.type === "string" || prop.type === undefined ? "" : null;
+    }
+  }
+  return out;
 }
 
 export interface Caller {
@@ -323,7 +358,7 @@ export async function resolveLeadAccount(deps: Pick<LeadTurnDeps, "resolvePhone"
 export async function pickLeadSession(
   deps: Pick<LeadTurnDeps, "db" | "listBrandIds">,
   args: { payload: LeadTurnRequest; ownBrand: boolean; account: PhoneAccount | null; caller: Caller; runId: string },
-): Promise<{ sessionId: string; orgId: string; userId: string; guest: boolean; phoneBound: boolean }> {
+): Promise<{ sessionId: string; orgId: string; userId: string; guest: boolean; phoneBound: boolean; planOrgId?: string | null }> {
   const { db } = deps;
   const { payload, ownBrand, account, caller } = args;
   const phone = ownBrand ? payload.recipient.phone ?? null : null;
@@ -355,7 +390,7 @@ export async function pickLeadSession(
       .where(and(eq(sessions.channelPhone, phone), eq(sessions.guest, true), eq(sessions.configKey, COPILOT_CONFIG_KEY)))
       .orderBy(desc(sessions.updatedAt))
       .limit(1);
-    if (guestSession) return { sessionId: guestSession.id, orgId: guestSession.orgId, userId: guestSession.userId!, guest: true, phoneBound: true };
+    if (guestSession) return { sessionId: guestSession.id, orgId: guestSession.orgId, userId: guestSession.userId!, guest: true, phoneBound: true, planOrgId: guestSession.planOrgId ?? null };
   }
   const [created] = await db
     .insert(sessions)
@@ -434,10 +469,38 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
     const run = (identity: { orgId: string; userId: string }, runId: string) =>
       deps.runChat({ ...identity, runId, sessionId: picked.sessionId, leadTurnId: rowId, trackingHeaders: inCallerOrg(identity) ? caller.trackingHeaders : {} });
 
+    // Distry's limits on our money (DISTRY-GUEST-CAPS-1119): our own brand's turn to a
+    // non-client. Another brand's lead runs on that brand's own org: never ours to cap.
+    let spendVerdict: DistryVerdict | null = null;
+    if (ownBrand) {
+      const handle = payload.recipient.phone ? `phone:${payload.recipient.phone}` : `email:${(payload.recipient.email ?? "").toLowerCase()}`;
+      spendVerdict = await deps.spend.gate({
+        key: handle,
+        surface: payload.medium,
+        guest: picked.guest,
+        turnOrgId: picked.orgId,
+        planOrgId: picked.planOrgId ?? null,
+      });
+      if (!spendVerdict.run) {
+        const answer = limitNoticeAnswer(payload, spendVerdict.notice, new Date());
+        if (typeof answer[payload.messageField] !== "string" || !(answer[payload.messageField] as string).trim()) {
+          await typing("stop");
+          typingOn = false;
+        }
+        await db
+          .update(copilotLeadTurns)
+          .set({ status: "answered", answer, model: "distry-limit-notice", error: `distry_limit:${spendVerdict.reason}`, updatedAt: new Date() })
+          .where(eq(copilotLeadTurns.id, rowId));
+        const [limited] = await db.select().from(copilotLeadTurns).where(eq(copilotLeadTurns.id, rowId));
+        return { status: 200, body: leadTurnBody(limited!, false) };
+      }
+    }
+
     const first = await run(picked, turnRunId);
     const firstStream = parseLeadTurnStream(first.body);
     const firstFailure = turnFailure(first.status, firstStream, first.body);
     if (firstFailure) return fail(firstFailure === "out_of_credits" || first.status === 402 ? 402 : 502, firstFailure);
+    let planAfter: string | null = picked.planOrgId ?? null;
     let answer = firstStream.answer!;
     let model = firstStream.model;
     let signedIn = false;
@@ -445,7 +508,8 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
     // A guest who signed in during the turn: the account answers in the SAME
     // exchange (a second turn, as them); the first answer never leaves.
     if (picked.guest) {
-      const [after] = await db.select({ orgId: sessions.orgId, userId: sessions.userId, guest: sessions.guest }).from(sessions).where(eq(sessions.id, picked.sessionId));
+      const [after] = await db.select({ orgId: sessions.orgId, userId: sessions.userId, guest: sessions.guest, planOrgId: sessions.planOrgId }).from(sessions).where(eq(sessions.id, picked.sessionId));
+      planAfter = after?.planOrgId ?? planAfter;
       // complete_sign_in re-keys the session to the account (guest off, its org and user).
       if (after && !after.guest && after.userId && (after.userId !== picked.userId || after.orgId !== picked.orgId)) {
         signedIn = true;
@@ -460,6 +524,8 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
       }
     }
 
+    // The guest's turn joins their spend; a plan org opened in it is counted from 0.
+    if (spendVerdict) await deps.spend.record(spendVerdict, turnRunId, planAfter);
     // Nothing goes out now: « typing… » ends here (a send ends it in crm).
     const sends = answer[payload.messageField];
     if (!(typeof sends === "string" && sends.trim())) {

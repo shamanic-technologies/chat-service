@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from "vitest";
 import {
   WEB_ACCOUNT_IDLE_MAX_MS,
   WEB_AFTER_SIGN_IN_TRIGGER,
-  WEB_GUEST_DAILY_TURN_CAP_DEFAULT,
   WEB_SPEED_MAX_MESSAGES,
   WEB_SPEED_WINDOW_MS,
   WEB_TURN_STALE_MS,
@@ -17,7 +16,6 @@ import {
   readWebConversation,
   webFacts,
   webGuardVerdict,
-  webGuestDailyTurnCap,
   webIdentityOf,
   webTurnOutcome,
   withChoicesList,
@@ -27,6 +25,7 @@ import * as webVisitor from "../../src/lib/web-visitor.js";
 import { CHANNEL_FAILURE_TEXT, PAGE_LINKS_LINE, WHOLE_WAY_TO_USE, buildChannelBlock, identityLines, type ChatChannelContext } from "../../src/lib/channel-copilot.js";
 import { buildTelegramBlock } from "../../src/lib/telegram-copilot.js";
 import { turnKeyOf } from "../../src/lib/turn-queue.js";
+import { DISTRY_LIMIT_NOTICE_GUEST, type DistryGate, type DistryPerson } from "../../src/lib/distry-spend.js";
 
 const sse = (events: unknown[]) => events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("") + "data: [DONE]\n\n";
 
@@ -65,26 +64,16 @@ interface Fake {
 /** A stateful db: the visitor's one session, the stored message rows (found by the id or key a `where` names), counts computed from the rows. */
 function fakeDb(state: Fake) {
   const nameOf = (table: unknown) => String((table as Record<symbol, unknown>)[Symbol.for("drizzle:Name")]);
-  let countQueries = 0;
   const select = (fields?: Record<string, unknown>) => ({
     from: (table: unknown) => ({
       where: (cond: unknown) => {
         const name = nameOf(table);
         let rows: unknown[] = [];
         if (fields && "n" in fields) {
-          // acceptWebMessage counts twice, in this order: the visitor's last 10 minutes, then (a guest) the line's day.
+          // acceptWebMessage counts once: the visitor's last 10 minutes (the only count; spend is in dollars, distry-spend.ts).
           const values = boundValues(cond);
-          const visitor = values.includes(VISITOR) || state.rows.some((r) => values.includes(r.senderPhone));
-          const speed = countQueries++ % 2 === 0 && visitor;
           const live = state.rows.filter((r) => r.status !== "refused");
-          rows = [
-            {
-              n: speed
-                ? live.filter((r) => values.includes(r.senderPhone) && (r.createdAt as Date).getTime() >= state.now.getTime() - WEB_SPEED_WINDOW_MS).length
-                : live.filter((r) => r.orgId === LINE.orgId && (r.createdAt as Date).toISOString().slice(0, 10) === state.now.toISOString().slice(0, 10)).length,
-            },
-          ];
-          if (!speed) countQueries = 0;
+          rows = [{ n: live.filter((r) => values.includes(r.senderPhone) && (r.createdAt as Date).getTime() >= state.now.getTime() - WEB_SPEED_WINDOW_MS).length }];
         } else if (name === "channel_inbound_messages") {
           const values = boundValues(cond);
           rows = state.rows.filter((r) => values.includes(r.id) || values.includes(r.messageId));
@@ -155,7 +144,7 @@ function world(over: Partial<Fake> = {}) {
     sendWhatsapp: vi.fn(async () => {}),
     handOverByEmail: vi.fn(async () => ({ status: "pending" })),
     now: () => state.now,
-    guestDailyTurnCap: () => WEB_GUEST_DAILY_TURN_CAP_DEFAULT,
+    spend: { gate: vi.fn(async (person: DistryPerson) => ({ run: true as const, tracked: true, person })), record: vi.fn(async () => {}) },
   };
   const send = (messageId: string, text = "hi") => answerWebMessage(deps, { visitorId: VISITOR, messageId, text });
   return { state, deps, runs, send };
@@ -316,28 +305,38 @@ describe("the guard: abuse is cut, a person onboarding never is (DISTRY-ONE-AI-1
     expect(deps.runChat).toHaveBeenCalledTimes(40);
   });
 
-  it("the daily breaker counts GUEST answers only: a signed-in visitor's turns are their org's and never stopped by it", async () => {
-    const guest = world();
-    guest.deps.guestDailyTurnCap = () => 3;
-    for (let i = 0; i < 3; i++) expect((await guest.send(`g${i}`)).status).toBe("answered");
-    expect(await guest.send("g3")).toMatchObject({ status: "busy", reply: null });
-    expect(guest.state.rows.at(-1)).toMatchObject({ status: "refused", error: "guard:daily" });
-
-    const signedIn = world({ session: accountSession(), rows: guest.state.rows.filter((r) => r.status !== "refused").map((r) => ({ ...r, senderPhone: "v_another_visitor_01" })) });
-    signedIn.deps.guestDailyTurnCap = () => 3;
-    expect((await signedIn.send("a1")).status).toBe("answered");
-    expect(signedIn.state.rows.at(-1)).toMatchObject({ orgId: ACCOUNT.orgId, userId: ACCOUNT.userId, status: "answered" });
+  it("the speed verdict is the only count: no answer count caps a day (DISTRY-GUEST-CAPS-1119 deleted it)", () => {
+    expect(webGuardVerdict({ visitorRecent: WEB_SPEED_MAX_MESSAGES - 1 })).toBeNull();
+    expect(webGuardVerdict({ visitorRecent: WEB_SPEED_MAX_MESSAGES })).toBe("speed");
+    expect(Object.keys(webVisitor)).not.toContain("webGuestDailyTurnCap");
   });
 
-  it("the verdict and the cap: speed first, the day's cap for a guest, tunable by WEB_GUEST_DAILY_TURN_CAP", () => {
-    expect(webGuardVerdict({ visitorRecent: WEB_SPEED_MAX_MESSAGES - 1, guest: true, guestToday: 0, dailyCap: 10 })).toBeNull();
-    expect(webGuardVerdict({ visitorRecent: WEB_SPEED_MAX_MESSAGES, guest: false, guestToday: 0, dailyCap: 10 })).toBe("speed");
-    expect(webGuardVerdict({ visitorRecent: 0, guest: true, guestToday: 10, dailyCap: 10 })).toBe("daily");
-    expect(webGuardVerdict({ visitorRecent: 0, guest: false, guestToday: 10_000, dailyCap: 10 })).toBeNull();
-    expect(webGuestDailyTurnCap({})).toBe(WEB_GUEST_DAILY_TURN_CAP_DEFAULT);
-    expect(WEB_GUEST_DAILY_TURN_CAP_DEFAULT).toBe(5000);
-    expect(webGuestDailyTurnCap({ WEB_GUEST_DAILY_TURN_CAP: "800" })).toBe(800);
-    expect(() => webGuestDailyTurnCap({ WEB_GUEST_DAILY_TURN_CAP: "lots" })).toThrow(/whole number/);
+  it("Distry's limit: the visitor gets the notice as the answer, no run, no model call; the gate is asked with who they are", async () => {
+    const { deps, send, state } = world({ session: { ...accountSession(), guest: true, userId: LINE.userId, orgId: LINE.orgId, webAccountEmail: null, planOrgId: "org-plan-1" } });
+    deps.spend.gate = vi.fn(async (person: DistryPerson) => ({ run: false as const, reason: "person_cap" as const, notice: DISTRY_LIMIT_NOTICE_GUEST, person }));
+    const out = await send("m-cap");
+    expect(out).toMatchObject({ status: "answered", reply: DISTRY_LIMIT_NOTICE_GUEST, choices: null, handOff: null });
+    expect(deps.spend.gate).toHaveBeenCalledWith({ key: `web:${VISITOR}`, surface: "web", guest: true, turnOrgId: LINE.orgId, planOrgId: "org-plan-1" });
+    expect(deps.createRootRun).not.toHaveBeenCalled();
+    expect(deps.runChat).not.toHaveBeenCalled();
+    expect(deps.spend.record).not.toHaveBeenCalled();
+    expect(state.rows.at(-1)).toMatchObject({ status: "answered", error: "distry_limit:person_cap", replyText: DISTRY_LIMIT_NOTICE_GUEST });
+  });
+
+  it("under the limits the turn runs and its run joins the visitor's spend", async () => {
+    const { deps, send } = world();
+    expect((await send("m-ok")).status).toBe("answered");
+    expect(deps.runChat).toHaveBeenCalledTimes(1);
+    expect(deps.spend.record).toHaveBeenCalledWith(expect.objectContaining({ run: true }), "run-1", null);
+  });
+
+  it("a ledger read that fails fails the turn loudly: never an answer on unmeasured spend", async () => {
+    const { deps, send } = world();
+    deps.spend.gate = vi.fn(async () => {
+      throw new Error("runs-service costs batch 503");
+    });
+    expect(await send("m-err")).toMatchObject({ status: "failed", reply: CHANNEL_FAILURE_TEXT });
+    expect(deps.runChat).not.toHaveBeenCalled();
   });
 });
 
