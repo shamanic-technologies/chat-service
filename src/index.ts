@@ -6926,7 +6926,8 @@ app.get("/internal/local-llm/served-llms", requireInternalAuth, async (req, res)
   const llms = parsed.data.llms.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
   if (llms.length === 0 || llms.length > 50) return res.status(400).json({ error: `llms: between 1 and 50 entries (got ${llms.length})` });
   const local = await isLocalLlmOrg(parsed.data.orgId);
-  res.json({ orgId: parsed.data.orgId, local, llms: servedLlmsFor(llms, local) });
+  const needs = { webSearch: parsed.data.webSearch === "true", imageUrl: parsed.data.imageUrl === "true" };
+  res.json({ orgId: parsed.data.orgId, local, llms: servedLlmsFor(llms, local, needs) });
 });
 
 app.post("/orgs/local-llm/work/claim", requireAuth, async (req, res) => {

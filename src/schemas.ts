@@ -4242,6 +4242,14 @@ export const LocalLlmServedLlmsQuerySchema = z
         description:
           "Comma-separated LLMs as script tactics state them: provider + chat-service LLM dynasty slug, e.g. `openai/gpt-sol,deepseek/deepseek-flash,anthropic/claude-sonnet`. Max 50.",
       }),
+    webSearch: z
+      .enum(["true", "false"])
+      .optional()
+      .openapi({ description: "WEBSEARCH-PICK-1119: `true` = the call asks web search; each row then answers `acceptsRequest` (the direct-vendor paths refuse it)." }),
+    imageUrl: z
+      .enum(["true", "false"])
+      .optional()
+      .openapi({ description: "`true` = the call carries an image; each row then answers `acceptsRequest`." }),
   })
   .openapi("LocalLlmServedLlmsQuery");
 
@@ -4260,6 +4268,10 @@ export const LocalLlmServedLlmSchema = z
         modelId: z.string().openapi({ description: "The concrete model id asked for (the runner reports the one that ran on each call's run)." }),
       })
       .optional(),
+    acceptsRequest: z
+      .boolean()
+      .optional()
+      .openapi({ description: "Present when `webSearch`/`imageUrl` is asked: whether the model that runs takes such a request, by the same refusal `/complete` applies. false = a call would 400." }),
     error: z.string().optional(),
   })
   .openapi("LocalLlmServedLlm");
