@@ -186,6 +186,16 @@ describe("LOCAL-CLAUDE-RATING-1116 — a local call states the model that ran", 
     }
   });
 
+  it("WEBSEARCH-PICK-1119: served LLMs say which model takes a web-search or image request", () => {
+    const plain = servedLlmsFor(["deepseek/deepseek-flash"], false);
+    expect(plain[0]).not.toHaveProperty("acceptsRequest");
+    const ws = servedLlmsFor(["deepseek/deepseek-flash", "zai/glm", "anthropic/claude-sonnet", "google/gemini-argon"], false, { webSearch: true });
+    expect(ws.map((r) => r.acceptsRequest)).toEqual([false, false, true, true]);
+    // A local org's runner (Claude) searches the web for every LLM, but takes no image.
+    expect(servedLlmsFor(["deepseek/deepseek-flash"], true, { webSearch: true })[0].acceptsRequest).toBe(true);
+    expect(servedLlmsFor(["deepseek/deepseek-flash"], true, { imageUrl: true })[0].acceptsRequest).toBe(false);
+  });
+
   it("served LLMs: an LLM this service does not serve is named, the others still answer", () => {
     const rows = servedLlmsFor(["nope/x", "bad", "anthropic/claude-sonnet"], true);
     expect(rows[0]).toMatchObject({ runsAsStated: null, error: expect.any(String) });

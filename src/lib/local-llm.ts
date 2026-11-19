@@ -32,6 +32,7 @@
 import { capabilityTierFor, resolveModel, type CapabilityTier, type ModelAlias, type Provider } from "./anthropic.js";
 import { anthropicCostLines } from "./anthropic-usage.js";
 import { dynastyOfModel } from "./llm-dynasties.js";
+import { isVendorProvider } from "./openai-compatible.js";
 import type { CostItem } from "./runs-client.js";
 import type { LocalAnswerOutcome, LocalJobKind, LocalJobRow, LocalLlmStore, LocalUsage } from "./local-llm-store.js";
 import type { TypeSafeAnswer, TypeSafeCriterion, TypeSafeQuestion } from "./typesafe.js";
@@ -366,7 +367,18 @@ export interface ServedLlmAnswer {
   runsAsStated: boolean | null;
   /** The model that will run instead / as stated: provider, dynasty slug, model id. Absent when unknown. */
   servedBy?: { llm: string; provider: string; dynasty: string; modelId: string };
+  /**
+   * Whether the model that runs takes a request with the features asked (`ServedLlmNeeds`), by the same refusal
+   * `/complete` applies (the direct-vendor paths are text-only: no web search, no image). Absent when none was asked.
+   */
+  acceptsRequest?: boolean;
   error?: string;
+}
+
+/** Request features a pick must see honoured (WEBSEARCH-PICK-1119): a script whose model refuses them is never drawn. */
+export interface ServedLlmNeeds {
+  webSearch?: boolean;
+  imageUrl?: boolean;
 }
 
 /**
@@ -374,7 +386,8 @@ export interface ServedLlmAnswer {
  * as stated. A local org runs a Claude model it names as itself; any other LLM
  * runs on the Claude model of its tier (the same `localClaudeModelFor` the calls use).
  */
-export function servedLlmsFor(llms: readonly string[], local: boolean): ServedLlmAnswer[] {
+export function servedLlmsFor(llms: readonly string[], local: boolean, needs: ServedLlmNeeds = {}): ServedLlmAnswer[] {
+  const asked = needs.webSearch === true || needs.imageUrl === true;
   return llms.map((llm) => {
     const slash = llm.indexOf("/");
     const provider = slash > 0 ? llm.slice(0, slash) : "";
@@ -390,10 +403,14 @@ export function servedLlmsFor(llms: readonly string[], local: boolean): ServedLl
     const servedProvider = local ? "anthropic" : resolved.provider;
     const dynasty = dynastyOfModel(modelId);
     if (!dynasty) throw new Error(`[local-llm] model "${modelId}" has no LLM dynasty recorded`);
+    // A local org's call goes to its runner (Claude, web search included) unless it carries an image, which the
+    // runner does not take: that call runs on the model as resolved (the /complete local gate).
+    const runsOn = local && needs.imageUrl !== true ? "anthropic" : resolved.provider;
     return {
       llm,
       runsAsStated: modelId === resolved.apiModelId,
       servedBy: { llm: `${servedProvider}/${dynasty.slug}`, provider: servedProvider, dynasty: dynasty.slug, modelId },
+      ...(asked ? { acceptsRequest: !isVendorProvider(runsOn) } : {}),
     };
   });
 }
