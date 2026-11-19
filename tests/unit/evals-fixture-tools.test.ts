@@ -92,3 +92,31 @@ describe("report_not_good in a replay (SCRIPT-VALUE-RATING-1113-SOPHIE)", () => 
     await expect(ex.executeTool({ name: "report_not_good", args: { outcomeKey: "message_written", subjectService: "lead-service", subjectId: "lead-9", kind: "liked" } })).rejects.toThrow(/no positive vote/);
   });
 });
+
+// DISTRY-ONE-AI-1118 B: a guest's replay meets the server's plan guard as production does. The guard
+// binds to the brand the call names: the first version bound a placeholder, and `{id}` routes (the
+// offer steps) were refused as another brand's.
+describe("eval replay of a guest's plan", () => {
+  const PLAN_DOC = {
+    paths: {
+      "/v1/brands/{id}/offers/confirm": { post: { operationId: "postV1BrandsByIdOffersConfirm", summary: "Confirm offers", parameters: [{ name: "id", in: "path", required: true }], requestBody: { content: { "application/json": { schema: { type: "object" } } } } } },
+      "/v1/billing/accounts/prepaid_checkout": { post: { operationId: "postV1BillingAccountsPrepaidCheckout", summary: "Pay", requestBody: { content: { "application/json": { schema: { type: "object" } } } } } },
+    },
+  };
+  const guest = {
+    id: "g", title: "t", source: "staff test, website, 2026-11-19", surface: "site", person: { name: "Sam" }, guest: true, history: [], message: "m", facts: ["f"], expect: "e",
+    fixtures: { confirm_offers: [{ chosenOfferId: "o-1" }], create_prepaid_checkout: [{ url: "https://pay.example" }] },
+  } as never;
+  const runGuest = async (args: Record<string, unknown>) =>
+    ((await fixtureExecutor(def, guest).executeTool({ name: "run_operation", args } as never)) as { result: unknown }).result;
+
+  beforeEach(() => loadCatalogFromDocument(PLAN_DOC));
+
+  it("answers a plan step on the brand the call names", async () => {
+    expect(await runGuest({ method: "POST", path: "/v1/brands/b-1/offers/confirm", body: { offers: [{ name: "x" }] } })).toMatchObject({ ok: true, data: { chosenOfferId: "o-1" } });
+  });
+
+  it("refuses paying before the account, as the server does", async () => {
+    expect(await runGuest({ operationId: "postV1BillingAccountsPrepaidCheckout", body: { topup_amount_cents: 1000 } })).toMatchObject({ refused: true, reason: "needs_account" });
+  });
+});

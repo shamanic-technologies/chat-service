@@ -15,7 +15,8 @@ import { parseChoicesArgs, parseChoicesIntro, OPEN_PAGE_TOOL_NAME, PRESENT_CHOIC
 import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, answerForModel, describeApi, failedCallAnswer, findApi, needsYes, yesProposal, operationsForTool, pathParamsFrom, toolsForOperation } from "../agent/catalogue-tools.js";
 import { findOperation, getCatalog, matchPath } from "../agent/catalogue.js";
 import type { AgentDefinition } from "./agent-turn.js";
-import type { Scenario } from "./scenario.js";
+import { isGuestScenario, type Scenario } from "./scenario.js";
+import { PlanRefusal, planGuard } from "../lib/guest-plan.js";
 
 export interface FixtureExecutor {
   executeTool: ToolExecutor;
@@ -134,6 +135,22 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
     const pathParams: Record<string, unknown> = concretePath && !a.operationId ? pathParamsFrom(op.path, concretePath) : ((a.pathParams ?? {}) as Record<string, unknown>);
     const asked: Record<string, string> = { ...query, ...Object.fromEntries(Object.entries(pathParams).map(([k, v]) => [k, String(v)])) };
     // As production proposes it: the gateway's own words on what the act does.
+    // A guest's plan (DISTRY-ONE-AI-1118 B): the server's own refusal of a call past the plan, as production
+    // answers it. A replay holds one brand: the guard is bound to the brand the call names (production binds
+    // it to the conversation's plan brand).
+    if (scenario.surface === "lead" ? scenario.lead?.guest === true : isGuestScenario(scenario)) {
+      const concrete = op.path.replace(/\{([^}]+)\}/g, (_, n: string) => encodeURIComponent(String(pathParams[n] ?? n)));
+      const qs = new URLSearchParams(query).toString();
+      const body = a.body as { brandId?: unknown; brandIds?: unknown } | undefined;
+      const named = /^\/v1\/brands\/([^/]+)/.exec(concrete)?.[1];
+      const brand = (named && named !== "extract-fields" ? decodeURIComponent(named) : null) ?? (typeof body?.brandId === "string" ? body.brandId : null) ?? query.brandId ?? null;
+      try {
+        planGuard(brand)(op.method, `${concrete}${qs ? `?${qs}` : ""}`, a.body);
+      } catch (err) {
+        if (err instanceof PlanRefusal) return err.toResult();
+        throw err;
+      }
+    }
     if (needsYes(op, a.body)) {
       const path = op.path.replace(/\{([^}]+)\}/g, (_, n: string) => String(pathParams[n] ?? `{${n}}`));
       return yesProposal(op, { operationId: op.operationId, method: op.method, path, query, body: a.body }, `replay-${op.operationId}`);

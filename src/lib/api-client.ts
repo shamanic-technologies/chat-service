@@ -7,6 +7,12 @@ export interface ApiCallParams {
   userId: string;
   runId: string;
   trackingHeaders?: Record<string, string>;
+  /**
+   * Refuses a call BEFORE it leaves (throws). Set for a guest's plan
+   * (guest-plan.ts): the unclaimed org may only make the calls the signup
+   * page's own walk makes, decided here on the server, never by the prompt.
+   */
+  guard?: (method: string, path: string, body: unknown) => void;
 }
 
 /**
@@ -22,6 +28,7 @@ export function apiServiceFetch(
   if (!ADMIN_DISTRIBUTE_API_KEY) {
     throw new Error("[api-client] ADMIN_DISTRIBUTE_API_KEY is required");
   }
+  params.guard?.(method, path, body);
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

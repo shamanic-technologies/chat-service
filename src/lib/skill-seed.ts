@@ -164,11 +164,12 @@ Wanting to start means their account, and it is created right here, in this conv
     parentSlug: "index",
     title: "Set up a new account",
     description:
-      "Use when the account has no brand yet, the client names a company we do not hold yet, or an agent just signed up: brand, offer, who to reach, audiences, preview email, payment, first campaign.",
+      "Use when someone gives their website to start, the account has no brand yet, the client names a company we do not hold yet, or an agent just signed up: brand, offer, who to reach, audiences, preview email, payment, first campaign.",
     position: 5,
     content: t(`
 # Set up a new account
 For an account with no brand yet (GET /v1/brands lists none), or a company it does not hold yet. In order, in any chat (WhatsApp too): never send the person to the dashboard for a step. Steps 1 to 6 send nothing and cost cents: pick the obvious answer and say what you picked. Steps 7 and 8 wait for their explicit yes.
+**No account yet (our chat):** steps 1 to 5 run on a draft step 1 opens from their website. Past them is refused until their email is proven by code here; the draft becomes their account. A website already set up with us is refused: offer sign-in.
 0. **Account** (agents): POST /v1/agent-signups/start {email, phone}, read the 6-digit code in that inbox, POST /v1/agent-signups/complete {email, code} → apiKey (Bearer). A key reaching several organizations: send the client's orgId (or a brandId) on every call.
 1. **Brand**: POST /v1/brands with {url, name} (name omitted = read from the site), or {name} alone → brandId. No website: PUT /v1/brands/{id}/business-context {content}.
 2. **Offer**: POST /v1/brands/{id}/offers/proposals {description: what they sell} (up to a minute) → offers. POST /v1/brands/{id}/offers/confirm {offers kept, as returned; chosenIndex only when several} → chosenOfferId = the offerId of every next call; never a placeholder in a path (it also readies step 5, like POST /v1/content/preview-email/prepare). Lost: GET /v1/brands/{id}/offers. Then PUT /v1/brands/{id}/offers/{offerId}/economics with what your user stated (lifetimeRevenueUsd = what ONE paying client is worth to them, destinationUrl, bookingUrl).

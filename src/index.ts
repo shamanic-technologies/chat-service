@@ -165,7 +165,8 @@ import { buildSituationBrief } from "./agent/situation.js";
 import { gatewaySituationReader } from "./agent/situation-reader.js";
 import { dashboardPagesBlock, SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
 import { SOPHIE_BACKUP_MODEL, sophieTurnModel } from "./agent/sophie-backup.js";
-import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi } from "./agent/catalogue-tools.js";
+import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi, requestOfCall } from "./agent/catalogue-tools.js";
+import { createPlanRun, domainClaim, openUnclaimedOrg, runGuestPlanCall, seedTrialCredit, type PlanOrg } from "./lib/guest-plan.js";
 import { REPORT_NOT_GOOD_TOOL_NAME, reportNotGood } from "./lib/unit-report.js";
 import {
   SkillNotFoundError,
@@ -534,6 +535,23 @@ import { buildContextUsageEvent } from "./lib/context-usage.js";
  * differently from what the caller asked for is the same quiet wrongness as
  * serving a fallback model.
  */
+/** A guest's plan as the session holds it (lib/guest-plan.ts); null until their website opened one, and once it is theirs. */
+async function readSessionPlan(sessionId: string): Promise<PlanOrg | null> {
+  const [s] = await db
+    .select({ orgId: sessions.planOrgId, userId: sessions.planOrgUserId, externalOrgId: sessions.planOrgExternalId, brandId: sessions.planBrandId, domain: sessions.planDomain })
+    .from(sessions)
+    .where(eq(sessions.id, sessionId));
+  if (!s?.orgId || !s.userId || !s.externalOrgId) return null;
+  return { orgId: s.orgId, userId: s.userId, externalOrgId: s.externalOrgId, brandId: s.brandId, domain: s.domain };
+}
+
+async function saveSessionPlan(sessionId: string, plan: PlanOrg): Promise<void> {
+  await db
+    .update(sessions)
+    .set({ planOrgId: plan.orgId, planOrgUserId: plan.userId, planOrgExternalId: plan.externalOrgId, planBrandId: plan.brandId, planDomain: plan.domain, updatedAt: new Date() })
+    .where(eq(sessions.id, sessionId));
+}
+
 function samplingRefusalFor(
   provider: string,
   effectiveModel: string,
@@ -4287,6 +4305,23 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       trackingHeaders: downstreamTrackingHeaders,
     };
 
+    // A guest's plan (DISTRY-ONE-AI-1118 B): opened on their website, then every call runs AS the
+    // unclaimed org, on one run of its own per turn (its spend lands on that org's trial seed).
+    let planRun: { orgId: string; runId: Promise<string> } | null = null;
+    const planChannel = webTurn ? "website_chat" : leadTurn?.payload.medium === "email" ? "email_chat" : "whatsapp_chat";
+    const guestPlanDeps = (args: Record<string, unknown>) => ({
+      readPlan: () => readSessionPlan(currentSessionId!),
+      savePlan: (plan: PlanOrg) => saveSessionPlan(currentSessionId!, plan),
+      domainClaim: (domain: string) => domainClaim(domain),
+      openOrg: (externalOrgId: string) => openUnclaimedOrg(externalOrgId, { channel: planChannel }),
+      seedTrial: (planOrgId: string) => seedTrialCredit(planOrgId),
+      runFor: (identity: { orgId: string; userId: string }) => {
+        if (!planRun || planRun.orgId !== identity.orgId) planRun = { orgId: identity.orgId, runId: createPlanRun(identity) };
+        return planRun.runId;
+      },
+      call: (params: ApiCallParams) => callApi(args, params, history, { readOnly: proactiveTurn }),
+    });
+
     // The client brief (SOPHIE-JCURVE-1102): an account holder's turn on a chat
     // that speaks for us starts knowing their brands, offers and what they sell
     // (read from their website), never asking them for it.
@@ -4601,7 +4636,9 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           toolCalls.push({ name: call.name, args, result });
           return { name: call.name, result };
         }
-        const signed = await completeSignIn(args.email, args.code, verifiedPhone);
+        // A plan built before the proof: the proof hands ITS org over (no other org is opened).
+        const plan = await readSessionPlan(currentSessionId!);
+        const signed = await completeSignIn(args.email, args.code, verifiedPhone, undefined, plan ? { orgId: plan.orgId, externalOrgId: plan.externalOrgId } : null);
         if (!signed.ok) {
           toolCalls.push({ name: call.name, args: { email: args.email }, result: signed });
           return { name: call.name, result: signed };
@@ -4618,6 +4655,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
             guest: false,
             brandIds: brandIds.length > 0 ? brandIds : null,
             ...(webTurn ? { webAccountEmail: signed.account.email } : {}),
+            // The org is theirs now: the proof of opening it is no longer needed.
+            ...(plan ? { planOrgExternalId: null } : {}),
             updatedAt: new Date(),
           })
           .where(eq(sessions.id, currentSessionId!));
@@ -4626,6 +4665,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           signedIn: signed.account.email,
           accountCreated: signed.account.created,
           note: `${webTurn ? "This conversation" : "This WhatsApp number"} is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue.`,
+          ...(plan ? { plan: `The plan built in this conversation${plan.domain ? ` (${plan.domain})` : ""} is now in this account.` } : {}),
         };
         toolCalls.push({ name: call.name, args: { email: args.email }, result });
         return { name: call.name, result };
@@ -4747,7 +4787,14 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
             ? await findApi(args)
             : call.name === DESCRIBE_API_TOOL_NAME
               ? await describeApi(args)
-              : await callApi(args, featureCallParams, history, { readOnly: proactiveTurn });
+              : sessionIsGuest
+                // A guest acts only on the plan org opened for this conversation, through the
+                // signup page's allowlist (lib/guest-plan.ts), never as our own line.
+                ? await runGuestPlanCall(
+                    (await requestOfCall(args, history)) ?? { method: String(args.method ?? "GET"), path: String(args.path ?? ""), body: args.body },
+                    guestPlanDeps(args),
+                  )
+                : await callApi(args, featureCallParams, history, { readOnly: proactiveTurn });
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }

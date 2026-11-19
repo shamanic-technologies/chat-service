@@ -1,0 +1,486 @@
+{
+  "id": "one-ai-after-sign-in-site",
+  "title": "Right after the sign-in: the plan is theirs, the next step comes",
+  "source": "staff test, website, 2026-11-19",
+  "surface": "site",
+  "person": {
+    "name": "Sam"
+  },
+  "guest": false,
+  "afterSignIn": true,
+  "history": [
+    {
+      "role": "user",
+      "content": "Get started with my website dutrou.com"
+    },
+    {
+      "role": "assistant",
+      "content": "I set up Dutrou from dutrou.com. I see two things you sell: drain unblocking for restaurants, and grease trap cleaning. Which one should we start with?",
+      "toolCalls": [
+        {
+          "name": "run_operation",
+          "args": {
+            "method": "POST",
+            "path": "/v1/brands",
+            "body": {
+              "url": "https://dutrou.com"
+            }
+          },
+          "result": {
+            "ok": true,
+            "status": 200,
+            "data": {
+              "brandId": "b-1",
+              "domain": "dutrou.com",
+              "name": "Dutrou",
+              "created": true
+            }
+          }
+        },
+        {
+          "name": "run_operation",
+          "args": {
+            "method": "POST",
+            "path": "/v1/brands/b-1/offers/proposals",
+            "body": {
+              "description": "Plumbing for restaurants in Paris"
+            }
+          },
+          "result": {
+            "ok": true,
+            "status": 200,
+            "data": {
+              "offers": [
+                {
+                  "name": "Drain unblocking for restaurants",
+                  "description": "Same-day drain and pipe unblocking for restaurant kitchens in Paris.",
+                  "icon": "wrench"
+                },
+                {
+                  "name": "Grease trap cleaning",
+                  "description": "Scheduled grease trap cleaning contracts for restaurants.",
+                  "icon": "droplet"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "Drain unblocking, mostly for restaurants in Paris."
+    },
+    {
+      "role": "assistant",
+      "content": "Done. We will reach owners and managers of independent restaurants in Paris: Le Petit Zinc, Chez Paulette and Bistrot Lune are in the sample. Here is the email Marie at Le Petit Zinc would get:\n\nSubject: Blocked kitchen drain at Le Petit Zinc?\n\nHi Marie, when a kitchen drain blocks in the middle of service, every minute costs covers. Dutrou unblocks restaurant drains in Paris the same day. Worth keeping our number for the next time?\n\nShall I go on to the launch?",
+      "toolCalls": [
+        {
+          "name": "run_operation",
+          "args": {
+            "method": "POST",
+            "path": "/v1/brands/b-1/offers/confirm",
+            "body": {
+              "offers": [
+                {
+                  "name": "Drain unblocking for restaurants",
+                  "description": "Same-day drain and pipe unblocking for restaurant kitchens in Paris.",
+                  "icon": "wrench"
+                }
+              ]
+            }
+          },
+          "result": {
+            "ok": true,
+            "status": 200,
+            "data": {
+              "offers": [
+                {
+                  "id": "o-1",
+                  "name": "Drain unblocking for restaurants"
+                }
+              ],
+              "chosenOfferId": "o-1",
+              "previewEmail": "preparing"
+            }
+          }
+        },
+        {
+          "name": "run_operation",
+          "args": {
+            "method": "POST",
+            "path": "/v1/brands/b-1/icp/suggest",
+            "body": {
+              "offerId": "o-1"
+            }
+          },
+          "result": {
+            "ok": true,
+            "status": 200,
+            "data": {
+              "targetAudience": "Owners and managers of independent restaurants in Paris"
+            }
+          }
+        },
+        {
+          "name": "run_operation",
+          "args": {
+            "method": "POST",
+            "path": "/v1/orgs/audiences/split",
+            "body": {
+              "brandId": "b-1",
+              "targetAudience": "Owners and managers of independent restaurants in Paris"
+            }
+          },
+          "result": {
+            "ok": true,
+            "status": 200,
+            "data": {
+              "segments": [
+                {
+                  "name": "Independent restaurants, Paris",
+                  "description": "Owners and managers of independent restaurants in Paris, 1 to 50 employees."
+                },
+                {
+                  "name": "Restaurant groups, Ile-de-France",
+                  "description": "Operations managers of restaurant groups in Ile-de-France."
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "run_operation",
+          "args": {
+            "method": "POST",
+            "path": "/v1/orgs/audiences/split/confirm",
+            "body": {
+              "brandId": "b-1",
+              "offerId": "o-1",
+              "targetAudience": "Owners and managers of independent restaurants in Paris",
+              "segments": [
+                {
+                  "name": "Independent restaurants, Paris",
+                  "description": "Owners and managers of independent restaurants in Paris, 1 to 50 employees."
+                }
+              ]
+            }
+          },
+          "result": {
+            "ok": true,
+            "status": 200,
+            "data": {
+              "audiences": [
+                {
+                  "id": "a-1",
+                  "name": "Independent restaurants, Paris"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "run_operation",
+          "args": {
+            "method": "GET",
+            "path": "/v1/orgs/audiences/a-1/preview"
+          },
+          "result": {
+            "ok": true,
+            "status": 200,
+            "data": {
+              "status": "ready",
+              "companies": [
+                {
+                  "name": "Le Petit Zinc",
+                  "domain": "lepetitzinc.example",
+                  "people": [
+                    {
+                      "firstName": "Marie",
+                      "lastName": "D.",
+                      "title": "Owner"
+                    }
+                  ]
+                },
+                {
+                  "name": "Chez Paulette",
+                  "domain": "chezpaulette.example",
+                  "people": [
+                    {
+                      "firstName": "Hugo",
+                      "lastName": "L.",
+                      "title": "General Manager"
+                    }
+                  ]
+                },
+                {
+                  "name": "Bistrot Lune",
+                  "domain": "bistrotlune.example",
+                  "people": [
+                    {
+                      "firstName": "Ines",
+                      "lastName": "R.",
+                      "title": "Owner"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "run_operation",
+          "args": {
+            "method": "POST",
+            "path": "/v1/content/preview-email",
+            "body": {
+              "brandId": "b-1",
+              "offerId": "o-1",
+              "audience": "Owners and managers of independent restaurants in Paris",
+              "recipient": {
+                "firstName": "Marie",
+                "lastName": "D.",
+                "title": "Owner",
+                "companyName": "Le Petit Zinc"
+              }
+            }
+          },
+          "result": {
+            "ok": true,
+            "status": 200,
+            "data": {
+              "subject": "Blocked kitchen drain at Le Petit Zinc?",
+              "body": "Hi Marie,\n\nWhen a kitchen drain blocks in the middle of service, every minute costs covers. Dutrou unblocks restaurant drains in Paris the same day.\n\nWorth keeping our number for the next time?\n\nThe Dutrou team"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "Looks great. Let's launch it."
+    },
+    {
+      "role": "assistant",
+      "content": "Launching needs your account, and everything we built here comes with it. Which email should it use?"
+    },
+    {
+      "role": "user",
+      "content": "sam@example.com, +33612345678"
+    },
+    {
+      "role": "assistant",
+      "content": "A 6-digit code just went to sam@example.com. Send it here when you have it.",
+      "toolCalls": [
+        {
+          "name": "start_sign_in",
+          "args": {
+            "email": "sam@example.com"
+          },
+          "result": {
+            "ok": true,
+            "codeSentTo": "sam@example.com",
+            "expiresAt": "2026-11-19T10:15:00Z"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "482913"
+    },
+    {
+      "role": "assistant",
+      "content": "You're in, Sam.",
+      "toolCalls": [
+        {
+          "name": "complete_sign_in",
+          "args": {
+            "email": "sam@example.com",
+            "code": "482913"
+          },
+          "result": {
+            "ok": true,
+            "signedIn": "sam@example.com",
+            "accountCreated": true,
+            "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue.",
+            "plan": "The plan built in this conversation (dutrou.com) is now in this account."
+          }
+        }
+      ]
+    }
+  ],
+  "message": "(They just signed in, in this same exchange. With their account, take them one step further from where they stopped.)",
+  "fixtures": {
+    "create_brand_from_url": [
+      {
+        "brandId": "b-1",
+        "domain": "dutrou.com",
+        "name": "Dutrou",
+        "created": true
+      }
+    ],
+    "propose_offers": [
+      {
+        "offers": [
+          {
+            "name": "Drain unblocking for restaurants",
+            "description": "Same-day drain and pipe unblocking for restaurant kitchens in Paris.",
+            "icon": "wrench"
+          },
+          {
+            "name": "Grease trap cleaning",
+            "description": "Scheduled grease trap cleaning contracts for restaurants.",
+            "icon": "droplet"
+          }
+        ]
+      }
+    ],
+    "confirm_offers": [
+      {
+        "offers": [
+          {
+            "id": "o-1",
+            "name": "Drain unblocking for restaurants"
+          }
+        ],
+        "chosenOfferId": "o-1",
+        "previewEmail": "preparing"
+      }
+    ],
+    "suggest_icp": [
+      {
+        "targetAudience": "Owners and managers of independent restaurants in Paris"
+      }
+    ],
+    "split_audiences": [
+      {
+        "segments": [
+          {
+            "name": "Independent restaurants, Paris",
+            "description": "Owners and managers of independent restaurants in Paris, 1 to 50 employees."
+          },
+          {
+            "name": "Restaurant groups, Ile-de-France",
+            "description": "Operations managers of restaurant groups in Ile-de-France."
+          }
+        ]
+      }
+    ],
+    "confirm_audiences": [
+      {
+        "audiences": [
+          {
+            "id": "a-1",
+            "name": "Independent restaurants, Paris"
+          }
+        ]
+      }
+    ],
+    "preview_audience": [
+      {
+        "status": "ready",
+        "companies": [
+          {
+            "name": "Le Petit Zinc",
+            "domain": "lepetitzinc.example",
+            "people": [
+              {
+                "firstName": "Marie",
+                "lastName": "D.",
+                "title": "Owner"
+              }
+            ]
+          },
+          {
+            "name": "Chez Paulette",
+            "domain": "chezpaulette.example",
+            "people": [
+              {
+                "firstName": "Hugo",
+                "lastName": "L.",
+                "title": "General Manager"
+              }
+            ]
+          },
+          {
+            "name": "Bistrot Lune",
+            "domain": "bistrotlune.example",
+            "people": [
+              {
+                "firstName": "Ines",
+                "lastName": "R.",
+                "title": "Owner"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "preview_email": [
+      {
+        "subject": "Blocked kitchen drain at Le Petit Zinc?",
+        "body": "Hi Marie,\n\nWhen a kitchen drain blocks in the middle of service, every minute costs covers. Dutrou unblocks restaurant drains in Paris the same day.\n\nWorth keeping our number for the next time?\n\nThe Dutrou team"
+      }
+    ],
+    "get_prepaid_status": [
+      {
+        "state": null,
+        "billing_account": "none yet: the payment link opens it",
+        "reload_rules": {
+          "first_topup_minimum_cents": 1000,
+          "default_reload_amount_cents": 1000
+        }
+      }
+    ],
+    "create_prepaid_checkout": [
+      {
+        "url": "https://checkout.example/session-1"
+      }
+    ],
+    "list_brands": [
+      {
+        "brands": [
+          {
+            "id": "b-1",
+            "name": "Dutrou",
+            "domain": "dutrou.com"
+          }
+        ]
+      }
+    ],
+    "list_offers": [
+      {
+        "offers": [
+          {
+            "id": "o-1",
+            "name": "Drain unblocking for restaurants"
+          }
+        ]
+      }
+    ],
+    "start_sign_in": [
+      {
+        "ok": true,
+        "codeSentTo": "sam@example.com",
+        "expiresAt": "2026-11-19T10:15:00Z"
+      }
+    ],
+    "complete_sign_in": [
+      {
+        "ok": true,
+        "signedIn": "sam@example.com",
+        "accountCreated": true,
+        "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue.",
+        "plan": "The plan built in this conversation (dutrou.com) is now in this account."
+      }
+    ]
+  },
+  "facts": [
+    "They just proved their email in this conversation: the account is theirs and holds the plan built before (brand Dutrou, offer drain unblocking for restaurants, independent restaurants in Paris, the sample email).",
+    "Nothing is paid or launched yet. The account's payment status and its first payment and reload figures are in the tool answers (get_prepaid_status).",
+    "What distribute.you offers is on its public site (https://distribute.you/llms.txt, /catalog, /terms): read it with read_our_website, whatever it says is true.",
+    "They asked to launch before signing in."
+  ],
+  "expect": "Says in a few words that they are in, then takes them one step further toward the launch they asked for, with their account (the first payment with its figures read from the account, asking their yes, or the campaign to propose). Never stops at their being in, never asks them to send anything to continue, never asks for the website or what they sell again."
+}

@@ -157,11 +157,12 @@ export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisp
             assistant: REPLAY_ASSISTANT,
             sender: { phone: "+10000000000", name: scenario.person.name, ...(scenario.person.email && !guest ? { knownEmails: [scenario.person.email] } : {}) },
             thread: [],
+            ...(scenario.afterSignIn ? { afterSignIn: true as const } : {}),
           },
           guest,
         )
       : site
-        ? buildWebBlock({ whatsapp: null, guest })
+        ? buildWebBlock({ whatsapp: null, guest, afterSignIn: scenario.afterSignIn === true })
         : "";
   const tools = resolveToolSet(toolNames.filter((t) => t !== WEB_CONTINUE_TOOL_NAME)) as unknown as ToolDefinition[];
   if (toolNames.includes(WEB_CONTINUE_TOOL_NAME)) tools.push(WEB_CONTINUE_TOOL as unknown as ToolDefinition);
