@@ -25,17 +25,19 @@ import { modelDisplayName } from "../lib/model-ids.js";
 import { isVendorProvider, type VendorId } from "../lib/openai-compatible.js";
 import { aboutYouBlock, withOurWebsite } from "../lib/person-facing.js";
 import { skillIndexBlockFrom } from "../lib/skills.js";
+import { sessionToolNamesFor } from "../agent/person-tools.js";
 import { streamVendorChat } from "../lib/vendor-chat.js";
 import { streamGeminiChat } from "../lib/gemini-chat.js";
 import { replayAnthropicTurn } from "./anthropic-replay.js";
 import type { VendorCostLine } from "../lib/cost-names.js";
 import { buildSituationBrief } from "../agent/situation.js";
-import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS } from "../agent/sophie.js";
+import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS, dashboardPagesBlock } from "../agent/sophie.js";
 import { clientBriefUnavailable } from "../lib/client-brief.js";
 import { prepareTurnImage, type TurnImage } from "../lib/turn-images.js";
 import { labelLines } from "../lib/lead-whatsapp.js";
 import { fixtureClientBrief, fixtureSituationReader } from "./fixture-situation.js";
-import { scenarioDay, type Scenario } from "./scenario.js";
+import { isGuestScenario, scenarioDay, type Scenario } from "./scenario.js";
+import { WEB_CONTINUE_TOOL, WEB_CONTINUE_TOOL_NAME, buildWebBlock } from "../lib/web-visitor.js";
 import type { AnthropicEffort } from "../schemas.js";
 
 export const AgentDefinitionSchema = z
@@ -84,7 +86,7 @@ export function definitionHash(def: AgentDefinition, model: string = `${def.prov
 }
 
 /** The WhatsApp line the replays answer on (our assistant's own line). */
-const REPLAY_ASSISTANT = { name: "Sophie", role: "distribute.you", instructions: null };
+const REPLAY_ASSISTANT = { name: "Distry", role: "distribute.you", instructions: null };
 
 export interface AssembledTurn {
   systemPrompt: string;
@@ -109,9 +111,14 @@ function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay
   // The WhatsApp conversation as crm serves it to the turn (SOPHIE-WA-HUMAN-1106).
   const whatsapp = scenario.whatsapp || images.length > 0 ? { shown: labelLines(scenario.whatsapp ?? []), images, unreadablePhotos: [] } : null;
   const frame: LeadTurnFrame = { payload, ownBrand: true, guest: lead.guest, phoneBound: lead.phoneBound, afterSignIn: false, now: scenarioDay(scenario), whatsapp };
-  const sessionTools = lead.guest ? [] : withOurWebsite(def.allowedTools, def.allowedTools.includes("read_skill"));
+  // The guest list is /chat's (agent/person-tools.ts), keyed on who they are; an account's lead
+  // replay keeps the list every earlier run was measured with (the config's tools, no sign-in pair).
+  const sessionTools = withOurWebsite(
+    sessionToolNamesFor({ configTools: def.allowedTools, guest: lead.guest, canSignIn: lead.guest && lead.phoneBound, website: false }),
+    def.allowedTools.includes("read_skill"),
+  );
   const toolNames = leadTurnToolNames(sessionTools, CLIENT_UI_TOOL_NAMES);
-  const skillBlock = !lead.guest && toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
+  const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
   const brandTools = withBrandTools ? scenarioBrandTools(scenario) : [];
   return {
     systemPrompt: def.systemPrompt + skillBlock + aboutYouBlock(modelDisplay),
@@ -130,7 +137,16 @@ function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay
 /** The prompt and tools /chat would build for this scenario under this definition. */
 export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisplay: string, brief = "", images: TurnImage[] = [], withBrandTools = true): AssembledTurn {
   if (scenario.surface === "lead") return assembleLeadTurn(def, scenario, modelDisplay, images, withBrandTools);
-  const toolNames = withOurWebsite(withAccountSetup(def.allowedTools), def.allowedTools.includes("read_skill"));
+  const guest = isGuestScenario(scenario);
+  const site = scenario.surface === "site";
+  // The list /chat builds, keyed on who the person is (agent/person-tools.ts): a chat app or our
+  // website can re-key its conversation (sign-in), the dashboard cannot.
+  const toolNames = guest || site || scenario.surface === "whatsapp"
+    ? withOurWebsite(
+        sessionToolNamesFor({ configTools: withAccountSetup(def.allowedTools), guest, canSignIn: site || scenario.surface === "whatsapp", website: site }),
+        def.allowedTools.includes("read_skill"),
+      )
+    : withOurWebsite(withAccountSetup(def.allowedTools), def.allowedTools.includes("read_skill"));
   const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
   const systemPrompt = def.systemPrompt + skillBlock + aboutYouBlock(modelDisplay);
   const channelBlock =
@@ -139,16 +155,20 @@ export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisp
           {
             kind: "whatsapp",
             assistant: REPLAY_ASSISTANT,
-            sender: { phone: "+10000000000", name: scenario.person.name, ...(scenario.person.email ? { knownEmails: [scenario.person.email] } : {}) },
+            sender: { phone: "+10000000000", name: scenario.person.name, ...(scenario.person.email && !guest ? { knownEmails: [scenario.person.email] } : {}) },
             thread: [],
           },
-          false,
+          guest,
         )
-      : "";
+      : site
+        ? buildWebBlock({ whatsapp: null, guest })
+        : "";
+  const tools = resolveToolSet(toolNames.filter((t) => t !== WEB_CONTINUE_TOOL_NAME)) as unknown as ToolDefinition[];
+  if (toolNames.includes(WEB_CONTINUE_TOOL_NAME)) tools.push(WEB_CONTINUE_TOOL as unknown as ToolDefinition);
   return {
     systemPrompt,
-    turnContext: buildSystemPrompt("", scenario.context) + channelBlock + brief,
-    tools: resolveToolSet(toolNames) as unknown as ToolDefinition[],
+    turnContext: buildSystemPrompt("", scenario.context) + channelBlock + (scenario.surface === "web" && def.id === "sophie-code" ? dashboardPagesBlock() : "") + brief,
+    tools,
     holdTextBesideToolCalls: toolNames.includes("present_choices"),
   };
 }
@@ -204,7 +224,8 @@ export async function replayTurn(args: {
   // Same order as /chat: the client brief, then where the account stands. A lead
   // turn carries neither here (it runs in the writing brand's thread; its
   // context is the writer's message).
-  const brief = scenario.surface === "lead" ? "" :
+  // A guest has no account to brief on (as /chat: no client or situation brief for a guest).
+  const brief = scenario.surface === "lead" || isGuestScenario(scenario) ? "" :
     (def.clientBrief ? await fixtureClientBrief(scenario).catch((err) => clientBriefUnavailable(err)) : "") +
     (def.situationBrief ? await buildSituationBrief(fixtureSituationReader(scenario), { now: scenarioDay(scenario) }) : "");
   const modelDisplay = modelDisplayName(resolved.apiModelId);

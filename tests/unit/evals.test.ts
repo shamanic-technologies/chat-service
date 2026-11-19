@@ -42,7 +42,7 @@ describe("eval scenarios", () => {
   });
 
   it("cover the web and WhatsApp surfaces", () => {
-    expect(new Set(scenarios.map((s) => s.surface))).toEqual(new Set(["web", "whatsapp", "lead"]));
+    expect(new Set(scenarios.map((s) => s.surface))).toEqual(new Set(["web", "whatsapp", "lead", "site"]));
     for (const s of scenarios.filter((x) => x.surface === "lead")) expect(s.lead, s.id).toBeDefined();
   });
 
@@ -81,6 +81,29 @@ describe("assembleTurn (same builders as /chat)", () => {
     expect(names).toContain("read_our_website");
     expect(names).toContain("create_brand_from_url");
     expect(names).toContain("present_choices");
+  });
+});
+
+// DISTRY-ONE-AI-1118 (owner 2026-11-18: « Je veux une unique AI quel que soit le canal »): the same guest
+// question replayed on WhatsApp and on our website reads the same prompt, skills and tools; only the form differs.
+describe("one assistant on every channel (DISTRY-ONE-AI-1118)", () => {
+  const pairs = ["one-ai-pricing", "one-ai-get-started", "one-ai-sign-in-code", "one-ai-signed-in-next"];
+  it("each guest situation exists on WhatsApp and on our website", () => {
+    for (const id of pairs) for (const s of ["whatsapp", "site"]) expect(scenarios.some((x) => x.id === `${id}-${s}`), `${id}-${s}`).toBe(true);
+  });
+
+  it("same stable prompt and same tools on both, the website adding its delivery tool only; the forms differ", () => {
+    for (const id of pairs) {
+      const wa = assembleTurn(def, scenarios.find((x) => x.id === `${id}-whatsapp`)!, "m");
+      const site = assembleTurn(def, scenarios.find((x) => x.id === `${id}-site`)!, "m");
+      expect(site.systemPrompt, id).toBe(wa.systemPrompt);
+      expect(site.tools.map((t) => t.name).filter((n) => n !== "continue_on_channel"), id).toEqual(wa.tools.map((t) => t.name));
+      expect(wa.turnContext).toContain("## Channel: WhatsApp");
+      expect(site.turnContext).toContain("## Channel: our website");
+      expect(site.turnContext).not.toMatch(/start button|sign-up/);
+    }
+    const guestTools = assembleTurn(def, scenarios.find((x) => x.id === "one-ai-pricing-site")!, "m").tools.map((t) => t.name).sort();
+    expect(guestTools).toEqual(["complete_sign_in", "continue_on_channel", "present_choices", "read_our_website", "read_skill", "start_sign_in"]);
   });
 });
 

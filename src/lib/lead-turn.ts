@@ -26,7 +26,7 @@
  *
  * chat-service sends nothing here: the workflow's channel plan sends.
  */
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { db as Db } from "../db/index.js";
 import { copilotLeadTurns, sessions } from "../db/schema.js";
@@ -303,7 +303,9 @@ export async function resolveLeadAccount(deps: Pick<LeadTurnDeps, "resolvePhone"
     const [bound] = await deps.db
       .select({ orgId: sessions.orgId, userId: sessions.userId })
       .from(sessions)
-      .where(and(eq(sessions.channelPhone, payload.recipient.phone), eq(sessions.guest, false), eq(sessions.configKey, COPILOT_CONFIG_KEY)))
+      // Never a website conversation (DISTRY-ONE-AI-1118): a number TYPED in the page chat was
+      // verified by nothing, so it never makes a WhatsApp sender resolve to that visitor's account.
+      .where(and(eq(sessions.channelPhone, payload.recipient.phone), eq(sessions.guest, false), eq(sessions.configKey, COPILOT_CONFIG_KEY), isNull(sessions.webVisitorId)))
       .orderBy(desc(sessions.updatedAt))
       .limit(1);
     if (bound?.userId) return { orgId: bound.orgId, userId: bound.userId };

@@ -37,6 +37,12 @@ const { state } = vi.hoisted(() => ({
   },
 }));
 
+// The skill index is read from the table: a stub that carries the voice and the job list, as the real one does.
+vi.mock("../../src/lib/skills.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/lib/skills.js")>("../../src/lib/skills.js");
+  return { ...actual, buildSkillIndexBlock: vi.fn(async () => "\n\n---\n## Skills (test index)\n# How we talk to a person\n- `our-offer`: questions about us, starting") };
+});
+
 vi.mock("../../src/db/index.js", async () => {
   const { getTableName } = await vi.importActual<typeof import("drizzle-orm")>("drizzle-orm");
   // Tables are compared by NAME: vi.resetModules gives each test a fresh schema module.
@@ -46,7 +52,7 @@ vi.mock("../../src/db/index.js", async () => {
     orgId: ORG,
     key: "copilot",
     systemPrompt: "Be useful.",
-    allowedTools: ["list_workflows", "present_choices", "open_page"],
+    allowedTools: ["list_workflows", "read_skill", "present_choices", "open_page"],
     provider: "google",
     model: "flash",
     createdAt: new Date(),
@@ -54,7 +60,7 @@ vi.mock("../../src/db/index.js", async () => {
   };
   const rowsFor = (table: unknown): unknown[] => {
     if (is(table, "channel_inbound_messages")) return state.channelRows;
-    if (is(table, "sessions")) return [state.session];
+    if (is(table, "sessions")) return [{ ...state.session }]; // a read is a snapshot, as in Postgres
     if (is(table, "messages")) {
       return state.messageInserts.map((m, i) => ({ id: `msg-${i + 1}`, proactiveTrigger: false, choices: null, openPages: null, creditsRequired: null, buttons: null, toolCalls: null, createdAt: new Date(Date.UTC(2026, 10, 17, 18, 0, i)), ...m }));
     }
@@ -232,9 +238,14 @@ describe("POST /internal/copilot/web-messages: a visitor of our site talks with 
     expect(res.body).toMatchObject({
       status: "answered",
       reply: "Hi! Two of your campaigns ran today, see your results: https://dashboard.distribute.you/r.",
+      choices: null,
       handOff: null,
       continuedOn: null,
+      account: { signedIn: false, email: null },
     });
+    // No answer count walls a visitor any more (DISTRY-ONE-AI-1118).
+    expect(res.body).not.toHaveProperty("messagesLeft");
+    expect(res.body).not.toHaveProperty("askForContact");
 
     const chatCall = fetchCalls.find((c) => c.url.endsWith("/chat"))!;
     expect(JSON.parse(chatCall.init!.body as string)).toMatchObject({ configKey: "copilot", message: "hi", sessionId: SESSION, channelMessageId: ROW_ID, webVisitorId: VISITOR });
@@ -245,8 +256,15 @@ describe("POST /internal/copilot/web-messages: a visitor of our site talks with 
     // The model writes for the page, sees no account tool, can hand over to WhatsApp.
     const sent = JSON.stringify(gemini.bodies[0]);
     expect(sent).toContain("Channel: our website");
+    // A guest reads the same skill index as an account, never a guest-only text.
+    expect(sent).toContain("## Skills (test index)");
     const declared = ((gemini.bodies[0].tools as Array<{ functionDeclarations?: Array<{ name: string }> }>) ?? []).flatMap((t) => t.functionDeclarations ?? []).map((d) => d.name);
-    expect(declared).toEqual(["continue_on_channel"]);
+    // The guest's list, the same on every channel (DISTRY-ONE-AI-1118), plus the website's delivery tool.
+    expect([...declared].sort()).toEqual(["complete_sign_in", "continue_on_channel", "present_choices", "read_our_website", "read_skill", "start_sign_in"]);
+    // The page's form only: nothing sends them to a page to start.
+    expect(sent).not.toMatch(/start button|sign-up/);
+    // The dashboard's page list is the dashboard's form, never in a website turn.
+    expect(sent).not.toContain("open_page shows a page");
     expect(fetchCalls.some((c) => c.url.includes("/internal/copilot/messages"))).toBe(false);
     expect(sends).toEqual([]);
 
@@ -268,7 +286,7 @@ describe("POST /internal/copilot/web-messages: a visitor of our site talks with 
 
     const res = await request(app).post("/internal/copilot/web-messages").set(SERVICE).send({ visitorId: VISITOR, messageId: "m2", text: "my whatsapp is +33 6 12 34 56 78" });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ status: "answered", handOff: { channel: "whatsapp", delivered: true, reason: null }, continuedOn: "whatsapp", askForContact: false });
+    expect(res.body).toMatchObject({ status: "answered", handOff: { channel: "whatsapp", delivered: true, reason: null }, continuedOn: "whatsapp" });
     expect(state.sessionUpdates.some((u) => u.channelPhone === "+33612345678")).toBe(true);
     expect(sends).toHaveLength(1);
     expect(sends[0].body).toMatchObject({ phone: "+33612345678", fromAccount: "+33700000000", text: "Great, I am writing to you on WhatsApp now." });
@@ -286,7 +304,7 @@ describe("POST /internal/copilot/web-messages: a visitor of our site talks with 
 
     const res = await request(app).post("/internal/copilot/web-messages").set(SERVICE).send({ visitorId: VISITOR, messageId: "m3", text: "write me at K.Lourd+webprobe@Example.com" });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ status: "answered", handOff: { channel: "email", delivered: true, reason: null }, continuedOn: "email", messagesLeft: null });
+    expect(res.body).toMatchObject({ status: "answered", handOff: { channel: "email", delivered: true, reason: null }, continuedOn: "email" });
     expect(state.sessionUpdates.some((u) => u.channelEmail === "k.lourd+webprobe@example.com")).toBe(true);
     expect(sends).toHaveLength(1);
     expect(sends[0].url).toBe(`${process.env.CRM_SERVICE_URL}/internal/copilot/web-conversations`);
@@ -297,6 +315,69 @@ describe("POST /internal/copilot/web-messages: a visitor of our site talks with 
       ["assistant", "Thanks, our next message reaches you by email shortly."],
     ]);
     expect(fetchCalls.some((c) => c.url.includes("/orgs/whatsapp/"))).toBe(false);
+  }, 30_000);
+
+  // DISTRY-ONE-AI-1118 (owner 2026-11-18: « on peut onboarder des gens depuis le widget sans qu'ils aient
+  // besoin d'aller sur la page signup »).
+  it("a visitor signs up in the page chat: email + a typed phone start it, the code ends it, the session becomes their account, no number is tied as a WhatsApp identity", async () => {
+    const app = (await import("../../src/index.js")).default;
+    const gemini = {
+      calls: 0,
+      bodies: [] as Array<Record<string, unknown>>,
+      script: [
+        [{ functionCall: { name: "start_sign_in", args: { email: "K.Lourd+webprobe@Example.com" } }, thoughtSignature: "s1" }],
+        [{ functionCall: { name: "start_sign_in", args: { email: "K.Lourd+webprobe@Example.com", phone: "+33 6 12 34 56 78" } }, thoughtSignature: "s2" }],
+        [{ functionCall: { name: "complete_sign_in", args: { email: "k.lourd+webprobe@example.com", code: "123456" } }, thoughtSignature: "s3" }],
+        [{ text: "You are in." }],
+        [{ text: "Send me your website and I will work out who buys from you." }],
+      ],
+    };
+    const sends: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const signups: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const ACC_ORG = "77777777-7777-4777-8777-777777777777";
+    const ACC_USER = "88888888-8888-4888-8888-888888888888";
+    routes.push(
+      {
+        match: (url) => url.includes("/internal/agent-signups/"),
+        respond: (url, init) => {
+          const body = JSON.parse(init!.body as string) as Record<string, unknown>;
+          signups.push({ url, body });
+          return url.endsWith("/start")
+            ? { ok: true, body: { expiresAt: "2026-11-18T10:15:00Z" } }
+            : { ok: true, body: { orgId: ACC_ORG, userId: ACC_USER, email: "k.lourd+webprobe@example.com", created: true } };
+        },
+      },
+      // The account's own reads (brands, briefs): a new account holds nothing yet.
+      { match: (url) => url.startsWith(process.env.API_SERVICE_URL!), respond: () => ({ ok: true, body: { brands: [] } }) },
+      { match: (url) => url.startsWith(process.env.BILLING_SERVICE_URL!) && !url.includes("authorize"), respond: () => ({ ok: false, status: 404, body: { error: "no account" } }) },
+      ...baseRoutes(gemini, app, sends),
+    );
+
+    const res = await request(app).post("/internal/copilot/web-messages").set(SERVICE).send({ visitorId: VISITOR, messageId: "m4", text: "let's start, K.Lourd+webprobe@Example.com, code 123456" });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: "answered", account: { signedIn: true, email: "k.lourd+webprobe@example.com" } });
+    // Nothing verified a number here: without one the start is refused in words (no call), then the typed one is sent.
+    expect(signups.map((s) => [s.url.split("/").pop(), s.body])).toEqual([
+      ["start", { email: "k.lourd+webprobe@example.com", phone: "+33612345678" }],
+      ["complete", { email: "k.lourd+webprobe@example.com", code: "123456" }],
+    ]);
+    // The session is theirs now, like a WhatsApp sign-in; the proved email is kept for the page.
+    expect(state.sessionUpdates).toContainEqual(expect.objectContaining({ orgId: ACC_ORG, userId: ACC_USER, guest: false, webAccountEmail: "k.lourd+webprobe@example.com" }));
+    // The answer with their account ran at once, as them, in a run of their own org, on the same message.
+    const chats = fetchCalls.filter((c) => c.url.endsWith("/chat"));
+    expect(chats).toHaveLength(2);
+    expect((chats[0].init!.headers as Record<string, string>)["x-org-id"]).toBe(ORG);
+    expect((chats[1].init!.headers as Record<string, string>)["x-org-id"]).toBe(ACC_ORG);
+    expect((chats[1].init!.headers as Record<string, string>)["x-user-id"]).toBe(ACC_USER);
+    expect(JSON.parse(chats[1].init!.body as string)).toMatchObject({ sessionId: SESSION, channelMessageId: ROW_ID, webVisitorId: VISITOR });
+    expect(res.body.reply).toBe("You are in.\n\nSend me your website and I will work out who buys from you.");
+    // Their account's turn carries every tool, and no hand-off tool; its trigger is stored hidden.
+    const accountTurn = gemini.bodies[4];
+    const declared = ((accountTurn.tools as Array<{ functionDeclarations?: Array<{ name: string }> }>) ?? []).flatMap((t) => t.functionDeclarations ?? []).map((d) => d.name);
+    expect(declared).toContain("list_workflows");
+    expect(declared).not.toContain("continue_on_channel");
+    expect(JSON.stringify(accountTurn)).toContain("This conversation is tied to the distribute.you account you act for");
+    expect(state.messageInserts.filter((m) => m.role === "user").map((m) => m.proactiveTrigger ?? false)).toEqual([false, true]);
   }, 30_000);
 
   it("a visitor id that is not one is refused before anything runs", async () => {

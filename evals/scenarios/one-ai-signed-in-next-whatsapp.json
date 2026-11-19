@@ -1,0 +1,64 @@
+{
+  "id": "one-ai-signed-in-next-whatsapp",
+  "title": "Just signed in, no brand yet: what next",
+  "source": "staff test, WhatsApp, 2026-11-18",
+  "surface": "whatsapp",
+  "person": {
+    "name": "Sam"
+  },
+  "guest": false,
+  "history": [
+    {
+      "role": "user",
+      "content": "I want to start, my site is dutrou.com"
+    },
+    {
+      "role": "assistant",
+      "content": "You are in."
+    }
+  ],
+  "message": "I'm in. What now?",
+  "fixtures": {
+    "list_brands": [
+      {
+        "brands": []
+      }
+    ],
+    "list_offers": [
+      {
+        "offers": []
+      }
+    ],
+    "list_campaigns": [
+      {
+        "campaigns": []
+      }
+    ],
+    "get_billing_account": [
+      {
+        "error": "no billing account yet"
+      }
+    ],
+    "create_brand_from_url": [
+      {
+        "brand": {
+          "id": "b-1",
+          "name": "Dutrou",
+          "url": "https://dutrou.com"
+        }
+      }
+    ],
+    "get_prepaid_status": [
+      {
+        "state": null,
+        "billing_account": "none yet: the payment link opens it"
+      }
+    ]
+  },
+  "facts": [
+    "The person just signed up: their account has no brand, no offer, no campaign and no payment yet.",
+    "They gave their website earlier in this conversation: dutrou.com.",
+    "The whole setup happens in this conversation (new-account skill): brand from the website, offer, who to reach, a sample and an email, the first payment through a link, the launch."
+  ],
+  "expect": "Moves the setup forward in this conversation: uses dutrou.com (creates the brand from it, or says it does so now), never asks for the website again, never sends them to the dashboard or a sign-up page for a step it can do. Ends on one next step."
+}
