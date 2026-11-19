@@ -271,9 +271,25 @@ describe("channelReplyDays", () => {
     });
     const days = await channelReplyDays(db as unknown as Parameters<typeof channelReplyDays>[0], 3, new Date("2026-10-29T12:00:00Z"));
     expect(days).toEqual([
-      { day: "2026-10-27", received: 1, delivered: 1, notDelivered: 0 },
-      { day: "2026-10-28", received: 4, delivered: 0, notDelivered: 2 },
-      { day: "2026-10-29", received: 3, delivered: 1, notDelivered: 1 },
+      { day: "2026-10-27", received: 1, delivered: 1, notDelivered: 0, refused: 0 },
+      { day: "2026-10-28", received: 4, delivered: 0, notDelivered: 2, refused: 0 },
+      { day: "2026-10-29", received: 3, delivered: 1, notDelivered: 1, refused: 0 },
+    ]);
+  });
+
+  // DISTRY-ONE-AI-1118: the website chat joins the series; what its guard stopped is counted apart.
+  it("a message the website guard stopped is counted as refused: neither received work nor a lost reply", async () => {
+    const { db } = fakeDb({
+      selects: [[
+        { createdAt: new Date("2026-11-18T08:00:00Z"), status: "answered", sentAt: new Date("2026-11-18T08:00:05Z") },
+        { createdAt: new Date("2026-11-18T08:01:00Z"), status: "refused", sentAt: null, error: "guard:speed" },
+        { createdAt: new Date("2026-11-18T08:02:00Z"), status: "refused", sentAt: null, error: "guard:daily" },
+        { createdAt: new Date("2026-11-18T08:03:00Z"), status: "failed", sentAt: null, error: "POST /chat 500" },
+      ]],
+      inserts: [],
+    });
+    expect(await channelReplyDays(db as unknown as Parameters<typeof channelReplyDays>[0], 1, new Date("2026-11-18T12:00:00Z"), "web")).toEqual([
+      { day: "2026-11-18", received: 2, delivered: 1, notDelivered: 1, refused: 2 },
     ]);
   });
 });

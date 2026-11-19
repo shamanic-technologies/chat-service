@@ -502,7 +502,7 @@ export async function processWebMessage(deps: WebDeps, rowId: string): Promise<W
   let handOff: WebHandOff | null = null;
   try {
     // The turn runs as the session's identity NOW (a sign-in in the message before this one already moved it).
-    const identity = webIdentityOf(await findWebSession(db, msg.visitorId, now()), line);
+    const { guest: asGuest, ...identity } = webIdentityOf(await findWebSession(db, msg.visitorId, now()), line);
     await db
       .update(channelInboundMessages)
       .set({ status: "processing", orgId: identity.orgId, userId: identity.userId, updatedAt: now() })
@@ -552,7 +552,7 @@ export async function processWebMessage(deps: WebDeps, rowId: string): Promise<W
     // A number given earlier: every answer reaches them there too. The send is the
     // line's own work: a run under the line, never a person-org run (runs-service 409).
     if (!failure && phone) {
-      const lineRunId = identity.guest ? runId : await deps.createRootRun(line);
+      const lineRunId = asGuest ? runId : await deps.createRootRun({ orgId: line.orgId, userId: line.userId });
       handOff = await deliverOnWhatsapp(deps, { line, runId: lineRunId, phone, text: withChoicesList(reply, choices), key: `${row.messageId}:whatsapp`, firstTime: before?.channelPhone !== phone });
     }
   } catch (err) {

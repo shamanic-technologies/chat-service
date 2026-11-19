@@ -88,7 +88,7 @@ function fakeDb(state: Fake) {
         } else if (name === "channel_inbound_messages") {
           const values = boundValues(cond);
           rows = state.rows.filter((r) => values.includes(r.id) || values.includes(r.messageId));
-        } else if (name === "sessions") rows = state.session ? [state.session] : [];
+        } else if (name === "sessions") rows = state.session ? [{ ...state.session }] : []; // a read is a snapshot, as in Postgres
         else if (name === "messages") rows = state.messages;
         const p = Promise.resolve(rows) as Promise<unknown[]> & { orderBy: () => unknown };
         p.orderBy = () => {
@@ -408,7 +408,7 @@ describe("a visitor signs up or in right in the page chat (DISTRY-ONE-AI-1118)",
     const { deps, send } = world({ session: accountSession({ channelPhone: "+33612345678" }) });
     const res = await send("m1");
     expect(res.handOff).toEqual({ channel: "whatsapp", delivered: true, reason: null });
-    expect((deps.createRootRun as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([ACCOUNT, LINE]);
+    expect((deps.createRootRun as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])).toEqual([ACCOUNT, { orgId: LINE.orgId, userId: LINE.userId }]);
     expect(deps.sendWhatsapp).toHaveBeenCalledWith(expect.objectContaining({ orgId: LINE.orgId, runId: "run-2", phone: "+33612345678" }));
   });
 });
@@ -425,6 +425,7 @@ describe("a turn belongs to the visitor, not to the request that brought it (DIS
     expect(await send("m1", "set up acme.io")).toEqual({ status: "in_progress", reply: null, choices: null, handOff: null, continuedOn: null, account: { signedIn: false, email: null } });
     expect(busyVisitors()).toBe(1);
     Object.assign(state.session!, { channelEmail: "ann@acme.io" });
+    state.messages.push({ id: "msg-1", role: "user", content: "set up acme.io", proactiveTrigger: false, choices: null, createdAt: state.now });
     finish({ status: 200, body: sse([{ type: "token", content: "Here is your plan." }, { type: "choices", question: "Run it?", choices: [{ label: "Yes", description: "start today" }, { label: "Not now" }] }]) });
     const served = await first;
     expect(served).toEqual({

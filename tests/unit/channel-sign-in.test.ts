@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { completeSignIn, startSignIn } from "../../src/lib/channel-sign-in.js";
+import { COMPLETE_SIGN_IN_TOOL, START_SIGN_IN_TOOL, completeSignIn, parseTypedPhone, startSignIn } from "../../src/lib/channel-sign-in.js";
 
 beforeEach(() => {
   process.env.CLIENT_SERVICE_URL = "https://client.test.local";
@@ -53,5 +53,35 @@ describe("completeSignIn", () => {
   it("a client-service outage throws", async () => {
     const fetchImpl = vi.fn(async () => json(502, { error: "identity_provider_failed" }));
     await expect(completeSignIn("e@x.io", "123456", "+33680478702", { fetchImpl: fetchImpl as unknown as typeof fetch })).rejects.toThrow(/502/);
+  });
+});
+
+// DISTRY-ONE-AI-1118 (owner 2026-11-18: « on peut onboarder des gens depuis le widget sans qu'ils aient
+// besoin d'aller sur la page signup »): the same sign-in on every channel; only the phone differs.
+describe("sign-in is one path on every channel; the channel changes the phone only (DISTRY-ONE-AI-1118)", () => {
+  it("the tools read the same wherever the conversation is: nothing says it works on WhatsApp only", () => {
+    for (const tool of [START_SIGN_IN_TOOL, COMPLETE_SIGN_IN_TOOL]) {
+      expect(tool.description).not.toMatch(/talking to on WhatsApp|WhatsApp number is tied/);
+    }
+    expect(START_SIGN_IN_TOOL.description).toContain("right here in this conversation");
+    expect(START_SIGN_IN_TOOL.description).toContain("when this conversation is on WhatsApp the number is already known");
+    expect(COMPLETE_SIGN_IN_TOOL.description).toContain("this conversation is tied to that account");
+    expect(Object.keys((START_SIGN_IN_TOOL.input_schema as { properties: object }).properties)).toEqual(["email", "phone"]);
+    expect((START_SIGN_IN_TOOL.input_schema as { required: string[] }).required).toEqual(["email"]);
+  });
+
+  it("a number the person types is read in international form, or refused in words the model can act on", () => {
+    expect(parseTypedPhone("+33 6 12 34 56 78")).toEqual({ ok: true, phone: "+33612345678" });
+    expect(parseTypedPhone("0033 (6) 12-34-56-78")).toEqual({ ok: true, phone: "+33612345678" });
+    expect(parseTypedPhone("06 12 34 56 78")).toMatchObject({ ok: false, refused: { ok: false, error: "unreadable_number" } });
+    expect(parseTypedPhone(undefined)).toMatchObject({ ok: false, refused: { ok: false, error: "phone_needed" } });
+  });
+
+  it("on our website the number was typed, verified by nothing: the completion sends NO whatsappPhone, so no number changes hands", async () => {
+    const fetchImpl = vi.fn(async () => json(200, { orgId: "o", userId: "u", email: "ann@acme.io", created: true }));
+    const r = await completeSignIn("Ann@Acme.io", "123456", null, { fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(r).toEqual({ ok: true, account: { orgId: "o", userId: "u", email: "ann@acme.io", created: true } });
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ email: "ann@acme.io", code: "123456" });
   });
 });
