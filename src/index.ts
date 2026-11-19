@@ -122,6 +122,7 @@ import {
   codeDistryDefinition,
   toDistryVersionBody,
   DistryConfigError,
+  distrySkillSet,
 } from "./agent/distry-config.js";
 import {
   FIND_STAKEHOLDERS_TOOL_NAME,
@@ -4053,7 +4054,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   if (allowedToolNames.includes("read_skill")) {
     try {
       // Distry's skill set is part of its versioned definition (null = every skill).
-      if (configKey === SOPHIE_CONFIG_KEY) turnSkillSet = (await currentDistryVersion(db))?.skillSlugs ?? null;
+      if (configKey === SOPHIE_CONFIG_KEY) turnSkillSet = distrySkillSet();
       skillIndexBlock = await buildSkillIndexBlock(db, turnSkillSet);
     } catch (err) {
       console.error(`[chat] skill index unavailable for configKey="${configKey}":`, err);

@@ -134,6 +134,15 @@ export async function getDistryVersion(database: Database, version: number): Pro
   return row;
 }
 
+/**
+ * The current version's skill set, held in memory (one chat-service process: every save goes
+ * through it). Set at boot and on each save; /chat reads it with no query per turn.
+ */
+let currentSkillSet: string[] | null = null;
+export function distrySkillSet(): string[] | null {
+  return currentSkillSet;
+}
+
 /** Write a version's values onto the `copilot` platform config: what the next /chat turn reads. */
 async function materialize(database: Database, def: DistryDefinition): Promise<void> {
   const row = {
@@ -149,6 +158,7 @@ async function materialize(database: Database, def: DistryDefinition): Promise<v
     .insert(platformConfigs)
     .values({ key: SOPHIE_CONFIG.key, ...row })
     .onConflictDoUpdate({ target: [platformConfigs.key], set: { ...row, updatedAt: new Date() } });
+  currentSkillSet = def.skillSlugs ? [...def.skillSlugs] : null;
 }
 
 async function knownSkillSlugs(database: Database): Promise<string[]> {
