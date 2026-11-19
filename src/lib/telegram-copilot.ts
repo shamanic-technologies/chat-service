@@ -28,6 +28,7 @@ import type { TelegramMessageRequest } from "../schemas.js";
 import {
   CHANNEL_FAILURE_TEXT,
   CONVERSATION_LINES,
+  PAGE_LINKS_LINE,
   identityLines,
   parseChatStream,
   renderChannelReply,
@@ -37,7 +38,6 @@ import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
 
 export const TELEGRAM_CHANNEL = "telegram";
 export const TELEGRAM_TASK_NAME = "copilot-telegram";
-const DASHBOARD_URL = process.env.DASHBOARD_URL || "https://dashboard.distribute.you";
 
 /** A photo, voice note or file with no text: no turn runs, the person is told in one line. */
 export const TELEGRAM_TEXT_ONLY =
@@ -54,7 +54,7 @@ export function buildTelegramBlock(): string {
     "You are answering in Telegram, in the chat this person linked to their distribute.you account. You are the distribute.you Copilot: same person, same conversation as on the web, same rules, same personality.",
     "This chat shows plain text only: no markup at all (no *, no _, no tables, no headings, no markdown links: write the URL itself). Write short messages. Never use the long dash characters.",
     "Clickable choices (present_choices) are shown as a numbered list: the person answers with a number or in words.",
-    `Pages you open (open_page) cannot be shown here: when a page helps, give the link ${DASHBOARD_URL}.`,
+    PAGE_LINKS_LINE,
     ...CONVERSATION_LINES,
     ...identityLines({ guest: false, place: "This Telegram chat", numberKnown: false, canSignIn: false }),
   ].join("\n");

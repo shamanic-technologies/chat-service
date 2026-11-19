@@ -33,6 +33,7 @@ const { state } = vi.hoisted(() => ({
     session: {} as Record<string, unknown>,
     sessionUpdates: [] as Array<Record<string, unknown>>,
     messageInserts: [] as Array<Record<string, unknown>>,
+    messageUpdates: [] as Array<Record<string, unknown>>,
     tables: {} as Record<string, unknown>,
   },
 }));
@@ -102,6 +103,7 @@ vi.mock("../../src/db/index.js", async () => {
         set: vi.fn((s: Record<string, unknown>) => ({
           where: vi.fn(() => {
             if (is(table, "channel_inbound_messages") && state.channelRows[0]) Object.assign(state.channelRows[0], s);
+            if (is(table, "messages")) state.messageUpdates.push(s);
             if (is(table, "sessions")) {
               state.sessionUpdates.push(s);
               Object.assign(state.session, s);
@@ -221,6 +223,7 @@ describe("POST /internal/copilot/web-messages: a visitor of our site talks with 
     fetchCalls = [];
     state.channelRows.length = 0;
     state.messageInserts.length = 0;
+    state.messageUpdates.length = 0;
     state.sessionUpdates.length = 0;
     freshSession();
     installFetchMock();
@@ -370,7 +373,10 @@ describe("POST /internal/copilot/web-messages: a visitor of our site talks with 
     expect((chats[1].init!.headers as Record<string, string>)["x-org-id"]).toBe(ACC_ORG);
     expect((chats[1].init!.headers as Record<string, string>)["x-user-id"]).toBe(ACC_USER);
     expect(JSON.parse(chats[1].init!.body as string)).toMatchObject({ sessionId: SESSION, channelMessageId: ROW_ID, webVisitorId: VISITOR });
-    expect(res.body.reply).toBe("You are in.\n\nSend me your website and I will work out who buys from you.");
+    // ONE message, the account's answer, in place of the sign-in turn's words (staff test 2026-11-19: « You're in » read twice);
+    // those words stay for the model, hidden from the page.
+    expect(res.body.reply).toBe("Send me your website and I will work out who buys from you.");
+    expect(state.messageUpdates).toEqual([{ proactiveTrigger: true }]);
     // Their account's turn carries every tool, and no hand-off tool; its trigger is stored hidden.
     const accountTurn = gemini.bodies[4];
     const declared = ((accountTurn.tools as Array<{ functionDeclarations?: Array<{ name: string }> }>) ?? []).flatMap((t) => t.functionDeclarations ?? []).map((d) => d.name);

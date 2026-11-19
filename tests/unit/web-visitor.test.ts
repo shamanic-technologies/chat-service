@@ -24,7 +24,7 @@ import {
   type WebDeps,
 } from "../../src/lib/web-visitor.js";
 import * as webVisitor from "../../src/lib/web-visitor.js";
-import { CHANNEL_FAILURE_TEXT, WHOLE_WAY_TO_USE, buildChannelBlock, identityLines, type ChatChannelContext } from "../../src/lib/channel-copilot.js";
+import { CHANNEL_FAILURE_TEXT, PAGE_LINKS_LINE, WHOLE_WAY_TO_USE, buildChannelBlock, identityLines, type ChatChannelContext } from "../../src/lib/channel-copilot.js";
 import { buildTelegramBlock } from "../../src/lib/telegram-copilot.js";
 import { turnKeyOf } from "../../src/lib/turn-queue.js";
 
@@ -89,11 +89,16 @@ function fakeDb(state: Fake) {
           const values = boundValues(cond);
           rows = state.rows.filter((r) => values.includes(r.id) || values.includes(r.messageId));
         } else if (name === "sessions") rows = state.session ? [{ ...state.session }] : []; // a read is a snapshot, as in Postgres
-        else if (name === "messages") rows = state.messages;
+        else if (name === "messages") {
+          // The session's messages, oldest first; a role the where names keeps only that role.
+          const values = boundValues(cond);
+          rows = state.messages.filter((m) => !m.sessionId || values.includes(m.sessionId)).filter((m) => !values.includes("assistant") || m.role === "assistant");
+        }
         const p = Promise.resolve(rows) as Promise<unknown[]> & { orderBy: () => unknown };
         p.orderBy = () => {
-          const q = Promise.resolve(rows) as Promise<unknown[]> & { limit: () => Promise<unknown[]> };
-          q.limit = () => Promise.resolve(rows);
+          const q = Promise.resolve(rows) as Promise<unknown[]> & { limit: (n: number) => Promise<unknown[]> };
+          // The one paged read (`limit`) is newest first.
+          q.limit = (n: number) => Promise.resolve([...rows].reverse().slice(0, n));
           return q;
         };
         return p;
@@ -119,7 +124,10 @@ function fakeDb(state: Fake) {
       set: (s: Record<string, unknown>) => ({
         where: (cond: unknown) => {
           if (nameOf(table) === "sessions") Object.assign(state.session!, s);
-          else {
+          else if (nameOf(table) === "messages") {
+            const values = boundValues(cond);
+            for (const m of state.messages.filter((x) => values.includes(x.id))) Object.assign(m, s);
+          } else {
             const values = boundValues(cond);
             for (const r of state.rows.filter((x) => values.includes(x.id))) Object.assign(r, { ...s, ...("answer" in s ? { answer: asJsonb(s.answer) } : {}) });
           }
@@ -177,6 +185,18 @@ describe("the website block is the page's FORM, nothing else (DISTRY-ONE-AI-1118
     }
   });
 
+  // Owner 2026-11-17: a person who must pay gets a DIRECT checkout link. Staff test 2026-11-19:
+  // « add money … here's the link: https://dashboard.distribute.you », licensed by « when a page helps, give the dashboard ».
+  it("every surface without pages: a step only they take gets its direct link (paying: the checkout), the dashboard only to look around", () => {
+    const wa = buildChannelBlock({ kind: "whatsapp", assistant: { name: null, role: null, instructions: null }, sender: { phone: "+33612345678", name: null }, thread: [] }, false);
+    for (const block of [guest, account, wa, buildTelegramBlock()]) {
+      expect(block).toContain(PAGE_LINKS_LINE);
+      expect(block).not.toContain("when a page helps, give the link");
+    }
+    expect(PAGE_LINKS_LINE).toContain("prepaid_checkout");
+    expect(PAGE_LINKS_LINE).toContain("never the dashboard to go and find it");
+  });
+
   it("a guest signs up or in right in the conversation: email, a phone number (nothing verified one here), the code", () => {
     expect(guest).toContain("This conversation is NOT tied to any distribute.you account yet");
     expect(guest).toContain("sign them up or in, right here in this conversation: ask for their email (once) and a phone number for urgent matters, with its country code (once), call start_sign_in");
@@ -188,7 +208,7 @@ describe("the website block is the page's FORM, nothing else (DISTRY-ONE-AI-1118
     expect(account).toContain(WHOLE_WAY_TO_USE);
     expect(account).not.toContain("NOT tied");
     expect(account).not.toContain("one step further from where they stopped");
-    expect(buildWebBlock({ whatsapp: null, guest: false, afterSignIn: true })).toContain("Take them one step further from where they stopped");
+    expect(buildWebBlock({ whatsapp: null, guest: false, afterSignIn: true })).toContain("take them one step further from where they stopped");
   });
 
   it("the hand-off is a delivery fact: offered once to a guest, stated once tied, never asked again", () => {
@@ -322,20 +342,28 @@ describe("the guard: abuse is cut, a person onboarding never is (DISTRY-ONE-AI-1
 });
 
 describe("a visitor signs up or in right in the page chat (DISTRY-ONE-AI-1118)", () => {
-  it("the turn that signed them in is followed at once by the answer with their account, in the same response", async () => {
+  // Staff test 2026-11-19: both turns were joined and the person read « You're in » twice.
+  it("the turn that signed them in is followed at once by the answer with their account, in the same response, IN PLACE of the sign-in turn's words", async () => {
     const { state, deps, runs, send } = world();
+    const said = (role: string, content: string, proactiveTrigger = false) =>
+      state.messages.push({ id: `msg-${state.messages.length + 1}`, sessionId: "s-1", role, content, proactiveTrigger, createdAt: state.now });
+    said("assistant", "Here is your plan: Acme, 3 companies, one email.");
     (deps.runChat as ReturnType<typeof vi.fn>).mockImplementation(async (args: { orgId: string; message: string }) => {
       if (args.orgId === LINE.orgId) {
         // complete_sign_in re-keyed the session during the guest turn.
         Object.assign(state.session!, { ...ACCOUNT, guest: false, webAccountEmail: "ann@acme.io" });
+        said("user", args.message);
+        said("assistant", "You are in.");
         return { status: 200, body: sse([{ type: "token", content: "You are in." }]) };
       }
-      return { status: 200, body: sse([{ type: "token", content: "I read acme.io: you sell X." }, { type: "choices", choices: [{ label: "Yes" }] }]) };
+      said("user", args.message, true);
+      said("assistant", "You're in. I read acme.io: you sell X.");
+      return { status: 200, body: sse([{ type: "token", content: "You're in. I read acme.io: you sell X." }, { type: "choices", choices: [{ label: "Yes" }] }]) };
     });
     const res = await send("m1", "the code is 123456");
     expect(res).toEqual({
       status: "answered",
-      reply: "You are in.\n\nI read acme.io: you sell X.",
+      reply: "You're in. I read acme.io: you sell X.",
       choices: { choices: [{ label: "Yes" }] },
       handOff: null,
       continuedOn: null,
@@ -346,7 +374,12 @@ describe("a visitor signs up or in right in the page chat (DISTRY-ONE-AI-1118)",
     const calls = (deps.runChat as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     expect(calls[0]).toMatchObject({ orgId: LINE.orgId, userId: LINE.userId, runId: "run-1", message: "the code is 123456", channelMessageId: "row-1", visitorId: VISITOR });
     expect(calls[1]).toMatchObject({ ...ACCOUNT, runId: "run-2", sessionId: "s-1", message: WEB_AFTER_SIGN_IN_TRIGGER, channelMessageId: "row-1", visitorId: VISITOR });
-    expect(state.rows[0]).toMatchObject({ ...ACCOUNT, signedIn: true, status: "answered", replyText: "You are in.\n\nI read acme.io: you sell X." });
+    expect(state.rows[0]).toMatchObject({ ...ACCOUNT, signedIn: true, status: "answered", replyText: "You're in. I read acme.io: you sell X." });
+    // The sign-in turn's words stay for the model, hidden from the person: a reload reads the one message they read.
+    expect(state.messages.find((m) => m.content === "You are in.")).toMatchObject({ proactiveTrigger: true });
+    expect(state.messages.find((m) => m.content.toString().startsWith("Here is your plan"))).toMatchObject({ proactiveTrigger: false });
+    const page = await readWebConversation(fakeDb(state), VISITOR, state.now);
+    expect(page.messages.map((m) => m.text)).toEqual(["Here is your plan: Acme, 3 companies, one email.", "the code is 123456", "You're in. I read acme.io: you sell X."]);
   });
 
   it("every later message of that visitor runs as THEIR account: the row, the run and the turn carry it", async () => {
@@ -376,7 +409,9 @@ describe("a visitor signs up or in right in the page chat (DISTRY-ONE-AI-1118)",
       }
       return { status: 502, body: "upstream" };
     });
+    state.messages.push({ id: "msg-1", sessionId: "s-1", role: "assistant", content: "You are in.", proactiveTrigger: false, createdAt: state.now });
     expect(await send("m1")).toMatchObject({ status: "answered", reply: "You are in.", account: { signedIn: true, email: "ann@acme.io" } });
+    expect(state.messages[0]).toMatchObject({ proactiveTrigger: false });
     expect(errors.mock.calls.flat().join(" ")).toContain("signed in, but the answer with their account failed");
     errors.mockRestore();
   });

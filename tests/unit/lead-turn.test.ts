@@ -12,6 +12,7 @@ import {
 } from "../../src/lib/lead-turn.js";
 import { LeadTurnRequestSchema, type LeadTurnRequest } from "../../src/schemas.js";
 import { CLIENT_UI_TOOL_NAMES } from "../../src/lib/ui-tools.js";
+import { AFTER_SIGN_IN_LINE } from "../../src/lib/channel-copilot.js";
 import { REACH_ELSEWHERE_TOOL_NAME, leadTurnCaller } from "../../src/lib/lead-contact.js";
 import { endToolFinalNote, endToolNudgeNote } from "../../src/lib/tool-budget.js";
 
@@ -87,8 +88,12 @@ describe("buildLeadTurnBlock", () => {
     expect(block).toContain("`bodyHtml`");
     expect(block).not.toContain("plain text");
   });
-  it("after a sign-in: the whole message, nothing before reached them", () => {
-    expect(buildLeadTurnBlock(frame({ afterSignIn: true }))).toContain("write the WHOLE message now");
+  it("after a sign-in: ONE line, the same as every channel's, said once (nothing before reached them)", () => {
+    const count = (b: string) => b.split(AFTER_SIGN_IN_LINE).length - 1;
+    expect(AFTER_SIGN_IN_LINE).toContain("this answer is the ONE message they read");
+    expect(count(buildLeadTurnBlock(frame({ afterSignIn: true })))).toBe(1);
+    expect(count(buildLeadTurnBlock(frame({ afterSignIn: true, phoneBound: false, guest: true })))).toBe(1);
+    expect(count(buildLeadTurnBlock(frame()))).toBe(0);
   });
 });
 

@@ -42,6 +42,7 @@ import { channelInboundMessages, messages, sessions } from "../db/schema.js";
 import {
   CHANNEL_FAILURE_TEXT,
   CONVERSATION_LINES,
+  PAGE_LINKS_LINE,
   identityLines,
   isIntendedSilence,
   parseChatStream,
@@ -79,7 +80,6 @@ export const WEB_AFTER_SIGN_IN_TRIGGER = "(They just signed in, in this same exc
 export const VISITOR_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 const E164 = /^\+[1-9]\d{6,14}$/;
 const SITE_URL = "https://distribute.you";
-const DASHBOARD_URL = process.env.DASHBOARD_URL || "https://dashboard.distribute.you";
 
 /** The daily cap on guest answers, tunable without a deploy of code (`WEB_GUEST_DAILY_TURN_CAP`). */
 export function webGuestDailyTurnCap(env: NodeJS.ProcessEnv = process.env): number {
@@ -112,7 +112,7 @@ export function buildWebBlock(state: WebTurnFacts): string {
     `You are answering a visitor of ${SITE_URL}, in the chat window of the page they are reading. You are the distribute.you Copilot: same person, same rules, same personality as on WhatsApp and email.`,
     "The chat window shows plain text only: no markup at all (no *, no _, no tables, no headings, no markdown links). Write short messages, like a person in a chat. A link you give, a payment link included, is written as the plain URL. Never use the long dash characters.",
     "Clickable choices (present_choices) are shown as buttons under your message: the visitor clicks one or answers in words.",
-    `Pages you open (open_page) cannot be shown here: when a page helps, give the link ${DASHBOARD_URL}.`,
+    PAGE_LINKS_LINE,
     ...CONVERSATION_LINES,
     ...identityLines({ guest: state.guest, place: "This conversation", numberKnown: false, canSignIn: true, afterSignIn: state.afterSignIn === true }),
   ];
@@ -519,9 +519,18 @@ export async function processWebMessage(deps: WebDeps, rowId: string): Promise<W
       .where(eq(sessions.id, sessionId));
     // They signed up or in during this turn (complete_sign_in re-keyed the
     // session): the answer with their account comes in the SAME response, in a
-    // run of their own org. Its failure never hides that they are in.
+    // run of their own org, and IN PLACE of the sign-in turn's words (one
+    // message that says once they are in, as on WhatsApp: staff test
+    // 2026-11-19 read « You're in » twice when both were joined). Its failure
+    // never hides that they are in: the sign-in turn's words are served then.
     if (!failure && before?.guest && after && !after.guest && after.userId) {
       const account = { orgId: after.orgId, userId: after.userId };
+      const [signInWords] = await db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.sessionId, sessionId), eq(messages.role, "assistant")))
+        .orderBy(desc(messages.createdAt), desc(messages.id))
+        .limit(1);
       await db
         .update(channelInboundMessages)
         .set({ orgId: account.orgId, userId: account.userId, signedIn: true, updatedAt: now() })
@@ -530,8 +539,10 @@ export async function processWebMessage(deps: WebDeps, rowId: string): Promise<W
         const second = await deps.runChat({ ...account, runId: await deps.createRootRun(account), sessionId, message: WEB_AFTER_SIGN_IN_TRIGGER, channelMessageId: rowId, visitorId: msg.visitorId });
         const next = webTurnOutcome(second.status, second.body);
         if (next.failure) throw new Error(next.failure);
-        reply = [reply, next.reply].filter(Boolean).join("\n\n");
+        reply = next.reply;
         choices = next.choices;
+        // Kept for the model (it said it), never shown again: the page on reload and the hand-over read what they read.
+        if (signInWords) await db.update(messages).set({ proactiveTrigger: true }).where(eq(messages.id, signInWords.id));
       } catch (err) {
         console.error(`[chat-service] web message "${row.messageId}": signed in, but the answer with their account failed: ${err instanceof Error ? err.message : String(err)}`);
       }
