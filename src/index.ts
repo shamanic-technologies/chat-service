@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { buildModelPanel, distryModelChoices, readIndexState, refreshIntelligenceIndex, INDEX_TICK_MS } from "./lib/intelligence-index.js";
 import crypto from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
@@ -87,6 +88,8 @@ import {
   initVendorCredit,
   buildVendorCreditRead,
   refreshFallbackPrices,
+  listPriceCentsPerUnit,
+  listPricesRead,
   PRICE_REFRESH_MS,
   type AcceptsRequest,
   type ServingChoice,
@@ -6991,6 +6994,28 @@ app.put("/internal/distry/config", requireInternalAuth, async (req, res) => {
   }
 });
 
+// DISTRY-MODELS-1119: every model Distry can be set to, with our price, its Artificial Analysis
+// Intelligence Index score + rank, and intelligence per dollar, best ratio first.
+app.get("/internal/distry/models", requireInternalAuth, async (_req, res) => {
+  try {
+    const current = await currentDistryVersion(db);
+    if (!current) return res.status(503).json({ error: "Distry's definition is not seeded yet (boot in progress)." });
+    const panel = buildModelPanel({
+      choices: distryModelChoices(CHAT_CONFIG_PROVIDERS),
+      state: await readIndexState(db),
+      keyConfigured: Boolean(process.env.ARTIFICIAL_ANALYSIS_API_KEY),
+      priceOf: listPriceCentsPerUnit,
+      pricesRead: listPricesRead(),
+      current: { provider: current.provider, model: current.model },
+      now: new Date(),
+    });
+    return res.json(panel);
+  } catch (err) {
+    const mapped = distryErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
 app.get("/internal/distry/config/versions", requireInternalAuth, async (_req, res) => {
   try {
     return res.json({ versions: (await listDistryVersions(db)).map(toDistryVersionBody) });
@@ -7312,6 +7337,20 @@ if (process.env.NODE_ENV !== "test") {
       failInterruptedProactiveTurns(db, bootedAt)
         .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
         .catch((err) => console.error("[chat-service] proactive turn recovery failed:", err));
+
+      // DISTRY-MODELS-1119: Artificial Analysis Intelligence Index, read once a day (the tick reads only when no
+      // success in 24 h and no attempt in the last hour; a failure is stored and served as broken).
+      let indexReading = false;
+      const readIndex = () => {
+        if (indexReading) return;
+        indexReading = true;
+        refreshIntelligenceIndex({ database: db, apiKey: process.env.ARTIFICIAL_ANALYSIS_API_KEY })
+          .then((outcome) => { if (outcome === "no_key") console.log("[intelligence-index] ARTIFICIAL_ANALYSIS_API_KEY not set: no reading"); })
+          .catch((err) => console.error("[intelligence-index] refresh tick failed:", err))
+          .finally(() => { indexReading = false; });
+      };
+      setTimeout(readIndex, 60_000).unref();
+      setInterval(readIndex, INDEX_TICK_MS).unref();
 
       // Distry's non-client spend: measured every minute from the runs ledger, the day's alert
       // sent once (DISTRY-GUEST-CAPS-1119). After listen (network reads), one at a time.

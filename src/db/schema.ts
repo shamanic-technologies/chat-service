@@ -190,6 +190,41 @@ export const distryConfigVersions = pgTable(
 
 export type DistryConfigVersion = typeof distryConfigVersions.$inferSelect;
 
+// DISTRY-MODELS-1119 (migration 0041): the Artificial Analysis Intelligence Index, read daily
+// (`src/lib/intelligence-index.ts`). Bronze = each read as received or its failure; silver = one
+// row per Artificial Analysis model per successful read. Never typed by hand.
+export const intelligenceIndexReads = pgTable(
+  "intelligence_index_reads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+    status: text("status").notNull().$type<"ok" | "failed">(),
+    httpStatus: integer("http_status"),
+    error: text("error"),
+    indexVersion: text("index_version"),
+    body: jsonb("body"),
+  },
+  (table) => [index("intelligence_index_reads_fetched_idx").on(table.fetchedAt)],
+);
+
+export const intelligenceIndexScores = pgTable(
+  "intelligence_index_scores",
+  {
+    readId: uuid("read_id").notNull().references(() => intelligenceIndexReads.id),
+    aaId: text("aa_id").notNull(),
+    aaSlug: text("aa_slug").notNull(),
+    aaName: text("aa_name").notNull(),
+    creator: text("creator"),
+    indexVersion: text("index_version").notNull(),
+    score: real("score"),
+    indexCostUsd: real("index_cost_usd"),
+    priceInputPer1mUsd: real("price_input_per_1m_usd"),
+    priceOutputPer1mUsd: real("price_output_per_1m_usd"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ name: "intelligence_index_scores_pk", columns: [table.readId, table.aaSlug] })],
+);
+
 // Copilot SKILL TREE (migration 0018). One row per skill: the INDEX (slug
 // "index", parent NULL) plus one sub-skill per topic (parent "index", or a
 // deeper parent). Staff edit content live from the dashboard (autosave), so

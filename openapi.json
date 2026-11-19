@@ -5404,6 +5404,285 @@
           }
         ]
       },
+      "DistryModelsResponse": {
+        "type": "object",
+        "properties": {
+          "indexName": {
+            "type": "string"
+          },
+          "indexVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "readAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When the reading served was taken."
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "attribution": {
+                "type": "string",
+                "description": "Show it beside the scores (Artificial Analysis requires it)."
+              }
+            },
+            "required": [
+              "name",
+              "url",
+              "attribution"
+            ]
+          },
+          "refresh": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "no_key",
+                  "never_read",
+                  "ok",
+                  "failed",
+                  "stale"
+                ]
+              },
+              "broken": {
+                "type": "boolean",
+                "description": "true = red on Monitoring (the last read failed, or none succeeded for 48 h)."
+              },
+              "sentence": {
+                "type": "string"
+              },
+              "lastAttemptAt": {
+                "type": "string",
+                "nullable": true
+              },
+              "lastSuccessAt": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "state",
+              "broken",
+              "sentence",
+              "lastAttemptAt",
+              "lastSuccessAt"
+            ]
+          },
+          "priceBasis": {
+            "type": "string"
+          },
+          "ratioBasis": {
+            "type": "string"
+          },
+          "current": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "modelId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "provider",
+              "model",
+              "modelId"
+            ]
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DistryModelRow"
+            },
+            "description": "Best intelligence per dollar first (run-cost basis, then blended basis), unscored last."
+          }
+        },
+        "required": [
+          "indexName",
+          "indexVersion",
+          "readAt",
+          "source",
+          "refresh",
+          "priceBasis",
+          "ratioBasis",
+          "current",
+          "models"
+        ]
+      },
+      "DistryModelRow": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "modelId": {
+            "type": "string",
+            "description": "The concrete model id a call runs.",
+            "example": "claude-haiku-5-5"
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Claude Haiku 5.5"
+          },
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every name Distry's definition may use for this model (save any one as `model`)."
+          },
+          "capabilityTier": {
+            "type": "string",
+            "enum": [
+              "cheap",
+              "strong",
+              "frontier"
+            ]
+          },
+          "isCurrent": {
+            "type": "boolean",
+            "description": "true = Distry runs on this model now."
+          },
+          "price": {
+            "type": "object",
+            "properties": {
+              "inputPer1mUsd": {
+                "type": "number",
+                "nullable": true,
+                "description": "USD per 1M input tokens we are billed (our catalogue price)."
+              },
+              "outputPer1mUsd": {
+                "type": "number",
+                "nullable": true
+              },
+              "costNames": {
+                "type": "object",
+                "nullable": true,
+                "properties": {
+                  "input": {
+                    "type": "string"
+                  },
+                  "output": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "input",
+                  "output"
+                ]
+              },
+              "reason": {
+                "type": "string",
+                "nullable": true,
+                "description": "Why a price is null, in words."
+              }
+            },
+            "required": [
+              "inputPer1mUsd",
+              "outputPer1mUsd",
+              "costNames",
+              "reason"
+            ]
+          },
+          "index": {
+            "type": "object",
+            "properties": {
+              "aaSlug": {
+                "type": "string",
+                "nullable": true
+              },
+              "aaName": {
+                "type": "string",
+                "nullable": true,
+                "description": "The Artificial Analysis entry matched to this model."
+              },
+              "score": {
+                "type": "number",
+                "nullable": true,
+                "description": "Artificial Analysis Intelligence Index score."
+              },
+              "rank": {
+                "type": "integer",
+                "nullable": true,
+                "description": "1 = highest score among the listed models; ties share a rank."
+              },
+              "rankOutOf": {
+                "type": "integer"
+              },
+              "indexCostUsd": {
+                "type": "number",
+                "nullable": true,
+                "description": "What Artificial Analysis spent running its Intelligence Index on this model (USD)."
+              },
+              "reason": {
+                "type": "string",
+                "nullable": true,
+                "description": "Why the score is null, in words."
+              }
+            },
+            "required": [
+              "aaSlug",
+              "aaName",
+              "score",
+              "rank",
+              "rankOutOf",
+              "indexCostUsd",
+              "reason"
+            ]
+          },
+          "intelligencePerDollar": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "number",
+                "nullable": true
+              },
+              "basis": {
+                "type": "string",
+                "nullable": true,
+                "enum": [
+                  "index_run_cost",
+                  "blended_price_3_to_1",
+                  null
+                ],
+                "description": "`index_run_cost` = score / index run cost; `blended_price_3_to_1` = score / our blended 1M-token price (no run cost published)."
+              },
+              "reason": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "value",
+              "basis",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "provider",
+          "modelId",
+          "displayName",
+          "names",
+          "capabilityTier",
+          "isCurrent",
+          "price",
+          "index",
+          "intelligencePerDollar"
+        ]
+      },
       "DistryRestoreRequest": {
         "type": "object",
         "properties": {
@@ -10352,6 +10631,59 @@
           },
           "409": {
             "description": "Another save landed first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/distry/models": {
+      "get": {
+        "tags": [
+          "Distry"
+        ],
+        "summary": "Every model Distry can run: price, Intelligence Index, rank, intelligence per dollar",
+        "description": "Staff editor model panel (dashboard v2 Monitoring > Distry). One row per model the definition's providers accept, sorted by intelligence per dollar, best first. Scores come from Artificial Analysis, read daily and stored; never typed by hand.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The model panel",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistryModelsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid definition (unknown tool, skill or model)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
             "content": {
               "application/json": {
                 "schema": {
