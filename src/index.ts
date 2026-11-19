@@ -135,7 +135,12 @@ import {
   withoutPrincipalToolsUnlessAllowed,
   isPrincipalToolName,
   DISTRY_STAFF_READ_TASK_NAME,
+  DISTRY_ENGINE_CALL_TASK_NAME,
+  ENGINES_TOOL_FAMILY,
+  READ_COMPANY_FINANCIALS_TOOL_NAME,
 } from "./agent/principal-tools.js";
+import { readCompanyFinancials, featuresFetchFromEnv } from "./agent/finance-tools.js";
+import { engineToolsFrom, listEngines, workflowFetchFromEnv, callEngine, readEngineCall, callAnswer, READ_ENGINE_CALL_TOOL_NAME } from "./agent/engine-tools.js";
 import { hasStaffOnlyTool, lookupRequester, toolsForRequester, type Requester } from "./lib/staff-only-tools.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
 import { readPlatformCaller, platformRunCreateFailure } from "./lib/platform-parent-run.js";
@@ -4062,6 +4067,19 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       return;
     }
   }
+  // Distry's Engine tools (DISTRY-PRINCIPAL-1119): one per Engine that can run now, from
+  // workflow-service's live list read at this turn; a failed read is named in the turn, never a gate.
+  let engineTools: { tools: Anthropic.Tool[]; outcomeOf: Map<string, string> } = { tools: [], outcomeOf: new Map() };
+  let engineListNote = "";
+  if (principalAllowed && allowedToolNames.includes(ENGINES_TOOL_FAMILY)) {
+    try {
+      engineTools = engineToolsFrom(await listEngines(workflowFetchFromEnv()));
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      console.error(`[chat] Engines could not be listed for this turn: ${why}`);
+      engineListNote = `\n\n---\n(Not read this turn: the list of Engines (${why.slice(0, 200)}). No Engine can be called in this turn.)`;
+    }
+  }
   // What stays the same across turns (the config's prompt + skills + who it
   // is) vs what this turn alone carries (page context, campaign inputs, the
   // WhatsApp or Lead event block). Gemini reads them joined, as before;
@@ -4074,7 +4092,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     buildSystemPrompt("", promptContext, campaignFeatureInputs) +
     (leadTurn ? buildLeadTurnBlock(leadTurn) : telegramTurn ? buildTelegramBlock() : webTurn ? buildWebBlock(webTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "") +
     // The dashboard's pages, on the dashboard only (DISTRY-ONE-AI-1118): a chat app or our website cannot show them.
-    (configKey === SOPHIE_CONFIG_KEY && !leadTurn && !telegramTurn && !webTurn && !channelTurn && !(proactiveTurn && context?.channel !== undefined) ? dashboardPagesBlock() : "");
+    (configKey === SOPHIE_CONFIG_KEY && !leadTurn && !telegramTurn && !webTurn && !channelTurn && !(proactiveTurn && context?.channel !== undefined) ? dashboardPagesBlock() : "") +
+    engineListNote;
   let systemPrompt = stableSystemPrompt + turnContextBlock;
   const isGeminiChat = chatProvider === "google";
   // A direct OpenAI-compatible vendor (DeepSeek, CHAT-DEEPSEEK-FLASH-1101): its own loop, vendor-chat.ts.
@@ -4307,7 +4326,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       }
     }
 
-    const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME && t !== WEB_CONTINUE_TOOL_NAME));
+    const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME && t !== WEB_CONTINUE_TOOL_NAME && t !== ENGINES_TOOL_FAMILY));
+    allTools.push(...engineTools.tools);
     if (webTurn && allowedToolNames.includes(WEB_CONTINUE_TOOL_NAME)) allTools.push(WEB_CONTINUE_TOOL);
     if (leadTurn) {
       allTools.push(
@@ -4319,7 +4339,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     const turnImages = leadTurn?.whatsapp?.images ?? [];
     // The answer a lead turn ended on (answer_person), in the writer's schema.
     const leadAnswer: { json: Record<string, unknown> | null } = { json: null };
-    const allowedToolSet = new Set(allowedToolNames);
+    const allowedToolSet = new Set([...allowedToolNames, ...engineTools.tools.map((t) => t.name)]);
     // Distry's reads of our own Unibox ride one run under OUR org, opened on first need.
     let stakeholderRun: Promise<string> | null = null;
     const downstreamTrackingHeaders = Object.keys(trackingHeaders).length > 0
@@ -4806,6 +4826,38 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
             : call.name === READ_PERSON_UNIBOX_TOOL_NAME
               ? await readPersonUnibox(args, deps)
               : await readOrganizationUnibox(args, deps);
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Distry: the company's financials, features-service's figures (DISTRY-PRINCIPAL-1119, staff turns only) ---
+      if (call.name === READ_COMPANY_FINANCIALS_TOOL_NAME) {
+        const args = (call.args as Record<string, unknown>) || {};
+        if (!principalAllowed) throw new Error(`[${call.name}] reserved to distribute.you staff`);
+        const result = await readCompanyFinancials(args, featuresFetchFromEnv());
+        toolCalls.push({ name: call.name, args, result });
+        return { name: call.name, result };
+      }
+
+      // --- Distry: one Unit of an Engine, its best script, waited for (DISTRY-PRINCIPAL-1119, staff turns only) ---
+      if (engineTools.outcomeOf.has(call.name) || call.name === READ_ENGINE_CALL_TOOL_NAME) {
+        const args = (call.args as Record<string, unknown>) || {};
+        if (!principalAllowed) throw new Error(`[${call.name}] reserved to distribute.you staff`);
+        const ours = ourAccountFromEnv();
+        const otherOrg = typeof args.orgId === "string" && args.orgId.trim() ? args.orgId.trim() : null;
+        const target = otherOrg
+          ? { orgId: otherOrg, userId, brandId: typeof args.brandId === "string" && args.brandId.trim() ? args.brandId.trim() : null }
+          : { orgId: ours.orgId, userId: ours.userId, brandId: ours.brandId };
+        if (otherOrg && !target.brandId && call.name !== READ_ENGINE_CALL_TOOL_NAME) throw new Error(`[${call.name}] orgId needs its brandId`);
+        const wf = workflowFetchFromEnv();
+        const result = call.name === READ_ENGINE_CALL_TOOL_NAME
+          ? callAnswer(await readEngineCall(String(args.callId ?? ""), target, 60, wf))
+          : await callEngine(
+            engineTools.outcomeOf.get(call.name)!,
+            args,
+            { ...target, runId: await createChannelRootRun({ orgId: target.orgId, userId: target.userId }, fetch, DISTRY_ENGINE_CALL_TASK_NAME, null) },
+            wf,
+          );
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }

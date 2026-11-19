@@ -107,5 +107,5 @@ export const SOPHIE_TOOLS: readonly string[] = [
   "contact_human", "request_staff", "request_skill_upgrade", "list_staff_requests",
   "create_followup", "update_followup", "cancel_followup", "list_followups", "fire_followup",
   // Distry as principal (DISTRY-PRINCIPAL-1119): loaded ONLY in a staff conversation (principal-tools.ts).
-  "find_stakeholders", "read_person_unibox", "read_organization_unibox",
+  "find_stakeholders", "read_person_unibox", "read_organization_unibox", "read_company_financials", "engines",
 ];

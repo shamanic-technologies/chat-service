@@ -44,6 +44,7 @@ export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> =
   find_stakeholders: ["GET /v1/orgs/people"],
   read_person_unibox: ["GET /v1/orgs/people/timeline"],
   read_organization_unibox: ["GET /v1/orgs/people/timeline"],
+  read_company_financials: [NO_API_ROUTE],
 
   // brands, offers, steps, rates
   list_brands: ["GET /v1/brands"],

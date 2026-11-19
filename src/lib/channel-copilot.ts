@@ -556,6 +556,8 @@ export async function createChannelRootRun(
   identity: { orgId: string; userId: string },
   fetchImpl: typeof fetch = fetch,
   taskName: string = CHANNEL_TASK_NAME,
+  /** null = the run is an order of work of its own (an Engine call), not Copilot support. */
+  support: typeof COPILOT_SUPPORT | null = COPILOT_SUPPORT,
 ): Promise<string> {
   const res = await fetchImpl(`${process.env.RUNS_SERVICE_URL || "https://runs.mcpfactory.org"}/v1/runs`, {
     method: "POST",
@@ -565,7 +567,7 @@ export async function createChannelRootRun(
       "x-org-id": identity.orgId,
       "x-user-id": identity.userId,
     },
-    body: JSON.stringify({ serviceName: "chat-service", taskName, support: COPILOT_SUPPORT }),
+    body: JSON.stringify({ serviceName: "chat-service", taskName, ...(support ? { support } : {}) }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`runs-service create run ${res.status}: ${await res.text().catch(() => "")}`);

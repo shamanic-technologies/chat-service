@@ -46,9 +46,18 @@ describe("/chat wiring (source guard)", () => {
 
   it("filters the config's tools by requester before the tool set and guard are built", () => {
     const filterAt = src.indexOf("toolsForRequester(configToolNames, await getRequester())");
-    const setAt = src.indexOf("const allowedToolSet = new Set(allowedToolNames)");
+    const setAt = src.indexOf("const allowedToolSet = new Set([...allowedToolNames");
     expect(filterAt).toBeGreaterThan(-1);
     expect(setAt).toBeGreaterThan(filterAt);
+  });
+
+  it("drops Distry's principal tools unless staff talk for themselves, before the tool set is built (DISTRY-PRINCIPAL-1119)", () => {
+    const gateAt = src.indexOf("withoutPrincipalToolsUnlessAllowed(");
+    const setAt = src.indexOf("const allowedToolSet = new Set([...allowedToolNames");
+    expect(gateAt).toBeGreaterThan(-1);
+    expect(setAt).toBeGreaterThan(gateAt);
+    // Every principal dispatch re-checks the gate.
+    expect(src.match(/if \(!principalAllowed\) throw new Error/g)?.length).toBe(3);
   });
 
   it("both prompt tools forward the staff email", () => {

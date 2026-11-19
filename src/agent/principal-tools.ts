@@ -46,8 +46,11 @@ export const PRINCIPAL_TOOL_DESCRIPTIONS: Readonly<Record<string, string>> = {
 
 /** The names a config can list that are principal tools (Engine tools included by prefix). */
 export function isPrincipalToolName(name: string): boolean {
-  return Object.prototype.hasOwnProperty.call(PRINCIPAL_TOOL_DESCRIPTIONS, name) || name.startsWith(ENGINE_TOOL_PREFIX);
+  return Object.prototype.hasOwnProperty.call(PRINCIPAL_TOOL_DESCRIPTIONS, name) || name.startsWith(ENGINE_TOOL_PREFIX) || name === "read_engine_call";
 }
+
+/** The run an Engine call rides under the account it is for (an order of work, not support). */
+export const DISTRY_ENGINE_CALL_TASK_NAME = "distry-engine-call";
 
 /**
  * Who may hold a principal tool in a turn: distribute.you staff talking for

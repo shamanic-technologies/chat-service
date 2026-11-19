@@ -12,6 +12,7 @@ import type { AnthropicEffort } from "../schemas.js";
 import { STAFF_REQUEST_REPOS } from "./staff-requests.js";
 import { CATALOGUE_TOOLS } from "../agent/catalogue-tools.js";
 import { STAKEHOLDER_TOOLS } from "../agent/principal-tools.js";
+import { READ_COMPANY_FINANCIALS_TOOL } from "../agent/finance-tools.js";
 import { REPORT_NOT_GOOD_TOOL, REPORT_NOT_GOOD_TOOL_NAME } from "./unit-report.js";
 
 export const MODEL = "claude-sonnet-4-6";
@@ -3414,6 +3415,7 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   ...Object.fromEntries(CATALOGUE_TOOLS.map((t) => [t.name, t])),
   // Distry's principal tools (DISTRY-PRINCIPAL-1119): staff conversations only (principal-tools.ts).
   ...Object.fromEntries(STAKEHOLDER_TOOLS.map((t) => [t.name, t])),
+  [READ_COMPANY_FINANCIALS_TOOL.name]: READ_COMPANY_FINANCIALS_TOOL,
   create_workflow: CREATE_WORKFLOW_TOOL,
   upgrade_workflow: UPGRADE_WORKFLOW_TOOL,
   fork_workflow: FORK_WORKFLOW_TOOL,
