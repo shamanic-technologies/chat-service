@@ -144,6 +144,32 @@
         "nextAction": 0.8309,
         "form": 0.9734
       }
+    },
+    "merged-recorded": {
+      "codeHash": "eac18ca309ed15c2",
+      "replays": 876,
+      "passRate": 0.532,
+      "criterionRate": {
+        "true": 0.9053,
+        "respectful": 0.8847,
+        "proactive": 0.8413,
+        "answers": 0.8961,
+        "nextAction": 0.8619,
+        "form": 0.9783
+      }
+    },
+    "main-3faf419": {
+      "codeHash": "3fe571ff23869d47",
+      "replays": 438,
+      "passRate": 0.5297,
+      "criterionRate": {
+        "true": 0.9132,
+        "respectful": 0.8927,
+        "proactive": 0.8402,
+        "answers": 0.8927,
+        "nextAction": 0.8356,
+        "form": 0.9772
+      }
     }
   }
 }
