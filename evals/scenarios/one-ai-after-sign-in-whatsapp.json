@@ -284,6 +284,30 @@
           }
         }
       ]
+    },
+    {
+      "role": "user",
+      "content": "482913"
+    },
+    {
+      "role": "assistant",
+      "content": "You're in, Sam.",
+      "toolCalls": [
+        {
+          "name": "complete_sign_in",
+          "args": {
+            "email": "sam@example.com",
+            "code": "482913"
+          },
+          "result": {
+            "ok": true,
+            "signedIn": "sam@example.com",
+            "accountCreated": true,
+            "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access, and that answer is the one they read in place of this reply: here just say in a few words that they are in. Never ask them to send anything to continue.",
+            "plan": "The plan built in this conversation (dutrou.com) is now in this account."
+          }
+        }
+      ]
     }
   ],
   "message": "482913",
@@ -409,6 +433,12 @@
         }
       }
     ],
+    "GET /v1/billing/accounts/reload_rules": [
+      {
+        "first_topup_minimum_cents": 1000,
+        "default_reload_amount_cents": 1000
+      }
+    ],
     "create_prepaid_checkout": [
       {
         "url": "https://checkout.example/session-1"
@@ -447,7 +477,7 @@
         "ok": true,
         "signedIn": "sam@example.com",
         "accountCreated": true,
-        "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue.",
+        "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access, and that answer is the one they read in place of this reply: here just say in a few words that they are in. Never ask them to send anything to continue.",
         "plan": "The plan built in this conversation (dutrou.com) is now in this account."
       }
     ]

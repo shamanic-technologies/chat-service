@@ -4664,7 +4664,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           ok: true,
           signedIn: signed.account.email,
           accountCreated: signed.account.created,
-          note: `${webTurn ? "This conversation" : "This WhatsApp number"} is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue.`,
+          note: `${webTurn ? "This conversation" : "This WhatsApp number"} is now tied to this account. Right after this reply you answer again, automatically, with its access, and that answer is the one they read in place of this reply: here just say in a few words that they are in. Never ask them to send anything to continue.`,
           ...(plan ? { plan: `The plan built in this conversation${plan.domain ? ` (${plan.domain})` : ""} is now in this account.` } : {}),
         };
         toolCalls.push({ name: call.name, args: { email: args.email }, result });

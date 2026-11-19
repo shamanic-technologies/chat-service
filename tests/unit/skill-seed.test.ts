@@ -738,3 +738,17 @@ describe("the offer every guest reads (our-offer)", () => {
     expect(index).toMatch(/Questions about us .* starting with no account yet: `our-offer`/);
   });
 });
+
+// Owner 2026-11-17: a person who must pay gets a DIRECT checkout link. Staff test 2026-11-19: right
+// after a sign-in, « add money … here's the link: https://dashboard.distribute.you ».
+describe("paying is the checkout's own link, never the dashboard (DISTRY-ONE-AI-1118 follow-up)", () => {
+  const skill = (slug: string) => SEED_SKILLS.find((s) => s.slug === slug)!.content;
+  it("new-account step 7 asks the yes on the stated amounts, then gives the url prepaid_checkout returns", () => {
+    const step7 = skill("new-account").split("\n").find((l) => l.startsWith("7. "))!;
+    expect(step7).toContain("say the first payment and reload it states and ask their yes");
+    expect(step7).toContain("the direct link you give them (never the dashboard to find it)");
+  });
+  it("budget-and-billing: adding money is the checkout url as is", () => {
+    expect(skill("budget-and-billing")).toContain("its url given as is (never the dashboard to find it)");
+  });
+});

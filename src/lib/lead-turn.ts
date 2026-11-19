@@ -32,7 +32,7 @@ import type { db as Db } from "../db/index.js";
 import { copilotLeadTurns, sessions } from "../db/schema.js";
 import type { LeadTurnRequest } from "../schemas.js";
 import { todayLine } from "../agent/situation.js";
-import { AMBIGUITY_LINE, QUOTE_AND_PHOTO_LINES, buildChannelBlock, type PhoneAccount } from "./channel-copilot.js";
+import { AFTER_SIGN_IN_LINE, AMBIGUITY_LINE, QUOTE_AND_PHOTO_LINES, buildChannelBlock, type PhoneAccount } from "./channel-copilot.js";
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
 import { BRAND_TOOLS_LINE } from "./brand-mcp.js";
 import { REACH_ELSEWHERE_TOOL_NAME, forgetLeadTurnCaller, registerLeadTurnCaller } from "./lead-contact.js";
@@ -179,11 +179,8 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
   if (ownBrand && guest && !phoneBound) {
     lines.push("We host no account for this person that you can read: you see no account and can change nothing; never claim to see their brands, campaigns or figures.");
   }
-  if (frame.afterSignIn) {
-    lines.push(
-      "They signed in a moment ago, in this same exchange, and nothing you wrote before reached them: write the WHOLE message now, with their account's access (any plan built before is in it): say in a few words that they are in, then take them one step further from where they stopped, what they came for or the next step of their setup. Never stop at their being in.",
-    );
-  }
+  // The channel block already carries it (one line for every channel, channel-copilot.ts).
+  if (frame.afterSignIn && !channelBlock) lines.push(AFTER_SIGN_IN_LINE);
   lines.push(todayLine(frame.now ?? new Date()));
   lines.push("### How the campaign asks you to decide", payload.systemPrompt.trim(), "### What the campaign knows", payload.message.trim());
   const moment = payload.medium === "whatsapp" && frame.whatsapp ? whatsappMomentBlock(frame.whatsapp, REPLY_TO_FIELD) : "";
