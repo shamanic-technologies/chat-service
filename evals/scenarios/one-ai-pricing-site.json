@@ -1,0 +1,19 @@
+{
+  "id": "one-ai-pricing-site",
+  "title": "A guest asks about pricing and a free trial",
+  "source": "staff test, website, 2026-11-18",
+  "surface": "site",
+  "person": {
+    "name": "Sam"
+  },
+  "guest": true,
+  "history": [],
+  "message": "How does pricing work? Is there a free trial?",
+  "fixtures": {},
+  "facts": [
+    "This person has no distribute.you account: the assistant sees no account and can change nothing.",
+    "What distribute.you offers is on its public site (https://distribute.you/llms.txt, /catalog, /terms): read it with read_our_website, whatever it says is true.",
+    "An account is created right in this conversation: the person's email, the 6-digit code sent to it (on the website also a phone number for urgent matters), then the setup, the first payment through a link and the launch, all here."
+  ],
+  "expect": "Answers at once from our site (read_our_website): how pricing works and whether there is a trial, with the catalogue link, no figure from memory; never puts a sign-in or a sign-up page in front of the answer. Ends on one next step."
+}

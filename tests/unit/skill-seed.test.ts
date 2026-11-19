@@ -719,11 +719,22 @@ describe("the offer every guest reads (our-offer)", () => {
     for (const skill of SEED_SKILLS) expect({ slug: skill.slug, hit: skill.content.match(banned)?.[0] ?? null }).toEqual({ slug: skill.slug, hit: null });
   });
 
-  it("states the site's offer: usage based at 0% markup, the $10 prepaid start, the open-source agent and the agency", () => {
-    const offer = SEED_SKILLS.find((s) => s.slug === "our-offer")!.content;
-    expect(offer).toContain("usage based, 0% markup");
-    expect(offer).toContain("$10");
-    expect(offer).toContain("https://github.com/distribute-you/gtm-factory");
-    expect(offer).toContain("https://distribute.you/gtm-agency");
+  // DISTRY-ONE-AI-1118: what we offer is READ on our site (llms.txt), never pasted here; starting
+  // happens in the conversation, on any channel, never on a sign-up page.
+  it("is a method: read the site index, answer from it; no price, no offer term and no sign-up page pasted in", () => {
+    const skill = SEED_SKILLS.find((s) => s.slug === "our-offer")!;
+    expect(skill.content).toContain("read_our_website");
+    expect(skill.content).toContain("https://distribute.you/llms.txt");
+    expect(skill.content).toContain("https://distribute.you/catalog");
+    expect(skill.content).toMatch(/created right here, in this conversation, wherever they write to us/);
+    expect(skill.content).toContain("`new-account`");
+    expect(skill.content).not.toMatch(/\$\s?\d/);
+    expect(skill.content).not.toMatch(/sign-up|dashboard\.distribute\.you|0% markup|On WhatsApp/i);
+    expect(skill.description).toMatch(/^Use when a person asks about distribute\.you itself/);
+  });
+
+  it("the index sends a question about us, or a start with no account, to it", () => {
+    const index = SEED_SKILLS.find((s) => s.slug === "index")!.content;
+    expect(index).toMatch(/Questions about us .* starting with no account yet: `our-offer`/);
   });
 });

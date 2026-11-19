@@ -1,103 +1,123 @@
 {
-  "note": "RELOAD-RULE-ONE-HOME-1118: the situation brief states the prepaid refill as 'each time the balance reaches $0, their card adds <amount>' (owner 2026-11-18: the reload threshold is $0 for everyone, editable nowhere), no threshold field read. Gate run on this code vs the code before it (origin/main, codeHash 1674ac2eb904faca), same 53 scenarios, live skills table on both sides, launched the same minute in one throwaway container, same judge, Haiku 5.5 effort low on both sides.",
+  "note": "DISTRY-ONE-AI-1118: one assistant on every channel. Tools keyed on who the person is (a guest gets the same list on WhatsApp, Lead turns and the website), the same skill index for a guest and an account (our-offer becomes a method reading llms.txt), shared identity lines, the website block = form only, sign-up in the page chat, the role named Distry, the dashboard page list out of the core prompt. Gate run on this code vs origin/main (codeHash 07c0b5d29b6e63f0), the same 53 scenarios of main, skills as each code seeds them (--seed-skills all) on both sides, launched the same minute in one throwaway container, same judge, Haiku 5.5 effort low on both sides. The 8 new paired scenarios (the same guest situations on WhatsApp and on the website) ran on this code apart: evals/results/2026-11-19-distry-one-ai-one-ai-pairs.json (16 of 24 replies pass; the 6 'signed-in next step' fails are API calls the scenario holds no recorded answer for).",
   "model": "anthropic/claude-haiku (effort low)",
   "judge": "jev/jev-latest",
-  "codeHash": "07c0b5d29b6e63f0",
+  "codeHash": "35d059fd0e257053",
   "runs": [
     {
-      "at": "2026-11-18T10:50:41.905Z",
+      "at": "2026-11-19T07:23:56.926Z",
       "runsPerScenario": 3,
-      "scenariosPassed": 25
+      "scenariosPassed": 24
     },
     {
-      "at": "2026-11-18T10:50:48.852Z",
+      "at": "2026-11-19T07:23:58.619Z",
       "runsPerScenario": 3,
-      "scenariosPassed": 28
+      "scenariosPassed": 27
     }
   ],
   "wire": {
-    "host": "api.anthropic.com",
-    "model": "claude-haiku-5-5",
-    "thinking": {
-      "type": "adaptive",
-      "block_binding": {
-        "prefix_mismatch_behavior": "drop_block"
+    "requests": 303,
+    "settings": [
+      {
+        "settings": {
+          "host": "api.anthropic.com",
+          "model": "claude-haiku-5-5",
+          "thinking": {
+            "type": "adaptive",
+            "block_binding": {
+              "prefix_mismatch_behavior": "drop_block"
+            }
+          },
+          "outputConfig": {
+            "effort": "low"
+          },
+          "reasoningEffort": null,
+          "maxOutputTokens": 64000,
+          "contextManagement": true,
+          "betas": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01"
+        },
+        "requests": 303
       }
-    },
-    "outputConfig": {
-      "effort": "low"
-    },
-    "reasoningEffort": null,
-    "maxOutputTokens": 64000,
-    "contextManagement": true,
-    "betas": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01"
+    ],
+    "requestsWithImages": 3,
+    "requestsWithToolsOff": 1
   },
   "pooled": {
     "replays": 318,
-    "passRate": 0.5126,
+    "passRate": 0.4874,
     "criterionRate": {
-      "true": 0.8868,
-      "respectful": 0.827,
-      "proactive": 0.8491,
-      "answers": 0.8616,
-      "nextAction": 0.8428,
-      "form": 0.9717
+      "true": 0.8962,
+      "respectful": 0.8396,
+      "proactive": 0.8428,
+      "answers": 0.8553,
+      "nextAction": 0.783,
+      "form": 0.9654
     },
     "failedReplies": 0,
-    "medianCostPerReplyUsd": 0.00087163,
-    "meanCostPerReplyUsd": 0.00122,
+    "medianCostPerReplyUsd": 0.000975,
+    "meanCostPerReplyUsd": 0.0013,
     "medianLlmCalls": 1.0,
-    "medianLatencyMs": 5122.5,
-    "meanLatencyMs": 5436
+    "medianLatencyMs": 4862.5,
+    "meanLatencyMs": 5182
   },
   "baseline": {
-    "definition": "the code before this change (origin/main, codeHash 1674ac2eb904faca, live skills table), same scenarios, launched the same minute",
+    "definition": "the code before this change (origin/main, codeHash 07c0b5d29b6e63f0, skills as main seeds them), same scenarios, launched the same minute",
     "wire": {
-      "host": "api.anthropic.com",
-      "model": "claude-haiku-5-5",
-      "thinking": {
-        "type": "adaptive",
-        "block_binding": {
-          "prefix_mismatch_behavior": "drop_block"
+      "requests": 311,
+      "settings": [
+        {
+          "settings": {
+            "host": "api.anthropic.com",
+            "model": "claude-haiku-5-5",
+            "thinking": {
+              "type": "adaptive",
+              "block_binding": {
+                "prefix_mismatch_behavior": "drop_block"
+              }
+            },
+            "outputConfig": {
+              "effort": "low"
+            },
+            "reasoningEffort": null,
+            "maxOutputTokens": 64000,
+            "contextManagement": true,
+            "betas": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01"
+          },
+          "requests": 311
         }
-      },
-      "outputConfig": {
-        "effort": "low"
-      },
-      "reasoningEffort": null,
-      "maxOutputTokens": 64000,
-      "contextManagement": true,
-      "betas": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01"
+      ],
+      "requestsWithImages": 3,
+      "requestsWithToolsOff": 3
     },
     "runs": [
       {
-        "at": "2026-11-18T10:50:42.263Z",
-        "runsPerScenario": 3,
-        "scenariosPassed": 28
-      },
-      {
-        "at": "2026-11-18T10:50:44.634Z",
+        "at": "2026-11-19T07:24:01.991Z",
         "runsPerScenario": 3,
         "scenariosPassed": 27
+      },
+      {
+        "at": "2026-11-19T07:24:11.261Z",
+        "runsPerScenario": 3,
+        "scenariosPassed": 30
       }
     ],
     "pooled": {
       "replays": 318,
-      "passRate": 0.5126,
+      "passRate": 0.478,
       "criterionRate": {
-        "true": 0.9025,
-        "respectful": 0.8491,
-        "proactive": 0.8742,
-        "answers": 0.8868,
-        "nextAction": 0.7893,
-        "form": 0.9748
+        "true": 0.8836,
+        "respectful": 0.8585,
+        "proactive": 0.8491,
+        "answers": 0.8616,
+        "nextAction": 0.7956,
+        "form": 0.978
       },
       "failedReplies": 0,
-      "medianCostPerReplyUsd": 0.00084026,
-      "meanCostPerReplyUsd": 0.00123,
+      "medianCostPerReplyUsd": 0.000945,
+      "meanCostPerReplyUsd": 0.0013,
       "medianLlmCalls": 1.0,
-      "medianLatencyMs": 4941.0,
-      "meanLatencyMs": 5483
+      "medianLatencyMs": 4979.0,
+      "meanLatencyMs": 5385
     }
   }
 }

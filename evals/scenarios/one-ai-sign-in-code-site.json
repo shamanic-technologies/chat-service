@@ -1,0 +1,67 @@
+{
+  "id": "one-ai-sign-in-code-site",
+  "title": "A guest sends the code from their email",
+  "source": "staff test, website, 2026-11-18",
+  "surface": "site",
+  "person": {
+    "name": "Sam"
+  },
+  "guest": true,
+  "history": [
+    {
+      "role": "user",
+      "content": "I want to start, my site is dutrou.com"
+    },
+    {
+      "role": "assistant",
+      "content": "Great. Which email should your account use, and a phone number for urgent matters?"
+    },
+    {
+      "role": "user",
+      "content": "sam@example.com +33 6 12 34 56 78"
+    },
+    {
+      "role": "assistant",
+      "content": "A 6-digit code just went to sam@example.com. Send it here when you have it.",
+      "toolCalls": [
+        {
+          "name": "start_sign_in",
+          "args": {
+            "email": "sam@example.com",
+            "phone": "+33612345678"
+          },
+          "result": {
+            "ok": true,
+            "codeSentTo": "sam@example.com",
+            "expiresAt": "2026-11-18T10:15:00Z"
+          }
+        }
+      ]
+    }
+  ],
+  "message": "482913",
+  "fixtures": {
+    "start_sign_in": [
+      {
+        "ok": true,
+        "codeSentTo": "sam@example.com",
+        "expiresAt": "2026-11-18T10:15:00Z"
+      }
+    ],
+    "complete_sign_in": [
+      {
+        "ok": true,
+        "signedIn": "sam@example.com",
+        "accountCreated": true,
+        "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue."
+      }
+    ]
+  },
+  "facts": [
+    "This person has no distribute.you account: the assistant sees no account and can change nothing.",
+    "What distribute.you offers is on its public site (https://distribute.you/llms.txt, /catalog, /terms): read it with read_our_website, whatever it says is true.",
+    "An account is created right in this conversation: the person's email, the 6-digit code sent to it (on the website also a phone number for urgent matters), then the setup, the first payment through a link and the launch, all here.",
+    "A 6-digit code was sent to sam@example.com this conversation; the person just sent 482913."
+  ],
+  "expect": "Calls complete_sign_in with sam@example.com and the code, then says in a few words that they are in. Never asks them to send anything to continue, never sends them to a page."
+}

@@ -1,0 +1,36 @@
+{
+  "id": "one-ai-get-started-whatsapp",
+  "title": "A guest wants to start with their website",
+  "source": "staff test, WhatsApp, 2026-11-18",
+  "surface": "whatsapp",
+  "person": {
+    "name": "Sam"
+  },
+  "guest": true,
+  "history": [],
+  "message": "Get started with my website dutrou.com",
+  "fixtures": {
+    "start_sign_in": [
+      {
+        "ok": true,
+        "codeSentTo": "sam@example.com",
+        "expiresAt": "2026-11-18T10:15:00Z"
+      }
+    ],
+    "complete_sign_in": [
+      {
+        "ok": true,
+        "signedIn": "sam@example.com",
+        "accountCreated": true,
+        "note": "This conversation is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue."
+      }
+    ]
+  },
+  "facts": [
+    "This person has no distribute.you account: the assistant sees no account and can change nothing.",
+    "What distribute.you offers is on its public site (https://distribute.you/llms.txt, /catalog, /terms): read it with read_our_website, whatever it says is true.",
+    "An account is created right in this conversation: the person's email, the 6-digit code sent to it (on the website also a phone number for urgent matters), then the setup, the first payment through a link and the launch, all here.",
+    "The person wants to start: the next step is their account, created here."
+  ],
+  "expect": "Starts right here: asks for their email to create the account in this conversation (or calls start_sign_in when it has them). Never sends them to a sign-up page or the dashboard to start, never asks for the website again."
+}

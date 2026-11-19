@@ -22,7 +22,6 @@ export const SEED_EDITOR = "seed";
 export const INDEX_SKILL_SLUG = "index";
 /** The one voice of every message a person reads from us (owner 2026-10-18), always loaded with the index. */
 export const CLIENT_COMMS_SKILL_SLUG = "client-comms";
-export const OUR_OFFER_SKILL_SLUG = "our-offer";
 
 /** A typing burst by one editor inside this window is ONE version. */
 export const SKILL_VERSION_COALESCE_MS = 10 * 60_000;
@@ -386,25 +385,6 @@ export function skillIndexBlockFrom(all: readonly SkillText[]): string {
     `(A skill lists its own sub-skills when you load it.)`,
     ...lines,
   ].join("\n");
-}
-
-/**
- * The voice (client-comms) and the public offer (our-offer), for a turn that
- * gets no skill index: a guest on WhatsApp with no account still hears the same
- * voice and answers a public question (free trial, pricing) at once, with no
- * sign-in in front of it (SOPHIE-WA-SIGNED-IN-1029).
- */
-export async function buildGuestSkillsBlock(database: Database): Promise<string> {
-  return guestSkillsBlockFrom(await listSkills(database));
-}
-
-export function guestSkillsBlockFrom(all: readonly SkillText[]): string {
-  const parts = [CLIENT_COMMS_SKILL_SLUG, OUR_OFFER_SKILL_SLUG].map((slug) => {
-    const skill = all.find((s) => s.slug === slug);
-    if (!skill) throw new SkillNotFoundError(slug);
-    return skill.content.trim();
-  });
-  return `\n\n---\n${parts.join("\n\n")}`;
 }
 
 /** What `read_skill` returns to the model: the skill, plus its direct children. */

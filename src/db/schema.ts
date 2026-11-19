@@ -35,6 +35,10 @@ export const sessions = pgTable(
     // The email a web visitor gave to continue there (migration 0036): the page
     // conversation is handed to crm-service, whose Lead event campaign writes by email.
     channelEmail: text("channel_email"),
+    // The email a web visitor PROVED by code in the page chat (migration 0037,
+    // DISTRY-ONE-AI-1118): the account the session was re-keyed to. The page
+    // shows it as who is signed in. NULL for a guest.
+    webAccountEmail: text("web_account_email"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -276,13 +280,20 @@ export const channelInboundMessages = pgTable(
     orgId: text("org_id"),
     userId: text("user_id"),
     sessionId: uuid("session_id"),
-    status: text("status").notNull().$type<"received" | "processing" | "answered" | "failed">(),
+    // `refused`: the website guard stopped it before any spend (migration 0037).
+    status: text("status").notNull().$type<"received" | "processing" | "answered" | "failed" | "refused">(),
     replyText: text("reply_text"),
     error: text("error"),
     payload: jsonb("payload").notNull(),
     // When crm-service accepted the reply (migration 0027, SOPHIE-WA-SIGNED-IN-1029):
     // NULL = the reply never left. Feeds the Monitoring chart (written vs delivered).
     sentAt: timestamp("sent_at", { withTimezone: true }),
+    // A website visitor signed up or in during this message (migration 0037): the
+    // answer with their account runs in the same exchange, its trigger hidden.
+    signedIn: boolean("signed_in").notNull().default(false),
+    // The whole answer a website message was served (migration 0037): reply,
+    // choices, hand-off, account. A retry of the same message reads it back.
+    answer: jsonb("answer"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

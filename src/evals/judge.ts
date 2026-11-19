@@ -20,6 +20,7 @@ export type Criterion = (typeof CRITERIA)[number];
 const SURFACE_FORM: Record<Scenario["surface"], string> = {
   web: "a chat panel in the client's dashboard: short paragraphs, plain words, no internal ids or tool names",
   whatsapp: "WhatsApp: short plain-text messages, no HTML tags, no markdown tables or headings, links written out",
+  site: "the chat window on our public website: short plain-text messages, no markup, links written out as plain URLs; clickable choices appear as buttons under the message",
   lead: "a message we send for our brand to a lead or client, in the channel the facts name (email: HTML paragraphs are right; WhatsApp: short plain text), or a reasoned decision to write nothing now",
 };
 

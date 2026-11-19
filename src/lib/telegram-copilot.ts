@@ -28,7 +28,7 @@ import type { TelegramMessageRequest } from "../schemas.js";
 import {
   CHANNEL_FAILURE_TEXT,
   CONVERSATION_LINES,
-  WHOLE_WAY_TO_USE,
+  identityLines,
   parseChatStream,
   renderChannelReply,
   toPlainText,
@@ -56,8 +56,7 @@ export function buildTelegramBlock(): string {
     "Clickable choices (present_choices) are shown as a numbered list: the person answers with a number or in words.",
     `Pages you open (open_page) cannot be shown here: when a page helps, give the link ${DASHBOARD_URL}.`,
     ...CONVERSATION_LINES,
-    "This Telegram chat is tied to the distribute.you account you act for: you have exactly this person's access, nothing more. You know who they are: never ask for their email or name.",
-    WHOLE_WAY_TO_USE,
+    ...identityLines({ guest: false, place: "This Telegram chat", numberKnown: false, canSignIn: false }),
   ].join("\n");
 }
 

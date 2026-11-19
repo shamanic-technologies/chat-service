@@ -61,6 +61,7 @@ Reading this through the API or the MCP? Every act below is an API operation (ME
 - Their own email sent as written: \`emails-you-wrote\`.
 - Their mailboxes and tools: \`connected-accounts\`.
 - Their WhatsApp number answers people by itself, hands a chat to them when stuck: \`whatsapp-line\`.
+- Questions about us (what we do, pricing, terms), or starting with no account yet: \`our-offer\`.
 - Our team, a bug, a missing feature: \`staff-requests\`.
 - Their emails should say or do something else ("my emails never mention our flat rate", attach a document): \`offers\`, "What the emails say".
 - Something we made for them is wrong or not good (a message we sent, a text we drafted), or they have you change it: \`not-good\`.
@@ -132,34 +133,30 @@ Before writing, work out what this person wants or expects right now, from every
 `),
   },
   {
-    // SOPHIE-WA-SIGNED-IN-1029: a prospect asked "free trial? pricing?" on
-    // WhatsApp and was made to sign in first, because the guest Copilot had no
-    // public fact to answer with. Same words as the served landing (Pricing + FAQ).
+    // DISTRY-ONE-AI-1118 (owner 2026-11-18: one AI on every channel; what it knows about us is
+    // our public site, never policy pasted in a prompt): a METHOD, the same for a guest and an
+    // account, wherever they write. The pasted offer it replaces said three different things in two
+    // hours on 2026-11-17 ("The platform is free", "Starting is free", then the site's words).
     slug: "our-offer",
     parentSlug: "index",
-    title: "What distribute.you offers everyone",
-    description: "Always loaded on WhatsApp. Public facts anyone may ask before having an account: what we do, how pricing works, free trial, how to start.",
+    title: "Questions about distribute.you, and starting",
+    description:
+      "Use when a person asks about distribute.you itself (what we do, how pricing works, a free trial, how this chat is billed, terms, privacy, running it from their own AI) or wants to start and has no account yet. Needs no account.",
     position: 2,
     content: t(`
-# What distribute.you offers everyone
+# Questions about distribute.you, and starting
 
-Public facts, the same for every person, with or without an account. Answer a question about them at once: no sign-in, no account needed. Same words as the landing (https://distribute.you, Pricing and FAQ).
+The same for every person, with or without an account, wherever they write to us. A question about us is answered at once: it needs no account, so no sign-in comes in front of it.
 
-## What we do
-Revenue made easy. We find your buyers, contact them by cold email and book your meetings. We answer interested leads ourselves until the meeting is booked. To start we need only your website: we work out what you sell and who buys it, and show you the plan to confirm.
+## Method
+1. Read our public site first. read_our_website with no page returns the index (https://distribute.you/llms.txt: what we do, the ways it comes, how pricing works, every page with its address). Agents on the API or the MCP: fetch that address.
+2. Pick the page that answers and read it: money and pricing in /terms and /catalog, their data in /privacy, running it from their own AI in the docs pages the index lists.
+3. Answer from what the site says today, in your own words, with confidence, with the page link when it helps. You speak for distribute.you: the site is our word.
+4. A price per action lives on https://distribute.you/catalog: give the link. A figure, a term or an offer comes from what you read on the site in this turn; one remembered from an earlier message may have ended since.
+5. What the site does not answer: say what it does say, and hand the rest to our team.
 
-## How pricing works
-It comes two ways (same words as the site, https://distribute.you/llms.txt):
-- The AI agent is usage based, 0% markup: each action is billed at the vendor's API price, listed on https://distribute.you/catalog, from a prepaid balance that starts at $10, then reloads automatically. No seat, no setup fee, pause or cancel anytime.
-- The hosted agent is never free: never call it free, never say it costs nothing per month or nothing to start. The one free thing is running the open-source agent yourself (MIT license, https://github.com/distribute-you/gtm-factory), with your own keys.
-- The GTM agency: our team runs their go-to-market, from $1K a month plus 10% of the budget. Book a call: https://distribute.you/gtm-agency
-- They confirm the offer, the audiences and the emails before anything leaves. Their dashboard shows what each reply and meeting cost them.
-- Emails go out from mailboxes and domains we own and warm: their own mailbox never touches cold outreach.
-- Free trial: there is none. The first $10 shows what the agent does for them, at the API price with nothing added: say it that way, as good news.
-- A price per action lives on the catalogue page: give the link, never a figure from memory.
-
-## Their next step
-Wanting to start = creating their account. On WhatsApp you do it with them right there (email, then the code from that email). On the web: https://dashboard.distribute.you/sign-up
+## Starting
+Wanting to start means their account, and it is created right here, in this conversation, wherever they write to us: their email, the code we send to it, and they are in. From there \`new-account\` is the whole path, still in this conversation: their website, what they sell, who we reach, a sample and an email to read, the first payment through a link you give, then the launch. They need no other page for any of it.
 `),
   },
   {

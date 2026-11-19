@@ -21,7 +21,7 @@
  * The assistant's name and voice come from the linked account's persona
  * (crm data), never from this code.
  */
-import { gte } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import { z } from "zod";
 import { COPILOT_SUPPORT } from "./support-marks.js";
 import type { db as Db } from "../db/index.js";
@@ -126,6 +126,67 @@ export const WHOLE_WAY_TO_USE =
   "This chat is a whole way to use distribute.you: a person can set up their account here from their website, choose their offer and who to reach, see a sample and an email, pay through a link you give, and launch, all in this conversation (the new-account skill is the path; your tools do every step). " +
   "So never send them to the dashboard for a step your tools can do; the dashboard link is for what they want to look at, never a hand-off. Steps that change nothing you just do and tell them what you picked; paying and launching wait for their clear yes.";
 
+/** Who the person is to us in this turn, and what ties the conversation to them. */
+export interface PersonIdentity {
+  /** No account of ours acts in this turn. */
+  guest: boolean;
+  /** What ties this conversation to the person, as the model reads it ("This WhatsApp number", "This Telegram chat", "This conversation"). */
+  place: string;
+  /** The channel holds their number already (WhatsApp verified it); anywhere else a sign-up asks for one. */
+  numberKnown: boolean;
+  /** The sign-in pair is among this turn's tools. */
+  canSignIn: boolean;
+  /** Emails our own records tie to them (a guest we already know). */
+  knownEmails?: readonly string[];
+  /** They signed in a moment ago, in this same exchange. */
+  afterSignIn?: boolean;
+}
+
+/**
+ * The identity lines of a turn, ONE builder for every channel (DISTRY-ONE-AI-1118):
+ * a guest answers public questions at once and signs the person up or in right
+ * in the conversation; an account can do everything here. Keyed on who the
+ * person is; the channel only says what ties the conversation to them and
+ * whether it already holds their number.
+ */
+export function identityLines(id: PersonIdentity): string[] {
+  const lines: string[] = [];
+  const knownEmails = (id.knownEmails ?? []).filter((e) => e.trim());
+  if (id.guest) {
+    if (knownEmails.length > 0) {
+      lines.push(
+        `We already know this person: our own records tie their number to ${knownEmails.join(", ")}. Never ask who they are or for their email. ` +
+          "This number is not tied to their distribute.you account yet, so you see no account and can change nothing: never claim to see their brands, campaigns or figures. " +
+          PUBLIC_FIRST +
+          "When their next step needs their account (their campaigns, their figures, starting or changing something), call start_sign_in with that email yourself (the one they signed up with, when several), tell them a 6-digit code just went there, then call complete_sign_in with it. " +
+          SIGN_IN_ANSWERS_AT_ONCE,
+      );
+    } else {
+      lines.push(
+        `${id.place} is NOT tied to any distribute.you account yet. You see no account and can change nothing: never claim to see their brands, campaigns or figures. ` +
+          PUBLIC_FIRST +
+          `When THEY want to start, or say they already have an account and their next step needs it, sign them up or in${id.numberKnown ? "" : ", right here in this conversation"}: ask for their email (once)${id.numberKnown ? "" : " and a phone number for urgent matters, with its country code (once)"}, call start_sign_in, ask for the 6-digit code from that email, call complete_sign_in. ` +
+          SIGN_IN_ANSWERS_AT_ONCE,
+      );
+    }
+    return lines;
+  }
+  lines.push(
+    `${id.place} is tied to the distribute.you account you act for: you have exactly this person's access, nothing more. You know who they are: never ask for their email or name.` +
+      (id.canSignIn ? " If they say it is not their account, or want another one, sign them in with start_sign_in then complete_sign_in." : ""),
+    // SOPHIE-WA-ONBOARD-1101 (prod 2026-11-01: "Creating the company from a
+    // website is the one step I can't do from WhatsApp", sent to the dashboard).
+    WHOLE_WAY_TO_USE,
+  );
+  if (id.afterSignIn) {
+    lines.push(
+      "They signed in a moment ago, in this same exchange: you now act with their account. Answer now, with that access, what they asked before signing in (the thread and this conversation tell you what). " +
+        "Do not greet them again, do not repeat that they are signed in, and never ask them to send anything to continue.",
+    );
+  }
+  return lines;
+}
+
 export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): string {
   const name = channel.assistant.name?.trim();
   const role = channel.assistant.role?.trim();
@@ -141,39 +202,16 @@ export function buildChannelBlock(channel: ChatChannelContext, guest: boolean): 
   if (channel.assistant.instructions?.trim()) lines.push(`How you speak on this number: ${channel.assistant.instructions.trim()}`);
   lines.push(...CONVERSATION_LINES, ...QUOTE_AND_PHOTO_LINES);
 
-  const knownEmails = (channel.sender.knownEmails ?? []).filter((e) => e.trim());
-  if (guest) {
-    if (knownEmails.length > 0) {
-      lines.push(
-        `We already know this person: our own records tie their number to ${knownEmails.join(", ")}. Never ask who they are or for their email. ` +
-          "This number is not tied to their distribute.you account yet, so you see no account and can change nothing: never claim to see their brands, campaigns or figures. " +
-          PUBLIC_FIRST +
-          "When their next step needs their account (their campaigns, their figures, starting or changing something), call start_sign_in with that email yourself (the one they signed up with, when several), tell them a 6-digit code just went there, then call complete_sign_in with it. " +
-          SIGN_IN_ANSWERS_AT_ONCE,
-      );
-    } else {
-      lines.push(
-        "This WhatsApp number is NOT tied to any distribute.you account yet. You see no account and can change nothing: never claim to see their brands, campaigns or figures. " +
-          PUBLIC_FIRST +
-          "When THEY want to start, or say they already have an account and their next step needs it, sign them up or in: ask for their email (once), call start_sign_in, ask for the 6-digit code from that email, call complete_sign_in. " +
-          SIGN_IN_ANSWERS_AT_ONCE,
-      );
-    }
-  } else {
-    lines.push(
-      "This WhatsApp number is tied to the distribute.you account you act for: you have exactly this person's access, nothing more. You know who they are: never ask for their email or name. " +
-        "If they say it is not their account, or want another one, sign them in with start_sign_in then complete_sign_in.",
-      // SOPHIE-WA-ONBOARD-1101 (prod 2026-11-01: "Creating the company from a
-      // website is the one step I can't do from WhatsApp", sent to the dashboard).
-      WHOLE_WAY_TO_USE,
-    );
-    if (channel.afterSignIn) {
-      lines.push(
-        "They signed in a moment ago, in this same exchange: you now act with their account. Answer now, with that access, what they asked before signing in (the thread and this conversation tell you what). " +
-          "Do not greet them again, do not repeat that they are signed in, and never ask them to send anything to continue.",
-      );
-    }
-  }
+  lines.push(
+    ...identityLines({
+      guest,
+      place: "This WhatsApp number",
+      numberKnown: true,
+      canSignIn: true,
+      knownEmails: channel.sender.knownEmails,
+      afterSignIn: channel.afterSignIn === true,
+    }),
+  );
   lines.push(
     "WhatsApp calls happen on this number too: our team may call the person from it. A call line in the thread is a call (us = we called them, them = they called us). " +
       "When the person mentions a call (they missed it, cannot take calls now), it is about a call from our team, even when the thread shows none: some calls do not reach the thread. Acknowledge it simply (no problem, we can talk here), never say no call was needed or that we did not call.",
@@ -341,7 +379,13 @@ export interface ChannelReplyDay {
   received: number;
   delivered: number;
   notDelivered: number;
+  /** Messages the website guard stopped before any spend (speed per visitor, daily breaker on guest answers). */
+  refused: number;
 }
+
+/** The surfaces whose inbound messages are stored (`channel_inbound_messages.channel`). */
+export const REPLY_CHANNELS = ["whatsapp", "telegram", "web"] as const;
+export type ReplyChannel = (typeof REPLY_CHANNELS)[number];
 
 /**
  * One row per UTC day, oldest first, zeros included, recomputed from the stored
@@ -350,23 +394,30 @@ export interface ChannelReplyDay {
  * nothing left; a message still in flight counts in received only. A send crm
  * refused as an intended silence (`INTENDED_SILENCE_CODES`: the team already
  * wrote by hand, or the brand said the person is not theirs) is not a break: it
- * never counts as not delivered (red only when broken).
+ * never counts as not delivered (red only when broken). `channel` narrows the
+ * series to one surface (the website chat: delivered = answered in the page,
+ * refused = stopped by its guard); omitted = every surface, as before.
  */
-export async function channelReplyDays(database: typeof Db, days: number, now = new Date()): Promise<ChannelReplyDay[]> {
+export async function channelReplyDays(database: typeof Db, days: number, now = new Date(), channel?: ReplyChannel): Promise<ChannelReplyDay[]> {
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   const from = new Date(today - (days - 1) * 86_400_000);
   const rows = await database
     .select({ createdAt: channelInboundMessages.createdAt, status: channelInboundMessages.status, sentAt: channelInboundMessages.sentAt, error: channelInboundMessages.error })
     .from(channelInboundMessages)
-    .where(gte(channelInboundMessages.createdAt, from));
+    .where(channel ? and(gte(channelInboundMessages.createdAt, from), eq(channelInboundMessages.channel, channel)) : gte(channelInboundMessages.createdAt, from));
   const byDay = new Map<string, ChannelReplyDay>();
   for (let i = 0; i < days; i++) {
     const day = new Date(from.getTime() + i * 86_400_000).toISOString().slice(0, 10);
-    byDay.set(day, { day, received: 0, delivered: 0, notDelivered: 0 });
+    byDay.set(day, { day, received: 0, delivered: 0, notDelivered: 0, refused: 0 });
   }
   for (const r of rows) {
     const bucket = byDay.get(r.createdAt.toISOString().slice(0, 10));
     if (!bucket) continue;
+    // Stopped by the website guard: nothing ran, so it is neither received work nor a lost reply.
+    if (r.status === "refused") {
+      bucket.refused++;
+      continue;
+    }
     bucket.received++;
     if (r.sentAt) bucket.delivered++;
     else if ((r.status === "answered" || r.status === "failed") && !isIntendedSilence(r.error)) bucket.notDelivered++;

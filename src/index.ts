@@ -110,6 +110,7 @@ import {
   listWorkflows,
 } from "./lib/workflow-client.js";
 import { getPromptTemplate, updatePromptTemplate } from "./lib/content-generation-client.js";
+import { sessionToolNamesFor } from "./agent/person-tools.js";
 import { hasStaffOnlyTool, lookupRequester, toolsForRequester, type Requester } from "./lib/staff-only-tools.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
 import { readPlatformCaller, platformRunCreateFailure } from "./lib/platform-parent-run.js";
@@ -162,7 +163,7 @@ import {
 import { seedPlatformConfigs, seedSophieConfig, holdTextBesideToolCallsFor, isSelfSeededConfigKey } from "./lib/seed-platform-configs.js";
 import { buildSituationBrief } from "./agent/situation.js";
 import { gatewaySituationReader } from "./agent/situation-reader.js";
-import { SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
+import { dashboardPagesBlock, SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
 import { SOPHIE_BACKUP_MODEL, sophieTurnModel } from "./agent/sophie-backup.js";
 import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi } from "./agent/catalogue-tools.js";
 import { REPORT_NOT_GOOD_TOOL_NAME, reportNotGood } from "./lib/unit-report.js";
@@ -170,7 +171,6 @@ import {
   SkillNotFoundError,
   SkillValidationError,
   buildSkillIndexBlock,
-  buildGuestSkillsBlock,
   getSkill,
   listSkillVersions,
   listSkills,
@@ -223,14 +223,12 @@ import {
   WEB_CONTINUE_TOOL_NAME,
   WEB_TASK_NAME,
   VISITOR_ID_PATTERN,
-  acceptWebMessage,
+  answerWebMessage,
   buildWebBlock,
+  type WebTurnFacts,
   handOverByEmailToCrm,
   parseContinueArgs,
-  processWebMessage,
   readWebConversation,
-  readWebState,
-  webSignals,
   type WebDeps,
 } from "./lib/web-visitor.js";
 import {
@@ -238,6 +236,7 @@ import {
   SIGN_IN_TOOL_NAMES,
   START_SIGN_IN_TOOL_NAME,
   completeSignIn,
+  parseTypedPhone,
   startSignIn,
 } from "./lib/channel-sign-in.js";
 import {
@@ -3784,10 +3783,10 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   let telegramTurn = false;
   // A visitor of our public site (POST /internal/copilot/web-messages,
   // DISTRY-WEB-CHAT-1117): same unlock, its own form + the WhatsApp hand-off tool.
-  let webTurn: { whatsapp: string | null; email: string | null } | null = null;
+  let webTurn: WebTurnFacts | null = null;
   if (parsed.data.channelMessageId) {
     const [m] = await db
-      .select({ channel: channelInboundMessages.channel, status: channelInboundMessages.status, orgId: channelInboundMessages.orgId, userId: channelInboundMessages.userId, sessionId: channelInboundMessages.sessionId, senderPhone: channelInboundMessages.senderPhone })
+      .select({ channel: channelInboundMessages.channel, status: channelInboundMessages.status, orgId: channelInboundMessages.orgId, userId: channelInboundMessages.userId, sessionId: channelInboundMessages.sessionId, senderPhone: channelInboundMessages.senderPhone, signedIn: channelInboundMessages.signedIn })
       .from(channelInboundMessages)
       .where(eq(channelInboundMessages.id, parsed.data.channelMessageId));
     if (nudge || leadTurn || proactiveTurn || !m || (m.channel !== TELEGRAM_CHANNEL && m.channel !== WEB_CHANNEL) || m.status !== "processing" || m.orgId !== orgId || m.userId !== userId || !sessionId || m.sessionId !== sessionId) {
@@ -3798,7 +3797,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     }
     if (m.channel === WEB_CHANNEL) {
       const [s] = await db.select({ channelPhone: sessions.channelPhone, channelEmail: sessions.channelEmail }).from(sessions).where(eq(sessions.id, sessionId));
-      webTurn = { whatsapp: s?.channelPhone ?? null, email: s?.channelEmail ?? null };
+      // The turn that follows their sign-in at once runs as the account, on the same message row.
+      webTurn = { whatsapp: s?.channelPhone ?? null, email: s?.channelEmail ?? null, guest: sessionIsGuest, afterSignIn: m.signedIn && !sessionIsGuest };
     } else {
       telegramTurn = true;
     }
@@ -3821,20 +3821,22 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       return res.status(502).json({ error: `The campaign that asked for this proactive turn could not be read: ${err instanceof Error ? err.message : String(err)}` });
     }
   }
-  const sessionToolNames: string[] = webTurn
-    ? [WEB_CONTINUE_TOOL_NAME]
-    : channelSession?.guest
-    ? [...SIGN_IN_TOOL_NAMES]
-    : channelSession
-      ? [...configAllowedToolNames, ...SIGN_IN_TOOL_NAMES]
-      : configAllowedToolNames;
-  // A lead turn: the person's own tools only on our brand with their account;
-  // a guest on our brand with a number can sign in; anything else, the answer only.
+  // The tools are keyed on WHO the person is, never on the channel
+  // (DISTRY-ONE-AI-1118, agent/person-tools.ts): an account gets the config's
+  // tools, a guest the same short list everywhere (skills, cards, sign-in where
+  // the session can become theirs); the website adds its delivery tool only.
+  const sessionToolNames: string[] = sessionToolNamesFor({
+    configTools: configAllowedToolNames,
+    guest: sessionIsGuest,
+    // Where the session can become theirs: a WhatsApp number or a website visitor is tied to it.
+    canSignIn: channelSession !== null || webTurn !== null,
+    website: webTurn !== null,
+  });
+  // A lead turn: the person's tools only on our brand (their account's, or a
+  // guest's); another brand's lead turn gets the answer only.
   const leadSessionToolNames: string[] = !leadTurn || !leadTurn.ownBrand
     ? []
-    : leadTurn.guest
-      ? channelSession ? [...SIGN_IN_TOOL_NAMES] : []
-      : [...configAllowedToolNames, ...(channelSession ? SIGN_IN_TOOL_NAMES : [])];
+    : sessionToolNamesFor({ configTools: configAllowedToolNames, guest: leadTurn.guest, canSignIn: channelSession !== null, website: false });
   // A config that speaks to a person (it reads our skills) also reads our public
   // site, guests included; another brand's lead turn does not speak for us.
   const speaksForUs = configAllowedToolNames.includes("read_skill") && (!leadTurn || leadTurn.ownBrand);
@@ -3856,7 +3858,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // A trigger the user did not write (nudge, proactive turn, the answer right
   // after a WhatsApp sign-in): stored hidden, never filed in the staff Unibox
   // as the user's words.
-  const hiddenTrigger = nudge === true || proactiveTurn || leadTurn !== null || channelTurn?.afterSignIn === true;
+  const hiddenTrigger = nudge === true || proactiveTurn || leadTurn !== null || channelTurn?.afterSignIn === true || webTurn?.afterSignIn === true;
   const promptContext = context && "channel" in context
     ? Object.fromEntries(Object.entries(context).filter(([k]) => k !== "channel"))
     : context;
@@ -3986,11 +3988,10 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // A config that allows read_skill gets the skill INDEX (method + map of
   // sub-skills) appended; sub-skills are loaded on demand with read_skill.
   let skillIndexBlock = "";
-  // A WhatsApp guest has no read_skill: it still gets the voice (client-comms) and the public offer (our-offer).
-  const wantsVoiceOnly = (webTurn !== null || channelSession?.guest === true || (leadTurn?.guest === true && leadTurn.ownBrand)) && configAllowedToolNames.includes("read_skill");
-  if (allowedToolNames.includes("read_skill") || wantsVoiceOnly) {
+  // A guest reads the SAME index as an account (DISTRY-ONE-AI-1118): never a guest-only text.
+  if (allowedToolNames.includes("read_skill")) {
     try {
-      skillIndexBlock = wantsVoiceOnly ? await buildGuestSkillsBlock(db) : await buildSkillIndexBlock(db);
+      skillIndexBlock = await buildSkillIndexBlock(db);
     } catch (err) {
       console.error(`[chat] skill index unavailable for configKey="${configKey}":`, err);
       sendSSE(res, {
@@ -4013,7 +4014,9 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // `let`: the client brief joins it once the turn's run exists (it reads with that run).
   let turnContextBlock =
     buildSystemPrompt("", promptContext, campaignFeatureInputs) +
-    (leadTurn ? buildLeadTurnBlock(leadTurn) : telegramTurn ? buildTelegramBlock() : webTurn ? buildWebBlock(webTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "");
+    (leadTurn ? buildLeadTurnBlock(leadTurn) : telegramTurn ? buildTelegramBlock() : webTurn ? buildWebBlock(webTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "") +
+    // The dashboard's pages, on the dashboard only (DISTRY-ONE-AI-1118): a chat app or our website cannot show them.
+    (configKey === SOPHIE_CONFIG_KEY && !leadTurn && !telegramTurn && !webTurn && !channelTurn && !(proactiveTurn && context?.channel !== undefined) ? dashboardPagesBlock() : "");
   let systemPrompt = stableSystemPrompt + turnContextBlock;
   const isGeminiChat = chatProvider === "google";
   // A direct OpenAI-compatible vendor (DeepSeek, CHAT-DEEPSEEK-FLASH-1101): its own loop, vendor-chat.ts.
@@ -4247,7 +4250,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     }
 
     const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME && t !== WEB_CONTINUE_TOOL_NAME));
-    if (webTurn) allTools.push(WEB_CONTINUE_TOOL);
+    if (webTurn && allowedToolNames.includes(WEB_CONTINUE_TOOL_NAME)) allTools.push(WEB_CONTINUE_TOOL);
     if (leadTurn) {
       allTools.push(
         REACH_ELSEWHERE_TOOL,
@@ -4578,13 +4581,27 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       // delivered message), never the model's or the caller's.
       if (call.name === START_SIGN_IN_TOOL_NAME || call.name === COMPLETE_SIGN_IN_TOOL_NAME) {
         const args = (call.args as Record<string, unknown>) || {};
-        if (!channelSession) throw new Error(`${call.name} works only in a WhatsApp conversation.`);
+        if (!channelSession && !webTurn) throw new Error(`${call.name} works only in a conversation tied to the person (WhatsApp or our website).`);
+        // WhatsApp verified the sender's number: it is the session's, and the
+        // completion ties it to the account. On our website nothing verified one:
+        // the visitor types it (every signup leaves a number) and it is never
+        // tied as a WhatsApp identity (DISTRY-ONE-AI-1118).
+        const verifiedPhone = channelSession ? channelSession.channelPhone : null;
         if (call.name === START_SIGN_IN_TOOL_NAME) {
-          const result = await startSignIn(args.email, channelSession.channelPhone);
+          let phone = verifiedPhone;
+          if (!phone) {
+            const typed = parseTypedPhone(args.phone);
+            if (!typed.ok) {
+              toolCalls.push({ name: call.name, args, result: typed.refused });
+              return { name: call.name, result: typed.refused };
+            }
+            phone = typed.phone;
+          }
+          const result = await startSignIn(args.email, phone);
           toolCalls.push({ name: call.name, args, result });
           return { name: call.name, result };
         }
-        const signed = await completeSignIn(args.email, args.code, channelSession.channelPhone);
+        const signed = await completeSignIn(args.email, args.code, verifiedPhone);
         if (!signed.ok) {
           toolCalls.push({ name: call.name, args: { email: args.email }, result: signed });
           return { name: call.name, result: signed };
@@ -4600,6 +4617,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
             userId: signed.account.userId,
             guest: false,
             brandIds: brandIds.length > 0 ? brandIds : null,
+            ...(webTurn ? { webAccountEmail: signed.account.email } : {}),
             updatedAt: new Date(),
           })
           .where(eq(sessions.id, currentSessionId!));
@@ -4607,7 +4625,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           ok: true,
           signedIn: signed.account.email,
           accountCreated: signed.account.created,
-          note: "This WhatsApp number is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue.",
+          note: `${webTurn ? "This conversation" : "This WhatsApp number"} is now tied to this account. Right after this reply you answer again, automatically, with its access: here just say in a few words that they are in. Never ask them to send anything to continue.`,
         };
         toolCalls.push({ name: call.name, args: { email: args.email }, result });
         return { name: call.name, result };
@@ -6236,7 +6254,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         // byte streamed gets an HTTP 402 instead (decided by the org: the
         // gateway forwards no caller type). Every other turn keeps the answer.
         let answerHttp402 = false;
-        if (!sse.isOpen()) {
+        // Nor can a person in the page chat: a website turn keeps the in-chat answer.
+        if (!sse.isOpen() && !webTurn) {
           try {
             answerHttp402 = await isAgentApiOrg(orgId, userId, runId ?? parentRunId);
           } catch (offerErr) {
@@ -6402,7 +6421,7 @@ app.get("/internal/copilot/channel-replies/daily", requireInternalAuth, async (r
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
   }
-  res.json({ days: await channelReplyDays(db, parsed.data.days) });
+  res.json({ days: await channelReplyDays(db, parsed.data.days, new Date(), parsed.data.channel) });
 });
 
 const telegramDeps: TelegramDeps = {
@@ -6475,43 +6494,23 @@ const webDeps: WebDeps = {
   handOverByEmail: (body) => handOverByEmailToCrm(body),
 };
 
-// A visitor of our public site talks to the Copilot in the page (DISTRY-WEB-CHAT-1117).
-// Synchronous: the answer is the response. One message at a time per visitor.
-const webVisitorQueues = new Map<string, Promise<unknown>>();
+// A visitor of our public site talks to the Copilot in the page (DISTRY-WEB-CHAT-1117,
+// DISTRY-ONE-AI-1118). The answer is the response; a turn runs to its end even when
+// the caller's connection drops, and the same messageId sent again answers
+// `in_progress` at once, then the whole stored answer (web-visitor.ts).
 app.post("/internal/copilot/web-messages", requireInternalAuth, async (req, res) => {
   const parsed = WebMessageRequestSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
   }
   const msg = parsed.data;
-  const previous = webVisitorQueues.get(msg.visitorId) ?? Promise.resolve();
-  const mine = previous.catch(() => undefined).then(async () => {
-    const accepted = await acceptWebMessage(webDeps, msg);
-    if (accepted.status === "contact_needed" || accepted.status === "busy") {
-      return { status: accepted.status, reply: null, handOff: null, ...webSignals(await readWebState(db, msg.visitorId)) };
-    }
-    if (accepted.status === "duplicate") {
-      const [row] = await db.select().from(channelInboundMessages).where(eq(channelInboundMessages.id, accepted.rowId));
-      const state = webSignals(await readWebState(db, msg.visitorId));
-      if (!row || row.status === "received" || row.status === "processing") return { status: "in_progress", reply: null, handOff: null, ...state };
-      return { status: row.status === "answered" ? "answered" : "failed", reply: row.replyText, handOff: null, ...state };
-    }
-    const answer = await processWebMessage(webDeps, accepted.rowId);
-    return {
-      status: answer.failed ? "failed" : "answered",
-      reply: answer.reply,
-      handOff: answer.handOff,
-      ...webSignals(await readWebState(db, msg.visitorId)),
-    };
-  });
-  webVisitorQueues.set(msg.visitorId, mine);
   try {
-    res.status(200).json(await mine);
+    const body = await answerWebMessage(webDeps, msg);
+    // The site may have stopped waiting: the answer is on the row for its next call.
+    if (!res.destroyed && !res.writableEnded) res.status(200).json(body);
   } catch (err) {
     console.error(`[chat-service] web message from visitor ${msg.visitorId}:`, err);
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  } finally {
-    if (webVisitorQueues.get(msg.visitorId) === mine) webVisitorQueues.delete(msg.visitorId);
+    if (!res.destroyed && !res.headersSent) res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
@@ -6927,7 +6926,8 @@ app.get("/internal/local-llm/served-llms", requireInternalAuth, async (req, res)
   const llms = parsed.data.llms.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
   if (llms.length === 0 || llms.length > 50) return res.status(400).json({ error: `llms: between 1 and 50 entries (got ${llms.length})` });
   const local = await isLocalLlmOrg(parsed.data.orgId);
-  res.json({ orgId: parsed.data.orgId, local, llms: servedLlmsFor(llms, local) });
+  const needs = { webSearch: parsed.data.webSearch === "true", imageUrl: parsed.data.imageUrl === "true" };
+  res.json({ orgId: parsed.data.orgId, local, llms: servedLlmsFor(llms, local, needs) });
 });
 
 app.post("/orgs/local-llm/work/claim", requireAuth, async (req, res) => {
