@@ -293,6 +293,28 @@ export async function callApi(
   return send(req, params);
 }
 
+/**
+ * Which gateway call a run_operation names (method, path, body), without
+ * running it: a guest's plan (guest-plan.ts) opens its org on the brand
+ * creation before the call is made. Null when it names no operation (callApi
+ * then says why). A token names the proposal it carries.
+ */
+export async function requestOfCall(
+  args: Record<string, unknown>,
+  priorHistory: readonly HistoryMessage[],
+): Promise<{ method: string; path: string; body: unknown } | null> {
+  if (typeof args.confirmationToken === "string" && args.confirmationToken.trim()) {
+    const req = resolveCallApiProposal(args.confirmationToken.trim(), priorHistory);
+    return { method: req.method, path: req.path, body: req.body };
+  }
+  const { operations } = await getCatalog();
+  const byId = findOperation(operations, { operationId: String(args.operationId ?? "") });
+  const concretePath = typeof args.path === "string" ? args.path.split("?")[0] : null;
+  const op = byId ?? (concretePath ? matchPath(operations, String(args.method ?? "GET"), concretePath)?.operation ?? null : null);
+  if (!op) return null;
+  return { method: op.method, path: byId || !concretePath ? op.path : concretePath, body: args.body };
+}
+
 /** The {placeholders} of a template read back from a concrete path that fits it. */
 export function pathParamsFrom(template: string, concrete: string): Record<string, string> {
   const t = template.split("/");

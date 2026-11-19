@@ -39,6 +39,17 @@ export const sessions = pgTable(
     // DISTRY-ONE-AI-1118): the account the session was re-keyed to. The page
     // shows it as who is signed in. NULL for a guest.
     webAccountEmail: text("web_account_email"),
+    // A guest's PLAN (migration 0038, DISTRY-ONE-AI-1118 B): the unclaimed org
+    // opened for this conversation when they gave their website (the signup
+    // page's own kind of org), the throwaway external id we minted for it (proof
+    // we opened it, sent with the email proof that hands it over; never shown),
+    // its system user, and the one brand the guest may act on. Set only by
+    // chat-service (guest-plan.ts); the external id is cleared once claimed.
+    planOrgId: text("plan_org_id"),
+    planOrgUserId: text("plan_org_user_id"),
+    planOrgExternalId: text("plan_org_external_id"),
+    planBrandId: text("plan_brand_id"),
+    planDomain: text("plan_domain"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

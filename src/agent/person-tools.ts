@@ -11,13 +11,18 @@
 //  - a GUEST (no account of ours acts in the turn) gets the same short list on
 //    every channel: the skills, cards, and the sign-in pair wherever a session
 //    can become theirs. A guest turn runs under distribute.you's own identity,
-//    so nothing that reads or acts on an account is in it (no API operation,
-//    no follow-up, no staff request).
+//    so nothing that reads or acts on an ACCOUNT is in it (no follow-up, no
+//    staff request).
+//  - where the session can become theirs, a guest also gets the API tools an
+//    account uses (increment B, owner plan 2026-11-19): their plan is built on
+//    the unclaimed org opened for the conversation (lib/guest-plan.ts), and
+//    every call is refused on the server outside the signup page's allowlist.
 //
 // What a channel adds is a DELIVERY fact only (the website's hand-off tool).
 // The site reader joins after (person-facing.ts), for both.
 // ---------------------------------------------------------------------------
 import { SIGN_IN_TOOL_NAMES } from "../lib/channel-sign-in.js";
+import { CATALOGUE_TOOL_NAMES } from "./catalogue-tools.js";
 
 /** The website's delivery tool (web-visitor.ts owns its definition). */
 export const WEB_CONTINUE_TOOL_NAME = "continue_on_channel";
@@ -39,8 +44,11 @@ export interface PersonTurn {
 export function sessionToolNamesFor(turn: PersonTurn): string[] {
   const signIn = turn.canSignIn ? SIGN_IN_TOOL_NAMES.filter((t) => !turn.configTools.includes(t)) : [];
   if (!turn.guest) return [...turn.configTools, ...signIn];
+  // Their plan needs a session that can become theirs (the email proof hands its org over).
+  const plan = turn.canSignIn ? CATALOGUE_TOOL_NAMES.filter((t) => turn.configTools.includes(t)) : [];
   return [
     ...GUEST_CONFIG_TOOLS.filter((t) => turn.configTools.includes(t)),
+    ...plan,
     ...signIn,
     ...(turn.website ? [WEB_CONTINUE_TOOL_NAME] : []),
   ];
