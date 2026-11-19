@@ -6483,7 +6483,11 @@ app.get("/internal/copilot/channel-replies/daily", requireInternalAuth, async (r
 
 // Distry's limits on our money (DISTRY-GUEST-CAPS-1119): read from the runs ledger and billing.
 const distrySpend = {
-  ourOrgId: () => copilotLineFromEnv().orgId,
+  ourOrgId: () => {
+    const orgId = process.env.COPILOT_FOLLOWUP_ORG_ID;
+    if (!orgId) throw new Error("COPILOT_FOLLOWUP_ORG_ID not configured: Distry cannot tell our own turns from a client's");
+    return orgId;
+  },
   isPayingOrg: (orgId: string) => isPayingOrgFromBilling(orgId),
   runTreeCents: (orgId: string, runIds: string[]) => runTreeCentsFromLedger(orgId, runIds),
   orgTotalCents: (orgId: string) => orgTotalCentsFromLedger(orgId),
