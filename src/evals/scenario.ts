@@ -16,7 +16,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
-export const EVAL_SURFACES = ["web", "whatsapp", "lead"] as const;
+/** `web` = the dashboard's chat; `site` = the chat in our public site's pages (DISTRY-ONE-AI-1118). */
+export const EVAL_SURFACES = ["web", "whatsapp", "lead", "site"] as const;
 export type EvalSurface = (typeof EVAL_SURFACES)[number];
 
 const ToolCallSchema = z
@@ -44,6 +45,11 @@ export const ScenarioSchema = z
     surface: z.enum(EVAL_SURFACES),
     /** Who writes (first name, anonymised) and what our records say about them. */
     person: z.object({ name: z.string().min(1), email: z.string().email().optional() }).strict(),
+    /**
+     * No account of ours acts in the turn (DISTRY-ONE-AI-1118): the guest's tools and no account
+     * brief, as /chat builds a guest turn. A `site` scenario is a guest unless it says `false`.
+     */
+    guest: z.boolean().optional(),
     /**
      * A Lead event turn (surface "lead"): the writer's payload as the Lead event
      * workflow sent it (its prompt, the thread, the answer schema), on our own
@@ -126,6 +132,11 @@ export const ScenarioSchema = z
   .strict();
 
 export type Scenario = z.infer<typeof ScenarioSchema>;
+
+/** No account acts in this replay: a `site` visitor by default, any scenario that says so. */
+export function isGuestScenario(scenario: Pick<Scenario, "surface" | "guest">): boolean {
+  return scenario.guest ?? scenario.surface === "site";
+}
 
 /** The day the turn was written, from its source ("client A, web, 2026-11-01"): the brief's "Today". */
 export function scenarioDay(scenario: Scenario): Date {

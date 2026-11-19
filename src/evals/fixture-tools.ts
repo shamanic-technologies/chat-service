@@ -52,6 +52,8 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
       choicesText = leadAnswerForJudge(a, field);
       return "input_request";
     }
+    // The website's hand-off: recorded, nothing tied or sent.
+    if (name === "continue_on_channel") return { name, result: { continuing: a.phone ? "whatsapp" : "email", note: "Recorded (replay: nothing sent)." } };
     if (name === REACH_ELSEWHERE_TOOL_NAME) return { name, result: { stated: true, note: "Recorded (replay: nothing written)." } };
     // A report in a replay is validated as production validates it and answered as stored: nothing is written.
     if (name === REPORT_NOT_GOOD_TOOL_NAME) {
