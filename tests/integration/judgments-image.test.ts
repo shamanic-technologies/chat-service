@@ -1,4 +1,10 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+// The SSRF guard is pinned in tests/unit/safe-fetch.test.ts; here the network is the stubbed global fetch.
+vi.mock("../../src/lib/safe-fetch.js", async (orig) => ({
+  ...(await orig<typeof import("../../src/lib/safe-fetch.js")>()),
+  publicFetch: (url: string | URL, init?: RequestInit) => globalThis.fetch(url, init),
+}));
 import request from "supertest";
 import sharp from "sharp";
 
