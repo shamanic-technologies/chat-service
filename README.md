@@ -16,7 +16,7 @@ All endpoints (except `/health` and `/openapi.json`) require these headers:
 
 | Header | Description |
 |---|---|
-| `x-api-key` | Service-to-service API key |
+| `x-api-key` | Service-to-service API key: MUST equal this service's `CHAT_SERVICE_API_KEY` (compared, timing-safe). A wrong key is `401 {"error":"Invalid API key"}`; an unset `CHAT_SERVICE_API_KEY` refuses everything (`503`) and the server will not boot without it (SEC-CHAT-IDENTITY-1120) |
 | `x-org-id` | Internal org UUID from client-service |
 | `x-user-id` | Internal user UUID from client-service |
 | `x-run-id` | Caller's run ID — used as `parentRunId` when creating this service's own run in runs-service |
@@ -1802,6 +1802,7 @@ Each brand plugs, in its Integrations, the MCP server(s) it gives to the AI that
 | `API_SERVICE_URL` | No | Api-service endpoint (default: `https://api.distribute.you`) |
 | `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used only for Anthropic API key decryption — infrastructure, not routed via api-service) |
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |
+| `CHAT_SERVICE_API_KEY` | Yes | The key every caller must send as `x-api-key` (compared on every authenticated route); boot fails without it |
 | `CHAT_SERVICE_DATABASE_URL` | Yes | PostgreSQL connection string |
 | `RUNS_SERVICE_URL` | No | RunsService endpoint (default: `https://runs.mcpfactory.org`) |
 | `RUNS_SERVICE_API_KEY` | No | API key for RunsService (runs tracking and trace events disabled if unset) |

@@ -111,7 +111,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 async function waitDone(id: string) {
   for (let i = 0; i < 100; i++) {
-    const res = await request(app).get(`/internal/platform-transcriptions/${id}`).set("x-api-key", "k");
+    const res = await request(app).get(`/internal/platform-transcriptions/${id}`).set("x-api-key", "test-key");
     if (res.body.status !== "processing") return res;
     await new Promise((r) => setTimeout(r, 50));
   }
@@ -120,7 +120,7 @@ async function waitDone(id: string) {
 
 describe("POST /internal/platform-transcriptions", { timeout: 30000 }, () => {
   it("transcribes in the background and declares the cost on a platform run", async () => {
-    const start = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ ...({ url: SOURCE }), support: TEST_PLATFORM_SUPPORT });
+    const start = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "test-key").send({ ...({ url: SOURCE }), support: TEST_PLATFORM_SUPPORT });
     expect(start.status).toBe(202);
     expect(start.body).toMatchObject({ status: "processing", model: "gemini-3.8-flash" });
     // The presigned signature is never stored or served back.
@@ -150,7 +150,7 @@ describe("POST /internal/platform-transcriptions", { timeout: 30000 }, () => {
 
   it("still bills a transcript it then refuses, and names why", async () => {
     transcriptText = "Sorry, here is a summary instead.";
-    const start = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ ...({ url: SOURCE }), support: TEST_PLATFORM_SUPPORT });
+    const start = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "test-key").send({ ...({ url: SOURCE }), support: TEST_PLATFORM_SUPPORT });
     const done = await waitDone(start.body.id);
     expect(done.body.status).toBe("failed");
     expect(done.body.error.code).toBe("unparseable_transcript");
@@ -161,7 +161,7 @@ describe("POST /internal/platform-transcriptions", { timeout: 30000 }, () => {
 
   it("answers a 404 URL with a named 422 and starts nothing", async () => {
     sourceStatus = 404;
-    const res = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ ...({ url: SOURCE }), support: TEST_PLATFORM_SUPPORT });
+    const res = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "test-key").send({ ...({ url: SOURCE }), support: TEST_PLATFORM_SUPPORT });
     expect(res.status).toBe(422);
     expect(res.body).toMatchObject({ code: "source_unreachable" });
     expect(res.body.error).toContain("404");
@@ -170,11 +170,11 @@ describe("POST /internal/platform-transcriptions", { timeout: 30000 }, () => {
 
   it("opens its platform run as the caller run's child, or marked with the caller's declared support", async () => {
     const CALLER = "5f0c2a8e-1b3d-4c6e-9f70-a1b2c3d4e5f6";
-    const a = await request(app).post("/internal/platform-transcriptions").set({ "x-api-key": "k", "x-run-id": CALLER }).send({ url: SOURCE });
+    const a = await request(app).post("/internal/platform-transcriptions").set({ "x-api-key": "test-key", "x-run-id": CALLER }).send({ url: SOURCE });
     expect(a.status).toBe(202);
     await waitDone(a.body.id);
     const support = { kind: "product_feature", reason: "teaching video transcript" };
-    const b = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ url: SOURCE, support });
+    const b = await request(app).post("/internal/platform-transcriptions").set("x-api-key", "test-key").send({ url: SOURCE, support });
     expect(b.status).toBe(202);
     await waitDone(b.body.id);
     expect(cap.runBodies![0]).toMatchObject({ parentRunId: CALLER });
@@ -184,12 +184,12 @@ describe("POST /internal/platform-transcriptions", { timeout: 30000 }, () => {
   });
 
   it("refuses a non-https URL and requires the service key", async () => {
-    expect((await request(app).post("/internal/platform-transcriptions").set("x-api-key", "k").send({ ...({ url: "http://x.test/a.mp4" }), support: TEST_PLATFORM_SUPPORT })).status).toBe(400);
+    expect((await request(app).post("/internal/platform-transcriptions").set("x-api-key", "test-key").send({ ...({ url: "http://x.test/a.mp4" }), support: TEST_PLATFORM_SUPPORT })).status).toBe(400);
     expect((await request(app).post("/internal/platform-transcriptions").send({ ...({ url: SOURCE }), support: TEST_PLATFORM_SUPPORT })).status).toBe(401);
   });
 
   it("404s an unknown job", async () => {
-    const res = await request(app).get("/internal/platform-transcriptions/22222222-2222-4222-8222-222222222222").set("x-api-key", "k");
+    const res = await request(app).get("/internal/platform-transcriptions/22222222-2222-4222-8222-222222222222").set("x-api-key", "test-key");
     expect(res.status).toBe(404);
   });
 });

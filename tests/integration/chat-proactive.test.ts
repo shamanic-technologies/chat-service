@@ -175,7 +175,7 @@ function baseRoutes(gemini: { calls: number; bodies: Array<Record<string, unknow
   ];
 }
 
-const HEADERS = { "x-api-key": "svc", "x-run-id": RUN, "x-org-id": ORG, "x-campaign-id": "camp-1", "x-workflow-slug": "hot-lead-proposal-v1" };
+const HEADERS = { "x-api-key": "test-key", "x-run-id": RUN, "x-org-id": ORG, "x-campaign-id": "camp-1", "x-workflow-slug": "hot-lead-proposal-v1" };
 const BODY = {
   kind: "hot_lead",
   idempotencyKey: "fact-123",
@@ -250,7 +250,7 @@ describe("POST /internal/copilot/proactive-turns — the Copilot writes first to
     routes.push(...baseRoutes({ calls: 0, bodies: [] }, app));
     const res = await request(app)
       .post("/chat")
-      .set({ "x-api-key": "k", "x-org-id": ORG, "x-user-id": USER, "x-run-id": RUN })
+      .set({ "x-api-key": "test-key", "x-org-id": ORG, "x-user-id": USER, "x-run-id": RUN })
       .send({ configKey: "copilot", message: "hi", sessionId: SESSION, proactiveTurnId: TURN_ID });
     expect(res.status).toBe(400);
     expect(state.messageInserts).toEqual([]);

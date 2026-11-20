@@ -2923,16 +2923,16 @@ registry.registerPath({
 
 export const TransferBrandRequestSchema = z
   .object({
-    sourceBrandId: z.string().min(1).openapi({
+    sourceBrandId: z.string().uuid().openapi({
       description: "The brand UUID to transfer (in the source org)",
     }),
-    sourceOrgId: z.string().min(1).openapi({
+    sourceOrgId: z.string().uuid().openapi({
       description: "The org UUID the brand is currently in",
     }),
-    targetOrgId: z.string().min(1).openapi({
+    targetOrgId: z.string().uuid().openapi({
       description: "The org UUID to transfer the brand to",
     }),
-    targetBrandId: z.string().min(1).optional().openapi({
+    targetBrandId: z.string().uuid().optional().openapi({
       description:
         "The brand UUID in the target org to rewrite to. " +
         "When present (conflict case), brand references are rewritten from sourceBrandId to targetBrandId. " +

@@ -3450,22 +3450,22 @@
         "properties": {
           "sourceBrandId": {
             "type": "string",
-            "minLength": 1,
+            "format": "uuid",
             "description": "The brand UUID to transfer (in the source org)"
           },
           "sourceOrgId": {
             "type": "string",
-            "minLength": 1,
+            "format": "uuid",
             "description": "The org UUID the brand is currently in"
           },
           "targetOrgId": {
             "type": "string",
-            "minLength": 1,
+            "format": "uuid",
             "description": "The org UUID to transfer the brand to"
           },
           "targetBrandId": {
             "type": "string",
-            "minLength": 1,
+            "format": "uuid",
             "description": "The brand UUID in the target org to rewrite to. When present (conflict case), brand references are rewritten from sourceBrandId to targetBrandId. When absent, only org_id is updated."
           }
         },

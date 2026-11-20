@@ -13,7 +13,7 @@ process.env.RUNS_SERVICE_API_KEY = process.env.RUNS_SERVICE_API_KEY || "test-run
 const RUN = Date.now().toString(36);
 const ORG_A = `org-${RUN}-cfgdel-a`;
 const ORG_B = `org-${RUN}-cfgdel-b`;
-const auth = (orgId: string) => ({ "x-api-key": "k", "x-org-id": orgId, "x-user-id": "u-1", "x-run-id": "r-1" });
+const auth = (orgId: string) => ({ "x-api-key": "test-key", "x-org-id": orgId, "x-user-id": "u-1", "x-run-id": "r-1" });
 
 describe("DELETE /config/:key", { timeout: 30000 }, () => {
   let client: ReturnType<typeof postgres>;
@@ -52,7 +52,7 @@ describe("DELETE /config/:key", { timeout: 30000 }, () => {
 
   it("requires the org identity", async () => {
     const app = (await import("../../src/index.js")).default;
-    const res = await request(app).delete("/config/probe").set({ "x-api-key": "k" });
+    const res = await request(app).delete("/config/probe").set({ "x-api-key": "test-key" });
     expect(res.status).toBe(400);
   });
 });

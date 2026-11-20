@@ -161,7 +161,7 @@ function routesFor(gemini: { bodies: Array<Record<string, unknown>> }): MockRout
   ];
 }
 
-const HEADERS = { "x-api-key": "k", "x-org-id": ORG, "x-user-id": USER, "x-run-id": RUN };
+const HEADERS = { "x-api-key": "test-key", "x-org-id": ORG, "x-user-id": USER, "x-run-id": RUN };
 
 function sentSystem(body: Record<string, unknown>): string {
   const si = body.systemInstruction as { parts: Array<{ text: string }> };

@@ -42,4 +42,21 @@ describe("requireInternalAuth middleware", () => {
     // Should not set any locals
     expect(res.locals).toEqual({});
   });
+
+  // SEC-CHAT-IDENTITY-1120 (prod 2026-11-20): /internal/transfer-brand was called
+  // from the internet with an arbitrary key and moved Martian DBB's sessions.
+  it("refuses an internal call whose x-api-key is not the service key", () => {
+    const { req, res, next } = mockReqRes({ "x-api-key": "probe" });
+    requireInternalAuth(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: "Invalid API key" });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("refuses a key that only shares a prefix with the service key", () => {
+    const { req, res, next } = mockReqRes({ "x-api-key": "test-key-and-more" });
+    requireInternalAuth(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
 });
