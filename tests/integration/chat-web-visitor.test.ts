@@ -41,7 +41,10 @@ const { state } = vi.hoisted(() => ({
 // The skill index is read from the table: a stub that carries the voice and the job list, as the real one does.
 vi.mock("../../src/lib/skills.js", async () => {
   const actual = await vi.importActual<typeof import("../../src/lib/skills.js")>("../../src/lib/skills.js");
-  return { ...actual, buildSkillIndexBlock: vi.fn(async () => "\n\n---\n## Skills (test index)\n# How we talk to a person\n- `our-offer`: questions about us, starting") };
+  return {
+    ...actual,
+    buildSkillIndexPieces: vi.fn(async () => ({ indexSkill: "## Skills (test index)", voiceSkill: "# How we talk to a person", subSkills: "- `our-offer`: questions about us, starting" })),
+  };
 });
 
 vi.mock("../../src/db/index.js", async () => {

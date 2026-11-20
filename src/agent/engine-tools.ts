@@ -14,6 +14,7 @@
 
 import type Anthropic from "@anthropic-ai/sdk";
 import { ENGINE_TOOL_PREFIX } from "./principal-tools.js";
+import { fillTemplate } from "../lib/prompt-template.js";
 
 export const READ_ENGINE_CALL_TOOL_NAME = "read_engine_call";
 
@@ -80,15 +81,18 @@ function waysToCall(e: EngineListing): string {
     .join("; or ");
 }
 
-export function engineTool(e: EngineListing): Anthropic.Tool {
+/** The words of every Engine tool's description (Distry's editor part `engine-tool`, DISTRY-PROMPT-PARTS-1120). */
+export const ENGINE_TOOL_DESCRIPTION_TEMPLATE =
+  `Engine "{{engineName}}": makes one Unit of this outcome. Runs the Engine's best script (the Rating picks it, as for a campaign) and waits for the result, then answers the Unit or why none was made. ` +
+  `Ways to call: {{waysToCall}} ` +
+  `It runs on distribute.you's own account unless orgId and brandId name another one, billed to that account. What it makes can reach real people: run it only when its outcome serves our goal.`;
+
+export function engineTool(e: EngineListing, template: string = ENGINE_TOOL_DESCRIPTION_TEMPLATE): Anthropic.Tool {
   const channels = [...new Set(e.inputs.map((i) => i.channel).filter((c): c is string => typeof c === "string"))];
   const unitOutcomes = [...new Set(e.inputs.flatMap((i) => i.units))];
   return {
     name: engineToolName(e.outcome),
-    description:
-      `Engine "${e.name}": makes one Unit of this outcome. Runs the Engine's best script (the Rating picks it, as for a campaign) and waits for the result, then answers the Unit or why none was made. ` +
-      `Ways to call: ${waysToCall(e)} ` +
-      `It runs on distribute.you's own account unless orgId and brandId name another one, billed to that account. What it makes can reach real people: run it only when its outcome serves our goal.`,
+    description: fillTemplate(template, { engineName: e.name, waysToCall: waysToCall(e) }),
     input_schema: {
       type: "object",
       properties: {
@@ -124,9 +128,12 @@ export const READ_ENGINE_CALL_TOOL: Anthropic.Tool = {
 };
 
 /** The tools of the Engines that can run now, and the outcome each name stands for. */
-export function engineToolsFrom(engines: readonly EngineListing[]): { tools: Anthropic.Tool[]; outcomeOf: Map<string, string> } {
+export function engineToolsFrom(
+  engines: readonly EngineListing[],
+  template: string = ENGINE_TOOL_DESCRIPTION_TEMPLATE,
+): { tools: Anthropic.Tool[]; outcomeOf: Map<string, string> } {
   const callable = engines.filter((e) => e.callable);
-  const tools = callable.map(engineTool);
+  const tools = callable.map((e) => engineTool(e, template));
   const outcomeOf = new Map(callable.map((e) => [engineToolName(e.outcome), e.outcome]));
   if (outcomeOf.size !== callable.length) throw new Error("two Engines map to the same tool name: their outcome keys differ only in punctuation");
   return { tools: tools.length > 0 ? [...tools, READ_ENGINE_CALL_TOOL] : [], outcomeOf };

@@ -8,7 +8,7 @@ import type { ToolCallRecord } from "../db/schema.js";
 import { trimGeminiHistoryToBudget } from "./gemini-trim.js";
 import { sanitizeGeminiSchema, buildThinkingConfig, geminiCostPrefix, type GeminiThinkingLevel } from "./gemini.js";
 import { buildToolResultFallback } from "./tool-fallback.js";
-import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, endToolFinalNote, endToolNudgeNote, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH, needsAnswerNudge } from "./tool-budget.js";
+import { CODE_LOOP_NOTES, isFinalToolRound, type LoopNotes, MAX_TOOL_CHAIN_DEPTH, needsAnswerNudge } from "./tool-budget.js";
 import { mergeGeminiCostLines, readGeminiBilledTokens, type GeminiCostLine, type GeminiUsageMetadata } from "./gemini-usage.js";
 import { formatToolError } from "./tool-errors.js";
 import { CLIENT_UI_TOOL_NAMES } from "./ui-tools.js";
@@ -161,6 +161,8 @@ export interface StreamGeminiChatOptions {
    * without it is re-asked once to call it.
    */
   endToolName?: string;
+  /** The notes beside the last tool results (Distry's editable parts); omitted = the code's. */
+  loopNotes?: LoopNotes;
   /**
    * Images joined to the user message (a /complete `imageUrl` with
    * `brandTools`), as Gemini inline data. Absent = a text-only message, as on
@@ -427,6 +429,7 @@ export function parseGeminiSSEBuffer(buffer: string): ParsedGeminiSSE {
 export async function streamGeminiChat(
   options: StreamGeminiChatOptions,
 ): Promise<StreamGeminiChatResult> {
+  const notes = options.loopNotes ?? CODE_LOOP_NOTES;
   const {
     apiKey,
     model,
@@ -653,7 +656,7 @@ export async function streamGeminiChat(
         console.warn(`[gemini-chat] model=${model} stopped without ${endToolName}; asking for it`);
         answerNudged = true;
         if (iterText.trim()) turnMessages.push({ role: "model", parts: [{ text: iterText }] });
-        const note = { text: endToolNudgeNote(endToolName) };
+        const note = { text: notes.silentTurnAnswerTool(endToolName) };
         if (iterText.trim() || lastTurn?.role !== "user") turnMessages.push({ role: "user", parts: [note] });
         else lastTurn.parts = [...lastTurn.parts, note];
         depth--; // the re-ask is not a tool round
@@ -666,7 +669,7 @@ export async function streamGeminiChat(
       ) {
         console.warn(`[gemini-chat] model=${model} ended silent after ${allToolCalls.length} tool(s); asking it to answer now`);
         answerNudged = true;
-        lastTurn.parts = [...lastTurn.parts, { text: EMPTY_ANSWER_NOTE }];
+        lastTurn.parts = [...lastTurn.parts, { text: notes.silentTurn }];
         depth--; // the re-ask is not a tool round
         continue;
       }
@@ -768,7 +771,7 @@ export async function streamGeminiChat(
     turnMessages.push({
       role: "user",
       parts: isFinalToolRound(depth + 1)
-        ? [...responseParts, { text: endToolName ? endToolFinalNote(endToolName) : FINAL_ROUND_NOTE }]
+        ? [...responseParts, { text: endToolName ? notes.finalRoundAnswerTool(endToolName) : notes.finalRound }]
         : responseParts,
     });
   }

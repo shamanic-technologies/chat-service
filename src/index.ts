@@ -27,14 +27,13 @@ import { transferBrand } from "./lib/transfer-brand.js";
 import { dynastyCatalogue, modelDisplayName, modelIdCatalogue } from "./lib/model-ids.js";
 import { llmCostNameCatalogue } from "./lib/llm-cost-names.js";
 import { readOurWebsite } from "./lib/our-website.js";
-import { aboutYouBlock, withOurWebsite } from "./lib/person-facing.js";
+import { withOurWebsite } from "./lib/person-facing.js";
 import { stripLongDashes } from "./lib/long-dash.js";
 import { ACCOUNT_SETUP_HANDLERS, withAccountSetup } from "./lib/account-setup.js";
 import { eq, and, desc, sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   createAnthropicClient,
-  buildSystemPrompt,
   resolveToolSet,
   AVAILABLE_TOOL_NAMES,
   RETIRED_TOOL_NAMES,
@@ -126,7 +125,22 @@ import {
   toDistryVersionBody,
   DistryConfigError,
   distrySkillSet,
+  distryVersionNumber,
+  definitionOf,
+  promptOverridesFrom,
 } from "./agent/distry-config.js";
+import {
+  assemblePrompt,
+  codePromptOverrides,
+  currentDistryPrompt,
+  emptyTurnPromptData,
+  loopNotesFrom,
+  partText,
+  partsForEditor,
+  withToolDescriptions,
+  type TurnPromptData,
+} from "./agent/distry-prompt.js";
+import { examplesByPart, listPromptSamples, previewBody, promptAudience, recordPromptSample } from "./agent/distry-prompt-samples.js";
 import {
   FIND_STAKEHOLDERS_TOOL_NAME,
   READ_PERSON_UNIBOX_TOOL_NAME,
@@ -197,7 +211,7 @@ import {
 import { seedPlatformConfigs, holdTextBesideToolCallsFor, isSelfSeededConfigKey } from "./lib/seed-platform-configs.js";
 import { buildSituationBrief } from "./agent/situation.js";
 import { gatewaySituationReader } from "./agent/situation-reader.js";
-import { dashboardPagesBlock, SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
+import { SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
 import { SOPHIE_BACKUP_MODEL, sophieTurnModel } from "./agent/sophie-backup.js";
 import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi, requestOfCall } from "./agent/catalogue-tools.js";
 import { createPlanRun, domainClaim, openUnclaimedOrg, runGuestPlanCall, seedTrialCredit, type PlanOrg } from "./lib/guest-plan.js";
@@ -205,7 +219,7 @@ import { REPORT_NOT_GOOD_TOOL_NAME, reportNotGood } from "./lib/unit-report.js";
 import {
   SkillNotFoundError,
   SkillValidationError,
-  buildSkillIndexBlock,
+  buildSkillIndexPieces,
   getSkill,
   listSkillVersions,
   listSkills,
@@ -254,7 +268,6 @@ import {
   TELEGRAM_CHANNEL,
   TELEGRAM_TASK_NAME,
   acceptTelegramMessage,
-  buildTelegramBlock,
   enqueueTelegramMessage,
   orgTelegramLinker,
   recoverTelegramMessages,
@@ -288,7 +301,6 @@ import {
   buildNudgeState,
   NUDGE_QUESTION,
   NUDGE_QUESTION_KEY,
-  NUDGE_TRIGGER_MESSAGE,
   nudgeVerdict,
   type NudgeTurn,
 } from "./lib/copilot-nudge.js";
@@ -413,7 +425,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryPromptPreviewQuerySchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -524,14 +536,13 @@ import {
 import { buildToolResultFallback } from "./lib/tool-fallback.js";
 import { leadTurnMoment, withReplyToEventId } from "./lib/lead-whatsapp.js";
 import { estimateRequestTokensWithImages } from "./lib/turn-images.js";
-import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, endToolFinalNote, endToolNudgeNote, isFinalToolRound, MAX_TOOL_CHAIN_DEPTH, needsAnswerNudge } from "./lib/tool-budget.js";
+import { isFinalToolRound, MAX_TOOL_CHAIN_DEPTH, needsAnswerNudge } from "./lib/tool-budget.js";
 import {
   LEAD_ANSWER_TOOL_NAME,
   LEAD_TURN_TRIGGER,
   leadTurnStoredText,
   buildLeadAnswerTool,
   buildLeadTurnBlock,
-  brandToolsBlock,
   copilotOwnBrandId,
   LEAD_TURN_TASK_NAME,
   leadTurnBody,
@@ -3749,7 +3760,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       error: nudge ? "A nudge request carries no message: omit `message`." : "message is required",
     });
   }
-  const message = nudge ? NUDGE_TRIGGER_MESSAGE : parsed.data.message!;
+  // The speak-first trigger is one of Distry's parts (DISTRY-PROMPT-PARTS-1120).
+  const message = nudge ? partText(configKey === SOPHIE_CONFIG_KEY ? currentDistryPrompt() : codePromptOverrides(), "nudge-trigger") : parsed.data.message!;
 
   // Look up app config by (orgId, configKey), fall back to platform config by configKey
   const [orgConfig] = await db
@@ -4070,14 +4082,17 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // Build system prompt with optional context and campaign feature inputs
   // A config that allows read_skill gets the skill INDEX (method + map of
   // sub-skills) appended; sub-skills are loaded on demand with read_skill.
-  let skillIndexBlock = "";
+  // Every text of the prompt is a part (DISTRY-PROMPT-PARTS-1120, agent/distry-prompt.ts): Distry
+  // reads its versioned parts (order + staff's texts); every other config, the code's.
+  const promptOverrides = configKey === SOPHIE_CONFIG_KEY ? currentDistryPrompt() : codePromptOverrides();
+  const promptData: TurnPromptData = emptyTurnPromptData(appConfig.systemPrompt);
   let turnSkillSet: string[] | null = null;
   // A guest reads the SAME index as an account (DISTRY-ONE-AI-1118): never a guest-only text.
   if (allowedToolNames.includes("read_skill")) {
     try {
       // Distry's skill set is part of its versioned definition (null = every skill).
       if (configKey === SOPHIE_CONFIG_KEY) turnSkillSet = distrySkillSet();
-      skillIndexBlock = await buildSkillIndexBlock(db, turnSkillSet);
+      promptData.skillIndex = await buildSkillIndexPieces(db, turnSkillSet);
     } catch (err) {
       console.error(`[chat] skill index unavailable for configKey="${configKey}":`, err);
       sendSSE(res, {
@@ -4093,14 +4108,13 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // Distry's Engine tools (DISTRY-PRINCIPAL-1119): one per Engine that can run now, from
   // workflow-service's live list read at this turn; a failed read is named in the turn, never a gate.
   let engineTools: { tools: Anthropic.Tool[]; outcomeOf: Map<string, string> } = { tools: [], outcomeOf: new Map() };
-  let engineListNote = "";
   if (principalAllowed && allowedToolNames.includes(ENGINES_TOOL_FAMILY)) {
     try {
-      engineTools = engineToolsFrom(await listEngines(workflowFetchFromEnv()));
+      engineTools = engineToolsFrom(await listEngines(workflowFetchFromEnv()), partText(promptOverrides, "engine-tool"));
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err);
       console.error(`[chat] Engines could not be listed for this turn: ${why}`);
-      engineListNote = `\n\n---\n(Not read this turn: the list of Engines (${why.slice(0, 200)}). No Engine can be called in this turn.)`;
+      promptData.enginesUnreadable = why.slice(0, 200);
     }
   }
   // What stays the same across turns (the config's prompt + skills + who it
@@ -4108,16 +4122,24 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // WhatsApp or Lead event block). Gemini reads them joined, as before;
   // Anthropic caches the first and sends the second after the user's message
   // (anthropic-turn.ts, CHAT-COST-1101).
-  const stableSystemPrompt =
-    appConfig.systemPrompt + skillIndexBlock + (speaksForUs ? aboutYouBlock(modelDisplayName(localChatModel ?? resolvedModelInfo.apiModelId)) : "");
-  // `let`: the client brief joins it once the turn's run exists (it reads with that run).
-  let turnContextBlock =
-    buildSystemPrompt("", promptContext, campaignFeatureInputs) +
-    (leadTurn ? buildLeadTurnBlock(leadTurn) : telegramTurn ? buildTelegramBlock() : webTurn ? buildWebBlock(webTurn) : channelTurn && channelSession ? buildChannelBlock(channelTurn, channelSession.guest) : "") +
-    // The dashboard's pages, on the dashboard only (DISTRY-ONE-AI-1118): a chat app or our website cannot show them.
-    (configKey === SOPHIE_CONFIG_KEY && !leadTurn && !telegramTurn && !webTurn && !channelTurn && !(proactiveTurn && context?.channel !== undefined) ? dashboardPagesBlock() : "") +
-    engineListNote;
+  promptData.modelName = speaksForUs ? modelDisplayName(localChatModel ?? resolvedModelInfo.apiModelId) : null;
+  promptData.campaignInputs = campaignFeatureInputs;
+  promptData.requestContext = (promptContext as Record<string, unknown> | undefined) ?? null;
+  if (leadTurn) promptData.leadTurnBlock = buildLeadTurnBlock(leadTurn);
+  else if (telegramTurn) promptData.telegram = true;
+  else if (webTurn) promptData.websiteBlock = buildWebBlock(webTurn);
+  else if (channelTurn && channelSession) promptData.whatsappBlock = buildChannelBlock(channelTurn, channelSession.guest);
+  // The dashboard's pages, on the dashboard only (DISTRY-ONE-AI-1118): a chat app or our website cannot show them.
+  promptData.dashboard = configKey === SOPHIE_CONFIG_KEY && !leadTurn && !telegramTurn && !webTurn && !channelTurn && !(proactiveTurn && context?.channel !== undefined);
+  // The parts above `conversation` = the system prompt (what stays across turns, cached on Anthropic);
+  // the parts below = this turn's context, sent after the person's message (anthropic-turn.ts, CHAT-COST-1101).
+  // Gemini reads them joined. Re-assembled each time a turn's data lands (the briefs read with the turn's run).
+  let assembledPrompt = assemblePrompt(promptOverrides, promptData);
+  let stableSystemPrompt = assembledPrompt.system;
+  let turnContextBlock = assembledPrompt.turn;
   let systemPrompt = stableSystemPrompt + turnContextBlock;
+  // The notes the tool loops send beside the last tool results (parts too).
+  const loopNotes = loopNotesFrom(promptOverrides);
   const isGeminiChat = chatProvider === "google";
   // A direct OpenAI-compatible vendor (DeepSeek, CHAT-DEEPSEEK-FLASH-1101): its own loop, vendor-chat.ts.
   const chatVendor: VendorId | null = isVendorProvider(chatProvider) ? chatProvider : null;
@@ -4127,6 +4149,25 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   let anthropicSystemPrompt = anthropicCache ? stableSystemPrompt : systemPrompt;
   let anthropicTurnContext = anthropicCache ? turnContextBlock : "";
   let claude = isGeminiChat || chatVendor || localChat ? null : createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
+  // A turn's data landed (a brief, the brand's tools): assemble the parts again, in Distry's order.
+  const reassemblePrompt = () => {
+    assembledPrompt = assemblePrompt(promptOverrides, promptData);
+    const systemMoved = assembledPrompt.system !== stableSystemPrompt;
+    stableSystemPrompt = assembledPrompt.system;
+    turnContextBlock = assembledPrompt.turn;
+    systemPrompt = stableSystemPrompt + turnContextBlock;
+    if (anthropicCache) {
+      anthropicTurnContext = turnContextBlock;
+      // Only when staff placed a brief above the conversation does the system prompt itself move.
+      if (systemMoved && claude) {
+        anthropicSystemPrompt = stableSystemPrompt;
+        claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
+      }
+    } else if (claude) {
+      anthropicSystemPrompt = systemPrompt;
+      claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
+    }
+  };
 
   let runId: string | null = null;
   let chatFailed = false;
@@ -4358,6 +4399,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         buildLeadAnswerTool(leadTurn.payload.responseSchema, leadTurn.payload.messageField, { replyTo: (leadTurn.whatsapp?.shown.length ?? 0) > 0 }),
       );
     }
+    // Tool descriptions staff rewrote in Distry's editor (DISTRY-PROMPT-PARTS-1120); the code's elsewhere.
+    allTools.splice(0, allTools.length, ...withToolDescriptions(allTools, promptOverrides));
     // Photos the person sent (SOPHIE-WA-HUMAN-1106): read natively by the model, on the direct-vendor loop (Sophie's).
     const turnImages = leadTurn?.whatsapp?.images ?? [];
     // The answer a lead turn ended on (answer_person), in the writer's schema.
@@ -4442,29 +4485,19 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       }
     }
     if (brief !== null) {
-      turnContextBlock += brief;
-      systemPrompt = stableSystemPrompt + turnContextBlock;
-      if (anthropicCache) anthropicTurnContext = turnContextBlock;
-      else if (claude) {
-        anthropicSystemPrompt = systemPrompt;
-        claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
-      }
+      promptData.clientBrief = brief;
+      reassemblePrompt();
     }
     // Sophie reads where the account stands before she answers
     // (SOPHIE-REFONTE-1102): campaigns, results, replies waiting, money, after
     // the client brief above. Not on a lead turn (it runs in the writing
     // brand's org), a proactive turn or a guest (no account).
     if (configKey === SOPHIE_CONFIG_KEY && !leadTurn && !proactiveTurn && !sessionIsGuest) {
-      turnContextBlock += await buildSituationBrief(gatewaySituationReader(featureCallParams), {
+      promptData.situationBrief = await buildSituationBrief(gatewaySituationReader(featureCallParams), {
         brandId: brandIds[0] ?? null,
         offerId: offerId ?? null,
       });
-      systemPrompt = stableSystemPrompt + turnContextBlock;
-      if (anthropicCache) anthropicTurnContext = turnContextBlock;
-      else if (claude) {
-        anthropicSystemPrompt = systemPrompt;
-        claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
-      }
+      reassemblePrompt();
     }
     // The writing brand's own MCP tools (BRAND-MCP-1109): every lead turn, any
     // brand, guest or account, loads the servers that brand plugged. A failure
@@ -4485,13 +4518,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           allowedToolSet.add(t.name);
         }
         console.log(`[chat] session="${currentSessionId}" lead turn ${leadTurnId}: ${brandToolset.tools.length} brand tool(s) from ${brandToolset.servers.map((x) => `"${x.name}"`).join(", ")}`);
-        turnContextBlock += brandToolsBlock();
-        systemPrompt = stableSystemPrompt + turnContextBlock;
-        if (anthropicCache) anthropicTurnContext = turnContextBlock;
-        else if (claude) {
-          anthropicSystemPrompt = systemPrompt;
-          claude = createAnthropicClient({ apiKey: resolvedKey.key, systemPrompt: anthropicSystemPrompt });
-        }
+        promptData.brandTools = true;
+        reassemblePrompt();
       }
     }
     const brandProfileWebsiteRefreshIntent =
@@ -5849,6 +5877,23 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
 
     const handledBrandProfileRefresh = await handleBrandProfileWebsiteRefreshIntent();
 
+    // What the model receives this turn, recorded for Distry's editor (preview + each part's example).
+    // A side record: a failed write is logged, never the turn's failure.
+    if (configKey === SOPHIE_CONFIG_KEY && !handledBrandProfileRefresh) {
+      recordPromptSample(db, {
+          audience: promptAudience({ principal: principalAllowed, leadTurn: leadTurn !== null, guest: sessionIsGuest }),
+          version: distryVersionNumber(),
+          orgId,
+          sessionId: currentSessionId ?? null,
+          provider: chatProvider,
+          model: resolvedModelInfo.apiModelId,
+          assembled: assembledPrompt,
+          tools: allTools.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
+          historyMessages: history.length,
+          userMessage: message.trim(),
+        }).catch((err) => console.error(`[chat] session="${currentSessionId}" Distry prompt sample not recorded:`, err));
+    }
+
     if (!handledBrandProfileRefresh && runId) {
       traceEvent(runId, "stream-start", { orgId, userId }, workflowTracking, {
         data: {
@@ -5892,6 +5937,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         signal: abortController.signal,
         holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),
         ...(leadTurn ? { endToolName: LEAD_ANSWER_TOOL_NAME } : {}),
+        loopNotes,
         beforeProviderCall: async () => {
           await authorizeChatProviderCall(0);
         },
@@ -5949,6 +5995,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         signal: abortController.signal,
         holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),
         ...(leadTurn ? { endToolName: LEAD_ANSWER_TOOL_NAME } : {}),
+        loopNotes,
         // On the vendor loop Sophie only runs as her backup (sophie-backup.ts), with its measured reasoning.
         reasoningDisabled: configKey === SOPHIE_CONFIG_KEY && SOPHIE_BACKUP_MODEL.reasoning !== "on",
         beforeProviderCall: async ({ requestBody, at }) => {
@@ -6003,6 +6050,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         thinkingLevel: appConfig.thinkingLevel ?? undefined,
         holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),
         ...(leadTurn ? { endToolName: LEAD_ANSWER_TOOL_NAME } : {}),
+        loopNotes,
         beforeProviderCall: async ({ requestBody }) => {
           await authorizeChatProviderCall(estimateRequestTokens(requestBody));
         },
@@ -6175,7 +6223,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         if (leadTurn && !leadAnswer.json && !answerNudged) {
           console.warn(`[chat] session="${currentSessionId}" lead turn stopped without ${LEAD_ANSWER_TOOL_NAME}; asking for it`);
           answerNudged = true;
-          const note = { type: "text" as const, text: endToolNudgeNote(LEAD_ANSWER_TOOL_NAME) };
+          const note = { type: "text" as const, text: loopNotes.silentTurnAnswerTool(LEAD_ANSWER_TOOL_NAME) };
           if (finalMessage.content.length > 0) {
             turnMessages.push({ role: "assistant", content: finalMessage.content });
             turnMessages.push({ role: "user", content: [note] });
@@ -6196,7 +6244,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
               `(stop_reason=${finalMessage.stop_reason}); asking the model to answer now`,
           );
           answerNudged = true;
-          lastTurn.content = [...lastTurn.content, { type: "text", text: EMPTY_ANSWER_NOTE }];
+          lastTurn.content = [...lastTurn.content, { type: "text", text: loopNotes.silentTurn }];
           continue;
         }
         break;
@@ -6276,7 +6324,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       turnMessages.push({
         role: "user",
         content: isFinalToolRound(depth)
-          ? [...toolResultBlocks, { type: "text", text: leadTurn ? endToolFinalNote(LEAD_ANSWER_TOOL_NAME) : FINAL_ROUND_NOTE }]
+          ? [...toolResultBlocks, { type: "text", text: leadTurn ? loopNotes.finalRoundAnswerTool(LEAD_ANSWER_TOOL_NAME) : loopNotes.finalRound }]
           : toolResultBlocks,
       });
     }
@@ -6966,11 +7014,17 @@ app.get("/internal/distry/config", requireInternalAuth, async (_req, res) => {
     const body = toDistryVersionBody(current);
     const { version: _v, editedBy: _e, note: _n, restoredFrom: _r, createdAt: _c, ...currentDef } = body;
     const allSkills = await listSkills(db);
+    const currentPrompt = definitionOf(current).prompt;
+    const examples = examplesByPart(await listPromptSamples(db));
     return res.json({
       current: body,
       code,
       codeDiffers: JSON.stringify(currentDef) !== JSON.stringify(code),
-      availableTools: availableDistryTools(),
+      availableTools: availableDistryTools().map((t) => {
+        const edited = Object.prototype.hasOwnProperty.call(currentPrompt.toolDescriptions, t.name);
+        return { name: t.name, description: edited ? currentPrompt.toolDescriptions[t.name]! : t.description, codeDescription: t.description, edited, staffOnly: t.staffOnly };
+      }),
+      promptParts: partsForEditor(currentPrompt, current.systemPrompt).map((p) => ({ ...p, example: examples.get(p.id) ?? null })),
       skills: allSkills.map((s) => ({ slug: s.slug, parentSlug: s.parentSlug, title: s.title, description: s.description })),
       models: Object.fromEntries(CHAT_CONFIG_PROVIDERS.map((p) => [p, [...PROVIDER_MODELS[p]]])),
       efforts: [...ANTHROPIC_EFFORTS],
@@ -6984,8 +7038,12 @@ app.get("/internal/distry/config", requireInternalAuth, async (_req, res) => {
 app.put("/internal/distry/config", requireInternalAuth, async (req, res) => {
   const body = DistrySaveRequestSchema.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: "Invalid request", details: body.error.flatten() });
-  const { editedBy, note, ...def } = body.data;
+  const { editedBy, note, prompt, ...rest } = body.data;
   try {
+    // The parts follow the current version unless the save sends their whole state.
+    const current = await currentDistryVersion(db);
+    if (!current) return res.status(503).json({ error: "Distry's definition is not seeded yet (boot in progress)." });
+    const def = { ...rest, prompt: prompt ? promptOverridesFrom(prompt) : definitionOf(current).prompt };
     const saved = await saveDistryVersion(db, def, { editedBy, note: note ?? null });
     return res.json({ version: toDistryVersionBody(saved) });
   } catch (err) {
@@ -7009,6 +7067,20 @@ app.get("/internal/distry/models", requireInternalAuth, async (_req, res) => {
       now: new Date(),
     });
     return res.json(panel);
+  } catch (err) {
+    const mapped = distryErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+// DISTRY-PROMPT-PARTS-1120: the whole prompt of the latest real Distry turn of one audience.
+app.get("/internal/distry/prompt/preview", requireInternalAuth, async (req, res) => {
+  const query = DistryPromptPreviewQuerySchema.safeParse(req.query);
+  if (!query.success) return res.status(400).json({ error: "Invalid request", details: query.error.flatten() });
+  try {
+    const sample = (await listPromptSamples(db)).find((s) => s.audience === query.data.audience);
+    if (!sample) return res.status(404).json({ error: `No Distry turn of audience "${query.data.audience}" recorded yet: the next one will be.` });
+    return res.json(previewBody(sample));
   } catch (err) {
     const mapped = distryErrorStatus(err);
     return res.status(mapped.status).json({ error: mapped.error });
