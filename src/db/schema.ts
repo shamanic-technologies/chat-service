@@ -180,7 +180,7 @@ export const distryConfigVersions = pgTable(
     provider: text("provider").notNull().$type<"anthropic" | "google" | "deepseek">(),
     model: text("model").notNull(),
     effort: text("effort").$type<AnthropicEffort>(),
-    // DISTRY-PROMPT-PARTS-1120 (migration 0043): the parts' order + the texts and tool descriptions
+    // DISTRY-PROMPT-PARTS-1120 (migration 0044): the parts' order + the texts and tool descriptions
     // staff changed. NULL = the code's order and texts (versions saved before it existed).
     promptParts: jsonb("prompt_parts").$type<{ order: string[]; texts: Record<string, string>; toolDescriptions: Record<string, string> } | null>(),
     editedBy: text("edited_by").notNull(),
@@ -193,7 +193,7 @@ export const distryConfigVersions = pgTable(
 
 export type DistryConfigVersion = typeof distryConfigVersions.$inferSelect;
 
-// DISTRY-PROMPT-PARTS-1120 (migration 0043): the last real Distry turn per audience (staff, client,
+// DISTRY-PROMPT-PARTS-1120 (migration 0044): the last real Distry turn per audience (staff, client,
 // guest, lead), as the model received it: system prompt, turn context, tools, and each part rendered.
 // One row per audience, overwritten each turn: the editor's preview and each live part's example.
 export const distryPromptSamples = pgTable("distry_prompt_samples", {
@@ -227,10 +227,8 @@ export const intelligenceIndexReads = pgTable(
     error: text("error"),
     indexVersion: text("index_version"),
     body: jsonb("body"),
-    /** `api` (key set) or `public_page` (the leaderboard page, no key). */
-    source: text("source").$type<"api" | "public_page">(),
-    /** The public page as received (bronze), when read from it. */
-    rawText: text("raw_text"),
+    /** Where the read came from: `api` (the Artificial Analysis Data API). */
+    source: text("source").$type<"api">(),
   },
   (table) => [index("intelligence_index_reads_fetched_idx").on(table.fetchedAt)],
 );

@@ -4589,10 +4589,9 @@ export const DistryModelsResponseSchema = z
       name: z.string(),
       url: z.string(),
       attribution: z.string().openapi({ description: "Show it beside the scores (Artificial Analysis requires it)." }),
-      readFrom: z.enum(["api", "public_page"]).nullable().openapi({ description: "Where the reading served came from: their Data API (key set) or their public leaderboard page." }),
     }),
     refresh: z.object({
-      state: z.enum(["never_read", "ok", "failed", "stale"]),
+      state: z.enum(["no_key", "never_read", "ok", "failed", "stale"]),
       broken: z.boolean().openapi({ description: "true = red on Monitoring (the last read failed, or none succeeded for 48 h)." }),
       sentence: z.string(),
       lastAttemptAt: z.string().nullable(),
@@ -4610,7 +4609,7 @@ registry.registerPath({
   path: "/internal/distry/models",
   tags: ["Distry"],
   summary: "Every model Distry can run: price, Intelligence Index, rank, intelligence per dollar",
-  description: "Staff editor model panel (dashboard v2 Monitoring > Distry). One row per model the definition's providers accept, sorted by intelligence per dollar, best first. Scores come from Artificial Analysis (their API with a key, else their public leaderboard page), read daily and stored; never typed by hand. Each model is read at the thinking Distry runs it.",
+  description: "Staff editor model panel (dashboard v2 Monitoring > Distry). One row per model the definition's providers accept, sorted by intelligence per dollar, best first. Scores come from Artificial Analysis's API, read daily and stored; never typed by hand. Each model is read at the thinking Distry runs it.",
   request: { headers: internalKeyHeader },
   responses: { 200: { description: "The model panel", content: { "application/json": { schema: DistryModelsResponseSchema } } }, ...distryErrors },
 });

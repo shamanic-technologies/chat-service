@@ -5,13 +5,12 @@
  * (dashboard v2 Monitoring > Distry) by `GET /internal/distry/models`; the dashboard computes nothing.
  *
  * Source: Artificial Analysis (https://artificialanalysis.ai, attribution required, served in `source`).
- * With `ARTIFICIAL_ANALYSIS_API_KEY` set, their Data API; without it, their public leaderboard page
- * (`/leaderboards/models`, robots `Allow: /`; owner 2026-11-20 « Can't you parse automatically? » while
- * their signup was broken), whose Next.js payload carries `initialModels`: every model at every thinking
- * level they scored, with its Intelligence Index and the cost per task of running it.
+ * Read from their Data API (`ARTIFICIAL_ANALYSIS_API_KEY`): every model at every thinking level they
+ * scored, with its Intelligence Index and the cost per task of running it. No key = nothing read
+ * (`no_key`, not red). A public-page scrape was shipped and removed the same day (owner got a key).
  *
  * Layers:
- *   bronze  `intelligence_index_reads`  each read as received (API pages or the raw page), or its failure
+ *   bronze  `intelligence_index_reads`  each read as received (the API pages), or its failure
  *   silver  `intelligence_index_scores` one row per Artificial Analysis entry (model x thinking level)
  *   gold    `buildModelPanel`           our models x the latest silver x our catalogue prices
  *
@@ -31,9 +30,6 @@ import { modelDisplayName } from "./model-ids.js";
 type Database = typeof db;
 
 export const ARTIFICIAL_ANALYSIS_MODELS_URL = "https://artificialanalysis.ai/api/v2/language/models/free";
-export const ARTIFICIAL_ANALYSIS_PUBLIC_URL = "https://artificialanalysis.ai/leaderboards/models";
-/** Generic client name (never a person or project detail). */
-const USER_AGENT = "distribute-chat-service";
 /** A successful read is good for a day; the tick re-reads after that. */
 export const INDEX_REFRESH_AFTER_MS = 24 * 60 * 60_000;
 /** After a failed read, wait this long before trying again. */
@@ -74,7 +70,7 @@ export class IndexReadError extends Error {
   constructor(
     message: string,
     readonly httpStatus: number | null,
-    readonly bronze: { pages?: unknown[]; rawText?: string },
+    readonly bronze: { pages?: unknown[] },
   ) {
     super(message);
     this.name = "IndexReadError";
@@ -193,104 +189,10 @@ export async function fetchIndex(
 }
 
 // ---------------------------------------------------------------------------
-// Bronze, path 2: the public leaderboard page (no key)
-// ---------------------------------------------------------------------------
-
-const PublicModelSchema = z
-  .object({
-    id: z.string().min(1),
-    name: z.string().min(1),
-    suffix: z.string().nullish(),
-    release: z.object({ slug: z.string().min(1), name: z.string().min(1) }).passthrough(),
-    modelCreatorName: z.string().nullish(),
-    intelligenceIndex: z.number().nullish(),
-    intelligenceIndexCostPerTask: z.number().nullish(),
-    price1mInputTokens: z.number().nullish(),
-    price1mOutputTokens: z.number().nullish(),
-  })
-  .passthrough();
-
-/** The text of the JSON value (array or object) that starts at `start`, by bracket depth outside strings. */
-function sliceJsonValue(text: string, start: number): string {
-  const open = text[start];
-  if (open !== "[" && open !== "{") throw new Error(`no JSON value at offset ${start}`);
-  let depth = 0;
-  let inString = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-    if (inString) {
-      if (ch === "\\") i++;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') inString = true;
-    else if (ch === "[" || ch === "{") depth++;
-    else if (ch === "]" || ch === "}") {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
-  }
-  throw new Error("unterminated JSON value");
-}
-
-/**
- * The leaderboard page's models. The page streams its data as Next.js flight chunks
- * (`self.__next_f.push([1,"..."])`, JSON string literals); joined and decoded they carry
- * `"initialModels":[...]`. Throws when the payload, the version or any scored model is missing.
- */
-export function parsePublicPage(html: string): { indexVersion: string; entries: IndexEntry[] } {
-  const chunks = [...html.matchAll(/self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)/g)].map((m) => JSON.parse(`"${m[1]}"`) as string);
-  if (chunks.length === 0) throw new Error("the page carries no Next.js data chunks: its layout changed");
-  const payload = chunks.join("");
-  const key = '"initialModels":';
-  const at = payload.indexOf(key);
-  if (at === -1) throw new Error("the page carries no `initialModels`: its layout changed");
-  const list = z.array(PublicModelSchema).safeParse(JSON.parse(sliceJsonValue(payload, at + key.length)));
-  if (!list.success) {
-    throw new Error(`the page's models have a shape we do not read: ${list.error.issues.slice(0, 3).map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
-  }
-  const version = /Intelligence Index v(\d+(?:\.\d+)*)/.exec(html)?.[1];
-  if (!version) throw new Error("the page does not state its Intelligence Index version");
-  const entries: IndexEntry[] = list.data.map((m) => ({
-    aaId: m.id,
-    aaSlug: m.release.slug,
-    aaName: m.name,
-    releaseSlug: m.release.slug,
-    releaseName: m.release.name,
-    variantLabel: m.suffix ?? null,
-    effort: effortOfLabel(m.suffix ?? null),
-    creator: m.modelCreatorName ?? null,
-    indexVersion: version,
-    score: m.intelligenceIndex ?? null,
-    indexCostPerTaskUsd: m.intelligenceIndexCostPerTask ?? null,
-    priceInputPer1mUsd: m.price1mInputTokens ?? null,
-    priceOutputPer1mUsd: m.price1mOutputTokens ?? null,
-  }));
-  if (!entries.some((e) => e.score !== null)) throw new Error(`the page lists ${entries.length} models and none carries an Intelligence Index score`);
-  return { indexVersion: version, entries };
-}
-
-export async function fetchPublicIndex(fetchImpl: typeof fetch = fetch): Promise<{ indexVersion: string; entries: IndexEntry[]; rawText: string }> {
-  let res: Response;
-  try {
-    res = await fetchImpl(ARTIFICIAL_ANALYSIS_PUBLIC_URL, { headers: { "user-agent": USER_AGENT } });
-  } catch (err) {
-    throw new IndexReadError(`Artificial Analysis unreachable: ${err instanceof Error ? err.message : String(err)}`, null, {});
-  }
-  const rawText = await res.text();
-  if (!res.ok) throw new IndexReadError(`Artificial Analysis's leaderboard page answered ${res.status}`, res.status, { rawText });
-  try {
-    return { ...parsePublicPage(rawText), rawText };
-  } catch (err) {
-    throw new IndexReadError(`Artificial Analysis's leaderboard page: ${err instanceof Error ? err.message : String(err)}`, res.status, { rawText });
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Store + refresh
 // ---------------------------------------------------------------------------
 
-export type IndexSource = "api" | "public_page";
+export type IndexSource = "api";
 
 export interface ReadRow {
   id: string;
@@ -373,12 +275,11 @@ export function shouldRefresh(state: IndexState, now: Date): boolean {
   return true;
 }
 
-export type RefreshOutcome = "fresh" | "stored" | "failed";
+export type RefreshOutcome = "no_key" | "fresh" | "stored" | "failed";
 
 /**
- * One refresh tick: the API when a key is set, else the public page. A failure (or a page where nothing
- * scored is found) is stored as a bronze row (status `failed`, the error, what was received) and logged:
- * the panel serves it as broken.
+ * One refresh tick. No key = nothing read, nothing stored (served as `no_key`). A failure is stored as a
+ * bronze row (status `failed`, the error, the pages read) and logged: the panel serves it as broken.
  */
 export async function refreshIntelligenceIndex(args: {
   database: Database;
@@ -388,16 +289,15 @@ export async function refreshIntelligenceIndex(args: {
 }): Promise<RefreshOutcome> {
   const { database, apiKey } = args;
   const now = args.now ?? new Date();
-  const source: IndexSource = apiKey ? "api" : "public_page";
+  const source: IndexSource = "api";
+  if (!apiKey) return "no_key";
   if (!shouldRefresh(await readIndexState(database), now)) return "fresh";
   try {
-    const read = apiKey
-      ? { ...(await fetchIndex(apiKey, args.fetchImpl)), rawText: null as string | null }
-      : { ...(await fetchPublicIndex(args.fetchImpl)), pages: null as unknown[] | null };
+    const read = await fetchIndex(apiKey, args.fetchImpl);
     await database.transaction(async (tx) => {
       const [row] = await tx
         .insert(intelligenceIndexReads)
-        .values({ fetchedAt: now, status: "ok", httpStatus: 200, indexVersion: read.indexVersion, source, body: read.pages, rawText: read.rawText })
+        .values({ fetchedAt: now, status: "ok", httpStatus: 200, indexVersion: read.indexVersion, source, body: read.pages })
         .returning({ id: intelligenceIndexReads.id });
       const byId = new Map(read.entries.map((e) => [e.aaId, e]));
       if (byId.size > 0) {
@@ -418,7 +318,6 @@ export async function refreshIntelligenceIndex(args: {
       error: message,
       source,
       body: bronze.pages ?? null,
-      rawText: bronze.rawText ?? null,
     });
     return "failed";
   }
@@ -609,9 +508,9 @@ export interface ModelPanel {
   indexName: string;
   indexVersion: string | null;
   readAt: string | null;
-  source: { name: string; url: string; attribution: string; readFrom: IndexSource | null };
+  source: { name: string; url: string; attribution: string };
   refresh: {
-    state: "never_read" | "ok" | "failed" | "stale";
+    state: "no_key" | "never_read" | "ok" | "failed" | "stale";
     broken: boolean;
     sentence: string;
     lastAttemptAt: string | null;
@@ -628,9 +527,20 @@ export const PRICE_BASIS =
 export const RATIO_BASIS =
   "Intelligence Index points per US dollar of Artificial Analysis's cost per task of running its Intelligence Index on this model, at the thinking Distry runs it (their published run cost). A model without a published run cost is ranked after them on points per dollar of a blended 1M tokens (3 input : 1 output, our catalogue price), and says so.";
 
-function refreshState(state: IndexState, now: Date): ModelPanel["refresh"] {
+function refreshState(state: IndexState, now: Date, keyConfigured: boolean): ModelPanel["refresh"] {
   const lastAttemptAt = state.latestAttempt?.fetchedAt.toISOString() ?? null;
   const lastSuccessAt = state.latestOk?.read.fetchedAt.toISOString() ?? null;
+  if (!keyConfigured) {
+    return {
+      state: "no_key",
+      broken: false,
+      sentence: state.latestOk
+        ? `No Artificial Analysis key set: showing the reading of ${lastSuccessAt!.slice(0, 10)}, not refreshed.`
+        : "No Artificial Analysis key set yet: no Intelligence Index reading.",
+      lastAttemptAt,
+      lastSuccessAt,
+    };
+  }
   if (state.latestAttempt?.status === "failed") {
     return {
       state: "failed",
@@ -671,17 +581,20 @@ function runCostRatio(score: number | null, costPerTask: number | null): number 
 export function buildModelPanel(args: {
   choices: readonly ModelChoice[];
   state: IndexState;
+  keyConfigured: boolean;
   priceOf: (costName: string) => number | null;
   pricesRead: boolean;
   current: { provider: string; model: string; effort: string | null };
   now: Date;
 }): ModelPanel {
-  const { choices, state, priceOf, pricesRead, current, now } = args;
+  const { choices, state, keyConfigured, priceOf, pricesRead, current, now } = args;
   const entries = state.latestOk?.entries ?? [];
   const currentModelId = resolveModel(current.provider as Provider, current.model).apiModelId;
 
   const noReadingReason = !state.latestOk
-    ? state.latestAttempt?.status === "failed"
+    ? !keyConfigured
+      ? "No Intelligence Index reading: the Artificial Analysis key is not set."
+      : state.latestAttempt?.status === "failed"
       ? `No Intelligence Index reading: the Artificial Analysis read failed (${state.latestAttempt.error ?? "no error recorded"}).`
       : "No Intelligence Index reading yet: the first read has not run."
     : null;
@@ -822,9 +735,8 @@ export function buildModelPanel(args: {
       name: "Artificial Analysis",
       url: "https://artificialanalysis.ai",
       attribution: "Intelligence Index and run cost: Artificial Analysis (artificialanalysis.ai)",
-      readFrom: state.latestOk?.read.source ?? null,
     },
-    refresh: refreshState(state, now),
+    refresh: refreshState(state, now, keyConfigured),
     priceBasis: PRICE_BASIS,
     ratioBasis: RATIO_BASIS,
     current: { provider: current.provider, model: current.model, modelId: currentModelId, effort: current.effort },
