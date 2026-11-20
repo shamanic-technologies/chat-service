@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import request from "supertest";
 
 process.env.NODE_ENV = "test";
@@ -47,9 +47,15 @@ const ATTACKER_HEADERS = {
   "x-run-id": "22222222-2222-4222-8222-222222222222",
 };
 
+let loaded: import("express").Express;
 async function app() {
-  return (await import("../../src/index.js")).default;
+  return loaded;
 }
+
+// Importing the whole service is slow on a loaded machine: load it once, apart.
+beforeAll(async () => {
+  loaded = (await import("../../src/index.js")).default;
+}, 120_000);
 
 describe("service key is compared, not just present (SEC-CHAT-IDENTITY-1120)", () => {
   beforeEach(() => {
