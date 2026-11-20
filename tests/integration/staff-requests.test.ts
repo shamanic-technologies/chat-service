@@ -70,12 +70,19 @@ describe("staff requests", { timeout: 30000 }, () => {
   });
 
   it("a staff requester gets the record and the issue, never the Telegram ping", async () => {
-    const d = deps("kevin+test@distribute.you");
-    const r = await submitStaffRequest(db as never, { orgId: `org-${RUN}-b`, userId: "u-2", brandId: null, sessionId: null }, input, d);
+    const d = deps("kevin@distribute.you");
+    const r = await submitStaffRequest(db as never, { orgId: `org-${RUN}-b`, userId: "7b417d70-29b5-471b-a8e1-20e75225c0af", brandId: null, sessionId: null }, input, d);
     expect(r.issueUrl).not.toBeNull();
     expect(r.staffPinged).toBe(false);
     expect(r.telegramSkippedReason).toBe("requester_is_staff");
     expect(d.sendStaffTelegram).not.toHaveBeenCalled();
+  });
+
+  it("a customer whose stored email is a staff address still pings staff (SEC-STAFF-EMAIL-1120)", async () => {
+    const d = deps("kevin.lourd@gmail.com");
+    const r = await submitStaffRequest(db as never, { orgId: `org-${RUN}-e`, userId: "a4651533-7acc-4c6e-be22-3a9b0e037568", brandId: null, sessionId: null }, input, d);
+    expect(r.staffPinged).toBe(true);
+    expect(d.sendStaffTelegram).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the request when the issue cannot be opened, and retries the issue on a repeat", async () => {

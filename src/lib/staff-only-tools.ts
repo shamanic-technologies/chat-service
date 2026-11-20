@@ -1,4 +1,5 @@
-import { fetchRequesterEmail, isStaffEmail } from "./staff-requests.js";
+import { fetchRequesterEmail } from "./staff-requests.js";
+import { isStaffUser } from "./staff-identity.js";
 
 // ---------------------------------------------------------------------------
 // Staff-only Copilot tools.
@@ -7,8 +8,10 @@ import { fetchRequesterEmail, isStaffEmail } from "./staff-requests.js";
 // org's cold emails are written from them. api-service gates those routes on
 // `requireStaff` = the platform key AND a forwarded `x-email` in its staff
 // allowlist. chat-service learns who is chatting from the gateway-resolved
-// `x-user-id` (never from anything the browser types): it asks client-service
-// for that user's email. Staff get the tools and the call carries their email
+// `x-user-id` (never from anything the browser types). Staff = that user id is
+// a pinned staff user row whose stored email is still the staff address
+// (`isStaffUser`, SEC-STAFF-EMAIL-1120): a stored email alone proves nothing,
+// any customer can create a user carrying one. Staff get the tools and the call carries their email
 // as `x-email`; anyone else never sees the tools (filtered out of the turn's
 // tool list, so the dispatcher's allowedTools guard also refuses a call).
 // ---------------------------------------------------------------------------
@@ -34,7 +37,7 @@ export async function lookupRequester(
 ): Promise<Requester> {
   try {
     const email = await fetchEmail(userId);
-    return { email, isStaff: isStaffEmail(email) };
+    return { email, isStaff: isStaffUser(userId, email) };
   } catch (err) {
     console.error(`[chat] staff lookup failed for user="${userId}", treating as a customer:`, err);
     return { email: null, isStaff: false };

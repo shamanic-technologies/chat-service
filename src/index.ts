@@ -160,6 +160,7 @@ import {
 import { readCompanyFinancials, featuresFetchFromEnv } from "./agent/finance-tools.js";
 import { engineToolsFrom, listEngines, workflowFetchFromEnv, callEngine, readEngineCall, callAnswer, READ_ENGINE_CALL_TOOL_NAME } from "./agent/engine-tools.js";
 import { hasStaffOnlyTool, lookupRequester, toolsForRequester, type Requester } from "./lib/staff-only-tools.js";
+import { isStaffUser } from "./lib/staff-identity.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
 import { readPlatformCaller, platformRunCreateFailure } from "./lib/platform-parent-run.js";
 import { createRun, updateRunStatus, addRunCosts, updateRunCostStatus, createPlatformRun, addPlatformRunCosts, updatePlatformRunStatus, type CostItem, type RunIdentityHeaders } from "./lib/runs-client.js";
@@ -236,7 +237,6 @@ import {
   staffRequestResultForModel,
   StaffRequestValidationError,
   fetchRequesterEmail,
-  isStaffEmail,
   sendStaffTelegram,
   submitStaffRequest,
   toStaffRequestBody,
@@ -6858,7 +6858,7 @@ app.post("/internal/copilot/lead-turns", requireInternalAuth, async (req, res) =
 const proactiveDeps: ProactiveDeps = {
   db,
   fetchEmail: (userId) => fetchRequesterEmail(userId),
-  isStaffEmail: (email) => isStaffEmail(email),
+  isStaffUser: (userId, email) => isStaffUser(userId, email),
   runChat: async (args) => {
     const res = await fetch(`http://127.0.0.1:${PORT}/chat`, {
       method: "POST",

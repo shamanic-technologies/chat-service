@@ -1,3 +1,4 @@
+import { isStaffUser } from "./staff-identity.js";
 import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
 import type { db as Db } from "../db/index.js";
 import { staffRequests, type StaffRequest, type StaffRequestKind, type StaffRequestPiece } from "../db/schema.js";
@@ -70,22 +71,6 @@ export const STAFF_REQUEST_REPOS = [
 export type StaffRequestRepo = (typeof STAFF_REQUEST_REPOS)[number];
 
 export const PIECE_KEY_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-/**
- * Staff, mirrored from api-service `src/lib/staff.ts` (STAFF_EMAILS) plus any
- * `@distribute.you` address, plus-addressing ignored — the same rule as
- * billing-service `isStaffEmail`.
- */
-const STAFF_EMAILS = new Set(["kevin.lourd@gmail.com", "kevin@distribute.you"]);
-const STAFF_DOMAIN = "@distribute.you";
-
-export function isStaffEmail(email: string | null | undefined): boolean {
-  const normalized = email?.trim().toLowerCase();
-  if (!normalized) return false;
-  if (normalized.endsWith(STAFF_DOMAIN)) return true;
-  const [local, domain] = normalized.split("@");
-  return STAFF_EMAILS.has(`${local.split("+")[0]}@${domain}`);
-}
 
 export class StaffRequestValidationError extends Error {
   constructor(message: string) {
@@ -484,7 +469,9 @@ export async function submitStaffRequest(
     lookupError = err instanceof Error ? err.message : String(err);
     console.error(`[staff-request] requester lookup failed for user="${ctx.userId}": ${lookupError}`);
   }
-  const requesterIsStaff = isStaffEmail(requesterEmail);
+  // Silence only (no Telegram ping, "(staff)" label): still the one proven-identity
+  // predicate, so a customer storing a staff email cannot mute their own alert.
+  const requesterIsStaff = isStaffUser(ctx.userId, requesterEmail);
   const isContact = input.kind === "contact_human";
   if (!isContact && !input.repo) throw new StaffRequestValidationError(`${input.kind} needs a repo`);
 
