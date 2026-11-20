@@ -19,7 +19,7 @@
  * at the thinking Distry runs = `score: null` + a reason. A read that fails or finds nothing is stored
  * and served as `refresh.broken` (red on Monitoring), never a silent stale value.
  */
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import type { db } from "../db/index.js";
 import { intelligenceIndexReads, intelligenceIndexScores } from "../db/schema.js";
@@ -324,7 +324,13 @@ const READ_COLUMNS = {
 
 export async function readIndexState(database: Database): Promise<IndexState> {
   // The bronze payloads (raw page, API pages) are never read back here: ~1.4 MB a read.
-  const [attempt] = await database.select(READ_COLUMNS).from(intelligenceIndexReads).orderBy(desc(intelligenceIndexReads.fetchedAt)).limit(1);
+  // A `superseded` read (dropped by a migration) is no attempt: it must not hold the next read back an hour.
+  const [attempt] = await database
+    .select(READ_COLUMNS)
+    .from(intelligenceIndexReads)
+    .where(ne(intelligenceIndexReads.status, "superseded"))
+    .orderBy(desc(intelligenceIndexReads.fetchedAt))
+    .limit(1);
   const [ok] = await database
     .select(READ_COLUMNS)
     .from(intelligenceIndexReads)
