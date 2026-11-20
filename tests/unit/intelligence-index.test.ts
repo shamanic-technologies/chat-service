@@ -103,6 +103,15 @@ describe("parseIndexPage + fetchIndex (key set)", () => {
     expect(page.entries[0]).toMatchObject({ releaseSlug: "glm-5-3", releaseName: "GLM-5.3", variantLabel: "Max", effort: "max", score: 31.7, indexCostPerTaskUsd: 5.0093 });
   });
 
+  it("groups the API's per-level slugs into one release (prod 2026-11-20: claude-haiku-5-5-high ...)", () => {
+    const mk = (slug: string, label: string, score: number) => ({ id: slug, name: `Claude Haiku 5.5 (${label})`, slug, evaluations: { artificial_analysis_intelligence_index: score }, artificial_analysis_intelligence_index_cost: { cost_per_task: { total_cost: 0.1 } } });
+    const { entries } = parseIndexPage({ intelligence_index_version: 5, pagination: { has_more: false }, data: [mk("claude-haiku-5-5", "Max", 36.5), mk("claude-haiku-5-5-low", "Low", 18.6), mk("claude-haiku-5-5-high", "High", 29.9)] });
+    expect(entries.map((e) => e.releaseSlug)).toEqual(["claude-haiku-5-5", "claude-haiku-5-5", "claude-haiku-5-5"]);
+    const m = matchIndexEntry({ modelId: "claude-haiku-5-5", displayName: "Claude Haiku 5.5" }, entries);
+    expect(m.kind === "matched" && m.variants.length).toBe(3);
+    if (m.kind === "matched") expect(pickVariant("Claude Haiku 5.5", m.variants, { level: "low", words: "effort low" })).toMatchObject({ kind: "picked", entry: { score: 18.6 } });
+  });
+
   it("a refusal throws IndexReadError with the status", async () => {
     const fake = (async () => new Response('{"error":"bad key"}', { status: 401 })) as unknown as typeof fetch;
     const err = await fetchIndex("k", fake).catch((e) => e);

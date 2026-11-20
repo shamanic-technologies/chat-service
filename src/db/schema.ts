@@ -198,7 +198,7 @@ export const intelligenceIndexReads = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
-    status: text("status").notNull().$type<"ok" | "failed">(),
+    status: text("status").notNull().$type<"ok" | "failed" | "superseded">(),
     httpStatus: integer("http_status"),
     error: text("error"),
     indexVersion: text("index_version"),

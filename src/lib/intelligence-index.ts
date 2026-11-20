@@ -129,11 +129,15 @@ export function parseIndexPage(body: unknown): { indexVersion: string; hasMore: 
     hasMore: parsed.data.pagination.has_more,
     entries: parsed.data.data.map((e) => {
       const { release, label } = splitVariant(e.name);
+      // The API slugs each thinking level apart ("claude-haiku-5-5-high"): the release slug is the slug
+      // without its own label's slug, when it ends with it (their words, never a guessed suffix).
+      const labelSlug = label ? `-${label.split(",")[0]!.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : null;
+      const releaseSlug = labelSlug && e.slug.endsWith(labelSlug) ? e.slug.slice(0, -labelSlug.length) : e.slug;
       return {
         aaId: e.id,
         aaSlug: e.slug,
         aaName: e.name,
-        releaseSlug: e.slug,
+        releaseSlug,
         releaseName: release,
         variantLabel: label,
         effort: effortOfLabel(label),
@@ -291,7 +295,8 @@ export type IndexSource = "api" | "public_page";
 export interface ReadRow {
   id: string;
   fetchedAt: Date;
-  status: "ok" | "failed";
+  /** `superseded` = an early read whose silver was dropped by migration 0042 (re-read at the next tick). */
+  status: "ok" | "failed" | "superseded";
   error: string | null;
   indexVersion: string | null;
   source: IndexSource | null;
@@ -510,10 +515,15 @@ export function matchIndexEntry(model: Pick<ModelChoice, "modelId" | "displayNam
     (e) => nameTokens(e.releaseSlug) === displayTokens,
     (e) => nameTokens(e.releaseName) === displayTokens,
   ];
+  // A release = the entries sharing a release name (every thinking level of one model).
+  const releaseOf = (e: IndexEntry) => nameTokens(e.releaseName);
   for (const test of levels) {
     const hits = entries.filter(test);
-    const releases = [...new Set(hits.map((e) => e.releaseSlug))];
-    if (releases.length === 1) return { kind: "matched", releaseSlug: releases[0]!, variants: entries.filter((e) => e.releaseSlug === releases[0]) };
+    const releases = [...new Set(hits.map(releaseOf))];
+    if (releases.length === 1) {
+      const variants = entries.filter((e) => releaseOf(e) === releases[0]);
+      return { kind: "matched", releaseSlug: hits[0]!.releaseSlug, variants };
+    }
     if (releases.length > 1) return { kind: "ambiguous", releases: [...new Set(hits.map((e) => e.releaseName))] };
   }
   const ours = displayTokens.split(" ");
