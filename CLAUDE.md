@@ -299,6 +299,10 @@ A return is told to a client only as the EXPECTED return (features `expectedRetu
 
 **Which orgs declared = ONE internal read (LOCAL-CLAUDE-ORGS-1116):** `GET /internal/local-llm/orgs?orgIds=` serves every declaring org (+ declarer, runner, pending calls) so the Mac runner follows a declaration made anywhere within its refresh, never one `GET /orgs/local-llm` per org. Who may see which org is the GATEWAY's decision (it passes the key's reachable orgs as `orgIds`; staff omit it); never add a membership or staff check here.
 
+## A customer-supplied URL is fetched ONLY through `publicFetch` (SEC-MCP-SSRF-1120, prod 2026-11-20)
+
+An attacker plugged ~70 brand MCP servers on public redirectors (tinyurl, httpbin redirect-to) pointing at `http://mcp-service:8080/mcp`, `brand-service:8080/health`...: the global `fetch` followed them from inside our docker network and the stored check echoed the internal answers. `src/lib/safe-fetch.ts` checks EVERY hop (URL + each redirect, followed by hand) after DNS (any private answer refuses), pins the socket to the checked address, refuses with ONE generic message. Call sites: brand MCP (`mcp-client.ts`, check AND tool calls), `fetchImageAsBase64`, `fetchJudgmentImage`, transcription `probeSource` + download. **Never fetch a URL a caller, a brand or a model supplied with the global `fetch`**, never echo a remote body into a stored/returned error, never widen the blocked ranges' exceptions for a "trusted" caller. A new call site imports `publicFetch`; tests stub the network with `transport`/`resolve`, never by dropping the guard.
+
 ## Code Conventions
 
 - TypeScript strict mode, ESM modules

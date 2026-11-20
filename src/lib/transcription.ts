@@ -21,6 +21,7 @@
 // ≈ $0.04 on Flash 3.8 with the answer).
 // ---------------------------------------------------------------------------
 
+import { PUBLIC_ONLY_MESSAGE, PublicUrlRefusedError, publicFetch } from "./safe-fetch.js";
 import { buildThinkingConfig, geminiCostPrefix } from "./gemini.js";
 import { readGeminiBilledTokens, type GeminiCostLine, type GeminiUsageMetadata } from "./gemini-usage.js";
 
@@ -179,12 +180,14 @@ function readSourceSize(res: Response): number | null {
 export async function probeSource(url: string): Promise<SourceInfo> {
   let res: Response;
   try {
-    res = await fetch(url, {
+    // A caller's file URL: public internet only, every redirect re-checked (SEC-MCP-SSRF-1120).
+    res = await publicFetch(url, {
       method: "GET",
       headers: { Range: "bytes=0-0" },
       signal: AbortSignal.timeout(SOURCE_PROBE_TIMEOUT_MS),
     });
   } catch (err) {
+    if (err instanceof PublicUrlRefusedError) throw new TranscriptionError("source_unreachable", `Could not reach the file URL: ${PUBLIC_ONLY_MESSAGE}.`);
     throw new TranscriptionError(
       "source_unreachable",
       `Could not reach the file URL: ${err instanceof Error ? err.message : String(err)}`,
@@ -340,7 +343,8 @@ export async function uploadSourceToGemini(params: {
     );
   }
 
-  const download = await fetch(url, { method: "GET", signal });
+  // Checked again: the name may point elsewhere since the probe (SEC-MCP-SSRF-1120).
+  const download = await publicFetch(url, { method: "GET", signal });
   if (!download.ok || !download.body) {
     throw new TranscriptionError(
       "source_unreachable",
