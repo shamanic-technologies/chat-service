@@ -27,6 +27,7 @@ import { brandMcpServers, type BrandMcpServer } from "../db/schema.js";
 import type { WorkflowTrackingHeaders } from "../middleware/auth.js";
 import type { ToolDefinition } from "./gemini-chat.js";
 import { McpError, McpSession, type McpCallResult, type McpTool } from "./mcp-client.js";
+import { PublicUrlRefusedError, checkPublicUrl, type Resolver } from "./safe-fetch.js";
 import { traceEvent } from "./trace-event.js";
 
 /** Run event of one brand tool call. */
@@ -149,6 +150,23 @@ export function mcpUrlProblem(raw: string): string | null {
   return null;
 }
 
+const NOT_PUBLIC = "The server must be reachable on the public internet.";
+
+/**
+ * The name must resolve to public addresses only (`127.0.0.1.nip.io` does
+ * not). A name that does not resolve yet is left to the connect check, which
+ * re-checks every hop and every redirect anyway (`publicFetch`).
+ */
+export async function mcpUrlNotPublic(raw: string, resolve?: Resolver): Promise<string | null> {
+  try {
+    await checkPublicUrl(raw, { protocols: ["https:"], resolve });
+    return null;
+  } catch (err) {
+    if (err instanceof PublicUrlRefusedError) return NOT_PUBLIC;
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Connect check (create, re-check, turn start)
 // ---------------------------------------------------------------------------
@@ -232,14 +250,14 @@ export interface CreateServerInput {
 
 /** Stores a brand's server (its secret in key-service), connects, stores what the check found. */
 export async function createServer(
-  deps: { db: typeof Db; secrets?: SecretStore; sessionFactory?: SessionFactory },
+  deps: { db: typeof Db; secrets?: SecretStore; sessionFactory?: SessionFactory; resolve?: Resolver },
   caller: KeyCaller,
   brandId: string,
   input: CreateServerInput,
 ): Promise<BrandMcpServer> {
   const secrets = deps.secrets ?? keyServiceSecrets;
   const url = input.url.trim();
-  const problem = mcpUrlProblem(url);
+  const problem = mcpUrlProblem(url) ?? (await mcpUrlNotPublic(url, deps.resolve));
   if (problem) throw new BrandMcpInputError(problem, 400);
   const existing = await listServers(deps.db, caller.orgId, brandId);
   if (existing.some((s) => s.url === url)) throw new BrandMcpInputError("This server is already plugged for this brand: re-check it or delete it first.", 409);

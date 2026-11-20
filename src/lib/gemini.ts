@@ -3,6 +3,7 @@
 // Used by POST /complete for vision tasks (gemini-3.1-flash-lite)
 // ---------------------------------------------------------------------------
 
+import { publicFetch } from "./safe-fetch.js";
 import { readGeminiBilledTokens, type GeminiCostLine, type GeminiUsageMetadata } from "./gemini-usage.js";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
@@ -389,7 +390,8 @@ export async function fetchImageAsBase64(url: string): Promise<{ data: string; m
   const IMAGE_FETCH_TIMEOUT_MS = 30_000;
   let res: Response;
   try {
-    res = await fetch(url, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS) });
+    // A caller's image URL: public internet only, every redirect re-checked (SEC-MCP-SSRF-1120).
+    res = await publicFetch(url, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS) });
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === "TimeoutError") {
       throw new Error(
