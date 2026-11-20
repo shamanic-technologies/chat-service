@@ -176,7 +176,7 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     const A = "11111111-1111-4111-8111-111111111111";
     const B = "22222222-2222-4222-8222-222222222222";
     const C = "33333333-3333-4333-8333-333333333333";
-    const empty = await request(app).get("/internal/local-llm/orgs").set({ "x-api-key": "k" });
+    const empty = await request(app).get("/internal/local-llm/orgs").set({ "x-api-key": "test-key" });
     expect(empty.status).toBe(200);
     expect(empty.body).toEqual({ orgs: [] });
 
@@ -191,19 +191,19 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
       pickupDeadlineAt: new Date(Date.now() + 60_000), answerDeadlineAt: new Date(Date.now() + 120_000),
     });
 
-    const all = await request(app).get("/internal/local-llm/orgs").set({ "x-api-key": "k" });
+    const all = await request(app).get("/internal/local-llm/orgs").set({ "x-api-key": "test-key" });
     expect(all.status).toBe(200);
     expect(all.body.orgs.map((o: { orgId: string }) => o.orgId).sort()).toEqual([A, B].sort());
     const b = all.body.orgs.find((o: { orgId: string }) => o.orgId === B);
     expect(b).toMatchObject({ declaredByUserId: "user-b", pendingCalls: 1, runner: { connected: false, lastSeenAt: null } });
     expect(typeof b.declaredAt).toBe("string");
 
-    const narrowed = await request(app).get(`/internal/local-llm/orgs?orgIds=${A},${C}`).set({ "x-api-key": "k" });
+    const narrowed = await request(app).get(`/internal/local-llm/orgs?orgIds=${A},${C}`).set({ "x-api-key": "test-key" });
     expect(narrowed.body.orgs.map((o: { orgId: string }) => o.orgId)).toEqual([A]);
-    const none = await request(app).get("/internal/local-llm/orgs?orgIds=").set({ "x-api-key": "k" });
+    const none = await request(app).get("/internal/local-llm/orgs?orgIds=").set({ "x-api-key": "test-key" });
     expect(none.body).toEqual({ orgs: [] });
 
-    expect((await request(app).get("/internal/local-llm/orgs?orgIds=org_abc").set({ "x-api-key": "k" })).status).toBe(400);
+    expect((await request(app).get("/internal/local-llm/orgs?orgIds=org_abc").set({ "x-api-key": "test-key" })).status).toBe(400);
     expect((await request(app).get("/internal/local-llm/orgs")).status).toBe(401);
   });
 

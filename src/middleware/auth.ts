@@ -1,4 +1,44 @@
 import type { Request, Response, NextFunction } from "express";
+import { createHash, timingSafeEqual } from "node:crypto";
+
+/**
+ * The caller's `x-api-key` MUST equal this service's own `CHAT_SERVICE_API_KEY`
+ * (SEC-CHAT-IDENTITY-1120). chat-service trusts `x-org-id` / `x-user-id` as the
+ * caller's identity, so ONLY a holder of the service key may state them. Until
+ * 2026-11-20 both middlewares checked the header was PRESENT, never its value,
+ * while chat.distribute.you is publicly routed: anyone could send any key and
+ * any org/user, read every org's conversations, run Sophie as another client's
+ * user and call `/internal/transfer-brand` to move a client's sessions into
+ * their own org. Never relax this to a presence check, and never add a default
+ * or test bypass: an unset key refuses every request (503), fail closed.
+ */
+export type ServiceKeyVerdict = "ok" | "missing" | "wrong" | "unconfigured";
+
+function digest(value: string): Buffer {
+  return createHash("sha256").update(value, "utf8").digest();
+}
+
+export function checkServiceKey(header: unknown): ServiceKeyVerdict {
+  if (typeof header !== "string" || header.length === 0) return "missing";
+  const expected = process.env.CHAT_SERVICE_API_KEY;
+  if (!expected) return "unconfigured";
+  return timingSafeEqual(digest(header), digest(expected)) ? "ok" : "wrong";
+}
+
+/** Answers the refusal and returns false, or returns true for a caller holding the key. */
+function refuseUnlessServiceKey(req: Request, res: Response): boolean {
+  const verdict = checkServiceKey(req.headers["x-api-key"]);
+  if (verdict === "ok") return true;
+  if (verdict === "missing") {
+    res.status(401).json({ error: "x-api-key header is required" });
+  } else if (verdict === "unconfigured") {
+    console.error("[chat-service] CHAT_SERVICE_API_KEY is not set: refusing every authenticated request");
+    res.status(503).json({ error: "Service key not configured" });
+  } else {
+    res.status(401).json({ error: "Invalid API key" });
+  }
+  return false;
+}
 
 export interface WorkflowTrackingHeaders {
   campaignId?: string;
@@ -45,11 +85,7 @@ export function requireAuth(
   res: Response,
   next: NextFunction,
 ): void {
-  const apiKey = req.headers["x-api-key"];
-  if (!apiKey || typeof apiKey !== "string") {
-    res.status(401).json({ error: "x-api-key header is required" });
-    return;
-  }
+  if (!refuseUnlessServiceKey(req, res)) return;
 
   const orgId = req.headers["x-org-id"];
   const userId = req.headers["x-user-id"];
@@ -96,10 +132,6 @@ export function requireInternalAuth(
   res: Response,
   next: NextFunction,
 ): void {
-  const apiKey = req.headers["x-api-key"];
-  if (!apiKey || typeof apiKey !== "string") {
-    res.status(401).json({ error: "x-api-key header is required" });
-    return;
-  }
+  if (!refuseUnlessServiceKey(req, res)) return;
   next();
 }

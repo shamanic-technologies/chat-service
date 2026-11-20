@@ -6701,7 +6701,7 @@ const telegramDeps: TelegramDeps = {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-api-key": process.env.CHAT_SERVICE_API_KEY || "chat-service-self",
+        "x-api-key": process.env.CHAT_SERVICE_API_KEY ?? "",
         "x-org-id": args.orgId,
         "x-user-id": args.userId,
         "x-run-id": args.runId,
@@ -6741,7 +6741,7 @@ const webDeps: WebDeps = {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-api-key": process.env.CHAT_SERVICE_API_KEY || "chat-service-self",
+        "x-api-key": process.env.CHAT_SERVICE_API_KEY ?? "",
         "x-org-id": args.orgId,
         "x-user-id": args.userId,
         "x-run-id": args.runId,
@@ -6801,7 +6801,7 @@ const leadTurnDeps: LeadTurnDeps = {
       headers: {
         ...args.trackingHeaders,
         "content-type": "application/json",
-        "x-api-key": process.env.CHAT_SERVICE_API_KEY || "chat-service-self",
+        "x-api-key": process.env.CHAT_SERVICE_API_KEY ?? "",
         "x-org-id": args.orgId,
         "x-user-id": args.userId,
         "x-run-id": args.runId,
@@ -6865,7 +6865,7 @@ const proactiveDeps: ProactiveDeps = {
       headers: {
         ...args.trackingHeaders,
         "content-type": "application/json",
-        "x-api-key": process.env.CHAT_SERVICE_API_KEY || "chat-service-self",
+        "x-api-key": process.env.CHAT_SERVICE_API_KEY ?? "",
         "x-org-id": args.orgId,
         "x-user-id": args.userId,
         "x-run-id": args.runId,
@@ -7373,6 +7373,11 @@ app.post("/orgs/local-llm/work/:id/result", requireAuth, async (req, res) => {
 
 // Only start server if not in test environment
 if (process.env.NODE_ENV !== "test") {
+  // SEC-CHAT-IDENTITY-1120: every route trusts x-org-id / x-user-id from a
+  // caller holding this key; without it the service would refuse everything.
+  if (!process.env.CHAT_SERVICE_API_KEY) {
+    throw new Error("[chat-service] CHAT_SERVICE_API_KEY is required: it is the only proof a caller may state an org and user");
+  }
   migrate(db, { migrationsFolder: "./drizzle" })
     .then(async () => {
       console.log("Migrations complete");

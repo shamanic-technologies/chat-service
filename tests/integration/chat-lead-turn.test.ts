@@ -194,7 +194,7 @@ function baseRoutes(gemini: { bodies: Array<Record<string, unknown>>; replies: G
   ];
 }
 
-const HEADERS = { "x-api-key": "svc", "x-run-id": RUN, "x-org-id": ORG, "x-user-id": USER, "x-campaign-id": "camp-1", "x-workflow-slug": "lead-follow-up-v3" };
+const HEADERS = { "x-api-key": "test-key", "x-run-id": RUN, "x-org-id": ORG, "x-user-id": USER, "x-campaign-id": "camp-1", "x-workflow-slug": "lead-follow-up-v3" };
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -307,11 +307,11 @@ describe("POST /internal/copilot/lead-turns: the Copilot writes the Lead event a
     const app = (await import("../../src/index.js")).default;
     const bad = await request(app).post("/internal/copilot/lead-turns").set(HEADERS).send({ ...BODY, messageField: "decisionx" });
     expect(bad.status).toBe(400);
-    const noHeaders = await request(app).post("/internal/copilot/lead-turns").set({ "x-api-key": "svc" }).send(BODY);
+    const noHeaders = await request(app).post("/internal/copilot/lead-turns").set({ "x-api-key": "test-key" }).send(BODY);
     expect(noHeaders.status).toBe(400);
     const chat = await request(app)
       .post("/chat")
-      .set({ "x-api-key": "k", "x-org-id": ORG, "x-user-id": USER, "x-run-id": RUN })
+      .set({ "x-api-key": "test-key", "x-org-id": ORG, "x-user-id": USER, "x-run-id": RUN })
       .send({ configKey: "copilot", message: "hi", sessionId: SESSION, leadTurnId: TURN_ID });
     expect(chat.status).toBe(400);
     expect(state.leadTurns).toEqual([]);

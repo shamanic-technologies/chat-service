@@ -232,7 +232,7 @@ describe("brandTools on an Anthropic model", () => {
 
     const res = await request(app)
       .post("/internal/platform-complete")
-      .set({ "x-api-key": "test-internal-key" })
+      .set({ "x-api-key": "test-key" })
       .send({ support: { kind: "staff_experiment", reason: "chat-service test" }, message: "m", systemPrompt: "s", provider: "anthropic", model: "claude-opus", responseSchema: schema, brandTools: { orgId: AUTH["x-org-id"], brandId: BRAND_ID } });
 
     expect(res.status).toBe(200);
@@ -253,7 +253,7 @@ describe("brandTools on an Anthropic model", () => {
 
     const res = await request(app)
       .post("/internal/platform-complete")
-      .set({ "x-api-key": "test-internal-key" })
+      .set({ "x-api-key": "test-key" })
       .send({ support: { kind: "staff_experiment", reason: "chat-service test" }, message: "m", systemPrompt: "s", provider: "anthropic", model: "claude-opus", responseSchema: schema, brandTools: { orgId: AUTH["x-org-id"], brandId: BRAND_ID } });
 
     expect(res.status).toBe(502);

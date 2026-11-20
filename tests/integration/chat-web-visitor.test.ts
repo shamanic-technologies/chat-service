@@ -212,7 +212,7 @@ function baseRoutes(gemini: { calls: number; bodies: Array<Record<string, unknow
   ];
 }
 
-const SERVICE = { "x-api-key": "svc" };
+const SERVICE = { "x-api-key": "test-key" };
 const VISITOR = "v_test_visitor_0001";
 
 function freshSession(channelPhone: string | null = null) {
@@ -401,7 +401,7 @@ describe("POST /internal/copilot/web-messages: a visitor of our site talks with 
     routes.push(...baseRoutes({ calls: 0, bodies: [] }, app, []));
     const res = await request(app)
       .post("/chat")
-      .set({ "x-api-key": "k", "x-org-id": ORG, "x-user-id": USER, "x-run-id": RUN })
+      .set({ "x-api-key": "test-key", "x-org-id": ORG, "x-user-id": USER, "x-run-id": RUN })
       .send({ configKey: "copilot", message: "hi", sessionId: SESSION, webVisitorId: VISITOR });
     expect(res.status).toBe(400);
     expect(state.messageInserts).toEqual([]);

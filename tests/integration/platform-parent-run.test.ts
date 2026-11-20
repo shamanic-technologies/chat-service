@@ -136,7 +136,7 @@ describe("platform calls on behalf of a caller's run", () => {
         const cap = { headers: [] as Array<Record<string, string>>, bodies: [] as Array<Record<string, unknown>> };
         routes.push(platformKey(r.provider), runCreate(cap), runCosts, runStatus, r.vendor);
 
-        const res = await request(app).post(r.path).set({ "x-api-key": "k", "x-run-id": CALLER_RUN }).send(r.body);
+        const res = await request(app).post(r.path).set({ "x-api-key": "test-key", "x-run-id": CALLER_RUN }).send(r.body);
 
         expect(res.status).toBe(200);
         expect(res.body.runId).toBe(PLATFORM_RUN);
@@ -158,7 +158,7 @@ describe("platform calls on behalf of a caller's run", () => {
         const cap = { headers: [] as Array<Record<string, string>> };
         routes.push(platformKey(r.provider), runCreate(cap), runCosts, runStatus, r.vendor);
 
-        const res = await request(app).post(r.path).set({ "x-api-key": "k" }).send(r.body);
+        const res = await request(app).post(r.path).set({ "x-api-key": "test-key" }).send(r.body);
 
         expect(res.status).toBe(400);
         expect(res.body.retryable).toBe(false);
@@ -171,7 +171,7 @@ describe("platform calls on behalf of a caller's run", () => {
         routes.push(platformKey(r.provider), runCreate(cap), runCosts, runStatus, r.vendor);
         const support = { kind: "staff_experiment", reason: "nightly staff probe" };
 
-        const res = await request(app).post(r.path).set({ "x-api-key": "k" }).send({ ...r.body, support });
+        const res = await request(app).post(r.path).set({ "x-api-key": "test-key" }).send({ ...r.body, support });
 
         expect(res.status).toBe(200);
         expect(cap.bodies[0]).toMatchObject({ support });
@@ -184,7 +184,7 @@ describe("platform calls on behalf of a caller's run", () => {
 
         const res = await request(app)
           .post(r.path)
-          .set({ "x-api-key": "k", "x-run-id": CALLER_RUN })
+          .set({ "x-api-key": "test-key", "x-run-id": CALLER_RUN })
           .send({ ...r.body, support: { kind: "platform_llm", reason: "x" } });
 
         expect(res.status).toBe(400);
@@ -196,7 +196,7 @@ describe("platform calls on behalf of a caller's run", () => {
         const cap = { headers: [] as Array<Record<string, string>> };
         routes.push(platformKey(r.provider), runCreate(cap), runCosts, runStatus, r.vendor);
 
-        const res = await request(app).post(r.path).set({ "x-api-key": "k" }).send({ ...r.body, support: { kind: "marketing", reason: "x" } });
+        const res = await request(app).post(r.path).set({ "x-api-key": "test-key" }).send({ ...r.body, support: { kind: "marketing", reason: "x" } });
 
         expect(res.status).toBe(400);
         expect(cap.headers).toHaveLength(0);
@@ -206,7 +206,7 @@ describe("platform calls on behalf of a caller's run", () => {
         const cap = { headers: [] as Array<Record<string, string>> };
         routes.push(platformKey(r.provider), runCreate(cap), runCosts, runStatus, r.vendor);
 
-        const res = await request(app).post(r.path).set({ "x-api-key": "k", "x-run-id": "not-a-run" }).send(r.body);
+        const res = await request(app).post(r.path).set({ "x-api-key": "test-key", "x-run-id": "not-a-run" }).send(r.body);
 
         expect(res.status).toBe(400);
         expect(res.body.retryable).toBe(false);
@@ -223,7 +223,7 @@ describe("platform calls on behalf of a caller's run", () => {
           r.vendor,
         );
 
-        const res = await request(app).post(r.path).set({ "x-api-key": "k", "x-run-id": CALLER_RUN }).send(r.body);
+        const res = await request(app).post(r.path).set({ "x-api-key": "test-key", "x-run-id": CALLER_RUN }).send(r.body);
 
         expect(res.status).toBe(400);
         expect(res.body.error).toContain(CALLER_RUN);
@@ -237,7 +237,7 @@ describe("platform calls on behalf of a caller's run", () => {
 
         const res = await request(app)
           .post(r.path)
-          .set({ "x-api-key": "k" })
+          .set({ "x-api-key": "test-key" })
           .send({ ...r.body, support: { kind: "staff_experiment", reason: "test" } });
 
         expect(res.status).toBe(502);

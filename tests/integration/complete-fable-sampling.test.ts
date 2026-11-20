@@ -34,7 +34,7 @@ const AUTH_HEADERS = {
 const ROUTES = [
   { path: "/complete", headers: AUTH_HEADERS, extra: {} },
   // A platform call states whose work it is (COST-SUPPORT-1024).
-  { path: "/internal/platform-complete", headers: { "x-api-key": "test-internal-key" }, extra: { support: { kind: "staff_experiment", reason: "chat-service test" } } },
+  { path: "/internal/platform-complete", headers: { "x-api-key": "test-key" }, extra: { support: { kind: "staff_experiment", reason: "chat-service test" } } },
 ] as const;
 
 for (const { path, headers, extra } of ROUTES) {

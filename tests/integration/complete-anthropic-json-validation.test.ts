@@ -51,7 +51,7 @@ describe("POST /internal/platform-complete — Anthropic JSON mode requires resp
     const { default: app } = await import("../../src/index.js");
     const res = await request(app)
       .post("/internal/platform-complete")
-      .set("x-api-key", "test-internal-key")
+      .set("x-api-key", "test-key")
       .send({ ...({
         message: "Hello",
         systemPrompt: "You are helpful.",
