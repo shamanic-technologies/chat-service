@@ -205,7 +205,7 @@ describe("POST /orgs/rag/embed", { timeout: 30_000 }, () => {
 
   function authHeaders(orgId: string, runId: string) {
     return {
-      "x-api-key": "test-api-key",
+      "x-api-key": "test-key",
       "x-org-id": orgId,
       "x-user-id": crypto.randomUUID(),
       "x-run-id": runId,

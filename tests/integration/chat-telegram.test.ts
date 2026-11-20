@@ -180,7 +180,7 @@ function baseRoutes(gemini: { calls: number; bodies: Array<Record<string, unknow
   ];
 }
 
-const WEBHOOK = { "x-api-key": "svc" };
+const WEBHOOK = { "x-api-key": "test-key" };
 
 describe("POST /internal/copilot/telegram-messages: a linked client talks with the Copilot in Telegram (SOPHIE-TELEGRAM-1103)", () => {
   beforeEach(() => {
@@ -251,7 +251,7 @@ describe("POST /internal/copilot/telegram-messages: a linked client talks with t
     routes.push(...baseRoutes({ calls: 0, bodies: [] }, app, [], true));
     const res = await request(app)
       .post("/chat")
-      .set({ "x-api-key": "k", "x-org-id": ORG, "x-user-id": USER, "x-run-id": RUN })
+      .set({ "x-api-key": "test-key", "x-org-id": ORG, "x-user-id": USER, "x-run-id": RUN })
       .send({ configKey: "copilot", message: "hi", sessionId: SESSION, channelMessageId: ROW_ID });
     expect(res.status).toBe(400);
     expect(state.messageInserts).toEqual([]);

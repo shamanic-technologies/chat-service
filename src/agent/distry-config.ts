@@ -24,6 +24,14 @@ import { resolveModel, TOOL_REGISTRY, type Provider } from "../lib/anthropic.js"
 import { SEED_EDITOR } from "../lib/skills.js";
 import { SOPHIE_CONFIG } from "../lib/seed-platform-configs.js";
 import { PRINCIPAL_TOOL_DESCRIPTIONS, ENGINES_TOOL_FAMILY } from "./principal-tools.js";
+import {
+  codePromptOverrides,
+  normalizePromptOverrides,
+  PromptPartsError,
+  resolveStoredPrompt,
+  setCurrentDistryPrompt,
+  type DistryPromptOverrides,
+} from "./distry-prompt.js";
 
 type Database = typeof db;
 
@@ -39,6 +47,12 @@ export interface DistryDefinition {
   model: string;
   /** Anthropic `output_config.effort`; null on another provider (or the model's default). */
   effort: AnthropicEffort | null;
+  /**
+   * Every other text Distry reads and its order (DISTRY-PROMPT-PARTS-1120,
+   * distry-prompt.ts): the order of the parts, and the texts and tool
+   * descriptions staff changed (only those; the rest follows the code).
+   */
+  prompt: DistryPromptOverrides;
 }
 
 export class DistryConfigError extends Error {
@@ -57,6 +71,7 @@ export function codeDistryDefinition(): DistryDefinition {
     provider: SOPHIE_CONFIG.provider,
     model: SOPHIE_CONFIG.model,
     effort: SOPHIE_CONFIG.effort,
+    prompt: codePromptOverrides(),
   };
 }
 
@@ -68,6 +83,7 @@ export function definitionOf(v: DistryConfigVersion): DistryDefinition {
     provider: v.provider,
     model: v.model,
     effort: v.effort ?? null,
+    prompt: resolveStoredPrompt(v.promptParts ?? null),
   };
 }
 
@@ -78,12 +94,14 @@ export function sameDefinition(a: DistryDefinition, b: DistryDefinition): boolea
 /**
  * Every tool a version may turn on, with what it does: the tool registry, plus
  * Distry's principal tools (`engines` = one tool per callable Engine, built at
- * run time). Served to the editor, and the check a save passes.
+ * run time). Served to the editor (each description whole, as the model reads it), and the check a save passes.
  */
 export function availableDistryTools(): Array<{ name: string; description: string; staffOnly: boolean }> {
   const registry = Object.values(TOOL_REGISTRY).map((t) => ({
     name: t.name,
-    description: (t.description ?? "").split("\n")[0].slice(0, 300),
+    // The WHOLE description, every line: what the model reads for this tool (owner 2026-11-19, a cut one read
+    // « …the people l » in the editor).
+    description: t.description ?? "",
     staffOnly: Object.prototype.hasOwnProperty.call(PRINCIPAL_TOOL_DESCRIPTIONS, t.name),
   }));
   const seen = new Set(registry.map((t) => t.name));
@@ -91,6 +109,25 @@ export function availableDistryTools(): Array<{ name: string; description: strin
     .filter(([name]) => !seen.has(name))
     .map(([name, description]) => ({ name, description, staffOnly: true }));
   return [...registry, ...principal].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** A tool's description as the code writes it (null = not a tool Distry can turn on). */
+export function codeToolDescription(name: string): string | null {
+  return availableDistryTools().find((t) => t.name === name)?.description ?? null;
+}
+
+/** Normalize what a save sends for the prompt parts (order, changed texts, changed tool descriptions). */
+export function promptOverridesFrom(input: {
+  order: string[];
+  texts: Record<string, string | null>;
+  toolDescriptions: Record<string, string | null>;
+}): DistryPromptOverrides {
+  try {
+    return normalizePromptOverrides(input, codeToolDescription);
+  } catch (err) {
+    if (err instanceof PromptPartsError) throw new DistryConfigError(err.message);
+    throw err;
+  }
 }
 
 /** Refuses a definition /chat could not run. Pure (the skill slugs are passed in). */
@@ -117,6 +154,8 @@ export function validateDistryDefinition(def: DistryDefinition, knownSkillSlugs:
     if (def.provider !== "anthropic") throw new DistryConfigError("effort is an Anthropic setting: set it to null on another provider.");
     if (!(ANTHROPIC_EFFORTS as readonly string[]).includes(def.effort)) throw new DistryConfigError(`effort must be one of ${ANTHROPIC_EFFORTS.join(", ")}.`);
   }
+  // Re-normalizing a stored-shape prompt is idempotent: it refuses what a hand-built definition got wrong.
+  promptOverridesFrom(def.prompt);
 }
 
 export async function listDistryVersions(database: Database): Promise<DistryConfigVersion[]> {
@@ -143,8 +182,14 @@ export function distrySkillSet(): string[] | null {
   return currentSkillSet;
 }
 
+/** The current version's number, held with the rest (stamped on each recorded prompt sample). */
+let currentVersionNumber: number | null = null;
+export function distryVersionNumber(): number | null {
+  return currentVersionNumber;
+}
+
 /** Write a version's values onto the `copilot` platform config: what the next /chat turn reads. */
-async function materialize(database: Database, def: DistryDefinition): Promise<void> {
+async function materialize(database: Database, def: DistryDefinition, version: number): Promise<void> {
   const row = {
     systemPrompt: def.systemPrompt,
     allowedTools: [...def.enabledTools],
@@ -159,6 +204,8 @@ async function materialize(database: Database, def: DistryDefinition): Promise<v
     .values({ key: SOPHIE_CONFIG.key, ...row })
     .onConflictDoUpdate({ target: [platformConfigs.key], set: { ...row, updatedAt: new Date() } });
   currentSkillSet = def.skillSlugs ? [...def.skillSlugs] : null;
+  setCurrentDistryPrompt(def.prompt);
+  currentVersionNumber = version;
 }
 
 async function knownSkillSlugs(database: Database): Promise<string[]> {
@@ -190,12 +237,13 @@ export async function saveDistryVersion(
           provider: def.provider,
           model: def.model,
           effort: def.effort,
+          promptParts: def.prompt,
           editedBy: meta.editedBy,
           note: meta.note ?? null,
           restoredFrom: meta.restoredFrom ?? null,
         })
         .returning();
-      await materialize(tx as unknown as Database, def);
+      await materialize(tx as unknown as Database, def, row.version);
       return row;
     });
   } catch (err) {
@@ -234,7 +282,7 @@ export async function seedDistryConfig(database: Database): Promise<DistryConfig
   if (differs) {
     console.log(`[chat-service] Distry config: version ${current.version} (saved by ${current.editedBy}) kept; the code's definition differs and is not applied`);
   }
-  await materialize(database, definitionOf(current));
+  await materialize(database, definitionOf(current), current.version);
   return current;
 }
 
@@ -247,6 +295,7 @@ export function toDistryVersionBody(v: DistryConfigVersion) {
     provider: v.provider,
     model: v.model,
     effort: v.effort ?? null,
+    prompt: resolveStoredPrompt(v.promptParts ?? null),
     editedBy: v.editedBy,
     note: v.note ?? null,
     restoredFrom: v.restoredFrom ?? null,

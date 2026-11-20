@@ -16,6 +16,7 @@
 // the same file as a data URL.
 // ---------------------------------------------------------------------------
 
+import { PUBLIC_ONLY_MESSAGE, PublicUrlRefusedError, publicFetch } from "./safe-fetch.js";
 import sharp, { type Metadata } from "sharp";
 
 export const JUDGMENT_IMAGE_MAX_SIDE = 1568;
@@ -157,7 +158,8 @@ export async function fetchJudgmentImage(url: string): Promise<PreparedJudgmentI
   for (let attempt = 0; attempt <= IMAGE_FETCH_RETRY_DELAYS_MS.length; attempt++) {
     if (attempt > 0) await sleep(IMAGE_FETCH_RETRY_DELAYS_MS[attempt - 1]!);
     try {
-      const r = await fetch(parsed, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      // Public internet only, every redirect re-checked (SEC-MCP-SSRF-1120).
+      const r = await publicFetch(parsed, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), protocols: ["https:"] });
       if (r.ok) {
         res = r;
         break;
@@ -168,6 +170,7 @@ export async function fetchJudgmentImage(url: string): Promise<PreparedJudgmentI
       lastFailure = `HTTP ${r.status}`;
     } catch (err) {
       if (err instanceof JudgmentImageError) throw err;
+      if (err instanceof PublicUrlRefusedError) throw new JudgmentImageError(`image.url refused: ${PUBLIC_ONLY_MESSAGE}`);
       lastFailure = err instanceof Error ? err.message : String(err);
     }
   }

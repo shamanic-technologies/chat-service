@@ -1,3 +1,4 @@
+import { TOOL_REGISTRY } from "../../src/lib/anthropic.js";
 import { describe, it, expect } from "vitest";
 import {
   codeDistryDefinition,
@@ -8,6 +9,7 @@ import {
 } from "../../src/agent/distry-config.js";
 import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS } from "../../src/agent/sophie.js";
 import { filterSkillSet } from "../../src/lib/skills.js";
+import { codePromptOverrides } from "../../src/agent/distry-prompt.js";
 
 describe("Distry's definition (DISTRY-PRINCIPAL-1119)", () => {
   it("version 1 = Distry as the code defines it: same prompt, tools, model, every skill", () => {
@@ -19,6 +21,7 @@ describe("Distry's definition (DISTRY-PRINCIPAL-1119)", () => {
       provider: SOPHIE_MODEL.provider,
       model: SOPHIE_MODEL.model,
       effort: SOPHIE_MODEL.effort,
+      prompt: codePromptOverrides(),
     });
     expect(() => validateDistryDefinition(code, [])).not.toThrow();
   });
@@ -30,6 +33,15 @@ describe("Distry's definition (DISTRY-PRINCIPAL-1119)", () => {
     expect(names).toContain("read_company_financials");
     expect(availableDistryTools().find((t) => t.name === "find_stakeholders")?.staffOnly).toBe(true);
     expect(availableDistryTools().find((t) => t.name === "run_operation")?.staffOnly).toBe(false);
+  });
+
+  it("serves each tool's whole description, every line, as the model reads it", () => {
+    for (const t of Object.values(TOOL_REGISTRY)) {
+      expect(availableDistryTools().find((a) => a.name === t.name)?.description).toBe(t.description ?? "");
+    }
+    const correct = availableDistryTools().find((t) => t.name === "correct_person")!;
+    expect(correct.description).toBe(TOOL_REGISTRY.correct_person!.description);
+    expect(correct.description.length).toBeGreaterThan(300);
   });
 
   it("refuses what /chat could not run: an unknown tool, skill or model, an effort off Anthropic", () => {

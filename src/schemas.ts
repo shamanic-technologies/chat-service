@@ -2923,16 +2923,16 @@ registry.registerPath({
 
 export const TransferBrandRequestSchema = z
   .object({
-    sourceBrandId: z.string().min(1).openapi({
+    sourceBrandId: z.string().uuid().openapi({
       description: "The brand UUID to transfer (in the source org)",
     }),
-    sourceOrgId: z.string().min(1).openapi({
+    sourceOrgId: z.string().uuid().openapi({
       description: "The org UUID the brand is currently in",
     }),
-    targetOrgId: z.string().min(1).openapi({
+    targetOrgId: z.string().uuid().openapi({
       description: "The org UUID to transfer the brand to",
     }),
-    targetBrandId: z.string().min(1).optional().openapi({
+    targetBrandId: z.string().uuid().optional().openapi({
       description:
         "The brand UUID in the target org to rewrite to. " +
         "When present (conflict case), brand references are rewritten from sourceBrandId to targetBrandId. " +
@@ -4389,7 +4389,28 @@ export const DistryDefinitionSchema = z
   })
   .openapi("DistryDefinition");
 
+// DISTRY-PROMPT-PARTS-1120: every other text Distry reads, and its order.
+const DistryPromptSchema = z
+  .object({
+    order: z.array(z.string().min(1).max(100)).max(100).openapi({
+      description: "Every ordered part id once, `tools` first. Parts above `conversation` form the system prompt; parts below it are the turn's context, read after the person's message.",
+      example: ["tools", "role", "skill-index", "about-you", "conversation", "campaign-context", "request-context"],
+    }),
+    texts: z.record(z.string(), z.string().max(100_000)).openapi({ description: "Part id -> its text, only where staff changed the code's text (never `role`: that is systemPrompt)." }),
+    toolDescriptions: z.record(z.string(), z.string().max(20_000)).openapi({ description: "Tool name -> its description, only where staff changed the code's." }),
+  })
+  .openapi("DistryPrompt");
+
+const DistryPromptInputSchema = z
+  .object({
+    order: z.array(z.string().min(1).max(100)).max(100),
+    texts: z.record(z.string(), z.string().max(100_000).nullable()).openapi({ description: "Part id -> text. null, or the code's own text, = follow the code. A part missing here follows the code." }),
+    toolDescriptions: z.record(z.string(), z.string().max(20_000).nullable()).openapi({ description: "Tool name -> description. null, or the code's own text, = follow the code." }),
+  })
+  .openapi("DistryPromptInput");
+
 export const DistryVersionSchema = DistryDefinitionSchema.extend({
+  prompt: DistryPromptSchema,
   version: z.number().int().openapi({ description: "1, 2, 3...: the highest is the current one." }),
   editedBy: z.string().openapi({ description: "Who saved it (staff email); `seed` = written from the code at boot." }),
   note: z.string().nullable(),
@@ -4398,6 +4419,9 @@ export const DistryVersionSchema = DistryDefinitionSchema.extend({
 }).openapi("DistryVersion");
 
 export const DistrySaveRequestSchema = DistryDefinitionSchema.extend({
+  prompt: DistryPromptInputSchema.optional().openapi({
+    description: "The WHOLE parts state (order + changed texts + changed tool descriptions). Omit it to keep the current version's: a save of the prompt alone never touches the parts.",
+  }),
   editedBy: z.string().min(1).max(200).refine((v) => v !== "seed", "`seed` is reserved").openapi({ description: "Who saves (staff email).", example: "kevin@distribute.you" }),
   note: z.string().max(500).optional().openapi({ description: "Why this change (shown in the history)." }),
 }).openapi("DistrySaveRequest");
@@ -4408,12 +4432,76 @@ export const DistryRestoreRequestSchema = z
 
 export const DistryVersionParamsSchema = z.object({ version: z.coerce.number().int().min(1) });
 
+const DistryPromptPartExampleSchema = z
+  .object({
+    audience: z.enum(["staff", "client", "guest", "lead"]),
+    orgId: z.string(),
+    recordedAt: z.string(),
+    text: z.string().openapi({ description: "What this part sent in that real turn." }),
+  })
+  .openapi("DistryPromptPartExample");
+
+export const DistryPromptPartSchema = z
+  .object({
+    id: z.string().openapi({ example: "situation-brief" }),
+    name: z.string().openapi({ example: "Where the account stands" }),
+    purpose: z.string().openapi({ description: "What it is for, in plain words." }),
+    when: z.string().openapi({ description: "When it is sent, in plain words." }),
+    kind: z.enum(["marker", "text", "template", "live"]).openapi({
+      description: "marker = where the tools / the conversation sit (no text); text = fixed words; template = words + named data; live = a block built from the account each turn, wrapped by its template.",
+    }),
+    place: z.enum(["ordered", "message", "loop", "tool"]).openapi({
+      description: "ordered = in the drag-and-drop order; message = sent in the person's place (a trigger they did not write); loop = a note beside the last tool results; tool = the Engine tools' description.",
+    }),
+    placeholders: z.array(z.object({ name: z.string(), means: z.string() })).openapi({ description: "The data `{{name}}` a template part can use." }),
+    editable: z.boolean(),
+    text: z.string().nullable().openapi({ description: "The text the current version sends (the role = systemPrompt). null for a marker." }),
+    codeText: z.string().nullable().openapi({ description: "The code's text. null for a marker and the role." }),
+    edited: z.boolean(),
+    example: DistryPromptPartExampleSchema.nullable().openapi({ description: "What it sent in the latest real Distry turn that carried it (staff turn first), else null." }),
+  })
+  .openapi("DistryPromptPart");
+
+export const DistryPromptPreviewQuerySchema = z.object({ audience: z.enum(["staff", "client", "guest", "lead"]) });
+
+export const DistryPromptPreviewResponseSchema = z
+  .object({
+    audience: z.enum(["staff", "client", "guest", "lead"]),
+    recordedAt: z.string(),
+    version: z.number().int().nullable().openapi({ description: "The Distry version that turn ran on." }),
+    orgId: z.string(),
+    sessionId: z.string().nullable(),
+    provider: z.string(),
+    model: z.string(),
+    tools: z.array(z.object({ name: z.string(), description: z.string(), inputSchema: z.unknown() })).openapi({ description: "Every tool definition sent, in order." }),
+    systemPrompt: z.string().openapi({ description: "The system prompt sent." }),
+    historyMessages: z.number().int().openapi({ description: "How many earlier messages of the conversation were sent." }),
+    userMessage: z.string().openapi({ description: "The person's message (empty for a trigger the person did not write)." }),
+    turnContext: z.string().openapi({ description: "The turn's context, sent after the person's message (joined to the system prompt on Gemini)." }),
+    parts: z.array(z.object({ id: z.string(), name: z.string(), placedIn: z.string(), sent: z.boolean(), text: z.string().nullable() })).openapi({
+      description: "Each part in that turn's order: where it went, whether it was sent, its text.",
+    }),
+    partsMatch: z.boolean().openapi({ description: "true = the sent parts joined are exactly the system prompt and the turn context (no hidden text)." }),
+  })
+  .openapi("DistryPromptPreviewResponse");
+
 export const DistryConfigResponseSchema = z
   .object({
     current: DistryVersionSchema,
-    code: DistryDefinitionSchema.openapi({ description: "Distry as the code defines it (what version 1 was)." }),
+    code: DistryDefinitionSchema.extend({ prompt: DistryPromptSchema }).openapi({ description: "Distry as the code defines it (what version 1 was)." }),
     codeDiffers: z.boolean().openapi({ description: "true = the current version differs from the code's definition." }),
-    availableTools: z.array(z.object({ name: z.string(), description: z.string(), staffOnly: z.boolean() })),
+    availableTools: z.array(
+      z.object({
+        name: z.string(),
+        description: z.string().openapi({ description: "The tool's whole description, every line, exactly as the model reads it under the current version." }),
+        codeDescription: z.string().openapi({ description: "The code's description (what `description` returns to when the edit is removed)." }),
+        edited: z.boolean().openapi({ description: "true = the current version changed this description." }),
+        staffOnly: z.boolean(),
+      }),
+    ),
+    promptParts: z.array(DistryPromptPartSchema).openapi({
+      description: "Every text Distry reads, in the current version's order (ordered parts, then the loop notes and the Engine tool template). Tool descriptions are in `availableTools`.",
+    }),
     skills: z.array(z.object({ slug: z.string(), parentSlug: z.string().nullable(), title: z.string(), description: z.string() })),
     models: z.record(z.string(), z.array(z.string())).openapi({ description: "Per provider, the model names accepted." }),
     efforts: z.array(z.string()),
@@ -4445,6 +4533,98 @@ registry.registerPath({
   responses: {
     200: { description: "Saved", content: { "application/json": { schema: z.object({ version: DistryVersionSchema }) } } },
     409: { description: "Another save landed first", content: { "application/json": { schema: ErrorResponseSchema } } },
+    ...distryErrors,
+  },
+});
+
+const DistryModelRowSchema = z
+  .object({
+    provider: z.string(),
+    modelId: z.string().openapi({ description: "The concrete model id a call runs.", example: "claude-haiku-5-5" }),
+    displayName: z.string().openapi({ example: "Claude Haiku 5.5" }),
+    names: z.array(z.string()).openapi({ description: "Every name Distry's definition may use for this model (save any one as `model`)." }),
+    capabilityTier: z.enum(["cheap", "strong", "frontier"]),
+    isCurrent: z.boolean().openapi({ description: "true = Distry runs on this model now." }),
+    thinking: z.string().openapi({ description: "The thinking Distry would run this model at, in words (the variant the score is read at).", example: "effort low (Distry's definition)" }),
+    price: z.object({
+      inputPer1mUsd: z.number().nullable().openapi({ description: "USD per 1M input tokens we are billed (our catalogue price)." }),
+      outputPer1mUsd: z.number().nullable(),
+      costNames: z.object({ input: z.string(), output: z.string() }).nullable(),
+      reason: z.string().nullable().openapi({ description: "Why a price is null, in words." }),
+    }),
+    index: z.object({
+      aaSlug: z.string().nullable(),
+      aaName: z.string().nullable().openapi({ description: "The Artificial Analysis entry read: this model at Distry's thinking.", example: "Claude Haiku 5.5 (Low)" }),
+      variantLabel: z.string().nullable().openapi({ description: "Artificial Analysis's thinking label of that entry; null when it lists one reading only." }),
+      picked: z.string().nullable().openapi({ description: "Why that entry, in words." }),
+      score: z.number().nullable().openapi({ description: "Artificial Analysis Intelligence Index score." }),
+      rank: z.number().int().nullable().openapi({ description: "1 = highest score among the listed models; ties share a rank." }),
+      rankOutOf: z.number().int(),
+      indexCostPerTaskUsd: z.number().nullable().openapi({ description: "Artificial Analysis's cost per task of running its Intelligence Index on this entry (USD)." }),
+      reason: z.string().nullable().openapi({ description: "Why the score is null, in words." }),
+    }),
+    intelligencePerDollar: z.object({
+      value: z.number().nullable(),
+      basis: z.enum(["index_run_cost", "blended_price_3_to_1"]).nullable().openapi({ description: "`index_run_cost` = score / index run cost per task; `blended_price_3_to_1` = score / our blended 1M-token price (no run cost published)." }),
+      reason: z.string().nullable(),
+    }),
+    variants: z.array(z.object({
+      aaName: z.string(),
+      variantLabel: z.string().nullable(),
+      effort: z.string().nullable(),
+      score: z.number().nullable(),
+      indexCostPerTaskUsd: z.number().nullable(),
+      intelligencePerDollar: z.number().nullable(),
+      isDistrysThinking: z.boolean(),
+    })).openapi({ description: "Every thinking level Artificial Analysis scored this model at, best score first; `isDistrysThinking` marks the one the row reads." }),
+  })
+  .openapi("DistryModelRow");
+
+export const DistryModelsResponseSchema = z
+  .object({
+    indexName: z.string(),
+    indexVersion: z.string().nullable(),
+    readAt: z.string().nullable().openapi({ description: "When the reading served was taken." }),
+    source: z.object({
+      name: z.string(),
+      url: z.string(),
+      attribution: z.string().openapi({ description: "Show it beside the scores (Artificial Analysis requires it)." }),
+    }),
+    refresh: z.object({
+      state: z.enum(["no_key", "never_read", "ok", "failed", "stale"]),
+      broken: z.boolean().openapi({ description: "true = red on Monitoring (the last read failed, or none succeeded for 48 h)." }),
+      sentence: z.string(),
+      lastAttemptAt: z.string().nullable(),
+      lastSuccessAt: z.string().nullable(),
+    }),
+    priceBasis: z.string(),
+    ratioBasis: z.string(),
+    current: z.object({ provider: z.string(), model: z.string(), modelId: z.string(), effort: z.string().nullable() }),
+    models: z.array(DistryModelRowSchema).openapi({ description: "Best intelligence per dollar first (run-cost basis, then blended basis), unscored last." }),
+  })
+  .openapi("DistryModelsResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/distry/models",
+  tags: ["Distry"],
+  summary: "Every model Distry can run: price, Intelligence Index, rank, intelligence per dollar",
+  description: "Staff editor model panel (dashboard v2 Monitoring > Distry). One row per model the definition's providers accept, sorted by intelligence per dollar, best first. Scores come from Artificial Analysis's API, read daily and stored; never typed by hand. Each model is read at the thinking Distry runs it.",
+  request: { headers: internalKeyHeader },
+  responses: { 200: { description: "The model panel", content: { "application/json": { schema: DistryModelsResponseSchema } } }, ...distryErrors },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/distry/prompt/preview",
+  tags: ["Distry"],
+  summary: "The whole prompt of the latest real Distry turn, for one audience",
+  description:
+    "DISTRY-PROMPT-PARTS-1120. What the model received in the latest real Distry turn of that audience (staff = a staff member talking to Distry, client = an account holder, guest = no account, lead = a Lead event answer): tools, system prompt, the conversation's size, the person's message, the turn's context, and each part in order. 404 until such a turn ran since this shipped.",
+  request: { headers: internalKeyHeader, query: DistryPromptPreviewQuerySchema },
+  responses: {
+    200: { description: "The assembled prompt", content: { "application/json": { schema: DistryPromptPreviewResponseSchema } } },
+    404: { description: "No Distry turn of that audience recorded yet", content: { "application/json": { schema: ErrorResponseSchema } } },
     ...distryErrors,
   },
 });

@@ -12,6 +12,8 @@
 // service that boots on a 2 GB box.
 // ---------------------------------------------------------------------------
 
+import { PUBLIC_ONLY_MESSAGE, PublicUrlRefusedError, publicFetch } from "./safe-fetch.js";
+
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 const CLIENT_INFO = { name: "distribute-chat-service", version: "1.0.0" };
 
@@ -43,8 +45,20 @@ export interface McpConnectOptions {
   authorization?: string | null;
   /** Per-request timeout (ms). */
   timeoutMs?: number;
-  fetchImpl?: typeof fetch;
+  /**
+   * Tests only. Production ALWAYS goes through `publicFetch` (SEC-MCP-SSRF-1120):
+   * a brand's URL, and every redirect it answers, must be the public internet.
+   */
+  fetchImpl?: McpFetch;
 }
+
+export type McpFetch = (
+  url: string,
+  init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal },
+) => Promise<Response>;
+
+/** A brand's server: https only, every hop public and pinned. */
+const guardedFetch: McpFetch = (url, init) => publicFetch(url, { ...init, protocols: ["https:"] });
 
 interface JsonRpcResponse {
   jsonrpc?: string;
@@ -97,11 +111,11 @@ export class McpSession {
   private protocolVersion = MCP_PROTOCOL_VERSION;
   private nextId = 1;
   private initialized = false;
-  private readonly fetchImpl: typeof fetch;
+  private readonly fetchImpl: McpFetch;
   private readonly timeoutMs: number;
 
   constructor(private readonly opts: McpConnectOptions) {
-    this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.fetchImpl = opts.fetchImpl ?? guardedFetch;
     this.timeoutMs = opts.timeoutMs ?? 20_000;
   }
 
@@ -124,6 +138,8 @@ export class McpSession {
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
+      // Never say which address or what it answered: a generic refusal.
+      if (err instanceof PublicUrlRefusedError) throw new McpError(PUBLIC_ONLY_MESSAGE);
       const e = err as { name?: string; message?: string; cause?: { code?: string; message?: string } };
       if (e?.name === "TimeoutError" || e?.name === "AbortError") throw new McpError(`the server did not answer within ${Math.round(timeoutMs / 1000)}s`);
       const cause = e?.cause?.code ?? e?.cause?.message ?? e?.message ?? String(err);
@@ -139,8 +155,10 @@ export class McpSession {
     }
     if (res.status === 404 && this.sessionId) throw new McpSessionExpired();
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new McpError(`the server answered HTTP ${res.status}${text ? `: ${text.slice(0, 200)}` : ""}`);
+      // The status only, never the body: a stored check is read back by the
+      // brand, and a body is the remote's words (SEC-MCP-SSRF-1120).
+      await res.body?.cancel().catch(() => undefined);
+      throw new McpError(`the server answered HTTP ${res.status}`);
     }
     if (method === "initialize") {
       const sid = res.headers.get("mcp-session-id");

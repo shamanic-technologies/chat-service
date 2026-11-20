@@ -37,11 +37,9 @@ import {
   type VendorToolCall,
 } from "./openai-compatible.js";
 import {
-  EMPTY_ANSWER_NOTE,
-  FINAL_ROUND_NOTE,
-  endToolFinalNote,
-  endToolNudgeNote,
+  CODE_LOOP_NOTES,
   isFinalToolRound,
+  type LoopNotes,
   MAX_TOOL_CHAIN_DEPTH,
   needsAnswerNudge,
 } from "./tool-budget.js";
@@ -107,6 +105,8 @@ export interface StreamVendorChatOptions {
   holdTextBesideToolCalls?: boolean;
   /** A turn that must END by calling this tool (a Lead event turn's answer_person). */
   endToolName?: string;
+  /** The notes beside the last tool results (Distry's editable parts); omitted = the code's. */
+  loopNotes?: LoopNotes;
   /**
    * Send the vendor's reasoning-off field (`vendorReasoningFields`: this
    * model's own spelling). Absent or false = the model's default.
@@ -255,6 +255,7 @@ function pushNote(messages: VendorChatMessage[], text: string): void {
 }
 
 export async function streamVendorChat(options: StreamVendorChatOptions): Promise<StreamVendorChatResult> {
+  const notes = options.loopNotes ?? CODE_LOOP_NOTES;
   const {
     vendor,
     apiKey,
@@ -333,13 +334,13 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
         console.warn(`[vendor-chat] model=${model} stopped without ${endToolName}; asking for it`);
         answerNudged = true;
         if (text.trim()) messages.push({ role: "assistant", content: text });
-        pushNote(messages, endToolNudgeNote(endToolName));
+        pushNote(messages, notes.silentTurnAnswerTool(endToolName));
         return "reask"; // the re-ask is not a tool round
       }
       if (needsAnswerNudge({ toolsRan: depth > 0, answerText: text, alreadyNudged: answerNudged })) {
         console.warn(`[vendor-chat] model=${model} ended silent after ${toolCalls.length} tool(s); asking it to answer now`);
         answerNudged = true;
-        pushNote(messages, EMPTY_ANSWER_NOTE);
+        pushNote(messages, notes.silentTurn);
         return "reask"; // the re-ask is not a tool round
       }
       if (finishReason === "length") console.warn(`[vendor-chat] model=${model} answer truncated (finish_reason=length)`);
@@ -390,7 +391,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
 
     // Before the final round, tell the model its tool budget is spent.
     if (isFinalToolRound(depth + 1)) {
-      messages.push({ role: "user", content: endToolName ? endToolFinalNote(endToolName) : FINAL_ROUND_NOTE });
+      messages.push({ role: "user", content: endToolName ? notes.finalRoundAnswerTool(endToolName) : notes.finalRound });
     }
     return "next";
   };

@@ -288,6 +288,34 @@
       "when": 1793491200000,
       "tag": "0040_distry_config_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1793577600000,
+      "tag": "0041_intelligence_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1793664000000,
+      "tag": "0042_intelligence_index_public_page",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793750400000,
+      "tag": "0043_intelligence_index_api_only",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793836800000,
+      "tag": "0044_distry_prompt_parts",
+      "breakpoints": true
     }
   ]
 }

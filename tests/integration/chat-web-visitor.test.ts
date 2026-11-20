@@ -41,7 +41,10 @@ const { state } = vi.hoisted(() => ({
 // The skill index is read from the table: a stub that carries the voice and the job list, as the real one does.
 vi.mock("../../src/lib/skills.js", async () => {
   const actual = await vi.importActual<typeof import("../../src/lib/skills.js")>("../../src/lib/skills.js");
-  return { ...actual, buildSkillIndexBlock: vi.fn(async () => "\n\n---\n## Skills (test index)\n# How we talk to a person\n- `our-offer`: questions about us, starting") };
+  return {
+    ...actual,
+    buildSkillIndexPieces: vi.fn(async () => ({ indexSkill: "## Skills (test index)", voiceSkill: "# How we talk to a person", subSkills: "- `our-offer`: questions about us, starting" })),
+  };
 });
 
 vi.mock("../../src/db/index.js", async () => {
@@ -209,7 +212,7 @@ function baseRoutes(gemini: { calls: number; bodies: Array<Record<string, unknow
   ];
 }
 
-const SERVICE = { "x-api-key": "svc" };
+const SERVICE = { "x-api-key": "test-key" };
 const VISITOR = "v_test_visitor_0001";
 
 function freshSession(channelPhone: string | null = null) {
@@ -398,7 +401,7 @@ describe("POST /internal/copilot/web-messages: a visitor of our site talks with 
     routes.push(...baseRoutes({ calls: 0, bodies: [] }, app, []));
     const res = await request(app)
       .post("/chat")
-      .set({ "x-api-key": "k", "x-org-id": ORG, "x-user-id": USER, "x-run-id": RUN })
+      .set({ "x-api-key": "test-key", "x-org-id": ORG, "x-user-id": USER, "x-run-id": RUN })
       .send({ configKey: "copilot", message: "hi", sessionId: SESSION, webVisitorId: VISITOR });
     expect(res.status).toBe(400);
     expect(state.messageInserts).toEqual([]);

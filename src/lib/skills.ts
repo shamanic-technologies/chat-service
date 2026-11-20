@@ -1,6 +1,7 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { db as Db } from "../db/index.js";
 import { skills, skillVersions, type Skill, type SkillVersion } from "../db/schema.js";
+import { fillTemplate } from "./prompt-template.js";
 import { MERGED_SKILL_SLUGS, SEED_SKILLS, type SeedSkill } from "./skill-seed.js";
 
 // ---------------------------------------------------------------------------
@@ -385,24 +386,50 @@ export function filterSkillSet<T extends Pick<Skill, "slug" | "parentSlug">>(all
 /** A skill as the prompt builders read it (a stored row, or a snapshot of one). */
 export type SkillText = Pick<Skill, "slug" | "parentSlug" | "title" | "description" | "content">;
 
-/** `buildSkillIndexBlock` over rows already read (the eval harness replays a snapshot). */
-export function skillIndexBlockFrom(all: readonly SkillText[]): string {
+/**
+ * How the skill index is introduced to the model (DISTRY-PROMPT-PARTS-1120): a
+ * template Distry's editor can rewrite (part `skill-index`). Its data: the
+ * `index` skill's content, the `client-comms` skill's content, and one line per
+ * direct sub-skill of `index`.
+ */
+export const SKILL_INDEX_TEMPLATE = [
+  `\n\n---\n## Skills (platform knowledge)`,
+  `{{indexSkill}}`,
+  ``,
+  `{{voiceSkill}}`,
+  ``,
+  `### Sub-skills you can load with read_skill`,
+  `(A skill lists its own sub-skills when you load it.)`,
+  `{{subSkills}}`,
+].join("\n");
+
+/** The data the skill index template is filled with. */
+export interface SkillIndexPieces {
+  indexSkill: string;
+  voiceSkill: string;
+  subSkills: string;
+}
+
+export function skillIndexPiecesFrom(all: readonly SkillText[]): SkillIndexPieces {
   const index = all.find((s) => s.slug === INDEX_SKILL_SLUG);
   if (!index) throw new SkillNotFoundError(INDEX_SKILL_SLUG);
   const voice = all.find((s) => s.slug === CLIENT_COMMS_SKILL_SLUG);
   if (!voice) throw new SkillNotFoundError(CLIENT_COMMS_SKILL_SLUG);
   const children = all.filter((s) => s.parentSlug === INDEX_SKILL_SLUG && s.slug !== CLIENT_COMMS_SKILL_SLUG);
-  const lines = children.map((s) => `- \`${s.slug}\`: ${s.title}. ${s.description}`);
-  return [
-    `\n\n---\n## Skills (platform knowledge)`,
-    index.content.trim(),
-    ``,
-    voice.content.trim(),
-    ``,
-    `### Sub-skills you can load with read_skill`,
-    `(A skill lists its own sub-skills when you load it.)`,
-    ...lines,
-  ].join("\n");
+  return {
+    indexSkill: index.content.trim(),
+    voiceSkill: voice.content.trim(),
+    subSkills: children.map((s) => `- \`${s.slug}\`: ${s.title}. ${s.description}`).join("\n"),
+  };
+}
+
+export async function buildSkillIndexPieces(database: Database, skillSet: readonly string[] | null = null): Promise<SkillIndexPieces> {
+  return skillIndexPiecesFrom(filterSkillSet(await listSkills(database), skillSet));
+}
+
+/** `buildSkillIndexBlock` over rows already read (the eval harness replays a snapshot). */
+export function skillIndexBlockFrom(all: readonly SkillText[], template: string = SKILL_INDEX_TEMPLATE): string {
+  return fillTemplate(template, { ...skillIndexPiecesFrom(all) });
 }
 
 /** What `read_skill` returns to the model: the skill, plus its direct children. */

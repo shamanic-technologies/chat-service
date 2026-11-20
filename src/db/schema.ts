@@ -180,6 +180,9 @@ export const distryConfigVersions = pgTable(
     provider: text("provider").notNull().$type<"anthropic" | "google" | "deepseek">(),
     model: text("model").notNull(),
     effort: text("effort").$type<AnthropicEffort>(),
+    // DISTRY-PROMPT-PARTS-1120 (migration 0044): the parts' order + the texts and tool descriptions
+    // staff changed. NULL = the code's order and texts (versions saved before it existed).
+    promptParts: jsonb("prompt_parts").$type<{ order: string[]; texts: Record<string, string>; toolDescriptions: Record<string, string> } | null>(),
     editedBy: text("edited_by").notNull(),
     note: text("note"),
     restoredFrom: integer("restored_from"),
@@ -189,6 +192,70 @@ export const distryConfigVersions = pgTable(
 );
 
 export type DistryConfigVersion = typeof distryConfigVersions.$inferSelect;
+
+// DISTRY-PROMPT-PARTS-1120 (migration 0044): the last real Distry turn per audience (staff, client,
+// guest, lead), as the model received it: system prompt, turn context, tools, and each part rendered.
+// One row per audience, overwritten each turn: the editor's preview and each live part's example.
+export const distryPromptSamples = pgTable("distry_prompt_samples", {
+  audience: text("audience").primaryKey().$type<"staff" | "client" | "guest" | "lead">(),
+  version: integer("version"),
+  orgId: text("org_id").notNull(),
+  sessionId: text("session_id"),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  systemPrompt: text("system_prompt").notNull(),
+  turnContext: text("turn_context").notNull(),
+  tools: jsonb("tools").notNull().$type<Array<{ name: string; description: string; inputSchema: unknown }>>(),
+  parts: jsonb("parts").notNull().$type<Array<{ id: string; placedIn: string; sent: boolean; text: string | null }>>(),
+  historyMessages: integer("history_messages").notNull(),
+  userMessage: text("user_message").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type DistryPromptSample = typeof distryPromptSamples.$inferSelect;
+
+// DISTRY-MODELS-1119 (migration 0041): the Artificial Analysis Intelligence Index, read daily
+// (`src/lib/intelligence-index.ts`). Bronze = each read as received or its failure; silver = one
+// row per Artificial Analysis model per successful read. Never typed by hand.
+export const intelligenceIndexReads = pgTable(
+  "intelligence_index_reads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+    status: text("status").notNull().$type<"ok" | "failed" | "superseded">(),
+    httpStatus: integer("http_status"),
+    error: text("error"),
+    indexVersion: text("index_version"),
+    body: jsonb("body"),
+    /** Where the read came from: `api` (the Artificial Analysis Data API). */
+    source: text("source").$type<"api">(),
+  },
+  (table) => [index("intelligence_index_reads_fetched_idx").on(table.fetchedAt)],
+);
+
+export const intelligenceIndexScores = pgTable(
+  "intelligence_index_scores",
+  {
+    readId: uuid("read_id").notNull().references(() => intelligenceIndexReads.id),
+    aaId: text("aa_id").notNull(),
+    aaSlug: text("aa_slug").notNull(),
+    aaName: text("aa_name").notNull(),
+    creator: text("creator"),
+    indexVersion: text("index_version").notNull(),
+    score: real("score"),
+    releaseSlug: text("release_slug"),
+    releaseName: text("release_name"),
+    /** Artificial Analysis's variant label ("High", "Max, Default Fallback"), null for a single entry. */
+    variantLabel: text("variant_label"),
+    /** The thinking level the variant label names (low|medium|high|xhigh|max), else null. */
+    effort: text("effort"),
+    indexCostPerTaskUsd: real("index_cost_per_task_usd"),
+    priceInputPer1mUsd: real("price_input_per_1m_usd"),
+    priceOutputPer1mUsd: real("price_output_per_1m_usd"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ name: "intelligence_index_scores_pk", columns: [table.readId, table.aaId] })],
+);
 
 // Copilot SKILL TREE (migration 0018). One row per skill: the INDEX (slug
 // "index", parent NULL) plus one sub-skill per topic (parent "index", or a
