@@ -203,7 +203,8 @@ export interface ProactiveDeps {
   db: typeof Db;
   /** client-service: a user's email (null when unknown). */
   fetchEmail: (userId: string) => Promise<string | null>;
-  isStaffEmail: (email: string | null) => boolean;
+  /** Filter only (prefer a customer member as recipient): the one staff predicate, `isStaffUser`. */
+  isStaffUser: (userId: string, email: string | null) => boolean;
   /** POST /chat on this process for the recipient. */
   runChat: (args: {
     orgId: string;
@@ -279,7 +280,7 @@ const MAX_CANDIDATES = 10;
  * latest Copilot session is the thread; null when nobody ever used the Copilot.
  */
 export async function pickProactiveRecipient(
-  deps: Pick<ProactiveDeps, "db" | "fetchEmail" | "isStaffEmail" | "telegramLinker">,
+  deps: Pick<ProactiveDeps, "db" | "fetchEmail" | "isStaffUser" | "telegramLinker">,
   orgId: string,
 ): Promise<ProactiveRecipient | null> {
   // An org that linked its own Telegram chat hears there, from the member who
@@ -323,7 +324,7 @@ export async function pickProactiveRecipient(
   // 2026-10-19: an email-less one-session user would have taken Kevin's place).
   const emails = await Promise.all(latestPerUser.map((c) => deps.fetchEmail(c.userId)));
   const known = latestPerUser.filter((_, i) => Boolean(emails[i]));
-  const pick = latestPerUser.find((_, i) => Boolean(emails[i]) && !deps.isStaffEmail(emails[i])) ?? known[0] ?? latestPerUser[0];
+  const pick = latestPerUser.find((_, i) => Boolean(emails[i]) && !deps.isStaffUser(latestPerUser[i].userId, emails[i])) ?? known[0] ?? latestPerUser[0];
 
   return { userId: pick.userId, sessionId: pick.id, whatsapp: pick.channelPhone ? { phone: pick.channelPhone } : null };
 }

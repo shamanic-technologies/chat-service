@@ -16,10 +16,24 @@ describe("staff-only Copilot tools", () => {
     expect(hasStaffOnlyTool(["list_workflows"])).toBe(false);
   });
 
-  it("staff keep the prompt tools", async () => {
-    const requester = await lookupRequester("u-staff", async () => "kevin@distribute.you");
-    expect(requester).toEqual({ email: "kevin@distribute.you", isStaff: true });
+  it.each([
+    ["cfe148ed-e3d8-40a2-8920-f8c040a81934", "kevin.lourd@gmail.com"],
+    ["7b417d70-29b5-471b-a8e1-20e75225c0af", "kevin@distribute.you"],
+  ])("the real staff user %s keeps the prompt tools", async (userId, email) => {
+    const requester = await lookupRequester(userId, async () => email);
+    expect(requester).toEqual({ email, isStaff: true });
     expect(toolsForRequester(CONFIG_TOOLS, requester)).toEqual(CONFIG_TOOLS);
+  });
+
+  it.each([
+    "kevin.lourd@gmail.com",
+    "kevin@distribute.you",
+    "anyone@distribute.you",
+  ])("a customer user storing %s is not staff: no prompt tools, catalogue not staff (SEC-STAFF-EMAIL-1120)", async (email) => {
+    // Prod 2026-11-20: a customer key created this user row carrying the owner's address.
+    const requester = await lookupRequester("a4651533-7acc-4c6e-be22-3a9b0e037568", async () => email);
+    expect(requester.isStaff).toBe(false);
+    expect(toolsForRequester(CONFIG_TOOLS, requester)).toEqual(["list_workflows", "read_skill"]);
   });
 
   it("a customer never sees the prompt tools", async () => {
@@ -58,6 +72,12 @@ describe("/chat wiring (source guard)", () => {
     expect(setAt).toBeGreaterThan(gateAt);
     // Every principal dispatch re-checks the gate.
     expect(src.match(/if \(!principalAllowed\) throw new Error/g)?.length).toBe(3);
+  });
+
+  it("every staff grant reads the one requester lookup (catalogue, principal tools, prompt tools)", () => {
+    expect(src).toContain("isStaff: () => getRequester().then((r) => r.isStaff)");
+    expect(src).toContain("requesterIsStaff: (await getRequester()).isStaff");
+    expect(src).not.toContain("isStaffEmail");
   });
 
   it("both prompt tools forward the staff email", () => {

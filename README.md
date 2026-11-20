@@ -1276,7 +1276,7 @@ Read-only and supporting workflow tools:
 | `get_prompt_template` | **Staff only.** Retrieves a stored prompt template by type |
 | `update_prompt_template` | **Staff only.** Creates a new version of an existing prompt template (auto-versions). `variables` is an array of `{ name, description }` objects (the deployed content-generation contract — not bare strings) |
 
-The two prompt tools act on the SHARED platform templates (every org's emails are written from them), which api-service serves only to staff (`requireStaff`: platform key + `x-email` in its allowlist). chat-service reads the requester's email from client-service (`GET /internal/users/:userId`, keyed on the gateway-resolved `x-user-id`): a non-staff requester (or a failed lookup) never gets these tools in the turn's tool list, and a staff requester's calls carry their email as `x-email` (`src/lib/staff-only-tools.ts`).
+The two prompt tools act on the SHARED platform templates (every org's emails are written from them), which api-service serves only to staff (`requireStaff`: platform key + `x-email` in its allowlist). Staff = the gateway-resolved `x-user-id` is one of the pinned staff user rows AND client-service (`GET /internal/users/:userId`) still stores that row's staff address (`isStaffUser`, `src/lib/staff-identity.ts`, SEC-STAFF-EMAIL-1120): a stored email alone never grants anything, any customer can create a user carrying one. A non-staff requester (or a failed lookup) never gets these tools in the turn's tool list, and a staff requester's calls carry their email as `x-email` (`src/lib/staff-only-tools.ts`).
 
 **Service discovery tools (read-only):**
 

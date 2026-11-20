@@ -242,7 +242,7 @@ describe("pickProactiveRecipient", () => {
         { id: "s-web", userId: "u-owner", channelPhone: null, leadThread: false },
       ],
     ]);
-    const r = await pickProactiveRecipient({ db, fetchEmail: async () => "owner@acme.example", isStaffEmail: () => false }, REQ.orgId);
+    const r = await pickProactiveRecipient({ db, fetchEmail: async () => "owner@acme.example", isStaffUser: () => false }, REQ.orgId);
     expect(r).toEqual({ userId: "u-owner", sessionId: "s-web", whatsapp: { phone: "+33600000009" } });
   });
 
@@ -255,7 +255,7 @@ describe("pickProactiveRecipient", () => {
       ],
     ]);
     const r = await pickProactiveRecipient(
-      { db, fetchEmail: async (u) => (u === "u-staff" ? "kevin@distribute.you" : "owner@acme.example"), isStaffEmail: (e) => e === "kevin@distribute.you" },
+      { db, fetchEmail: async (u) => (u === "u-staff" ? "kevin@distribute.you" : "owner@acme.example"), isStaffUser: (u) => u === "u-staff" },
       REQ.orgId,
     );
     expect(r).toEqual({ userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000" } });
@@ -271,7 +271,7 @@ describe("pickProactiveRecipient", () => {
     ]);
     const emails: Record<string, string | null> = { cfe148ed: "kevin.lourd@gmail.com", "7b417d70": "kevin@distribute.you", d2317462: null };
     const r = await pickProactiveRecipient(
-      { db, fetchEmail: async (u) => emails[u], isStaffEmail: (e) => e === "kevin.lourd@gmail.com" || e === "kevin@distribute.you" },
+      { db, fetchEmail: async (u) => emails[u], isStaffUser: (u) => u === "cfe148ed" || u === "7b417d70" },
       REQ.orgId,
     );
     expect(r).toEqual({ userId: "cfe148ed", sessionId: "s-gmail", whatsapp: { phone: "+33680478702" } });
@@ -280,7 +280,7 @@ describe("pickProactiveRecipient", () => {
   it("an org that linked its own Telegram hears there, as the member who linked it, in their thread (SOPHIE-TELEGRAM-1103)", async () => {
     const { db } = fakeDb([[{ id: "s-linker" }]]);
     const r = await pickProactiveRecipient(
-      { db, fetchEmail: async () => "owner@acme.example", isStaffEmail: () => false, telegramLinker: async () => "u-linker" },
+      { db, fetchEmail: async () => "owner@acme.example", isStaffUser: () => false, telegramLinker: async () => "u-linker" },
       REQ.orgId,
     );
     expect(r).toEqual({ userId: "u-linker", sessionId: "s-linker", whatsapp: null, telegram: true });
@@ -289,22 +289,22 @@ describe("pickProactiveRecipient", () => {
   it("no Telegram link, an unreadable one, or a linker with no Copilot thread: picks as before", async () => {
     const team = [{ id: "s-owner", userId: "u-owner", channelPhone: "+33600000000" }];
     const none = fakeDb([team]);
-    expect(await pickProactiveRecipient({ db: none.db, fetchEmail: async () => "owner@acme.example", isStaffEmail: () => false, telegramLinker: async () => null }, REQ.orgId))
+    expect(await pickProactiveRecipient({ db: none.db, fetchEmail: async () => "owner@acme.example", isStaffUser: () => false, telegramLinker: async () => null }, REQ.orgId))
       .toEqual({ userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000" } });
     const broken = fakeDb([team]);
-    expect(await pickProactiveRecipient({ db: broken.db, fetchEmail: async () => "owner@acme.example", isStaffEmail: () => false, telegramLinker: async () => { throw new Error("502"); } }, REQ.orgId))
+    expect(await pickProactiveRecipient({ db: broken.db, fetchEmail: async () => "owner@acme.example", isStaffUser: () => false, telegramLinker: async () => { throw new Error("502"); } }, REQ.orgId))
       .toEqual({ userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000" } });
     const noThread = fakeDb([[], team]);
-    expect(await pickProactiveRecipient({ db: noThread.db, fetchEmail: async () => "owner@acme.example", isStaffEmail: () => false, telegramLinker: async () => "u-linker" }, REQ.orgId))
+    expect(await pickProactiveRecipient({ db: noThread.db, fetchEmail: async () => "owner@acme.example", isStaffUser: () => false, telegramLinker: async () => "u-linker" }, REQ.orgId))
       .toEqual({ userId: "u-owner", sessionId: "s-owner", whatsapp: { phone: "+33600000000" } });
   });
 
   it("on an org where everyone is staff, the latest staff member; nobody ever used the Copilot → null", async () => {
     const staffOnly = fakeDb([[{ id: "s-1", userId: "u-1", channelPhone: null }]]);
-    expect(await pickProactiveRecipient({ db: staffOnly.db, fetchEmail: async () => "kevin@distribute.you", isStaffEmail: () => true }, REQ.orgId))
+    expect(await pickProactiveRecipient({ db: staffOnly.db, fetchEmail: async () => "kevin@distribute.you", isStaffUser: () => true }, REQ.orgId))
       .toEqual({ userId: "u-1", sessionId: "s-1", whatsapp: null });
     const empty = fakeDb([[]]);
-    expect(await pickProactiveRecipient({ db: empty.db, fetchEmail: async () => null, isStaffEmail: () => false }, REQ.orgId)).toBeNull();
+    expect(await pickProactiveRecipient({ db: empty.db, fetchEmail: async () => null, isStaffUser: () => false }, REQ.orgId)).toBeNull();
   });
 });
 
@@ -320,7 +320,7 @@ describe("processProactiveTurn", () => {
     const sendTelegram = vi.fn(async () => {});
     const sendWhatsapp = vi.fn(async () => {});
     const recipient: ProactiveRecipient = { userId: "u-linker", sessionId: "s-linker", whatsapp: null, telegram: true };
-    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp, sendTelegram }, "turn-1", recipient, {});
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffUser: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp, sendTelegram }, "turn-1", recipient, {});
     const args = (runChat.mock.calls[0] as unknown as [Parameters<ProactiveDeps["runChat"]>[0]])[0];
     expect(args.context.channel).toEqual({ kind: "telegram" });
     expect(sendTelegram).toHaveBeenCalledWith({ orgId: REQ.orgId, text: "Marie from Acme wants outbound. Go?", runId: "run-1" });
@@ -333,7 +333,7 @@ describe("processProactiveTurn", () => {
     const runChat = vi.fn(async () => ({ status: 200, body: sse({ type: "token", content: "Go?" }) }));
     const sendTelegram = vi.fn(async () => { throw new Error("telegram delivery_failed: bot was blocked by the user"); });
     const recipient: ProactiveRecipient = { userId: "u-linker", sessionId: "s-linker", whatsapp: null, telegram: true };
-    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp: vi.fn(), sendTelegram }, "turn-1", recipient, {});
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffUser: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp: vi.fn(), sendTelegram }, "turn-1", recipient, {});
     expect(updates.at(-1)).toMatchObject({ status: "failed" });
     expect(String(updates.at(-1)!.error)).toContain("telegram delivery failed, the message waits in the web Copilot thread");
   });
@@ -342,7 +342,7 @@ describe("processProactiveTurn", () => {
     const { db, updates } = fakeDb([[ROW]]);
     const runChat = vi.fn(async () => ({ status: 200, body: sse({ type: "token", content: "Marie from Acme wants outbound. Start the Outbound offer at $10/day? Go?" }) }));
     const sendWhatsapp = vi.fn(async () => {});
-    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffUser: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
     expect(runChat).toHaveBeenCalledTimes(1);
     const args = (runChat.mock.calls[0] as unknown as [Parameters<ProactiveDeps["runChat"]>[0]])[0];
     expect(args).toMatchObject({ orgId: REQ.orgId, userId: "u-owner", runId: "run-1", sessionId: "s-owner", proactiveTurnId: "turn-1", trackingHeaders: { "x-campaign-id": "c-1" } });
@@ -359,7 +359,7 @@ describe("processProactiveTurn", () => {
     const runChat = vi.fn(async () => ({ status: 200, body: sse({ type: "token", content: "ok" }) }));
     const readThread = vi.fn(async () => [{ at: null, direction: "inbound" as const, channel: "email", text: "Do you do LinkedIn?" }]);
     const resolve = vi.fn(resolveAskingCampaign);
-    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, runChat, sendWhatsapp: vi.fn(async () => {}), readThread, resolveAskingCampaign: resolve }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffUser: () => false, runChat, sendWhatsapp: vi.fn(async () => {}), readThread, resolveAskingCampaign: resolve }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
     expect(resolve).toHaveBeenCalledWith({ orgId: REQ.orgId, userId: "u-owner", runId: "run-1", campaignId: "c-1" });
     expect(readThread).toHaveBeenCalledWith(expect.objectContaining({ userId: "u-owner", runId: "run-1", brandId: REQ.brandId }));
     const msg = (runChat.mock.calls[0] as unknown as [{ message: string }])[0].message;
@@ -373,7 +373,7 @@ describe("processProactiveTurn", () => {
     const refusal = new WhatsappSendError(422, JSON.stringify({ type: "refused", code: "whatsapp_not_connected" }));
     const sendWhatsapp = vi.fn().mockRejectedValueOnce(refusal).mockResolvedValueOnce(undefined);
     const sleep = vi.fn(async () => {});
-    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], runChat, sendWhatsapp, sleep }, "turn-1", whatsappRecipient, {});
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffUser: () => false, readThread: async () => [], runChat, sendWhatsapp, sleep }, "turn-1", whatsappRecipient, {});
     expect(runChat).toHaveBeenCalledTimes(1);
     expect(sendWhatsapp).toHaveBeenCalledTimes(2);
     expect(sendWhatsapp.mock.calls[0][0]).toEqual(sendWhatsapp.mock.calls[1][0]);
@@ -385,7 +385,7 @@ describe("processProactiveTurn", () => {
     const { db, updates } = fakeDb([[ROW]]);
     const sendWhatsapp = vi.fn(async () => { throw new WhatsappSendError(422, JSON.stringify({ type: "refused", code: "whatsapp_not_connected" })); });
     await processProactiveTurn(
-      { ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, sleep: async () => {},
+      { ...lineDeps(), db, fetchEmail: async () => null, isStaffUser: () => false, readThread: async () => [], sendWhatsapp, sleep: async () => {},
         runChat: async () => ({ status: 200, body: sse({ type: "token", content: "Hot lead. Go?" }) }) },
       "turn-1", whatsappRecipient, {},
     );
@@ -401,7 +401,7 @@ describe("processProactiveTurn", () => {
     const sendWhatsapp = vi.fn(async () => { throw new WhatsappSendError(400, "bad phone"); });
     const sleep = vi.fn(async () => {});
     await processProactiveTurn(
-      { ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, sleep,
+      { ...lineDeps(), db, fetchEmail: async () => null, isStaffUser: () => false, readThread: async () => [], sendWhatsapp, sleep,
         runChat: async () => ({ status: 200, body: sse({ type: "token", content: "Go?" }) }) },
       "turn-1", whatsappRecipient, {},
     );
@@ -418,7 +418,7 @@ describe("processProactiveTurn", () => {
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
     const infoLog = vi.spyOn(console, "info").mockImplementation(() => {});
     await processProactiveTurn(
-      { ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, sendTelegram, sleep,
+      { ...lineDeps(), db, fetchEmail: async () => null, isStaffUser: () => false, readThread: async () => [], sendWhatsapp, sendTelegram, sleep,
         runChat: async () => ({ status: 200, body: sse({ type: "token", content: "Go?" }) }) },
       "turn-1", whatsappRecipient, {},
     );
@@ -439,7 +439,7 @@ describe("processProactiveTurn", () => {
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
     const infoLog = vi.spyOn(console, "info").mockImplementation(() => {});
     await processProactiveTurn(
-      { ...lineDeps({ reachable: false, code: "stated_not_to_brand", error: "not someone of the brand" }), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, sendTelegram,
+      { ...lineDeps({ reachable: false, code: "stated_not_to_brand", error: "not someone of the brand" }), db, fetchEmail: async () => null, isStaffUser: () => false, readThread: async () => [], sendWhatsapp, sendTelegram,
         runChat: async () => ({ status: 200, body: sse({ type: "token", content: "Go?" }) }) },
       "turn-1", whatsappRecipient, {},
     );
@@ -455,7 +455,7 @@ describe("processProactiveTurn", () => {
     const { db, updates } = fakeDb([[ROW]]);
     const sendWhatsapp = vi.fn(async () => {});
     await processProactiveTurn(
-      { ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp,
+      { ...lineDeps(), db, fetchEmail: async () => null, isStaffUser: () => false, readThread: async () => [], sendWhatsapp,
         runChat: async () => ({ status: 200, body: sse({ type: "token", content: "You're out of credits." }, { type: "credits_required", message: "You're out of credits.", label: "Add credits" }) }) },
       "turn-1", whatsappRecipient, {},
     );
@@ -466,7 +466,7 @@ describe("processProactiveTurn", () => {
   it("a row no longer processing runs nothing (never twice)", async () => {
     const { db } = fakeDb([[{ ...ROW, status: "delivered" }]]);
     const runChat = vi.fn();
-    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], runChat, sendWhatsapp: vi.fn() }, "turn-1", whatsappRecipient, {});
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffUser: () => false, readThread: async () => [], runChat, sendWhatsapp: vi.fn() }, "turn-1", whatsappRecipient, {});
     expect(runChat).not.toHaveBeenCalled();
   });
 
@@ -475,7 +475,7 @@ describe("processProactiveTurn", () => {
     const sendWhatsapp = vi.fn();
     const runChat = vi.fn(async () => ({ status: 200, body: sse({ type: "token", content: "Marie wants outbound. Go?" }) }));
     const deps = lineDeps({ reachable: false, code: "not_on_whatsapp", error: "no WhatsApp on this number" });
-    await processProactiveTurn({ ...deps, db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
+    await processProactiveTurn({ ...deps, db, fetchEmail: async () => null, isStaffUser: () => false, readThread: async () => [], resolveAskingCampaign, runChat, sendWhatsapp }, "turn-1", whatsappRecipient, { "x-campaign-id": "c-1" });
     expect(deps.reachWhatsapp).toHaveBeenCalledWith({ line: LINE, runId: "run-line", phone: "+33600000000" });
     expect(runChat).toHaveBeenCalledTimes(1);
     expect(sendWhatsapp).not.toHaveBeenCalled();
@@ -486,7 +486,7 @@ describe("processProactiveTurn", () => {
   it("a failed turn is recorded failed with its reason, nothing sent", async () => {
     const { db, updates } = fakeDb([[ROW]]);
     const sendWhatsapp = vi.fn();
-    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffEmail: () => false, readThread: async () => [], sendWhatsapp, runChat: async () => ({ status: 502, body: "boom" }) }, "turn-1", whatsappRecipient, {});
+    await processProactiveTurn({ ...lineDeps(), db, fetchEmail: async () => null, isStaffUser: () => false, readThread: async () => [], sendWhatsapp, runChat: async () => ({ status: 502, body: "boom" }) }, "turn-1", whatsappRecipient, {});
     expect(sendWhatsapp).not.toHaveBeenCalled();
     expect(updates.at(-1)).toMatchObject({ status: "failed", error: "POST /chat 502: boom" });
   });
