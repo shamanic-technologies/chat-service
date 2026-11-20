@@ -78,12 +78,14 @@ export function sameDefinition(a: DistryDefinition, b: DistryDefinition): boolea
 /**
  * Every tool a version may turn on, with what it does: the tool registry, plus
  * Distry's principal tools (`engines` = one tool per callable Engine, built at
- * run time). Served to the editor, and the check a save passes.
+ * run time). Served to the editor (each description whole, as the model reads it), and the check a save passes.
  */
 export function availableDistryTools(): Array<{ name: string; description: string; staffOnly: boolean }> {
   const registry = Object.values(TOOL_REGISTRY).map((t) => ({
     name: t.name,
-    description: (t.description ?? "").split("\n")[0].slice(0, 300),
+    // The WHOLE description, every line: what the model reads for this tool (owner 2026-11-19, a cut one read
+    // « …the people l » in the editor).
+    description: t.description ?? "",
     staffOnly: Object.prototype.hasOwnProperty.call(PRINCIPAL_TOOL_DESCRIPTIONS, t.name),
   }));
   const seen = new Set(registry.map((t) => t.name));

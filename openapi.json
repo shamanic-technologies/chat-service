@@ -5203,7 +5203,8 @@
                   "type": "string"
                 },
                 "description": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "The tool's whole description, every line, exactly as the model reads it."
                 },
                 "staffOnly": {
                   "type": "boolean"

@@ -1696,7 +1696,7 @@ Staff routes (`requireInternalAuth`, through the gateway for dashboard v2 Monito
 
 | Route | What |
 |---|---|
-| `GET /internal/distry/config` | Current version, the code's definition, `codeDiffers`, every tool that can be turned on (`availableTools`, `staffOnly` flagged), the skill tree, models per provider, efforts |
+| `GET /internal/distry/config` | Current version, the code's definition, `codeDiffers`, every tool that can be turned on (`availableTools`, `staffOnly` flagged, each description whole as the model reads it), the skill tree, models per provider, efforts |
 | `PUT /internal/distry/config` | Save `{systemPrompt, enabledTools, skillSlugs (null = all), provider, model, effort, editedBy, note?}` = a new version; 400 on an unknown tool/skill/model, 409 when another save landed first |
 | `GET /internal/distry/config/versions` | Every version, newest first |
 | `GET /internal/distry/config/versions/{version}` | One version |

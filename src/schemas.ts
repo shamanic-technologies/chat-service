@@ -4413,7 +4413,7 @@ export const DistryConfigResponseSchema = z
     current: DistryVersionSchema,
     code: DistryDefinitionSchema.openapi({ description: "Distry as the code defines it (what version 1 was)." }),
     codeDiffers: z.boolean().openapi({ description: "true = the current version differs from the code's definition." }),
-    availableTools: z.array(z.object({ name: z.string(), description: z.string(), staffOnly: z.boolean() })),
+    availableTools: z.array(z.object({ name: z.string(), description: z.string().openapi({ description: "The tool's whole description, every line, exactly as the model reads it." }), staffOnly: z.boolean() })),
     skills: z.array(z.object({ slug: z.string(), parentSlug: z.string().nullable(), title: z.string(), description: z.string() })),
     models: z.record(z.string(), z.array(z.string())).openapi({ description: "Per provider, the model names accepted." }),
     efforts: z.array(z.string()),
