@@ -9,6 +9,7 @@ import {
 } from "../../src/agent/distry-config.js";
 import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS } from "../../src/agent/sophie.js";
 import { filterSkillSet } from "../../src/lib/skills.js";
+import { codePromptOverrides } from "../../src/agent/distry-prompt.js";
 
 describe("Distry's definition (DISTRY-PRINCIPAL-1119)", () => {
   it("version 1 = Distry as the code defines it: same prompt, tools, model, every skill", () => {
@@ -20,6 +21,7 @@ describe("Distry's definition (DISTRY-PRINCIPAL-1119)", () => {
       provider: SOPHIE_MODEL.provider,
       model: SOPHIE_MODEL.model,
       effort: SOPHIE_MODEL.effort,
+      prompt: codePromptOverrides(),
     });
     expect(() => validateDistryDefinition(code, [])).not.toThrow();
   });

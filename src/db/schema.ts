@@ -180,6 +180,9 @@ export const distryConfigVersions = pgTable(
     provider: text("provider").notNull().$type<"anthropic" | "google" | "deepseek">(),
     model: text("model").notNull(),
     effort: text("effort").$type<AnthropicEffort>(),
+    // DISTRY-PROMPT-PARTS-1120 (migration 0044): the parts' order + the texts and tool descriptions
+    // staff changed. NULL = the code's order and texts (versions saved before it existed).
+    promptParts: jsonb("prompt_parts").$type<{ order: string[]; texts: Record<string, string>; toolDescriptions: Record<string, string> } | null>(),
     editedBy: text("edited_by").notNull(),
     note: text("note"),
     restoredFrom: integer("restored_from"),
@@ -189,6 +192,27 @@ export const distryConfigVersions = pgTable(
 );
 
 export type DistryConfigVersion = typeof distryConfigVersions.$inferSelect;
+
+// DISTRY-PROMPT-PARTS-1120 (migration 0044): the last real Distry turn per audience (staff, client,
+// guest, lead), as the model received it: system prompt, turn context, tools, and each part rendered.
+// One row per audience, overwritten each turn: the editor's preview and each live part's example.
+export const distryPromptSamples = pgTable("distry_prompt_samples", {
+  audience: text("audience").primaryKey().$type<"staff" | "client" | "guest" | "lead">(),
+  version: integer("version"),
+  orgId: text("org_id").notNull(),
+  sessionId: text("session_id"),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  systemPrompt: text("system_prompt").notNull(),
+  turnContext: text("turn_context").notNull(),
+  tools: jsonb("tools").notNull().$type<Array<{ name: string; description: string; inputSchema: unknown }>>(),
+  parts: jsonb("parts").notNull().$type<Array<{ id: string; placedIn: string; sent: boolean; text: string | null }>>(),
+  historyMessages: integer("history_messages").notNull(),
+  userMessage: text("user_message").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type DistryPromptSample = typeof distryPromptSamples.$inferSelect;
 
 // DISTRY-MODELS-1119 (migration 0041): the Artificial Analysis Intelligence Index, read daily
 // (`src/lib/intelligence-index.ts`). Bronze = each read as received or its failure; silver = one

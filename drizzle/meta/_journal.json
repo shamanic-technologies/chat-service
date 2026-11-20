@@ -309,6 +309,13 @@
       "when": 1793750400000,
       "tag": "0043_intelligence_index_api_only",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793836800000,
+      "tag": "0044_distry_prompt_parts",
+      "breakpoints": true
     }
   ]
 }

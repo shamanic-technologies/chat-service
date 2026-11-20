@@ -52,3 +52,21 @@ export function endToolFinalNote(toolName: string): string {
 export function endToolNudgeNote(toolName: string): string {
   return `You ended your turn without calling ${toolName}. Your turn only counts once you call it: call ${toolName} now, from the conversation and what you already found.`;
 }
+
+/**
+ * The notes a tool loop sends beside the last tool results (DISTRY-PROMPT-PARTS-1120):
+ * Distry's editor can rewrite them (agent/distry-prompt.ts); every other chat sends the code's.
+ */
+export interface LoopNotes {
+  finalRound: string;
+  silentTurn: string;
+  finalRoundAnswerTool: (toolName: string) => string;
+  silentTurnAnswerTool: (toolName: string) => string;
+}
+
+export const CODE_LOOP_NOTES: LoopNotes = {
+  finalRound: FINAL_ROUND_NOTE,
+  silentTurn: EMPTY_ANSWER_NOTE,
+  finalRoundAnswerTool: endToolFinalNote,
+  silentTurnAnswerTool: endToolNudgeNote,
+};

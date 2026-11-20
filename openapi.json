@@ -5186,9 +5186,18 @@
                 "$ref": "#/components/schemas/DistryDefinition"
               },
               {
-                "description": "Distry as the code defines it (what version 1 was)."
+                "type": "object",
+                "properties": {
+                  "prompt": {
+                    "$ref": "#/components/schemas/DistryPrompt"
+                  }
+                },
+                "required": [
+                  "prompt"
+                ]
               }
-            ]
+            ],
+            "description": "Distry as the code defines it (what version 1 was)."
           },
           "codeDiffers": {
             "type": "boolean",
@@ -5204,7 +5213,15 @@
                 },
                 "description": {
                   "type": "string",
-                  "description": "The tool's whole description, every line, exactly as the model reads it."
+                  "description": "The tool's whole description, every line, exactly as the model reads it under the current version."
+                },
+                "codeDescription": {
+                  "type": "string",
+                  "description": "The code's description (what `description` returns to when the edit is removed)."
+                },
+                "edited": {
+                  "type": "boolean",
+                  "description": "true = the current version changed this description."
                 },
                 "staffOnly": {
                   "type": "boolean"
@@ -5213,9 +5230,18 @@
               "required": [
                 "name",
                 "description",
+                "codeDescription",
+                "edited",
                 "staffOnly"
               ]
             }
+          },
+          "promptParts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DistryPromptPart"
+            },
+            "description": "Every text Distry reads, in the current version's order (ordered parts, then the loop notes and the Engine tool template). Tool descriptions are in `availableTools`."
           },
           "skills": {
             "type": "array",
@@ -5266,6 +5292,7 @@
           "code",
           "codeDiffers",
           "availableTools",
+          "promptParts",
           "skills",
           "models",
           "efforts"
@@ -5279,6 +5306,9 @@
           {
             "type": "object",
             "properties": {
+              "prompt": {
+                "$ref": "#/components/schemas/DistryPrompt"
+              },
               "version": {
                 "type": "integer",
                 "description": "1, 2, 3...: the highest is the current one."
@@ -5301,6 +5331,7 @@
               }
             },
             "required": [
+              "prompt",
               "version",
               "editedBy",
               "note",
@@ -5308,6 +5339,51 @@
               "createdAt"
             ]
           }
+        ]
+      },
+      "DistryPrompt": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "maxItems": 100,
+            "description": "Every ordered part id once, `tools` first. Parts above `conversation` form the system prompt; parts below it are the turn's context, read after the person's message.",
+            "example": [
+              "tools",
+              "role",
+              "skill-index",
+              "about-you",
+              "conversation",
+              "campaign-context",
+              "request-context"
+            ]
+          },
+          "texts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 100000
+            },
+            "description": "Part id -> its text, only where staff changed the code's text (never `role`: that is systemPrompt)."
+          },
+          "toolDescriptions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 20000
+            },
+            "description": "Tool name -> its description, only where staff changed the code's."
+          }
+        },
+        "required": [
+          "order",
+          "texts",
+          "toolDescriptions"
         ]
       },
       "DistryDefinition": {
@@ -5378,6 +5454,131 @@
           "effort"
         ]
       },
+      "DistryPromptPart": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "situation-brief"
+          },
+          "name": {
+            "type": "string",
+            "example": "Where the account stands"
+          },
+          "purpose": {
+            "type": "string",
+            "description": "What it is for, in plain words."
+          },
+          "when": {
+            "type": "string",
+            "description": "When it is sent, in plain words."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "marker",
+              "text",
+              "template",
+              "live"
+            ],
+            "description": "marker = where the tools / the conversation sit (no text); text = fixed words; template = words + named data; live = a block built from the account each turn, wrapped by its template."
+          },
+          "place": {
+            "type": "string",
+            "enum": [
+              "ordered",
+              "message",
+              "loop",
+              "tool"
+            ],
+            "description": "ordered = in the drag-and-drop order; message = sent in the person's place (a trigger they did not write); loop = a note beside the last tool results; tool = the Engine tools' description."
+          },
+          "placeholders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "means": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "means"
+              ]
+            },
+            "description": "The data `{{name}}` a template part can use."
+          },
+          "editable": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string",
+            "nullable": true,
+            "description": "The text the current version sends (the role = systemPrompt). null for a marker."
+          },
+          "codeText": {
+            "type": "string",
+            "nullable": true,
+            "description": "The code's text. null for a marker and the role."
+          },
+          "edited": {
+            "type": "boolean"
+          },
+          "example": {
+            "$ref": "#/components/schemas/DistryPromptPartExample"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "purpose",
+          "when",
+          "kind",
+          "place",
+          "placeholders",
+          "editable",
+          "text",
+          "codeText",
+          "edited",
+          "example"
+        ]
+      },
+      "DistryPromptPartExample": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "audience": {
+            "type": "string",
+            "enum": [
+              "staff",
+              "client",
+              "guest",
+              "lead"
+            ]
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string",
+            "description": "What this part sent in that real turn."
+          }
+        },
+        "required": [
+          "audience",
+          "orgId",
+          "recordedAt",
+          "text"
+        ],
+        "description": "What it sent in the latest real Distry turn that carried it (staff turn first), else null."
+      },
       "DistrySaveRequest": {
         "allOf": [
           {
@@ -5386,6 +5587,9 @@
           {
             "type": "object",
             "properties": {
+              "prompt": {
+                "$ref": "#/components/schemas/DistryPromptInput"
+              },
               "editedBy": {
                 "type": "string",
                 "minLength": 1,
@@ -5404,6 +5608,44 @@
             ]
           }
         ]
+      },
+      "DistryPromptInput": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "maxItems": 100
+          },
+          "texts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "nullable": true,
+              "maxLength": 100000
+            },
+            "description": "Part id -> text. null, or the code's own text, = follow the code. A part missing here follows the code."
+          },
+          "toolDescriptions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "nullable": true,
+              "maxLength": 20000
+            },
+            "description": "Tool name -> description. null, or the code's own text, = follow the code."
+          }
+        },
+        "required": [
+          "order",
+          "texts",
+          "toolDescriptions"
+        ],
+        "description": "The WHOLE parts state (order + changed texts + changed tool descriptions). Omit it to keep the current version's: a save of the prompt alone never touches the parts."
       },
       "DistryModelsResponse": {
         "type": "object",
@@ -5751,6 +5993,131 @@
           "index",
           "intelligencePerDollar",
           "variants"
+        ]
+      },
+      "DistryPromptPreviewResponse": {
+        "type": "object",
+        "properties": {
+          "audience": {
+            "type": "string",
+            "enum": [
+              "staff",
+              "client",
+              "guest",
+              "lead"
+            ]
+          },
+          "recordedAt": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "nullable": true,
+            "description": "The Distry version that turn ran on."
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "inputSchema": {
+                  "nullable": true
+                }
+              },
+              "required": [
+                "name",
+                "description"
+              ]
+            },
+            "description": "Every tool definition sent, in order."
+          },
+          "systemPrompt": {
+            "type": "string",
+            "description": "The system prompt sent."
+          },
+          "historyMessages": {
+            "type": "integer",
+            "description": "How many earlier messages of the conversation were sent."
+          },
+          "userMessage": {
+            "type": "string",
+            "description": "The person's message (empty for a trigger the person did not write)."
+          },
+          "turnContext": {
+            "type": "string",
+            "description": "The turn's context, sent after the person's message (joined to the system prompt on Gemini)."
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "placedIn": {
+                  "type": "string"
+                },
+                "sent": {
+                  "type": "boolean"
+                },
+                "text": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "placedIn",
+                "sent",
+                "text"
+              ]
+            },
+            "description": "Each part in that turn's order: where it went, whether it was sent, its text."
+          },
+          "partsMatch": {
+            "type": "boolean",
+            "description": "true = the sent parts joined are exactly the system prompt and the turn context (no hidden text)."
+          }
+        },
+        "required": [
+          "audience",
+          "recordedAt",
+          "version",
+          "orgId",
+          "sessionId",
+          "provider",
+          "model",
+          "tools",
+          "systemPrompt",
+          "historyMessages",
+          "userMessage",
+          "turnContext",
+          "parts",
+          "partsMatch"
         ]
       },
       "DistryRestoreRequest": {
@@ -10754,6 +11121,83 @@
           },
           "401": {
             "description": "Missing x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/distry/prompt/preview": {
+      "get": {
+        "tags": [
+          "Distry"
+        ],
+        "summary": "The whole prompt of the latest real Distry turn, for one audience",
+        "description": "DISTRY-PROMPT-PARTS-1120. What the model received in the latest real Distry turn of that audience (staff = a staff member talking to Distry, client = an account holder, guest = no account, lead = a Lead event answer): tools, system prompt, the conversation's size, the person's message, the turn's context, and each part in order. 404 until such a turn ran since this shipped.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "staff",
+                "client",
+                "guest",
+                "lead"
+              ]
+            },
+            "required": true,
+            "name": "audience",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The assembled prompt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistryPromptPreviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid definition (unknown tool, skill or model)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Distry turn of that audience recorded yet",
             "content": {
               "application/json": {
                 "schema": {
