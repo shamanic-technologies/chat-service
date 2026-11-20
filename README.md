@@ -1793,7 +1793,7 @@ Each brand plugs, in its Integrations, the MCP server(s) it gives to the AI that
 | Variable | Required | Description |
 |---|---|---|
 | `ADMIN_DISTRIBUTE_API_KEY` | Yes | Admin API key for api-service gateway (sent as `X-API-Key` header) — all client-facing backend calls (workflows, features, keys, prompts, api-registry) route through api-service |
-| `ARTIFICIAL_ANALYSIS_API_KEY` | No | Artificial Analysis Data API key. Set = the daily Intelligence Index read uses their API; unset = their public leaderboard page (`/leaderboards/models`) is read and parsed instead |
+| `ARTIFICIAL_ANALYSIS_API_KEY` | No | Artificial Analysis Data API key: the daily Intelligence Index read behind `GET /internal/distry/models`. Unset = nothing read, scores served null with the reason |
 | `API_SERVICE_URL` | No | Api-service endpoint (default: `https://api.distribute.you`) |
 | `KEY_SERVICE_API_KEY` | Yes | Service-to-service key for key-service (used only for Anthropic API key decryption — infrastructure, not routed via api-service) |
 | `KEY_SERVICE_URL` | No | Key-service endpoint (default: `https://key.mcpfactory.org`) |

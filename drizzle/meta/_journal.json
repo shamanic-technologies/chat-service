@@ -302,6 +302,13 @@
       "when": 1793664000000,
       "tag": "0042_intelligence_index_public_page",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793750400000,
+      "tag": "0043_intelligence_index_api_only",
+      "breakpoints": true
     }
   ]
 }

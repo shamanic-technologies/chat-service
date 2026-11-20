@@ -5,12 +5,10 @@ import {
   distryThinkingFor,
   effortOfLabel,
   fetchIndex,
-  fetchPublicIndex,
   IndexReadError,
   matchIndexEntry,
   nameTokens,
   parseIndexPage,
-  parsePublicPage,
   pickVariant,
   shouldRefresh,
   type IndexEntry,
@@ -42,20 +40,9 @@ function entry(over: Partial<IndexEntry> & { releaseSlug: string; releaseName: s
 }
 
 function okState(entries: IndexEntry[], fetchedAt = NOW): IndexState {
-  const read = { id: "r1", fetchedAt, status: "ok" as const, error: null, indexVersion: "5.0.1", source: "public_page" as const };
+  const read = { id: "r1", fetchedAt, status: "ok" as const, error: null, indexVersion: "5.0.1", source: "api" as const };
   return { latestOk: { read, entries }, latestAttempt: read };
 }
-
-/** A page shaped like artificialanalysis.ai/leaderboards/models: Next.js flight chunks + the version in text. */
-function publicPage(models: unknown[], withVersion = true): string {
-  const payload = `21:["$","div",null,{"children":[["$","$L22",null,{"initialModels":${JSON.stringify(models)},"other":1}]]}]`;
-  const half = Math.floor(payload.length / 2);
-  const push = (s: string) => `<script>self.__next_f.push([1,${JSON.stringify(s)}])</script>`;
-  return `<html><body>${withVersion ? "<p>Artificial Analysis Intelligence Index v5.0.1</p>" : ""}${push(payload.slice(0, half))}${push(payload.slice(half))}</body></html>`;
-}
-
-const HAIKU_LOW = { id: "h-low", name: "Claude Haiku 5.5 (Low)", suffix: "Low", release: { slug: "claude-haiku-5-5", name: "Claude Haiku 5.5" }, modelCreatorName: "Anthropic", intelligenceIndex: 18.6, intelligenceIndexCostPerTask: 0.0437, price1mInputTokens: 0.1, price1mOutputTokens: 0.5 };
-const HAIKU_MAX = { ...HAIKU_LOW, id: "h-max", name: "Claude Haiku 5.5 (Max)", suffix: "Max", intelligenceIndex: 36.5, intelligenceIndexCostPerTask: 0.411 };
 
 describe("effortOfLabel", () => {
   it("reads Artificial Analysis's own thinking words, nothing else", () => {
@@ -63,29 +50,6 @@ describe("effortOfLabel", () => {
     expect(effortOfLabel("Max, Default Fallback")).toBe("max");
     expect(effortOfLabel("Non-reasoning")).toBeNull();
     expect(effortOfLabel(null)).toBeNull();
-  });
-});
-
-describe("parsePublicPage (no key)", () => {
-  it("reads every variant from the page's Next.js payload, with the stated version", () => {
-    const { indexVersion, entries } = parsePublicPage(publicPage([HAIKU_LOW, HAIKU_MAX]));
-    expect(indexVersion).toBe("5.0.1");
-    expect(entries).toHaveLength(2);
-    expect(entries[0]).toMatchObject({ aaId: "h-low", releaseSlug: "claude-haiku-5-5", variantLabel: "Low", effort: "low", score: 18.6, indexCostPerTaskUsd: 0.0437, creator: "Anthropic" });
-  });
-
-  it("fails loud when nothing is found (never a stale or empty value)", () => {
-    expect(() => parsePublicPage("<html></html>")).toThrow(/no Next.js data chunks/);
-    expect(() => parsePublicPage(publicPage([HAIKU_LOW], false))).toThrow(/version/);
-    expect(() => parsePublicPage(publicPage([{ ...HAIKU_LOW, intelligenceIndex: null }]))).toThrow(/none carries an Intelligence Index score/);
-    expect(() => parsePublicPage(publicPage([{ name: "x" }]))).toThrow(/shape we do not read/);
-  });
-
-  it("fetchPublicIndex keeps the raw page on a parse failure (bronze)", async () => {
-    const fake = (async () => new Response("<html>changed</html>", { status: 200 })) as unknown as typeof fetch;
-    const err = await fetchPublicIndex(fake).catch((e) => e);
-    expect(err).toBeInstanceOf(IndexReadError);
-    expect(err.bronze.rawText).toBe("<html>changed</html>");
   });
 });
 
@@ -180,7 +144,7 @@ describe("buildModelPanel", () => {
     entry({ releaseSlug: "deepseek-v4-1-flash-1017", releaseName: "DeepSeek V4.1 Flash 1017", variantLabel: "Max", score: 32.6, indexCostPerTaskUsd: 0.6 }),
   ];
   const build = (state: IndexState) =>
-    buildModelPanel({ choices, state, priceOf: (n) => prices[n] ?? null, pricesRead: true, current: { provider: "anthropic", model: "claude-haiku", effort: "low" }, now: NOW });
+    buildModelPanel({ choices, state, keyConfigured: true, priceOf: (n) => prices[n] ?? null, pricesRead: true, current: { provider: "anthropic", model: "claude-haiku", effort: "low" }, now: NOW });
 
   it("reads each model at Distry's thinking, sorted by intelligence per dollar, unmatched last with a reason", () => {
     const panel = build(okState(entries));
@@ -194,16 +158,21 @@ describe("buildModelPanel", () => {
     expect(deepseek!.index.score).toBeNull();
     expect(deepseek!.index.reason).toBe("Artificial Analysis lists DeepSeek V4.1 Flash only as DeepSeek V4.1 Flash 1017: none picked.");
     expect(panel.current).toMatchObject({ modelId: "claude-haiku-5-5", effort: "low" });
-    expect(panel.source.readFrom).toBe("public_page");
     expect(panel.refresh).toMatchObject({ state: "ok", broken: false });
   });
 
   it("a failed read is red, the last good reading stays served", () => {
     const ok = okState(entries, new Date("2026-11-18T12:00:00Z"));
-    const failed = { id: "r2", fetchedAt: NOW, status: "failed" as const, error: "the page carries no `initialModels`", indexVersion: null, source: "public_page" as const };
+    const failed = { id: "r2", fetchedAt: NOW, status: "failed" as const, error: "Artificial Analysis answered 500", indexVersion: null, source: "api" as const };
     const panel = build({ latestOk: ok.latestOk, latestAttempt: failed });
     expect(panel.refresh).toMatchObject({ state: "failed", broken: true });
     expect(panel.models[0]!.index.score).toBe(18.6);
+  });
+
+  it("no key = every score null with the reason, not red", () => {
+    const panel = buildModelPanel({ choices, state: { latestOk: null, latestAttempt: null }, keyConfigured: false, priceOf: () => null, pricesRead: true, current: { provider: "anthropic", model: "claude-haiku", effort: "low" }, now: NOW });
+    expect(panel.refresh).toMatchObject({ state: "no_key", broken: false });
+    expect(panel.models.every((m) => /key is not set/.test(m.index.reason!))).toBe(true);
   });
 
   it("never read = every score null with the reason; 48 h without success = red", () => {

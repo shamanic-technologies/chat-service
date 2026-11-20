@@ -7003,6 +7003,7 @@ app.get("/internal/distry/models", requireInternalAuth, async (_req, res) => {
     const panel = buildModelPanel({
       choices: distryModelChoices(CHAT_CONFIG_PROVIDERS),
       state: await readIndexState(db),
+      keyConfigured: Boolean(process.env.ARTIFICIAL_ANALYSIS_API_KEY),
       priceOf: listPriceCentsPerUnit,
       pricesRead: listPricesRead(),
       current: { provider: current.provider, model: current.model, effort: current.effort ?? null },
@@ -7337,13 +7338,14 @@ if (process.env.NODE_ENV !== "test") {
         .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
         .catch((err) => console.error("[chat-service] proactive turn recovery failed:", err));
 
-      // DISTRY-MODELS-1119: Artificial Analysis Intelligence Index (API with a key, else their public page), read once a day (the tick reads only when no
+      // DISTRY-MODELS-1119: Artificial Analysis Intelligence Index, read once a day from their API (the tick reads only when no
       // success in 24 h and no attempt in the last hour; a failure is stored and served as broken).
       let indexReading = false;
       const readIndex = () => {
         if (indexReading) return;
         indexReading = true;
         refreshIntelligenceIndex({ database: db, apiKey: process.env.ARTIFICIAL_ANALYSIS_API_KEY })
+          .then((outcome) => { if (outcome === "no_key") console.log("[intelligence-index] ARTIFICIAL_ANALYSIS_API_KEY not set: no reading"); })
           .catch((err) => console.error("[intelligence-index] refresh tick failed:", err))
           .finally(() => { indexReading = false; });
       };
