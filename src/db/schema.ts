@@ -203,10 +203,8 @@ export const intelligenceIndexReads = pgTable(
     error: text("error"),
     indexVersion: text("index_version"),
     body: jsonb("body"),
-    /** `api` (key set) or `public_page` (the leaderboard page, no key). */
-    source: text("source").$type<"api" | "public_page">(),
-    /** The public page as received (bronze), when read from it. */
-    rawText: text("raw_text"),
+    /** Where the read came from: `api` (the Artificial Analysis Data API). */
+    source: text("source").$type<"api">(),
   },
   (table) => [index("intelligence_index_reads_fetched_idx").on(table.fetchedAt)],
 );
