@@ -23,36 +23,42 @@ describe("Intelligence Index store (DISTRY-MODELS-1119)", { timeout: 30000 }, ()
     await client?.end();
   });
 
-  const body = {
-    intelligence_index_version: 5,
-    pagination: { has_more: false },
-    data: [
-      { id: "a", name: "Claude Haiku 5.5", slug: "claude-haiku-5-5", evaluations: { artificial_analysis_intelligence_index: 41.2 }, artificial_analysis_intelligence_index_cost: { total_cost: 120.5 } },
-    ],
+  const page = (score: number | null) => {
+    const models = [{ id: "a", name: "Claude Haiku 5.5 (Low)", suffix: "Low", release: { slug: "claude-haiku-5-5", name: "Claude Haiku 5.5" }, intelligenceIndex: score, intelligenceIndexCostPerTask: 0.0437 }];
+    const payload = `21:["$","div",null,{"initialModels":${JSON.stringify(models)}}]`;
+    return `<p>Intelligence Index v5.0.1</p><script>self.__next_f.push([1,${JSON.stringify(payload)}])</script>`;
   };
 
-  it("no key reads nothing and stores nothing", async () => {
-    expect(await refreshIntelligenceIndex({ database: db as never, apiKey: undefined })).toBe("no_key");
-    expect((await readIndexState(db as never)).latestAttempt).toBeNull();
-  });
-
-  it("a good read stores bronze + silver; a later failure is stored and the good reading stays served", async () => {
+  it("no key reads the public page: bronze keeps the raw page, silver every variant; a page with nothing scored is a stored failure and the good reading stays served", async () => {
     const t0 = new Date("2026-11-18T08:00:00Z");
-    const ok = (async () => new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch;
-    expect(await refreshIntelligenceIndex({ database: db as never, apiKey: "k", now: t0, fetchImpl: ok })).toBe("stored");
+    const ok = (async () => new Response(page(18.6), { status: 200 })) as unknown as typeof fetch;
+    expect(await refreshIntelligenceIndex({ database: db as never, apiKey: undefined, now: t0, fetchImpl: ok })).toBe("stored");
     // Within 24 h: nothing re-read.
-    expect(await refreshIntelligenceIndex({ database: db as never, apiKey: "k", now: new Date("2026-11-18T20:00:00Z"), fetchImpl: ok })).toBe("fresh");
+    expect(await refreshIntelligenceIndex({ database: db as never, apiKey: undefined, now: new Date("2026-11-18T20:00:00Z"), fetchImpl: ok })).toBe("fresh");
+    const [bronze] = await db.select().from(schema.intelligenceIndexReads);
+    expect(bronze).toMatchObject({ status: "ok", source: "public_page", indexVersion: "5.0.1" });
+    expect(bronze!.rawText).toContain("initialModels");
 
-    const bad = (async () => new Response("down", { status: 503 })) as unknown as typeof fetch;
+    const empty = (async () => new Response(page(null), { status: 200 })) as unknown as typeof fetch;
     const t1 = new Date("2026-11-19T09:00:00Z");
-    expect(await refreshIntelligenceIndex({ database: db as never, apiKey: "k", now: t1, fetchImpl: bad })).toBe("failed");
+    expect(await refreshIntelligenceIndex({ database: db as never, apiKey: undefined, now: t1, fetchImpl: empty })).toBe("failed");
 
     const state = await readIndexState(db as never);
-    expect(state.latestAttempt).toMatchObject({ status: "failed" });
-    expect(state.latestAttempt!.error).toMatch(/503/);
-    expect(state.latestOk!.read.indexVersion).toBe("5");
+    expect(state.latestAttempt).toMatchObject({ status: "failed", source: "public_page" });
+    expect(state.latestAttempt!.error).toMatch(/none carries an Intelligence Index score/);
     expect(state.latestOk!.entries).toEqual([
-      expect.objectContaining({ aaSlug: "claude-haiku-5-5", score: expect.closeTo(41.2, 3), indexCostUsd: expect.closeTo(120.5, 3) }),
+      expect.objectContaining({ aaId: "a", releaseSlug: "claude-haiku-5-5", variantLabel: "Low", effort: "low", score: expect.closeTo(18.6, 3), indexCostPerTaskUsd: expect.closeTo(0.0437, 3) }),
     ]);
+  });
+
+  it("with a key the API is read (source api)", async () => {
+    await db.delete(schema.intelligenceIndexScores);
+    await db.delete(schema.intelligenceIndexReads);
+    const body = { intelligence_index_version: 5, pagination: { has_more: false }, data: [{ id: "b", name: "Claude Haiku 5.5 (Max)", slug: "claude-haiku-5-5", evaluations: { artificial_analysis_intelligence_index: 36.5 }, artificial_analysis_intelligence_index_cost: { cost_per_task: { total_cost: 0.41 } } }] };
+    const api = (async () => new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch;
+    expect(await refreshIntelligenceIndex({ database: db as never, apiKey: "k", now: new Date("2026-11-20T08:00:00Z"), fetchImpl: api })).toBe("stored");
+    const state = await readIndexState(db as never);
+    expect(state.latestOk!.read.source).toBe("api");
+    expect(state.latestOk!.entries[0]).toMatchObject({ effort: "max", indexCostPerTaskUsd: expect.closeTo(0.41, 3) });
   });
 });

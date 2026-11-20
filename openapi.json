@@ -5432,12 +5432,23 @@
               "attribution": {
                 "type": "string",
                 "description": "Show it beside the scores (Artificial Analysis requires it)."
+              },
+              "readFrom": {
+                "type": "string",
+                "nullable": true,
+                "enum": [
+                  "api",
+                  "public_page",
+                  null
+                ],
+                "description": "Where the reading served came from: their Data API (key set) or their public leaderboard page."
               }
             },
             "required": [
               "name",
               "url",
-              "attribution"
+              "attribution",
+              "readFrom"
             ]
           },
           "refresh": {
@@ -5446,7 +5457,6 @@
               "state": {
                 "type": "string",
                 "enum": [
-                  "no_key",
                   "never_read",
                   "ok",
                   "failed",
@@ -5494,12 +5504,17 @@
               },
               "modelId": {
                 "type": "string"
+              },
+              "effort": {
+                "type": "string",
+                "nullable": true
               }
             },
             "required": [
               "provider",
               "model",
-              "modelId"
+              "modelId",
+              "effort"
             ]
           },
           "models": {
@@ -5556,6 +5571,11 @@
             "type": "boolean",
             "description": "true = Distry runs on this model now."
           },
+          "thinking": {
+            "type": "string",
+            "description": "The thinking Distry would run this model at, in words (the variant the score is read at).",
+            "example": "effort low (Distry's definition)"
+          },
           "price": {
             "type": "object",
             "properties": {
@@ -5607,7 +5627,18 @@
               "aaName": {
                 "type": "string",
                 "nullable": true,
-                "description": "The Artificial Analysis entry matched to this model."
+                "description": "The Artificial Analysis entry read: this model at Distry's thinking.",
+                "example": "Claude Haiku 5.5 (Low)"
+              },
+              "variantLabel": {
+                "type": "string",
+                "nullable": true,
+                "description": "Artificial Analysis's thinking label of that entry; null when it lists one reading only."
+              },
+              "picked": {
+                "type": "string",
+                "nullable": true,
+                "description": "Why that entry, in words."
               },
               "score": {
                 "type": "number",
@@ -5622,10 +5653,10 @@
               "rankOutOf": {
                 "type": "integer"
               },
-              "indexCostUsd": {
+              "indexCostPerTaskUsd": {
                 "type": "number",
                 "nullable": true,
-                "description": "What Artificial Analysis spent running its Intelligence Index on this model (USD)."
+                "description": "Artificial Analysis's cost per task of running its Intelligence Index on this entry (USD)."
               },
               "reason": {
                 "type": "string",
@@ -5636,10 +5667,12 @@
             "required": [
               "aaSlug",
               "aaName",
+              "variantLabel",
+              "picked",
               "score",
               "rank",
               "rankOutOf",
-              "indexCostUsd",
+              "indexCostPerTaskUsd",
               "reason"
             ]
           },
@@ -5658,7 +5691,7 @@
                   "blended_price_3_to_1",
                   null
                 ],
-                "description": "`index_run_cost` = score / index run cost; `blended_price_3_to_1` = score / our blended 1M-token price (no run cost published)."
+                "description": "`index_run_cost` = score / index run cost per task; `blended_price_3_to_1` = score / our blended 1M-token price (no run cost published)."
               },
               "reason": {
                 "type": "string",
@@ -5670,6 +5703,50 @@
               "basis",
               "reason"
             ]
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "aaName": {
+                  "type": "string"
+                },
+                "variantLabel": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "effort": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "score": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "indexCostPerTaskUsd": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "intelligencePerDollar": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "isDistrysThinking": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "aaName",
+                "variantLabel",
+                "effort",
+                "score",
+                "indexCostPerTaskUsd",
+                "intelligencePerDollar",
+                "isDistrysThinking"
+              ]
+            },
+            "description": "Every thinking level Artificial Analysis scored this model at, best score first; `isDistrysThinking` marks the one the row reads."
           }
         },
         "required": [
@@ -5679,9 +5756,11 @@
           "names",
           "capabilityTier",
           "isCurrent",
+          "thinking",
           "price",
           "index",
-          "intelligencePerDollar"
+          "intelligencePerDollar",
+          "variants"
         ]
       },
       "DistryRestoreRequest": {
@@ -10649,7 +10728,7 @@
           "Distry"
         ],
         "summary": "Every model Distry can run: price, Intelligence Index, rank, intelligence per dollar",
-        "description": "Staff editor model panel (dashboard v2 Monitoring > Distry). One row per model the definition's providers accept, sorted by intelligence per dollar, best first. Scores come from Artificial Analysis, read daily and stored; never typed by hand.",
+        "description": "Staff editor model panel (dashboard v2 Monitoring > Distry). One row per model the definition's providers accept, sorted by intelligence per dollar, best first. Scores come from Artificial Analysis (their API with a key, else their public leaderboard page), read daily and stored; never typed by hand. Each model is read at the thinking Distry runs it.",
         "parameters": [
           {
             "schema": {

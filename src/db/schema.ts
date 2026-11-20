@@ -198,11 +198,15 @@ export const intelligenceIndexReads = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
-    status: text("status").notNull().$type<"ok" | "failed">(),
+    status: text("status").notNull().$type<"ok" | "failed" | "superseded">(),
     httpStatus: integer("http_status"),
     error: text("error"),
     indexVersion: text("index_version"),
     body: jsonb("body"),
+    /** `api` (key set) or `public_page` (the leaderboard page, no key). */
+    source: text("source").$type<"api" | "public_page">(),
+    /** The public page as received (bronze), when read from it. */
+    rawText: text("raw_text"),
   },
   (table) => [index("intelligence_index_reads_fetched_idx").on(table.fetchedAt)],
 );
@@ -217,12 +221,18 @@ export const intelligenceIndexScores = pgTable(
     creator: text("creator"),
     indexVersion: text("index_version").notNull(),
     score: real("score"),
-    indexCostUsd: real("index_cost_usd"),
+    releaseSlug: text("release_slug"),
+    releaseName: text("release_name"),
+    /** Artificial Analysis's variant label ("High", "Max, Default Fallback"), null for a single entry. */
+    variantLabel: text("variant_label"),
+    /** The thinking level the variant label names (low|medium|high|xhigh|max), else null. */
+    effort: text("effort"),
+    indexCostPerTaskUsd: real("index_cost_per_task_usd"),
     priceInputPer1mUsd: real("price_input_per_1m_usd"),
     priceOutputPer1mUsd: real("price_output_per_1m_usd"),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
   },
-  (table) => [primaryKey({ name: "intelligence_index_scores_pk", columns: [table.readId, table.aaSlug] })],
+  (table) => [primaryKey({ name: "intelligence_index_scores_pk", columns: [table.readId, table.aaId] })],
 );
 
 // Copilot SKILL TREE (migration 0018). One row per skill: the INDEX (slug

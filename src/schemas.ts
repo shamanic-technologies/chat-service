@@ -4457,6 +4457,7 @@ const DistryModelRowSchema = z
     names: z.array(z.string()).openapi({ description: "Every name Distry's definition may use for this model (save any one as `model`)." }),
     capabilityTier: z.enum(["cheap", "strong", "frontier"]),
     isCurrent: z.boolean().openapi({ description: "true = Distry runs on this model now." }),
+    thinking: z.string().openapi({ description: "The thinking Distry would run this model at, in words (the variant the score is read at).", example: "effort low (Distry's definition)" }),
     price: z.object({
       inputPer1mUsd: z.number().nullable().openapi({ description: "USD per 1M input tokens we are billed (our catalogue price)." }),
       outputPer1mUsd: z.number().nullable(),
@@ -4465,18 +4466,29 @@ const DistryModelRowSchema = z
     }),
     index: z.object({
       aaSlug: z.string().nullable(),
-      aaName: z.string().nullable().openapi({ description: "The Artificial Analysis entry matched to this model." }),
+      aaName: z.string().nullable().openapi({ description: "The Artificial Analysis entry read: this model at Distry's thinking.", example: "Claude Haiku 5.5 (Low)" }),
+      variantLabel: z.string().nullable().openapi({ description: "Artificial Analysis's thinking label of that entry; null when it lists one reading only." }),
+      picked: z.string().nullable().openapi({ description: "Why that entry, in words." }),
       score: z.number().nullable().openapi({ description: "Artificial Analysis Intelligence Index score." }),
       rank: z.number().int().nullable().openapi({ description: "1 = highest score among the listed models; ties share a rank." }),
       rankOutOf: z.number().int(),
-      indexCostUsd: z.number().nullable().openapi({ description: "What Artificial Analysis spent running its Intelligence Index on this model (USD)." }),
+      indexCostPerTaskUsd: z.number().nullable().openapi({ description: "Artificial Analysis's cost per task of running its Intelligence Index on this entry (USD)." }),
       reason: z.string().nullable().openapi({ description: "Why the score is null, in words." }),
     }),
     intelligencePerDollar: z.object({
       value: z.number().nullable(),
-      basis: z.enum(["index_run_cost", "blended_price_3_to_1"]).nullable().openapi({ description: "`index_run_cost` = score / index run cost; `blended_price_3_to_1` = score / our blended 1M-token price (no run cost published)." }),
+      basis: z.enum(["index_run_cost", "blended_price_3_to_1"]).nullable().openapi({ description: "`index_run_cost` = score / index run cost per task; `blended_price_3_to_1` = score / our blended 1M-token price (no run cost published)." }),
       reason: z.string().nullable(),
     }),
+    variants: z.array(z.object({
+      aaName: z.string(),
+      variantLabel: z.string().nullable(),
+      effort: z.string().nullable(),
+      score: z.number().nullable(),
+      indexCostPerTaskUsd: z.number().nullable(),
+      intelligencePerDollar: z.number().nullable(),
+      isDistrysThinking: z.boolean(),
+    })).openapi({ description: "Every thinking level Artificial Analysis scored this model at, best score first; `isDistrysThinking` marks the one the row reads." }),
   })
   .openapi("DistryModelRow");
 
@@ -4485,9 +4497,14 @@ export const DistryModelsResponseSchema = z
     indexName: z.string(),
     indexVersion: z.string().nullable(),
     readAt: z.string().nullable().openapi({ description: "When the reading served was taken." }),
-    source: z.object({ name: z.string(), url: z.string(), attribution: z.string().openapi({ description: "Show it beside the scores (Artificial Analysis requires it)." }) }),
+    source: z.object({
+      name: z.string(),
+      url: z.string(),
+      attribution: z.string().openapi({ description: "Show it beside the scores (Artificial Analysis requires it)." }),
+      readFrom: z.enum(["api", "public_page"]).nullable().openapi({ description: "Where the reading served came from: their Data API (key set) or their public leaderboard page." }),
+    }),
     refresh: z.object({
-      state: z.enum(["no_key", "never_read", "ok", "failed", "stale"]),
+      state: z.enum(["never_read", "ok", "failed", "stale"]),
       broken: z.boolean().openapi({ description: "true = red on Monitoring (the last read failed, or none succeeded for 48 h)." }),
       sentence: z.string(),
       lastAttemptAt: z.string().nullable(),
@@ -4495,7 +4512,7 @@ export const DistryModelsResponseSchema = z
     }),
     priceBasis: z.string(),
     ratioBasis: z.string(),
-    current: z.object({ provider: z.string(), model: z.string(), modelId: z.string() }),
+    current: z.object({ provider: z.string(), model: z.string(), modelId: z.string(), effort: z.string().nullable() }),
     models: z.array(DistryModelRowSchema).openapi({ description: "Best intelligence per dollar first (run-cost basis, then blended basis), unscored last." }),
   })
   .openapi("DistryModelsResponse");
@@ -4505,7 +4522,7 @@ registry.registerPath({
   path: "/internal/distry/models",
   tags: ["Distry"],
   summary: "Every model Distry can run: price, Intelligence Index, rank, intelligence per dollar",
-  description: "Staff editor model panel (dashboard v2 Monitoring > Distry). One row per model the definition's providers accept, sorted by intelligence per dollar, best first. Scores come from Artificial Analysis, read daily and stored; never typed by hand.",
+  description: "Staff editor model panel (dashboard v2 Monitoring > Distry). One row per model the definition's providers accept, sorted by intelligence per dollar, best first. Scores come from Artificial Analysis (their API with a key, else their public leaderboard page), read daily and stored; never typed by hand. Each model is read at the thinking Distry runs it.",
   request: { headers: internalKeyHeader },
   responses: { 200: { description: "The model panel", content: { "application/json": { schema: DistryModelsResponseSchema } } }, ...distryErrors },
 });
