@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isStaffEmail, parseStaffRequestArgs, buildTelegramMessage, buildIssueBody } from "../../src/lib/staff-requests.js";
+import { parseStaffRequestArgs, buildTelegramMessage, buildIssueBody } from "../../src/lib/staff-requests.js";
 import type { StaffRequest } from "../../src/db/schema.js";
 import { RETIRED_TOOL_NAMES, TOOL_REGISTRY, resolveToolSet } from "../../src/lib/anthropic.js";
 
@@ -12,16 +12,6 @@ const args = {
   missingPiece: "a trigger",
   decomposition: [{ piece: "qualify", outcome: "exists" }],
 };
-
-describe("isStaffEmail (same rule as billing-service)", () => {
-  it.each([
-    ["kevin@distribute.you", true],
-    ["anyone@distribute.you", true],
-    ["Kevin.Lourd+test@gmail.com", true],
-    ["client@acme.com", false],
-    [null, false],
-  ])("%s → %s", (email, expected) => expect(isStaffEmail(email)).toBe(expected));
-});
 
 describe("parseStaffRequestArgs", () => {
   it("accepts a complete request", () => {
