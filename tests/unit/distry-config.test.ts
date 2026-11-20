@@ -1,3 +1,4 @@
+import { TOOL_REGISTRY } from "../../src/lib/anthropic.js";
 import { describe, it, expect } from "vitest";
 import {
   codeDistryDefinition,
@@ -30,6 +31,15 @@ describe("Distry's definition (DISTRY-PRINCIPAL-1119)", () => {
     expect(names).toContain("read_company_financials");
     expect(availableDistryTools().find((t) => t.name === "find_stakeholders")?.staffOnly).toBe(true);
     expect(availableDistryTools().find((t) => t.name === "run_operation")?.staffOnly).toBe(false);
+  });
+
+  it("serves each tool's whole description, every line, as the model reads it", () => {
+    for (const t of Object.values(TOOL_REGISTRY)) {
+      expect(availableDistryTools().find((a) => a.name === t.name)?.description).toBe(t.description ?? "");
+    }
+    const correct = availableDistryTools().find((t) => t.name === "correct_person")!;
+    expect(correct.description).toBe(TOOL_REGISTRY.correct_person!.description);
+    expect(correct.description.length).toBeGreaterThan(300);
   });
 
   it("refuses what /chat could not run: an unknown tool, skill or model, an effort off Anthropic", () => {
