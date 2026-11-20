@@ -51,6 +51,16 @@ describe("Intelligence Index store (DISTRY-MODELS-1119)", { timeout: 30000 }, ()
     ]);
   });
 
+  it("a superseded read is no attempt: the next tick reads at once", async () => {
+    await db.delete(schema.intelligenceIndexScores);
+    await db.delete(schema.intelligenceIndexReads);
+    await db.insert(schema.intelligenceIndexReads).values({ fetchedAt: new Date("2026-11-20T07:09:00Z"), status: "superseded", indexVersion: "5" });
+    const state = await readIndexState(db as never);
+    expect(state.latestAttempt).toBeNull();
+    const ok = (async () => new Response(page(18.6), { status: 200 })) as unknown as typeof fetch;
+    expect(await refreshIntelligenceIndex({ database: db as never, apiKey: undefined, now: new Date("2026-11-20T07:27:00Z"), fetchImpl: ok })).toBe("stored");
+  });
+
   it("with a key the API is read (source api)", async () => {
     await db.delete(schema.intelligenceIndexScores);
     await db.delete(schema.intelligenceIndexReads);
