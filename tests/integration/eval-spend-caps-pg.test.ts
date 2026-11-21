@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import {
+  EVAL_MONTHLY_CEILING_USD,
   EvalSpendCeilingError,
   evalBudget,
   evalRunsPerScenario,
@@ -16,10 +17,10 @@ import { runReplayPlan, type ReplayOutcome } from "../../src/evals/replay-plan.j
 
 const connectionString = process.env.CHAT_SERVICE_DATABASE_URL;
 const tag = `esc${Date.now()}`;
-let dayN = 0;
-/** Every test counts on its own UTC day, so the fleet's daily total starts at 0. */
+let monthN = 0;
+/** Every test counts in its own UTC month, so the fleet's monthly total starts at 0. */
 const freshDay = () => {
-  const d = new Date(Date.UTC(2099, 0, 1 + dayN++, 12));
+  const d = new Date(Date.UTC(2099, monthN++, 15, 12));
   return () => d;
 };
 
@@ -55,7 +56,7 @@ describe("eval spend ceilings", { timeout: 30_000 }, () => {
   });
 
   it("refuses a run whose projection crosses its ceiling before any spend, stating the figures", async () => {
-    const budget = evalBudget({ db, runKey: `${tag}-proj`, runCeilingUsd: 1, dailyCeilingUsd: 3, now: freshDay() });
+    const budget = evalBudget({ db, runKey: `${tag}-proj`, runCeilingUsd: 1, monthlyCeilingUsd: 3, now: freshDay() });
     const replayOnce = replayCosting(0.004);
     // 73 scenarios x 3 replays x 3 models at the prior: $2.63 projected over a $1 ceiling.
     const err = await runReplayPlan({ db, budget, scenarios: scenarios(657, "proj"), runs: 1, parallel: 4, model: `${tag}/proj`, fresh: false, replayOnce, log: () => {} }).catch((e) => e);
@@ -70,7 +71,7 @@ describe("eval spend ceilings", { timeout: 30_000 }, () => {
   });
 
   it("stops cleanly when the measured spend would cross the run ceiling, keeping the partial results", async () => {
-    const budget = evalBudget({ db, runKey: `${tag}-actual`, runCeilingUsd: 1, dailyCeilingUsd: 3, now: freshDay() });
+    const budget = evalBudget({ db, runKey: `${tag}-actual`, runCeilingUsd: 1, monthlyCeilingUsd: 3, now: freshDay() });
     // Each replay costs $0.40 measured (the prior said $0.004: the projection passed).
     const replayOnce = replayCosting(0.4);
     const plan = await runReplayPlan({ db, budget, scenarios: scenarios(5, "actual"), runs: 1, parallel: 1, model: `${tag}/actual`, fresh: false, replayOnce, log: () => {} });
@@ -85,11 +86,11 @@ describe("eval spend ceilings", { timeout: 30_000 }, () => {
     expect(cents).toBeCloseTo(80, 6);
   });
 
-  it("holds the fleet's daily ceiling across two concurrent runs", async () => {
+  it("holds the fleet's monthly ceiling across two concurrent runs", async () => {
     const now = freshDay();
-    // $0.01 a day for every eval run together; each replay reserves the prior ($0.004) and costs it.
-    const a = evalBudget({ db, runKey: `${tag}-fleet-a`, runCeilingUsd: 1, dailyCeilingUsd: 0.01, now });
-    const b = evalBudget({ db, runKey: `${tag}-fleet-b`, runCeilingUsd: 1, dailyCeilingUsd: 0.01, now });
+    // $0.01 a month for every eval run together; each replay reserves the prior ($0.004) and costs it.
+    const a = evalBudget({ db, runKey: `${tag}-fleet-a`, runCeilingUsd: 1, monthlyCeilingUsd: 0.01, now });
+    const b = evalBudget({ db, runKey: `${tag}-fleet-b`, runCeilingUsd: 1, monthlyCeilingUsd: 0.01, now });
     const run = (budget: typeof a, name: string) =>
       runReplayPlan({ db, budget, scenarios: scenarios(4, name), runs: 1, parallel: 2, model: `${tag}/fleet`, fresh: false, replayOnce: replayCosting(0.004, 30), log: () => {} });
     // Each run alone projects $0.016 > $0.01: the projection would refuse it, so start them on a 1-replay projection each.
@@ -98,15 +99,15 @@ describe("eval spend ceilings", { timeout: 30_000 }, () => {
       runReplayPlan({ db, budget: b, scenarios: scenarios(1, "fleet-b"), runs: 1, parallel: 1, model: `${tag}/fleet`, fresh: false, replayOnce: replayCosting(0.004, 30), log: () => {} }),
     ]);
     expect(pa.replayed + pb.replayed).toBe(2);
-    // The day now holds $0.008: a third replay ($0.004) from either run crosses $0.01.
+    // The month now holds $0.008: a third replay ($0.004) from either run crosses $0.01.
     const third = await run(a, "fleet-c").catch((e) => e);
     expect(third).toBeInstanceOf(EvalSpendCeilingError);
-    expect(third.scope).toBe("day");
+    expect(third.scope).toBe("month");
 
-    // Truly concurrent reservations: 6 parallel replays from two runs on a fresh day, room for 2.
+    // Truly concurrent reservations: 6 parallel replays from two runs in a fresh month, room for 2.
     const day2 = freshDay();
-    const c = evalBudget({ db, runKey: `${tag}-fleet-c`, runCeilingUsd: 1, dailyCeilingUsd: 0.01, now: day2 });
-    const d = evalBudget({ db, runKey: `${tag}-fleet-d`, runCeilingUsd: 1, dailyCeilingUsd: 0.01, now: day2 });
+    const c = evalBudget({ db, runKey: `${tag}-fleet-c`, runCeilingUsd: 1, monthlyCeilingUsd: 0.01, now: day2 });
+    const d = evalBudget({ db, runKey: `${tag}-fleet-d`, runCeilingUsd: 1, monthlyCeilingUsd: 0.01, now: day2 });
     const reserveMany = async (budget: typeof c) => {
       const got = await Promise.allSettled(Array.from({ length: 3 }, () => budget.reserve(0.004)));
       for (const g of got) if (g.status === "fulfilled") { g.value.add(0.4); await g.value.close(); }
@@ -123,13 +124,13 @@ describe("eval spend ceilings", { timeout: 30_000 }, () => {
   it("reuses an unchanged replay at $0 and replays a failed one", async () => {
     const list = scenarios(2, "reuse");
     const first = replayCosting(0.004);
-    const b1 = evalBudget({ db, runKey: `${tag}-reuse-1`, runCeilingUsd: 1, dailyCeilingUsd: 3, now: freshDay() });
+    const b1 = evalBudget({ db, runKey: `${tag}-reuse-1`, runCeilingUsd: 1, monthlyCeilingUsd: 3, now: freshDay() });
     const p1 = await runReplayPlan({ db, budget: b1, scenarios: list, runs: 1, parallel: 2, model: `${tag}/reuse`, fresh: false, replayOnce: first, log: () => {} });
     expect(p1.replayed).toBe(2);
     expect(b1.spentCents()).toBeCloseTo(0.8, 6);
 
     const second = replayCosting(0.004);
-    const b2 = evalBudget({ db, runKey: `${tag}-reuse-2`, runCeilingUsd: 1, dailyCeilingUsd: 3, now: freshDay() });
+    const b2 = evalBudget({ db, runKey: `${tag}-reuse-2`, runCeilingUsd: 1, monthlyCeilingUsd: 3, now: freshDay() });
     const p2 = await runReplayPlan({ db, budget: b2, scenarios: list, runs: 1, parallel: 2, model: `${tag}/reuse`, fresh: false, replayOnce: second, log: () => {} });
     expect(second).not.toHaveBeenCalled();
     expect(p2.reused).toBe(2);
@@ -139,17 +140,17 @@ describe("eval spend ceilings", { timeout: 30_000 }, () => {
 
     // Asking 2 replays reuses the kept one and makes only the missing one.
     const third = replayCosting(0.004);
-    const b3 = evalBudget({ db, runKey: `${tag}-reuse-3`, runCeilingUsd: 1, dailyCeilingUsd: 3, now: freshDay() });
+    const b3 = evalBudget({ db, runKey: `${tag}-reuse-3`, runCeilingUsd: 1, monthlyCeilingUsd: 3, now: freshDay() });
     const p3 = await runReplayPlan({ db, budget: b3, scenarios: list, runs: 2, parallel: 2, model: `${tag}/reuse`, fresh: false, replayOnce: third, log: () => {} });
     expect(p3.reused).toBe(2);
     expect(third).toHaveBeenCalledTimes(2);
 
     // A failed replay (vendor 500) is never kept: the next run replays it.
     const failing = scenarios(1, "reuse-failed");
-    const b4 = evalBudget({ db, runKey: `${tag}-reuse-4`, runCeilingUsd: 1, dailyCeilingUsd: 3, now: freshDay() });
+    const b4 = evalBudget({ db, runKey: `${tag}-reuse-4`, runCeilingUsd: 1, monthlyCeilingUsd: 3, now: freshDay() });
     await runReplayPlan({ db, budget: b4, scenarios: failing, runs: 1, parallel: 1, model: `${tag}/reuse`, fresh: false, replayOnce: replayCosting(0, 0, true), log: () => {} });
     const again = replayCosting(0.004);
-    const b5 = evalBudget({ db, runKey: `${tag}-reuse-5`, runCeilingUsd: 1, dailyCeilingUsd: 3, now: freshDay() });
+    const b5 = evalBudget({ db, runKey: `${tag}-reuse-5`, runCeilingUsd: 1, monthlyCeilingUsd: 3, now: freshDay() });
     const p5 = await runReplayPlan({ db, budget: b5, scenarios: failing, runs: 1, parallel: 1, model: `${tag}/reuse`, fresh: false, replayOnce: again, log: () => {} });
     expect(p5.reused).toBe(0);
     expect(again).toHaveBeenCalledTimes(1);
@@ -159,13 +160,37 @@ describe("eval spend ceilings", { timeout: 30_000 }, () => {
 
   it("--fresh replays even what is kept", async () => {
     const list = scenarios(1, "fresh");
-    const b1 = evalBudget({ db, runKey: `${tag}-fresh-1`, runCeilingUsd: 1, dailyCeilingUsd: 3, now: freshDay() });
+    const b1 = evalBudget({ db, runKey: `${tag}-fresh-1`, runCeilingUsd: 1, monthlyCeilingUsd: 3, now: freshDay() });
     await runReplayPlan({ db, budget: b1, scenarios: list, runs: 1, parallel: 1, model: `${tag}/fresh`, fresh: false, replayOnce: replayCosting(0.004), log: () => {} });
     const again = replayCosting(0.004);
-    const b2 = evalBudget({ db, runKey: `${tag}-fresh-2`, runCeilingUsd: 1, dailyCeilingUsd: 3, now: freshDay() });
+    const b2 = evalBudget({ db, runKey: `${tag}-fresh-2`, runCeilingUsd: 1, monthlyCeilingUsd: 3, now: freshDay() });
     const p = await runReplayPlan({ db, budget: b2, scenarios: list, runs: 1, parallel: 1, model: `${tag}/fresh`, fresh: true, replayOnce: again, log: () => {} });
     expect(p.reused).toBe(0);
     expect(again).toHaveBeenCalledTimes(1);
+  });
+
+  it("spends strictly $0 a month by default: any new spend is refused before it happens, kept replays still serve", async () => {
+    expect(EVAL_MONTHLY_CEILING_USD).toBe(0);
+    const list = scenarios(1, "zero");
+    // A replay kept earlier (under a test budget) is served at $0 under the owner's ceiling.
+    const seed = evalBudget({ db, runKey: `${tag}-zero-seed`, runCeilingUsd: 1, monthlyCeilingUsd: 1, now: freshDay() });
+    await runReplayPlan({ db, budget: seed, scenarios: list, runs: 1, parallel: 1, model: `${tag}/zero`, fresh: false, replayOnce: replayCosting(0.004), log: () => {} });
+    const now = freshDay();
+    const kept = replayCosting(0.004);
+    const b = evalBudget({ db, runKey: `${tag}-zero-1`, runCeilingUsd: 1, monthlyCeilingUsd: EVAL_MONTHLY_CEILING_USD, now });
+    const p = await runReplayPlan({ db, budget: b, scenarios: list, runs: 1, parallel: 1, model: `${tag}/zero`, fresh: false, replayOnce: kept, log: () => {} });
+    expect(p.reused).toBe(1);
+    expect(kept).not.toHaveBeenCalled();
+    // Anything new (a second replay, a judge call) is refused before any spend.
+    const fresh = replayCosting(0.004);
+    const b2 = evalBudget({ db, runKey: `${tag}-zero-2`, runCeilingUsd: 1, monthlyCeilingUsd: EVAL_MONTHLY_CEILING_USD, now });
+    const err = await runReplayPlan({ db, budget: b2, scenarios: list, runs: 2, parallel: 1, model: `${tag}/zero`, fresh: false, replayOnce: fresh, log: () => {} }).catch((e) => e);
+    expect(err).toBeInstanceOf(EvalSpendCeilingError);
+    expect(err.scope).toBe("month");
+    expect(fresh).not.toHaveBeenCalled();
+    await expect(evalBudget({ db, runKey: `${tag}-zero-3`, runCeilingUsd: 1, monthlyCeilingUsd: EVAL_MONTHLY_CEILING_USD, now }).reserve(0.0005)).rejects.toBeInstanceOf(EvalSpendCeilingError);
+    const [{ n }] = await client`SELECT COUNT(*)::int AS n FROM eval_spend WHERE run_key IN (${`${tag}-zero-1`}, ${`${tag}-zero-2`}, ${`${tag}-zero-3`})`;
+    expect(n).toBe(0);
   });
 
   it("defaults to one replay per scenario and to naming the scenarios", () => {
