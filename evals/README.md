@@ -35,9 +35,12 @@ The runner reads platform keys from key-service and declares its spend on platfo
 npx tsc -p . && COPYFILE_DISABLE=1 tar czf /tmp/evals.tgz dist evals src/agent src/lib/client-brief.ts  # the sources: sophieCodeHash() reads them
 scp -i ~/.ssh/oracle-distribute /tmp/evals.tgz root@62.83.93.230:/tmp/<workspace>-evals.tgz
 # box: unpack in /tmp/sophie-evals of distribute-chat-service-1, symlink /app/node_modules, then
-node dist/evals/run.js --definition evals/definitions/<id>.json --runs 3 --parallel 5 --out /tmp/sophie-evals/run.json
+node dist/evals/run.js --definition code --only <ids your change touches> --out /tmp/sophie-evals/run.json   # the default: once each
+node dist/evals/run.js --definition code --all --runs 3 --parallel 5 --out /tmp/sophie-evals/run.json      # the merge gate only
 node dist/evals/run.js --definition evals/definitions/<id>.json --calibrate --out /tmp/sophie-evals/calibration.json
 ```
+
+**Spend is capped (EVAL-SPEND-CAP-1121, owner 2026-11-21 « ça dépense trop »: 34,662 replayed turns in November, the Claude org limit crossed, every client chat on Claude refused until December).** Defaults are cheap: `--only` names the scenarios your change touches (the whole suite needs `--all`), each replays ONCE (`--runs 3` only for the gate), and a replay already judged under the same key (definition, Sophie's code, eval code, scenario, model and wire flags, judge; kept 7 days) is reused at $0, so an unchanged baseline costs nothing (`--fresh` replays anyway: a same-hour bake-off, or a change in a loop the key does not hash, e.g. `vendor-chat.ts`). The rest runs under two ceilings read from measured spend (runs-service's priced costs): `--max-usd` per run (default $1) and `EVAL_DAILY_USD` for every eval run of the UTC day together (default $3, table `eval_spend`). A run whose projection crosses one is refused before any spend; a run that would cross one stops, writes its partial results (`spend.stopped`) and exits 1. Every progress line prints `spent $x of $1.00`. Raising a ceiling is a decision, never a retry loop.
 
 A scenario with `afterSignIn: true` replays the answer that follows a sign-in at once (site and WhatsApp); a guest's `run_operation` meets the server's plan guard (`lib/guest-plan.ts`) as production does (DISTRY-ONE-AI-1118 B, `tools/one_ai_plan_scenarios.py`).
 
