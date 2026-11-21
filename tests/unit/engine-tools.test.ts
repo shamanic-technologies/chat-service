@@ -33,10 +33,10 @@ function producers(over: Partial<Record<string, (s: Seen) => Response>> = {}): {
     const key = `${service} ${init.method}`;
     if (over[key]) return over[key]!(s);
     if (key === "campaign POST")
-      return Response.json({ salesFunnelCampaign: { id: CAMPAIGN_ID, salesFunnelId: "newsletter_drafted", salesFunnelName: "Newsletter drafted", status: "stopped" }, created: true, firstRun: { waitingFor: "caps" } });
+      return Response.json({ salesFunnelCampaign: { id: CAMPAIGN_ID, salesFunnelId: "newsletter_drafted", salesFunnelName: "Newsletter drafted", status: "stopped" }, created: true, nextRun: { waitingFor: "caps" } });
     if (key === "billing PUT") return Response.json({ maxVolume: { count: 1, period: "one_off" }, maxBudget: { amountCents: 100, period: "one_off" }, funded: true });
     if (key === "campaign PATCH")
-      return Response.json({ salesFunnelCampaign: { id: CAMPAIGN_ID, status: "ongoing" }, firstRun: { at: "2026-11-21T12:05:00.000Z" } });
+      return Response.json({ salesFunnelCampaign: { id: CAMPAIGN_ID, status: "ongoing" }, nextRun: { at: "2026-11-21T12:05:00.000Z" } });
     if (key === "campaign GET") return Response.json({ unitsMade: 1, spendUsd: 0.04, finished: true, idleReason: null });
     throw new Error(`unexpected ${key} ${path}`);
   };
@@ -88,7 +88,7 @@ describe("an Engine call is ALWAYS a campaign (DISTRY-CALL-IS-CAMPAIGN-1121)", (
     expect(seen[0].headers).toMatchObject({ "x-org-id": target.orgId, "x-user-id": "user-1", "x-run-id": "run-1", "x-brand-id": "brand-1" });
     expect(seen[1].body).toEqual({ maxVolume: { count: 1, period: "one_off" }, maxBudget: { amountCents: 100, period: "one_off" } });
     expect(seen[2].body).toEqual({ status: "activate" });
-    expect(out).toMatchObject({ campaignId: CAMPAIGN_ID, status: "ongoing", created: true, firstRun: { at: "2026-11-21T12:05:00.000Z" }, caps: { funded: true } });
+    expect(out).toMatchObject({ campaignId: CAMPAIGN_ID, status: "ongoing", created: true, nextRun: { at: "2026-11-21T12:05:00.000Z" }, caps: { funded: true } });
   });
 
   it("a stated offer rides the campaign and its caps path", async () => {

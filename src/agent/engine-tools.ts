@@ -271,9 +271,9 @@ export async function startEngineCampaign(
       created: created.created ?? null,
       status: after.status ?? null,
       stopReason: after.stopReason ?? null,
-      firstRun: activated.firstRun ?? created.firstRun ?? null,
+      nextRun: activated.nextRun ?? created.nextRun ?? null,
       caps: { maxVolume: capsView.maxVolume ?? null, maxBudget: capsView.maxBudget ?? null, funded: capsView.funded ?? null },
-      note: `Nothing is made during this call: say when the first run happens (firstRun), then read its progress with ${READ_ENGINE_CAMPAIGN_TOOL_NAME}.`,
+      note: `Nothing is made during this call: say when its first run happens (nextRun), then read its progress with ${READ_ENGINE_CAMPAIGN_TOOL_NAME}.`,
     };
   } catch (err) {
     if (err instanceof EngineCampaignRefusedError && err.status < 500) {
