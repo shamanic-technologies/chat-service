@@ -13,7 +13,8 @@
 //
 // Spend (EVAL-SPEND-CAP-1121): a replay already judged under the same key is
 // reused at $0 (--fresh replays anyway); the rest runs under a per-run ceiling
-// (--max-usd, default $1) and the fleet's monthly one (EVAL_MONTHLY_CEILING_USD, strict $0):
+// (--max-usd, default $1) and the fleet's monthly one (EVAL_MONTHLY_CEILING_USD, $1: replies run on
+// Claude Code at $0, the Jev judge is the only spend):
 // a projection over a ceiling is refused before any spend, and a run stops
 // cleanly (partial results written, exit 1) when the next replay would cross it.
 // The default replays the scenarios named with --only, once each.
@@ -46,6 +47,9 @@ import { summarise, type ScenarioResult, type ReplayResult } from "./report.js";
 import { recordWire } from "./wire.js";
 import { EvalSpendCeilingError, JUDGE_PRIOR_USD, EVAL_MONTHLY_CEILING_USD, evalBudget, evalRunCeilingUsd, evalRunsPerScenario, requireScenarioSelection, type EvalBudget, type EvalDb, type Reservation } from "./budget.js";
 import { evalCodeHash, replayCacheKey, runReplayPlan } from "./replay-plan.js";
+import { claudeCodeModel, pickRunnerOrg } from "./claude-code.js";
+import { localLlmStore, startLocalLlm } from "../lib/local-llm.js";
+import { createPgLocalLlmStore, type SqlExecutor } from "../lib/local-llm-store.js";
 import { createHash, randomUUID } from "node:crypto";
 import { ANTHROPIC_EFFORTS, type AnthropicEffort } from "../schemas.js";
 
@@ -147,9 +151,9 @@ async function calibrate(scenarios: Scenario[], typesafeKey: string, budget: Eva
 }
 
 /** Everything a replay depends on, hashed: a replay kept under the same key is reused at $0. */
-function scenarioCacheKey(def: AgentDefinition, scenario: Scenario, provider: string, model: string): string {
+function scenarioCacheKey(def: AgentDefinition, scenario: Scenario, modelLabel: string): string {
   return replayCacheKey({
-    definition: definitionHash(def, `${provider}/${model}`),
+    definition: definitionHash(def, modelLabel),
     sophieCode: def.id.startsWith("sophie-code") ? sophieCodeHash() : null,
     evalCode: evalCodeHash(),
     scenario: createHash("sha256").update(JSON.stringify(scenario)).digest("hex"),
@@ -162,15 +166,16 @@ function scenarioCacheKey(def: AgentDefinition, scenario: Scenario, provider: st
   });
 }
 
-async function replay(def: AgentDefinition, scenarios: Scenario[], provider: string, model: string, runs: number, parallel: number, typesafeKey: string, db: EvalDb, budget: EvalBudget) {
-  const { key: modelKey } = await resolvePlatformKey(provider, { method: "POST", path: "/evals" });
+/** Replies on Claude Code (the Mac runner of `local.orgId`): $0; only the Jev judge spends. */
+async function replay(def: AgentDefinition, scenarios: Scenario[], provider: string, model: string, local: { orgId: string; model: string }, runs: number, parallel: number, typesafeKey: string, db: EvalDb, budget: EvalBudget) {
+  const modelLabel = `claude-code/${local.model}`;
   const byId = new Map(scenarios.map((s) => [s.id, s]));
   const replayOnce = async (scenarioId: string, i: number, reservation: Reservation) => {
     const scenario = byId.get(scenarioId)!;
     const r: ReplayResult = await withRun("sophie-eval-replay", async (runId) => {
        try {
         const fixtures = fixtureExecutor(def, scenario);
-        const turn = await replayTurn({ def, scenario, provider, model, apiKey: modelKey, executeTool: fixtures.executeTool, uiText: fixtures.uiText, brandTools: !process.argv.includes("--no-brand-tools"), ...(EFFORT ? { effort: EFFORT } : {}), ...(arg("api-model") ? { rawModel: { apiModelId: arg("api-model")!, costPrefix: arg("cost-prefix") ?? arg("api-model")! } } : {}), ...(process.argv.includes("--reasoning-off") ? { reasoningDisabled: true } : process.argv.includes("--reasoning-on") ? { reasoningDisabled: false } : {}) });
+        const turn = await replayTurn({ def, scenario, provider, model, apiKey: "", local, executeTool: fixtures.executeTool, uiText: fixtures.uiText, brandTools: !process.argv.includes("--no-brand-tools"), ...(EFFORT ? { effort: EFFORT } : {}), ...(arg("api-model") ? { rawModel: { apiModelId: arg("api-model")!, costPrefix: arg("cost-prefix") ?? arg("api-model")! } } : {}), ...(process.argv.includes("--reasoning-off") ? { reasoningDisabled: true } : process.argv.includes("--reasoning-on") ? { reasoningDisabled: false } : {}) });
         const modelCosts = await retryRefused("reply costs", () => addPlatformRunCosts(runId, SERVICE, turn.costLines.map((l) => ({ costName: l.costName, quantity: l.quantity, costSource: "platform" as const }))));
         reservation.add(cents(modelCosts));
         const actions = turn.toolCalls.map((c) => describeAction(c.name, c.args, c.result));
@@ -216,10 +221,10 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
   const plan = await runReplayPlan<ReplayResult>({
     db,
     budget,
-    scenarios: scenarios.map((s) => ({ id: s.id, key: scenarioCacheKey(def, s, provider, model) })),
+    scenarios: scenarios.map((s) => ({ id: s.id, key: scenarioCacheKey(def, s, modelLabel) })),
     runs,
     parallel,
-    model: `${provider}/${model}`,
+    model: modelLabel,
     fresh: process.argv.includes("--fresh"),
     replayOnce,
   });
@@ -324,12 +329,14 @@ async function main() {
   if (EFFORT && provider !== "anthropic") throw new Error("[evals] --effort is Claude's output_config.effort: use it with --provider anthropic");
   // The scenarios the change touches, named (EVAL-SPEND-CAP-1121): the whole suite only when asked.
   requireScenarioSelection(only, process.argv.includes("--all"));
+  // Replies run on Claude Code at $0 (owner 2026-11-22): a Claude model, answered by a Mac runner seen lately.
+  const localModel = claudeCodeModel(provider, model, arg("local-model"));
+  await startLocalLlm(createPgLocalLlmStore(db as unknown as SqlExecutor), { refresh: false });
+  const runner = await pickRunnerOrg(localLlmStore(), new Date(), arg("local-org"));
+  console.log(`[evals] replies on Claude Code (${localModel}) through the runner of org ${runner.orgId} (${runner.runner}): $0; the Jev judge is the only spend`);
   const wire = recordWire();
-  const { results, plan } = await replay(def, scenarios, provider, model, runs, Number(arg("parallel") ?? "4"), typesafeKey, db as unknown as EvalDb, budget);
-  const wireReport = wire.report();
-  // A run whose model requests never crossed fetch has no wire to state: refuse it rather than report an unchecked setting.
-  // Every replay reused = no request this run: their settings are the key they were kept under.
-  if (plan.replayed > 0 && wireReport.requests === 0) throw new Error("[evals] no model request was seen on the wire: the run's settings cannot be stated");
+  const { results, plan } = await replay(def, scenarios, provider, model, { orgId: runner.orgId, model: localModel }, runs, Number(arg("parallel") ?? "4"), typesafeKey, db as unknown as EvalDb, budget);
+  // No vendor request crosses fetch: the turn's requests are Claude Code's own, stated below.
   const spend = { spentUsd: budget.spentCents() / 100, ceilingUsd: budget.ceilingCents() / 100, reused: plan.reused, replayed: plan.replayed, skipped: plan.skipped, ...(plan.stopped ? { stopped: plan.stopped.message } : {}) };
   if (results.length === 0) {
     console.error(plan.stopped?.message ?? "[evals] nothing was replayed");
@@ -342,10 +349,10 @@ async function main() {
     at: new Date().toISOString(),
     definition: def.id,
     ...(def.id.startsWith("sophie-code") ? { codeHash: sophieCodeHash(), definitionSnapshot: def } : {}),
-    definitionHash: definitionHash(def, `${provider}/${model}`),
+    definitionHash: definitionHash(def, `claude-code/${localModel}`),
     ...(process.argv.includes("--no-brand-tools") ? { brandTools: "withheld" } : {}),
-    model: `${provider}/${model}${provider === "anthropic" ? ` (effort ${EFFORT ?? def.effort ?? "not sent"})` : process.argv.includes("--reasoning-off") || (!process.argv.includes("--reasoning-on") && def.reasoning === "off") ? " (reasoning off)" : ""}`,
-    wire: plan.replayed > 0 ? wireReport : { reused: "every replay was kept under the same definition, code, scenario, model and settings" },
+    model: `claude-code/${localModel}`,
+    wire: { claudeCode: { model: localModel, runnerOrg: runner.orgId, runner: runner.runner, note: "claude -p on the subscription: tools as a JSON step, no photos, no effort field", vendorRequestsSeen: wire.report().requests } },
     judge: `jev/${TYPESAFE_DEFAULT_MODEL}`,
     runsPerScenario: runs,
     spend,
