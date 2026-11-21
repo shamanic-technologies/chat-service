@@ -27,6 +27,7 @@ import { aboutYouBlock, withOurWebsite } from "../lib/person-facing.js";
 import { skillIndexBlockFrom } from "../lib/skills.js";
 import { sessionToolNamesFor } from "../agent/person-tools.js";
 import { streamVendorChat } from "../lib/vendor-chat.js";
+import { chatRoundAnswer, chatRoundCall, runLocally, type RoundMessage } from "../lib/local-llm.js";
 import { streamGeminiChat } from "../lib/gemini-chat.js";
 import { replayAnthropicTurn } from "./anthropic-replay.js";
 import type { VendorCostLine } from "../lib/cost-names.js";
@@ -220,8 +221,16 @@ export async function replayTurn(args: {
    * SOPHIE-CORE-1111: DeepSeek V4 Pro is listed again by the vendor, chat-service has no alias for it).
    */
   rawModel?: { apiModelId: string; costPrefix: string };
+  /**
+   * EVAL-SPEND-CAP-1121 (owner 2026-11-22: replies at $0): the turn runs on Claude Code through the
+   * local-runner queue /chat uses for a declaring org (LOCAL-CLAUDE-1116), answered by the Mac runner
+   * of `orgId` with `model` (a full Claude id). Same prompt, tools and history; the runner's own
+   * request (tools as a JSON step, no photos, no effort field) is what is measured.
+   */
+  local?: { orgId: string; model: string };
 }): Promise<ReplayedTurn> {
   const { def, scenario, provider, model, apiKey, executeTool, uiText } = args;
+  if (args.local) return replayLocalTurn(args as typeof args & { local: { orgId: string; model: string } });
   if (!isVendorProvider(provider) && provider !== "google" && provider !== "anthropic") {
     throw new Error(`[evals] provider "${provider}" is not wired in the replay yet (direct vendors, google, anthropic)`);
   }
@@ -314,6 +323,57 @@ export async function replayTurn(args: {
     tokensInput: result.tokensInput,
     tokensOutput: result.tokensOutput,
     costLines: result.costLines,
+    latencyMs: Date.now() - started,
+  };
+}
+
+/** A replay answered by Claude Code (the local runner): $0 to us, its tokens kept as the runner reported them. */
+async function replayLocalTurn(args: Parameters<typeof replayTurn>[0] & { local: { orgId: string; model: string } }): Promise<ReplayedTurn> {
+  const { def, scenario, executeTool, uiText, local } = args;
+  const brief = scenario.surface === "lead" ? "" : isGuestScenario(scenario) ? (def.clientBrief ? await fixtureGuestPlanBrief(scenario).catch((err) => clientBriefUnavailable(err)) : "") :
+    (def.clientBrief ? await fixtureClientBrief(scenario).catch((err) => clientBriefUnavailable(err)) : "") +
+    (def.situationBrief ? await buildSituationBrief(fixtureSituationReader(scenario), { now: scenarioDay(scenario) }) : "");
+  const modelDisplay = modelDisplayName(local.model);
+  const images = await scenarioImages(scenario);
+  const turn = assembleTurn(def, scenario, modelDisplay, brief, images, args.brandTools !== false);
+  let llmCalls = 0;
+  const started = Date.now();
+  const result = await streamVendorChat({
+    vendor: null,
+    apiKey: "",
+    model: local.model,
+    costPrefix: "",
+    systemPrompt: turn.systemPrompt,
+    turnContext: turn.turnContext,
+    history: scenario.history.map((m) => ({ role: m.role, content: m.content, toolCalls: m.toolCalls as never })),
+    userMessage: scenario.message,
+    images,
+    tools: turn.tools,
+    res: silentResponse(),
+    sendSSE: () => undefined,
+    executeTool,
+    signal: new AbortController().signal,
+    holdTextBesideToolCalls: turn.holdTextBesideToolCalls,
+    ...(turn.endToolName ? { endToolName: turn.endToolName } : {}),
+    beforeProviderCall: async () => {
+      llmCalls++;
+    },
+    localRound: async ({ messages, tools, signal }) => {
+      const answer = await runLocally({ orgId: local.orgId, kind: "chat_round", route: "/evals", runId: null, call: chatRoundCall(messages as RoundMessage[], tools, local.model), signal });
+      const step = chatRoundAnswer(answer, tools.length > 0);
+      return { ...step, model: answer.model, inputTokens: answer.usage.inputTokens ?? 0, outputTokens: answer.usage.outputTokens ?? 0 };
+    },
+  });
+  const ui = uiText();
+  return {
+    reply: [result.fullResponse.trim(), ui && !result.fullResponse.includes(ui) ? ui : ""].filter(Boolean).join("\n\n"),
+    turnContext: turn.turnContext + aboutYouBlock(modelDisplay),
+    toolCalls: result.toolCalls.map((c) => ({ name: c.name, args: (c.args ?? {}) as Record<string, unknown>, result: c.result })),
+    llmCalls,
+    tokensInput: result.tokensInput,
+    tokensOutput: result.tokensOutput,
+    // Claude Code on the subscription: nothing billed to us.
+    costLines: [],
     latencyMs: Date.now() - started,
   };
 }
