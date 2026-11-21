@@ -1422,7 +1422,7 @@ Every request result carries `kind` and `destination` (where it landed, in words
 
 **One kind per funnel** (owner 2026-10-10): a funnel holding a proactive pipe and a reactive pipe we run (features-service `mixed`; a customer-team reactive pipe is not a mix) is refused by `create_sales_funnel` (before the POST), `create_funnel_campaign` and the `start_funnel_campaign` proposal: its budget would cap the reactive pipe with the proactive one. Make a Proactive funnel and a separate Reactive funnel starting at the trigger step.
 
-Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaign` (brandId, offerId, salesFunnelId) reads the caps and is REFUSED only while NEITHER cap is stated (its `caps` carry billing's `funded` + `funding`); `confirm_switch_on` then POSTs `status: "ongoing"` (creates and starts, or starts the existing stopped one).
+Starting is the switch-on gate: `propose_switch_on` action `start_funnel_campaign` (brandId, offerId, salesFunnelId, salesFunnelCampaignId) reads the caps and is REFUSED only while NEITHER cap is stated (its `caps` carry billing's `funded` + `funding`); `confirm_switch_on` then PATCHes that campaign by id `{status: "activate"}` (several campaigns can share a funnel since the brief joined a campaign's identity; a brief-less POST would start the oldest). A proposal recorded without the id is refused at confirm: propose again.
 
 `get_channel_catalogue` is RETIRED (2026-10-10): one read was 128k characters; `find_channels` / `find_pipes` replace it.
 

@@ -54,7 +54,7 @@ describe("funnel campaign tools (campaign-service / billing-service, direct, cha
   it("caps read/write hit billing with the funnel id URL-encoded", async () => {
     fetchMock().mockResolvedValue(res(200, {}));
     const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
-    await FUNNEL_CAMPAIGN_TOOLS.get_funnel_caps({ brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p);
+    await FUNNEL_CAMPAIGN_TOOLS.get_funnel_caps({ brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" }, p);
     expect(call(0).url).toBe(`http://billing.test/v1/brands/b/offers/o/sales-funnels/${ENC}/caps`);
     expect(call(0).headers["x-api-key"]).toBe("billing-key");
     await FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps(
@@ -116,7 +116,7 @@ describe("funnel campaign tools (campaign-service / billing-service, direct, cha
   it("create_funnel_campaign sends the brief the agent wrote, and refuses a create without one (HUMAN-BRIEF-1121)", async () => {
     // refused before any read
     const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
-    await expect(FUNNEL_CAMPAIGN_TOOLS.create_funnel_campaign({ brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p)).rejects.toThrow(/brief is required/);
+    await expect(FUNNEL_CAMPAIGN_TOOLS.create_funnel_campaign({ brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" }, p)).rejects.toThrow(/brief is required/);
     await expect(FUNNEL_CAMPAIGN_TOOLS.create_funnel_campaign({ brandId: "b", offerId: "o", salesFunnelId: FUNNEL, brief: "  " }, p)).rejects.toThrow(/brief is required/);
     expect(fetchMock()).not.toHaveBeenCalled();
   });
@@ -206,7 +206,7 @@ describe("start_funnel_campaign goes through the switch-on gate", () => {
     fetchMock().mockResolvedValueOnce(proactiveFunnel()).mockResolvedValue(res(200, { maxBudget: null, maxVolume: null }));
     const { proposeSwitchOn } = await copilot();
     await expect(
-      proposeSwitchOn({ action: "start_funnel_campaign", summary: "s", brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p),
+      proposeSwitchOn({ action: "start_funnel_campaign", summary: "s", brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" }, p),
     ).rejects.toThrow(/needs a max budget, a max volume, or both/);
     expect(fetchMock()).toHaveBeenCalledTimes(2);
     expect(fetchMock().mock.calls.every((c) => (c[1] as RequestInit).method === "GET")).toBe(true);
@@ -215,7 +215,7 @@ describe("start_funnel_campaign goes through the switch-on gate", () => {
   it("propose is accepted with a max budget alone (no volume cap)", async () => {
     fetchMock().mockResolvedValueOnce(proactiveFunnel()).mockResolvedValue(res(200, { maxBudget: { amountCents: "110800", period: "one_off" }, maxVolume: null }));
     const { proposeSwitchOn } = await copilot();
-    const out = await proposeSwitchOn({ action: "start_funnel_campaign", summary: "Run Doc Dinners, $1,108 one-off, no volume cap", brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p);
+    const out = await proposeSwitchOn({ action: "start_funnel_campaign", summary: "Run Doc Dinners, $1,108 one-off, no volume cap", brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" }, p);
     expect(out.status).toBe("awaiting_user_confirmation");
     expect(out.caps).toMatchObject({ maxVolume: null, funded: true });
   });
@@ -223,7 +223,7 @@ describe("start_funnel_campaign goes through the switch-on gate", () => {
   it("propose is accepted with a max volume alone, carrying billing's hold verdict", async () => {
     fetchMock().mockResolvedValueOnce(proactiveFunnel()).mockResolvedValue(res(200, { maxBudget: null, maxVolume: { count: 500, period: "monthly" } }));
     const { proposeSwitchOn } = await copilot();
-    const out = await proposeSwitchOn({ action: "start_funnel_campaign", summary: "s", brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p);
+    const out = await proposeSwitchOn({ action: "start_funnel_campaign", summary: "s", brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" }, p);
     expect(out.caps).toMatchObject({ maxBudget: null, maxVolume: { count: 500, period: "monthly" }, funded: false });
     expect((out.caps as { funding: string }).funding).toMatch(/Held by billing/);
   });
@@ -232,36 +232,56 @@ describe("start_funnel_campaign goes through the switch-on gate", () => {
     fetchMock().mockResolvedValueOnce(mixedFunnel());
     const { proposeSwitchOn } = await copilot();
     await expect(
-      proposeSwitchOn({ action: "start_funnel_campaign", summary: "s", brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p),
+      proposeSwitchOn({ action: "start_funnel_campaign", summary: "s", brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" }, p),
     ).rejects.toThrow(/serves .* as mixed/);
   });
 
   it("propose with a stated max budget records the caps and a token, starts nothing", async () => {
     fetchMock().mockResolvedValueOnce(proactiveFunnel()).mockResolvedValue(res(200, { maxBudget: { amountCents: 5000, period: "weekly" }, maxVolume: { count: 100, period: "monthly" } }));
     const { proposeSwitchOn } = await copilot();
-    const out = await proposeSwitchOn({ action: "start_funnel_campaign", summary: "Run Zenith", brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p);
+    const out = await proposeSwitchOn({ action: "start_funnel_campaign", summary: "Run Zenith", brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" }, p);
     expect(out.status).toBe("awaiting_user_confirmation");
-    expect(out.target).toEqual({ brandId: "b", offerId: "o", salesFunnelId: FUNNEL });
+    expect(out.target).toEqual({ brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" });
     expect(out.caps).toMatchObject({ maxBudget: { amountCents: 5000, period: "weekly" }, maxVolume: { count: 100, period: "monthly" }, funded: true });
     expect(fetchMock().mock.calls.every((c) => (c[1] as RequestInit).method === "GET")).toBe(true);
   });
 
-  it("confirm POSTs status ongoing for the recorded funnel", async () => {
-    fetchMock().mockResolvedValue(res(200, { created: false, started: true }));
+  it("confirm activates the ONE proposed campaign by its id (several can share a funnel, HUMAN-BRIEF-1121)", async () => {
+    fetchMock().mockResolvedValue(res(200, { id: "fc-1", status: "ongoing" }));
     const { executeSwitchOn } = await copilot();
     const out = (await executeSwitchOn(
       {
         confirmationToken: "t",
         action: "start_funnel_campaign",
-        target: { brandId: "b", offerId: "o", salesFunnelId: FUNNEL },
+        target: { brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" },
         summary: "s",
         status: "awaiting_user_confirmation",
         instruction: "",
       },
       p,
     )) as { switchedOn: boolean };
-    expect(call(0)).toMatchObject({ url: "http://campaign.test/sales-funnel-campaigns", method: "POST", body: { status: "ongoing", salesFunnelId: FUNNEL } });
+    expect(call(0)).toMatchObject({ url: "http://campaign.test/sales-funnel-campaigns/fc-1", method: "PATCH", body: { status: "activate" } });
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
     expect(out.switchedOn).toBe(true);
+  });
+
+  it("propose names the campaign: refused without its id, before any read", async () => {
+    const { proposeSwitchOn } = await copilot();
+    await expect(
+      proposeSwitchOn({ action: "start_funnel_campaign", summary: "s", brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, p),
+    ).rejects.toThrow(/salesFunnelCampaignId is required/);
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("a proposal recorded before the id was named is refused at confirm, starts nothing", async () => {
+    const { executeSwitchOn } = await copilot();
+    await expect(
+      executeSwitchOn(
+        { confirmationToken: "t", action: "start_funnel_campaign", target: { brandId: "b", offerId: "o", salesFunnelId: FUNNEL }, summary: "s", status: "awaiting_user_confirmation", instruction: "" },
+        p,
+      ),
+    ).rejects.toThrow(/names no campaign/);
+    expect(fetchMock()).not.toHaveBeenCalled();
   });
 });
 

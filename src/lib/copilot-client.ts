@@ -256,6 +256,8 @@ export async function proposeSwitchOn(a: Record<string, unknown>, p: ApiCallPara
       brandId: rawId("brandId", a.brandId),
       offerId: rawId("offerId", a.offerId),
       salesFunnelId: rawId("salesFunnelId", a.salesFunnelId),
+      // The campaign the user says yes to, started by its id (HUMAN-BRIEF-1121: several campaigns can share a funnel).
+      salesFunnelCampaignId: rawId("salesFunnelCampaignId", a.salesFunnelCampaignId),
     };
     const caps = await requireStatedCap(target, p);
     return { ...base, target, caps };
@@ -328,10 +330,13 @@ export async function executeSwitchOn(proposal: SwitchOnProposal, p: ApiCallPara
   const t = proposal.target;
   let result: unknown;
   if (proposal.action === "start_funnel_campaign") {
-    result = await startFunnelCampaign(
-      { brandId: String(t.brandId), offerId: String(t.offerId), salesFunnelId: String(t.salesFunnelId) },
-      p,
-    );
+    // A proposal recorded before the campaign id was named: propose again (the start is by id now).
+    if (typeof t.salesFunnelCampaignId !== "string" || !t.salesFunnelCampaignId) {
+      throw new SwitchOnConfirmationError(
+        "This proposal names no campaign. Propose start_funnel_campaign again with its salesFunnelCampaignId (create_funnel_campaign or list_campaigns), and ask the user's yes on it.",
+      );
+    }
+    result = await startFunnelCampaign({ salesFunnelCampaignId: t.salesFunnelCampaignId }, p);
   } else if (proposal.action === "push_email") {
     return { pushed: true, action: proposal.action, result: await pushEmail(t as unknown as EmailPushTarget, proposal.confirmationToken, p) };
   } else {
