@@ -86,11 +86,15 @@ export const QUESTIONS: Record<Criterion, TypeSafeNoulQuestion> = {
 /** One action as the judge reads it: the tool and its arguments, short. */
 export function describeAction(name: string, args: Record<string, unknown>, result?: unknown): string {
   const a = JSON.stringify(args);
-  const call = a === "{}" ? name : `${name} ${a.length > 300 ? `${a.slice(0, 300)}...` : a}`;
+  // Long enough for a create's whole body: a brief sat past a 300-char cut, behind the funnel id (HUMAN-BRIEF-1121).
+  const call = a === "{}" ? name : `${name} ${a.length > ARGS_CHARS ? `${a.slice(0, ARGS_CHARS)}...` : a}`;
   if (result === undefined) return call;
   const r = JSON.stringify(result);
   return `${call} → ${r.length > RESULT_CHARS ? `${r.slice(0, RESULT_CHARS)}...` : r}`;
 }
+
+/** How much of a call's arguments the judge reads (a whole create body, its brief included). */
+const ARGS_CHARS = 1500;
 
 /** How much of each earlier message the judge reads (the whole conversation is read). */
 const HISTORY_MESSAGE_CHARS = 2000;
