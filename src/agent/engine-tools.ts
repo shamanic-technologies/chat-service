@@ -5,18 +5,27 @@
 //
 // The tool list is built at each turn from workflow-service's LIVE read of
 // every Engine (`GET /internal/engines`): one tool per Engine that can run now,
-// never a hard-coded list. Calling one asks workflow-service for one Unit of
-// that Engine: the SAME Rating pick a campaign takes, run org-billed on a child
-// run of the caller's, and waits for it (`POST /internal/engines/{outcome}/calls`,
-// then `GET /internal/engine-calls/{callId}` while it runs). chat-service picks
-// nothing and runs nothing itself.
+// never a hard-coded list.
+//
+// Calling one is ALWAYS a campaign (DISTRY-CALL-IS-CAMPAIGN-1121, owner 2026-11-21:
+// « tout appel de Distry sur un de ces engines est TOUJOURS une campagne,
+// obligatoirement »): a normal campaign on campaign-service whose Target is the
+// Engine's outcome, with the brief, max volume and/or max budget (one-off /
+// daily / weekly / monthly, stated at billing on that campaign) and an optional
+// offer Distry states. It answers at once with the campaign and when its first
+// run happens (« It is okay to wait ... as long as Distry gets back the info
+// about when it's going to start »); `read_engine_campaign` reads its progress
+// later. There is NO direct Engine call any more: never call workflow-service's
+// former `/internal/engines/{outcome}/calls` or `/internal/engine-calls/*` again
+// (pinned by tests/unit/engine-tools.test.ts). chat-service picks nothing and
+// runs nothing itself.
 // ---------------------------------------------------------------------------
 
 import type Anthropic from "@anthropic-ai/sdk";
 import { ENGINE_TOOL_PREFIX } from "./principal-tools.js";
 import { fillTemplate } from "../lib/prompt-template.js";
 
-export const READ_ENGINE_CALL_TOOL_NAME = "read_engine_call";
+export const READ_ENGINE_CAMPAIGN_TOOL_NAME = "read_engine_campaign";
 
 export interface EngineInputOption {
   units: string[];
@@ -72,58 +81,68 @@ export function engineToolName(outcome: string): string {
 }
 
 function waysToCall(e: EngineListing): string {
-  if (e.inputs.length === 0) return "Hand nothing.";
-  return e.inputs
-    .map((i) => {
-      const units = i.units.length > 0 ? `hand Units of: ${i.units.join(", ")}` : "hand nothing";
-      return i.channel ? `${units}, channel ${i.channel}` : units;
-    })
-    .join("; or ");
+  if (e.inputs.length === 0) return "nothing handed.";
+  return (
+    e.inputs
+      .map((i) => {
+        const units = i.units.length > 0 ? `Units of ${i.units.join(", ")}` : "nothing handed";
+        return i.channel ? `${units} (channel ${i.channel})` : units;
+      })
+      .join("; or ") + ", which the campaign finds itself."
+  );
 }
 
 /** The words of every Engine tool's description (Distry's editor part `engine-tool`, DISTRY-PROMPT-PARTS-1120). */
 export const ENGINE_TOOL_DESCRIPTION_TEMPLATE =
-  `Engine "{{engineName}}": makes one Unit of this outcome. Runs the Engine's best script (the Rating picks it, as for a campaign) and waits for the result, then answers the Unit or why none was made. ` +
-  `Ways to call: {{waysToCall}} ` +
+  `Engine "{{engineName}}": starts a campaign that makes Units of this outcome, run by the Engine's best scripts (the Rating picks them). ` +
+  `State the brief, and a max volume (how many Units) and/or a max budget, each one-off, daily, weekly or monthly: the campaign stops by itself at its cap. ` +
+  `It answers at once with the campaign and when its first run happens (nothing is made during this call): tell the person, or read its progress later with ${READ_ENGINE_CAMPAIGN_TOOL_NAME}. ` +
+  `The same outcome on the same brand (and the same offer, or none) is always the same campaign: a new call restates its brief and caps and starts it again, and a one-off max volume counts every Unit it ever made, so state the total you want. ` +
+  `Its scripts work from: {{waysToCall}} ` +
   `It runs on distribute.you's own account unless orgId and brandId name another one, billed to that account. What it makes can reach real people: run it only when its outcome serves our goal.`;
 
+const PERIODS = ["one_off", "daily", "weekly", "monthly"] as const;
+const periodSchema = { type: "string", enum: [...PERIODS], description: "one_off = in all; daily / weekly / monthly = per period, again each period." };
+
 export function engineTool(e: EngineListing, template: string = ENGINE_TOOL_DESCRIPTION_TEMPLATE): Anthropic.Tool {
-  const channels = [...new Set(e.inputs.map((i) => i.channel).filter((c): c is string => typeof c === "string"))];
-  const unitOutcomes = [...new Set(e.inputs.flatMap((i) => i.units))];
   return {
     name: engineToolName(e.outcome),
     description: fillTemplate(template, { engineName: e.name, waysToCall: waysToCall(e) }),
     input_schema: {
       type: "object",
       properties: {
-        request: { type: "object", description: "What the script reads as its request (the brief, a target, words to say...). Omit when nothing is needed." },
-        ...(unitOutcomes.length > 0
-          ? { units: { type: "object", description: `Units handed, keyed by outcome (${unitOutcomes.join(", ")}): each a Unit or a list of Units, as another Engine call returned them.` } }
-          : {}),
-        ...(channels.length > 0 ? { channel: { type: "string", enum: channels, description: "The channel the work is for." } } : {}),
-        subject: {
+        brief: { type: "string", description: "What the campaign is for, in plain words: the scripts read it as their request (the topic, who it is for, words to say...)." },
+        maxVolume: {
           type: "object",
-          properties: { service: { type: "string" }, id: { type: "string" } },
-          required: ["service", "id"],
-          description: "Who or what the Unit is about, when you know it (a lead: {service: \"lead-service\", id}). Omit = this request of yours.",
+          properties: { count: { type: "integer", minimum: 1 }, period: periodSchema },
+          required: ["count", "period"],
+          description: "How many Units at most. Omit when you state a max budget only.",
         },
+        maxBudget: {
+          type: "object",
+          properties: { usd: { type: "number", exclusiveMinimum: 0 }, period: periodSchema },
+          required: ["usd", "period"],
+          description: "How many dollars at most, to avoid bad surprises. Omit when you state a max volume only.",
+        },
+        offerId: { type: "string", description: "The offer it sells, when it sells one. Omit = no offer." },
         orgId: { type: "string", description: "Another account to run it for (with brandId). Omit = distribute.you's own." },
         brandId: { type: "string", description: "That account's brand." },
       },
+      required: ["brief"],
     },
   };
 }
 
-export const READ_ENGINE_CALL_TOOL: Anthropic.Tool = {
-  name: READ_ENGINE_CALL_TOOL_NAME,
-  description: "Read an Engine call that was still running when its tool answered: waits up to a minute, then answers its Unit, why none was made, or that it still runs.",
+export const READ_ENGINE_CAMPAIGN_TOOL: Anthropic.Tool = {
+  name: READ_ENGINE_CAMPAIGN_TOOL_NAME,
+  description: "Read the progress of a campaign an Engine tool started: the Units made so far, its spend, whether it has finished, and why it is idle when it is.",
   input_schema: {
     type: "object",
     properties: {
-      callId: { type: "string", description: "The callId the Engine tool answered." },
-      orgId: { type: "string", description: "The account it ran for, when not distribute.you's own." },
+      campaignId: { type: "string", description: "The campaignId the Engine tool answered." },
+      orgId: { type: "string", description: "The account it runs for, when not distribute.you's own." },
     },
-    required: ["callId"],
+    required: ["campaignId"],
   },
 };
 
@@ -136,89 +155,138 @@ export function engineToolsFrom(
   const tools = callable.map((e) => engineTool(e, template));
   const outcomeOf = new Map(callable.map((e) => [engineToolName(e.outcome), e.outcome]));
   if (outcomeOf.size !== callable.length) throw new Error("two Engines map to the same tool name: their outcome keys differ only in punctuation");
-  return { tools: tools.length > 0 ? [...tools, READ_ENGINE_CALL_TOOL] : [], outcomeOf };
+  return { tools: tools.length > 0 ? [...tools, READ_ENGINE_CAMPAIGN_TOOL] : [], outcomeOf };
 }
 
-/** How long one tool call waits in all before answering "still running" (the client side times out at 300 s). */
-export const ENGINE_CALL_WAIT_BUDGET_S = 240;
-/** One wait per request to workflow-service (its own cap). */
-const WAIT_PER_REQUEST_S = 60;
+// --- The campaign: campaign-service makes it, billing holds its caps --------------------------
 
-function headersFor(t: Pick<EngineCallTarget, "orgId" | "userId" | "brandId" | "runId">): Record<string, string> {
+/** A call to campaign-service or billing-service with its service key and the target's identity. */
+export type CampaignFetch = (service: "campaign" | "billing", path: string, init: { method: string; headers: Record<string, string>; body?: string }) => Promise<Response>;
+
+export function campaignFetchFromEnv(env: NodeJS.ProcessEnv = process.env): CampaignFetch {
+  const cfg = {
+    campaign: { url: (env.CAMPAIGN_SERVICE_URL ?? "").replace(/\/$/, ""), key: env.CAMPAIGN_SERVICE_API_KEY ?? "" },
+    billing: { url: (env.BILLING_SERVICE_URL ?? "").replace(/\/$/, ""), key: env.BILLING_SERVICE_API_KEY ?? "" },
+  };
+  for (const [name, c] of Object.entries(cfg)) {
+    if (!c.url || !c.key) throw new Error(`${name.toUpperCase()}_SERVICE_URL / ${name.toUpperCase()}_SERVICE_API_KEY not configured: an Engine campaign cannot be started or read`);
+  }
+  return (service, path, init) =>
+    fetch(`${cfg[service].url}${path}`, {
+      method: init.method,
+      headers: { "content-type": "application/json", "x-api-key": cfg[service].key, ...init.headers },
+      ...(init.body !== undefined ? { body: init.body } : {}),
+      signal: AbortSignal.timeout(60_000),
+    });
+}
+
+const enc = encodeURIComponent;
+
+function headersFor(t: EngineCallTarget): Record<string, string> {
   return { "x-org-id": t.orgId, "x-user-id": t.userId, "x-run-id": t.runId, ...(t.brandId ? { "x-brand-id": t.brandId } : {}) };
 }
 
-/** What the model reads: the call as workflow-service served it, the Unit cut to a readable size. */
-export function callAnswer(served: Record<string, unknown>): Record<string, unknown> {
-  const unit = served.unit;
-  const unitText = unit === null || unit === undefined ? null : JSON.stringify(unit);
-  return {
-    callId: served.callId,
-    status: served.status,
-    ended: served.ended,
-    ...(unitText === null ? { unit: null } : unitText.length > 6000 ? { unit: `${unitText.slice(0, 6000)}… (cut)` } : { unit }),
-    error: served.error ?? null,
-    pick: served.pick ?? null,
-    ...(served.ended === false ? { note: `Still running: read it again with ${READ_ENGINE_CALL_TOOL_NAME}.` } : {}),
-  };
+async function send(fetchImpl: CampaignFetch, service: "campaign" | "billing", what: string, path: string, method: string, t: EngineCallTarget, body?: unknown): Promise<Record<string, unknown>> {
+  const res = await fetchImpl(service, path, { method, headers: headersFor(t), ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+  const text = await res.text();
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  } catch {
+    throw new Error(`${service}-service ${what} ${res.status}: ${text.slice(0, 300)}`);
+  }
+  if (!res.ok) throw new EngineCampaignRefusedError(service, what, res.status, parsed);
+  return parsed;
 }
 
-async function readJson(res: Response): Promise<Record<string, unknown>> {
-  const text = await res.text();
-  try {
-    return JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    throw new Error(`workflow-service ${res.status}: ${text.slice(0, 300)}`);
+/** A refusal in the producer's own words: answered to the model as a result, never a guess. */
+export class EngineCampaignRefusedError extends Error {
+  constructor(
+    public readonly service: string,
+    public readonly what: string,
+    public readonly status: number,
+    public readonly body: Record<string, unknown>,
+  ) {
+    super(`${service}-service ${what} ${status}: ${String(body.error ?? JSON.stringify(body)).slice(0, 300)}`);
+    this.name = "EngineCampaignRefusedError";
   }
 }
 
-export async function readEngineCall(callId: string, target: Pick<EngineCallTarget, "orgId">, waitSeconds: number, fetchImpl: WorkflowFetch): Promise<Record<string, unknown>> {
-  if (!/^[0-9a-f-]{36}$/i.test(callId)) throw new Error(`[${READ_ENGINE_CALL_TOOL_NAME}] ${callId} is not a call id`);
-  const res = await fetchImpl(`/internal/engine-calls/${encodeURIComponent(callId)}?waitSeconds=${waitSeconds}`, { method: "GET", headers: { "x-org-id": target.orgId } });
-  const body = await readJson(res);
-  if (!res.ok) throw new Error(`workflow-service engine call ${res.status}: ${String(body.error ?? JSON.stringify(body)).slice(0, 300)}`);
-  return body;
+function capArgs(outcome: string, args: Record<string, unknown>): { maxVolume: { count: number; period: string } | null; maxBudget: { amountCents: number; period: string } | null } {
+  const period = (name: string, v: unknown): string => {
+    if (!(PERIODS as readonly unknown[]).includes(v)) throw new Error(`[${outcome}] ${name}.period must be one of ${PERIODS.join(", ")}`);
+    return v as string;
+  };
+  let maxVolume = null;
+  if (args.maxVolume !== undefined && args.maxVolume !== null) {
+    const v = args.maxVolume as { count?: unknown; period?: unknown };
+    if (typeof v !== "object" || typeof v.count !== "number" || !Number.isInteger(v.count) || v.count < 1) throw new Error(`[${outcome}] maxVolume.count must be a whole number of at least 1`);
+    maxVolume = { count: v.count, period: period("maxVolume", v.period) };
+  }
+  let maxBudget = null;
+  if (args.maxBudget !== undefined && args.maxBudget !== null) {
+    const b = args.maxBudget as { usd?: unknown; period?: unknown };
+    if (typeof b !== "object" || typeof b.usd !== "number" || !(b.usd > 0)) throw new Error(`[${outcome}] maxBudget.usd must be a number of dollars above 0`);
+    const amountCents = Math.round(b.usd * 100);
+    if (amountCents < 1) throw new Error(`[${outcome}] maxBudget.usd must be at least $0.01`);
+    maxBudget = { amountCents, period: period("maxBudget", b.period) };
+  }
+  if (!maxVolume && !maxBudget) throw new Error(`[${outcome}] state a max volume, a max budget, or both: a campaign never runs without a cap`);
+  return { maxVolume, maxBudget };
 }
 
-/** One Unit of an Engine: start the call, then wait on it within the budget. */
-export async function callEngine(
+/**
+ * One Engine call = one campaign on its outcome: created stopped, its caps stated at billing on
+ * that campaign, then activated, so the first run time it answers counts the caps.
+ */
+export async function startEngineCampaign(
   outcome: string,
   args: Record<string, unknown>,
-  target: EngineCallTarget,
-  fetchImpl: WorkflowFetch,
-  budgetSeconds = ENGINE_CALL_WAIT_BUDGET_S,
+  target: EngineCallTarget & { brandId: string },
+  fetchImpl: CampaignFetch,
 ): Promise<Record<string, unknown>> {
-  const body: Record<string, unknown> = { waitSeconds: Math.min(WAIT_PER_REQUEST_S, budgetSeconds) };
-  if (args.request !== undefined && args.request !== null) {
-    if (typeof args.request !== "object" || Array.isArray(args.request)) throw new Error(`[${outcome}] request must be an object`);
-    body.request = args.request;
-  }
-  if (args.units !== undefined && args.units !== null) {
-    if (typeof args.units !== "object" || Array.isArray(args.units)) throw new Error(`[${outcome}] units must be an object keyed by outcome`);
-    body.units = args.units;
-  }
-  if (typeof args.channel === "string" && args.channel) body.channel = args.channel;
-  // The ledger declares every Unit on a subject: the one the model names, else this call itself
-  // (Distry's own request, its run): never a guess about someone else.
-  const subject = args.subject as { service?: unknown; id?: unknown } | undefined;
-  if (subject !== undefined && subject !== null) {
-    if (typeof subject !== "object" || typeof subject.service !== "string" || !subject.service || typeof subject.id !== "string" || !subject.id) {
-      throw new Error(`[${outcome}] subject must be {service, id}`);
+  const brief = typeof args.brief === "string" ? args.brief.trim() : "";
+  if (!brief) throw new Error(`[${outcome}] brief is required: say what the campaign is for`);
+  const caps = capArgs(outcome, args);
+  const offerId = typeof args.offerId === "string" && args.offerId.trim() ? args.offerId.trim() : null;
+  try {
+    const created = await send(fetchImpl, "campaign", "campaign create", "/sales-funnel-campaigns", "POST", target, {
+      brandId: target.brandId,
+      ...(offerId ? { offerId } : {}),
+      target: outcome,
+      brief,
+      status: "stopped",
+    });
+    const campaign = created.salesFunnelCampaign as { id?: unknown; salesFunnelId?: unknown; salesFunnelName?: unknown } | undefined;
+    if (!campaign || typeof campaign.id !== "string" || typeof campaign.salesFunnelId !== "string") {
+      throw new Error(`campaign-service answered no campaign: ${JSON.stringify(created).slice(0, 300)}`);
     }
-    body.subject = { service: subject.service, id: subject.id };
-  } else {
-    body.subject = { service: "chat-service", id: target.runId };
+    const capsPath = `/v1/brands/${enc(target.brandId)}${offerId ? `/offers/${enc(offerId)}` : ""}/sales-funnels/${enc(campaign.salesFunnelId)}/campaigns/${enc(campaign.id)}/caps`;
+    const capsView = await send(fetchImpl, "billing", "campaign caps", capsPath, "PUT", target, caps);
+    const activated = await send(fetchImpl, "campaign", "campaign start", `/sales-funnel-campaigns/${enc(campaign.id)}`, "PATCH", target, { status: "activate" });
+    const after = (activated.salesFunnelCampaign ?? {}) as { status?: unknown; stopReason?: unknown };
+    return {
+      campaignId: campaign.id,
+      name: campaign.salesFunnelName ?? null,
+      created: created.created ?? null,
+      status: after.status ?? null,
+      stopReason: after.stopReason ?? null,
+      firstRun: activated.firstRun ?? created.firstRun ?? null,
+      caps: { maxVolume: capsView.maxVolume ?? null, maxBudget: capsView.maxBudget ?? null, funded: capsView.funded ?? null },
+      note: `Nothing is made during this call: say when the first run happens (firstRun), then read its progress with ${READ_ENGINE_CAMPAIGN_TOOL_NAME}.`,
+    };
+  } catch (err) {
+    if (err instanceof EngineCampaignRefusedError && err.status < 500) {
+      return { status: "refused", by: `${err.service}-service`, step: err.what, reason: err.body.reason ?? null, error: err.body.error ?? null };
+    }
+    throw err;
   }
-  const res = await fetchImpl(`/internal/engines/${encodeURIComponent(outcome)}/calls`, { method: "POST", headers: headersFor(target), body: JSON.stringify(body) });
-  const started = await readJson(res);
-  if (res.status === 404 && started.code === "no_runnable_script") return { status: "not_callable", error: started.error ?? "no runnable script" };
-  if (!res.ok && res.status !== 202) throw new Error(`workflow-service engine call ${res.status}: ${String(started.error ?? JSON.stringify(started)).slice(0, 300)}`);
-  let served = started;
-  let waited = Number(body.waitSeconds);
-  while (served.ended === false && waited < budgetSeconds) {
-    const step = Math.min(WAIT_PER_REQUEST_S, budgetSeconds - waited);
-    served = await readEngineCall(String(served.callId), target, step, fetchImpl);
-    waited += step;
-  }
-  return callAnswer(served);
+}
+
+/** What the model reads of a campaign's progress: the producer's own figures, cut to a readable size. */
+export async function readEngineCampaign(campaignId: string, target: EngineCallTarget, fetchImpl: CampaignFetch): Promise<Record<string, unknown>> {
+  if (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error(`[${READ_ENGINE_CAMPAIGN_TOOL_NAME}] ${campaignId} is not a campaign id`);
+  const served = await send(fetchImpl, "campaign", "campaign progress", `/sales-funnel-campaigns/${enc(campaignId)}/progress`, "GET", target);
+  const text = JSON.stringify(served);
+  return text.length > 6000 ? { progress: `${text.slice(0, 6000)}… (cut)` } : served;
 }
