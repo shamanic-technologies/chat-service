@@ -13,7 +13,7 @@
 //
 // Spend (EVAL-SPEND-CAP-1121): a replay already judged under the same key is
 // reused at $0 (--fresh replays anyway); the rest runs under a per-run ceiling
-// (--max-usd, default $1) and the fleet's daily one (EVAL_DAILY_USD, default $3):
+// (--max-usd, default $1) and the fleet's monthly one (EVAL_MONTHLY_CEILING_USD, strict $0):
 // a projection over a ceiling is refused before any spend, and a run stops
 // cleanly (partial results written, exit 1) when the next replay would cross it.
 // The default replays the scenarios named with --only, once each.
@@ -44,7 +44,7 @@ import { LabelFileSchema, trueAgreement, type JudgedRow } from "./labels.js";
 import { loadScenarios, type Scenario } from "./scenario.js";
 import { summarise, type ScenarioResult, type ReplayResult } from "./report.js";
 import { recordWire } from "./wire.js";
-import { EvalSpendCeilingError, JUDGE_PRIOR_USD, evalBudget, evalDailyCeilingUsd, evalRunCeilingUsd, evalRunsPerScenario, requireScenarioSelection, type EvalBudget, type EvalDb, type Reservation } from "./budget.js";
+import { EvalSpendCeilingError, JUDGE_PRIOR_USD, EVAL_MONTHLY_CEILING_USD, evalBudget, evalRunCeilingUsd, evalRunsPerScenario, requireScenarioSelection, type EvalBudget, type EvalDb, type Reservation } from "./budget.js";
 import { evalCodeHash, replayCacheKey, runReplayPlan } from "./replay-plan.js";
 import { createHash, randomUUID } from "node:crypto";
 import { ANTHROPIC_EFFORTS, type AnthropicEffort } from "../schemas.js";
@@ -297,8 +297,8 @@ async function main() {
   const out = arg("out");
   const { db } = await import("../db/index.js");
   const runKey = randomUUID();
-  const budget = evalBudget({ db: db as unknown as EvalDb, runKey, runCeilingUsd: evalRunCeilingUsd(arg("max-usd")), dailyCeilingUsd: evalDailyCeilingUsd() });
-  console.log(`[evals] run ${runKey}: ceiling $${(budget.ceilingCents() / 100).toFixed(2)} for this run (--max-usd), $${evalDailyCeilingUsd().toFixed(2)} a day for every eval run (EVAL_DAILY_USD)`);
+  const budget = evalBudget({ db: db as unknown as EvalDb, runKey, runCeilingUsd: evalRunCeilingUsd(arg("max-usd")), monthlyCeilingUsd: EVAL_MONTHLY_CEILING_USD });
+  console.log(`[evals] run ${runKey}: ceiling $${(budget.ceilingCents() / 100).toFixed(2)} for this run (--max-usd), $${EVAL_MONTHLY_CEILING_USD.toFixed(2)} a month for every eval run together (only kept replays run at $0)`);
   const { key: typesafeKey } = await resolvePlatformKey(JUDGE_PROVIDERS[JUDGE], { method: "POST", path: "/evals" });
 
   const rejudgePath = arg("rejudge");
