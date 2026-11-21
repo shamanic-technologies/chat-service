@@ -1,0 +1,216 @@
+{
+ "id": "brief-new-campaign-whatsapp",
+ "title": "A client asks for a campaign in their words, on WhatsApp",
+ "source": "staff test, whatsapp, 2026-11-21",
+ "surface": "whatsapp",
+ "person": {
+  "name": "Alex"
+ },
+ "history": [],
+ "message": "I want to start talking to equity investors in Europe, VCs and angels, by cold email. Don't pitch our round, just open the conversation. Set up the campaign, max $20 a day.",
+ "fixtures": {
+  "list_brands": [
+   {
+    "brands": [
+     {
+      "id": "b71e0000-0000-4000-8000-00000000f001",
+      "name": "Fernwood",
+      "domain": "fernwood.example",
+      "brandUrl": "https://fernwood.example"
+     }
+    ]
+   }
+  ],
+  "list_offers": [
+   {
+    "offers": [
+     {
+      "offerId": "0ffe0000-0000-4000-8000-00000000f002",
+      "brandId": "b71e0000-0000-4000-8000-00000000f001",
+      "name": "Investor Conversations",
+      "status": "active",
+      "description": "Relationships with equity investors (seed and Series A funds, angels) in Europe for Fernwood, an AI bookkeeping startup."
+     }
+    ]
+   }
+  ],
+  "get_offer_settings": [
+   {
+    "lifetimeRevenueUsd": null,
+    "bookingUrl": "https://cal.example/fernwood"
+   }
+  ],
+  "get_offer_performance": [
+   {
+    "brandId": "b71e0000-0000-4000-8000-00000000f001",
+    "offerId": "0ffe0000-0000-4000-8000-00000000f002",
+    "recipientsContacted": 0,
+    "recipientsClicked": {
+     "total": 0
+    },
+    "recipientsRepliesPositive": {
+     "total": 0
+    },
+    "spent": {
+     "actualSpentCents": 0,
+     "totalSpentCents": 0
+    },
+    "return": "no return served yet"
+   }
+  ],
+  "list_replies_to_handle": [
+   {
+    "leads": [],
+    "total": 0,
+    "nextCursor": null
+   }
+  ],
+  "get_billing_account": [
+   {
+    "org_id": "06ffd332-b05d-4468-bc33-fe2789caad95",
+    "payment_mode": "prepaid",
+    "balance_cents": "5000.0000000000",
+    "usage_cents": "0",
+    "credited_cents": "5000.0000000000",
+    "has_auto_topup": true,
+    "has_payment_method": true,
+    "card_brand": "visa",
+    "card_last4": "4242",
+    "usage_discount_pct": null
+   }
+  ],
+  "get_payment_outlook": [
+   {
+    "orgId": "06ffd332-b05d-4468-bc33-fe2789caad95",
+    "paymentMode": "prepaid",
+    "state": "autopay_ready",
+    "blockedReason": null,
+    "nextChargeAttemptAt": null,
+    "trigger": null
+   }
+  ],
+  "list_campaigns": [
+   {
+    "campaignCount": 0,
+    "note": "A campaign is a sales funnel campaign: this is the full list.",
+    "campaigns": []
+   },
+   {
+    "_after": "POST /v1/sales-funnel-campaigns",
+    "campaignCount": 1,
+    "note": "A campaign is a sales funnel campaign: this is the full list.",
+    "campaigns": [
+     {
+      "id": "ca220000-0000-4000-8000-00000000f004",
+      "name": "Investor Conversations",
+      "path": "Start → Lead Sourcing → Lead found → Sales Cold Email Outreach → Positive reply → AI Meeting Booking → Meeting booked",
+      "runsWhen": "On its own, within its caps (no trigger)",
+      "type": "proactive",
+      "status": "stopped",
+      "stopReason": null,
+      "budget": "Max $20/day",
+      "volume": null,
+      "spent": "$0 spent today",
+      "invested": "$0 invested since start",
+      "return": "no return served yet",
+      "offerId": "0ffe0000-0000-4000-8000-00000000f002",
+      "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_meeting_booked@ai-meeting-booking",
+      "steps": []
+     }
+    ]
+   }
+  ],
+  "GET /v1/brands/{id}/offers": [
+   {
+    "offers": [
+     {
+      "offerId": "0ffe0000-0000-4000-8000-00000000f002",
+      "brandId": "b71e0000-0000-4000-8000-00000000f001",
+      "name": "Investor Conversations",
+      "status": "active",
+      "description": "Relationships with equity investors (seed and Series A funds, angels) in Europe for Fernwood, an AI bookkeeping startup."
+     }
+    ]
+   }
+  ],
+  "GET /v1/orgs/audiences": [
+   {
+    "audiences": [
+     {
+      "id": "aa22aa22-0000-4000-8000-00000000f003",
+      "name": "European seed and Series A investors",
+      "status": "active",
+      "nlPrompt": "Partners and principals at seed and Series A venture funds in Europe, and active angel investors in European software"
+     }
+    ]
+   }
+  ],
+  "GET /v1/offers/{offerId}/sales-funnels": [
+   {
+    "rows": [
+     {
+      "id": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_meeting_booked@ai-meeting-booking",
+      "name": "Cold email to meetings",
+      "type": "proactive",
+      "mixed": false,
+      "runnable": true,
+      "line": "Lead Sourcing → Sales Cold Email Outreach → AI Meeting Booking",
+      "path": "Start → Lead found → Positive reply → Meeting booked"
+     }
+    ],
+    "setAside": []
+   }
+  ],
+  "POST /v1/sales-funnel-campaigns": [
+   {
+    "created": true,
+    "started": false,
+    "salesFunnelCampaign": {
+     "id": "ca220000-0000-4000-8000-00000000f004",
+     "brandId": "b71e0000-0000-4000-8000-00000000f001",
+     "offerId": "0ffe0000-0000-4000-8000-00000000f002",
+     "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_meeting_booked@ai-meeting-booking",
+     "status": "stopped"
+    }
+   }
+  ],
+  "PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps": [
+   {
+    "maxBudget": {
+     "amountCents": 2000,
+     "period": "daily"
+    },
+    "maxVolume": null,
+    "funded": true
+   }
+  ],
+  "GET /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps": [
+   {
+    "maxBudget": null,
+    "maxVolume": null,
+    "funded": false
+   },
+   {
+    "_after": "PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps",
+    "maxBudget": {
+     "amountCents": 2000,
+     "period": "daily"
+    },
+    "maxVolume": null,
+    "funded": true
+   }
+  ]
+ },
+ "facts": [
+  "Fernwood (fernwood.example) has one active offer, Investor Conversations: relationships with equity investors in Europe. Its audience \"European seed and Series A investors\" is ready. No campaign exists yet; the prepaid balance is $50 with a card on file.",
+  "One sales funnel runs for this offer today: \"Cold email to meetings\" (Lead Sourcing → Sales Cold Email Outreach → AI Meeting Booking), proactive.",
+  "A new campaign is created stopped (POST /v1/sales-funnel-campaigns) with a brief: the one text our judge and every AI writer of the campaign read. It starts only after the client's yes in a later message."
+ ],
+ "expect": "Creates the campaign stopped with a brief it wrote from the client's words: one or two plain sentences saying what it aims at, who and how (e.g. conversations with European equity investors by cold email, no pitch of the round), never a list or labels like \"Goal:\" or \"Use only these channels\". Sets the $20 a day cap, shows the client the brief and the cap, and asks their yes to start. Never starts it in this turn.",
+ "goodReply": "Your campaign is ready, stopped until you say go. Its brief, the text every email is written from: \"Start conversations with seed and Series A investors and angels in Europe by cold email, without pitching Fernwood's round.\" It finds them, writes to them and books a meeting when one replies, with a cap of $20 a day. Shall I start it?",
+ "goodReplyActions": [
+  "run_operation GET /v1/offers/{offerId}/sales-funnels",
+  "run_operation POST /v1/sales-funnel-campaigns {brandId, offerId, salesFunnelId, status: stopped, brief: \"Start conversations with seed and Series A investors and angels in Europe by cold email, without pitching Fernwood's round.\"}",
+  "run_operation PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps {maxBudget: $20 daily, maxVolume: null}"
+ ]
+}

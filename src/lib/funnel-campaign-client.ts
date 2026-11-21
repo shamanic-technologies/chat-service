@@ -207,12 +207,16 @@ export const FUNNEL_LINE_RULE =
   "Say what this campaign does from funnelLine, in plain words. When no step on it writes to a lead (only a lead source, then the user's own team), say plainly: we find the leads and hand them to your team, no email goes out.";
 
 export async function createFunnelCampaign(a: Record<string, unknown>, p: ApiCallParams) {
+  // The brief the agent wrote from the user's words (HUMAN-BRIEF-1121): the one text the
+  // judge and every writer read; campaign-service refuses a new campaign without one.
+  const brief = req("brief", a.brief);
   const { type, line } = await assertFunnelNotMixed(req("salesFunnelId", a.salesFunnelId));
   const created = (await call("campaign", "create_funnel_campaign", "POST", "/sales-funnel-campaigns", p, {
     brandId: req("brandId", a.brandId),
     offerId: req("offerId", a.offerId),
     salesFunnelId: req("salesFunnelId", a.salesFunnelId),
     status: "stopped",
+    brief,
   })) as Record<string, unknown>;
   return { ...created, funnelType: type, funnelLine: line, askCapsAs: capsAskFor(type), tellUser: FUNNEL_LINE_RULE };
 }
