@@ -41,12 +41,12 @@ export const PRINCIPAL_TOOL_DESCRIPTIONS: Readonly<Record<string, string>> = {
   [READ_PERSON_UNIBOX_TOOL_NAME]: "Staff only. One person's whole Unibox: every message and event with us, every channel, newest last.",
   [READ_ORGANIZATION_UNIBOX_TOOL_NAME]: "Staff only. One organization's people and everything that happened with each of them, merged by date.",
   [READ_COMPANY_FINANCIALS_TOOL_NAME]: "Staff only. Revenue, cost and margin per client and for the whole company, as served by features-service.",
-  [ENGINES_TOOL_FAMILY]: "Staff only. One tool per Engine of the live catalogue that can run now: runs its best script (the Rating's pick) and waits for the Unit.",
+  [ENGINES_TOOL_FAMILY]: "Staff only. One tool per Engine of the live catalogue that can run now: starts a campaign on its outcome (brief, max volume and/or max budget, optional offer) and answers when it first runs; read_engine_campaign reads its progress.",
 };
 
 /** The names a config can list that are principal tools (Engine tools included by prefix). */
 export function isPrincipalToolName(name: string): boolean {
-  return Object.prototype.hasOwnProperty.call(PRINCIPAL_TOOL_DESCRIPTIONS, name) || name.startsWith(ENGINE_TOOL_PREFIX) || name === "read_engine_call";
+  return Object.prototype.hasOwnProperty.call(PRINCIPAL_TOOL_DESCRIPTIONS, name) || name.startsWith(ENGINE_TOOL_PREFIX) || name === "read_engine_campaign";
 }
 
 /** The run an Engine call rides under the account it is for (an order of work, not support). */
