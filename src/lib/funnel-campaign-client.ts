@@ -243,14 +243,20 @@ export async function requireStatedCap(target: { brandId: string; offerId: strin
   return { maxBudget: caps.maxBudget ?? null, maxVolume: caps.maxVolume ?? null, funded: fundingOf(caps), funding: fundingWords(caps) };
 }
 
-/** POST status "ongoing": creates and starts, or starts the existing stopped one (`started`). */
-export async function startFunnelCampaign(t: { brandId: string; offerId: string; salesFunnelId: string }, p: ApiCallParams) {
-  return call("campaign", "confirm_switch_on:start_funnel_campaign", "POST", "/sales-funnel-campaigns", p, {
-    brandId: t.brandId,
-    offerId: t.offerId,
-    salesFunnelId: t.salesFunnelId,
-    status: "ongoing",
-  });
+/**
+ * PATCH {status: "activate"} on the ONE campaign the user said yes to, by its id. Since the brief joined a
+ * campaign's identity (campaign-service v0.75.161), one brand can hold several campaigns on the same funnel; a
+ * brief-less POST start hands back the OLDEST of them, which may not be the one proposed (HUMAN-BRIEF-1121).
+ */
+export async function startFunnelCampaign(t: { salesFunnelCampaignId: string }, p: ApiCallParams) {
+  return call(
+    "campaign",
+    "confirm_switch_on:start_funnel_campaign",
+    "PATCH",
+    `/sales-funnel-campaigns/${enc(req("salesFunnelCampaignId", t.salesFunnelCampaignId))}`,
+    p,
+    { status: "activate" },
+  );
 }
 
 // --- Campaign rows (every campaign, pre-funnel and funnel units) ------------------
