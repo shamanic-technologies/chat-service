@@ -99,8 +99,11 @@ function positiveInt(name: string, v: unknown): number {
   return n;
 }
 
-const capsPath = (a: Record<string, unknown>) =>
-  `/v1/brands/${enc(req("brandId", a.brandId))}/offers/${enc(req("offerId", a.offerId))}/sales-funnels/${enc(req("salesFunnelId", a.salesFunnelId))}/caps`;
+// A campaign may name no offer (DISTRY-CALL-IS-CAMPAIGN-1121): billing serves its caps without the offer segment.
+const capsPath = (a: Record<string, unknown>) => {
+  const offerId = opt(a.offerId);
+  return `/v1/brands/${enc(req("brandId", a.brandId))}${offerId ? `/offers/${enc(offerId)}` : ""}/sales-funnels/${enc(req("salesFunnelId", a.salesFunnelId))}/caps`;
+};
 
 // --- Reads (free) -------------------------------------------------------------
 
@@ -314,8 +317,11 @@ export async function listCampaignsCompact(a: Record<string, unknown>, p: ApiCal
  */
 interface FunnelCampaignRow {
   id: string;
-  offerId: string;
+  /** null = it names no offer (a campaign on its target alone, DISTRY-CALL-IS-CAMPAIGN-1121). */
+  offerId: string | null;
   salesFunnelId: string;
+  /** Set on a campaign on its target alone: its salesFunnelId then reads this outcome, not a catalogue funnel. */
+  target?: string | null;
   salesFunnelName?: string | null;
   status: string;
   stopReason?: string | null;
@@ -413,6 +419,9 @@ export function triggerWords(triggerName: string | null): string {
 }
 
 /** What a campaign whose sales funnel features-service retired says it runs on (campaign-service#764). */
+/** What a campaign on its target alone runs on: its outcome's Engine, by itself, within its caps. */
+export const TARGET_ONLY_WORDS = "By itself, within its caps: it makes its target outcome, no sales funnel";
+
 export const RETIRED_FUNNEL_WORDS = "Not known: its sales funnel was retired from the catalogue (the campaign is kept, stopped, with its history)";
 
 /**
@@ -456,13 +465,15 @@ export async function listAccountCampaigns(a: Record<string, unknown>, p: ApiCal
       const brandId = opt(a.brandId) ?? (c as unknown as { brandId?: string }).brandId ?? "";
       const caps = (await getFunnelCaps({ brandId, offerId: c.offerId, salesFunnelId: c.salesFunnelId }, p)) as CapsBody;
       const results = resultsByBrand.get(brandId)?.get(c.id);
-      const served = await servedFunnel(c.salesFunnelId);
+      // A campaign on its target alone runs no catalogue funnel: its salesFunnelId reads its target.
+      const targetOnly = !!c.target && c.target === c.salesFunnelId;
+      const served = targetOnly ? { retired: false, trigger: null } : await servedFunnel(c.salesFunnelId);
       return {
         id: c.id,
         name: c.salesFunnelName ?? c.salesFunnelId,
         path: pathWords(results),
         // What starts it (owner 2026-10-14: read what a running campaign already does before calling anything missing).
-        runsWhen: served.retired ? RETIRED_FUNNEL_WORDS : triggerWords(served.trigger?.name ?? null),
+        runsWhen: targetOnly ? TARGET_ONLY_WORDS : served.retired ? RETIRED_FUNNEL_WORDS : triggerWords(served.trigger?.name ?? null),
         ...(served.retired ? { funnelRetired: true } : {}),
         type: caps.salesFunnelType ?? null,
         status: c.status,

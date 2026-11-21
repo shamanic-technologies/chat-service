@@ -358,6 +358,23 @@ describe("a campaign IS a sales funnel campaign (owner rule; prod 2026-10-10 NOV
     expect(out.note).toMatch(/never campaigns/);
   });
 
+  it("a campaign naming NO offer, on its target alone, is listed and never fails the whole list (DISTRY-CALL-IS-CAMPAIGN-1121)", async () => {
+    fetchMock().mockImplementation(async (url: string) => {
+      if (url.startsWith("http://features.test/brands/b/sales-funnel-campaigns")) return res(200, { salesFunnelCampaigns: [] });
+      if (url.startsWith("http://features.test/internal/catalogue/sales-funnels/")) throw new Error(`a target-only campaign must not be read as a catalogue funnel: ${url}`);
+      if (url.includes("/sales-funnel-campaigns")) {
+        return res(200, { salesFunnelCampaigns: [{ ...camp("c1", "Newsletter drafted", "newsletter_drafted", 1), offerId: null, target: "newsletter_drafted" }] });
+      }
+      return res(200, { salesFunnelType: "proactive", volumeUnit: "units", maxBudget: { amountCents: "100", period: "one_off", consumedCents: "4", reached: false }, maxVolume: null });
+    });
+    const { FUNNEL_CAMPAIGN_TOOLS, TARGET_ONLY_WORDS } = await funnel();
+    const out = (await FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ brandId: "b" }, p, customer)) as { campaignCount: number; campaigns: Array<Record<string, any>> };
+    expect(out.campaignCount).toBe(1);
+    expect(out.campaigns[0]).toMatchObject({ name: "Newsletter drafted", offerId: null, runsWhen: TARGET_ONLY_WORDS });
+    const capsUrl = fetchMock().mock.calls.map((c) => String(c[0])).find((u) => u.includes("/caps"));
+    expect(capsUrl).toBe("http://billing.test/v1/brands/b/sales-funnels/newsletter_drafted/caps");
+  });
+
   it("a campaign whose sales funnel was RETIRED is listed and flagged, never failing the whole list (campaign-service#764)", async () => {
     const RETIRED = "trigger:signup_not_paid_5_min+signup_to_paid_client@ai-follow-up-email";
     fetchMock().mockImplementation(async (url: string) => {

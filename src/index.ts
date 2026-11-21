@@ -158,7 +158,7 @@ import {
   READ_COMPANY_FINANCIALS_TOOL_NAME,
 } from "./agent/principal-tools.js";
 import { readCompanyFinancials, featuresFetchFromEnv } from "./agent/finance-tools.js";
-import { engineToolsFrom, listEngines, workflowFetchFromEnv, callEngine, readEngineCall, callAnswer, READ_ENGINE_CALL_TOOL_NAME } from "./agent/engine-tools.js";
+import { engineToolsFrom, listEngines, workflowFetchFromEnv, campaignFetchFromEnv, startEngineCampaign, readEngineCampaign, READ_ENGINE_CAMPAIGN_TOOL_NAME } from "./agent/engine-tools.js";
 import { hasStaffOnlyTool, lookupRequester, toolsForRequester, type Requester } from "./lib/staff-only-tools.js";
 import { isStaffUser } from "./lib/staff-identity.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
@@ -4907,8 +4907,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         return { name: call.name, result };
       }
 
-      // --- Distry: one Unit of an Engine, its best script, waited for (DISTRY-PRINCIPAL-1119, staff turns only) ---
-      if (engineTools.outcomeOf.has(call.name) || call.name === READ_ENGINE_CALL_TOOL_NAME) {
+      // --- Distry: an Engine call is a campaign on its outcome (DISTRY-CALL-IS-CAMPAIGN-1121, staff turns only) ---
+      if (engineTools.outcomeOf.has(call.name) || call.name === READ_ENGINE_CAMPAIGN_TOOL_NAME) {
         const args = (call.args as Record<string, unknown>) || {};
         if (!principalAllowed) throw new Error(`[${call.name}] reserved to distribute.you staff`);
         const ours = ourAccountFromEnv();
@@ -4916,16 +4916,13 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         const target = otherOrg
           ? { orgId: otherOrg, userId, brandId: typeof args.brandId === "string" && args.brandId.trim() ? args.brandId.trim() : null }
           : { orgId: ours.orgId, userId: ours.userId, brandId: ours.brandId };
-        if (otherOrg && !target.brandId && call.name !== READ_ENGINE_CALL_TOOL_NAME) throw new Error(`[${call.name}] orgId needs its brandId`);
-        const wf = workflowFetchFromEnv();
-        const result = call.name === READ_ENGINE_CALL_TOOL_NAME
-          ? callAnswer(await readEngineCall(String(args.callId ?? ""), target, 60, wf))
-          : await callEngine(
-            engineTools.outcomeOf.get(call.name)!,
-            args,
-            { ...target, runId: await createChannelRootRun({ orgId: target.orgId, userId: target.userId }, fetch, DISTRY_ENGINE_CALL_TASK_NAME, null) },
-            wf,
-          );
+        const brandId = target.brandId;
+        if (!brandId && call.name !== READ_ENGINE_CAMPAIGN_TOOL_NAME) throw new Error(`[${call.name}] ${otherOrg ? "orgId needs its brandId" : "our own account has no brand configured"}`);
+        const runId = await createChannelRootRun({ orgId: target.orgId, userId: target.userId }, fetch, DISTRY_ENGINE_CALL_TASK_NAME, null);
+        const cf = campaignFetchFromEnv();
+        const result = call.name === READ_ENGINE_CAMPAIGN_TOOL_NAME
+          ? await readEngineCampaign(String(args.campaignId ?? ""), { ...target, runId }, cf)
+          : await startEngineCampaign(engineTools.outcomeOf.get(call.name)!, args, { ...target, brandId: brandId!, runId }, cf);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
