@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, integer, unique, uniqueIndex, index, boolean, bigint, real, date, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, integer, unique, uniqueIndex, index, boolean, bigint, real, date, primaryKey, serial, numeric } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { AnthropicEffort, ChoicesRecord, OpenPageRecord } from "../schemas.js";
 import type { SupportFunction } from "../lib/support-marks.js";
@@ -671,3 +671,38 @@ export const distrySpendDays = pgTable("distry_spend_days", {
   /** The last delivery error per channel, null once delivered. */
   alertError: text("alert_error"),
 });
+
+/** EVAL-SPEND-CAP-1121: one eval replay's money, reserved before the call, settled at its measured cost. */
+export const evalSpend = pgTable(
+  "eval_spend",
+  {
+    id: serial("id").primaryKey(),
+    /** UTC day (YYYY-MM-DD) the fleet-wide daily ceiling counts it on. */
+    day: text("day").notNull(),
+    runKey: text("run_key").notNull(),
+    reservedCents: numeric("reserved_cents").notNull(),
+    /** NULL while the replay runs; then what runs-service priced it at. */
+    spentCents: numeric("spent_cents"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("eval_spend_day_idx").on(table.day)],
+);
+
+/** EVAL-SPEND-CAP-1121: a judged replay kept under its key, reused at $0 while nothing it depends on changed. */
+export const evalReplayCache = pgTable(
+  "eval_replay_cache",
+  {
+    id: serial("id").primaryKey(),
+    cacheKey: text("cache_key").notNull(),
+    scenarioId: text("scenario_id").notNull(),
+    /** provider/model: the measured cost per replay of a model is read from here. */
+    model: text("model").notNull(),
+    costUsd: numeric("cost_usd").notNull(),
+    result: jsonb("result").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("eval_replay_cache_key_idx").on(table.cacheKey),
+    index("eval_replay_cache_model_idx").on(table.model, table.createdAt),
+  ],
+);
