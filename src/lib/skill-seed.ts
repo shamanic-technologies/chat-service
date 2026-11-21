@@ -312,22 +312,25 @@ A campaign needs a max budget, a max volume, or both. Either alone is valid; onl
 
 ## Launch (always this order)
 1. The offer (GET /v1/brands/{id}/offers) and the funnel: GET /v1/offers/{offerId}/sales-funnels?brandId=.
-2. POST /v1/sales-funnel-campaigns {brandId, offerId, salesFunnelId, status: "stopped"}: created STOPPED, starts nothing.
+2. POST /v1/sales-funnel-campaigns {brandId, offerId, salesFunnelId, status: "stopped", brief}: created STOPPED, starts nothing; you write its brief (below).
 3. The caps: PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps with both keys (null = no such cap).
-4. Show the funnel, its caps and billing's verdict; ask yes or no. A step that cannot run today (its preview email refused, its source empty) is said first, and the start waits for it: a start would pay for the steps before it and deliver nothing.
+4. Show the funnel, its brief, its caps and billing's verdict; ask yes or no. A step that cannot run today (its preview email refused, its source empty) is said first, and the start waits for it: a start would pay for the steps before it and deliver nothing.
 5. Only after their yes, in their next message: PATCH /v1/sales-funnel-campaigns/{id} {status: "activate"} (it needs their yes). Refused (nothing can run it yet, payment held): say why plainly; request_staff (POST /v1/staff-requests) only if it needs code.
+
+## The brief: you write it
+The brief is the ONE text our judge reads to pick how the campaign works, and every AI writer reads before each message. Write it from the client's own words, one or two plain sentences: what it aims at, who, how ("Start conversations with equity investors by cold email, no fundraising pitch."). Never a list, labels, or what they did not say.
 
 ## Read and adjust
 - GET /v1/sales-funnel-campaigns?brandId= : THE campaigns with status, budget in words ("Max $10/day", "Not funded"), spent this period, results, and their path (that IS what it does). Count and name only campaigns: a step (a source, cold email, AI booking) is part of a campaign, never a campaign.
 - GET .../sales-funnels/{salesFunnelId}/caps: one funnel's caps (never a campaign id there). Raising a cap spends more: their yes first.
-- Stop: PATCH /v1/sales-funnel-campaigns/{id} {status: "stop"}: no new first touches from now; follow-ups still go out. Say what stopped.
-- A campaign owns one part per step, each with its own campaign id; GET /v1/campaigns/{id} names its salesFunnelCampaignId. What the emails say: \`offers\`.
+- Stop: PATCH /v1/sales-funnel-campaigns/{id} {status: "stop"}: no new first touches; follow-ups still go out. Say what stopped.
+- It owns one part per step, each with a campaign id; GET /v1/campaigns/{id} names its salesFunnelCampaignId. What the emails say: \`offers\`.
 
 ## A rule for a campaign ("only companies above $25k", "always mention the 30-day delivery")
-Its brief is the ONE text every AI of the campaign reads (who to keep, what to say). Read it (GET /v1/sales-funnel-campaigns/{id}, field brief), add the rule to the text in the client's words, then PATCH /v1/sales-funnel-campaigns/{id} {brief: the whole new text}: the brief replaces the old text, so keep what was there. Write it in the same turn (the API may ask their yes first: show the new text and ask), then say the rule is in the brief and applies from the next run. Never the instruction field (retired into the brief).
+Read its brief (GET /v1/sales-funnel-campaigns/{id}), add the rule in the client's words, then PATCH /v1/sales-funnel-campaigns/{id} {brief: the whole new text}: the brief replaces the old text, so keep what was there. Write it in the same turn (if the API asks their yes, show the new text and ask), then say it applies from the next run. Never the instruction field (retired into the brief).
 
 ## Method on one ask
-"Start reaching event planners in Lagos": find the funnel for the offer, create the campaign stopped, set the cap they stated (else propose one once), show what it will do and its cap, and start it after their yes in their next message.
+"Start reaching event planners in Lagos": find the funnel for the offer, create the campaign stopped with the brief you wrote from their words, set the cap they stated (else propose one once), show its brief and cap, and start it after their yes in their next message.
 `),
   },
   {

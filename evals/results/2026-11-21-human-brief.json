@@ -1,0 +1,169 @@
+{
+ "note": "HUMAN-BRIEF-1121: brief-new-campaign (web + WhatsApp), 3 replays each per side, same hour, same judge (Jev), Sophie on her backup DeepSeek V4.1 Flash reasoning on (the Claude org API limit is reached until 2026-12-01, so Haiku could not replay), --seed-skills all. Every create on both sides carried a brief (the gateway documents it); base wrote multi-paragraph labelled briefs (Who we reach: ... Goal: ...), this change one or two plain sentences on 6 of 6.",
+ "sides": {
+  "this-change": {
+   "wire": {
+    "requests": 64,
+    "settings": [
+     {
+      "settings": {
+       "host": "api.deepseek.com",
+       "model": "deepseek-flash",
+       "thinking": null,
+       "outputConfig": null,
+       "reasoningEffort": null,
+       "maxOutputTokens": 32000,
+       "contextManagement": false,
+       "betas": null
+      },
+      "requests": 64
+     }
+    ],
+    "requestsWithImages": 0,
+    "requestsWithToolsOff": 0
+   },
+   "summary": {
+    "scenarios": 2,
+    "scenariosPassed": 2,
+    "replays": 6,
+    "criterionRate": {
+     "true": 0.8333333333333334,
+     "respectful": 1,
+     "proactive": 1,
+     "answers": 1,
+     "nextAction": 1,
+     "form": 1
+    },
+    "failedReplies": 0,
+    "medianCostPerReplyUsd": 0.0049,
+    "medianLlmCalls": 11,
+    "medianInputTokens": 188108,
+    "medianLatencyMs": 29467,
+    "replyPassRate": 0.8333333333333334,
+    "meanCostPerReplyUsd": 0.00485,
+    "meanLatencyMs": 28937,
+    "passed": false
+   },
+   "replies": [
+    {
+     "scenario": "brief-new-campaign",
+     "pass": true,
+     "briefSent": "Open conversations with equity investors in Europe, seed and Series A funds and angels, by cold email. Do not pitch our round: just start a genuine conversation that can lead to a meeting.",
+     "reply": "Fernwood: AI bookkeeping, and this campaign is about opening conversations with European seed and Series A funds and angels, without pitching the round. It is set up as cold email to meetings (we find investors, send the first email and follow-ups, and hand whoever replies to your booking link), created and sitting stopped with a max of $20 a day and no volume cap, spending from your $50 balance with auto-refill on the card ending 4242.\n\nSay yes and I save the $20-a-day cap and start it. Same reply, if fernwood.example is not your real site, send the right address, since that one does not open for me and the first emails will lean on it."
+    },
+    {
+     "scenario": "brief-new-campaign",
+     "pass": true,
+     "briefSent": "Start conversations by cold email with equity investors in Europe, seed and Series A funds and angel investors, without pitching our round: just open the conversation.",
+     "reply": "Your campaign is built and waiting for your go. It runs cold email first and books a call when someone is interested, with this brief: \"Start conversations by cold email with equity investors in Europe, seed and Series A funds and angel investors, without pitching our round: just open the conversation.\"\n\nThe cap is $20 a day, which I'll set the moment you say yes; work is paid from your balance of $50, and your card ending 4242 tops it up automatically.\n\nSay yes and it starts at up to $20 a day. One thing to check: fernwood.example doesn't open on my side, so I've worked from your offer details, is that the right address for the site?"
+    },
+    {
+     "scenario": "brief-new-campaign",
+     "pass": true,
+     "briefSent": "Start conversations with equity investors in Europe, venture capital funds and angel investors, by cold email. Open the relationship without pitching our round: no fundraising ask and no deck, just a genuine first conversation about what they invest in.",
+     "reply": "The campaign is set up and waiting on one thing from you: the $20 a day cap, plus your go-ahead to start it.\n\nHere's what it does: finds equity investors in Europe, VCs and angels, and opens a conversation by cold email without pitching the round, then hands anyone who replies over to you to book a call. The brief is already written in those terms: no fundraising ask, no deck, just a first conversation about what they invest in.\n\nTwo things to know before it runs:\n\n1. **The cap and the start need your yes.** Neither has been applied yet, so nothing is sending and nothing is being spent. Say go and I'll set the $20/day cap and switch it on. Your balance is $50.00, and it will only spend within that cap.\n2. **fernwood.example doesn't open for me**, so I couldn't read the site and the emails will lean on what you've told me. Is that the right address? If you send the right one I'll read it before the first email goes out.\n\nReady when you are: **start it at $20 a day?**"
+    },
+    {
+     "scenario": "brief-new-campaign-whatsapp",
+     "pass": false,
+     "briefSent": "Start conversations with equity investors in Europe, VC funds and angels, by cold email. No fundraising pitch and no round mentioned: just open the conversation. Write to Fernwood, an AI bookkeeping startup.",
+     "reply": "Built it: a cold email campaign that finds VCs and angels in Europe, writes to them, follows up, and lets anyone interested book a call with you at cal.example/fernwood. The brief is exactly what you said: open the conversation, no round, no pitch. It is sitting stopped right now.\n\nThe cap is set at $20 a day from your $50 balance, and your card on file tops it up when the balance hits zero. At that pace the balance covers about two and a half days.\n\nOne thing: fernwood.example does not open for me, so the emails will be written from your offer, AI bookkeeping for startups. If it is a different address, send it and I will read it.\n\nShall I set the $20 a day and start it? A yes and it goes live."
+    },
+    {
+     "scenario": "brief-new-campaign-whatsapp",
+     "pass": true,
+     "briefSent": "Start conversations with equity investors in Europe (seed and Series A funds and angels) by cold email. No fundraising pitch: the emails just open a conversation.",
+     "reply": "The campaign is set up for Investor Conversations: cold email to VCs and angels in Europe, no round, no pitch, just opening the conversation. When someone says they want to talk, they get your booking link.\n\nThe cap is $20 a day from your $50 balance, with no limit on how many people we write to (say the word if you want a daily number cap too). Nothing has gone out yet: shall I set the $20 a day and start it?\n\nOne small thing: fernwood.example doesn't open for me, so the emails work from your offer as it stands. If your site lives on another address, send it over."
+    },
+    {
+     "scenario": "brief-new-campaign-whatsapp",
+     "pass": true,
+     "briefSent": "Start conversations with equity investors in Europe, VCs and angels, by cold email, without pitching the round: just open the conversation.",
+     "reply": "Here's where it stands, Fernwood: the campaign is built and sitting ready but stopped. It aims at seed and Series A funds and angels across Europe, cold email only, opening a conversation rather than pitching the round, and anyone who wants to talk gets offered your booking link (https://cal.example/fernwood).\n\nTwo things before it can go out. Your yes on the cap: $20 a day is the most it can spend, taken from your $50 balance as it goes, no volume limit. And your site address fernwood.example doesn't open for me, so if it has changed, send me the new one and I'll write the emails from it.\n\nShall I set the $20 a day and start it?"
+    }
+   ]
+  },
+  "origin-main": {
+   "wire": {
+    "requests": 62,
+    "settings": [
+     {
+      "settings": {
+       "host": "api.deepseek.com",
+       "model": "deepseek-flash",
+       "thinking": null,
+       "outputConfig": null,
+       "reasoningEffort": null,
+       "maxOutputTokens": 32000,
+       "contextManagement": false,
+       "betas": null
+      },
+      "requests": 62
+     }
+    ],
+    "requestsWithImages": 0,
+    "requestsWithToolsOff": 0
+   },
+   "summary": {
+    "scenarios": 2,
+    "scenariosPassed": 2,
+    "replays": 6,
+    "criterionRate": {
+     "true": 0.6666666666666666,
+     "respectful": 1,
+     "proactive": 1,
+     "answers": 1,
+     "nextAction": 1,
+     "form": 1
+    },
+    "failedReplies": 0,
+    "medianCostPerReplyUsd": 0.00495,
+    "medianLlmCalls": 11,
+    "medianInputTokens": 181600,
+    "medianLatencyMs": 30271,
+    "replyPassRate": 0.6666666666666666,
+    "meanCostPerReplyUsd": 0.00504,
+    "meanLatencyMs": 30469,
+    "passed": false
+   },
+   "replies": [
+    {
+     "scenario": "brief-new-campaign",
+     "pass": false,
+     "briefSent": "Who we write to: equity investors in Europe — partners and principals at seed and Series A funds, and business angels who invest in software and AI startups.\n\nWhat the emails do: open a conversation with the investor. Do not pitch Fernwood's round: no round size, no valuation, no ask for money, no deck in the first email. Talk about what Fernwood does (AI bookkeeping for small businesses) and ask what the investor focuses on, so the conversation starts on their ground. Short, one idea per email.",
+     "reply": "Your campaign is created and sitting stopped, so nothing is being sent and nothing has been spent. It does the whole thing you asked for: finds seed and Series A funds and angels in Europe, cold-emails them to open a conversation with no round pitch and no ask for money, follows up, and books anyone interested into your calendar.\n\nThe cap goes on as **$20 a day** (max budget, daily, all-inclusive of finding people, emailing and the AI work); with that stated your balance of $50 covers it, and your card on file refills it. One thing still missing: I couldn't confirm the cap went on and the \"no round pitch\" rule landed in the campaign's brief, because the write needs your yes and my last two reads came back empty, so I'll verify both the moment you say go, before anything sends."
+    },
+    {
+     "scenario": "brief-new-campaign",
+     "pass": true,
+     "briefSent": "Who we reach: equity investors in Europe — seed and Series A venture capital funds and angel investors — who back AI / fintech / bookkeeping-adjacent software startups. Fernwood is an AI bookkeeping startup.\n\nWhat the emails do: open a conversation only. Do NOT pitch Fernwood's round, do not mention raising, valuation, round size or terms. Write a short, personal first email that starts a genuine conversation with the investor about what they back and what they are seeing in the market, and lightly mentions what Fernwood does. One clear, low-pressure ask: a short call if they are curious. Follow-ups stay conversational, never a pitch.",
+     "reply": "The campaign is built and sitting stopped: cold email to European seed and Series A funds and angels, opening a conversation only, with your no-round-pitch rule written into its brief. Its cap is $20 a day, no volume cap, and it spends from your $50 balance.\n\nI couldn't open fernwood.example, so if the address is different, tell me and I'll read it before the first emails go out.\n\nSay yes and I start it."
+    },
+    {
+     "scenario": "brief-new-campaign",
+     "pass": true,
+     "briefSent": "Who we reach: partners and principals at seed and Series A venture funds in Europe, and active angel investors in European software. Fernwood is an AI bookkeeping startup.\n\nWhat the emails say: do NOT pitch a round, do not mention raising, valuation, ticket size or ask for money. This is a first, human, short email that opens a conversation with an investor: who we are in one line (AI bookkeeping for startups), a genuine note on what we are working on and what we are learning, and one light question about what they are seeing in their portfolio or whether they would be open to a short chat. No deck, no ask, no attachments. Follow-ups stay just as conversational.",
+     "reply": "Fernwood sells AI bookkeeping to startups, and you want European seed and Series A funds and angels, opened gently rather than pitched. I've built that campaign: we find the investors, write the cold email to open a conversation, and book the meeting when someone is interested. It's saved and stopped, with your \"no pitching the round\" rule written into what the emails say.\n\nOne thing still missing: the $20 a day cap. The campaign spends nothing until that's set and you say go, and your balance stands at $50.00 to spend. Say yes and I'll set $20 a day and switch it on.\n\nAlso, fernwood.example doesn't open for me, so the emails are written from what your offer tells me. If that isn't your real address, send the right one and I'll tighten the copy before anything goes out."
+    },
+    {
+     "scenario": "brief-new-campaign-whatsapp",
+     "pass": true,
+     "briefSent": "Who we reach: equity investors in Europe, VCs and angels, investing at seed and Series A. Firms and partners based in Europe writing cheques at that stage. Skip anyone outside Europe and anyone who does not invest at seed or Series A.\n\nWhat the emails say: Fernwood is an AI bookkeeping startup. The first email only opens a conversation with the investor, person to person. Do not pitch the round: no raise amount, no valuation, no deck, no ask for money, no ask for a call to see the deck. Keep it short and warm, and make it about the investor and what they back.\n\nIf they reply with interest, hand them to us.",
+     "reply": "Fernwood, cold email to VCs and angels across Europe: the campaign is built and sitting stopped, with your rule written in, open the conversation, never pitch the round. Nothing sends and no cap is live until you say yes: $20 a day. One thing, fernwood.example does not open for me, so the emails say only that Fernwood is an AI bookkeeping startup; if that is not the right address, send it and I will have them use it.\n1. Yes, cap $20 a day and start it\n2. Not yet, leave it stopped"
+    },
+    {
+     "scenario": "brief-new-campaign-whatsapp",
+     "pass": true,
+     "briefSent": "Who we reach: equity investors in Europe, venture capital funds and angel investors (seed and Series A).\nGoal: open the conversation, nothing more. Do not pitch our round: no raise size, valuation, terms or deck in the first email.\nHow to write: short and personal, one investor at a time. Ask what they are looking at these days and whether a short call makes sense. Interested replies go to Fernwood to talk to them.",
+     "reply": "The campaign is set up and waiting on your yes.\n\nIt emails VC funds and angels across Europe off your Investor Conversations offer, follows up, and puts anyone interested straight onto your call link. The emails only open a conversation: no raise size, no valuation, no deck in the first one.\n\nBudget is $20 a day, with no cap on how many investors we write to. Your balance is $50 and your card tops it up when it runs down.\n\nOne note: fernwood.example doesn't open for us, so the emails are written from your offer text for now. Send the live address when you get a chance and I'll sharpen what they say.\n\nSay yes and I start it."
+    },
+    {
+     "scenario": "brief-new-campaign-whatsapp",
+     "pass": false,
+     "briefSent": "Who to reach: equity investors in Europe only. Venture capital funds at seed and Series A stage, and angel investors who write their own cheques. Europe means funds and angels based in Europe, including the UK, EU, Switzerland and the Nordics. Skip investors outside Europe, skip debt and buyout only investors, skip recruiters, advisors and service providers.\n\nWhat the emails say: open a conversation, never pitch the round. No deck, no raise amount, no valuation, no ask for a cheque, no mention of the round. Write to the investor about Fernwood, an AI bookkeeping startup, in a short human email of a few lines, and ask one genuine question that is easy to answer in two lines, about what they are seeing in the market or what they look for at seed and Series A. No hype words, no invented results, no claims we cannot support.\n\nWhy: these are first conversations with investors, so the goal is a reply and a conversation, not a commitment.\n\nWhen an investor is interested, offer the booking link https://cal.example/fernwood.",
+     "reply": "Got it: cold email to European seed and Series A funds and angels, opening a conversation, not pitching the round.\n\nThat campaign is built and parked, with your rule written into it: a few human lines about Fernwood, no deck, no raise, no ask for a cheque, one question they can answer in two lines. Max $20 a day is set to go, and I switch it on the moment you say so.\n\nOne thing first: fernwood.example doesn't open, so I can't read Fernwood's site and the emails would come out generic. Send me the real address, or three lines on what Fernwood does, and it goes live today."
+    }
+   ]
+  }
+ }
+}

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { assembleTurn, definitionHash, loadDefinition } from "../../src/evals/agent-turn.js";
 import { fixtureExecutor } from "../../src/evals/fixture-tools.js";
-import { CRITERIA, verdictFrom } from "../../src/evals/judge.js";
+import { CRITERIA, describeAction, verdictFrom } from "../../src/evals/judge.js";
 import { COST_PER_REPLY_TARGET_USD, summarise, type ReplayResult } from "../../src/evals/report.js";
 import { loadScenarios, type Scenario } from "../../src/evals/scenario.js";
 import { readSkillFrom, skillIndexBlockFrom } from "../../src/lib/skills.js";
@@ -237,5 +237,13 @@ describe("a guest's plan brief in the replay, as /chat builds it (DISTRY-GUEST-C
     const down = { ...readSite, fixtures: { ...readSite.fixtures, [EXTRACT_FIELDS_KEY]: [{ _status: 422, error: "We could not read dutrou.com" }] } } as Scenario;
     expect(await fixtureGuestPlanBrief(down)).toContain("the address does not open");
     expect(await fixtureGuestPlanBrief(fresh)).toBe("");
+  });
+});
+
+describe("the judge sees a create's whole body (HUMAN-BRIEF-1121)", () => {
+  it("a brief behind a long funnel id reaches the judge", () => {
+    const brief = "Start conversations with equity investors by cold email, no fundraising pitch.";
+    const body = { brandId: "b71e0000-0000-4000-8000-00000000f001", offerId: "0ffe0000-0000-4000-8000-00000000f002", salesFunnelId: "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_meeting_booked@ai-meeting-booking", status: "stopped", brief };
+    expect(describeAction("run_operation", { operationId: "postV1SalesFunnelCampaigns", body })).toContain(brief);
   });
 });

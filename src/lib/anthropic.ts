@@ -2802,8 +2802,19 @@ export const SET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
 export const CREATE_FUNNEL_CAMPAIGN_TOOL: Anthropic.Tool = {
   name: "create_funnel_campaign",
   description:
-    "Create the campaign of a sales funnel for an offer, STOPPED (data only, starts nothing; an existing one is returned as is). To run it: set_funnel_caps, then propose_switch_on start_funnel_campaign and the user's yes. Returns funnelLine (who works each leg): tell the user what the campaign does from it, and when no step writes to a lead, that no email goes out.",
-  input_schema: { type: "object" as const, properties: FUNNEL_TARGET_PROPS, required: ["brandId", "offerId", "salesFunnelId"] },
+    "Create the campaign of a sales funnel for an offer, STOPPED (data only, starts nothing; an existing one is returned as is). To run it: set_funnel_caps, then propose_switch_on start_funnel_campaign and the user's yes. Returns funnelLine (who works each leg): tell the user what the campaign does from it, and when no step writes to a lead, that no email goes out. Show the user the brief you wrote.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      ...FUNNEL_TARGET_PROPS,
+      brief: {
+        type: "string",
+        description:
+          "The campaign's brief, written by you from what the user said: the ONE text our judge reads to pick how the campaign works and every AI writer reads before each message. One or two plain sentences: what it aims at, who, how (\"Start conversations with equity investors by cold email, no fundraising pitch.\"). Never a list, labels, or anything the user did not say.",
+      },
+    },
+    required: ["brandId", "offerId", "salesFunnelId", "brief"],
+  },
 };
 
 export const STOP_FUNNEL_CAMPAIGN_TOOL: Anthropic.Tool = {
