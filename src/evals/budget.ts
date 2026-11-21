@@ -12,24 +12,24 @@
 //     written, exit 1) the moment the next replay would cross it;
 //   - a fleet-wide MONTHLY ceiling over every eval run of the UTC calendar
 //     month, concurrent runs included (one Postgres advisory lock serialises the
-//     reservations in `eval_spend`): **$0, strict** (owner 2026-11-21, after
-//     « Max $10 per month »: « Actually no, strict $0 »). A constant, never an
-//     env var or a flag: raising it is a code change the owner decides.
+//     reservations in `eval_spend`): **$1** (owner 2026-11-21 « strict $0 »,
+//     then 2026-11-22: replies on Claude Code at $0, the Jev judge kept,
+//     « max per month? » → $1, all of it Jev's: ~20 merge-gate runs). A constant,
+//     never an env var or a flag: moving it is a code change the owner decides.
 // The mechanism follows eval-budgeting practice: hard USD caps that stop scoring
 // when hit (LangSmith evaluator spend limits), a cost projected up front as
 // rows x variants x runs x cost per evaluation before the run starts (Arize),
-// and caching of fully versioned evaluations (see replay-plan.ts). At $0 a run
-// serves only replays already kept (reused at $0) and refuses any new spend
-// before it happens.
+// and caching of fully versioned evaluations (see replay-plan.ts). Replies cost
+// $0 (claude-code.ts), so the money a run spends is its Jev judgments (~$0.0002 each).
 // ---------------------------------------------------------------------------
 
 import { sql, type SQL } from "drizzle-orm";
 
 export const EVAL_RUN_CEILING_USD = 1;
-/** Every eval run of a UTC month together, in dollars: strict $0 (owner 2026-11-21). */
-export const EVAL_MONTHLY_CEILING_USD = 0;
-/** Cost of one replay (reply + judge) assumed before this model was ever measured: ~2.5x the measured mean (Haiku 5.5, 2026-11-19). */
-export const REPLAY_PRIOR_USD = 0.004;
+/** Every eval run of a UTC month together, in dollars: $1, the Jev judge's (owner 2026-11-22). */
+export const EVAL_MONTHLY_CEILING_USD = 1;
+/** Cost of one replay assumed before it was ever measured: the reply is Claude Code's ($0), the judge ~$0.0002, so 2.5x a judgment. */
+export const REPLAY_PRIOR_USD = 0.0005;
 /** Cost of one judge call assumed before measurement (measured ~$0.0002). */
 export const JUDGE_PRIOR_USD = 0.0005;
 /** A reservation never settled (the process died) stops counting after this long. */
