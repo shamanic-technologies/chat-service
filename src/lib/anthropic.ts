@@ -2731,6 +2731,10 @@ export const PROPOSE_SWITCH_ON_TOOL: Anthropic.Tool = {
       brandId: BRAND_ID_PROP,
       offerId: OFFER_ID_PROP,
       salesFunnelId: { type: "string", description: "start_funnel_campaign: the sales funnel id (list_campaigns or find_sales_funnels)." },
+      salesFunnelCampaignId: {
+        type: "string",
+        description: "start_funnel_campaign: the id of the ONE campaign to start (create_funnel_campaign's answer, or list_campaigns' id). Several campaigns can run the same funnel.",
+      },
       email: { type: "string", description: "push_email: the recipient's email address." },
       name: { type: "string", description: "push_email, optional: the recipient's name." },
       subject: { type: "string", description: "push_email: the subject, exactly as the user wrote it." },
