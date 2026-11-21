@@ -5,10 +5,18 @@
 // any other spend of ours. No client org is read or written.
 //
 //   node dist/evals/run.js --definition evals/definitions/<id>.json \
-//     [--scenarios evals/scenarios] [--only id1,id2] [--runs 3] \
+//     (--only id1,id2 | --all) [--scenarios evals/scenarios] [--runs 1] \
+//     [--max-usd 1] [--fresh] \
 //     [--provider deepseek --model deepseek-flash] [--parallel 4] [--calibrate] [--out file]
 //     [--no-brand-tools]   (lead turns as before BRAND-MCP-1109: the brand's own tools withheld)
 //     [--effort low|medium|high|...]   (Claude: output_config.effort; omitted = none sent, as the copilot config)
+//
+// Spend (EVAL-SPEND-CAP-1121): a replay already judged under the same key is
+// reused at $0 (--fresh replays anyway); the rest runs under a per-run ceiling
+// (--max-usd, default $1) and the fleet's daily one (EVAL_DAILY_USD, default $3):
+// a projection over a ceiling is refused before any spend, and a run stops
+// cleanly (partial results written, exit 1) when the next replay would cross it.
+// The default replays the scenarios named with --only, once each.
 //
 // Every model request is read at the fetch boundary (wire.ts) and the run stores
 // the settings the requests really carried (`wire`): a result names its wire.
@@ -36,6 +44,9 @@ import { LabelFileSchema, trueAgreement, type JudgedRow } from "./labels.js";
 import { loadScenarios, type Scenario } from "./scenario.js";
 import { summarise, type ScenarioResult, type ReplayResult } from "./report.js";
 import { recordWire } from "./wire.js";
+import { EvalSpendCeilingError, JUDGE_PRIOR_USD, evalBudget, evalDailyCeilingUsd, evalRunCeilingUsd, evalRunsPerScenario, requireScenarioSelection, type EvalBudget, type EvalDb, type Reservation } from "./budget.js";
+import { evalCodeHash, replayCacheKey, runReplayPlan } from "./replay-plan.js";
+import { createHash, randomUUID } from "node:crypto";
 import { ANTHROPIC_EFFORTS, type AnthropicEffort } from "../schemas.js";
 
 const SERVICE = "chat-service";
@@ -63,12 +74,26 @@ const JUDGE: Judge = (() => {
   return j as Judge;
 })();
 
-async function judge(runId: string, judgeKey: string, scenario: Scenario, reply: string, actions: readonly string[], contextGiven = ""): Promise<{ verdict: Verdict; cents: number }> {
+async function judge(runId: string, judgeKey: string, scenario: Scenario, reply: string, actions: readonly string[], contextGiven = "", reservation?: Reservation): Promise<{ verdict: Verdict; cents: number }> {
   const result = await runJudge({ judge: JUDGE, apiKey: judgeKey, model: TYPESAFE_DEFAULT_MODEL, state: judgeState(scenario, reply, actions, contextGiven), questions: QUESTIONS });
   const costs = await retryRefused("judge costs", () => addPlatformRunCosts(runId, SERVICE, [
     { costName: judgeActualCostName(JUDGE, result.inputTokens), quantity: result.inputTokens, costSource: "platform" },
   ]));
+  reservation?.add(cents(costs));
   return { verdict: verdictFrom(result.answers as never), cents: cents(costs) };
+}
+
+/** A judge call alone (calibration, rejudge), reserved and settled under the run's ceilings. */
+async function judgeUnderBudget(budget: EvalBudget, task: string, judgeKey: string, scenario: Scenario, reply: string, actions: readonly string[], contextGiven = ""): Promise<Verdict> {
+  const reservation = await budget.reserve(JUDGE_PRIOR_USD);
+  let failed = true;
+  try {
+    const { verdict } = await withRun(task, (runId) => judge(runId, judgeKey, scenario, reply, actions, contextGiven, reservation));
+    failed = false;
+    return verdict;
+  } finally {
+    await reservation.close(failed);
+  }
 }
 
 /**
@@ -102,7 +127,7 @@ async function withRun<T>(task: string, fn: (runId: string) => Promise<T>): Prom
   }
 }
 
-async function calibrate(scenarios: Scenario[], typesafeKey: string) {
+async function calibrate(scenarios: Scenario[], typesafeKey: string, budget: EvalBudget) {
   const rows: Array<{ id: string; which: "prod-bad" | "good"; expected: "fail" | "pass"; got: "fail" | "pass"; failed: Criterion[] }> = [];
   for (const s of scenarios) {
     const cases: Array<["prod-bad" | "good", string | undefined, string[], "fail" | "pass"]> = [
@@ -111,7 +136,7 @@ async function calibrate(scenarios: Scenario[], typesafeKey: string) {
     ];
     for (const [which, reply, actions, expected] of cases) {
       if (!reply) continue;
-      const { verdict } = await withRun("sophie-eval-calibrate", (runId) => judge(runId, typesafeKey, s, reply, actions));
+      const verdict = await judgeUnderBudget(budget, "sophie-eval-calibrate", typesafeKey, s, reply, actions);
       const got = verdict.pass ? "pass" : "fail";
       rows.push({ id: s.id, which, expected, got, failed: CRITERIA.filter((c) => !verdict.passed[c]) });
       console.log(`[evals] calibrate ${s.id} ${which}: expected ${expected}, got ${got}${got === "fail" ? ` (${rows[rows.length - 1].failed.join(", ")})` : ""}`);
@@ -121,23 +146,35 @@ async function calibrate(scenarios: Scenario[], typesafeKey: string) {
   return { cases: rows.length, agree, passed: rows.length > 0 && agree === rows.length, rows };
 }
 
-async function replay(def: AgentDefinition, scenarios: Scenario[], provider: string, model: string, runs: number, parallel: number, typesafeKey: string) {
+/** Everything a replay depends on, hashed: a replay kept under the same key is reused at $0. */
+function scenarioCacheKey(def: AgentDefinition, scenario: Scenario, provider: string, model: string): string {
+  return replayCacheKey({
+    definition: definitionHash(def, `${provider}/${model}`),
+    sophieCode: def.id.startsWith("sophie-code") ? sophieCodeHash() : null,
+    evalCode: evalCodeHash(),
+    scenario: createHash("sha256").update(JSON.stringify(scenario)).digest("hex"),
+    effort: EFFORT ?? null,
+    brandTools: !process.argv.includes("--no-brand-tools"),
+    apiModel: arg("api-model") ?? null,
+    costPrefix: arg("cost-prefix") ?? null,
+    reasoning: process.argv.includes("--reasoning-off") ? "off" : process.argv.includes("--reasoning-on") ? "on" : null,
+    judge: JUDGE === "jev" ? `jev/${TYPESAFE_DEFAULT_MODEL}` : JUDGE,
+  });
+}
+
+async function replay(def: AgentDefinition, scenarios: Scenario[], provider: string, model: string, runs: number, parallel: number, typesafeKey: string, db: EvalDb, budget: EvalBudget) {
   const { key: modelKey } = await resolvePlatformKey(provider, { method: "POST", path: "/evals" });
-  const results: ScenarioResult[] = [];
-  const queue = [...scenarios];
-  const worker = async () => {
-    for (let scenario = queue.shift(); scenario; scenario = queue.shift()) await replayScenario(scenario);
-  };
-  const replayScenario = async (scenario: Scenario) => {
-    const replays: ReplayResult[] = [];
-    for (let i = 0; i < runs; i++) {
-      const r = await withRun("sophie-eval-replay", async (runId) => {
+  const byId = new Map(scenarios.map((s) => [s.id, s]));
+  const replayOnce = async (scenarioId: string, i: number, reservation: Reservation) => {
+    const scenario = byId.get(scenarioId)!;
+    const r: ReplayResult = await withRun("sophie-eval-replay", async (runId) => {
        try {
         const fixtures = fixtureExecutor(def, scenario);
         const turn = await replayTurn({ def, scenario, provider, model, apiKey: modelKey, executeTool: fixtures.executeTool, uiText: fixtures.uiText, brandTools: !process.argv.includes("--no-brand-tools"), ...(EFFORT ? { effort: EFFORT } : {}), ...(arg("api-model") ? { rawModel: { apiModelId: arg("api-model")!, costPrefix: arg("cost-prefix") ?? arg("api-model")! } } : {}), ...(process.argv.includes("--reasoning-off") ? { reasoningDisabled: true } : process.argv.includes("--reasoning-on") ? { reasoningDisabled: false } : {}) });
         const modelCosts = await retryRefused("reply costs", () => addPlatformRunCosts(runId, SERVICE, turn.costLines.map((l) => ({ costName: l.costName, quantity: l.quantity, costSource: "platform" as const }))));
+        reservation.add(cents(modelCosts));
         const actions = turn.toolCalls.map((c) => describeAction(c.name, c.args, c.result));
-        const judged = await judge(runId, typesafeKey, scenario, turn.reply, actions, turn.turnContext);
+        const judged = await judge(runId, typesafeKey, scenario, turn.reply, actions, turn.turnContext, reservation);
         return {
           reply: turn.reply,
           tools: turn.toolCalls.map((c) => c.name),
@@ -171,15 +208,26 @@ async function replay(def: AgentDefinition, scenarios: Scenario[], provider: str
           verdict: { probabilities: Object.fromEntries(CRITERIA.map((c) => [c, 0])), passed: Object.fromEntries(CRITERIA.map((c) => [c, false])), pass: false } as Verdict,
         };
        }
-      });
-      replays.push(r);
-      const failed = CRITERIA.filter((c) => !r.verdict.passed[c]);
-      console.log(`[evals] ${scenario.id} run ${i + 1}/${runs}: ${r.verdict.pass ? "PASS" : `FAIL (${failed.join(", ")})`} $${r.replyCostUsd.toFixed(4)} ${r.llmCalls} calls ${Math.round(r.latencyMs / 1000)}s`);
-    }
-    results.push({ id: scenario.id, surface: scenario.surface, replays });
+    });
+    const failed = CRITERIA.filter((c) => !r.verdict.passed[c]);
+    console.log(`[evals] ${scenario.id} run ${i + 1}/${runs}: ${r.verdict.pass ? "PASS" : `FAIL (${failed.join(", ")})`} $${r.replyCostUsd.toFixed(4)} ${r.llmCalls} calls ${Math.round(r.latencyMs / 1000)}s`);
+    return { result: r, costUsd: r.replyCostUsd + r.judgeCostUsd, failed: r.error !== undefined };
   };
-  await Promise.all(Array.from({ length: Math.max(1, parallel) }, worker));
-  return results.sort((a, b) => a.id.localeCompare(b.id));
+  const plan = await runReplayPlan<ReplayResult>({
+    db,
+    budget,
+    scenarios: scenarios.map((s) => ({ id: s.id, key: scenarioCacheKey(def, s, provider, model) })),
+    runs,
+    parallel,
+    model: `${provider}/${model}`,
+    fresh: process.argv.includes("--fresh"),
+    replayOnce,
+  });
+  const results: ScenarioResult[] = scenarios
+    .map((s) => ({ id: s.id, surface: s.surface, replays: plan.byScenario.get(s.id) ?? [] }))
+    .filter((s) => s.replays.length > 0)
+    .sort((a, b) => a.id.localeCompare(b.id));
+  return { results, plan };
 }
 
 interface StoredRun {
@@ -187,7 +235,7 @@ interface StoredRun {
   scenarios: Array<{ id: string; replays: Array<{ reply: string; actions?: string[]; turnContext?: string; error?: string }> }>;
 }
 
-async function rejudge(runPath: string, labelsPath: string, scenarios: Scenario[], typesafeKey: string, parallel: number) {
+async function rejudge(runPath: string, labelsPath: string, scenarios: Scenario[], typesafeKey: string, parallel: number, budget: EvalBudget) {
   const stored = JSON.parse(readFileSync(runPath, "utf8")) as StoredRun;
   const labelFile = LabelFileSchema.parse(JSON.parse(readFileSync(labelsPath, "utf8")));
   if (labelFile.run !== stored.at) throw new Error(`[evals] labels were checked on run ${labelFile.run}, not ${stored.at}`);
@@ -199,7 +247,7 @@ async function rejudge(runPath: string, labelsPath: string, scenarios: Scenario[
   const worker = async () => {
     for (let item = queue.shift(); item; item = queue.shift()) {
       const { sc, r, replay } = item;
-      const { verdict } = await withRun("sophie-eval-rejudge", (runId) => judge(runId, typesafeKey, byId.get(sc.id)!, r.reply, r.actions ?? [], r.turnContext ?? ""));
+      const verdict = await judgeUnderBudget(budget, "sophie-eval-rejudge", typesafeKey, byId.get(sc.id)!, r.reply, r.actions ?? [], r.turnContext ?? "");
       rows.push({ scenario: sc.id, replay, judgedTrue: verdict.passed.true, pTrue: verdict.probabilities.true, pass: verdict.pass });
     }
   };
@@ -244,35 +292,50 @@ async function main() {
   if (scenarios.length === 0) throw new Error("[evals] no scenario selected");
   const provider = arg("provider") ?? def.provider;
   const model = arg("model") ?? def.model;
-  const runs = Number(arg("runs") ?? "3");
+  // One replay per scenario unless asked (EVAL-SPEND-CAP-1121): the merge gate asks --runs 3 itself.
+  const runs = evalRunsPerScenario(arg("runs"));
   const out = arg("out");
+  const { db } = await import("../db/index.js");
+  const runKey = randomUUID();
+  const budget = evalBudget({ db: db as unknown as EvalDb, runKey, runCeilingUsd: evalRunCeilingUsd(arg("max-usd")), dailyCeilingUsd: evalDailyCeilingUsd() });
+  console.log(`[evals] run ${runKey}: ceiling $${(budget.ceilingCents() / 100).toFixed(2)} for this run (--max-usd), $${evalDailyCeilingUsd().toFixed(2)} a day for every eval run (EVAL_DAILY_USD)`);
   const { key: typesafeKey } = await resolvePlatformKey(JUDGE_PROVIDERS[JUDGE], { method: "POST", path: "/evals" });
 
   const rejudgePath = arg("rejudge");
   if (rejudgePath) {
     const labelsPath = arg("labels");
     if (!labelsPath) throw new Error("--rejudge needs --labels <file>");
-    const report = await rejudge(rejudgePath, labelsPath, scenarios, typesafeKey, Number(arg("parallel") ?? "5"));
+    const report = await rejudge(rejudgePath, labelsPath, scenarios, typesafeKey, Number(arg("parallel") ?? "5"), budget);
     if (out) writeFileSync(out, JSON.stringify(report, null, 2));
+    console.log(`[evals] ${budget.line()}`);
     console.log(`[evals] rejudge: true agrees with the labels on ${report.agreement.agree}/${report.agreement.labelled} (${Math.round(report.agreement.rate * 100)}%), ${report.agreement.falseAlarms.length} false alarms, ${report.agreement.missed.length} missed`);
     return;
   }
 
   if (process.argv.includes("--calibrate")) {
-    const calibration = await calibrate(scenarios, typesafeKey);
+    const calibration = await calibrate(scenarios, typesafeKey, budget);
     const body = { kind: "calibration", at: new Date().toISOString(), judge: `jev/${TYPESAFE_DEFAULT_MODEL}`, ...calibration };
     if (out) writeFileSync(out, JSON.stringify(body, null, 2));
-    console.log(`[evals] calibration: ${calibration.agree}/${calibration.cases} agree → ${calibration.passed ? "TRUSTED" : "NOT TRUSTED"}`);
+    console.log(`[evals] calibration: ${calibration.agree}/${calibration.cases} agree → ${calibration.passed ? "TRUSTED" : "NOT TRUSTED"}, ${budget.line()}`);
     process.exitCode = calibration.passed ? 0 : 1;
     return;
   }
 
   if (EFFORT && provider !== "anthropic") throw new Error("[evals] --effort is Claude's output_config.effort: use it with --provider anthropic");
+  // The scenarios the change touches, named (EVAL-SPEND-CAP-1121): the whole suite only when asked.
+  requireScenarioSelection(only, process.argv.includes("--all"));
   const wire = recordWire();
-  const results = await replay(def, scenarios, provider, model, runs, Number(arg("parallel") ?? "4"), typesafeKey);
+  const { results, plan } = await replay(def, scenarios, provider, model, runs, Number(arg("parallel") ?? "4"), typesafeKey, db as unknown as EvalDb, budget);
   const wireReport = wire.report();
   // A run whose model requests never crossed fetch has no wire to state: refuse it rather than report an unchecked setting.
-  if (wireReport.requests === 0) throw new Error("[evals] no model request was seen on the wire: the run's settings cannot be stated");
+  // Every replay reused = no request this run: their settings are the key they were kept under.
+  if (plan.replayed > 0 && wireReport.requests === 0) throw new Error("[evals] no model request was seen on the wire: the run's settings cannot be stated");
+  const spend = { spentUsd: budget.spentCents() / 100, ceilingUsd: budget.ceilingCents() / 100, reused: plan.reused, replayed: plan.replayed, skipped: plan.skipped, ...(plan.stopped ? { stopped: plan.stopped.message } : {}) };
+  if (results.length === 0) {
+    console.error(plan.stopped?.message ?? "[evals] nothing was replayed");
+    process.exitCode = 1;
+    return;
+  }
   const summary = summarise(results);
   const body = {
     kind: "replay",
@@ -282,17 +345,26 @@ async function main() {
     definitionHash: definitionHash(def, `${provider}/${model}`),
     ...(process.argv.includes("--no-brand-tools") ? { brandTools: "withheld" } : {}),
     model: `${provider}/${model}${provider === "anthropic" ? ` (effort ${EFFORT ?? def.effort ?? "not sent"})` : process.argv.includes("--reasoning-off") || (!process.argv.includes("--reasoning-on") && def.reasoning === "off") ? " (reasoning off)" : ""}`,
-    wire: wireReport,
+    wire: plan.replayed > 0 ? wireReport : { reused: "every replay was kept under the same definition, code, scenario, model and settings" },
     judge: `jev/${TYPESAFE_DEFAULT_MODEL}`,
     runsPerScenario: runs,
+    spend,
     summary,
     scenarios: results,
   };
   if (out) writeFileSync(out, JSON.stringify(body, null, 2));
   console.log(`[evals] ${JSON.stringify(summary)}`);
+  console.log(`[evals] ${plan.reused} reused at $0, ${plan.replayed} replayed, ${budget.line()}`);
+  if (plan.stopped) {
+    // A ceiling stopped the run: the partial results above are written, the run fails loud.
+    console.error(`${plan.stopped.message}; ${plan.skipped} replays not made (partial results${out ? ` in ${out}` : ""})`);
+    process.exitCode = 1;
+  }
 }
 
-main().catch((err) => {
-  console.error("[evals] run failed:", err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(process.exitCode ?? 0))
+  .catch((err) => {
+    console.error(err instanceof EvalSpendCeilingError ? err.message : "[evals] run failed:", err instanceof EvalSpendCeilingError ? "" : err);
+    process.exit(1);
+  });

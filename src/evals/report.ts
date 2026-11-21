@@ -27,6 +27,8 @@ export interface ReplayResult {
   judgeCostUsd: number;
   latencyMs: number;
   verdict: Verdict;
+  /** Kept from an earlier run under the same key (EVAL-SPEND-CAP-1121): cost $0 this run; its costs are what it cost when made. */
+  reused?: boolean;
 }
 
 export interface ScenarioResult {
