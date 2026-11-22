@@ -3,13 +3,16 @@ import type { db as Db } from "../db/index.js";
 import { skills, skillVersions, type Skill, type SkillVersion } from "../db/schema.js";
 import { fillTemplate } from "./prompt-template.js";
 import { MERGED_SKILL_SLUGS, SEED_SKILLS, type SeedSkill } from "./skill-seed.js";
+import { foldChildrenIntoSkill, mentionedSkillSlugs, parseMentions, reachableSkills } from "./skill-mentions.js";
 
 // ---------------------------------------------------------------------------
-// Copilot SKILL TREE store.
+// Copilot SKILLS store.
 //
-// The Copilot's knowledge of the platform is a tree of markdown skills: an
-// INDEX (always in the prompt) and one sub-skill per topic, loaded on demand
-// with the `read_skill` tool. Staff edit the content live from the dashboard
+// The Copilot's knowledge of the platform is a set of markdown skills linked by
+// MENTIONS (`@skill:<slug>`, skill-mentions.ts, DISTRY-SKILL-MENTIONS-1122): one
+// text is read on every turn, Distry's Prompt; a skill is loaded on demand with
+// `read_skill` when the Prompt, or a skill already reachable from it, mentions
+// it. The stored parent/position columns are the old tree: kept, read by no agent. Staff edit the content live from the dashboard
 // (autosave), so this table, not the code, is the source of truth once a human
 // has touched a row.
 //
@@ -21,7 +24,7 @@ import { MERGED_SKILL_SLUGS, SEED_SKILLS, type SeedSkill } from "./skill-seed.js
 
 export const SEED_EDITOR = "seed";
 export const INDEX_SKILL_SLUG = "index";
-/** The one voice of every message a person reads from us (owner 2026-10-18), always loaded with the index. */
+/** The one voice of every message a person reads from us (owner 2026-10-18). Folded into Distry's Prompt (DISTRY-SKILL-MENTIONS-1122). */
 export const CLIENT_COMMS_SKILL_SLUG = "client-comms";
 
 /** A typing burst by one editor inside this window is ONE version. */
@@ -31,7 +34,7 @@ export const SKILL_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export class SkillNotFoundError extends Error {
   constructor(public readonly slug: string) {
-    super(`No skill "${slug}". Call read_skill with a slug listed in the skill index.`);
+    super(`No skill "${slug}". Call read_skill with a slug your prompt, or a skill you read, mentions.`);
     this.name = "SkillNotFoundError";
   }
 }
@@ -51,12 +54,6 @@ export class SkillConflictError extends Error {
   }
 }
 
-/**
- * Skills the code reads BY SLUG on every chat turn (skillIndexPiecesFrom): the
- * root and the one voice. Deleting one would stop every chat, so delete refuses
- * them; the root also never moves (it has no parent).
- */
-export const UNDELETABLE_SKILL_SLUGS: readonly string[] = [INDEX_SKILL_SLUG, CLIENT_COMMS_SKILL_SLUG];
 
 type Database = typeof Db;
 
@@ -170,8 +167,10 @@ export interface SkillWrite {
 }
 
 /**
- * Create or update one skill and record the version. Creating needs `title`,
- * `description` and an existing `parentSlug`. An update by the same editor
+ * Create or update one skill and record the version. Creating needs `title`
+ * and `description`; no parent (DISTRY-SKILL-MENTIONS-1122: a new skill stands
+ * alone and is never mentioned until a text cites it; a `parentSlug` still sent
+ * is stored, read by no agent). An update by the same editor
  * within SKILL_VERSION_COALESCE_MS of the latest version rewrites that version
  * (autosave); otherwise it appends version N+1. Identical content is a no-op.
  */
@@ -205,9 +204,6 @@ export async function writeSkill(
       if (!write.title || !write.description) {
         throw new SkillValidationError(`Skill "${slug}" was deleted: bringing it back needs a title and a description.`);
       }
-      if (!write.parentSlug) {
-        throw new SkillValidationError(`Skill "${slug}" was deleted: bringing it back needs a parentSlug.`);
-      }
       const version = existing.version + 1;
       await tx.insert(skillVersions).values({
         skillId: existing.id,
@@ -225,7 +221,7 @@ export async function writeSkill(
           title: write.title,
           description: write.description,
           content: write.content,
-          parentSlug: write.parentSlug,
+          parentSlug: write.parentSlug === undefined ? existing.parentSlug : write.parentSlug,
           position: write.position ?? existing.position,
           placedBy: write.editedBy,
           version,
@@ -246,9 +242,6 @@ export async function writeSkill(
       }
       if (!write.title || !write.description) {
         throw new SkillValidationError(`Skill "${slug}" does not exist: creating it needs a title and a description.`);
-      }
-      if (slug !== INDEX_SKILL_SLUG && !write.parentSlug) {
-        throw new SkillValidationError(`Skill "${slug}" does not exist: creating it needs a parentSlug.`);
       }
       const [created] = await tx
         .insert(skills)
@@ -332,13 +325,26 @@ export async function writeSkill(
 }
 
 /**
+ * The seed skills as agents read them since DISTRY-SKILL-MENTIONS-1122: a seed
+ * skill that has seed sub-skills mentions each one (`## Read next`), so the boot
+ * seed writes the links the old tree carried. `index` mentions none (its text is
+ * in Distry's Prompt, which mentions what it mapped).
+ */
+export function seedsWithChildMentions(seeds: readonly SeedSkill[]): SeedSkill[] {
+  return seeds.map((seed) => {
+    const folded = foldChildrenIntoSkill(seed, seeds);
+    return folded === null ? seed : { ...seed, content: folded };
+  });
+}
+
+/**
  * Boot seed. Inserts every absent seed skill; refreshes a row ONLY while its
  * content is still the seed's (`updated_by = "seed"`); never touches a row a
  * human edited. Returns what it did per slug, for the boot log and tests.
  */
 export async function seedSkills(
   database: Database,
-  seeds: readonly SeedSkill[] = SEED_SKILLS,
+  seeds: readonly SeedSkill[] = seedsWithChildMentions(SEED_SKILLS),
   merged: Readonly<Record<string, string>> = MERGED_SKILL_SLUGS,
 ): Promise<{ inserted: string[]; refreshed: string[]; keptHumanEdit: string[]; removedMerged: string[] }> {
   const inserted: string[] = [];
@@ -524,37 +530,25 @@ export async function moveSkill(database: Database, slug: string, move: SkillMov
 }
 
 /**
- * Delete from the tree (SKILL-TREE-EDIT-1122). A soft delete: the row and every
- * version stay readable (`GET .../versions`), no agent reads it from now on,
- * the boot seed never re-creates it, and writing the slug again brings it back.
- * Refused: the root and the one voice (UNDELETABLE_SKILL_SLUGS), and a skill
- * that still has live sub-skills (move or delete them first), so a delete
- * always removes exactly one skill.
+ * Delete (SKILL-TREE-EDIT-1122). A soft delete: the row and every version stay
+ * readable (`GET .../versions`), no agent reads it from now on, the boot seed
+ * never re-creates it, and writing the slug again brings it back. Any skill can
+ * go (DISTRY-SKILL-MENTIONS-1122: none is read on every turn). Texts that
+ * mention it are left as they are: the mention is served `known: false` and
+ * leads nowhere; bringing the skill back revives every one of them. The result
+ * names who still mentions it (`mentionedBy`), for the editor's warning.
  */
 export async function deleteSkill(
   database: Database,
   slug: string,
   editedBy: string,
   now: Date = new Date(),
-): Promise<{ skill: Skill; versionsKept: number }> {
+): Promise<{ skill: Skill; versionsKept: number; mentionedBy: string[] }> {
   if (editedBy === SEED_EDITOR) throw new SkillValidationError(`editedBy "${SEED_EDITOR}" is reserved for the boot seed.`);
-  if (UNDELETABLE_SKILL_SLUGS.includes(slug)) {
-    throw new SkillConflictError(`"${slug}" cannot be deleted: every chat reads it on every turn.`);
-  }
   return database.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('skills-tree'))`);
     const [existing] = await tx.select().from(skills).where(eq(skills.slug, slug)).for("update");
     if (!existing || existing.deletedAt) throw new SkillNotFoundError(slug);
-    const children = await tx
-      .select({ slug: skills.slug })
-      .from(skills)
-      .where(and(eq(skills.parentSlug, slug), isNull(skills.deletedAt)))
-      .orderBy(asc(skills.position), asc(skills.slug));
-    if (children.length > 0) {
-      throw new SkillConflictError(
-        `"${slug}" has ${children.length} sub-skill${children.length === 1 ? "" : "s"} (${children.map((c) => c.slug).join(", ")}): move or delete them first.`,
-      );
-    }
     const [skill] = await tx
       .update(skills)
       .set({ deletedAt: now, deletedBy: editedBy, updatedAt: now })
@@ -573,90 +567,96 @@ export async function deleteSkill(
       }
     }
     const versions = await tx.select({ id: skillVersions.id }).from(skillVersions).where(eq(skillVersions.skillId, existing.id));
-    return { skill, versionsKept: versions.length };
+    const others = await tx.select({ slug: skills.slug, content: skills.content }).from(skills).where(isNull(skills.deletedAt));
+    const mentionedBy = others.filter((o) => o.slug !== slug && mentionedSkillSlugs(o.content).includes(slug)).map((o) => o.slug).sort();
+    return { skill, versionsKept: versions.length, mentionedBy };
   });
 }
 
-/**
- * The block appended to a chat's system prompt when its config allows
- * `read_skill`: the INDEX skill's content plus its DIRECT sub-skills (slug +
- * one line each). Deeper skills are listed by read_skill on their parent, so
- * the prompt stays small however deep the tree grows (owner 2026-10-10).
- */
-export async function buildSkillIndexBlock(database: Database): Promise<string> {
-  return skillIndexBlockFrom(await listSkills(database));
+/** A skill as the prompt builders read it (a stored row, or a snapshot of one). */
+export type SkillText = Pick<Skill, "slug" | "title" | "description" | "content">;
+
+/** A mentioned slug -> the live slug it reads (a merged slug answers the skill it went into). */
+export function resolveSkillSlug(all: readonly Pick<Skill, "slug">[], slug: string): string | null {
+  const target = MERGED_SKILL_SLUGS[slug] ?? slug;
+  return all.some((s) => s.slug === target) ? target : null;
 }
 
-/** A skill as the prompt builders read it (a stored row, or a snapshot of one). */
-export type SkillText = Pick<Skill, "slug" | "parentSlug" | "title" | "description" | "content">;
-
 /**
- * How the skill index is introduced to the model (DISTRY-PROMPT-PARTS-1120): a
- * template Distry's editor can rewrite (part `skill-index`). Its data: the
- * `index` skill's content, the `client-comms` skill's content, and one line per
- * direct sub-skill of `index`.
+ * How the skills are introduced to the model (DISTRY-PROMPT-PARTS-1120, part
+ * `skill-index`; DISTRY-SKILL-MENTIONS-1122): what a mention means, then one line
+ * per skill the Prompt mentions. Deeper skills are listed by read_skill on the
+ * skill that mentions them, so the prompt stays small however many skills exist.
  */
 export const SKILL_INDEX_TEMPLATE = [
   `\n\n---\n## Skills (platform knowledge)`,
-  `{{indexSkill}}`,
+  "A text you read may mention a skill as `@skill:<slug>` (load it with read_skill: it lists the skills it mentions in turn) or one of your tools as `@tool:<name>`.",
   ``,
-  `{{voiceSkill}}`,
-  ``,
-  `### Sub-skills you can load with read_skill`,
-  `(A skill lists its own sub-skills when you load it.)`,
-  `{{subSkills}}`,
+  `### Skills your prompt mentions`,
+  `{{skills}}`,
 ].join("\n");
 
 /** The data the skill index template is filled with. */
 export interface SkillIndexPieces {
-  indexSkill: string;
-  voiceSkill: string;
-  subSkills: string;
+  skills: string;
 }
 
-export function skillIndexPiecesFrom(all: readonly SkillText[]): SkillIndexPieces {
-  const index = all.find((s) => s.slug === INDEX_SKILL_SLUG);
-  if (!index) throw new SkillNotFoundError(INDEX_SKILL_SLUG);
-  const voice = all.find((s) => s.slug === CLIENT_COMMS_SKILL_SLUG);
-  if (!voice) throw new SkillNotFoundError(CLIENT_COMMS_SKILL_SLUG);
-  const children = all.filter((s) => s.parentSlug === INDEX_SKILL_SLUG && s.slug !== CLIENT_COMMS_SKILL_SLUG);
-  return {
-    indexSkill: index.content.trim(),
-    voiceSkill: voice.content.trim(),
-    subSkills: children.map((s) => `- \`${s.slug}\`: ${s.title}. ${s.description}`).join("\n"),
-  };
+/** The skills a text mentions, live ones only, in text order, as `- \`slug\`: Title. Description` lines. */
+function mentionedSkillLines(text: string, all: readonly SkillText[]): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const slug of mentionedSkillSlugs(text)) {
+    const target = resolveSkillSlug(all, slug);
+    if (!target || seen.has(target)) continue;
+    seen.add(target);
+    const s = all.find((x) => x.slug === target)!;
+    lines.push(`- \`${s.slug}\`: ${s.title}. ${s.description}`);
+  }
+  return lines.length > 0 ? lines.join("\n") : "(none)";
 }
 
-export async function buildSkillIndexPieces(database: Database): Promise<SkillIndexPieces> {
-  return skillIndexPiecesFrom(await listSkills(database));
+export function skillIndexPiecesFrom(prompt: string, all: readonly SkillText[]): SkillIndexPieces {
+  return { skills: mentionedSkillLines(prompt, all) };
 }
 
-/** `buildSkillIndexBlock` over rows already read (the eval harness replays a snapshot). */
-export function skillIndexBlockFrom(all: readonly SkillText[], template: string = SKILL_INDEX_TEMPLATE): string {
-  return fillTemplate(template, { ...skillIndexPiecesFrom(all) });
+/** The skill index for a turn whose always-read text is `prompt` (Distry's Prompt). */
+export async function buildSkillIndexPieces(database: Database, prompt: string): Promise<SkillIndexPieces> {
+  return skillIndexPiecesFrom(prompt, await listSkills(database));
 }
 
-/** What `read_skill` returns to the model: the skill, plus its direct children. */
-export async function readSkillForModel(database: Database, slug: unknown) {
+/** The skill index block over rows already read (the eval harness replays a snapshot). */
+export function skillIndexBlockFrom(prompt: string, all: readonly SkillText[], template: string = SKILL_INDEX_TEMPLATE): string {
+  return fillTemplate(template, { ...skillIndexPiecesFrom(prompt, all) });
+}
+
+/** What `read_skill` returns to the model: the skill, plus what it mentions. Only a skill reachable from `prompt`. */
+export async function readSkillForModel(database: Database, slug: unknown, prompt: string) {
   if (typeof slug !== "string" || slug.trim() === "") {
     throw new SkillValidationError("read_skill needs a slug (see the skill index).");
   }
-  return readSkillFrom(await listSkills(database), slug);
+  return readSkillFrom(await listSkills(database), slug, prompt);
 }
 
-export function readSkillFrom(all: readonly SkillText[], slug: unknown) {
+/**
+ * One skill for the model. `prompt` = the turn's always-read text: a skill no
+ * chain of mentions from it reaches is not offered (answered as unknown).
+ */
+export function readSkillFrom(all: readonly SkillText[], slug: unknown, prompt: string) {
   if (typeof slug !== "string" || slug.trim() === "") {
     throw new SkillValidationError("read_skill needs a slug (see the skill index).");
   }
   const wanted = slug.trim();
-  const skill = all.find((s) => s.slug === (MERGED_SKILL_SLUGS[wanted] ?? wanted));
-  if (!skill) throw new SkillNotFoundError(wanted);
-  return {
-    slug: skill.slug,
-    title: skill.title,
-    content: skill.content,
-    subSkills: all
-      .filter((s) => s.parentSlug === skill.slug)
-      .map((s) => ({ slug: s.slug, title: s.title, description: s.description })),
-  };
+  const target = resolveSkillSlug(all, wanted);
+  const reachable = reachableSkills([prompt], all, (s) => resolveSkillSlug(all, s));
+  if (!target || !reachable.has(target)) throw new SkillNotFoundError(wanted);
+  const skill = all.find((s) => s.slug === target)!;
+  type ModelMention = { tool: string } | { skill: string; title: string; description: string };
+  const mentions = parseMentions(skill.content).flatMap((m): ModelMention[] => {
+    if (m.kind === "tool") return [{ tool: m.ref }];
+    const t = resolveSkillSlug(all, m.ref);
+    if (!t || t === skill.slug) return [];
+    const s = all.find((x) => x.slug === t)!;
+    return [{ skill: s.slug, title: s.title, description: s.description }];
+  });
+  return { slug: skill.slug, title: skill.title, content: skill.content, mentions };
 }

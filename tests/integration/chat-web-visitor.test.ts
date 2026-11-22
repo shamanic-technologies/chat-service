@@ -43,7 +43,7 @@ vi.mock("../../src/lib/skills.js", async () => {
   const actual = await vi.importActual<typeof import("../../src/lib/skills.js")>("../../src/lib/skills.js");
   return {
     ...actual,
-    buildSkillIndexPieces: vi.fn(async () => ({ indexSkill: "## Skills (test index)", voiceSkill: "# How we talk to a person", subSkills: "- `our-offer`: questions about us, starting" })),
+    buildSkillIndexPieces: vi.fn(async () => ({ skills: "## Skills (test index)\n- `our-offer`: questions about us, starting" })),
   };
 });
 
