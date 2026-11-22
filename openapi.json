@@ -5624,15 +5624,10 @@
           "effort": {
             "type": "string",
             "nullable": true,
-            "enum": [
-              "low",
-              "medium",
-              "high",
-              "xhigh",
-              "max",
-              null
-            ],
-            "description": "Anthropic thinking effort; null on another provider (or the model's default)."
+            "minLength": 1,
+            "maxLength": 20,
+            "description": "The thinking level Distry runs its model at, any provider: one of the model's `thinkingLevels` in GET /internal/distry/models (Anthropic effort, Gemini thinking level, a direct vendor's reasoning level; `none` = reasoning off). null = the model's default. A level the model cannot run with tools is refused 400 with the reason.",
+            "example": "medium"
           }
         },
         "required": [
@@ -5998,6 +5993,21 @@
             "description": "The thinking Distry would run this model at, in words (the variant the score is read at).",
             "example": "effort low (Distry's definition)"
           },
+          "thinkingLevels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every thinking level Distry can run this model at with tools (save one as `effort`); empty = the model's default only.",
+            "example": [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          },
           "price": {
             "type": "object",
             "properties": {
@@ -6156,6 +6166,30 @@
                 },
                 "isDistrysThinking": {
                   "type": "boolean"
+                },
+                "distry": {
+                  "type": "object",
+                  "properties": {
+                    "level": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "What \"Use\" saves as `effort` for this variant (null = the model's default: a model scored at one reading)."
+                    },
+                    "canRun": {
+                      "type": "boolean",
+                      "description": "false = Distry cannot run this model at this level with tools: show `reason`, never a Use button."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Why it cannot run, in plain words."
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "canRun",
+                    "reason"
+                  ]
                 }
               },
               "required": [
@@ -6165,7 +6199,8 @@
                 "score",
                 "indexCostPerTaskUsd",
                 "intelligencePerDollar",
-                "isDistrysThinking"
+                "isDistrysThinking",
+                "distry"
               ]
             },
             "description": "Every thinking level Artificial Analysis scored this model at, best score first; `isDistrysThinking` marks the one the row reads."
@@ -6179,6 +6214,7 @@
           "capabilityTier",
           "isCurrent",
           "thinking",
+          "thinkingLevels",
           "price",
           "index",
           "intelligencePerDollar",

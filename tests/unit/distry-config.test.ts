@@ -44,14 +44,15 @@ describe("Distry's definition (DISTRY-PRINCIPAL-1119)", () => {
     expect(correct.description.length).toBeGreaterThan(300);
   });
 
-  it("refuses what /chat could not run: an unknown tool, skill or model, an effort off Anthropic", () => {
+  it("refuses what /chat could not run: an unknown tool, skill or model, a thinking level the model cannot run", () => {
     const code = codeDistryDefinition();
     const bad = (patch: Partial<typeof code>, skills: string[] = []) => () => validateDistryDefinition({ ...code, ...patch }, skills);
     expect(bad({ enabledTools: ["no_such_tool"] })).toThrow(/Unknown tools: no_such_tool/);
     expect(bad({ enabledTools: ["read_skill", "read_skill"] })).toThrow(/twice/);
     expect(bad({ skillSlugs: ["ghost"] }, ["index"])).toThrow(/Unknown skills: ghost/);
     expect(bad({ model: "gpt-9" })).toThrow(/Unknown model/);
-    expect(bad({ provider: "google", model: "flash-pro" })).toThrow(/effort is an Anthropic setting/);
+    // DISTRY-THINKING-1122: a level is checked against the model's own levels, any provider.
+    expect(bad({ provider: "google", model: "flash-pro", effort: "max" })).toThrow(/not at max/);
     expect(() => validateDistryDefinition({ ...code, provider: "google", model: "flash-pro", effort: null }, [])).not.toThrow();
     expect(bad({ systemPrompt: "  " })).toThrow(DistryConfigError);
   });

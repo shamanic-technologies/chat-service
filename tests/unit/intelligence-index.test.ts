@@ -115,11 +115,12 @@ describe("matching (no hand mapping, never guessed)", () => {
 });
 
 describe("distryThinkingFor", () => {
-  it("Anthropic = the definition's effort; Google = what /chat sends; DeepSeek = no level", () => {
+  it("the saved level, any provider (DISTRY-THINKING-1122); else Anthropic's default, what /chat sends to Google, DeepSeek no level", () => {
     expect(distryThinkingFor({ provider: "anthropic", modelId: "claude-haiku-5-5" }, "low").level).toBe("low");
     expect(distryThinkingFor({ provider: "anthropic", modelId: "claude-haiku-5-5" }, null).level).toBeNull();
-    expect(distryThinkingFor({ provider: "google", modelId: "gemini-4-hydrogen" }, "low").level).toBe("low");
-    expect(distryThinkingFor({ provider: "deepseek", modelId: "deepseek-flash" }, "low").level).toBeNull();
+    expect(distryThinkingFor({ provider: "google", modelId: "gemini-4-hydrogen" }, null).level).toBe("low");
+    expect(distryThinkingFor({ provider: "openai", modelId: "gpt-6.1-terra" }, "medium")).toEqual({ level: "medium", words: "thinking medium (Distry's definition)" });
+    expect(distryThinkingFor({ provider: "deepseek", modelId: "deepseek-flash" }, null).level).toBeNull();
   });
 
   // DISTRY-ALL-MODELS-1122: a direct vendor reads at the reasoning its tool rounds carry (vendor data).
