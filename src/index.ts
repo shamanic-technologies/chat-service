@@ -6000,6 +6000,9 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         // Sophie/Distry on a direct vendor (her backup, or a vendor staff picked, DISTRY-ALL-MODELS-1122)
         // keeps the model's own reasoning default; the backup's is measured "on".
         reasoningDisabled: configKey === SOPHIE_CONFIG_KEY && SOPHIE_BACKUP_MODEL.reasoning !== "on",
+        // The config's thinking level (DISTRY-THINKING-1122: Distry at the level picked in the models
+        // panel). A backup turn runs another model: the level is not its setting.
+        ...(appConfig.thinkingLevel && !turnModel.backupFor ? { reasoningLevel: appConfig.thinkingLevel } : {}),
         beforeProviderCall: async ({ requestBody, at }) => {
           await authorizeChatProviderCall(
             turnImages.length > 0 ? estimateRequestTokensWithImages(requestBody, turnImages) : estimateRequestTokens(requestBody),
@@ -6049,7 +6052,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         signal: abortController.signal,
         // Per-config Gemini-3 thinking level (NULL → code default "low"). Only
         // the /chat path reads this; /complete never raises thinking.
-        thinkingLevel: appConfig.thinkingLevel ?? undefined,
+        thinkingLevel: turnModel.backupFor ? undefined : (appConfig.thinkingLevel ?? undefined),
         holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),
         ...(leadTurn ? { endToolName: LEAD_ANSWER_TOOL_NAME } : {}),
         loopNotes,

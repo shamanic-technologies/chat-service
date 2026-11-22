@@ -32,6 +32,7 @@ import {
   VendorProviderError,
   VENDORS,
   vendorReasoningFields,
+  vendorThinkingLevelFields,
   type VendorId,
   type VendorResponseBody,
   type VendorToolCall,
@@ -112,6 +113,14 @@ export interface StreamVendorChatOptions {
    * model's own spelling). Absent or false = the model's default.
    */
   reasoningDisabled?: boolean;
+  /**
+   * The thinking level to run THIS model at (DISTRY-THINKING-1122), one of
+   * `VENDORS[...].thinkingLevels[model]` (`vendorThinkingLevelFields`, which
+   * throws on any other). Wins over `reasoningDisabled` and over the model's
+   * tool-round default (Terra's `none`); a reasoning tool round on OpenAI goes
+   * to the Responses API (`usesResponsesApi`). Absent = the model's default.
+   */
+  reasoningLevel?: string;
   /**
    * Called once per provider request with THAT request's billed lines, as soon
    * as its usage is read: a loop that later fails still has every round it
@@ -275,6 +284,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
     holdTextBesideToolCalls = false,
     endToolName,
     reasoningDisabled = false,
+    reasoningLevel,
     onRoundBilled,
     localRound,
   } = options;
@@ -452,6 +462,8 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
         : {}),
       // What THIS model needs beside tools (OpenAI Terra: reasoning_effort none).
       ...(vendorTools.length > 0 ? (VENDORS[v].toolCallRequestFields?.[model] ?? {}) : {}),
+      // The level staff picked, last so it wins over both defaults above (DISTRY-THINKING-1122).
+      ...(reasoningLevel ? vendorThinkingLevelFields(v, model, reasoningLevel) : {}),
     };
 
     const at = new Date();
@@ -459,7 +471,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
 
     let json: VendorResponseBody;
     try {
-      json = await postVendorChatCompletion({ vendor: v, apiKey, model, body, reasoningDisabled, signal });
+      json = await postVendorChatCompletion({ vendor: v, apiKey, model, body, reasoningDisabled: reasoningLevel ? reasoningLevel === "none" : reasoningDisabled, signal });
     } catch (err) {
       if (signal.aborted) break;
       throw err;
