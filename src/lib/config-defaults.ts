@@ -1,6 +1,7 @@
 import type { AnthropicEffort, ChatConfigProvider } from "../schemas.js";
 import type { Provider, ModelAlias } from "./anthropic.js";
 import type { SupportFunction } from "./support-marks.js";
+import { callableModelNames } from "./llm-dynasties.js";
 
 // ---------------------------------------------------------------------------
 // Chat config default resolution + registration merge semantics.
@@ -22,8 +23,11 @@ export const DEFAULT_CHAT_PROVIDER: Provider = "google";
 /** Per-provider model alias used when a chat config row leaves `model` NULL. */
 export function defaultModelAliasFor(provider: Provider): ModelAlias {
   if (provider === "anthropic") return "sonnet";
-  if (provider === "deepseek") return "deepseek-flash";
-  return "flash-pro";
+  if (provider === "google") return "flash-pro";
+  // Every other provider: its first served dynasty (DeepSeek: deepseek-flash).
+  const first = callableModelNames(provider)[0];
+  if (!first) throw new Error(`No served model for provider "${provider}"`);
+  return first;
 }
 
 /**
