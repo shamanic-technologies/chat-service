@@ -3723,6 +3723,8 @@ export const SkillSummarySchema = z
     version: z.number().int(),
     updatedBy: z.string().openapi({ description: "Who wrote the current content. `seed` = never edited by a human." }),
     updatedAt: z.string(),
+    deletedAt: z.string().nullable().openapi({ description: "When staff deleted it from the tree; null while it is live." }),
+    deletedBy: z.string().nullable().openapi({ description: "Who deleted it; null while it is live." }),
   })
   .openapi("SkillSummary");
 
@@ -3764,6 +3766,48 @@ export const SkillWriteRequestSchema = z
   })
   .openapi("SkillWriteRequest");
 
+export const SkillListQuerySchema = z
+  .object({
+    state: z.enum(["live", "deleted"]).optional().openapi({
+      description: "`live` (default) = the tree agents read; `deleted` = skills staff deleted (history still readable).",
+    }),
+  })
+  .openapi("SkillListQuery");
+
+const SkillEditorSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .openapi({ description: "Who is editing (staff email or user id). `seed` is reserved.", example: "kevin@distribute.you" });
+
+export const SkillMoveRequestSchema = z
+  .object({
+    parentSlug: SkillSlugSchema.openapi({ description: "The skill it goes under." }),
+    position: z.number().int().min(0).max(10_000).openapi({
+      description: "0-based place among that parent's other sub-skills; past the end = last.",
+    }),
+    editedBy: SkillEditorSchema,
+  })
+  .openapi("SkillMoveRequest");
+
+export const SkillMoveResponseSchema = z
+  .object({
+    skill: SkillSchema,
+    siblings: z
+      .array(z.object({ slug: z.string(), position: z.number().int() }))
+      .openapi({ description: "The new parent's sub-skills in order, positions 0..n-1." }),
+  })
+  .openapi("SkillMoveResponse");
+
+export const SkillDeleteRequestSchema = z.object({ editedBy: SkillEditorSchema }).openapi("SkillDeleteRequest");
+
+export const SkillDeleteResponseSchema = z
+  .object({
+    skill: SkillSchema,
+    versionsKept: z.number().int().openapi({ description: "Versions still readable at GET /internal/skills/{slug}/versions." }),
+  })
+  .openapi("SkillDeleteResponse");
+
 export const SkillWriteResponseSchema = z
   .object({
     skill: SkillSchema,
@@ -3784,8 +3828,8 @@ registry.registerPath({
   tags: ["Skills"],
   summary: "List the Copilot skill tree",
   description:
-    "Every skill (no content), sorted by position then slug. Build the tree from `parentSlug` (root = `index`). Staff surface, read through the api-service gateway. Read-only.",
-  request: { headers: internalKeyHeader },
+    "Every live skill (no content), sorted by position then slug. Build the tree from `parentSlug` (root = `index`). `?state=deleted` lists the skills staff deleted instead. Staff surface, read through the api-service gateway. Read-only.",
+  request: { headers: internalKeyHeader, query: SkillListQuerySchema },
   responses: {
     200: { description: "The skill tree", content: { "application/json": { schema: SkillListResponseSchema } } },
     ...skillErrors,
@@ -3825,10 +3869,52 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/internal/skills/{slug}/move",
+  tags: ["Skills"],
+  summary: "Move a skill (drag and drop): new parent and place among its siblings",
+  description:
+    "Puts the skill under `parentSlug` at `position`, then renumbers that parent's sub-skills 0..n-1 (and the old parent's when it changed): no two siblings share a place. Refused 400: the parent is the skill itself, one of its descendants (cycle), absent or deleted. Refused 409: the root `index`. Content and versions are untouched; the boot seed never moves it back (SKILL-TREE-EDIT-1122).",
+  request: {
+    headers: internalKeyHeader,
+    params: SkillSlugParamsSchema,
+    body: { content: { "application/json": { schema: SkillMoveRequestSchema } } },
+  },
+  responses: {
+    200: { description: "Moved", content: { "application/json": { schema: SkillMoveResponseSchema } } },
+    400: { description: "Invalid body, cycle, unknown or deleted parent", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "Unknown or deleted skill", content: { "application/json": { schema: ErrorResponseSchema } } },
+    409: { description: "The root cannot move", content: { "application/json": { schema: ErrorResponseSchema } } },
+    ...skillErrors,
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/internal/skills/{slug}",
+  tags: ["Skills"],
+  summary: "Delete a skill from the tree (history kept)",
+  description:
+    "From now on no agent reads it and the boot seed never re-creates it; the row and every version stay readable at GET /internal/skills/{slug}/versions, and PUT /internal/skills/{slug} (title, description, parentSlug, content) brings it back. Removes exactly one skill: refused 409 while it has live sub-skills (the message names them: move or delete them first), and for `index` and `client-comms`, which every chat reads by slug. Its siblings are renumbered to close the gap (SKILL-TREE-EDIT-1122).",
+  request: {
+    headers: internalKeyHeader,
+    params: SkillSlugParamsSchema,
+    body: { content: { "application/json": { schema: SkillDeleteRequestSchema } } },
+  },
+  responses: {
+    200: { description: "Deleted", content: { "application/json": { schema: SkillDeleteResponseSchema } } },
+    400: { description: "Invalid body", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "Unknown or already deleted skill", content: { "application/json": { schema: ErrorResponseSchema } } },
+    409: { description: "Has sub-skills, or a skill every chat reads", content: { "application/json": { schema: ErrorResponseSchema } } },
+    ...skillErrors,
+  },
+});
+
+registry.registerPath({
   method: "get",
   path: "/internal/skills/{slug}/versions",
   tags: ["Skills"],
-  summary: "List a skill's previous versions (newest first, with content)",
+  summary: "List a skill's previous versions (newest first, with content), deleted skills included",
   request: { headers: internalKeyHeader, params: SkillSlugParamsSchema },
   responses: {
     200: { description: "Every version", content: { "application/json": { schema: SkillVersionListResponseSchema } } },

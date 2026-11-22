@@ -218,9 +218,13 @@ import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi
 import { createPlanRun, domainClaim, openUnclaimedOrg, runGuestPlanCall, seedTrialCredit, type PlanOrg } from "./lib/guest-plan.js";
 import { REPORT_NOT_GOOD_TOOL_NAME, reportNotGood } from "./lib/unit-report.js";
 import {
+  SkillConflictError,
   SkillNotFoundError,
   SkillValidationError,
   buildSkillIndexPieces,
+  deleteSkill,
+  listDeletedSkills,
+  moveSkill,
   getSkill,
   listSkillVersions,
   listSkills,
@@ -425,7 +429,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryPromptPreviewQuerySchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, SkillListQuerySchema, SkillMoveRequestSchema, SkillDeleteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryPromptPreviewQuerySchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -6991,6 +6995,7 @@ app.post("/internal/transfer-brand", requireInternalAuth, async (req, res) => {
 function skillErrorStatus(err: unknown): { status: number; error: string } {
   if (err instanceof SkillNotFoundError) return { status: 404, error: err.message };
   if (err instanceof SkillValidationError) return { status: 400, error: err.message };
+  if (err instanceof SkillConflictError) return { status: 409, error: err.message };
   console.error("[skills] unexpected error:", err);
   return { status: 500, error: err instanceof Error ? err.message : String(err) };
 }
@@ -7118,9 +7123,11 @@ app.post("/internal/distry/config/versions/:version/restore", requireInternalAut
   }
 });
 
-app.get("/internal/skills", requireInternalAuth, async (_req, res) => {
+app.get("/internal/skills", requireInternalAuth, async (req, res) => {
+  const query = SkillListQuerySchema.safeParse(req.query);
+  if (!query.success) return res.status(400).json({ error: "Invalid request", details: query.error.flatten() });
   try {
-    const rows = await listSkills(db);
+    const rows = query.data.state === "deleted" ? await listDeletedSkills(db) : await listSkills(db);
     return res.json({ skills: rows.map(toSkillSummary) });
   } catch (err) {
     const mapped = skillErrorStatus(err);
@@ -7147,6 +7154,34 @@ app.put("/internal/skills/:slug", requireInternalAuth, async (req, res) => {
   try {
     const result = await writeSkill(db, params.data.slug, body.data);
     return res.json({ skill: toSkillBody(result.skill), created: result.created, versionAdded: result.versionAdded });
+  } catch (err) {
+    const mapped = skillErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+app.post("/internal/skills/:slug/move", requireInternalAuth, async (req, res) => {
+  const params = SkillSlugParamsSchema.safeParse(req.params);
+  if (!params.success) return res.status(400).json({ error: "Invalid request", details: params.error.flatten() });
+  const body = SkillMoveRequestSchema.safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "Invalid request", details: body.error.flatten() });
+  try {
+    const result = await moveSkill(db, params.data.slug, body.data);
+    return res.json({ skill: toSkillBody(result.skill), siblings: result.siblings });
+  } catch (err) {
+    const mapped = skillErrorStatus(err);
+    return res.status(mapped.status).json({ error: mapped.error });
+  }
+});
+
+app.delete("/internal/skills/:slug", requireInternalAuth, async (req, res) => {
+  const params = SkillSlugParamsSchema.safeParse(req.params);
+  if (!params.success) return res.status(400).json({ error: "Invalid request", details: params.error.flatten() });
+  const body = SkillDeleteRequestSchema.safeParse(req.body ?? {});
+  if (!body.success) return res.status(400).json({ error: "Invalid request", details: body.error.flatten() });
+  try {
+    const result = await deleteSkill(db, params.data.slug, body.data.editedBy);
+    return res.json({ skill: toSkillBody(result.skill), versionsKept: result.versionsKept });
   } catch (err) {
     const mapped = skillErrorStatus(err);
     return res.status(mapped.status).json({ error: mapped.error });

@@ -273,6 +273,13 @@ export const skills = pgTable("skills", {
   position: integer("position").notNull().default(0),
   version: integer("version").notNull().default(1),
   updatedBy: text("updated_by").notNull(),
+  // SKILL-TREE-EDIT-1122: a staff member moved this skill (parent or order): the
+  // boot seed keeps refreshing a seed row's TEXT but never its place again.
+  placedBy: text("placed_by"),
+  // SKILL-TREE-EDIT-1122: deleted from the tree by staff. No agent reads it; the
+  // row and every version stay (history readable), the seed never re-creates it.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: text("deleted_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

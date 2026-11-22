@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import type { db as Db } from "../db/index.js";
 import { skills, skillVersions, type Skill, type SkillVersion } from "../db/schema.js";
 import { fillTemplate } from "./prompt-template.js";
@@ -43,6 +43,21 @@ export class SkillValidationError extends Error {
   }
 }
 
+/** A tree edit refused because of the tree's state (sub-skills, a skill the code reads by slug). */
+export class SkillConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SkillConflictError";
+  }
+}
+
+/**
+ * Skills the code reads BY SLUG on every chat turn (skillIndexPiecesFrom): the
+ * root and the one voice. Deleting one would stop every chat, so delete refuses
+ * them; the root also never moves (it has no parent).
+ */
+export const UNDELETABLE_SKILL_SLUGS: readonly string[] = [INDEX_SKILL_SLUG, CLIENT_COMMS_SKILL_SLUG];
+
 type Database = typeof Db;
 
 export interface SkillSummary {
@@ -54,6 +69,8 @@ export interface SkillSummary {
   version: number;
   updatedBy: string;
   updatedAt: string;
+  deletedAt: string | null;
+  deletedBy: string | null;
 }
 
 export function toSkillSummary(s: Skill): SkillSummary {
@@ -66,6 +83,8 @@ export function toSkillSummary(s: Skill): SkillSummary {
     version: s.version,
     updatedBy: s.updatedBy,
     updatedAt: s.updatedAt.toISOString(),
+    deletedAt: s.deletedAt ? s.deletedAt.toISOString() : null,
+    deletedBy: s.deletedBy ?? null,
   };
 }
 
@@ -95,8 +114,18 @@ export async function listSkills(
   database: Database,
   merged: Readonly<Record<string, string>> = MERGED_SKILL_SLUGS,
 ): Promise<Skill[]> {
-  const rows = await database.select().from(skills).orderBy(asc(skills.position), asc(skills.slug));
+  const rows = await database
+    .select()
+    .from(skills)
+    .where(isNull(skills.deletedAt))
+    .orderBy(asc(skills.position), asc(skills.slug));
   return rows.filter((s) => !(s.slug in merged));
+}
+
+/** Skills staff deleted from the tree (SKILL-TREE-EDIT-1122): kept with every version, read by no agent. */
+export async function listDeletedSkills(database: Database): Promise<Skill[]> {
+  const rows = await database.select().from(skills).orderBy(desc(skills.deletedAt));
+  return rows.filter((s) => s.deletedAt !== null);
 }
 
 /**
@@ -112,16 +141,18 @@ export async function getSkill(
 ): Promise<Skill> {
   const mergedInto = merged[slug];
   if (mergedInto) {
-    const [target] = await database.select().from(skills).where(eq(skills.slug, mergedInto));
+    const [target] = await database.select().from(skills).where(and(eq(skills.slug, mergedInto), isNull(skills.deletedAt)));
     if (target) return target;
   }
-  const [row] = await database.select().from(skills).where(eq(skills.slug, slug));
+  const [row] = await database.select().from(skills).where(and(eq(skills.slug, slug), isNull(skills.deletedAt)));
   if (row) return row;
   throw new SkillNotFoundError(slug);
 }
 
+/** A skill's history, also once it is deleted (SKILL-TREE-EDIT-1122: deleting never loses a version). */
 export async function listSkillVersions(database: Database, slug: string): Promise<SkillVersion[]> {
-  const skill = await getSkill(database, slug);
+  const [deleted] = await database.select().from(skills).where(eq(skills.slug, slug));
+  const skill = deleted?.deletedAt ? deleted : await getSkill(database, slug);
   return database
     .select()
     .from(skillVersions)
@@ -161,9 +192,51 @@ export async function writeSkill(
     const [existing] = await tx.select().from(skills).where(eq(skills.slug, slug)).for("update");
 
     if (write.parentSlug !== undefined && write.parentSlug !== null) {
-      if (write.parentSlug === slug) throw new SkillValidationError("A skill cannot be its own parent.");
-      const [parent] = await tx.select({ id: skills.id }).from(skills).where(eq(skills.slug, write.parentSlug));
-      if (!parent) throw new SkillValidationError(`Parent skill "${write.parentSlug}" does not exist.`);
+      if (existing && !existing.deletedAt && existing.parentSlug !== write.parentSlug) {
+        await assertCanPlaceUnder(tx, slug, write.parentSlug);
+      } else {
+        if (write.parentSlug === slug) throw new SkillValidationError("A skill cannot be its own parent.");
+        await requireLiveParent(tx, write.parentSlug);
+      }
+    }
+
+    if (existing?.deletedAt) {
+      // Writing a deleted slug brings it back, like a create (versions continue from its history).
+      if (!write.title || !write.description) {
+        throw new SkillValidationError(`Skill "${slug}" was deleted: bringing it back needs a title and a description.`);
+      }
+      if (!write.parentSlug) {
+        throw new SkillValidationError(`Skill "${slug}" was deleted: bringing it back needs a parentSlug.`);
+      }
+      const version = existing.version + 1;
+      await tx.insert(skillVersions).values({
+        skillId: existing.id,
+        version,
+        title: write.title,
+        description: write.description,
+        content: write.content,
+        editedBy: write.editedBy,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const [restored] = await tx
+        .update(skills)
+        .set({
+          title: write.title,
+          description: write.description,
+          content: write.content,
+          parentSlug: write.parentSlug,
+          position: write.position ?? existing.position,
+          placedBy: write.editedBy,
+          version,
+          updatedBy: write.editedBy,
+          updatedAt: now,
+          deletedAt: null,
+          deletedBy: null,
+        })
+        .where(eq(skills.id, existing.id))
+        .returning();
+      return { skill: restored, created: true, versionAdded: true };
     }
 
     if (!existing) {
@@ -186,6 +259,7 @@ export async function writeSkill(
           description: write.description,
           content: write.content,
           position: write.position ?? 0,
+          placedBy: write.editedBy,
           version: 1,
           updatedBy: write.editedBy,
           createdAt: now,
@@ -247,9 +321,10 @@ export async function writeSkill(
         updatedAt: now,
       });
     }
+    const moved = next.parentSlug !== existing.parentSlug || next.position !== existing.position;
     const [updated] = await tx
       .update(skills)
-      .set({ ...next, version, updatedBy: write.editedBy, updatedAt: now })
+      .set({ ...next, version, updatedBy: write.editedBy, updatedAt: now, ...(moved ? { placedBy: write.editedBy } : {}) })
       .where(eq(skills.id, existing.id))
       .returning();
     return { skill: updated, created: false, versionAdded: !coalesce };
@@ -278,7 +353,7 @@ export async function seedSkills(
   for (const slug of Object.keys(merged)) {
     const [row] = await database.select().from(skills).where(eq(skills.slug, slug));
     if (!row) continue;
-    if (row.updatedBy !== SEED_EDITOR) {
+    if (row.updatedBy !== SEED_EDITOR || row.deletedAt) {
       keptHumanEdit.push(slug);
       continue;
     }
@@ -316,16 +391,20 @@ export async function seedSkills(
         inserted.push(seed.slug);
         return;
       }
-      if (row.updatedBy !== SEED_EDITOR) {
+      // A skill staff deleted stays deleted; one a human edited keeps its text.
+      if (row.updatedBy !== SEED_EDITOR || row.deletedAt) {
         keptHumanEdit.push(seed.slug);
         return;
       }
+      // A skill staff MOVED keeps its place; the seed still refreshes its text.
+      const parentSlug = row.placedBy ? row.parentSlug : seed.parentSlug;
+      const position = row.placedBy ? row.position : seed.position;
       const same =
         row.title === seed.title &&
         row.description === seed.description &&
         row.content === seed.content &&
-        row.parentSlug === seed.parentSlug &&
-        row.position === seed.position;
+        row.parentSlug === parentSlug &&
+        row.position === position;
       if (same) return;
       const version = row.version + 1;
       await tx.insert(skillVersions).values({
@@ -342,8 +421,8 @@ export async function seedSkills(
           title: seed.title,
           description: seed.description,
           content: seed.content,
-          parentSlug: seed.parentSlug,
-          position: seed.position,
+          parentSlug,
+          position,
           version,
           updatedBy: SEED_EDITOR,
           updatedAt: now,
@@ -353,6 +432,149 @@ export async function seedSkills(
     });
   }
   return { inserted, refreshed, keptHumanEdit, removedMerged };
+}
+
+type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+async function requireLiveParent(tx: Tx, parentSlug: string): Promise<void> {
+  const [parent] = await tx.select({ deletedAt: skills.deletedAt }).from(skills).where(eq(skills.slug, parentSlug));
+  if (!parent) throw new SkillValidationError(`Parent skill "${parentSlug}" does not exist.`);
+  if (parent.deletedAt) throw new SkillValidationError(`Parent skill "${parentSlug}" was deleted.`);
+}
+
+/** Refuses a parent that is the skill itself, one of its descendants (a cycle), absent or deleted. */
+async function assertCanPlaceUnder(tx: Tx, slug: string, parentSlug: string): Promise<void> {
+  if (parentSlug === slug) throw new SkillValidationError("A skill cannot be its own parent.");
+  await requireLiveParent(tx, parentSlug);
+  const rows = await tx.select({ slug: skills.slug, parentSlug: skills.parentSlug }).from(skills);
+  const parentOf = new Map(rows.map((r) => [r.slug, r.parentSlug]));
+  const seen = new Set<string>();
+  for (let cur: string | null | undefined = parentSlug; cur; cur = parentOf.get(cur)) {
+    if (cur === slug) {
+      throw new SkillValidationError(`Cannot move "${slug}" under "${parentSlug}": "${parentSlug}" is inside "${slug}".`);
+    }
+    if (seen.has(cur)) break;
+    seen.add(cur);
+  }
+}
+
+export interface SkillMove {
+  parentSlug: string;
+  /** 0-based place among the new parent's other live sub-skills; past the end = last. */
+  position: number;
+  editedBy: string;
+}
+
+export interface SkillMoveResult {
+  skill: Skill;
+  /** The new parent's sub-skills in order, positions 0..n-1. */
+  siblings: { slug: string; position: number }[];
+}
+
+/**
+ * Drag and drop (SKILL-TREE-EDIT-1122): put `slug` under `parentSlug` at
+ * `position`, then renumber the new parent's live sub-skills 0..n-1 (and the
+ * old parent's, when it changed), so no two siblings share a place. A cycle,
+ * the root, or a deleted/absent skill is refused. Content is untouched: no
+ * version is added; moved rows carry `placedBy` so the seed keeps their place.
+ */
+export async function moveSkill(database: Database, slug: string, move: SkillMove, now: Date = new Date()): Promise<SkillMoveResult> {
+  if (move.editedBy === SEED_EDITOR) {
+    throw new SkillValidationError(`editedBy "${SEED_EDITOR}" is reserved for the boot seed.`);
+  }
+  if (slug === INDEX_SKILL_SLUG) throw new SkillConflictError(`"${INDEX_SKILL_SLUG}" is the root of the tree: it cannot move.`);
+  return database.transaction(async (tx) => {
+    // One lock for every tree edit, so two drags at once cannot interleave their renumbering.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('skills-tree'))`);
+    const [existing] = await tx.select().from(skills).where(eq(skills.slug, slug)).for("update");
+    if (!existing || existing.deletedAt) throw new SkillNotFoundError(slug);
+    await assertCanPlaceUnder(tx, slug, move.parentSlug);
+
+    const oldParent = existing.parentSlug;
+    const siblingsOf = async (parent: string) =>
+      (await tx.select().from(skills).where(and(eq(skills.parentSlug, parent), isNull(skills.deletedAt))).orderBy(asc(skills.position), asc(skills.slug)))
+        .filter((s) => s.id !== existing.id);
+
+    const renumber = async (ordered: Skill[]) => {
+      for (const [i, s] of ordered.entries()) {
+        if (s.position === i && s.parentSlug === move.parentSlug && s.id !== existing.id) continue;
+        await tx
+          .update(skills)
+          .set({ position: i, ...(s.id === existing.id ? { parentSlug: move.parentSlug } : {}), placedBy: move.editedBy, updatedAt: now })
+          .where(eq(skills.id, s.id));
+      }
+    };
+
+    const newSiblings = await siblingsOf(move.parentSlug);
+    const at = Math.min(Math.max(0, move.position), newSiblings.length);
+    newSiblings.splice(at, 0, existing);
+    await renumber(newSiblings);
+
+    if (oldParent && oldParent !== move.parentSlug) {
+      const old = await siblingsOf(oldParent);
+      for (const [i, s] of old.entries()) {
+        if (s.position === i) continue;
+        await tx.update(skills).set({ position: i, placedBy: move.editedBy, updatedAt: now }).where(eq(skills.id, s.id));
+      }
+    }
+
+    const [skill] = await tx.select().from(skills).where(eq(skills.id, existing.id));
+    return { skill, siblings: newSiblings.map((s, i) => ({ slug: s.slug, position: i })) };
+  });
+}
+
+/**
+ * Delete from the tree (SKILL-TREE-EDIT-1122). A soft delete: the row and every
+ * version stay readable (`GET .../versions`), no agent reads it from now on,
+ * the boot seed never re-creates it, and writing the slug again brings it back.
+ * Refused: the root and the one voice (UNDELETABLE_SKILL_SLUGS), and a skill
+ * that still has live sub-skills (move or delete them first), so a delete
+ * always removes exactly one skill.
+ */
+export async function deleteSkill(
+  database: Database,
+  slug: string,
+  editedBy: string,
+  now: Date = new Date(),
+): Promise<{ skill: Skill; versionsKept: number }> {
+  if (editedBy === SEED_EDITOR) throw new SkillValidationError(`editedBy "${SEED_EDITOR}" is reserved for the boot seed.`);
+  if (UNDELETABLE_SKILL_SLUGS.includes(slug)) {
+    throw new SkillConflictError(`"${slug}" cannot be deleted: every chat reads it on every turn.`);
+  }
+  return database.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('skills-tree'))`);
+    const [existing] = await tx.select().from(skills).where(eq(skills.slug, slug)).for("update");
+    if (!existing || existing.deletedAt) throw new SkillNotFoundError(slug);
+    const children = await tx
+      .select({ slug: skills.slug })
+      .from(skills)
+      .where(and(eq(skills.parentSlug, slug), isNull(skills.deletedAt)))
+      .orderBy(asc(skills.position), asc(skills.slug));
+    if (children.length > 0) {
+      throw new SkillConflictError(
+        `"${slug}" has ${children.length} sub-skill${children.length === 1 ? "" : "s"} (${children.map((c) => c.slug).join(", ")}): move or delete them first.`,
+      );
+    }
+    const [skill] = await tx
+      .update(skills)
+      .set({ deletedAt: now, deletedBy: editedBy, updatedAt: now })
+      .where(eq(skills.id, existing.id))
+      .returning();
+    // Close the gap among the siblings it leaves.
+    if (existing.parentSlug) {
+      const rest = await tx
+        .select()
+        .from(skills)
+        .where(and(eq(skills.parentSlug, existing.parentSlug), isNull(skills.deletedAt)))
+        .orderBy(asc(skills.position), asc(skills.slug));
+      for (const [i, s] of rest.entries()) {
+        if (s.position === i) continue;
+        await tx.update(skills).set({ position: i, placedBy: editedBy, updatedAt: now }).where(eq(skills.id, s.id));
+      }
+    }
+    const versions = await tx.select({ id: skillVersions.id }).from(skillVersions).where(eq(skillVersions.skillId, existing.id));
+    return { skill, versionsKept: versions.length };
+  });
 }
 
 /**
