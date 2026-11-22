@@ -6,6 +6,7 @@ import { leadTurnToolNames } from "../../src/lib/lead-turn.js";
 import { withOurWebsite } from "../../src/lib/person-facing.js";
 import { CLIENT_UI_TOOL_NAMES } from "../../src/lib/ui-tools.js";
 import { skillIndexBlockFrom } from "../../src/lib/skills.js";
+import { codeDistryDefinition } from "../../src/agent/distry-config.js";
 import { SEED_SKILLS } from "../../src/lib/skill-seed.js";
 import * as skills from "../../src/lib/skills.js";
 
@@ -57,8 +58,10 @@ describe("a guest reads the same skills as an account (DISTRY-ONE-AI-1118)", () 
   it("there is one skill block: the index with the voice and every client job, no guest-only text", () => {
     expect(Object.keys(skills)).not.toContain("buildGuestSkillsBlock");
     expect(Object.keys(skills)).not.toContain("guestSkillsBlockFrom");
-    const block = skillIndexBlockFrom(SEED_SKILLS);
-    expect(block).toContain("# How we talk to a person");
+    // DISTRY-SKILL-MENTIONS-1122: the voice lives in the Prompt, the block lists what the Prompt mentions.
+    const prompt = codeDistryDefinition().systemPrompt;
+    expect(prompt).toContain("# How we talk to a person");
+    const block = skillIndexBlockFrom(prompt, SEED_SKILLS);
     expect(block).toContain("- `our-offer`:");
     expect(block).toContain("- `new-account`:");
   });

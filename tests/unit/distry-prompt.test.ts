@@ -33,7 +33,7 @@ const noTool = () => null;
 function fullData(): TurnPromptData {
   return {
     ...emptyTurnPromptData(ROLE),
-    skillIndex: skillIndexPiecesFrom(SEED_SKILLS),
+    skillIndex: skillIndexPiecesFrom(ROLE, SEED_SKILLS),
     modelName: "Claude Haiku 5.5",
     campaignInputs: { goal: "meetings" },
     requestContext: { page: "today", recentActions: ["opened billing"] },
@@ -47,7 +47,7 @@ function fullData(): TurnPromptData {
 
 /** What /chat sent before the parts existed (DISTRY-PRINCIPAL-1119 code), rebuilt from the same builders. */
 function legacy(d: TurnPromptData, surface: string): { system: string; turn: string } {
-  const system = ROLE + (d.skillIndex ? skillIndexBlockFrom(SEED_SKILLS) : "") + (d.modelName ? aboutYouBlock(d.modelName) : "");
+  const system = ROLE + (d.skillIndex ? skillIndexBlockFrom(ROLE, SEED_SKILLS) : "") + (d.modelName ? aboutYouBlock(d.modelName) : "");
   const turn =
     buildSystemPrompt("", d.requestContext ?? undefined, d.campaignInputs) +
     surface +

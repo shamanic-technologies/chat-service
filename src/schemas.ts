@@ -3718,10 +3718,10 @@ export const SkillVersionParamsSchema = z
 export const SkillSummarySchema = z
   .object({
     slug: z.string(),
-    parentSlug: z.string().nullable().openapi({ description: "Parent skill slug; null only for `index`." }),
+    parentSlug: z.string().nullable().openapi({ description: "The old stored tree (read by no agent since DISTRY-SKILL-MENTIONS-1122; links are mentions). null for a skill created without one." }),
     title: z.string(),
     description: z.string().openapi({ description: "One line: when the model should load this skill." }),
-    position: z.number().int().openapi({ description: "Sort order among siblings." }),
+    position: z.number().int().openapi({ description: "The old stored tree's place among siblings (read by no agent)." }),
     version: z.number().int(),
     updatedBy: z.string().openapi({ description: "Who wrote the current content. `seed` = never edited by a human." }),
     updatedAt: z.string(),
@@ -3735,7 +3735,36 @@ export const SkillSchema = SkillSummarySchema.extend({
   createdAt: z.string(),
 }).openapi("Skill");
 
-export const SkillListResponseSchema = z.object({ skills: z.array(SkillSummarySchema) }).openapi("SkillListResponse");
+// DISTRY-SKILL-MENTIONS-1122: skills are linked by mentions written in their text, recomputed on every read.
+export const SkillMentionSchema = z
+  .object({
+    kind: z.enum(["skill", "tool"]),
+    ref: z.string().openapi({ description: "The skill's slug or the tool's name. In the text: `@skill:<slug>` / `@tool:<name>`." }),
+    known: z.boolean().openapi({ description: "true = a live skill / a tool Distry can call. false = a deleted or unknown skill, or a tool that does not exist: the mention leads nowhere." }),
+  })
+  .openapi("SkillMention");
+
+export const SkillLinksSchema = z.object({
+  mentions: z.array(SkillMentionSchema).openapi({ description: "What this skill's text mentions, in text order, each once (itself excluded)." }),
+  mentionedBy: z
+    .object({
+      prompt: z.boolean().openapi({ description: "Distry's Prompt mentions it." }),
+      skills: z.array(z.string()).openapi({ description: "Live skills whose text mentions it, sorted by slug." }),
+    })
+    .openapi({ description: "Who mentions it. Warn before deleting a skill this is not empty for: their mentions then lead nowhere until it comes back." }),
+  neverMentioned: z.boolean().openapi({ description: "Nothing mentions it (not the Prompt, no other live skill): Distry never reads it." }),
+  reachable: z.boolean().openapi({ description: "Distry reaches it by following mentions from the Prompt." }),
+});
+
+export const SkillListItemSchema = SkillSummarySchema.merge(SkillLinksSchema).openapi("SkillListItem");
+export const SkillWithLinksSchema = SkillSchema.merge(SkillLinksSchema).openapi("SkillWithLinks");
+
+export const SkillListResponseSchema = z
+  .object({
+    skills: z.array(SkillListItemSchema),
+    prompt: z.object({ mentions: z.array(SkillMentionSchema) }).openapi({ description: "What Distry's Prompt (the one text read every turn) mentions, in text order." }),
+  })
+  .openapi("SkillListResponse");
 
 export const SkillVersionSchema = z
   .object({
@@ -3758,7 +3787,7 @@ export const SkillWriteRequestSchema = z
     content: z.string().min(1).max(100_000).openapi({ description: "Full markdown body (replaces the current one)." }),
     title: z.string().min(1).max(200).optional().openapi({ description: "Required when creating." }),
     description: z.string().min(1).max(500).optional().openapi({ description: "Required when creating." }),
-    parentSlug: SkillSlugSchema.nullable().optional().openapi({ description: "Required when creating (except `index`)." }),
+    parentSlug: SkillSlugSchema.nullable().optional().openapi({ description: "Optional, read by no agent (the old stored tree). A new skill needs none: it stands alone until a text mentions it." }),
     position: z.number().int().min(0).max(10_000).optional(),
     editedBy: z
       .string()
@@ -3807,12 +3836,13 @@ export const SkillDeleteResponseSchema = z
   .object({
     skill: SkillSchema,
     versionsKept: z.number().int().openapi({ description: "Versions still readable at GET /internal/skills/{slug}/versions." }),
+    mentionedBy: z.array(z.string()).openapi({ description: "Live skills that still mention it: their text is left as is, the mention is served `known: false` and revives if the skill comes back." }),
   })
   .openapi("SkillDeleteResponse");
 
 export const SkillWriteResponseSchema = z
   .object({
-    skill: SkillSchema,
+    skill: SkillWithLinksSchema,
     created: z.boolean(),
     versionAdded: z.boolean().openapi({
       description: "false when the save was folded into the current version (same editor within 10 minutes) or nothing changed.",
@@ -3828,9 +3858,9 @@ registry.registerPath({
   method: "get",
   path: "/internal/skills",
   tags: ["Skills"],
-  summary: "List the Copilot skill tree",
+  summary: "List the skills, with who mentions whom",
   description:
-    "Every live skill (no content), sorted by position then slug. Build the tree from `parentSlug` (root = `index`). `?state=deleted` lists the skills staff deleted instead. Staff surface, read through the api-service gateway. Read-only.",
+    "Every live skill (no content), with its mentions in text order, who mentions it, `neverMentioned` and `reachable`, plus what Distry's Prompt mentions (DISTRY-SKILL-MENTIONS-1122: the links are the mentions, recomputed on every read; `parentSlug`/`position` are the old tree, read by no agent). `?state=deleted` lists the skills staff deleted instead. Staff surface, read through the api-service gateway. Read-only.",
   request: { headers: internalKeyHeader, query: SkillListQuerySchema },
   responses: {
     200: { description: "The skill tree", content: { "application/json": { schema: SkillListResponseSchema } } },
@@ -3845,7 +3875,7 @@ registry.registerPath({
   summary: "Read one skill",
   request: { headers: internalKeyHeader, params: SkillSlugParamsSchema },
   responses: {
-    200: { description: "The skill with its content", content: { "application/json": { schema: SkillSchema } } },
+    200: { description: "The skill with its content and its links", content: { "application/json": { schema: SkillWithLinksSchema } } },
     404: { description: "Unknown slug", content: { "application/json": { schema: ErrorResponseSchema } } },
     ...skillErrors,
   },
@@ -3857,7 +3887,7 @@ registry.registerPath({
   tags: ["Skills"],
   summary: "Create or update one skill (autosave-safe)",
   description:
-    "Replaces the skill's content (and optionally title, description, parent, position). Built for autosave: a save by the SAME `editedBy` within 10 minutes of the latest version rewrites that version instead of adding one, so a typing burst is one recoverable snapshot. Identical content is a no-op. Creating a new slug needs `title`, `description` and an existing `parentSlug`. Once a human saves a skill, the boot seed never overwrites it again.",
+    "Replaces the skill's content (and optionally title, description, parent, position). Built for autosave: a save by the SAME `editedBy` within 10 minutes of the latest version rewrites that version instead of adding one, so a typing burst is one recoverable snapshot. Identical content is a no-op. Creating a new slug needs `title` and `description`, no parent (it is never mentioned until a text cites it as `@skill:<slug>`). Once a human saves a skill, the boot seed never overwrites it again.",
   request: {
     headers: internalKeyHeader,
     params: SkillSlugParamsSchema,
@@ -3897,7 +3927,7 @@ registry.registerPath({
   tags: ["Skills"],
   summary: "Delete a skill from the tree (history kept)",
   description:
-    "From now on no agent reads it and the boot seed never re-creates it; the row and every version stay readable at GET /internal/skills/{slug}/versions, and PUT /internal/skills/{slug} (title, description, parentSlug, content) brings it back. Removes exactly one skill: refused 409 while it has live sub-skills (the message names them: move or delete them first), and for `index` and `client-comms`, which every chat reads by slug. Its siblings are renumbered to close the gap (SKILL-TREE-EDIT-1122).",
+    "From now on no agent reads it and the boot seed never re-creates it; the row and every version stay readable at GET /internal/skills/{slug}/versions, and PUT /internal/skills/{slug} (title, description, content) brings it back. Any skill can be deleted (DISTRY-SKILL-MENTIONS-1122: none is read every turn). Texts that mention it are left as they are: those mentions are served `known: false` and revive if it comes back; `mentionedBy` names them (read the list's `mentionedBy` to warn before).",
   request: {
     headers: internalKeyHeader,
     params: SkillSlugParamsSchema,
@@ -3907,7 +3937,6 @@ registry.registerPath({
     200: { description: "Deleted", content: { "application/json": { schema: SkillDeleteResponseSchema } } },
     400: { description: "Invalid body", content: { "application/json": { schema: ErrorResponseSchema } } },
     404: { description: "Unknown or already deleted skill", content: { "application/json": { schema: ErrorResponseSchema } } },
-    409: { description: "Has sub-skills, or a skill every chat reads", content: { "application/json": { schema: ErrorResponseSchema } } },
     ...skillErrors,
   },
 });
@@ -4601,7 +4630,9 @@ export const DistryConfigResponseSchema = z
     promptParts: z.array(DistryPromptPartSchema).openapi({
       description: "Every text Distry reads, in the current version's order (ordered parts, then the loop notes and the Engine tool template). Tool descriptions are in `availableTools`.",
     }),
-    skills: z.array(z.object({ slug: z.string(), parentSlug: z.string().nullable(), title: z.string(), description: z.string() })),
+    skills: z.array(z.object({ slug: z.string(), parentSlug: z.string().nullable(), title: z.string(), description: z.string() }).merge(SkillLinksSchema)),
+    promptMentions: z.array(SkillMentionSchema).openapi({ description: "What the current Prompt mentions, in text order (DISTRY-SKILL-MENTIONS-1122)." }),
+    mentionableTools: z.array(z.string()).openapi({ description: "Tools a text may mention as `@tool:<name>` (Engines are not mentionable)." }),
     models: z.record(z.string(), z.array(z.string())).openapi({ description: "Per provider, the model names accepted." }),
     efforts: z.array(z.string()),
   })

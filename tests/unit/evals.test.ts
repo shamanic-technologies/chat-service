@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { assembleTurn, definitionHash, loadDefinition } from "../../src/evals/agent-turn.js";
+import { assembleTurn, definitionHash, evalPrompt, evalSkills, loadDefinition } from "../../src/evals/agent-turn.js";
 import { fixtureExecutor } from "../../src/evals/fixture-tools.js";
 import { CRITERIA, describeAction, verdictFrom } from "../../src/evals/judge.js";
 import { COST_PER_REPLY_TARGET_USD, summarise, type ReplayResult } from "../../src/evals/report.js";
@@ -68,7 +68,7 @@ describe("assembleTurn (same builders as /chat)", () => {
   it("puts the config prompt, the skill index and the identity line in the stable prompt", () => {
     const turn = assembleTurn(def, web, "DeepSeek V4.1 Flash");
     expect(turn.systemPrompt.startsWith(def.systemPrompt)).toBe(true);
-    expect(turn.systemPrompt).toContain(skillIndexBlockFrom(def.skills));
+    expect(turn.systemPrompt).toContain(skillIndexBlockFrom(evalPrompt(def), evalSkills(def)));
     expect(turn.systemPrompt).toContain("DeepSeek V4.1 Flash");
   });
 
@@ -140,7 +140,7 @@ describe("fixtureExecutor", () => {
   it("answers read_skill from the definition under test", async () => {
     const ex = fixtureExecutor(def, s);
     const r = await ex.executeTool({ name: "read_skill", args: { slug: "campaigns" } });
-    expect(r).toEqual({ name: "read_skill", result: readSkillFrom(def.skills, "campaigns") });
+    expect(r).toEqual({ name: "read_skill", result: readSkillFrom(evalSkills(def), "campaigns", evalPrompt(def)) });
   });
 
   it("ends the turn on present_choices and keeps what the person sees", async () => {

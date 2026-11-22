@@ -4206,15 +4206,31 @@
           "skills": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/SkillSummary"
+              "$ref": "#/components/schemas/SkillListItem"
             }
+          },
+          "prompt": {
+            "type": "object",
+            "properties": {
+              "mentions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SkillMention"
+                }
+              }
+            },
+            "required": [
+              "mentions"
+            ],
+            "description": "What Distry's Prompt (the one text read every turn) mentions, in text order."
           }
         },
         "required": [
-          "skills"
+          "skills",
+          "prompt"
         ]
       },
-      "SkillSummary": {
+      "SkillListItem": {
         "type": "object",
         "properties": {
           "slug": {
@@ -4223,7 +4239,7 @@
           "parentSlug": {
             "type": "string",
             "nullable": true,
-            "description": "Parent skill slug; null only for `index`."
+            "description": "The old stored tree (read by no agent since DISTRY-SKILL-MENTIONS-1122; links are mentions). null for a skill created without one."
           },
           "title": {
             "type": "string"
@@ -4234,7 +4250,7 @@
           },
           "position": {
             "type": "integer",
-            "description": "Sort order among siblings."
+            "description": "The old stored tree's place among siblings (read by no agent)."
           },
           "version": {
             "type": "integer"
@@ -4255,6 +4271,42 @@
             "type": "string",
             "nullable": true,
             "description": "Who deleted it; null while it is live."
+          },
+          "mentions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillMention"
+            },
+            "description": "What this skill's text mentions, in text order, each once (itself excluded)."
+          },
+          "mentionedBy": {
+            "type": "object",
+            "properties": {
+              "prompt": {
+                "type": "boolean",
+                "description": "Distry's Prompt mentions it."
+              },
+              "skills": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Live skills whose text mentions it, sorted by slug."
+              }
+            },
+            "required": [
+              "prompt",
+              "skills"
+            ],
+            "description": "Who mentions it. Warn before deleting a skill this is not empty for: their mentions then lead nowhere until it comes back."
+          },
+          "neverMentioned": {
+            "type": "boolean",
+            "description": "Nothing mentions it (not the Prompt, no other live skill): Distry never reads it."
+          },
+          "reachable": {
+            "type": "boolean",
+            "description": "Distry reaches it by following mentions from the Prompt."
           }
         },
         "required": [
@@ -4267,37 +4319,148 @@
           "updatedBy",
           "updatedAt",
           "deletedAt",
-          "deletedBy"
+          "deletedBy",
+          "mentions",
+          "mentionedBy",
+          "neverMentioned",
+          "reachable"
         ]
       },
-      "Skill": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/SkillSummary"
+      "SkillMention": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "skill",
+              "tool"
+            ]
           },
-          {
+          "ref": {
+            "type": "string",
+            "description": "The skill's slug or the tool's name. In the text: `@skill:<slug>` / `@tool:<name>`."
+          },
+          "known": {
+            "type": "boolean",
+            "description": "true = a live skill / a tool Distry can call. false = a deleted or unknown skill, or a tool that does not exist: the mention leads nowhere."
+          }
+        },
+        "required": [
+          "kind",
+          "ref",
+          "known"
+        ]
+      },
+      "SkillWithLinks": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "parentSlug": {
+            "type": "string",
+            "nullable": true,
+            "description": "The old stored tree (read by no agent since DISTRY-SKILL-MENTIONS-1122; links are mentions). null for a skill created without one."
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "One line: when the model should load this skill."
+          },
+          "position": {
+            "type": "integer",
+            "description": "The old stored tree's place among siblings (read by no agent)."
+          },
+          "version": {
+            "type": "integer"
+          },
+          "updatedBy": {
+            "type": "string",
+            "description": "Who wrote the current content. `seed` = never edited by a human."
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "deletedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When staff deleted it from the tree; null while it is live."
+          },
+          "deletedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Who deleted it; null while it is live."
+          },
+          "content": {
+            "type": "string",
+            "description": "Markdown body."
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "mentions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillMention"
+            },
+            "description": "What this skill's text mentions, in text order, each once (itself excluded)."
+          },
+          "mentionedBy": {
             "type": "object",
             "properties": {
-              "content": {
-                "type": "string",
-                "description": "Markdown body."
+              "prompt": {
+                "type": "boolean",
+                "description": "Distry's Prompt mentions it."
               },
-              "createdAt": {
-                "type": "string"
+              "skills": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Live skills whose text mentions it, sorted by slug."
               }
             },
             "required": [
-              "content",
-              "createdAt"
-            ]
+              "prompt",
+              "skills"
+            ],
+            "description": "Who mentions it. Warn before deleting a skill this is not empty for: their mentions then lead nowhere until it comes back."
+          },
+          "neverMentioned": {
+            "type": "boolean",
+            "description": "Nothing mentions it (not the Prompt, no other live skill): Distry never reads it."
+          },
+          "reachable": {
+            "type": "boolean",
+            "description": "Distry reaches it by following mentions from the Prompt."
           }
+        },
+        "required": [
+          "slug",
+          "parentSlug",
+          "title",
+          "description",
+          "position",
+          "version",
+          "updatedBy",
+          "updatedAt",
+          "deletedAt",
+          "deletedBy",
+          "content",
+          "createdAt",
+          "mentions",
+          "mentionedBy",
+          "neverMentioned",
+          "reachable"
         ]
       },
       "SkillWriteResponse": {
         "type": "object",
         "properties": {
           "skill": {
-            "$ref": "#/components/schemas/Skill"
+            "$ref": "#/components/schemas/SkillWithLinks"
           },
           "created": {
             "type": "boolean"
@@ -4338,7 +4501,7 @@
             "type": "string",
             "nullable": true,
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
-            "description": "Required when creating (except `index`).",
+            "description": "Optional, read by no agent (the old stored tree). A new skill needs none: it stands alone until a text mentions it.",
             "example": "campaigns"
           },
           "position": {
@@ -4390,6 +4553,85 @@
           "siblings"
         ]
       },
+      "Skill": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SkillSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "content": {
+                "type": "string",
+                "description": "Markdown body."
+              },
+              "createdAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "content",
+              "createdAt"
+            ]
+          }
+        ]
+      },
+      "SkillSummary": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "parentSlug": {
+            "type": "string",
+            "nullable": true,
+            "description": "The old stored tree (read by no agent since DISTRY-SKILL-MENTIONS-1122; links are mentions). null for a skill created without one."
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "One line: when the model should load this skill."
+          },
+          "position": {
+            "type": "integer",
+            "description": "The old stored tree's place among siblings (read by no agent)."
+          },
+          "version": {
+            "type": "integer"
+          },
+          "updatedBy": {
+            "type": "string",
+            "description": "Who wrote the current content. `seed` = never edited by a human."
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "deletedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When staff deleted it from the tree; null while it is live."
+          },
+          "deletedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Who deleted it; null while it is live."
+          }
+        },
+        "required": [
+          "slug",
+          "parentSlug",
+          "title",
+          "description",
+          "position",
+          "version",
+          "updatedBy",
+          "updatedAt",
+          "deletedAt",
+          "deletedBy"
+        ]
+      },
       "SkillMoveRequest": {
         "type": "object",
         "properties": {
@@ -4428,11 +4670,19 @@
           "versionsKept": {
             "type": "integer",
             "description": "Versions still readable at GET /internal/skills/{slug}/versions."
+          },
+          "mentionedBy": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Live skills that still mention it: their text is left as is, the mention is served `known: false` and revives if the skill comes back."
           }
         },
         "required": [
           "skill",
-          "versionsKept"
+          "versionsKept",
+          "mentionedBy"
         ]
       },
       "SkillDeleteRequest": {
@@ -5453,15 +5703,69 @@
                 },
                 "description": {
                   "type": "string"
+                },
+                "mentions": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SkillMention"
+                  },
+                  "description": "What this skill's text mentions, in text order, each once (itself excluded)."
+                },
+                "mentionedBy": {
+                  "type": "object",
+                  "properties": {
+                    "prompt": {
+                      "type": "boolean",
+                      "description": "Distry's Prompt mentions it."
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Live skills whose text mentions it, sorted by slug."
+                    }
+                  },
+                  "required": [
+                    "prompt",
+                    "skills"
+                  ],
+                  "description": "Who mentions it. Warn before deleting a skill this is not empty for: their mentions then lead nowhere until it comes back."
+                },
+                "neverMentioned": {
+                  "type": "boolean",
+                  "description": "Nothing mentions it (not the Prompt, no other live skill): Distry never reads it."
+                },
+                "reachable": {
+                  "type": "boolean",
+                  "description": "Distry reaches it by following mentions from the Prompt."
                 }
               },
               "required": [
                 "slug",
                 "parentSlug",
                 "title",
-                "description"
+                "description",
+                "mentions",
+                "mentionedBy",
+                "neverMentioned",
+                "reachable"
               ]
             }
+          },
+          "promptMentions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SkillMention"
+            },
+            "description": "What the current Prompt mentions, in text order (DISTRY-SKILL-MENTIONS-1122)."
+          },
+          "mentionableTools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tools a text may mention as `@tool:<name>` (Engines are not mentionable)."
           },
           "models": {
             "type": "object",
@@ -5487,6 +5791,8 @@
           "availableTools",
           "promptParts",
           "skills",
+          "promptMentions",
+          "mentionableTools",
           "models",
           "efforts"
         ]
@@ -9742,8 +10048,8 @@
         "tags": [
           "Skills"
         ],
-        "summary": "List the Copilot skill tree",
-        "description": "Every live skill (no content), sorted by position then slug. Build the tree from `parentSlug` (root = `index`). `?state=deleted` lists the skills staff deleted instead. Staff surface, read through the api-service gateway. Read-only.",
+        "summary": "List the skills, with who mentions whom",
+        "description": "Every live skill (no content), with its mentions in text order, who mentions it, `neverMentioned` and `reachable`, plus what Distry's Prompt mentions (DISTRY-SKILL-MENTIONS-1122: the links are the mentions, recomputed on every read; `parentSlug`/`position` are the old tree, read by no agent). `?state=deleted` lists the skills staff deleted instead. Staff surface, read through the api-service gateway. Read-only.",
         "parameters": [
           {
             "schema": {
@@ -9826,11 +10132,11 @@
         ],
         "responses": {
           "200": {
-            "description": "The skill with its content",
+            "description": "The skill with its content and its links",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Skill"
+                  "$ref": "#/components/schemas/SkillWithLinks"
                 }
               }
             }
@@ -9862,7 +10168,7 @@
           "Skills"
         ],
         "summary": "Create or update one skill (autosave-safe)",
-        "description": "Replaces the skill's content (and optionally title, description, parent, position). Built for autosave: a save by the SAME `editedBy` within 10 minutes of the latest version rewrites that version instead of adding one, so a typing burst is one recoverable snapshot. Identical content is a no-op. Creating a new slug needs `title`, `description` and an existing `parentSlug`. Once a human saves a skill, the boot seed never overwrites it again.",
+        "description": "Replaces the skill's content (and optionally title, description, parent, position). Built for autosave: a save by the SAME `editedBy` within 10 minutes of the latest version rewrites that version instead of adding one, so a typing burst is one recoverable snapshot. Identical content is a no-op. Creating a new slug needs `title` and `description`, no parent (it is never mentioned until a text cites it as `@skill:<slug>`). Once a human saves a skill, the boot seed never overwrites it again.",
         "parameters": [
           {
             "schema": {
@@ -9934,7 +10240,7 @@
           "Skills"
         ],
         "summary": "Delete a skill from the tree (history kept)",
-        "description": "From now on no agent reads it and the boot seed never re-creates it; the row and every version stay readable at GET /internal/skills/{slug}/versions, and PUT /internal/skills/{slug} (title, description, parentSlug, content) brings it back. Removes exactly one skill: refused 409 while it has live sub-skills (the message names them: move or delete them first), and for `index` and `client-comms`, which every chat reads by slug. Its siblings are renumbered to close the gap (SKILL-TREE-EDIT-1122).",
+        "description": "From now on no agent reads it and the boot seed never re-creates it; the row and every version stay readable at GET /internal/skills/{slug}/versions, and PUT /internal/skills/{slug} (title, description, content) brings it back. Any skill can be deleted (DISTRY-SKILL-MENTIONS-1122: none is read every turn). Texts that mention it are left as they are: those mentions are served `known: false` and revive if it comes back; `mentionedBy` names them (read the list's `mentionedBy` to warn before).",
         "parameters": [
           {
             "schema": {
@@ -10001,16 +10307,6 @@
           },
           "404": {
             "description": "Unknown or already deleted skill",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Has sub-skills, or a skill every chat reads",
             "content": {
               "application/json": {
                 "schema": {

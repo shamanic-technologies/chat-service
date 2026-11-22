@@ -25,6 +25,7 @@ import { modelDisplayName } from "../lib/model-ids.js";
 import { isVendorProvider, type VendorId } from "../lib/openai-compatible.js";
 import { aboutYouBlock, withOurWebsite } from "../lib/person-facing.js";
 import { skillIndexBlockFrom } from "../lib/skills.js";
+import { foldAlwaysReadIntoPrompt, foldChildrenIntoSkill } from "../lib/skill-mentions.js";
 import { sessionToolNamesFor } from "../agent/person-tools.js";
 import { streamVendorChat } from "../lib/vendor-chat.js";
 import { chatRoundAnswer, chatRoundCall, runLocally, type RoundMessage } from "../lib/local-llm.js";
@@ -74,6 +75,29 @@ export const AgentDefinitionSchema = z
 
 export type AgentDefinition = z.infer<typeof AgentDefinitionSchema>;
 
+/**
+ * A definition's skills placed as the old tree had them (array order = place), so
+ * the mention folds (DISTRY-SKILL-MENTIONS-1122) read a recorded snapshot the way
+ * the boot read the live table.
+ */
+function foldNodes(def: AgentDefinition) {
+  return def.skills.map((s, i) => ({ ...s, position: i }));
+}
+
+/** The always-read text a replay sends: the definition's prompt, with `index` + `client-comms` folded in when it predates mentions. */
+export function evalPrompt(def: AgentDefinition): string {
+  return foldAlwaysReadIntoPrompt(def.systemPrompt, foldNodes(def));
+}
+
+/** The definition's skills, each mentioning its old sub-skills (a recorded tree reads as mentions). */
+export function evalSkills(def: AgentDefinition): AgentDefinition["skills"] {
+  const nodes = foldNodes(def);
+  return def.skills.map((s, i) => {
+    const folded = foldChildrenIntoSkill(nodes[i]!, nodes);
+    return folded === null ? s : { ...s, content: folded };
+  });
+}
+
 export function loadDefinition(path: string): AgentDefinition {
   return AgentDefinitionSchema.parse(JSON.parse(readFileSync(path, "utf8")));
 }
@@ -121,10 +145,10 @@ function assembleLeadTurn(def: AgentDefinition, scenario: Scenario, modelDisplay
   );
   // A Lead event turn never holds Distry's principal tools (staff conversations only, principal-tools.ts).
   const toolNames = withoutPrincipalToolsUnlessAllowed(leadTurnToolNames(sessionTools, CLIENT_UI_TOOL_NAMES), false);
-  const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
+  const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(evalPrompt(def), evalSkills(def)) : "";
   const brandTools = withBrandTools ? scenarioBrandTools(scenario) : [];
   return {
-    systemPrompt: def.systemPrompt + skillBlock + aboutYouBlock(modelDisplay),
+    systemPrompt: evalPrompt(def) + skillBlock + aboutYouBlock(modelDisplay),
     turnContext: buildLeadTurnBlock(frame) + (brandTools.length > 0 ? brandToolsBlock() : ""),
     tools: [
       ...(resolveToolSet(toolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME)) as unknown as ToolDefinition[]),
@@ -152,8 +176,8 @@ export function assembleTurn(def: AgentDefinition, scenario: Scenario, modelDisp
         def.allowedTools.includes("read_skill"),
       )
     : withOurWebsite(withAccountSetup(def.allowedTools), def.allowedTools.includes("read_skill")), false);
-  const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(def.skills) : "";
-  const systemPrompt = def.systemPrompt + skillBlock + aboutYouBlock(modelDisplay);
+  const skillBlock = toolNames.includes("read_skill") ? skillIndexBlockFrom(evalPrompt(def), evalSkills(def)) : "";
+  const systemPrompt = evalPrompt(def) + skillBlock + aboutYouBlock(modelDisplay);
   const channelBlock =
     scenario.surface === "whatsapp"
       ? buildChannelBlock(

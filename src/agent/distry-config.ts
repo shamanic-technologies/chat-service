@@ -22,7 +22,17 @@ import { CHAT_CONFIG_PROVIDERS, type AnthropicEffort } from "../schemas.js";
 import { thinkingLevelRefusal } from "../lib/thinking-levels.js";
 import type { GeminiThinkingLevel } from "../lib/gemini.js";
 import { resolveModel, TOOL_REGISTRY, type Provider } from "../lib/anthropic.js";
-import { SEED_EDITOR } from "../lib/skills.js";
+import { SEED_EDITOR, listSkills, resolveSkillSlug, writeSkill, type SkillText } from "../lib/skills.js";
+import { SEED_SKILLS } from "../lib/skill-seed.js";
+import {
+  buildMentionGraph,
+  foldAlwaysReadIntoPrompt,
+  foldChildrenIntoSkill,
+  linksOfOffGraph,
+  mentionedSkillSlugs,
+  type MentionGraph,
+  type SkillLinks,
+} from "../lib/skill-mentions.js";
 import { SOPHIE_CONFIG } from "../lib/seed-platform-configs.js";
 import { PRINCIPAL_TOOL_DESCRIPTIONS, ENGINES_TOOL_FAMILY } from "./principal-tools.js";
 import {
@@ -68,7 +78,9 @@ export class DistryConfigError extends Error {
 /** Distry as the code defines it (sophie.ts): version 1, and what the seed compares with. */
 export function codeDistryDefinition(): DistryDefinition {
   return {
-    systemPrompt: SOPHIE_CONFIG.systemPrompt,
+    // DISTRY-SKILL-MENTIONS-1122: the Prompt is the one text read every turn, so it carries the
+    // `index` method and the `client-comms` voice, and mentions what `index` mapped.
+    systemPrompt: foldAlwaysReadIntoPrompt(SOPHIE_CONFIG.systemPrompt, SEED_SKILLS),
     enabledTools: [...SOPHIE_CONFIG.allowedTools],
     provider: SOPHIE_CONFIG.provider,
     model: SOPHIE_CONFIG.model,
@@ -326,3 +338,58 @@ export function toDistryVersionBody(v: DistryConfigVersion) {
 }
 
 export { ENGINES_TOOL_FAMILY };
+
+// --- Mentions (DISTRY-SKILL-MENTIONS-1122) -----------------------------------
+
+/** Who wrote the one-time move from the stored tree to mentions. */
+export const MENTIONS_FOLD_EDITOR = "fold DISTRY-SKILL-MENTIONS-1122";
+
+/** Tools a text may mention: every tool Distry can turn on, except Engines (calling one is a campaign). */
+export function mentionableTools(): string[] {
+  return availableDistryTools().map((t) => t.name).filter((n) => n !== ENGINES_TOOL_FAMILY);
+}
+
+/**
+ * The one-time move from the stored tree to mentions, at boot, after the skill
+ * seed. Runs while Distry's current Prompt mentions no skill (once folded, it
+ * does): each live skill that had live sub-skills gains a mention of each
+ * (a seed skill already carries them from the seed), then a new Distry version
+ * carries `index` + `client-comms` in its Prompt and mentions what `index`
+ * mapped. Staff texts are kept and extended, never replaced. Fails loud.
+ */
+export async function foldTreeIntoMentions(database: Database): Promise<{ promptVersion: number | null; skills: string[] }> {
+  const current = await currentDistryVersion(database);
+  if (!current) throw new Error("[distry] foldTreeIntoMentions: no Distry version yet (seedDistryConfig runs first)");
+  if (mentionedSkillSlugs(current.systemPrompt).length > 0) return { promptVersion: null, skills: [] };
+  const live = await listSkills(database);
+  const folded: string[] = [];
+  for (const skill of live) {
+    const content = foldChildrenIntoSkill(skill, live);
+    if (content === null) continue;
+    await writeSkill(database, skill.slug, { content, editedBy: MENTIONS_FOLD_EDITOR });
+    folded.push(skill.slug);
+  }
+  const def = definitionOf(current);
+  const saved = await saveDistryVersion(
+    database,
+    { ...def, systemPrompt: foldAlwaysReadIntoPrompt(def.systemPrompt, live) },
+    { editedBy: MENTIONS_FOLD_EDITOR, note: "Skills are linked by mentions: the index and the voice moved into the Prompt, which mentions the skills the index listed." },
+  );
+  return { promptVersion: saved.version, skills: folded };
+}
+
+/** The mention graph over the live skills, rooted at Distry's current Prompt. */
+export async function skillMentionGraph(database: Database): Promise<{ graph: MentionGraph; prompt: string; live: SkillText[] }> {
+  const current = await currentDistryVersion(database);
+  const prompt = current?.systemPrompt ?? codeDistryDefinition().systemPrompt;
+  const live = await listSkills(database);
+  return { graph: buildMentionGraph(prompt, live, mentionableTools(), (s) => resolveSkillSlug(live, s)), prompt, live };
+}
+
+/** One skill's links in that graph (a deleted skill: what it mentions, who still mentions it). */
+export function linksOf(view: { graph: MentionGraph; prompt: string; live: SkillText[] }, skill: { slug: string; content: string }): SkillLinks {
+  return (
+    view.graph.skills.get(skill.slug) ??
+    linksOfOffGraph(skill, view.prompt, view.live, mentionableTools(), (s) => resolveSkillSlug(view.live, s))
+  );
+}

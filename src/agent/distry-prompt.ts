@@ -88,14 +88,12 @@ export const PROMPT_PARTS: readonly PromptPartSpec[] = [
   {
     id: "skill-index",
     name: "Skill index",
-    purpose: "Introduces the skills: the `index` skill, the `client-comms` voice, then one line per sub-skill it can load with read_skill.",
+    purpose: "Introduces the skills: what a mention (`@skill:<slug>`, `@tool:<name>`) means, then one line per skill the Prompt mentions, which Distry loads with read_skill.",
     when: "When read_skill is one of the turn's tools (every Distry turn).",
     kind: "template",
     place: "ordered",
     placeholders: {
-      indexSkill: "The `index` skill's content (edited on the Skills page).",
-      voiceSkill: "The `client-comms` skill's content (edited on the Skills page).",
-      subSkills: "One line per direct sub-skill of `index`: slug, title, description.",
+      skills: "One line per skill the Prompt mentions, in the Prompt's order: slug, title, description.",
     },
     codeText: SKILL_INDEX_TEMPLATE,
   },
@@ -500,7 +498,12 @@ export function resolveStoredPrompt(stored: DistryPromptOverrides | null): Distr
     const prev = ORDERED_IDS.slice(0, i).reverse().find((p) => order.includes(p));
     order.splice(prev ? order.indexOf(prev) + 1 : 0, 0, id);
   });
-  const texts = Object.fromEntries(Object.entries(stored.texts).filter(([id]) => SPEC_BY_ID.has(id) && SPEC_BY_ID.get(id)!.codeText !== stored.texts[id]));
+  // A text written for placeholders the part no longer has (skill-index before DISTRY-SKILL-MENTIONS-1122)
+  // follows the code again: filling it would throw on every turn.
+  const fits = (id: string, text: string) => placeholdersIn(text).every((n) => Object.keys(SPEC_BY_ID.get(id)!.placeholders).includes(n));
+  const texts = Object.fromEntries(
+    Object.entries(stored.texts).filter(([id, text]) => SPEC_BY_ID.has(id) && SPEC_BY_ID.get(id)!.codeText !== text && fits(id, text)),
+  );
   return { order, texts, toolDescriptions: { ...stored.toolDescriptions } };
 }
 

@@ -127,6 +127,10 @@ import {
   DistryConfigError,
   distryVersionNumber,
   definitionFromSaveRequest,
+  foldTreeIntoMentions,
+  skillMentionGraph,
+  linksOf,
+  mentionableTools,
   definitionOf,
   promptOverridesFrom,
 } from "./agent/distry-config.js";
@@ -4108,8 +4112,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // A guest reads the SAME index as an account (DISTRY-ONE-AI-1118): never a guest-only text.
   if (allowedToolNames.includes("read_skill")) {
     try {
-      // Every live skill of the tree, Distry included (DISTRY-NO-SKILL-PICKS-1122): no per-agent pick.
-      promptData.skillIndex = await buildSkillIndexPieces(db);
+      // The skills the Prompt mentions (DISTRY-SKILL-MENTIONS-1122); deeper ones are reached through read_skill.
+      promptData.skillIndex = await buildSkillIndexPieces(db, appConfig.systemPrompt);
     } catch (err) {
       console.error(`[chat] skill index unavailable for configKey="${configKey}":`, err);
       sendSSE(res, {
@@ -4904,7 +4908,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       // --- Copilot: skill tree ---------------------------------------------
       if (call.name === "read_skill") {
         const args = (call.args as Record<string, unknown>) || {};
-        const result = await readSkillForModel(db, args.slug);
+        // Only a skill reachable by mentions from the Prompt (DISTRY-SKILL-MENTIONS-1122).
+        const result = await readSkillForModel(db, args.slug, appConfig.systemPrompt);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -7104,7 +7109,7 @@ app.get("/internal/distry/config", requireInternalAuth, async (_req, res) => {
     const code = codeDistryDefinition();
     const body = toDistryVersionBody(current);
     const { version: _v, editedBy: _e, note: _n, restoredFrom: _r, createdAt: _c, skillSlugs: _s, ...currentDef } = body;
-    const allSkills = await listSkills(db);
+    const view = await skillMentionGraph(db);
     const currentPrompt = definitionOf(current).prompt;
     const examples = examplesByPart(await listPromptSamples(db));
     return res.json({
@@ -7117,7 +7122,17 @@ app.get("/internal/distry/config", requireInternalAuth, async (_req, res) => {
         return { name: t.name, description: edited ? currentPrompt.toolDescriptions[t.name]! : t.description, codeDescription: t.description, edited, staffOnly: t.staffOnly };
       }),
       promptParts: partsForEditor(currentPrompt, current.systemPrompt).map((p) => ({ ...p, example: examples.get(p.id) ?? null })),
-      skills: allSkills.map((s) => ({ slug: s.slug, parentSlug: s.parentSlug, title: s.title, description: s.description })),
+      // DISTRY-SKILL-MENTIONS-1122: each skill with what it mentions (text order), who mentions it, and
+      // whether nothing does; the Prompt's own mentions; the tools a text may mention (Engines are not).
+      skills: (view.live as Array<(typeof view.live)[number] & { parentSlug: string | null }>).map((s) => ({
+        slug: s.slug,
+        parentSlug: s.parentSlug,
+        title: s.title,
+        description: s.description,
+        ...linksOf(view, s),
+      })),
+      promptMentions: view.graph.prompt.mentions,
+      mentionableTools: mentionableTools(),
       models: Object.fromEntries(CHAT_CONFIG_PROVIDERS.map((p) => [p, [...PROVIDER_MODELS[p]]])),
       efforts: [...ANTHROPIC_EFFORTS],
     });
@@ -7208,7 +7223,12 @@ app.get("/internal/skills", requireInternalAuth, async (req, res) => {
   if (!query.success) return res.status(400).json({ error: "Invalid request", details: query.error.flatten() });
   try {
     const rows = query.data.state === "deleted" ? await listDeletedSkills(db) : await listSkills(db);
-    return res.json({ skills: rows.map(toSkillSummary) });
+    // DISTRY-SKILL-MENTIONS-1122: who mentions whom, recomputed from the texts on every read.
+    const view = await skillMentionGraph(db);
+    return res.json({
+      skills: rows.map((r) => ({ ...toSkillSummary(r), ...linksOf(view, r) })),
+      prompt: { mentions: view.graph.prompt.mentions },
+    });
   } catch (err) {
     const mapped = skillErrorStatus(err);
     return res.status(mapped.status).json({ error: mapped.error });
@@ -7219,7 +7239,8 @@ app.get("/internal/skills/:slug", requireInternalAuth, async (req, res) => {
   const parsed = SkillSlugParamsSchema.safeParse(req.params);
   if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
   try {
-    return res.json(toSkillBody(await getSkill(db, parsed.data.slug)));
+    const skill = await getSkill(db, parsed.data.slug);
+    return res.json({ ...toSkillBody(skill), ...linksOf(await skillMentionGraph(db), skill) });
   } catch (err) {
     const mapped = skillErrorStatus(err);
     return res.status(mapped.status).json({ error: mapped.error });
@@ -7233,7 +7254,8 @@ app.put("/internal/skills/:slug", requireInternalAuth, async (req, res) => {
   if (!body.success) return res.status(400).json({ error: "Invalid request", details: body.error.flatten() });
   try {
     const result = await writeSkill(db, params.data.slug, body.data);
-    return res.json({ skill: toSkillBody(result.skill), created: result.created, versionAdded: result.versionAdded });
+    const links = linksOf(await skillMentionGraph(db), result.skill);
+    return res.json({ skill: { ...toSkillBody(result.skill), ...links }, created: result.created, versionAdded: result.versionAdded });
   } catch (err) {
     const mapped = skillErrorStatus(err);
     return res.status(mapped.status).json({ error: mapped.error });
@@ -7261,7 +7283,7 @@ app.delete("/internal/skills/:slug", requireInternalAuth, async (req, res) => {
   if (!body.success) return res.status(400).json({ error: "Invalid request", details: body.error.flatten() });
   try {
     const result = await deleteSkill(db, params.data.slug, body.data.editedBy);
-    return res.json({ skill: toSkillBody(result.skill), versionsKept: result.versionsKept });
+    return res.json({ skill: toSkillBody(result.skill), versionsKept: result.versionsKept, mentionedBy: result.mentionedBy });
   } catch (err) {
     const mapped = skillErrorStatus(err);
     return res.status(mapped.status).json({ error: mapped.error });
@@ -7518,6 +7540,11 @@ if (process.env.NODE_ENV !== "test") {
       console.log(
         `[chat-service] Skill seed: inserted=[${skillSeed.inserted.join(",")}] refreshed=[${skillSeed.refreshed.join(",")}] keptHumanEdit=[${skillSeed.keptHumanEdit.join(",")}] removedMerged=[${skillSeed.removedMerged.join(",")}]`,
       );
+      // DISTRY-SKILL-MENTIONS-1122: once, the stored tree becomes mentions (a few rows, safe to await).
+      const fold = await foldTreeIntoMentions(db);
+      if (fold.promptVersion !== null) {
+        console.log(`[chat-service] Skills folded into mentions: Distry version ${fold.promptVersion}, skills=[${fold.skills.join(",")}]`);
+      }
       const bootedAt = new Date();
       const server = app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
