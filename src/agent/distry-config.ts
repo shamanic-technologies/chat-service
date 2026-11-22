@@ -2,8 +2,7 @@
 // Distry's definition, versioned and editable (DISTRY-PRINCIPAL-1119, owner
 // 2026-11-19: « Add an editor for Distry, which is OUR agent »).
 //
-// What Distry is (prompt, the tools it may call, the skills it reads, its
-// model) used to live in code only (sophie.ts). It is now a row per save in
+// What Distry is (prompt, the tools it may call, its model) used to live in code only (sophie.ts). It is now a row per save in
 // `distry_config_versions`: the highest version is current and is written onto
 // the `copilot` platform config, which is what /chat reads on every turn. So a
 // save changes the next turn, and a restore (a NEW version carrying an old
@@ -18,7 +17,7 @@
 
 import { desc, eq } from "drizzle-orm";
 import type { db } from "../db/index.js";
-import { distryConfigVersions, platformConfigs, skills, type DistryConfigVersion } from "../db/schema.js";
+import { distryConfigVersions, platformConfigs, type DistryConfigVersion } from "../db/schema.js";
 import { ANTHROPIC_EFFORTS, CHAT_CONFIG_PROVIDERS, type AnthropicEffort } from "../schemas.js";
 import { resolveModel, TOOL_REGISTRY, type Provider } from "../lib/anthropic.js";
 import { SEED_EDITOR } from "../lib/skills.js";
@@ -41,8 +40,6 @@ export type DistryProvider = (typeof CHAT_CONFIG_PROVIDERS)[number];
 export interface DistryDefinition {
   systemPrompt: string;
   enabledTools: string[];
-  /** null = every skill of the tree. */
-  skillSlugs: string[] | null;
   provider: DistryProvider;
   model: string;
   /** Anthropic `output_config.effort`; null on another provider (or the model's default). */
@@ -67,7 +64,6 @@ export function codeDistryDefinition(): DistryDefinition {
   return {
     systemPrompt: SOPHIE_CONFIG.systemPrompt,
     enabledTools: [...SOPHIE_CONFIG.allowedTools],
-    skillSlugs: null,
     provider: SOPHIE_CONFIG.provider,
     model: SOPHIE_CONFIG.model,
     effort: SOPHIE_CONFIG.effort,
@@ -79,7 +75,6 @@ export function definitionOf(v: DistryConfigVersion): DistryDefinition {
   return {
     systemPrompt: v.systemPrompt,
     enabledTools: [...v.enabledTools],
-    skillSlugs: v.skillSlugs ? [...v.skillSlugs] : null,
     provider: v.provider,
     model: v.model,
     effort: v.effort ?? null,
@@ -130,18 +125,35 @@ export function promptOverridesFrom(input: {
   }
 }
 
-/** Refuses a definition /chat could not run. Pure (the skill slugs are passed in). */
-export function validateDistryDefinition(def: DistryDefinition, knownSkillSlugs: readonly string[]): void {
+/**
+ * A `PUT /internal/distry/config` body -> the definition to save. `skillSlugs` is dropped
+ * (DISTRY-NO-SKILL-PICKS-1122): an older editor still sends it, the save must keep succeeding.
+ * The prompt parts follow the current version unless the save sends their whole state.
+ */
+export function definitionFromSaveRequest(
+  body: Omit<DistryDefinition, "prompt"> & {
+    skillSlugs?: unknown;
+    prompt?: { order: string[]; texts: Record<string, string | null>; toolDescriptions: Record<string, string | null> };
+  },
+  currentPrompt: DistryPromptOverrides,
+): DistryDefinition {
+  return {
+    systemPrompt: body.systemPrompt,
+    enabledTools: [...body.enabledTools],
+    provider: body.provider,
+    model: body.model,
+    effort: body.effort,
+    prompt: body.prompt ? promptOverridesFrom(body.prompt) : currentPrompt,
+  };
+}
+
+/** Refuses a definition /chat could not run. Pure. */
+export function validateDistryDefinition(def: DistryDefinition): void {
   if (typeof def.systemPrompt !== "string" || def.systemPrompt.trim() === "") throw new DistryConfigError("systemPrompt is empty.");
   const known = new Set(availableDistryTools().map((t) => t.name));
   const unknown = def.enabledTools.filter((t) => !known.has(t));
   if (unknown.length > 0) throw new DistryConfigError(`Unknown tools: ${unknown.join(", ")}. See availableTools.`);
   if (new Set(def.enabledTools).size !== def.enabledTools.length) throw new DistryConfigError("enabledTools lists a tool twice.");
-  if (def.skillSlugs) {
-    const skillSet = new Set(knownSkillSlugs);
-    const missing = def.skillSlugs.filter((s) => !skillSet.has(s));
-    if (missing.length > 0) throw new DistryConfigError(`Unknown skills: ${missing.join(", ")}.`);
-  }
   if (!(CHAT_CONFIG_PROVIDERS as readonly string[]).includes(def.provider)) {
     throw new DistryConfigError(`provider must be one of ${CHAT_CONFIG_PROVIDERS.join(", ")}.`);
   }
@@ -174,13 +186,11 @@ export async function getDistryVersion(database: Database, version: number): Pro
 }
 
 /**
- * The current version's skill set, held in memory (one chat-service process: every save goes
- * through it). Set at boot and on each save; /chat reads it with no query per turn.
+ * Distry reads EVERY live skill of the tree, new ones included (DISTRY-NO-SKILL-PICKS-1122,
+ * owner 2026-11-22 « enlève même ce concept de tick box. Si je ne veux pas une skill je la
+ * supprime »). A definition carries no skill list: a skill Distry must not read is deleted
+ * from the tree. Old versions' stored `skill_slugs` are history only, never read.
  */
-let currentSkillSet: string[] | null = null;
-export function distrySkillSet(): string[] | null {
-  return currentSkillSet;
-}
 
 /** The current version's number, held with the rest (stamped on each recorded prompt sample). */
 let currentVersionNumber: number | null = null;
@@ -203,19 +213,8 @@ async function materialize(database: Database, def: DistryDefinition, version: n
     .insert(platformConfigs)
     .values({ key: SOPHIE_CONFIG.key, ...row })
     .onConflictDoUpdate({ target: [platformConfigs.key], set: { ...row, updatedAt: new Date() } });
-  currentSkillSet = def.skillSlugs ? [...def.skillSlugs] : null;
   setCurrentDistryPrompt(def.prompt);
   currentVersionNumber = version;
-}
-
-/**
- * Every slug ever in the tree, DELETED ones included (SKILL-TREE-EDIT-1122): a
- * version naming a skill staff later deleted still saves and restores; the
- * deleted slug simply matches no live skill (filterSkillSet keeps nothing for it).
- */
-async function knownSkillSlugs(database: Database): Promise<string[]> {
-  const rows = await database.select({ slug: skills.slug }).from(skills);
-  return rows.map((r) => r.slug);
 }
 
 /**
@@ -228,7 +227,7 @@ export async function saveDistryVersion(
   def: DistryDefinition,
   meta: { editedBy: string; note?: string | null; restoredFrom?: number | null },
 ): Promise<DistryConfigVersion> {
-  validateDistryDefinition(def, await knownSkillSlugs(database));
+  validateDistryDefinition(def);
   try {
     return await database.transaction(async (tx) => {
       const [latest] = await tx.select({ version: distryConfigVersions.version }).from(distryConfigVersions).orderBy(desc(distryConfigVersions.version)).limit(1);
@@ -238,7 +237,7 @@ export async function saveDistryVersion(
           version: (latest?.version ?? 0) + 1,
           systemPrompt: def.systemPrompt,
           enabledTools: [...def.enabledTools],
-          skillSlugs: def.skillSlugs ? [...def.skillSlugs] : null,
+          skillSlugs: null,
           provider: def.provider,
           model: def.model,
           effort: def.effort,
@@ -296,7 +295,9 @@ export function toDistryVersionBody(v: DistryConfigVersion) {
     version: v.version,
     systemPrompt: v.systemPrompt,
     enabledTools: v.enabledTools,
-    skillSlugs: v.skillSlugs ?? null,
+    // Served as null on every version until the dashboard stops reading it (DISTRY-NO-SKILL-PICKS-1122):
+    // Distry reads every live skill, whatever an old version stored.
+    skillSlugs: null,
     provider: v.provider,
     model: v.model,
     effort: v.effort ?? null,

@@ -167,8 +167,9 @@ export const platformConfigs = pgTable("platform_configs", {
 
 // Distry's definition, versioned (migration 0039, DISTRY-PRINCIPAL-1119): one
 // row per save, the highest version is current and is written onto the
-// `copilot` platform config (what /chat reads). `skill_slugs` NULL = every
-// skill. Never updated in place: a restore is a new row (`restored_from`).
+// `copilot` platform config (what /chat reads). `skill_slugs` is HISTORY only
+// (DISTRY-NO-SKILL-PICKS-1122: Distry reads every live skill; new rows write
+// NULL, old lists are never read). Never updated in place: a restore is a new row (`restored_from`).
 export const distryConfigVersions = pgTable(
   "distry_config_versions",
   {

@@ -124,8 +124,8 @@ import {
   codeDistryDefinition,
   toDistryVersionBody,
   DistryConfigError,
-  distrySkillSet,
   distryVersionNumber,
+  definitionFromSaveRequest,
   definitionOf,
   promptOverridesFrom,
 } from "./agent/distry-config.js";
@@ -4090,13 +4090,11 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // reads its versioned parts (order + staff's texts); every other config, the code's.
   const promptOverrides = configKey === SOPHIE_CONFIG_KEY ? currentDistryPrompt() : codePromptOverrides();
   const promptData: TurnPromptData = emptyTurnPromptData(appConfig.systemPrompt);
-  let turnSkillSet: string[] | null = null;
   // A guest reads the SAME index as an account (DISTRY-ONE-AI-1118): never a guest-only text.
   if (allowedToolNames.includes("read_skill")) {
     try {
-      // Distry's skill set is part of its versioned definition (null = every skill).
-      if (configKey === SOPHIE_CONFIG_KEY) turnSkillSet = distrySkillSet();
-      promptData.skillIndex = await buildSkillIndexPieces(db, turnSkillSet);
+      // Every live skill of the tree, Distry included (DISTRY-NO-SKILL-PICKS-1122): no per-agent pick.
+      promptData.skillIndex = await buildSkillIndexPieces(db);
     } catch (err) {
       console.error(`[chat] skill index unavailable for configKey="${configKey}":`, err);
       sendSSE(res, {
@@ -4880,7 +4878,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       // --- Copilot: skill tree ---------------------------------------------
       if (call.name === "read_skill") {
         const args = (call.args as Record<string, unknown>) || {};
-        const result = await readSkillForModel(db, args.slug, turnSkillSet);
+        const result = await readSkillForModel(db, args.slug);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -7015,13 +7013,14 @@ app.get("/internal/distry/config", requireInternalAuth, async (_req, res) => {
     if (!current) return res.status(503).json({ error: "Distry's definition is not seeded yet (boot in progress)." });
     const code = codeDistryDefinition();
     const body = toDistryVersionBody(current);
-    const { version: _v, editedBy: _e, note: _n, restoredFrom: _r, createdAt: _c, ...currentDef } = body;
+    const { version: _v, editedBy: _e, note: _n, restoredFrom: _r, createdAt: _c, skillSlugs: _s, ...currentDef } = body;
     const allSkills = await listSkills(db);
     const currentPrompt = definitionOf(current).prompt;
     const examples = examplesByPart(await listPromptSamples(db));
     return res.json({
       current: body,
-      code,
+      // skillSlugs: null served until the dashboard stops reading it (DISTRY-NO-SKILL-PICKS-1122).
+      code: { ...code, skillSlugs: null },
       codeDiffers: JSON.stringify(currentDef) !== JSON.stringify(code),
       availableTools: availableDistryTools().map((t) => {
         const edited = Object.prototype.hasOwnProperty.call(currentPrompt.toolDescriptions, t.name);
@@ -7041,12 +7040,12 @@ app.get("/internal/distry/config", requireInternalAuth, async (_req, res) => {
 app.put("/internal/distry/config", requireInternalAuth, async (req, res) => {
   const body = DistrySaveRequestSchema.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: "Invalid request", details: body.error.flatten() });
-  const { editedBy, note, prompt, ...rest } = body.data;
+  const { editedBy, note } = body.data;
   try {
-    // The parts follow the current version unless the save sends their whole state.
     const current = await currentDistryVersion(db);
     if (!current) return res.status(503).json({ error: "Distry's definition is not seeded yet (boot in progress)." });
-    const def = { ...rest, prompt: prompt ? promptOverridesFrom(prompt) : definitionOf(current).prompt };
+    // `skillSlugs` (an older editor still sends it) is ignored: DISTRY-NO-SKILL-PICKS-1122.
+    const def = definitionFromSaveRequest(body.data, definitionOf(current).prompt);
     const saved = await saveDistryVersion(db, def, { editedBy, note: note ?? null });
     return res.json({ version: toDistryVersionBody(saved) });
   } catch (err) {
