@@ -140,3 +140,46 @@ describe("the models panel says, per scored level, whether Distry can run it", (
     expect(thinkingLevelRefusal("google", "gemini-4-hydrogen", "Gemini 4 Hydrogen", "low")).toBeNull();
   });
 });
+
+describe("Distry's fallback order: best model x level by intelligence per dollar, dynamically", () => {
+  const NOW = new Date("2026-11-22T12:00:00Z");
+  const e = (releaseName: string, releaseSlug: string, variantLabel: string | null, effort: string | null, score: number, cost: number | null) => ({
+    aaId: `${releaseSlug}-${variantLabel}`, aaSlug: `${releaseSlug}-${variantLabel}`, aaName: `${releaseName} (${variantLabel})`, releaseSlug, releaseName,
+    variantLabel, effort, creator: null, indexVersion: "4", score, indexCostPerTaskUsd: cost, priceInputPer1mUsd: null, priceOutputPer1mUsd: null,
+  });
+  const entries = [
+    e("Claude Haiku 5.5", "claude-haiku-5-5", "Low", "low", 18.6, 0.0438),
+    e("Claude Haiku 5.5", "claude-haiku-5-5", "Max", "max", 36.5, 0.411),
+    e("GPT-6.1 Terra", "gpt-6-1-terra", "Medium", "medium", 38.2, 0.169),
+    e("GPT-6.1 Terra", "gpt-6-1-terra", "Non-reasoning", null, 30.5, 0.1),
+    e("Gemini 4 Hydrogen", "gemini-4-hydrogen", "Xhigh", "xhigh", 53.9, 0.05),
+    e("Gemini 4 Hydrogen", "gemini-4-hydrogen", "Low", "low", 26.9, null),
+  ];
+  const choices = [
+    { provider: "anthropic" as const, modelId: "claude-haiku-5-5", displayName: "Claude Haiku 5.5", names: ["claude-haiku"], capabilityTier: "cheap" as const, costPrefix: "anthropic-haiku-5.5" },
+    { provider: "openai" as const, modelId: "gpt-6.1-terra", displayName: "GPT-6.1 Terra", names: ["gpt-terra"], capabilityTier: "strong" as const, costPrefix: "openai-gpt-6.1-terra" },
+    { provider: "google" as const, modelId: "gemini-4-hydrogen", displayName: "Gemini 4 Hydrogen", names: ["flash-pro"], capabilityTier: "strong" as const, costPrefix: "google-gemini-4-hydrogen" },
+    { provider: "moonshot" as const, modelId: "kimi-k3.1-pro", displayName: "Kimi K3.1 Pro", names: ["kimi-pro"], capabilityTier: "strong" as const, costPrefix: "moonshot-kimi-k3.1-pro" },
+  ];
+  const panel = (outOfCredit: (p: string) => string | null = () => null) =>
+    buildModelPanel({
+      choices, state: { latestOk: { read: { id: "r", fetchedAt: NOW, status: "ok", error: null, indexVersion: "4", source: "api" }, entries } as never, latestAttempt: null },
+      keyConfigured: true, priceOf: () => null, pricesRead: true, current: { provider: "openai", model: "gpt-terra", effort: "medium" }, now: NOW, outOfCredit: outOfCredit as never,
+    });
+
+  it("ranks runnable levels by points per dollar, then scored without a run cost, then unscored; never the current model nor a level that cannot run", () => {
+    const p = panel();
+    expect(p.fallbackOrder.map((c) => `${c.modelId}@${c.level}`)).toEqual([
+      "claude-haiku-5-5@low", // 425 pts/$
+      "claude-haiku-5-5@max", // 89 pts/$
+      "gemini-4-hydrogen@low", // no run cost, scored 26.9 (xhigh cannot run: left out)
+      "kimi-k3.1-pro@null", // no score: last, at its default
+    ]);
+    expect(p.nextFallback).toBe("If GPT-6.1 Terra cannot serve a turn, Distry answers on Claude Haiku 5.5 at low.");
+  });
+
+  it("drops a vendor out of credit, recomputed on every read", () => {
+    const p = panel((prov) => (prov === "anthropic" ? "Anthropic is out of credit." : null));
+    expect(p.fallbackOrder[0]).toMatchObject({ modelId: "gemini-4-hydrogen", level: "low" });
+  });
+});

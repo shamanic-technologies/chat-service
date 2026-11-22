@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { buildModelPanel, distryModelChoices, readIndexState, refreshIntelligenceIndex, INDEX_TICK_MS } from "./lib/intelligence-index.js";
+import { buildModelPanel, distryModelChoices, fallbackKey, rankFallbacks, readIndexState, refreshIntelligenceIndex, INDEX_TICK_MS, type FallbackCandidate } from "./lib/intelligence-index.js";
 import crypto from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
@@ -64,6 +64,7 @@ import {
   GEMINI_IMAGE_MODEL,
   estimateGeminiImageOutputTokens,
   geminiCostPrefix,
+  type GeminiThinkingLevel,
 } from "./lib/gemini.js";
 import {
   completeWithVendor,
@@ -213,7 +214,7 @@ import { seedPlatformConfigs, holdTextBesideToolCallsFor, isSelfSeededConfigKey 
 import { buildSituationBrief } from "./agent/situation.js";
 import { gatewaySituationReader } from "./agent/situation-reader.js";
 import { SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
-import { SOPHIE_BACKUP_MODEL, distryOutageSentence, sophieTurnModel } from "./agent/sophie-backup.js";
+import { distryOutageSentence, fallbackLine, nextDistryAttempt, sophieTurnModel, type DistryAttempt } from "./agent/sophie-backup.js";
 import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi, requestOfCall } from "./agent/catalogue-tools.js";
 import { createPlanRun, domainClaim, openUnclaimedOrg, runGuestPlanCall, seedTrialCredit, type PlanOrg } from "./lib/guest-plan.js";
 import { REPORT_NOT_GOOD_TOOL_NAME, reportNotGood } from "./lib/unit-report.js";
@@ -429,7 +430,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, SkillListQuerySchema, SkillMoveRequestSchema, SkillDeleteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryPromptPreviewQuerySchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, SkillListQuerySchema, SkillMoveRequestSchema, SkillDeleteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryPromptPreviewQuerySchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type AnthropicEffort, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -4015,12 +4016,24 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // Resolve provider/model from config (NULL = default: google/pro — Gemini is
   // the platform default; the Anthropic platform key has no credit balance).
   // Sophie's backup (SOPHIE-HAIKU-BACKUP-1112): while her vendor is out of credit, the turn runs on her backup model.
-  const turnModel = sophieTurnModel(configKey, resolveChatProviderModel(appConfig));
+  // DISTRY-THINKING-1122: the backup is the best-ranked model x level of the panel's fallback order, and a
+  // turn that failed before any tool or word re-runs here on the next one (`distryAttempt`).
+  const distryAttempt = (res.locals as { distryAttempt?: DistryAttempt }).distryAttempt;
+  const configured = resolveChatProviderModel(appConfig);
+  const turnModel = await sophieTurnModel(
+    configKey,
+    { ...configured, modelId: resolveModel(configured.provider, configured.modelAlias).apiModelId },
+    distryFallbackOrder,
+    distryAttempt,
+  );
   const { provider: chatProvider, modelAlias: chatModelAlias } = turnModel;
   if (turnModel.backupFor) {
-    console.warn(`[chat] org="${orgId}" config="${configKey}" ${turnModel.backupFor} is out of credit: this turn runs on the backup ${chatProvider}/${chatModelAlias}`);
+    console.warn(`[chat] org="${orgId}" config="${configKey}" ${distryAttempt ? `attempt ${distryAttempt.tried.length + 1} after ${distryAttempt.tried.join(", ")} failed` : `${turnModel.backupFor} is out of credit`}: this turn runs on ${chatProvider}/${chatModelAlias} level=${turnModel.backupLevel ?? "default"}`);
     recordReroute(turnModel.backupFor);
   }
+  // The thinking level each loop sends: the config's, or the fallback's own (DISTRY-THINKING-1122).
+  const turnEffort = turnModel.backupFor ? (chatProvider === "anthropic" ? turnModel.backupLevel : null) : appConfig.effort;
+  const turnThinkingLevel = turnModel.backupFor ? (chatProvider === "anthropic" ? null : turnModel.backupLevel) : appConfig.thinkingLevel;
   const resolvedModelInfo = resolveModel(chatProvider, chatModelAlias);
   // A backup turn runs on another vendor: the config's Anthropic effort is not its setting.
   if (appConfig.effort && chatProvider !== "anthropic" && !turnModel.backupFor) {
@@ -4073,11 +4086,13 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     }
   }
 
-  // SSE headers — disable proxy buffering so tokens stream immediately
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
+  // SSE headers — disable proxy buffering so tokens stream immediately (a fallback attempt reuses the open stream).
+  if (!res.headersSent) {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+  }
   // Held until the turn's first billing check passes: an org an AI agent opened
   // through the API, refused for lack of money before any byte left, then still
   // gets an HTTP 402 (the gateway turns it into its prepay instructions).
@@ -4189,6 +4204,9 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   let provisionedCostIds: string[] = [];
   // What the out-of-credits answer needs from inside the try (set once known).
   const creditsTurn: { sessionId: string | null; text: () => string; userMessage: CopilotTurnMessage | null } = { sessionId: null, text: () => "", userMessage: null };
+  // What a failed Distry turn needs to re-run on the next model (DISTRY-THINKING-1122): set once known.
+  const failoverState = { userMessageId: null as string | null, toolCount: () => 0, textSent: () => false };
+  let failoverTo: DistryAttempt | null = null;
 
   try {
     // Get or create session (scoped by org + user + app)
@@ -4314,19 +4332,25 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       }
     };
 
-    // Load conversation history (shared by both providers)
-    const history = await db.query.messages.findMany({
+    // Load conversation history (shared by both providers). A fallback attempt finds the user's message
+    // the first attempt stored: it is this turn's message, not history.
+    const storedHistory = await db.query.messages.findMany({
       where: eq(messages.sessionId, currentSessionId),
       orderBy: (m, { asc }) => [asc(m.createdAt)],
     });
+    const retriedMessage = distryAttempt ? storedHistory.find((m) => m.id === distryAttempt.userMessageId) : undefined;
+    const history = retriedMessage ? storedHistory.filter((m) => m.id !== retriedMessage.id) : storedHistory;
 
-    // Save user message
-    const [savedUserMessage] = await db.insert(messages).values(stripNul({
-      sessionId: currentSessionId,
-      role: "user",
-      content: message.trim(),
-      proactiveTrigger: hiddenTrigger,
-    })).returning({ id: messages.id, createdAt: messages.createdAt });
+    // Save user message (once: a fallback attempt reuses the first attempt's row)
+    const [savedUserMessage] = retriedMessage
+      ? [{ id: retriedMessage.id, createdAt: retriedMessage.createdAt }]
+      : await db.insert(messages).values(stripNul({
+          sessionId: currentSessionId,
+          role: "user",
+          content: message.trim(),
+          proactiveTrigger: hiddenTrigger,
+        })).returning({ id: messages.id, createdAt: messages.createdAt });
+    failoverState.userMessageId = savedUserMessage.id;
     const userTurnMessage: CopilotTurnMessage = {
       messageId: savedUserMessage.id, role: "user", text: message.trim(), at: savedUserMessage.createdAt,
     };
@@ -4347,6 +4371,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     // Whether any answer text reached the client this turn, and the
     // present_choices intro streamed in its place when none did.
     const turnText: { streamed: boolean; intro: string | null } = { streamed: false, intro: null };
+    failoverState.toolCount = () => toolCalls.length;
+    failoverState.textSent = () => turnText.streamed || fullResponse.trim() !== "";
     const openedPages: OpenPageRecord[] = [];
     let lastContentBlocks: Anthropic.ContentBlock[] = [];
     // Track workflows forked during this turn (used by executeTool)
@@ -5999,10 +6025,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         loopNotes,
         // Sophie/Distry on a direct vendor (her backup, or a vendor staff picked, DISTRY-ALL-MODELS-1122)
         // keeps the model's own reasoning default; the backup's is measured "on".
-        reasoningDisabled: configKey === SOPHIE_CONFIG_KEY && SOPHIE_BACKUP_MODEL.reasoning !== "on",
-        // The config's thinking level (DISTRY-THINKING-1122: Distry at the level picked in the models
-        // panel). A backup turn runs another model: the level is not its setting.
-        ...(appConfig.thinkingLevel && !turnModel.backupFor ? { reasoningLevel: appConfig.thinkingLevel } : {}),
+        // The config's thinking level, or the fallback's own (DISTRY-THINKING-1122).
+        ...(turnThinkingLevel ? { reasoningLevel: turnThinkingLevel } : {}),
         beforeProviderCall: async ({ requestBody, at }) => {
           await authorizeChatProviderCall(
             turnImages.length > 0 ? estimateRequestTokensWithImages(requestBody, turnImages) : estimateRequestTokens(requestBody),
@@ -6052,7 +6076,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         signal: abortController.signal,
         // Per-config Gemini-3 thinking level (NULL → code default "low"). Only
         // the /chat path reads this; /complete never raises thinking.
-        thinkingLevel: turnModel.backupFor ? undefined : (appConfig.thinkingLevel ?? undefined),
+        thinkingLevel: (turnThinkingLevel as GeminiThinkingLevel | null) ?? undefined,
         holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),
         ...(leadTurn ? { endToolName: LEAD_ANSWER_TOOL_NAME } : {}),
         loopNotes,
@@ -6142,7 +6166,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           model: resolvedModelInfo.apiModelId,
           cache: anthropicCachePriced(resolvedModelInfo.costPrefix),
           // Per-config thinking effort (NULL → the model's own default).
-          effort: appConfig.effort ?? undefined,
+          effort: (turnEffort as AnthropicEffort | null) ?? undefined,
           // A lead turn ends on a tool call: tools never go off for it.
           ...((isFinalToolRound(depth) || answerNudged) && !leadTurn ? { toolChoice: "none" as const } : {}),
         });
@@ -6494,6 +6518,37 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         message: err instanceof Error ? err.message : String(err),
       });
     }
+    // DISTRY-THINKING-1122: a Distry turn whose model failed before any tool ran and before any word reached
+    // the person runs again on the next model of the fallback order (the outage just recorded drops that vendor).
+    if (!localChat) {
+      try {
+        failoverTo = await nextDistryAttempt({
+          configKey,
+          platformKey: resolvedKey.keySource !== "org",
+          billingRefusal: err instanceof ChatCostGateError,
+          sessionId: creditsTurn.sessionId,
+          userMessageId: failoverState.userMessageId,
+          toolCount: failoverState.toolCount(),
+          textSent: failoverState.textSent(),
+          failed: { provider: chatProvider, modelId: resolvedModelInfo.apiModelId },
+          previous: distryAttempt,
+          order: distryFallbackOrder,
+        });
+      } catch (orderErr) {
+        console.error(`[chat] org="${orgId}" Distry's fallback order could not be read, the turn fails:`, orderErr);
+      }
+    }
+    if (failoverTo) {
+      chatFailed = true;
+      console.warn(`[chat] org="${orgId}" ${chatProvider}/${resolvedModelInfo.apiModelId} failed before any tool or word (${err instanceof Error ? err.message.slice(0, 200) : String(err)}): retrying on ${fallbackLine(failoverTo.next)}`);
+      if (runId) {
+        traceEvent(runId, "stream-failed", { orgId, userId }, workflowTracking, {
+          level: "warn",
+          detail: err instanceof Error ? err.message : String(err),
+          data: { provider: chatProvider, model: resolvedModelInfo.apiModelId, fallback: fallbackKey(failoverTo.next.provider, failoverTo.next.modelId), level: failoverTo.next.level },
+        });
+      }
+    }
     // Out of credits (billing refused the turn BEFORE the model was called):
     // not an error, a fixed message with an "Add credits" action (owner
     // 2026-10-10). Streamed as text for any client, plus `credits_required`
@@ -6558,6 +6613,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         console.error(`[chat] org="${orgId}" out-of-credits message failed:`, creditsErr);
       }
     }
+    if (!failoverTo) {
     chatFailed = true;
     const { message: errorMessage, code: errorCode } = classifyErrorForClient(err);
     console.error(`[chat] org="${orgId}" error code="${errorCode}":`, err);
@@ -6578,10 +6634,11 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       message: errorMessage,
     });
     sendSSE(res, "[DONE]");
+    }
   } finally {
     // End SSE stream immediately so the client is not blocked (a 402 JSON
-    // answer has already ended it).
-    if (!res.writableEnded) res.end();
+    // answer has already ended it). A fallback attempt keeps it open.
+    if (!res.writableEnded && !failoverTo) res.end();
 
     // Reconcile: record ACTUAL real tokens, then release the provisioned worst-case holds.
     // If the actual POST fails, the provisioned-max rows stay as a fallback record — the
@@ -6613,6 +6670,36 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       }
     }
   }
+  // DISTRY-THINKING-1122: the failed attempt is closed and billed above; the turn runs again on the next model,
+  // same session and stored message, its own run and cost names.
+  if (failoverTo) {
+    (res.locals as { distryAttempt?: DistryAttempt }).distryAttempt = failoverTo;
+    req.body = { ...req.body, sessionId: failoverTo.sessionId };
+    return handleChatTurn(req, res);
+  }
+}
+
+/**
+ * Distry's models panel as served (the dashboard's table and the fallback order read the same rows).
+ */
+async function distryModelsPanel() {
+  const current = await currentDistryVersion(db);
+  if (!current) throw new DistryConfigError("Distry's definition is not seeded yet (boot in progress).", 409);
+  return buildModelPanel({
+    choices: distryModelChoices(CHAT_CONFIG_PROVIDERS),
+    state: await readIndexState(db),
+    keyConfigured: Boolean(process.env.ARTIFICIAL_ANALYSIS_API_KEY),
+    priceOf: listPriceCentsPerUnit,
+    pricesRead: listPricesRead(),
+    current: { provider: current.provider, model: current.model, effort: current.effort ?? null },
+    now: new Date(),
+    outOfCredit: distryOutageSentence,
+  });
+}
+
+/** Distry's fallback order now, the models already tried left out (DISTRY-THINKING-1122). */
+async function distryFallbackOrder(exclude: ReadonlySet<string>): Promise<FallbackCandidate[]> {
+  return rankFallbacks((await distryModelsPanel()).models, exclude);
 }
 
 /**
@@ -7062,19 +7149,8 @@ app.put("/internal/distry/config", requireInternalAuth, async (req, res) => {
 // Intelligence Index score + rank, and intelligence per dollar, best ratio first.
 app.get("/internal/distry/models", requireInternalAuth, async (_req, res) => {
   try {
-    const current = await currentDistryVersion(db);
-    if (!current) return res.status(503).json({ error: "Distry's definition is not seeded yet (boot in progress)." });
-    const panel = buildModelPanel({
-      choices: distryModelChoices(CHAT_CONFIG_PROVIDERS),
-      state: await readIndexState(db),
-      keyConfigured: Boolean(process.env.ARTIFICIAL_ANALYSIS_API_KEY),
-      priceOf: listPriceCentsPerUnit,
-      pricesRead: listPricesRead(),
-      current: { provider: current.provider, model: current.model, effort: current.effort ?? null },
-      now: new Date(),
-      outOfCredit: distryOutageSentence,
-    });
-    return res.json(panel);
+    if (!(await currentDistryVersion(db))) return res.status(503).json({ error: "Distry's definition is not seeded yet (boot in progress)." });
+    return res.json(await distryModelsPanel());
   } catch (err) {
     const mapped = distryErrorStatus(err);
     return res.status(mapped.status).json({ error: mapped.error });
