@@ -14,7 +14,7 @@ import {
 } from "../../src/agent/distry-config.js";
 import { SEED_EDITOR, buildSkillIndexPieces, deleteSkill, listSkills, readSkillForModel, writeSkill } from "../../src/lib/skills.js";
 import { DistrySaveRequestSchema } from "../../src/schemas.js";
-import { definitionFromSaveRequest, definitionOf, foldTreeIntoMentions, skillMentionGraph, MENTIONS_FOLD_EDITOR } from "../../src/agent/distry-config.js";
+import { toDistryVersionBody, definitionFromSaveRequest, definitionOf, foldTreeIntoMentions, skillMentionGraph, MENTIONS_FOLD_EDITOR } from "../../src/agent/distry-config.js";
 import { SkillNotFoundError, getSkill } from "../../src/lib/skills.js";
 import { SOPHIE_SYSTEM_PROMPT } from "../../src/agent/sophie.js";
 
@@ -132,6 +132,8 @@ describe("Distry's versioned definition (DISTRY-PRINCIPAL-1119)", { timeout: 300
     });
     const saved = await saveDistryVersion(db as never, definitionFromSaveRequest(parsed, definitionOf(old).prompt), { editedBy: parsed.editedBy });
     expect(saved.skillSlugs).toBeNull();
+    // The served version carries no skill list at all (the dashboard conformed, distribute.you #6047).
+    expect("skillSlugs" in toDistryVersionBody(saved)).toBe(false);
     // A restore of the old version keeps reading everything (its list is history only).
     const restored = await restoreDistryVersion(db as never, old.version, "kevin@distribute.you");
     expect(restored.skillSlugs).toBeNull();

@@ -144,13 +144,12 @@ export function promptOverridesFrom(input: {
 }
 
 /**
- * A `PUT /internal/distry/config` body -> the definition to save. `skillSlugs` is dropped
- * (DISTRY-NO-SKILL-PICKS-1122): an older editor still sends it, the save must keep succeeding.
+ * A `PUT /internal/distry/config` body -> the definition to save
+ * (DISTRY-NO-SKILL-PICKS-1122: no skill list; a stray `skillSlugs` is stripped by the schema).
  * The prompt parts follow the current version unless the save sends their whole state.
  */
 export function definitionFromSaveRequest(
   body: Omit<DistryDefinition, "prompt"> & {
-    skillSlugs?: unknown;
     prompt?: { order: string[]; texts: Record<string, string | null>; toolDescriptions: Record<string, string | null> };
   },
   currentPrompt: DistryPromptOverrides,
@@ -265,7 +264,6 @@ export async function saveDistryVersion(
           version: (latest?.version ?? 0) + 1,
           systemPrompt: def.systemPrompt,
           enabledTools: [...def.enabledTools],
-          skillSlugs: null,
           provider: def.provider,
           model: def.model,
           effort: def.effort,
@@ -323,9 +321,6 @@ export function toDistryVersionBody(v: DistryConfigVersion) {
     version: v.version,
     systemPrompt: v.systemPrompt,
     enabledTools: v.enabledTools,
-    // Served as null on every version until the dashboard stops reading it (DISTRY-NO-SKILL-PICKS-1122):
-    // Distry reads every live skill, whatever an old version stored.
-    skillSlugs: null,
     provider: v.provider,
     model: v.model,
     effort: v.effort ?? null,
