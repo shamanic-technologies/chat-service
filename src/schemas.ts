@@ -4709,6 +4709,19 @@ export const DistryModelsResponseSchema = z
     ratioBasis: z.string(),
     current: z.object({ provider: z.string(), model: z.string(), modelId: z.string(), effort: z.string().nullable() }),
     models: z.array(DistryModelRowSchema).openapi({ description: "Best intelligence per dollar first (run-cost basis, then blended basis), unscored last." }),
+    fallbackOrder: z.array(z.object({
+      provider: z.string(),
+      model: z.string().openapi({ description: "A name Distry's definition accepts for this model." }),
+      modelId: z.string(),
+      displayName: z.string(),
+      level: z.string().nullable().openapi({ description: "The thinking level the turn runs at (null = the model's default; `none` = reasoning off)." }),
+      score: z.number().nullable(),
+      intelligencePerDollar: z.number().nullable(),
+    })).openapi({
+      description:
+        "Where a Distry turn goes when its model cannot serve (vendor out of credit, refusal, failure before any tool or word): every model x thinking level Distry can run now with tools, best intelligence per dollar first, unscored models last, the current model left out. Tried in order; recomputed on every read.",
+    }),
+    nextFallback: z.string().nullable().openapi({ description: "The first fallback in plain words; null when none can serve.", example: "If GPT-6.1 Terra cannot serve a turn, Distry answers on Claude Haiku 5.5 at low." }),
   })
   .openapi("DistryModelsResponse");
 
