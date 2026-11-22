@@ -130,18 +130,22 @@ registry.registerPath({
 // --- App Config ---
 
 /**
- * Providers and model aliases a /chat config may run on. `deepseek` is the
- * direct-vendor tool loop (src/lib/vendor-chat.ts, CHAT-DEEPSEEK-FLASH-1101);
- * the other direct vendors were never probed with tools on /chat.
+ * Providers and model names a /chat config may run on: every provider and every
+ * name chat-service can call (DISTRY-ALL-MODELS-1122, owner 2026-11-22 « tous
+ * ceux qu'on a dans chat-service »). Anthropic and Google run their own loops;
+ * DeepSeek, Z.ai, Moonshot and OpenAI share ONE direct-vendor tool loop
+ * (src/lib/vendor-chat.ts), probed live with a tool turn on each served model
+ * (GLM-5.3 + Flash, GPT-6 Astra, GPT-6.1 Sol + Terra 2026-11-22; Moonshot's
+ * account was out of credit that day, same loop and request shape).
  */
-export const CHAT_CONFIG_MODELS_BY_PROVIDER = {
-  anthropic: ["haiku", "sonnet", "opus"],
-  google: ["flash-lite", "flash", "flash-pro", "pro"],
-  deepseek: ["deepseek-flash"],
-} as const;
-export const CHAT_CONFIG_PROVIDERS = ["anthropic", "google", "deepseek"] as const;
+export const CHAT_CONFIG_PROVIDERS = ["anthropic", "google", "deepseek", "zai", "moonshot", "openai"] as const;
 export type ChatConfigProvider = (typeof CHAT_CONFIG_PROVIDERS)[number];
-export const CHAT_CONFIG_MODELS = ["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro", "deepseek-flash"] as const;
+export const CHAT_CONFIG_MODELS_BY_PROVIDER: Record<ChatConfigProvider, readonly string[]> = Object.fromEntries(
+  CHAT_CONFIG_PROVIDERS.map((p) => [p, callableModelNames(p)]),
+) as unknown as Record<ChatConfigProvider, readonly string[]>;
+export const CHAT_CONFIG_MODELS = CHAT_CONFIG_PROVIDERS.flatMap((p) => CHAT_CONFIG_MODELS_BY_PROVIDER[p]).filter(
+  (name, i, all) => all.indexOf(name) === i,
+) as [string, ...string[]];
 
 export const AppConfigRequestSchema = z
   .object({
@@ -183,15 +187,13 @@ export const AppConfigRequestSchema = z
         "LLM provider for this chat mode. Omit to use the default (google).\n\n" +
         "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
         "- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n" +
-        "- `deepseek` — DeepSeek V4.1 Flash (deepseek-flash), tools included",
+        "- `deepseek`, `zai`, `moonshot`, `openai` — the direct vendors (DeepSeek, GLM, Kimi, GPT), on one shared tool loop",
       example: "google",
     }),
     model: z.enum(CHAT_CONFIG_MODELS).optional().openapi({
       description:
         "Model alias (version-free). Omit to use the provider's default " +
-        "(sonnet for anthropic, flash-pro for google). Must match the provider:\n\n" +
-        "- anthropic → haiku, sonnet, opus\n" +
-        "- google → flash-lite, flash, flash-pro, pro",
+        "(sonnet for anthropic, flash-pro for google, the first served model otherwise). Must be a name that provider accepts.",
       example: "pro",
     }),
     supportKind: z.enum(SUPPORT_FUNCTIONS).optional().openapi({
@@ -358,13 +360,13 @@ export const PlatformConfigRequestSchema = z
         "LLM provider for this chat mode. Omit to use the default (google).\n\n" +
         "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
         "- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n" +
-        "- `deepseek` — DeepSeek V4.1 Flash (deepseek-flash), tools included",
+        "- `deepseek`, `zai`, `moonshot`, `openai` — the direct vendors (DeepSeek, GLM, Kimi, GPT), on one shared tool loop",
       example: "google",
     }),
     model: z.enum(CHAT_CONFIG_MODELS).optional().openapi({
       description:
         "Model alias (version-free). Omit to use the provider's default " +
-        "(sonnet for anthropic, flash-pro for google). Must match the provider.",
+        "(sonnet for anthropic, flash-pro for google, the first served model otherwise). Must be a name that provider accepts.",
       example: "pro",
     }),
     thinkingLevel: z.enum(["minimal", "low", "medium", "high"]).optional().openapi({

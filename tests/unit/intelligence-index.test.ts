@@ -121,6 +121,18 @@ describe("distryThinkingFor", () => {
     expect(distryThinkingFor({ provider: "google", modelId: "gemini-4-hydrogen" }, "low").level).toBe("low");
     expect(distryThinkingFor({ provider: "deepseek", modelId: "deepseek-flash" }, "low").level).toBeNull();
   });
+
+  // DISTRY-ALL-MODELS-1122: a direct vendor reads at the reasoning its tool rounds carry (vendor data).
+  it("GPT-6.1 Terra = reasoning off, read on Artificial Analysis's Non-reasoning entry; GLM = its default", () => {
+    const terra = distryThinkingFor({ provider: "openai", modelId: "gpt-6.1-terra" }, null);
+    expect(terra.level).toBe("none");
+    expect(distryThinkingFor({ provider: "zai", modelId: "glm-5.3" }, null).level).toBeNull();
+    const variants = [
+      entry({ releaseSlug: "gpt-6-1-terra", releaseName: "GPT-6.1 Terra", variantLabel: "Max", score: 51.3 }),
+      entry({ releaseSlug: "gpt-6-1-terra", releaseName: "GPT-6.1 Terra", variantLabel: "Non-reasoning", score: 30.5 }),
+    ];
+    expect(pickVariant("GPT-6.1 Terra", variants, terra)).toMatchObject({ kind: "picked", entry: { score: 30.5 } });
+  });
 });
 
 describe("buildModelPanel", () => {
@@ -159,6 +171,13 @@ describe("buildModelPanel", () => {
     expect(deepseek!.index.reason).toBe("Artificial Analysis lists DeepSeek V4.1 Flash only as DeepSeek V4.1 Flash 1017: none picked.");
     expect(panel.current).toMatchObject({ modelId: "claude-haiku-5-5", effort: "low" });
     expect(panel.refresh).toMatchObject({ state: "ok", broken: false });
+  });
+
+  it("says when a model's vendor is out of credit, every other row runs now", () => {
+    const panel = buildModelPanel({ choices, state: okState(entries), keyConfigured: true, priceOf: (n) => prices[n] ?? null, pricesRead: true, current: { provider: "anthropic", model: "claude-haiku", effort: "low" }, now: NOW, outOfCredit: (p) => (p === "deepseek" ? "DeepSeek is out of credit." : null) });
+    const deepseek = panel.models.find((m) => m.provider === "deepseek")!;
+    expect(deepseek.availability).toEqual({ runsNow: false, reason: "DeepSeek is out of credit." });
+    expect(panel.models.filter((m) => m.provider !== "deepseek").every((m) => m.availability.runsNow)).toBe(true);
   });
 
   it("a failed read is red, the last good reading stays served", () => {

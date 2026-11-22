@@ -2,7 +2,7 @@
 // failed overnight. While her vendor is out of credit, her turn runs on her backup model.
 // SOPHIE-ON-HAIKU-1113 (owner 2026-11-13): Haiku 5.5 became her model, DeepSeek V4.1 Flash her backup.
 import { afterEach, describe, expect, it } from "vitest";
-import { SOPHIE_BACKUP_MODEL, sophieTurnModel } from "../../src/agent/sophie-backup.js";
+import { SOPHIE_BACKUP_MODEL, distryOutageSentence, sophieTurnModel } from "../../src/agent/sophie-backup.js";
 import { SOPHIE_CONFIG_KEY, SOPHIE_MODEL } from "../../src/agent/sophie.js";
 import { markProviderServing, recordOutOfCredit, resetVendorCredit } from "../../src/lib/vendor-credit.js";
 import { resolveModel } from "../../src/lib/anthropic.js";
@@ -37,5 +37,16 @@ describe("Sophie's backup model", () => {
   it("leaves every other chat config on its own model", () => {
     recordOutOfCredit({ provider: SOPHIE_MODEL.provider, model: "claude-haiku-5-5", status: 400, message: "Your credit balance is too low to access the Anthropic API." });
     expect(sophieTurnModel("workflow", primary)).toEqual({ ...primary, backupFor: null });
+  });
+
+  // DISTRY-ALL-MODELS-1122: staff can set Distry to any vendor; the backup covers each of them.
+  it("covers any vendor staff set Distry to, never the backup's own vendor", () => {
+    recordOutOfCredit({ provider: "moonshot", model: "kimi-k3.1-pro", status: 429, message: "suspended due to insufficient balance" });
+    expect(sophieTurnModel(SOPHIE_CONFIG_KEY, { provider: "moonshot", modelAlias: "kimi-pro" })).toEqual({ provider: "deepseek", modelAlias: SOPHIE_BACKUP_MODEL.model, backupFor: "moonshot" });
+    expect(distryOutageSentence("moonshot")).toContain("run on DeepSeek");
+    expect(distryOutageSentence("zai")).toBeNull();
+    recordOutOfCredit({ provider: "deepseek", model: "deepseek-flash", status: 402, message: "Insufficient Balance" });
+    expect(sophieTurnModel(SOPHIE_CONFIG_KEY, { provider: "deepseek", modelAlias: "deepseek-flash" }).backupFor).toBeNull();
+    expect(distryOutageSentence("deepseek")).toContain("fails until it serves again");
   });
 });
