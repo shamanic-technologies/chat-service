@@ -18,7 +18,9 @@
 import { desc, eq } from "drizzle-orm";
 import type { db } from "../db/index.js";
 import { distryConfigVersions, platformConfigs, type DistryConfigVersion } from "../db/schema.js";
-import { ANTHROPIC_EFFORTS, CHAT_CONFIG_PROVIDERS, type AnthropicEffort } from "../schemas.js";
+import { CHAT_CONFIG_PROVIDERS, type AnthropicEffort } from "../schemas.js";
+import { thinkingLevelRefusal } from "../lib/thinking-levels.js";
+import type { GeminiThinkingLevel } from "../lib/gemini.js";
 import { resolveModel, TOOL_REGISTRY, type Provider } from "../lib/anthropic.js";
 import { SEED_EDITOR } from "../lib/skills.js";
 import { SOPHIE_CONFIG } from "../lib/seed-platform-configs.js";
@@ -42,8 +44,12 @@ export interface DistryDefinition {
   enabledTools: string[];
   provider: DistryProvider;
   model: string;
-  /** Anthropic `output_config.effort`; null on another provider (or the model's default). */
-  effort: AnthropicEffort | null;
+  /**
+   * The thinking level Distry runs its model at, any provider (DISTRY-THINKING-1122): Anthropic
+   * `output_config.effort`, Gemini `thinkingLevel`, a direct vendor's level (`none` = reasoning off).
+   * One of `chatThinkingLevels(provider, model)`; null = the model's default.
+   */
+  effort: string | null;
   /**
    * Every other text Distry reads and its order (DISTRY-PROMPT-PARTS-1120,
    * distry-prompt.ts): the order of the parts, and the texts and tool
@@ -157,14 +163,15 @@ export function validateDistryDefinition(def: DistryDefinition): void {
   if (!(CHAT_CONFIG_PROVIDERS as readonly string[]).includes(def.provider)) {
     throw new DistryConfigError(`provider must be one of ${CHAT_CONFIG_PROVIDERS.join(", ")}.`);
   }
+  let resolved: ReturnType<typeof resolveModel>;
   try {
-    resolveModel(def.provider as Provider, def.model as never);
+    resolved = resolveModel(def.provider as Provider, def.model as never);
   } catch (err) {
     throw new DistryConfigError(err instanceof Error ? err.message : String(err));
   }
   if (def.effort !== null) {
-    if (def.provider !== "anthropic") throw new DistryConfigError("effort is an Anthropic setting: set it to null on another provider.");
-    if (!(ANTHROPIC_EFFORTS as readonly string[]).includes(def.effort)) throw new DistryConfigError(`effort must be one of ${ANTHROPIC_EFFORTS.join(", ")}.`);
+    const refusal = thinkingLevelRefusal(def.provider as Provider, resolved.apiModelId, resolved.apiModelId, def.effort);
+    if (refusal) throw new DistryConfigError(`effort "${def.effort}": ${refusal}`);
   }
   // Re-normalizing a stored-shape prompt is idempotent: it refuses what a hand-built definition got wrong.
   promptOverridesFrom(def.prompt);
@@ -198,6 +205,16 @@ export function distryVersionNumber(): number | null {
   return currentVersionNumber;
 }
 
+/**
+ * One level, written where the provider's loop reads it (DISTRY-THINKING-1122): the Anthropic loop
+ * reads `effort`; the Gemini and direct-vendor loops read `thinking_level`.
+ */
+export function thinkingColumns(def: Pick<DistryDefinition, "provider" | "effort">): { effort: AnthropicEffort | null; thinkingLevel: GeminiThinkingLevel | null } {
+  if (def.provider === "anthropic") return { effort: def.effort as AnthropicEffort | null, thinkingLevel: null };
+  // The column is text typed with Gemini's words; a vendor level (`none`, `xhigh`, `max`) rides it too.
+  return { effort: null, thinkingLevel: def.effort as GeminiThinkingLevel | null };
+}
+
 /** Write a version's values onto the `copilot` platform config: what the next /chat turn reads. */
 async function materialize(database: Database, def: DistryDefinition, version: number): Promise<void> {
   const row = {
@@ -205,8 +222,7 @@ async function materialize(database: Database, def: DistryDefinition, version: n
     allowedTools: [...def.enabledTools],
     provider: def.provider,
     model: def.model,
-    effort: def.effort,
-    thinkingLevel: null,
+    ...thinkingColumns(def),
     supportKind: SOPHIE_CONFIG.supportKind,
   };
   await database

@@ -204,6 +204,17 @@ export function geminiThinkingFloor(model: string): GeminiThinkingLevel {
   return floor;
 }
 
+/**
+ * The thinking levels /chat may run a Gemini model at (DISTRY-THINKING-1122): its recorded
+ * floor and every level above it. Gemini 2.5 (a token budget) and a model with no recorded
+ * floor take none.
+ */
+export function geminiThinkingLevels(model: string): GeminiThinkingLevel[] {
+  const floor = GEMINI_3_THINKING_FLOOR[model];
+  if (!floor || model.startsWith("gemini-2.")) return [];
+  return THINKING_LEVEL_ORDER.slice(THINKING_LEVEL_ORDER.indexOf(floor));
+}
+
 /** Every Gemini-3 model id with a recorded thinking floor. */
 export function geminiModelsWithThinkingFloor(): string[] {
   return Object.keys(GEMINI_3_THINKING_FLOOR);

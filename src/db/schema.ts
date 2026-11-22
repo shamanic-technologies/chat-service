@@ -180,7 +180,8 @@ export const distryConfigVersions = pgTable(
     skillSlugs: jsonb("skill_slugs").$type<string[] | null>(),
     provider: text("provider").notNull().$type<"anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai">(),
     model: text("model").notNull(),
-    effort: text("effort").$type<AnthropicEffort>(),
+    // The thinking level the model runs at, any provider (DISTRY-THINKING-1122: was Anthropic effort only).
+    effort: text("effort"),
     // DISTRY-PROMPT-PARTS-1120 (migration 0044): the parts' order + the texts and tool descriptions
     // staff changed. NULL = the code's order and texts (versions saved before it existed).
     promptParts: jsonb("prompt_parts").$type<{ order: string[]; texts: Record<string, string>; toolDescriptions: Record<string, string> } | null>(),

@@ -607,6 +607,26 @@ export interface VendorConfig {
    * stays on /chat/completions.
    */
   toolRoundsOnResponsesApi?: readonly string[];
+  /**
+   * The thinking levels a /chat turn may run THIS concrete model at WITH TOOLS
+   * (DISTRY-THINKING-1122), each probed live on a tool call. `none` = reasoning
+   * off (sent as this model's `reasoning` off fields, which must be a true off);
+   * any other level is sent as `reasoning_effort: <level>` (the spelling all four
+   * vendors take). A model absent here runs at its default only; a level absent
+   * from its list is refused before any call. Levels use Artificial Analysis's
+   * words, so the Distry models panel matches a scored variant to a level as is.
+   */
+  thinkingLevels?: Record<string, readonly string[]>;
+  /**
+   * True when a tool round carrying a reasoning effort other than `none` must go
+   * to `${baseUrl}/responses` (DISTRY-THINKING-1122): OpenAI refuses function
+   * tools beside any reasoning on /v1/chat/completions ("To use function tools,
+   * use /v1/responses or set reasoning_effort to 'none'"), while /v1/responses
+   * runs them at every level (probed live 2026-11-22 on gpt-6.1-terra, gpt-6-astra,
+   * gpt-6.1-sol: low, medium, high, xhigh, max all 200 with the tool called, and a
+   * follow-up round with reasoning tokens answered with no reasoning item sent back).
+   */
+  toolReasoningOnResponsesApi?: boolean;
 }
 
 /**
@@ -701,6 +721,9 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     },
     maxOutputTokensField: "max_tokens",
     imageInput: true,
+    // DISTRY-THINKING-1122, probed live 2026-11-22: V4.1 Flash validates reasoning_effort (a junk value 422s
+    // naming the set) and runs a tool call at high and max; thinking disabled = 0 reasoning tokens (none).
+    thinkingLevels: { "deepseek-flash": ["none", "high", "max"] },
     structuredOutput: "json_object",
     schemaEnforced: false,
     // Reasoning is disablable, and it is the SAME field on all three vendors —
@@ -792,6 +815,9 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     },
     maxOutputTokensField: "max_tokens",
     imageInput: true,
+    // DISTRY-THINKING-1122, probed live 2026-11-22 with a function tool: GLM-5.3 and its Flash take
+    // reasoning_effort low | high | max (medium → 400 code 1210 "please use low, high, or max"); never off.
+    thinkingLevels: { "glm-5.3": ["low", "high", "max"], "glm-5.3-flash": ["low", "high", "max"] },
     structuredOutput: "json_schema",
     schemaEnforced: false,
     // Z.ai is the vendor this was measured on and the one it saves most on.
@@ -1023,6 +1049,15 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     imageInput: true,
     toolCallRequestFields: { "gpt-6.1-terra": { reasoning_effort: "none" } },
     toolRoundsOnResponsesApi: ["gpt-6-astra", "gpt-6.1-sol"],
+    // DISTRY-THINKING-1122, probed live 2026-11-22 with a function tool on /v1/responses:
+    // Terra takes none..max; Astra and Sol refuse `none` ("Supported values are: 'low',
+    // 'medium', 'high', 'xhigh', and 'max'"); `minimal` is refused by all three.
+    toolReasoningOnResponsesApi: true,
+    thinkingLevels: {
+      "gpt-6.1-terra": ["none", "low", "medium", "high", "xhigh", "max"],
+      "gpt-6-astra": ["low", "medium", "high", "xhigh", "max"],
+      "gpt-6.1-sol": ["low", "medium", "high", "xhigh", "max"],
+    },
     // Structured Outputs is a first-class OpenAI feature, and the non-strict
     // schema form we send is confirmed live (200, valid object, probed
     // 2026-09-09) rather than taken from the model page alone. We do NOT send
@@ -1630,7 +1665,33 @@ export async function completeWithVendor(
 /** True when this request goes to the vendor's Responses API (a tool round on a listed model). */
 export function usesResponsesApi(vendor: VendorId, model: string, body: Record<string, unknown>): boolean {
   const tools = body.tools;
-  return Array.isArray(tools) && tools.length > 0 && (vendorConfig(vendor).toolRoundsOnResponsesApi ?? []).includes(model);
+  if (!Array.isArray(tools) || tools.length === 0) return false;
+  const config = vendorConfig(vendor);
+  if ((config.toolRoundsOnResponsesApi ?? []).includes(model)) return true;
+  // A tool round that reasons (DISTRY-THINKING-1122): chat/completions takes tools at `none` only.
+  const effort = body.reasoning_effort;
+  return config.toolReasoningOnResponsesApi === true && typeof effort === "string" && effort !== "none";
+}
+
+/**
+ * The request fields that run THIS model at a thinking level on a tool round
+ * (DISTRY-THINKING-1122). Throws on a level the model's `thinkingLevels` does not
+ * list: a level we cannot send is refused, never dropped for the model's default.
+ */
+export function vendorThinkingLevelFields(vendor: VendorId, model: string, level: string): Record<string, unknown> {
+  const config = vendorConfig(vendor);
+  const levels = config.thinkingLevels?.[model] ?? [];
+  if (!levels.includes(level)) {
+    throw new VendorProviderError(
+      `[vendor:${vendor}] ${model} does not run at thinking level "${level}" with tools` +
+        (levels.length > 0 ? ` (it takes ${levels.join(", ")})` : " (no level probed: it runs at its default)"),
+    );
+  }
+  if (level === "none") {
+    if (config.reasoning.kind !== "disablable") throw new VendorProviderError(`[vendor:${vendor}] ${model} lists "none" but its reasoning cannot be turned off`);
+    return vendorReasoningFields(config.reasoning, model);
+  }
+  return { reasoning_effort: level };
 }
 
 type ChatMessageIn = {
