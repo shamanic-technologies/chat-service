@@ -98,7 +98,7 @@ export const appConfigs = pgTable(
     key: text("key").notNull(),
     systemPrompt: text("system_prompt").notNull(),
     allowedTools: jsonb("allowed_tools").notNull().$type<string[]>(),
-    provider: text("provider").$type<"anthropic" | "google" | "deepseek">(),
+    provider: text("provider").$type<"anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai">(),
     model: text("model"),
     // Per-config Gemini-3 thinking level for the /chat path. NULL = code default
     // ("low"). Never read by /complete. See src/lib/gemini.ts buildThinkingConfig.
@@ -150,7 +150,7 @@ export const platformConfigs = pgTable("platform_configs", {
   key: text("key").notNull().unique(),
   systemPrompt: text("system_prompt").notNull(),
   allowedTools: jsonb("allowed_tools").notNull().$type<string[]>(),
-  provider: text("provider").$type<"anthropic" | "google" | "deepseek">(),
+  provider: text("provider").$type<"anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai">(),
   model: text("model"),
   // Per-config Gemini-3 thinking level for the /chat path. NULL = code default
   // ("low"). Never read by /complete. See src/lib/gemini.ts buildThinkingConfig.
@@ -177,7 +177,7 @@ export const distryConfigVersions = pgTable(
     systemPrompt: text("system_prompt").notNull(),
     enabledTools: jsonb("enabled_tools").notNull().$type<string[]>(),
     skillSlugs: jsonb("skill_slugs").$type<string[] | null>(),
-    provider: text("provider").notNull().$type<"anthropic" | "google" | "deepseek">(),
+    provider: text("provider").notNull().$type<"anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai">(),
     model: text("model").notNull(),
     effort: text("effort").$type<AnthropicEffort>(),
     // DISTRY-PROMPT-PARTS-1120 (migration 0044): the parts' order + the texts and tool descriptions

@@ -26,6 +26,7 @@ import { PROVIDER_MODELS, resolveModel, type CapabilityTier, type Provider } fro
 import { buildLlmCostNames } from "./cost-names.js";
 import { buildThinkingConfig } from "./gemini.js";
 import { modelDisplayName } from "./model-ids.js";
+import { isVendorProvider, VENDORS } from "./openai-compatible.js";
 
 type Database = typeof db;
 
@@ -371,7 +372,8 @@ export interface DistryThinking {
 /**
  * Anthropic = the definition's `effort` (null = the model's default, no level sent); Google = the level
  * /chat sends (the definition sets none: `buildThinkingConfig`'s default, raised to the model's floor);
- * DeepSeek = reasoning on, no level.
+ * a direct vendor (DeepSeek, Z.ai, Moonshot, OpenAI) = the reasoning field its tool rounds carry
+ * (`VENDORS[...].toolCallRequestFields`: GPT-6.1 Terra runs at `none`), else the model's own default.
  */
 export function distryThinkingFor(choice: Pick<ModelChoice, "provider" | "modelId">, definitionEffort: string | null): DistryThinking {
   if (choice.provider === "anthropic") {
@@ -385,7 +387,25 @@ export function distryThinkingFor(choice: Pick<ModelChoice, "provider" | "modelI
       ? { level: config.thinkingLevel, words: `thinking ${config.thinkingLevel} (what /chat sends)` }
       : { level: null, words: "a thinking budget, no level" };
   }
+  if (isVendorProvider(choice.provider)) {
+    const effort = VENDORS[choice.provider].toolCallRequestFields?.[choice.modelId]?.reasoning_effort;
+    if (typeof effort === "string") {
+      return effort === "none"
+        ? { level: "none", words: "reasoning off (what /chat sends with tools)" }
+        : { level: effort, words: `reasoning ${effort} (what /chat sends with tools)` };
+    }
+  }
   return { level: null, words: "reasoning on, no level" };
+}
+
+/** Artificial Analysis's word for a reading with reasoning off ("Non-reasoning"). */
+function isNonReasoningLabel(label: string | null): boolean {
+  return (label ?? "").split(",")[0]!.trim().toLowerCase() === "non-reasoning";
+}
+
+/** True when this variant is the model at that thinking level (`none` = Artificial Analysis's "Non-reasoning"). */
+function variantRunsAt(v: IndexEntry, level: string): boolean {
+  return level === "none" ? isNonReasoningLabel(v.variantLabel) : v.effort === level;
 }
 
 const IGNORED_TOKENS = new Set(["preview", "latest"]);
@@ -452,7 +472,7 @@ export function pickVariant(displayName: string, variants: readonly IndexEntry[]
   if (variants.length === 1) return { kind: "picked", entry: variants[0]!, why: "Artificial Analysis's only reading of this model" };
   const levels = variants.map((v) => v.variantLabel ?? "unlabelled").join(", ");
   if (thinking.level) {
-    const hits = variants.filter((v) => v.effort === thinking.level);
+    const hits = variants.filter((v) => variantRunsAt(v, thinking.level!));
     if (hits.length === 1) return { kind: "picked", entry: hits[0]!, why: `at ${thinking.words}` };
     return { kind: "not_picked", reason: `Artificial Analysis scores ${displayName} at ${levels}: none at ${thinking.words}.` };
   }
@@ -479,6 +499,8 @@ export interface ModelPanelRow {
   capabilityTier: CapabilityTier;
   isCurrent: boolean;
   thinking: string;
+  /** Whether a Distry turn runs on this model right now; the reason when it does not (its vendor is out of credit). */
+  availability: { runsNow: boolean; reason: string | null };
   price: {
     inputPer1mUsd: number | null;
     outputPer1mUsd: number | null;
@@ -586,8 +608,11 @@ export function buildModelPanel(args: {
   pricesRead: boolean;
   current: { provider: string; model: string; effort: string | null };
   now: Date;
+  /** The stored out-of-credit fact per provider (vendor-credit.ts); omitted = every vendor serves. */
+  outOfCredit?: (provider: Provider) => string | null;
 }): ModelPanel {
   const { choices, state, keyConfigured, priceOf, pricesRead, current, now } = args;
+  const outOfCredit = args.outOfCredit ?? (() => null);
   const entries = state.latestOk?.entries ?? [];
   const currentModelId = resolveModel(current.provider as Provider, current.model).apiModelId;
 
@@ -681,6 +706,10 @@ export function buildModelPanel(args: {
       capabilityTier: c.capabilityTier,
       isCurrent: currentModelId === c.modelId && current.provider === c.provider,
       thinking: thinking.words,
+      availability: (() => {
+        const reason = outOfCredit(c.provider);
+        return { runsNow: reason === null, reason };
+      })(),
       price: { inputPer1mUsd, outputPer1mUsd, costNames, reason: priceReason },
       index: {
         aaSlug: picked?.aaSlug ?? null,

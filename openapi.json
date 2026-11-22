@@ -635,6 +635,9 @@
               "anthropic",
               "google",
               "deepseek",
+              "zai",
+              "moonshot",
+              "openai",
               null
             ],
             "description": "LLM provider. Null means default (google)."
@@ -733,24 +736,63 @@
             "enum": [
               "anthropic",
               "google",
-              "deepseek"
+              "deepseek",
+              "zai",
+              "moonshot",
+              "openai"
             ],
-            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n- `deepseek` — DeepSeek V4.1 Flash (deepseek-flash), tools included",
+            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n- `deepseek`, `zai`, `moonshot`, `openai` — the direct vendors (DeepSeek, GLM, Kimi, GPT), on one shared tool loop",
             "example": "google"
           },
           "model": {
             "type": "string",
             "enum": [
+              "claude-haiku",
+              "claude-haiku-5-5",
               "haiku",
+              "claude-sonnet",
+              "claude-sonnet-5-5",
               "sonnet",
+              "claude-opus",
+              "claude-opus-5-5",
               "opus",
-              "flash-lite",
+              "claude-fable",
+              "claude-fable-5-2",
+              "fable",
+              "gemini-flash-lite",
+              "gemini-3.5-flash-lite",
               "flash",
+              "flash-lite",
+              "gemini-flash",
+              "gemini-4-hydrogen",
               "flash-pro",
+              "gemini-pro",
+              "gemini-3.1-pro-preview",
               "pro",
-              "deepseek-flash"
+              "gemini-argon",
+              "gemini-4-argon",
+              "deepseek-flash",
+              "deepseek-pro",
+              "glm-flash",
+              "glm-5.3-flash",
+              "glm",
+              "glm-5.3",
+              "glm-pro",
+              "kimi-k2",
+              "kimi-k2.6",
+              "kimi-flash",
+              "kimi-k3",
+              "kimi-k3.1-pro",
+              "kimi-pro",
+              "gpt-astra",
+              "gpt-6-astra",
+              "gpt-pro",
+              "gpt-sol",
+              "gpt-6.1-sol",
+              "gpt-terra",
+              "gpt-6.1-terra"
             ],
-            "description": "Model alias (version-free). Omit to use the provider's default (sonnet for anthropic, flash-pro for google). Must match the provider:\n\n- anthropic → haiku, sonnet, opus\n- google → flash-lite, flash, flash-pro, pro",
+            "description": "Model alias (version-free). Omit to use the provider's default (sonnet for anthropic, flash-pro for google, the first served model otherwise). Must be a name that provider accepts.",
             "example": "pro"
           },
           "supportKind": {
@@ -797,6 +839,9 @@
               "anthropic",
               "google",
               "deepseek",
+              "zai",
+              "moonshot",
+              "openai",
               null
             ],
             "description": "LLM provider. Null means default (google)."
@@ -911,24 +956,63 @@
             "enum": [
               "anthropic",
               "google",
-              "deepseek"
+              "deepseek",
+              "zai",
+              "moonshot",
+              "openai"
             ],
-            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n- `deepseek` — DeepSeek V4.1 Flash (deepseek-flash), tools included",
+            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n- `deepseek`, `zai`, `moonshot`, `openai` — the direct vendors (DeepSeek, GLM, Kimi, GPT), on one shared tool loop",
             "example": "google"
           },
           "model": {
             "type": "string",
             "enum": [
+              "claude-haiku",
+              "claude-haiku-5-5",
               "haiku",
+              "claude-sonnet",
+              "claude-sonnet-5-5",
               "sonnet",
+              "claude-opus",
+              "claude-opus-5-5",
               "opus",
-              "flash-lite",
+              "claude-fable",
+              "claude-fable-5-2",
+              "fable",
+              "gemini-flash-lite",
+              "gemini-3.5-flash-lite",
               "flash",
+              "flash-lite",
+              "gemini-flash",
+              "gemini-4-hydrogen",
               "flash-pro",
+              "gemini-pro",
+              "gemini-3.1-pro-preview",
               "pro",
-              "deepseek-flash"
+              "gemini-argon",
+              "gemini-4-argon",
+              "deepseek-flash",
+              "deepseek-pro",
+              "glm-flash",
+              "glm-5.3-flash",
+              "glm",
+              "glm-5.3",
+              "glm-pro",
+              "kimi-k2",
+              "kimi-k2.6",
+              "kimi-flash",
+              "kimi-k3",
+              "kimi-k3.1-pro",
+              "kimi-pro",
+              "gpt-astra",
+              "gpt-6-astra",
+              "gpt-pro",
+              "gpt-sol",
+              "gpt-6.1-sol",
+              "gpt-terra",
+              "gpt-6.1-terra"
             ],
-            "description": "Model alias (version-free). Omit to use the provider's default (sonnet for anthropic, flash-pro for google). Must match the provider.",
+            "description": "Model alias (version-free). Omit to use the provider's default (sonnet for anthropic, flash-pro for google, the first served model otherwise). Must be a name that provider accepts.",
             "example": "pro"
           },
           "thinkingLevel": {
@@ -5524,7 +5608,10 @@
             "enum": [
               "anthropic",
               "google",
-              "deepseek"
+              "deepseek",
+              "zai",
+              "moonshot",
+              "openai"
             ]
           },
           "model": {

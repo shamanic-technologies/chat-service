@@ -19,8 +19,10 @@
 // ---------------------------------------------------------------------------
 
 import type { ModelAlias, Provider } from "../lib/anthropic.js";
-import { isProviderOutOfCredit } from "../lib/vendor-credit.js";
-import { SOPHIE_CONFIG_KEY, SOPHIE_MODEL } from "./sophie.js";
+import { modelDisplayName } from "../lib/model-ids.js";
+import { resolveModel } from "../lib/anthropic.js";
+import { isProviderOutOfCredit, PROVIDER_LABELS } from "../lib/vendor-credit.js";
+import { SOPHIE_CONFIG_KEY } from "./sophie.js";
 
 /** Reasoning "on" = no reasoning-off field sent (the vendor's default), as measured. */
 export const SOPHIE_BACKUP_MODEL = { provider: "deepseek", model: "deepseek-flash", reasoning: "on" } as const;
@@ -32,11 +34,29 @@ export interface SophieTurnModel {
   backupFor: Provider | null;
 }
 
-/** The model this turn runs on: the config's, or the backup while Sophie's vendor is out of credit. */
+/**
+ * The model this turn runs on: the config's, or the backup while Sophie's vendor is out of credit.
+ * Any vendor staff set Distry to (DISTRY-ALL-MODELS-1122), not only Anthropic; the backup's own
+ * vendor has no backup (its outage fails the turn loud).
+ */
 export function sophieTurnModel(configKey: string, primary: { provider: Provider; modelAlias: ModelAlias }): SophieTurnModel {
-  const isSophie = configKey === SOPHIE_CONFIG_KEY && primary.provider === SOPHIE_MODEL.provider;
+  const isSophie = configKey === SOPHIE_CONFIG_KEY && primary.provider !== SOPHIE_BACKUP_MODEL.provider;
   if (isSophie && isProviderOutOfCredit(primary.provider)) {
     return { provider: SOPHIE_BACKUP_MODEL.provider as Provider, modelAlias: SOPHIE_BACKUP_MODEL.model as ModelAlias, backupFor: primary.provider };
   }
   return { ...primary, backupFor: null };
+}
+
+/**
+ * What happens to a Distry turn on this provider right now, in words: null while it serves; else that its
+ * vendor is out of credit (the stored fact, red on Monitoring) and where the turn runs meanwhile.
+ */
+export function distryOutageSentence(provider: Provider): string | null {
+  if (!isProviderOutOfCredit(provider)) return null;
+  const label = PROVIDER_LABELS[provider];
+  if (provider === SOPHIE_BACKUP_MODEL.provider) {
+    return `${label} is out of credit on our account (red on Monitoring): a Distry turn on it fails until it serves again.`;
+  }
+  const backup = modelDisplayName(resolveModel(SOPHIE_BACKUP_MODEL.provider, SOPHIE_BACKUP_MODEL.model).apiModelId);
+  return `${label} is out of credit on our account (red on Monitoring): Distry's turns run on ${backup} until it serves again.`;
 }
