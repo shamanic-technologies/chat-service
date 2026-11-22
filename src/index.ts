@@ -213,7 +213,7 @@ import { seedPlatformConfigs, holdTextBesideToolCallsFor, isSelfSeededConfigKey 
 import { buildSituationBrief } from "./agent/situation.js";
 import { gatewaySituationReader } from "./agent/situation-reader.js";
 import { SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
-import { SOPHIE_BACKUP_MODEL, sophieTurnModel } from "./agent/sophie-backup.js";
+import { SOPHIE_BACKUP_MODEL, distryOutageSentence, sophieTurnModel } from "./agent/sophie-backup.js";
 import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi, requestOfCall } from "./agent/catalogue-tools.js";
 import { createPlanRun, domainClaim, openUnclaimedOrg, runGuestPlanCall, seedTrialCredit, type PlanOrg } from "./lib/guest-plan.js";
 import { REPORT_NOT_GOOD_TOOL_NAME, reportNotGood } from "./lib/unit-report.js";
@@ -5993,7 +5993,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),
         ...(leadTurn ? { endToolName: LEAD_ANSWER_TOOL_NAME } : {}),
         loopNotes,
-        // On the vendor loop Sophie only runs as her backup (sophie-backup.ts), with its measured reasoning.
+        // Sophie/Distry on a direct vendor (her backup, or a vendor staff picked, DISTRY-ALL-MODELS-1122)
+        // keeps the model's own reasoning default; the backup's is measured "on".
         reasoningDisabled: configKey === SOPHIE_CONFIG_KEY && SOPHIE_BACKUP_MODEL.reasoning !== "on",
         beforeProviderCall: async ({ requestBody, at }) => {
           await authorizeChatProviderCall(
@@ -7063,6 +7064,7 @@ app.get("/internal/distry/models", requireInternalAuth, async (_req, res) => {
       pricesRead: listPricesRead(),
       current: { provider: current.provider, model: current.model, effort: current.effort ?? null },
       now: new Date(),
+      outOfCredit: distryOutageSentence,
     });
     return res.json(panel);
   } catch (err) {
