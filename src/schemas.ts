@@ -4473,7 +4473,11 @@ export const DistryDefinitionSchema = z
     }),
     provider: z.enum(CHAT_CONFIG_PROVIDERS),
     model: z.string().min(1).max(100).openapi({ description: "A model name the provider accepts (see `models`).", example: "claude-haiku" }),
-    effort: z.enum(ANTHROPIC_EFFORTS).nullable().openapi({ description: "Anthropic thinking effort; null on another provider (or the model's default)." }),
+    effort: z.string().min(1).max(20).nullable().openapi({
+      description:
+        "The thinking level Distry runs its model at, any provider: one of the model's `thinkingLevels` in GET /internal/distry/models (Anthropic effort, Gemini thinking level, a direct vendor's reasoning level; `none` = reasoning off). null = the model's default. A level the model cannot run with tools is refused 400 with the reason.",
+      example: "medium",
+    }),
   })
   .openapi("DistryDefinition");
 
@@ -4634,6 +4638,10 @@ const DistryModelRowSchema = z
     capabilityTier: z.enum(["cheap", "strong", "frontier"]),
     isCurrent: z.boolean().openapi({ description: "true = Distry runs on this model now." }),
     thinking: z.string().openapi({ description: "The thinking Distry would run this model at, in words (the variant the score is read at).", example: "effort low (Distry's definition)" }),
+    thinkingLevels: z.array(z.string()).openapi({
+      description: "Every thinking level Distry can run this model at with tools (save one as `effort`); empty = the model's default only.",
+      example: ["none", "low", "medium", "high", "xhigh", "max"],
+    }),
     price: z.object({
       inputPer1mUsd: z.number().nullable().openapi({ description: "USD per 1M input tokens we are billed (our catalogue price)." }),
       outputPer1mUsd: z.number().nullable(),
@@ -4664,6 +4672,11 @@ const DistryModelRowSchema = z
       indexCostPerTaskUsd: z.number().nullable(),
       intelligencePerDollar: z.number().nullable(),
       isDistrysThinking: z.boolean(),
+      distry: z.object({
+        level: z.string().nullable().openapi({ description: "What \"Use\" saves as `effort` for this variant (null = the model's default: a model scored at one reading)." }),
+        canRun: z.boolean().openapi({ description: "false = Distry cannot run this model at this level with tools: show `reason`, never a Use button." }),
+        reason: z.string().nullable().openapi({ description: "Why it cannot run, in plain words." }),
+      }),
     })).openapi({ description: "Every thinking level Artificial Analysis scored this model at, best score first; `isDistrysThinking` marks the one the row reads." }),
   })
   .openapi("DistryModelRow");

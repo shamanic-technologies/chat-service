@@ -25,6 +25,7 @@ import { intelligenceIndexReads, intelligenceIndexScores } from "../db/schema.js
 import { PROVIDER_MODELS, resolveModel, type CapabilityTier, type Provider } from "./anthropic.js";
 import { buildLlmCostNames } from "./cost-names.js";
 import { buildThinkingConfig } from "./gemini.js";
+import { chatThinkingLevels, thinkingLevelRefusal } from "./thinking-levels.js";
 import { modelDisplayName } from "./model-ids.js";
 import { isVendorProvider, VENDORS } from "./openai-compatible.js";
 
@@ -370,17 +371,19 @@ export interface DistryThinking {
 }
 
 /**
- * Anthropic = the definition's `effort` (null = the model's default, no level sent); Google = the level
- * /chat sends (the definition sets none: `buildThinkingConfig`'s default, raised to the model's floor);
- * a direct vendor (DeepSeek, Z.ai, Moonshot, OpenAI) = the reasoning field its tool rounds carry
- * (`VENDORS[...].toolCallRequestFields`: GPT-6.1 Terra runs at `none`), else the model's own default.
+ * The thinking a /chat turn runs this model at. `savedLevel` = the level Distry's definition saved
+ * (DISTRY-THINKING-1122: any provider), passed for the model Distry runs only; null = the model's
+ * default: Anthropic sends no effort; Google sends `buildThinkingConfig`'s default (raised to the
+ * model's floor); a direct vendor sends the reasoning field its tool rounds carry
+ * (`VENDORS[...].toolCallRequestFields`: GPT-6.1 Terra runs at `none`), else nothing.
  */
-export function distryThinkingFor(choice: Pick<ModelChoice, "provider" | "modelId">, definitionEffort: string | null): DistryThinking {
-  if (choice.provider === "anthropic") {
-    return definitionEffort
-      ? { level: definitionEffort, words: `effort ${definitionEffort} (Distry's definition)` }
-      : { level: null, words: "the model's default effort (Distry's definition sets none)" };
+export function distryThinkingFor(choice: Pick<ModelChoice, "provider" | "modelId">, savedLevel: string | null): DistryThinking {
+  if (savedLevel) {
+    return savedLevel === "none"
+      ? { level: "none", words: "reasoning off (Distry's definition)" }
+      : { level: savedLevel, words: `${choice.provider === "anthropic" ? "effort" : "thinking"} ${savedLevel} (Distry's definition)` };
   }
+  if (choice.provider === "anthropic") return { level: null, words: "the model's default effort (Distry's definition sets none)" };
   if (choice.provider === "google") {
     const config = buildThinkingConfig(choice.modelId, false) as { thinkingLevel?: string };
     return config.thinkingLevel
@@ -396,6 +399,15 @@ export function distryThinkingFor(choice: Pick<ModelChoice, "provider" | "modelI
     }
   }
   return { level: null, words: "reasoning on, no level" };
+}
+
+/**
+ * The level a scored variant names, in the words Distry's definition saves: its effort word,
+ * `none` for "Non-reasoning", null when its label names no level.
+ */
+export function variantLevel(v: Pick<IndexEntry, "variantLabel" | "effort">): string | null {
+  if (v.effort) return v.effort;
+  return isNonReasoningLabel(v.variantLabel) ? "none" : null;
 }
 
 /** Artificial Analysis's word for a reading with reasoning off ("Non-reasoning"). */
@@ -479,6 +491,18 @@ export function pickVariant(displayName: string, variants: readonly IndexEntry[]
   return { kind: "not_picked", reason: `Distry runs ${displayName} at ${thinking.words}, which Artificial Analysis does not name; it scores it at ${levels}.` };
 }
 
+/** Whether "Use" on this variant runs as scored (DISTRY-THINKING-1122). */
+function variantRunnable(c: Pick<ModelChoice, "provider" | "modelId" | "displayName">, v: IndexEntry, variantCount: number): PanelVariant["distry"] {
+  const level = variantLevel(v);
+  if (level === null) {
+    return variantCount === 1
+      ? { level: null, canRun: true, reason: null }
+      : { level: null, canRun: false, reason: `Artificial Analysis's label "${v.variantLabel ?? "unlabelled"}" names no thinking level Distry can set.` };
+  }
+  const refusal = thinkingLevelRefusal(c.provider, c.modelId, c.displayName, level);
+  return { level, canRun: refusal === null, reason: refusal };
+}
+
 export type RatioBasis = "index_run_cost" | "blended_price_3_to_1";
 
 export interface PanelVariant {
@@ -489,6 +513,11 @@ export interface PanelVariant {
   indexCostPerTaskUsd: number | null;
   intelligencePerDollar: number | null;
   isDistrysThinking: boolean;
+  /**
+   * What "Use" saves for this variant (DISTRY-THINKING-1122): the level (null = the model's
+   * default, a model scored once), whether Distry can run it, and why not, in words.
+   */
+  distry: { level: string | null; canRun: boolean; reason: string | null };
 }
 
 export interface ModelPanelRow {
@@ -499,6 +528,8 @@ export interface ModelPanelRow {
   capabilityTier: CapabilityTier;
   isCurrent: boolean;
   thinking: string;
+  /** Every thinking level Distry can run this model at, with tools (empty = its default only). */
+  thinkingLevels: string[];
   /** Whether a Distry turn runs on this model right now; the reason when it does not (its vendor is out of credit). */
   availability: { runsNow: boolean; reason: string | null };
   price: {
@@ -651,7 +682,12 @@ export function buildModelPanel(args: {
       }
     }
 
-    const thinking = distryThinkingFor(c, current.effort);
+    const isCurrent = currentModelId === c.modelId && current.provider === c.provider;
+    const levels = chatThinkingLevels(c.provider, c.modelId);
+    // The saved level reads the model Distry runs, and a sibling of its provider that runs at it
+    // (what a switch keeping the level would run); every other row reads at its own default.
+    const savedApplies = current.effort !== null && (isCurrent || (c.provider === current.provider && levels.includes(current.effort)));
+    const thinking = distryThinkingFor(c, savedApplies ? current.effort : null);
 
     // Index score: the release, then the variant at Distry's thinking.
     let picked: IndexEntry | null = null;
@@ -704,8 +740,9 @@ export function buildModelPanel(args: {
       displayName: c.displayName,
       names: c.names,
       capabilityTier: c.capabilityTier,
-      isCurrent: currentModelId === c.modelId && current.provider === c.provider,
+      isCurrent,
       thinking: thinking.words,
+      thinkingLevels: [...levels],
       availability: (() => {
         const reason = outOfCredit(c.provider);
         return { runsNow: reason === null, reason };
@@ -733,6 +770,7 @@ export function buildModelPanel(args: {
           indexCostPerTaskUsd: v.indexCostPerTaskUsd,
           intelligencePerDollar: runCostRatio(v.score, v.indexCostPerTaskUsd),
           isDistrysThinking: picked?.aaId === v.aaId,
+          distry: variantRunnable(c, v, variants.length),
         })),
     };
   });
