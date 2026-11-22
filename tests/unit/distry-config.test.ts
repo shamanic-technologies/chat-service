@@ -13,14 +13,19 @@ import { SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS } from "../../src/agen
 import * as skillsModule from "../../src/lib/skills.js";
 import * as distryConfigModule from "../../src/agent/distry-config.js";
 import { codePromptOverrides } from "../../src/agent/distry-prompt.js";
-import { foldAlwaysReadIntoPrompt } from "../../src/lib/skill-mentions.js";
-import { SEED_SKILLS } from "../../src/lib/skill-seed.js";
+import { convertReferencesToMentions, foldAlwaysReadIntoPrompt } from "../../src/lib/skill-mentions.js";
+import { MERGED_SKILL_SLUGS, SEED_SKILLS } from "../../src/lib/skill-seed.js";
+import { mentionableTools } from "../../src/agent/distry-config.js";
 
 describe("Distry's definition (DISTRY-PRINCIPAL-1119)", () => {
   it("version 1 = Distry as the code defines it: same prompt, tools, model (no skill list)", () => {
     const code = codeDistryDefinition();
     expect(code).toEqual({
-      systemPrompt: foldAlwaysReadIntoPrompt(SOPHIE_SYSTEM_PROMPT, SEED_SKILLS),
+      systemPrompt: convertReferencesToMentions(
+        foldAlwaysReadIntoPrompt(SOPHIE_SYSTEM_PROMPT, SEED_SKILLS),
+        new Set(SEED_SKILLS.map((s) => s.slug).filter((s) => !(s in MERGED_SKILL_SLUGS))),
+        new Set(mentionableTools()),
+      ).text,
       enabledTools: [...SOPHIE_TOOLS],
       provider: SOPHIE_MODEL.provider,
       model: SOPHIE_MODEL.model,

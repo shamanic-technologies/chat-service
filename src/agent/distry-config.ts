@@ -23,9 +23,10 @@ import { thinkingLevelRefusal } from "../lib/thinking-levels.js";
 import type { GeminiThinkingLevel } from "../lib/gemini.js";
 import { resolveModel, TOOL_REGISTRY, type Provider } from "../lib/anthropic.js";
 import { SEED_EDITOR, listSkills, resolveSkillSlug, writeSkill, type SkillText } from "../lib/skills.js";
-import { SEED_SKILLS } from "../lib/skill-seed.js";
+import { MERGED_SKILL_SLUGS, SEED_SKILLS } from "../lib/skill-seed.js";
 import {
   buildMentionGraph,
+  convertReferencesToMentions,
   foldAlwaysReadIntoPrompt,
   foldChildrenIntoSkill,
   linksOfOffGraph,
@@ -80,7 +81,12 @@ export function codeDistryDefinition(): DistryDefinition {
   return {
     // DISTRY-SKILL-MENTIONS-1122: the Prompt is the one text read every turn, so it carries the
     // `index` method and the `client-comms` voice, and mentions what `index` mapped.
-    systemPrompt: foldAlwaysReadIntoPrompt(SOPHIE_CONFIG.systemPrompt, SEED_SKILLS),
+    // References to a skill or a tool are mention tokens (owner 2026-11-22: chips in the editor).
+    systemPrompt: convertReferencesToMentions(
+      foldAlwaysReadIntoPrompt(SOPHIE_CONFIG.systemPrompt, SEED_SKILLS),
+      new Set(SEED_SKILLS.map((s) => s.slug).filter((s) => !(s in MERGED_SKILL_SLUGS))),
+      new Set(mentionableTools()),
+    ).text,
     enabledTools: [...SOPHIE_CONFIG.allowedTools],
     provider: SOPHIE_CONFIG.provider,
     model: SOPHIE_CONFIG.model,
@@ -387,4 +393,50 @@ export function linksOf(view: { graph: MentionGraph; prompt: string; live: Skill
     view.graph.skills.get(skill.slug) ??
     linksOfOffGraph(skill, view.prompt, view.live, mentionableTools(), (s) => resolveSkillSlug(view.live, s))
   );
+}
+
+/** Who wrote the move of old-style references (backticks, bare names) to mention tokens. */
+export const MENTION_REFS_EDITOR = "refs DISTRY-SKILL-MENTIONS-1122";
+
+/**
+ * At boot, after the seed and the fold: every reference to a live skill or a mentionable tool still
+ * written the old way (backticks, bare names) in Distry's Prompt and in the skills staff edited
+ * becomes its mention token (owner 2026-11-22 « Je ne vois pas de @<> tag stylisé dans les textes »).
+ * Seed-owned rows are converted by the seed itself (seedsAsRead) and keep refreshing. Idempotent:
+ * a converted text converts to itself, so a later boot writes nothing. A Prompt change is a new
+ * Distry version. Returns how many references were converted, for the boot log.
+ */
+export async function convertStoredReferences(database: Database): Promise<{ prompt: number; skills: Record<string, number> }> {
+  const live = await listSkills(database);
+  const slugs = new Set(live.map((s) => s.slug));
+  const tools = new Set(mentionableTools());
+  const skillCounts: Record<string, number> = {};
+  for (const skill of live) {
+    if (skill.updatedBy === SEED_EDITOR) continue;
+    const { text, converted } = convertReferencesToMentions(skill.content, slugs, tools);
+    if (converted === 0) continue;
+    await writeSkill(database, skill.slug, { content: text, editedBy: MENTION_REFS_EDITOR });
+    skillCounts[skill.slug] = converted;
+  }
+  const current = await currentDistryVersion(database);
+  if (!current) throw new Error("[distry] convertStoredReferences: no Distry version yet");
+  const { text, converted } = convertReferencesToMentions(current.systemPrompt, slugs, tools);
+  if (converted > 0) {
+    await saveDistryVersion(
+      database,
+      { ...definitionOf(current), systemPrompt: text },
+      { editedBy: MENTION_REFS_EDITOR, note: `${converted} references to a skill or a tool written as mentions (@skill: / @tool:).` },
+    );
+  }
+  return { prompt: converted, skills: skillCounts };
+}
+
+/** Read-only: how many old-style references each live text holds now (Prompt + every skill), for the boot log. */
+export async function countPendingReferences(database: Database): Promise<{ prompt: number; skills: number }> {
+  const live = await listSkills(database);
+  const slugs = new Set(live.map((s) => s.slug));
+  const tools = new Set(mentionableTools());
+  const current = await currentDistryVersion(database);
+  const skills = live.reduce((n, s) => n + convertReferencesToMentions(s.content, slugs, tools).converted, 0);
+  return { prompt: current ? convertReferencesToMentions(current.systemPrompt, slugs, tools).converted : 0, skills };
 }

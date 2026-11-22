@@ -14,7 +14,7 @@ import {
 } from "../../src/agent/distry-config.js";
 import { SEED_EDITOR, buildSkillIndexPieces, deleteSkill, listSkills, readSkillForModel, writeSkill } from "../../src/lib/skills.js";
 import { DistrySaveRequestSchema } from "../../src/schemas.js";
-import { toDistryVersionBody, definitionFromSaveRequest, definitionOf, foldTreeIntoMentions, skillMentionGraph, MENTIONS_FOLD_EDITOR } from "../../src/agent/distry-config.js";
+import { convertStoredReferences, MENTION_REFS_EDITOR, toDistryVersionBody, definitionFromSaveRequest, definitionOf, foldTreeIntoMentions, skillMentionGraph, MENTIONS_FOLD_EDITOR } from "../../src/agent/distry-config.js";
 import { SkillNotFoundError, getSkill } from "../../src/lib/skills.js";
 import { SOPHIE_SYSTEM_PROMPT } from "../../src/agent/sophie.js";
 
@@ -229,5 +229,32 @@ describe("Distry's versioned definition (DISTRY-PRINCIPAL-1119)", { timeout: 300
     expect(await foldTreeIntoMentions(db as never)).toEqual({ promptVersion: null, skills: [] });
 
     for (const slug of [parent, child]) await db.delete(schema.skills).where(eq(schema.skills.slug, slug));
+  });
+
+  it("old-style references in staff texts and the Prompt become mention tokens, once (owner 2026-11-22)", async () => {
+    const tag = Date.now().toString(36);
+    const target = `refs-target-${tag}`;
+    const writer = `refs-writer-${tag}`;
+    await writeSkill(db as never, target, { content: "Target.", title: "Target", description: "t", editedBy: "k" });
+    await writeSkill(db as never, writer, { content: `See \`${target}\`, call request_staff, keep \`nope\`.`, title: "W", description: "w", editedBy: "kevin@distribute.you" });
+    const code = codeDistryDefinition();
+    await saveDistryVersion(db as never, { ...code, systemPrompt: `${code.systemPrompt}\nAlso read \`${writer}\` and use contact_human.` }, { editedBy: "kevin@distribute.you" });
+
+    const r = await convertStoredReferences(db as never);
+    expect(r.skills[writer]).toBe(2);
+    expect(r.prompt).toBe(2);
+    const w = await getSkill(db as never, writer);
+    expect(w.content).toBe(`See @skill:${target}, call @tool:request_staff, keep \`nope\`.`);
+    expect(w.updatedBy).toBe(MENTION_REFS_EDITOR);
+    const current = (await currentDistryVersion(db as never))!;
+    expect(current.editedBy).toBe(MENTION_REFS_EDITOR);
+    expect(current.systemPrompt.endsWith(`Also read @skill:${writer} and use @tool:contact_human.`)).toBe(true);
+    // The links now count them.
+    const { graph } = await skillMentionGraph(db as never);
+    expect(graph.skills.get(target)?.mentionedBy.skills).toContain(writer);
+    // Idempotent: a second boot converts nothing.
+    expect(await convertStoredReferences(db as never)).toEqual({ prompt: 0, skills: {} });
+
+    for (const slug of [target, writer]) await db.delete(schema.skills).where(eq(schema.skills.slug, slug));
   });
 });

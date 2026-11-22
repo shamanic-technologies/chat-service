@@ -8,7 +8,9 @@ import {
   parseMentions,
   reachableSkills,
 } from "../../src/lib/skill-mentions.js";
-import { readSkillFrom, seedsWithChildMentions, skillIndexBlockFrom, SkillNotFoundError } from "../../src/lib/skills.js";
+import { readSkillFrom, seedsAsRead, seedsWithChildMentions, skillIndexBlockFrom, SkillNotFoundError } from "../../src/lib/skills.js";
+import { convertReferencesToMentions } from "../../src/lib/skill-mentions.js";
+import { MERGED_SKILL_SLUGS } from "../../src/lib/skill-seed.js";
 import { SEED_SKILLS } from "../../src/lib/skill-seed.js";
 import { codeDistryDefinition, mentionableTools } from "../../src/agent/distry-config.js";
 import { codePromptOverrides, resolveStoredPrompt } from "../../src/agent/distry-prompt.js";
@@ -126,7 +128,8 @@ describe("the one-time move from the stored tree", () => {
       if (s.slug === "index" || s.slug === "client-comms") continue;
       expect(reached.has(s.slug), s.slug).toBe(true);
     }
-    expect(prompt).toContain(SEED_SKILLS.find((s) => s.slug === "client-comms")!.content.trim());
+    // The voice is in the Prompt, its references written as mentions.
+    expect(prompt).toContain("# How we talk to a person");
   });
 });
 
@@ -136,5 +139,33 @@ describe("a stored skill-index text written for the old placeholders follows the
     expect(resolveStoredPrompt(stored).texts).toEqual({});
     const fresh = { ...codePromptOverrides(), texts: { "skill-index": "## My skills\n{{skills}}" } };
     expect(resolveStoredPrompt(fresh).texts).toEqual({ "skill-index": "## My skills\n{{skills}}" });
+  });
+});
+
+describe("old-style references become mention tokens (owner 2026-11-22 « Je ne vois pas de @<> tag stylisé »)", () => {
+  const skills = new Set(["client-comms", "campaigns", "gtm-factory", "staff"]);
+  const tools = new Set(["request_staff", "run_operation", "read_skill"]);
+
+  it("converts a backticked skill or tool, a bare hyphenated slug and a bare snake_case tool; counts them; idempotent", () => {
+    const r = convertReferencesToMentions("Read `client-comms` then `campaigns`; call request_staff and `run_operation`. See gtm-factory.", skills, tools);
+    expect(r.text).toBe("Read @skill:client-comms then @skill:campaigns; call @tool:request_staff and @tool:run_operation. See @skill:gtm-factory.");
+    expect(r.converted).toBe(5);
+    expect(convertReferencesToMentions(r.text, skills, tools)).toEqual({ text: r.text, converted: 0 });
+  });
+
+  it("leaves what is not a reference: bare one-word slugs, unknown names, paths, tokens, code blocks, calls in code", () => {
+    const text = "staff and campaigns stay. `nope` stays. /v1/run_operation, run_operation_x, `run_operation(x)`, {{request_staff}}, @tool:read_skill.\n```\nrequest_staff\n```";
+    expect(convertReferencesToMentions(text, skills, tools)).toEqual({ text, converted: 0 });
+  });
+
+  it("the seed as the boot writes it names no live seed skill or tool the old way", () => {
+    const seedSlugs = new Set(SEED_SKILLS.map((s) => s.slug).filter((s) => !(s in MERGED_SKILL_SLUGS)));
+    const toolSet = new Set(mentionableTools());
+    const asRead = seedsAsRead(SEED_SKILLS, [...toolSet]);
+    for (const s of asRead) expect(convertReferencesToMentions(s.content, seedSlugs, toolSet).converted, s.slug).toBe(0);
+    const before = SEED_SKILLS.reduce((n, s) => n + convertReferencesToMentions(s.content, seedSlugs, toolSet).converted, 0);
+    expect(before).toBeGreaterThan(0);
+    // The code's Prompt too.
+    expect(convertReferencesToMentions(codeDistryDefinition().systemPrompt, seedSlugs, toolSet).converted).toBe(0);
   });
 });
