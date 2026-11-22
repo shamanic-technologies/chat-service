@@ -74,7 +74,7 @@ describe("no skill pick-list (DISTRY-NO-SKILL-PICKS-1122)", () => {
     expect("distrySkillSet" in distryConfigModule).toBe(false);
   });
 
-  it("a save still sending the old pick-list parses, and the list is dropped from what is saved", () => {
+  it("a stray old pick-list in a save is stripped: the save parses and saves no list", () => {
     const code = codeDistryDefinition();
     const body = { systemPrompt: code.systemPrompt, enabledTools: code.enabledTools, provider: code.provider, model: code.model, effort: code.effort, editedBy: "kevin@distribute.you" };
     for (const skillSlugs of [["campaigns"], null, []]) {

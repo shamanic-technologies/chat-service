@@ -4527,13 +4527,7 @@ const DistryPromptInputSchema = z
   })
   .openapi("DistryPromptInput");
 
-// DISTRY-NO-SKILL-PICKS-1122 (owner 2026-11-22 « enlève même ce concept de tick box »): Distry reads
-// every live skill; a skill it must not read is deleted from the tree. `skillSlugs` is served as null
-// and accepted-then-ignored on a save only until the dashboard stops reading and sending it.
-const DeprecatedServedSkillSlugs = z.null().openapi({ deprecated: true, description: "Always null: Distry reads every live skill of the tree. Removed once the dashboard stops reading it." });
-
 export const DistryVersionSchema = DistryDefinitionSchema.extend({
-  skillSlugs: DeprecatedServedSkillSlugs,
   prompt: DistryPromptSchema,
   version: z.number().int().openapi({ description: "1, 2, 3...: the highest is the current one." }),
   editedBy: z.string().openapi({ description: "Who saved it (staff email); `seed` = written from the code at boot." }),
@@ -4543,10 +4537,6 @@ export const DistryVersionSchema = DistryDefinitionSchema.extend({
 }).openapi("DistryVersion");
 
 export const DistrySaveRequestSchema = DistryDefinitionSchema.extend({
-  skillSlugs: z.array(z.string().max(100)).max(300).nullable().optional().openapi({
-    deprecated: true,
-    description: "Ignored: Distry reads every live skill of the tree (delete a skill to stop it being read). Accepted so an older editor's save still succeeds.",
-  }),
   prompt: DistryPromptInputSchema.optional().openapi({
     description: "The WHOLE parts state (order + changed texts + changed tool descriptions). Omit it to keep the current version's: a save of the prompt alone never touches the parts.",
   }),
@@ -4616,7 +4606,7 @@ export const DistryPromptPreviewResponseSchema = z
 export const DistryConfigResponseSchema = z
   .object({
     current: DistryVersionSchema,
-    code: DistryDefinitionSchema.extend({ skillSlugs: DeprecatedServedSkillSlugs, prompt: DistryPromptSchema }).openapi({ description: "Distry as the code defines it (what version 1 was)." }),
+    code: DistryDefinitionSchema.extend({ prompt: DistryPromptSchema }).openapi({ description: "Distry as the code defines it (what version 1 was)." }),
     codeDiffers: z.boolean().openapi({ description: "true = the current version differs from the code's definition." }),
     availableTools: z.array(
       z.object({
