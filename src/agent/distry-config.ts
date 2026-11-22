@@ -208,6 +208,11 @@ async function materialize(database: Database, def: DistryDefinition, version: n
   currentVersionNumber = version;
 }
 
+/**
+ * Every slug ever in the tree, DELETED ones included (SKILL-TREE-EDIT-1122): a
+ * version naming a skill staff later deleted still saves and restores; the
+ * deleted slug simply matches no live skill (filterSkillSet keeps nothing for it).
+ */
 async function knownSkillSlugs(database: Database): Promise<string[]> {
   const rows = await database.select({ slug: skills.slug }).from(skills);
   return rows.map((r) => r.slug);

@@ -12,7 +12,7 @@ import {
   listDistryVersions,
   DistryConfigError,
 } from "../../src/agent/distry-config.js";
-import { SEED_EDITOR } from "../../src/lib/skills.js";
+import { SEED_EDITOR, deleteSkill, filterSkillSet, listSkills, writeSkill } from "../../src/lib/skills.js";
 
 const connectionString = process.env.CHAT_SERVICE_DATABASE_URL;
 
@@ -69,5 +69,24 @@ describe("Distry's versioned definition (DISTRY-PRINCIPAL-1119)", { timeout: 300
     const before = await currentDistryVersion(db as never);
     await expect(saveDistryVersion(db as never, { ...codeDistryDefinition(), enabledTools: ["nope"] }, { editedBy: "kevin@distribute.you" })).rejects.toThrow(/Unknown tools/);
     expect((await currentDistryVersion(db as never))?.version).toBe(before?.version);
+  });
+
+  it("a version naming a skill staff later deleted still saves, restores and reads (SKILL-TREE-EDIT-1122)", async () => {
+    const slug = `distry-del-${Date.now().toString(36)}`;
+    const parent = (await listSkills(db as never)).find((s) => s.parentSlug === null)?.slug;
+    if (!parent) {
+      await writeSkill(db as never, "index", { content: "root", title: "Index", description: "root", parentSlug: null, editedBy: "k" });
+    }
+    await writeSkill(db as never, slug, { content: "x", title: "T", description: "D", parentSlug: "index", editedBy: "k" });
+    const code = codeDistryDefinition();
+    const saved = await saveDistryVersion(db as never, { ...code, skillSlugs: [slug] }, { editedBy: "kevin@distribute.you" });
+    await deleteSkill(db as never, slug, "kevin@distribute.you");
+
+    const next = await saveDistryVersion(db as never, { ...code, skillSlugs: [slug], systemPrompt: `${code.systemPrompt}\nAfter delete.` }, { editedBy: "kevin@distribute.you" });
+    expect(next.skillSlugs).toEqual([slug]);
+    const restored = await restoreDistryVersion(db as never, saved.version, "kevin@distribute.you");
+    expect(restored.skillSlugs).toEqual([slug]);
+    expect(filterSkillSet(await listSkills(db as never), [slug]).map((s) => s.slug)).not.toContain(slug);
+    await db.delete(schema.skills).where(eq(schema.skills.slug, slug));
   });
 });
