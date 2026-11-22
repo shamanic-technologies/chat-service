@@ -11,6 +11,7 @@ import { REPORT_NOT_GOOD_TOOL_NAME, buildUnitReportBody, storedReportForModel } 
 import { LEAD_ANSWER_TOOL_NAME } from "../lib/lead-turn.js";
 import { readOurWebsite } from "../lib/our-website.js";
 import { readSkillFrom } from "../lib/skills.js";
+import { evalPrompt, evalSkills } from "./agent-turn.js";
 import { parseChoicesArgs, parseChoicesIntro, OPEN_PAGE_TOOL_NAME, PRESENT_CHOICES_TOOL_NAME } from "../lib/ui-tools.js";
 import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, answerForModel, describeApi, failedCallAnswer, findApi, needsYes, yesProposal, operationsForTool, pathParamsFrom, toolsForOperation } from "../agent/catalogue-tools.js";
 import { findOperation, getCatalog, matchPath } from "../agent/catalogue.js";
@@ -35,7 +36,7 @@ export function fixtureExecutor(def: AgentDefinition, scenario: Scenario): Fixtu
 
   const executeTool: ToolExecutor = async ({ name, args }) => {
     const a = (args ?? {}) as Record<string, unknown>;
-    if (name === "read_skill") return { name, result: readSkillFrom(def.skills, a.slug) };
+    if (name === "read_skill") return { name, result: readSkillFrom(evalSkills(def), a.slug, evalPrompt(def)) };
     if (name === "read_our_website") return { name, result: await readOurWebsite(a) };
     if (name === PRESENT_CHOICES_TOOL_NAME) {
       const record = parseChoicesArgs(a);

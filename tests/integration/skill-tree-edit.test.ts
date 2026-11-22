@@ -4,7 +4,6 @@ import postgres from "postgres";
 import { eq, inArray, like } from "drizzle-orm";
 import * as schema from "../../src/db/schema.js";
 import {
-  CLIENT_COMMS_SKILL_SLUG,
   INDEX_SKILL_SLUG,
   SkillConflictError,
   SkillNotFoundError,
@@ -109,13 +108,24 @@ describe("skill tree edit: delete + move", { timeout: 30000 }, () => {
     expect(moved.position).toBe(1); // not the seed's 30
   });
 
-  it("delete: refused while it has sub-skills, naming them", async () => {
-    await expect(deleteSkill(db as never, a, ED)).rejects.toThrow(new RegExp(`has 1 sub-skill \\(${leaf}\\)`));
+  it("delete: any skill goes, sub-skills or not (DISTRY-SKILL-MENTIONS-1122), and names who still mentions it", async () => {
+    await writeSkill(db as never, c, { content: `See @skill:${a}.`, editedBy: ED });
+    const r = await deleteSkill(db as never, a, ED);
+    expect(r.mentionedBy).toEqual([c]);
+    // The mentioning text is left as it is.
+    expect((await getSkill(db as never, c)).content).toBe(`See @skill:${a}.`);
+    expect((await listSkills(db as never)).map((s) => s.slug)).toContain(leaf);
+    // Writing it again (no parent needed) brings it back: the mention leads to it again.
+    const back = await writeSkill(db as never, a, { content: "v1", title: "A", description: "a", editedBy: ED });
+    expect(back.skill.deletedAt).toBeNull();
+    expect(readSkillFrom(await listSkills(db as never), a, `@skill:${c}`).slug).toBe(a);
   });
 
-  it("delete: refuses the root and the one voice", async () => {
-    await expect(deleteSkill(db as never, INDEX_SKILL_SLUG, ED)).rejects.toBeInstanceOf(SkillConflictError);
-    await expect(deleteSkill(db as never, CLIENT_COMMS_SKILL_SLUG, ED)).rejects.toBeInstanceOf(SkillConflictError);
+  it("create: a new skill needs no parent", async () => {
+    const lone = `${P}-lone`;
+    const r = await writeSkill(db as never, lone, { content: "alone", title: "Lone", description: "lone", editedBy: ED });
+    expect(r.created).toBe(true);
+    expect(r.skill.parentSlug).toBeNull();
   });
 
   it("delete: no agent reads it, history kept, siblings closed up, the seed never re-creates it, a PUT brings it back", async () => {
@@ -128,7 +138,7 @@ describe("skill tree edit: delete + move", { timeout: 30000 }, () => {
     const live = await listSkills(db as never);
     expect(live.map((s) => s.slug)).not.toContain(b);
     await expect(getSkill(db as never, b)).rejects.toBeInstanceOf(SkillNotFoundError);
-    expect(() => readSkillFrom(live, b)).toThrow(SkillNotFoundError);
+    expect(() => readSkillFrom(live, b, `@skill:${b}`)).toThrow(SkillNotFoundError);
     expect((await listDeletedSkills(db as never)).map((s) => s.slug)).toContain(b);
     expect((await listSkillVersions(db as never, b)).length).toBe(versionsBefore);
     expect(await childrenOf(db, root)).toEqual([

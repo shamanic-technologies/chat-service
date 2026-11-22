@@ -23,7 +23,7 @@ const REED = "00000000-0000-4000-8000-0000000000a1";
 
 vi.mock("../../src/lib/skills.js", async () => {
   const actual = await vi.importActual<typeof import("../../src/lib/skills.js")>("../../src/lib/skills.js");
-  return { ...actual, buildSkillIndexPieces: vi.fn(async () => ({ indexSkill: "## Skills (test index)", voiceSkill: "", subSkills: "" })) };
+  return { ...actual, buildSkillIndexPieces: vi.fn(async () => ({ skills: "## Skills (test index)" })) };
 });
 
 vi.mock("../../src/db/index.js", () => {
