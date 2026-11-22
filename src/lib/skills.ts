@@ -3,7 +3,7 @@ import type { db as Db } from "../db/index.js";
 import { skills, skillVersions, type Skill, type SkillVersion } from "../db/schema.js";
 import { fillTemplate } from "./prompt-template.js";
 import { MERGED_SKILL_SLUGS, SEED_SKILLS, type SeedSkill } from "./skill-seed.js";
-import { foldChildrenIntoSkill, mentionedSkillSlugs, parseMentions, reachableSkills } from "./skill-mentions.js";
+import { convertReferencesToMentions, foldChildrenIntoSkill, mentionedSkillSlugs, parseMentions, reachableSkills } from "./skill-mentions.js";
 
 // ---------------------------------------------------------------------------
 // Copilot SKILLS store.
@@ -335,6 +335,18 @@ export function seedsWithChildMentions(seeds: readonly SeedSkill[]): SeedSkill[]
     const folded = foldChildrenIntoSkill(seed, seeds);
     return folded === null ? seed : { ...seed, content: folded };
   });
+}
+
+/**
+ * The seed skills exactly as the boot writes them: each mentions its old
+ * sub-skills (seedsWithChildMentions), and every reference to a seed skill or a
+ * mentionable tool is a mention token (convertReferencesToMentions), so a
+ * reseed keeps the chips (owner 2026-11-22). `tools` = the mentionable tools.
+ */
+export function seedsAsRead(seeds: readonly SeedSkill[], tools: readonly string[]): SeedSkill[] {
+  const slugs = new Set(seeds.map((s) => s.slug).filter((s) => !(s in MERGED_SKILL_SLUGS)));
+  const toolSet = new Set(tools);
+  return seedsWithChildMentions(seeds).map((seed) => ({ ...seed, content: convertReferencesToMentions(seed.content, slugs, toolSet).text }));
 }
 
 /**
