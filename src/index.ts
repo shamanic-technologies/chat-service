@@ -7108,14 +7108,13 @@ app.get("/internal/distry/config", requireInternalAuth, async (_req, res) => {
     if (!current) return res.status(503).json({ error: "Distry's definition is not seeded yet (boot in progress)." });
     const code = codeDistryDefinition();
     const body = toDistryVersionBody(current);
-    const { version: _v, editedBy: _e, note: _n, restoredFrom: _r, createdAt: _c, skillSlugs: _s, ...currentDef } = body;
+    const { version: _v, editedBy: _e, note: _n, restoredFrom: _r, createdAt: _c, ...currentDef } = body;
     const view = await skillMentionGraph(db);
     const currentPrompt = definitionOf(current).prompt;
     const examples = examplesByPart(await listPromptSamples(db));
     return res.json({
       current: body,
-      // skillSlugs: null served until the dashboard stops reading it (DISTRY-NO-SKILL-PICKS-1122).
-      code: { ...code, skillSlugs: null },
+      code,
       codeDiffers: JSON.stringify(currentDef) !== JSON.stringify(code),
       availableTools: availableDistryTools().map((t) => {
         const edited = Object.prototype.hasOwnProperty.call(currentPrompt.toolDescriptions, t.name);
@@ -7149,7 +7148,6 @@ app.put("/internal/distry/config", requireInternalAuth, async (req, res) => {
   try {
     const current = await currentDistryVersion(db);
     if (!current) return res.status(503).json({ error: "Distry's definition is not seeded yet (boot in progress)." });
-    // `skillSlugs` (an older editor still sends it) is ignored: DISTRY-NO-SKILL-PICKS-1122.
     const def = definitionFromSaveRequest(body.data, definitionOf(current).prompt);
     const saved = await saveDistryVersion(db, def, { editedBy, note: note ?? null });
     return res.json({ version: toDistryVersionBody(saved) });

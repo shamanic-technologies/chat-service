@@ -5625,17 +5625,11 @@
               {
                 "type": "object",
                 "properties": {
-                  "skillSlugs": {
-                    "nullable": true,
-                    "deprecated": true,
-                    "description": "Always null: Distry reads every live skill of the tree. Removed once the dashboard stops reading it."
-                  },
                   "prompt": {
                     "$ref": "#/components/schemas/DistryPrompt"
                   }
                 },
                 "required": [
-                  "skillSlugs",
                   "prompt"
                 ]
               }
@@ -5805,11 +5799,6 @@
           {
             "type": "object",
             "properties": {
-              "skillSlugs": {
-                "nullable": true,
-                "deprecated": true,
-                "description": "Always null: Distry reads every live skill of the tree. Removed once the dashboard stops reading it."
-              },
               "prompt": {
                 "$ref": "#/components/schemas/DistryPrompt"
               },
@@ -5835,7 +5824,6 @@
               }
             },
             "required": [
-              "skillSlugs",
               "prompt",
               "version",
               "editedBy",
@@ -6078,17 +6066,6 @@
           {
             "type": "object",
             "properties": {
-              "skillSlugs": {
-                "type": "array",
-                "nullable": true,
-                "items": {
-                  "type": "string",
-                  "maxLength": 100
-                },
-                "maxItems": 300,
-                "deprecated": true,
-                "description": "Ignored: Distry reads every live skill of the tree (delete a skill to stop it being read). Accepted so an older editor's save still succeeds."
-              },
               "prompt": {
                 "$ref": "#/components/schemas/DistryPromptInput"
               },
