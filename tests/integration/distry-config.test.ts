@@ -12,7 +12,9 @@ import {
   listDistryVersions,
   DistryConfigError,
 } from "../../src/agent/distry-config.js";
-import { SEED_EDITOR, deleteSkill, filterSkillSet, listSkills, writeSkill } from "../../src/lib/skills.js";
+import { SEED_EDITOR, buildSkillIndexPieces, deleteSkill, listSkills, readSkillForModel, writeSkill } from "../../src/lib/skills.js";
+import { DistrySaveRequestSchema } from "../../src/schemas.js";
+import { definitionFromSaveRequest, definitionOf } from "../../src/agent/distry-config.js";
 
 const connectionString = process.env.CHAT_SERVICE_DATABASE_URL;
 
@@ -71,22 +73,69 @@ describe("Distry's versioned definition (DISTRY-PRINCIPAL-1119)", { timeout: 300
     expect((await currentDistryVersion(db as never))?.version).toBe(before?.version);
   });
 
-  it("a version naming a skill staff later deleted still saves, restores and reads (SKILL-TREE-EDIT-1122)", async () => {
-    const slug = `distry-del-${Date.now().toString(36)}`;
-    const parent = (await listSkills(db as never)).find((s) => s.parentSlug === null)?.slug;
-    if (!parent) {
+  it("Distry reads every live skill even when a stored version picked a narrower list (DISTRY-NO-SKILL-PICKS-1122)", async () => {
+    const tag = Date.now().toString(36);
+    const picked = `distry-picked-${tag}`;
+    const unpicked = `distry-unpicked-${tag}`;
+    const gone = `distry-gone-${tag}`;
+    if (!(await listSkills(db as never)).some((s) => s.slug === "index")) {
       await writeSkill(db as never, "index", { content: "root", title: "Index", description: "root", parentSlug: null, editedBy: "k" });
     }
-    await writeSkill(db as never, slug, { content: "x", title: "T", description: "D", parentSlug: "index", editedBy: "k" });
+    if (!(await listSkills(db as never)).some((s) => s.slug === "client-comms")) {
+      await writeSkill(db as never, "client-comms", { content: "voice", title: "Voice", description: "voice", parentSlug: "index", editedBy: "k" });
+    }
+    for (const slug of [picked, unpicked, gone]) {
+      await writeSkill(db as never, slug, { content: `content of ${slug}`, title: `T ${slug}`, description: `D ${slug}`, parentSlug: "index", editedBy: "k" });
+    }
+    // A version saved by the old editor, holding an explicit narrower list (history).
+    const latest = await currentDistryVersion(db as never);
     const code = codeDistryDefinition();
-    const saved = await saveDistryVersion(db as never, { ...code, skillSlugs: [slug] }, { editedBy: "kevin@distribute.you" });
-    await deleteSkill(db as never, slug, "kevin@distribute.you");
+    const [old] = await db
+      .insert(schema.distryConfigVersions)
+      .values({
+        version: (latest?.version ?? 0) + 1,
+        systemPrompt: code.systemPrompt,
+        enabledTools: code.enabledTools,
+        skillSlugs: [picked],
+        provider: code.provider,
+        model: code.model,
+        effort: code.effort,
+        promptParts: code.prompt,
+        editedBy: "kevin@distribute.you",
+      })
+      .returning();
+    // Boot keeps that staff version as current.
+    expect((await seedDistryConfig(db as never)).version).toBe(old.version);
+    expect("skillSlugs" in definitionOf(old)).toBe(false);
+    await deleteSkill(db as never, gone, "kevin@distribute.you");
 
-    const next = await saveDistryVersion(db as never, { ...code, skillSlugs: [slug], systemPrompt: `${code.systemPrompt}\nAfter delete.` }, { editedBy: "kevin@distribute.you" });
-    expect(next.skillSlugs).toEqual([slug]);
-    const restored = await restoreDistryVersion(db as never, saved.version, "kevin@distribute.you");
-    expect(restored.skillSlugs).toEqual([slug]);
-    expect(filterSkillSet(await listSkills(db as never), [slug]).map((s) => s.slug)).not.toContain(slug);
-    await db.delete(schema.skills).where(eq(schema.skills.slug, slug));
+    // The turn's skill index (what /chat puts in Distry's prompt) lists every live skill.
+    const pieces = await buildSkillIndexPieces(db as never);
+    expect(pieces.subSkills).toContain(`\`${picked}\``);
+    expect(pieces.subSkills).toContain(`\`${unpicked}\``);
+    expect(pieces.subSkills).not.toContain(`\`${gone}\``);
+    // read_skill reaches a skill outside the old list.
+    expect(JSON.stringify(await readSkillForModel(db as never, unpicked))).toContain(`content of ${unpicked}`);
+
+    // A save from the old editor (still sending the pick-list) succeeds and stores no list.
+    const parsed = DistrySaveRequestSchema.parse({
+      systemPrompt: `${code.systemPrompt}\nOld editor save.`,
+      enabledTools: code.enabledTools,
+      skillSlugs: [picked],
+      provider: code.provider,
+      model: code.model,
+      effort: code.effort,
+      editedBy: "kevin@distribute.you",
+    });
+    const saved = await saveDistryVersion(db as never, definitionFromSaveRequest(parsed, definitionOf(old).prompt), { editedBy: parsed.editedBy });
+    expect(saved.skillSlugs).toBeNull();
+    // A restore of the old version keeps reading everything (its list is history only).
+    const restored = await restoreDistryVersion(db as never, old.version, "kevin@distribute.you");
+    expect(restored.skillSlugs).toBeNull();
+    expect((await buildSkillIndexPieces(db as never)).subSkills).toContain(`\`${unpicked}\``);
+
+    await db.delete(schema.skills).where(eq(schema.skills.slug, picked));
+    await db.delete(schema.skills).where(eq(schema.skills.slug, unpicked));
+    await db.delete(schema.skills).where(eq(schema.skills.slug, gone));
   });
 });

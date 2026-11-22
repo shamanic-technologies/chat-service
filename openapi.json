@@ -5375,11 +5375,17 @@
               {
                 "type": "object",
                 "properties": {
+                  "skillSlugs": {
+                    "nullable": true,
+                    "deprecated": true,
+                    "description": "Always null: Distry reads every live skill of the tree. Removed once the dashboard stops reading it."
+                  },
                   "prompt": {
                     "$ref": "#/components/schemas/DistryPrompt"
                   }
                 },
                 "required": [
+                  "skillSlugs",
                   "prompt"
                 ]
               }
@@ -5493,6 +5499,11 @@
           {
             "type": "object",
             "properties": {
+              "skillSlugs": {
+                "nullable": true,
+                "deprecated": true,
+                "description": "Always null: Distry reads every live skill of the tree. Removed once the dashboard stops reading it."
+              },
               "prompt": {
                 "$ref": "#/components/schemas/DistryPrompt"
               },
@@ -5518,6 +5529,7 @@
               }
             },
             "required": [
+              "skillSlugs",
               "prompt",
               "version",
               "editedBy",
@@ -5592,17 +5604,6 @@
             "maxItems": 300,
             "description": "The tools Distry may call: names from `availableTools`. `engines` = one tool per callable Engine, built at each turn. Staff-only tools load only in a staff conversation, whatever this list says."
           },
-          "skillSlugs": {
-            "type": "array",
-            "nullable": true,
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 100
-            },
-            "maxItems": 300,
-            "description": "The skills Distry reads (each with everything under it); `index` and `client-comms` always. null = every skill."
-          },
           "provider": {
             "type": "string",
             "enum": [
@@ -5633,7 +5634,6 @@
         "required": [
           "systemPrompt",
           "enabledTools",
-          "skillSlugs",
           "provider",
           "model",
           "effort"
@@ -5772,6 +5772,17 @@
           {
             "type": "object",
             "properties": {
+              "skillSlugs": {
+                "type": "array",
+                "nullable": true,
+                "items": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "maxItems": 300,
+                "deprecated": true,
+                "description": "Ignored: Distry reads every live skill of the tree (delete a skill to stop it being read). Accepted so an older editor's save still succeeds."
+              },
               "prompt": {
                 "$ref": "#/components/schemas/DistryPromptInput"
               },
