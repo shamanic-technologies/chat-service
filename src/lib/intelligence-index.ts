@@ -573,6 +573,56 @@ export interface ModelPanel {
   ratioBasis: string;
   current: { provider: string; model: string; modelId: string; effort: string | null };
   models: ModelPanelRow[];
+  /**
+   * Where a Distry turn goes when its model cannot serve (DISTRY-THINKING-1122, owner 2026-11-22: « le
+   * meilleur model x thinking en terme de index/$, dynamiquement »): every model x level Distry can run
+   * now with tools, best intelligence per dollar first, the current model left out. Tried in order.
+   */
+  fallbackOrder: FallbackCandidate[];
+  /** The first of `fallbackOrder`, in words; null when none can serve. */
+  nextFallback: string | null;
+}
+
+export interface FallbackCandidate {
+  provider: Provider;
+  /** A name Distry's definition accepts for this model. */
+  model: string;
+  modelId: string;
+  displayName: string;
+  /** The thinking level the turn runs at (null = the model's default). */
+  level: string | null;
+  score: number | null;
+  intelligencePerDollar: number | null;
+}
+
+/**
+ * The fallback order from the panel's rows (pure): each runnable scored level of each model that runs now,
+ * by intelligence per dollar (run cost), then scored levels with no run cost by score, then models with no
+ * score at their default level, in the panel's order. `exclude` = provider:modelId keys already tried.
+ */
+export function rankFallbacks(rows: readonly ModelPanelRow[], exclude: ReadonlySet<string>): FallbackCandidate[] {
+  const scored: Array<FallbackCandidate & { group: number }> = [];
+  const unscored: FallbackCandidate[] = [];
+  for (const r of rows) {
+    if (!r.availability.runsNow || exclude.has(fallbackKey(r.provider, r.modelId))) continue;
+    const base = { provider: r.provider, model: r.names[0]!, modelId: r.modelId, displayName: r.displayName };
+    const runnable = r.variants.filter((v) => v.distry.canRun && v.score !== null);
+    for (const v of runnable) {
+      scored.push({ ...base, level: v.distry.level, score: v.score, intelligencePerDollar: v.intelligencePerDollar, group: v.intelligencePerDollar !== null ? 0 : 1 });
+    }
+    if (runnable.length === 0) unscored.push({ ...base, level: null, score: null, intelligencePerDollar: null });
+  }
+  scored.sort((a, b) => a.group - b.group || (b.intelligencePerDollar ?? b.score ?? 0) - (a.intelligencePerDollar ?? a.score ?? 0) || a.displayName.localeCompare(b.displayName));
+  return [...scored.map(({ group: _g, ...c }) => c), ...unscored];
+}
+
+export function fallbackKey(provider: string, modelId: string): string {
+  return `${provider}:${modelId}`;
+}
+
+/** A candidate in words: "GPT-6.1 Terra at medium". */
+export function fallbackWords(c: Pick<FallbackCandidate, "displayName" | "level">): string {
+  return c.level === null ? `${c.displayName} at its default thinking` : c.level === "none" ? `${c.displayName} with reasoning off` : `${c.displayName} at ${c.level}`;
 }
 
 export const PRICE_BASIS =
@@ -794,6 +844,8 @@ export function buildModelPanel(args: {
     return a.displayName.localeCompare(b.displayName);
   });
 
+  const fallbackOrder = rankFallbacks(rows, new Set([fallbackKey(current.provider, currentModelId)]));
+
   return {
     indexName: "Artificial Analysis Intelligence Index",
     indexVersion: state.latestOk?.read.indexVersion ?? null,
@@ -808,5 +860,7 @@ export function buildModelPanel(args: {
     ratioBasis: RATIO_BASIS,
     current: { provider: current.provider, model: current.model, modelId: currentModelId, effort: current.effort },
     models: rows,
+    fallbackOrder,
+    nextFallback: fallbackOrder[0] ? `If ${modelDisplayName(currentModelId)} cannot serve a turn, Distry answers on ${fallbackWords(fallbackOrder[0])}.` : null,
   };
 }

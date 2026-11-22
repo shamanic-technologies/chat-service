@@ -194,6 +194,11 @@ export interface VendorUsage {
    * reports `input_tokens_details`, mapped here by `fromResponsesBody`.
    */
   prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+  /**
+   * The reasoning share of `completion_tokens` (already counted in it, billed as output), where the vendor
+   * reports it (OpenAI, DeepSeek; the Responses API's `output_tokens_details`). Logged, never billed apart.
+   */
+  completion_tokens_details?: { reasoning_tokens?: number };
 }
 
 /**
@@ -1794,6 +1799,7 @@ interface ResponsesApiBody {
     input_tokens?: number;
     output_tokens?: number;
     input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+    output_tokens_details?: { reasoning_tokens?: number };
   };
   error?: { message?: string; type?: string; code?: string } | null;
 }
@@ -1829,6 +1835,9 @@ export function fromResponsesBody(json: ResponsesApiBody): VendorResponseBody {
         cached_tokens: usage.input_tokens_details?.cached_tokens ?? 0,
         cache_write_tokens: usage.input_tokens_details?.cache_write_tokens ?? 0,
       },
+      ...(usage.output_tokens_details?.reasoning_tokens !== undefined
+        ? { completion_tokens_details: { reasoning_tokens: usage.output_tokens_details.reasoning_tokens } }
+        : {}),
     },
   };
 }

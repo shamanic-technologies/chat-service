@@ -493,7 +493,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
     const roundLines = vendorCostLines({ provider: v, costPrefix, at, tokensInput: promptTokens, cachedInputTokens: cached, cacheWriteTokens: cacheWrites, tokensOutput: outTokens });
     costLines = mergeLines(costLines, roundLines);
     onRoundBilled?.(roundLines);
-    console.log(`[vendor-chat] [${v}] model="${json.model ?? model}" depth=${depth} in=${promptTokens} cached=${cached} out=${outTokens}`);
+    console.log(`[vendor-chat] [${v}] model="${json.model ?? model}" depth=${depth} in=${promptTokens} cached=${cached} out=${outTokens} reasoning=${usage.completion_tokens_details?.reasoning_tokens ?? "?"} level=${reasoningLevel ?? "default"}`);
 
     const choice = json.choices?.[0];
     const reply = choice?.message ?? {};
