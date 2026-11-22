@@ -6257,6 +6257,56 @@
               "$ref": "#/components/schemas/DistryModelRow"
             },
             "description": "Best intelligence per dollar first (run-cost basis, then blended basis), unscored last."
+          },
+          "fallbackOrder": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string",
+                  "description": "A name Distry's definition accepts for this model."
+                },
+                "modelId": {
+                  "type": "string"
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "level": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "The thinking level the turn runs at (null = the model's default; `none` = reasoning off)."
+                },
+                "score": {
+                  "type": "number",
+                  "nullable": true
+                },
+                "intelligencePerDollar": {
+                  "type": "number",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "provider",
+                "model",
+                "modelId",
+                "displayName",
+                "level",
+                "score",
+                "intelligencePerDollar"
+              ]
+            },
+            "description": "Where a Distry turn goes when its model cannot serve (vendor out of credit, refusal, failure before any tool or word): every model x thinking level Distry can run now with tools, best intelligence per dollar first, unscored models last, the current model left out. Tried in order; recomputed on every read."
+          },
+          "nextFallback": {
+            "type": "string",
+            "nullable": true,
+            "description": "The first fallback in plain words; null when none can serve.",
+            "example": "If GPT-6.1 Terra cannot serve a turn, Distry answers on Claude Haiku 5.5 at low."
           }
         },
         "required": [
@@ -6268,7 +6318,9 @@
           "priceBasis",
           "ratioBasis",
           "current",
-          "models"
+          "models",
+          "fallbackOrder",
+          "nextFallback"
         ]
       },
       "DistryModelRow": {
