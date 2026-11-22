@@ -232,3 +232,50 @@ export function foldChildrenIntoSkill(skill: FoldNode, all: readonly FoldNode[])
   if (missing.length === 0) return null;
   return `${skill.content.trimEnd()}\n\n## Read next\n${mentionLines(missing)}`;
 }
+
+/**
+ * References written the old way become mention tokens (owner 2026-11-22 « Je ne vois pas de @<> tag
+ * stylisé dans les textes »): a backticked live skill slug or mentionable tool (`` `campaigns` ``,
+ * `` `run_operation` ``), a bare hyphenated live skill slug (`client-comms`), a bare snake_case
+ * mentionable tool (`request_staff`). Only the reference changes, never the words around it.
+ * Left as is: fenced code blocks, anything that is neither a live skill nor a mentionable tool, a
+ * bare one-word slug (`campaigns`, `staff`: ordinary words too), a name inside a path, URL or token.
+ * Idempotent: a converted text converts to itself.
+ */
+export function convertReferencesToMentions(
+  text: string,
+  skillSlugs: ReadonlySet<string>,
+  toolNames: ReadonlySet<string>,
+): { text: string; converted: number } {
+  let converted = 0;
+  const token = (name: string): string | null =>
+    skillSlugs.has(name) ? mentionToken("skill", name) : toolNames.has(name) ? mentionToken("tool", name) : null;
+  // Before a bare name: not part of a word, path, URL, token or identifier.
+  const BEFORE = "(?<![A-Za-z0-9_@:/.\\-`$#{])";
+  const AFTER = "(?![A-Za-z0-9_\\-`}])";
+  const bareTool = new RegExp(`${BEFORE}([a-z][a-z0-9]*(?:_[a-z0-9]+)+)${AFTER}`, "g");
+  const bareSkill = new RegExp(`${BEFORE}([a-z0-9]+(?:-[a-z0-9]+)+)${AFTER}`, "g");
+  const convertPlain = (seg: string): string =>
+    seg
+      .replace(bareTool, (whole, name: string) => (toolNames.has(name) ? (converted++, mentionToken("tool", name)) : whole))
+      .replace(bareSkill, (whole, name: string) => (skillSlugs.has(name) ? (converted++, mentionToken("skill", name)) : whole));
+  const convertProse = (seg: string): string =>
+    // Inline code: a span that is exactly a reference becomes its token; any other span stays whole.
+    seg
+      .split(/(`[^`\n]+`)/)
+      .map((part, i) => {
+        if (i % 2 === 1) {
+          const t = token(part.slice(1, -1));
+          if (t === null) return part;
+          converted++;
+          return t;
+        }
+        return convertPlain(part);
+      })
+      .join("");
+  const out = text
+    .split(/(```[\s\S]*?```)/)
+    .map((part, i) => (i % 2 === 1 ? part : convertProse(part)))
+    .join("");
+  return { text: out, converted };
+}

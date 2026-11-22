@@ -1,3 +1,4 @@
+import { SEED_SKILLS } from "./lib/skill-seed.js";
 import express from "express";
 import cors from "cors";
 import { buildModelPanel, distryModelChoices, fallbackKey, rankFallbacks, readIndexState, refreshIntelligenceIndex, INDEX_TICK_MS, type FallbackCandidate } from "./lib/intelligence-index.js";
@@ -128,6 +129,8 @@ import {
   distryVersionNumber,
   definitionFromSaveRequest,
   foldTreeIntoMentions,
+  convertStoredReferences,
+  countPendingReferences,
   skillMentionGraph,
   linksOf,
   mentionableTools,
@@ -235,6 +238,7 @@ import {
   listSkills,
   readSkillForModel,
   seedSkills,
+  seedsAsRead,
   toSkillBody,
   toSkillSummary,
   toSkillVersionBody,
@@ -7534,7 +7538,9 @@ if (process.env.NODE_ENV !== "test") {
       const abandoned = await localStore.expireAbandoned(new Date(), new Date());
       if (abandoned > 0) console.log(`[local-llm] ${abandoned} local call(s) cut off by a restart ended`);
       await startLocalLlm(localStore);
-      const skillSeed = await seedSkills(db);
+      // Old-style references (backticks, bare names) still to become mention tokens, counted before the seed converts its own rows.
+      const pendingRefs = await countPendingReferences(db);
+      const skillSeed = await seedSkills(db, seedsAsRead(SEED_SKILLS, mentionableTools()));
       console.log(
         `[chat-service] Skill seed: inserted=[${skillSeed.inserted.join(",")}] refreshed=[${skillSeed.refreshed.join(",")}] keptHumanEdit=[${skillSeed.keptHumanEdit.join(",")}] removedMerged=[${skillSeed.removedMerged.join(",")}]`,
       );
@@ -7542,6 +7548,12 @@ if (process.env.NODE_ENV !== "test") {
       const fold = await foldTreeIntoMentions(db);
       if (fold.promptVersion !== null) {
         console.log(`[chat-service] Skills folded into mentions: Distry version ${fold.promptVersion}, skills=[${fold.skills.join(",")}]`);
+      }
+      const refs = await convertStoredReferences(db);
+      if (pendingRefs.prompt + pendingRefs.skills > 0) {
+        console.log(
+          `[chat-service] References written as mentions: pending before boot prompt=${pendingRefs.prompt} skills=${pendingRefs.skills}; converted now prompt=${refs.prompt} staff skills=${JSON.stringify(refs.skills)} (seed rows by the seed)`,
+        );
       }
       const bootedAt = new Date();
       const server = app.listen(Number(PORT), "::", () => {
