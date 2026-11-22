@@ -583,26 +583,8 @@ export async function deleteSkill(
  * one line each). Deeper skills are listed by read_skill on their parent, so
  * the prompt stays small however deep the tree grows (owner 2026-10-10).
  */
-export async function buildSkillIndexBlock(database: Database, skillSet: readonly string[] | null = null): Promise<string> {
-  return skillIndexBlockFrom(filterSkillSet(await listSkills(database), skillSet));
-}
-
-/**
- * The skills an agent definition keeps (Distry's `skillSlugs`, DISTRY-PRINCIPAL-1119):
- * null = the whole tree. Else a listed skill and everything under it, plus the
- * index and the one voice (`client-comms`), which every agent that speaks reads.
- */
-export function filterSkillSet<T extends Pick<Skill, "slug" | "parentSlug">>(all: readonly T[], skillSet: readonly string[] | null): T[] {
-  if (skillSet === null) return [...all];
-  const kept = new Set<string>([INDEX_SKILL_SLUG, CLIENT_COMMS_SKILL_SLUG, ...skillSet]);
-  const bySlug = new Map(all.map((s) => [s.slug, s]));
-  const keeps = (s: T): boolean => {
-    for (let cur: T | undefined = s, depth = 0; cur && depth < 20; cur = cur.parentSlug ? bySlug.get(cur.parentSlug) : undefined, depth++) {
-      if (kept.has(cur.slug) && (cur.slug !== INDEX_SKILL_SLUG || s.slug === INDEX_SKILL_SLUG)) return true;
-    }
-    return false;
-  };
-  return all.filter(keeps);
+export async function buildSkillIndexBlock(database: Database): Promise<string> {
+  return skillIndexBlockFrom(await listSkills(database));
 }
 
 /** A skill as the prompt builders read it (a stored row, or a snapshot of one). */
@@ -645,8 +627,8 @@ export function skillIndexPiecesFrom(all: readonly SkillText[]): SkillIndexPiece
   };
 }
 
-export async function buildSkillIndexPieces(database: Database, skillSet: readonly string[] | null = null): Promise<SkillIndexPieces> {
-  return skillIndexPiecesFrom(filterSkillSet(await listSkills(database), skillSet));
+export async function buildSkillIndexPieces(database: Database): Promise<SkillIndexPieces> {
+  return skillIndexPiecesFrom(await listSkills(database));
 }
 
 /** `buildSkillIndexBlock` over rows already read (the eval harness replays a snapshot). */
@@ -655,11 +637,11 @@ export function skillIndexBlockFrom(all: readonly SkillText[], template: string 
 }
 
 /** What `read_skill` returns to the model: the skill, plus its direct children. */
-export async function readSkillForModel(database: Database, slug: unknown, skillSet: readonly string[] | null = null) {
+export async function readSkillForModel(database: Database, slug: unknown) {
   if (typeof slug !== "string" || slug.trim() === "") {
     throw new SkillValidationError("read_skill needs a slug (see the skill index).");
   }
-  return readSkillFrom(filterSkillSet(await listSkills(database), skillSet), slug);
+  return readSkillFrom(await listSkills(database), slug);
 }
 
 export function readSkillFrom(all: readonly SkillText[], slug: unknown) {
