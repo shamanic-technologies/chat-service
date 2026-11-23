@@ -9,8 +9,8 @@ import { resolveModel } from "../../src/lib/anthropic.js";
 import type { FallbackCandidate } from "../../src/lib/intelligence-index.js";
 
 const primary = { provider: SOPHIE_MODEL.provider, modelAlias: SOPHIE_MODEL.model, modelId: "claude-haiku-5-5" };
-const terraMedium: FallbackCandidate = { provider: "openai", model: "gpt-terra", modelId: "gpt-6.1-terra", displayName: "GPT-6.1 Terra", level: "medium", score: 38.2, intelligencePerDollar: 226 };
-const glmLow: FallbackCandidate = { provider: "zai", model: "glm-pro", modelId: "glm-5.3", displayName: "GLM-5.3", level: "low", score: 23.1, intelligencePerDollar: 120 };
+const terraMedium: FallbackCandidate = { provider: "openai", model: "gpt-terra", modelId: "gpt-6.1-terra", displayName: "GPT-6.1 Terra", level: "medium", score: 38.2, intelligencePerDollar: 226, availability: { runsNow: true, reason: null } };
+const glmLow: FallbackCandidate = { provider: "zai", model: "glm-pro", modelId: "glm-5.3", displayName: "GLM-5.3", level: "low", score: 23.1, intelligencePerDollar: 120, availability: { runsNow: true, reason: null } };
 const order = vi.fn(async (exclude: ReadonlySet<string>) => [terraMedium, glmLow].filter((c) => !exclude.has(`${c.provider}:${c.modelId}`)));
 
 afterEach(() => {
