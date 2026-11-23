@@ -575,11 +575,14 @@ export interface ModelPanel {
   models: ModelPanelRow[];
   /**
    * Where a Distry turn goes when its model cannot serve (DISTRY-THINKING-1122, owner 2026-11-22: « le
-   * meilleur model x thinking en terme de index/$, dynamiquement »): every model x level Distry can run
-   * now with tools, best intelligence per dollar first, the current model left out. Tried in order.
+   * meilleur model x thinking en terme de index/$, dynamiquement »): the ABSOLUTE order (DISTRY-FALLBACK-
+   * ABSOLUTE-1123, owner 2026-11-23 « mets le classement absolu … pas besoin de le retirer de la liste »):
+   * every model x level Distry can run with tools, best intelligence per dollar first, the current model
+   * left out, INCLUDING candidates whose vendor cannot serve right now (`availability.runsNow: false` +
+   * the reason). A turn tries only the ones that run now, in this order.
    */
   fallbackOrder: FallbackCandidate[];
-  /** The first of `fallbackOrder`, in words; null when none can serve. */
+  /** The first of `fallbackOrder` that runs now, in words; null when none can serve. */
   nextFallback: string | null;
 }
 
@@ -593,19 +596,25 @@ export interface FallbackCandidate {
   level: string | null;
   score: number | null;
   intelligencePerDollar: number | null;
+  /** Whether this candidate can serve a turn right now; the reason when not (its vendor is out of credit). */
+  availability: { runsNow: boolean; reason: string | null };
 }
 
 /**
- * The fallback order from the panel's rows (pure): each runnable scored level of each model that runs now,
- * by intelligence per dollar (run cost), then scored levels with no run cost by score, then models with no
- * score at their default level, in the panel's order. `exclude` = provider:modelId keys already tried.
+ * The ABSOLUTE fallback order from the panel's rows (pure): each runnable scored level of each model, by
+ * intelligence per dollar (run cost), then scored levels with no run cost by score, then models with no
+ * score at their default level, in the panel's order. A candidate whose vendor cannot serve now keeps its
+ * rank and says so (`availability`). `exclude` = provider:modelId keys left out (the current model).
  */
-export function rankFallbacks(rows: readonly ModelPanelRow[], exclude: ReadonlySet<string>): FallbackCandidate[] {
+export function rankAllFallbacks(rows: readonly ModelPanelRow[], exclude: ReadonlySet<string>): FallbackCandidate[] {
   const scored: Array<FallbackCandidate & { group: number }> = [];
   const unscored: FallbackCandidate[] = [];
   for (const r of rows) {
-    if (!r.availability.runsNow || exclude.has(fallbackKey(r.provider, r.modelId))) continue;
-    const base = { provider: r.provider, model: r.names[0]!, modelId: r.modelId, displayName: r.displayName };
+    if (exclude.has(fallbackKey(r.provider, r.modelId))) continue;
+    const base = {
+      provider: r.provider, model: r.names[0]!, modelId: r.modelId, displayName: r.displayName,
+      availability: { runsNow: r.availability.runsNow, reason: r.availability.reason },
+    };
     const runnable = r.variants.filter((v) => v.distry.canRun && v.score !== null);
     for (const v of runnable) {
       scored.push({ ...base, level: v.distry.level, score: v.score, intelligencePerDollar: v.intelligencePerDollar, group: v.intelligencePerDollar !== null ? 0 : 1 });
@@ -614,6 +623,14 @@ export function rankFallbacks(rows: readonly ModelPanelRow[], exclude: ReadonlyS
   }
   scored.sort((a, b) => a.group - b.group || (b.intelligencePerDollar ?? b.score ?? 0) - (a.intelligencePerDollar ?? a.score ?? 0) || a.displayName.localeCompare(b.displayName));
   return [...scored.map(({ group: _g, ...c }) => c), ...unscored];
+}
+
+/**
+ * What a turn may go to, in order: the absolute order with every candidate that cannot serve now left out
+ * (`exclude` = provider:modelId keys already tried). Never picks an unavailable candidate.
+ */
+export function rankFallbacks(rows: readonly ModelPanelRow[], exclude: ReadonlySet<string>): FallbackCandidate[] {
+  return rankAllFallbacks(rows, exclude).filter((c) => c.availability.runsNow);
 }
 
 export function fallbackKey(provider: string, modelId: string): string {
@@ -844,7 +861,8 @@ export function buildModelPanel(args: {
     return a.displayName.localeCompare(b.displayName);
   });
 
-  const fallbackOrder = rankFallbacks(rows, new Set([fallbackKey(current.provider, currentModelId)]));
+  const fallbackOrder = rankAllFallbacks(rows, new Set([fallbackKey(current.provider, currentModelId)]));
+  const firstServing = fallbackOrder.find((c) => c.availability.runsNow);
 
   return {
     indexName: "Artificial Analysis Intelligence Index",
@@ -861,6 +879,6 @@ export function buildModelPanel(args: {
     current: { provider: current.provider, model: current.model, modelId: currentModelId, effort: current.effort },
     models: rows,
     fallbackOrder,
-    nextFallback: fallbackOrder[0] ? `If ${modelDisplayName(currentModelId)} cannot serve a turn, Distry answers on ${fallbackWords(fallbackOrder[0])}.` : null,
+    nextFallback: firstServing ? `If ${modelDisplayName(currentModelId)} cannot serve a turn, Distry answers on ${fallbackWords(firstServing)}.` : null,
   };
 }
