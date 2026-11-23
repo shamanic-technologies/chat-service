@@ -4738,11 +4738,15 @@ export const DistryModelsResponseSchema = z
       level: z.string().nullable().openapi({ description: "The thinking level the turn runs at (null = the model's default; `none` = reasoning off)." }),
       score: z.number().nullable(),
       intelligencePerDollar: z.number().nullable(),
+      availability: z.object({
+        runsNow: z.boolean().openapi({ description: "false = this candidate cannot serve a turn right now (its vendor is out of credit): a turn skips it and takes the next one that runs now." }),
+        reason: z.string().nullable().openapi({ description: "Why it cannot serve now, in plain words; null when it runs now.", example: "OpenAI is out of credit." }),
+      }),
     })).openapi({
       description:
-        "Where a Distry turn goes when its model cannot serve (vendor out of credit, refusal, failure before any tool or word): every model x thinking level Distry can run now with tools, best intelligence per dollar first, unscored models last, the current model left out. Tried in order; recomputed on every read.",
+        "Where a Distry turn goes when its model cannot serve (vendor out of credit, refusal, failure before any tool or word): the ABSOLUTE order, every model x thinking level Distry can run with tools, best intelligence per dollar first, unscored models last, the current model left out. A candidate that cannot serve right now keeps its rank, flagged by `availability`; a turn tries only those that run now, in this order. Recomputed on every read.",
     }),
-    nextFallback: z.string().nullable().openapi({ description: "The first fallback in plain words; null when none can serve.", example: "If GPT-6.1 Terra cannot serve a turn, Distry answers on Claude Haiku 5.5 at low." }),
+    nextFallback: z.string().nullable().openapi({ description: "The first fallback that runs now, in plain words; null when none can serve.", example: "If GPT-6.1 Terra cannot serve a turn, Distry answers on Claude Haiku 5.5 at low." }),
   })
   .openapi("DistryModelsResponse");
 

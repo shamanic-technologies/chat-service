@@ -15,7 +15,7 @@ const { streamVendorChat } = await import("../../src/lib/vendor-chat.js");
 const { usesResponsesApi, toResponsesRequest, fromResponsesBody, vendorThinkingLevelFields } = await import("../../src/lib/openai-compatible.js");
 const { codeDistryDefinition, validateDistryDefinition, thinkingColumns } = await import("../../src/agent/distry-config.js");
 const { chatThinkingLevels, thinkingLevelRefusal } = await import("../../src/lib/thinking-levels.js");
-const { buildModelPanel } = await import("../../src/lib/intelligence-index.js");
+const { buildModelPanel, rankFallbacks, fallbackKey } = await import("../../src/lib/intelligence-index.js");
 
 const TOOLS = [{ name: "get_billing_account", description: "Balance", input_schema: { type: "object" as const, properties: {} } }];
 
@@ -178,8 +178,23 @@ describe("Distry's fallback order: best model x level by intelligence per dollar
     expect(p.nextFallback).toBe("If GPT-6.1 Terra cannot serve a turn, Distry answers on Claude Haiku 5.5 at low.");
   });
 
-  it("drops a vendor out of credit, recomputed on every read", () => {
+  it("serves the absolute order: a vendor out of credit keeps its rank, flagged with the reason; the next fallback is the first that runs now", () => {
     const p = panel((prov) => (prov === "anthropic" ? "Anthropic is out of credit." : null));
-    expect(p.fallbackOrder[0]).toMatchObject({ modelId: "gemini-4-hydrogen", level: "low" });
+    expect(p.fallbackOrder.map((c) => `${c.modelId}@${c.level}:${c.availability.runsNow}`)).toEqual([
+      "claude-haiku-5-5@low:false",
+      "claude-haiku-5-5@max:false",
+      "gemini-4-hydrogen@low:true",
+      "kimi-k3.1-pro@null:true",
+    ]);
+    expect(p.fallbackOrder[0]!.availability).toEqual({ runsNow: false, reason: "Anthropic is out of credit." });
+    expect(p.fallbackOrder[2]!.availability).toEqual({ runsNow: true, reason: null });
+    expect(p.nextFallback).toBe("If GPT-6.1 Terra cannot serve a turn, Distry answers on Gemini 4 Hydrogen at low.");
+  });
+
+  it("the runtime order never picks a candidate that cannot serve now", () => {
+    const p = panel((prov) => (prov === "anthropic" ? "Anthropic is out of credit." : null));
+    const order = rankFallbacks(p.models, new Set([fallbackKey("openai", "gpt-6.1-terra")]));
+    expect(order.map((c) => `${c.modelId}@${c.level}`)).toEqual(["gemini-4-hydrogen@low", "kimi-k3.1-pro@null"]);
+    expect(order.every((c) => c.availability.runsNow)).toBe(true);
   });
 });
