@@ -51,8 +51,8 @@ export const FIND_OUTCOME_TOOL: Anthropic.Tool = {
   name: FIND_OUTCOME_TOOL_NAME,
   description:
     "Read how to get or make Units of an outcome (an outcome is one kind of result we produce: an email found, an email sent, a message written...). " +
-    "Without `outcome`: every outcome we know, how many scripts its Engine can run and how many Provider reads it has (`q` narrows by words). " +
-    "With `outcome`: its Provider reads (get_units: each read's route, what it filters on and what it answers, as its service documents it) and its Engine's scripts (ask_engine: what each does and reads). " +
+    "Without `outcome`: every outcome we know, whether its Engine can make one now and how many Provider reads it has (`q` narrows by words). " +
+    "With `outcome`: its Provider reads (get_units: each read's route, what it filters on and what it answers, as its service documents it) and its Engine's ask (ask_engine: can it make one now, what it needs handed, what each script does and reads). " +
     "The game, the same one our Scripts play: a fact we already hold is READ (get_units, free); the Engine MAKES a new Unit (ask_engine, it costs money) only when no held Unit fits what the person wants (none, or too old for them). Reading this costs nothing.",
   input_schema: {
     type: "object",
@@ -134,6 +134,8 @@ export interface EngineListing {
   reason: string | null;
   inputs: Array<{ units: string[]; channel: string | null }>;
   counts?: { scripts: number; live: number; runnable: number };
+  /** Whether a DIRECT ask (no campaign) can make one now (workflow-service, ENGINE-GET-ASK-1123). */
+  ask?: { possible: boolean; needsNothing: boolean; reason: string | null };
 }
 
 /** One live script of an Engine, as workflow-service serves it: what it does, in its author's words. */
@@ -310,7 +312,7 @@ export async function findOutcome(args: Record<string, unknown>, identity: Pick<
     const rows = keys
       .map((k) => {
         const e = engineOf.get(k);
-        return { outcome: k, name: e?.name ?? null, reads: byOutcome.get(k)?.length ?? 0, engineScripts: e ? (e.counts?.runnable ?? null) : 0 };
+        return { outcome: k, name: e?.name ?? null, reads: byOutcome.get(k)?.length ?? 0, engineCanMake: e?.ask?.possible ?? false };
       })
       .filter((r) => q.every((w) => `${r.outcome} ${r.name ?? ""}`.toLowerCase().includes(w)));
     return {
@@ -329,8 +331,10 @@ export async function findOutcome(args: Record<string, unknown>, identity: Pick<
     get: reads.length ? reads : `no Provider read is documented for ${key}: no held Unit can be read`,
     ask: e
       ? {
+          canMake: e.ask?.possible ?? false,
+          needsNothing: e.ask?.needsNothing ?? false,
+          ...(e.ask?.reason ? { whyNot: e.ask.reason } : {}),
           scripts: scripts.map((x) => ({ name: x.name, does: cut(x.description, 600), takes: x.materials })),
-          ...(scripts.length ? {} : { whyNot: e.reason ?? "no script of this Engine can run now" }),
           note: "The Rating picks one of these scripts. inputs.units = the materials a script takes (by outcome); inputs.request = what its description says it reads; nothing else.",
         }
       : `no Engine makes ${key}`,

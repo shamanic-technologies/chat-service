@@ -50,8 +50,8 @@ const specs = new Map<string, Record<string, unknown>>([
 ]);
 
 const engines: EngineListing[] = [
-  { outcome: "email_checked", name: "Email checked", callable: true, reason: null, inputs: [{ units: [], channel: null }], counts: { scripts: 1, live: 1, runnable: 1 } },
-  { outcome: "backlink_earned", name: "Backlink earned", callable: false, reason: "No script can run now.", inputs: [], counts: { scripts: 0, live: 0, runnable: 0 } },
+  { outcome: "email_checked", name: "Email checked", callable: true, reason: null, inputs: [{ units: [], channel: null }], counts: { scripts: 1, live: 1, runnable: 1 }, ask: { possible: true, needsNothing: true, reason: null } },
+  { outcome: "backlink_earned", name: "Backlink earned", callable: false, reason: "No script can run now.", inputs: [], counts: { scripts: 0, live: 0, runnable: 0 }, ask: { possible: false, needsNothing: false, reason: "No script can run now." } },
 ];
 
 type Seen = { kind: string; [k: string]: unknown };
@@ -108,10 +108,10 @@ describe("the Provider reads are discovered by tag, never listed in code (ENGINE
 describe("find_outcome reads the doc, spends nothing", () => {
   it("without an outcome: every outcome known, from the Engines and the tags, with the org's Engine list", async () => {
     const { deps, seen } = fakes();
-    const out = (await findOutcome({}, { orgId: ORG }, deps, createProviderIndex(deps))) as { outcomes: Array<{ outcome: string; reads: number; engineScripts: number }>; notRead: string };
+    const out = (await findOutcome({}, { orgId: ORG }, deps, createProviderIndex(deps))) as { outcomes: Array<{ outcome: string; reads: number; engineCanMake: boolean }>; notRead: string };
     expect(out.outcomes.map((o) => o.outcome)).toEqual(["backlink_earned", "email_checked", "email_found", "email_queued", "email_sent"]);
-    expect(out.outcomes.find((o) => o.outcome === "email_found")).toMatchObject({ reads: 2, engineScripts: 0 });
-    expect(out.outcomes.find((o) => o.outcome === "email_checked")).toMatchObject({ reads: 0, engineScripts: 1 });
+    expect(out.outcomes.find((o) => o.outcome === "email_found")).toMatchObject({ reads: 2, engineCanMake: false });
+    expect(out.outcomes.find((o) => o.outcome === "email_checked")).toMatchObject({ reads: 0, engineCanMake: true });
     expect(out.notRead).toContain("broken");
     expect(seen).toEqual([{ kind: "engines", orgId: ORG }]);
   });
@@ -122,7 +122,8 @@ describe("find_outcome reads the doc, spends nothing", () => {
     expect(out.get[0]).toMatchObject({ route: "listEmailSentUnits", method: "GET", description: "Scope: every brand of the CALLING org." });
     expect(out.get[0].filters).toEqual([{ name: "emails", in: "query", required: false, type: "string", description: "Comma-separated addresses" }]);
     expect(out.ask).toBe("no Engine makes email_sent");
-    const checked = (await findOutcome({ outcome: "email_checked" }, { orgId: ORG }, deps, createProviderIndex(deps))) as { ask: { scripts: unknown[] } };
+    const checked = (await findOutcome({ outcome: "email_checked" }, { orgId: ORG }, deps, createProviderIndex(deps))) as { ask: { scripts: unknown[]; canMake: boolean } };
+    expect(checked.ask.canMake).toBe(true);
     expect(checked.ask.scripts).toEqual([{ name: "Email address check", does: "Checks one email address (request.email).", takes: [] }]);
     const none = (await findOutcome({ outcome: "backlink_earned" }, { orgId: ORG }, deps, createProviderIndex(deps))) as { ask: { whyNot: string } };
     expect(none.ask.whyNot).toBe("No script can run now.");
