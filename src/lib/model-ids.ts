@@ -72,6 +72,12 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "gpt-5.6-terra": "GPT-5.6 Terra",
   "gpt-6.1-sol": "GPT-6.1 Sol",
   "gpt-6.1-terra": "GPT-6.1 Terra",
+  // Cerebras (OPEN-LLM-FREE-1124)
+  "gpt-oss-120b": "GPT-OSS 120B (Cerebras)",
+  "qwen-3.8-27b": "Qwen 3.8 27B (Cerebras)",
+  // Groq (OPEN-LLM-FREE-1124)
+  "openai/gpt-oss-120b": "GPT-OSS 120B (Groq)",
+  "qwen/qwen3.8-27b": "Qwen 3.8 27B (Groq)",
 };
 
 interface RetiredModel {

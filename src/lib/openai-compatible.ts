@@ -173,10 +173,34 @@ export class VendorRateLimitError extends VendorProviderError {
 }
 
 /**
+ * The vendor refused for a cap that does not clear within the retry budget: a
+ * per-day / per-hour quota, or a `Retry-After` longer than we wait
+ * (OPEN-LLM-FREE-1124: a free tier's daily token cap answers 429 "tokens per day
+ * (TPD) ... try again in 7m12s"). Thrown on the FIRST such refusal, without
+ * burning the retry budget: waiting 13 s on a cap that lifts in minutes buys
+ * nothing. A `VendorRateLimitError` (nothing ran, nothing billed), so every route
+ * that answers a rate limit answers this one the same way; on our platform key the
+ * completion routes move the call down the fallback order instead.
+ */
+export class VendorQuotaExhaustedError extends VendorRateLimitError {
+  constructor(
+    message: string,
+    readonly vendor: VendorId,
+    readonly model: string,
+    /** Seconds the vendor asked us to wait, when it said. */
+    readonly retryAfterSeconds: number | null,
+    vendorMessage: string,
+  ) {
+    super(message, 1, 0, vendorMessage);
+    this.name = "VendorQuotaExhaustedError";
+  }
+}
+
+/**
  * Vendors reachable through this adapter. The id doubles as the API `provider`
  * value AND the key-service provider slug — one vendor, one key, one name.
  */
-export type VendorId = "deepseek" | "zai" | "moonshot" | "openai";
+export type VendorId = "deepseek" | "zai" | "moonshot" | "openai" | "cerebras" | "groq";
 
 /** Raw `usage` object as returned by an OpenAI-compatible chat completion. */
 export interface VendorUsage {
@@ -332,6 +356,20 @@ export type VendorConcurrency =
       /** Tier label → the rate limits published for THIS model at that tier. */
       tierLimits: Record<string, { rpm: number; tpm: number }>;
       /** What decides which tier applies, and what is NOT published. */
+      note: string;
+      source: string;
+      observedOn: string;
+    }
+  | {
+      /**
+       * The vendor publishes no in-flight cap, and the rates it does publish
+       * (requests / tokens per minute and per DAY on a free tier) are console
+       * facts per model we have not read with an account (OPEN-LLM-FREE-1124:
+       * no key on 2026-11-24). Nothing is typed here until it is read:
+       * `publishedConcurrency` answers null, and a daily cap that refuses a call
+       * moves it down the fallback order (`VendorQuotaExhaustedError`).
+       */
+      scope: "unpublished";
       note: string;
       source: string;
       observedOn: string;
@@ -1147,6 +1185,124 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     isOutOfCreditRefusal: (s) =>
       s.code === "credit_balance_exhausted" || s.type === "insufficient_quota",
   },
+  // OPEN-LLM-FREE-1124 (owner 2026-11-24): open-weight models on Cerebras, compared by the Rating
+  // to the private models. EVERY fact below is read from the vendor's docs on 2026-11-24 and NOT
+  // probed live: no key existed that day. Re-probe each one (structured output, the reasoning
+  // field per model, a tool round per thinking level, the out-of-credit wording) when the
+  // platform key is registered, as every other vendor here was.
+  // https://inference-docs.cerebras.ai
+  cerebras: {
+    id: "cerebras",
+    label: "Cerebras",
+    baseUrl: "https://api.cerebras.ai/v1",
+    docsUrl: "https://inference-docs.cerebras.ai",
+    // Cerebras bills a cache hit at the input rate, so the count changes no cost line; read
+    // at the OpenAI location for the log only.
+    readCachedTokens: (usage) => usage.prompt_tokens_details?.cached_tokens ?? 0,
+    // No cached row: the whole prompt is billed at the one input rate (the vendor's own
+    // billing). The free tier is a vendor discount: the catalogue carries the full list price.
+    pricing: { kind: "priced", cachedInput: false, regime: null },
+    concurrency: {
+      scope: "unpublished",
+      note:
+        "Cerebras publishes requests / tokens per minute and per day by model and plan, no in-flight " +
+        "cap. The free-tier numbers of our account were not read (no key on 2026-11-24), so none is " +
+        "typed here. A cap that refuses a call moves it down the fallback order.",
+      source: "https://inference-docs.cerebras.ai/support/rate-limits",
+      observedOn: "2026-11-24",
+    },
+    sampling: {
+      accepted: true,
+      note: "Cerebras documents temperature and top_p on chat completions for both models (docs read 2026-11-24, not probed).",
+    },
+    maxOutputTokensField: "max_completion_tokens",
+    imageInput: false,
+    // From the vendor docs, not yet probed live with a tool call (no key on 2026-11-24):
+    // qwen-3.8-27b takes reasoning_effort none | low | medium | high, gpt-oss-120b low | medium | high.
+    thinkingLevels: { "qwen-3.8-27b": ["none", "low", "medium", "high"], "gpt-oss-120b": ["low", "medium", "high"] },
+    // json_schema and json_object are both documented on both models. We send the non-strict
+    // schema form, as on Z.ai / Moonshot / OpenAI (strict needs additionalProperties:false on
+    // every object, the Anthropic dialect). gpt-oss-120b REFUSES a request carrying both
+    // `tools` and `response_format`: a tool round never carries a response_format here
+    // (only `buildVendorRequestBody` sets it, and it sends no tools).
+    structuredOutput: "json_schema",
+    schemaEnforced: false,
+    // `reasoning_effort` on both models, never `thinking` / `disable_reasoning` / `enable_thinking`.
+    // qwen-3.8-27b has a true off (`none`); gpt-oss-120b cannot stop reasoning, `low` is its floor
+    // (the knob means MINIMIZE there, as on GPT-6 Astra and GLM-5.3). Reasoning tokens are
+    // counted in completion_tokens, billed as output.
+    reasoning: {
+      kind: "disablable",
+      requestFields: { reasoning_effort: "none" },
+      perModel: {
+        "qwen-3.8-27b": { reasoning_effort: "none" },
+        "gpt-oss-120b": { reasoning_effort: "low" },
+      },
+      refusedBy: {},
+      source: "https://inference-docs.cerebras.ai/capabilities/reasoning",
+      evidence:
+        "Vendor docs read 2026-11-24, NOT probed live (no key): qwen-3.8-27b reasoning_effort " +
+        "none|low|medium|high (default high, none = off); gpt-oss-120b low|medium|high (none refused).",
+    },
+    // The free tier is a $5 credit that expires after 30 days; Cerebras documents 402
+    // PaymentRequired. No refusal observed yet: the status alone, nothing adjacent.
+    isOutOfCreditRefusal: (s) => s.status === 402,
+  },
+  // OPEN-LLM-FREE-1124: the same open-weight models on Groq. Same caveat as Cerebras: docs read
+  // 2026-11-24, nothing probed live (no key).
+  // https://console.groq.com/docs
+  groq: {
+    id: "groq",
+    label: "Groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    docsUrl: "https://console.groq.com/docs",
+    // The OpenAI location (reported for openai/gpt-oss-120b; absent = 0).
+    readCachedTokens: (usage) => usage.prompt_tokens_details?.cached_tokens ?? 0,
+    // A cache hit is its own catalog row; no time-of-day schedule, no cache write.
+    pricing: { kind: "priced", cachedInput: true, regime: null },
+    concurrency: {
+      scope: "unpublished",
+      note:
+        "Groq publishes requests / tokens per minute and per DAY by model and plan, no in-flight cap. " +
+        "The free-tier numbers of our account were not read (no key on 2026-11-24), so none is typed " +
+        "here. A 429 names the cap it hit (e.g. \"tokens per day (TPD)\") and carries retry-after in " +
+        "seconds: a daily cap moves the call down the fallback order.",
+      source: "https://console.groq.com/docs/rate-limits",
+      observedOn: "2026-11-24",
+    },
+    sampling: {
+      accepted: true,
+      note: "Groq documents temperature and top_p on chat completions for both models (docs read 2026-11-24, not probed).",
+    },
+    maxOutputTokensField: "max_completion_tokens",
+    imageInput: false,
+    // From the vendor docs, not yet probed live with a tool call (no key on 2026-11-24):
+    // qwen/qwen3.8-27b takes reasoning_effort none | default | low | medium | high (`default`
+    // = sending nothing), openai/gpt-oss-120b low | medium | high.
+    thinkingLevels: { "qwen/qwen3.8-27b": ["none", "low", "medium", "high"], "openai/gpt-oss-120b": ["low", "medium", "high"] },
+    // json_schema (best effort without strict) on both models, json_object on all. "Streaming
+    // and tool use are not supported with Structured Outputs": a tool round never carries a
+    // response_format here. We never send `reasoning_format`: the default keeps the reasoning
+    // in its own `reasoning` field, out of `content` (`raw` beside JSON mode or tools is a 400).
+    structuredOutput: "json_schema",
+    schemaEnforced: false,
+    reasoning: {
+      kind: "disablable",
+      requestFields: { reasoning_effort: "none" },
+      perModel: {
+        "qwen/qwen3.8-27b": { reasoning_effort: "none" },
+        "openai/gpt-oss-120b": { reasoning_effort: "low" },
+      },
+      refusedBy: {},
+      source: "https://console.groq.com/docs/reasoning",
+      evidence:
+        "Vendor docs read 2026-11-24, NOT probed live (no key): qwen/qwen3.8-27b reasoning_effort " +
+        "none|default|low|medium|high (none = off); openai/gpt-oss-120b low|medium|high (none refused).",
+    },
+    // Groq's out-of-credit body is unknown (the free tier is capped by rate, not by a balance):
+    // only a 402 counts. A daily-cap 429 is a QUOTA refusal, never an empty balance.
+    isOutOfCreditRefusal: (s) => s.status === 402,
+  },
 };
 
 /**
@@ -1252,6 +1408,13 @@ export function vendorRejectsSampling(vendor: VendorId): boolean {
  * wait cannot hold the request open for five minutes.
  */
 export function parseRetryAfterMs(headerValue: string | null | undefined): number | null {
+  const ms = readRetryAfterMs(headerValue);
+  if (ms == null) return null;
+  return ms > MAX_RETRY_AFTER_MS ? null : ms;
+}
+
+/** The wait a `Retry-After` header asks for in ms, WITHOUT the ceiling; null when absent/unusable. */
+export function readRetryAfterMs(headerValue: string | null | undefined): number | null {
   if (!headerValue) return null;
   const raw = headerValue.trim();
   let ms: number | null = null;
@@ -1265,7 +1428,24 @@ export function parseRetryAfterMs(headerValue: string | null | undefined): numbe
   }
 
   if (ms == null || ms <= 0) return null;
-  return ms > MAX_RETRY_AFTER_MS ? null : ms;
+  return ms;
+}
+
+/**
+ * A vendor naming a cap counted per day or per hour, in its 429 body. Vendors word
+ * it alike ("on tokens per day (TPD)", "requests per day (RPD)", "daily limit",
+ * "per hour"); a per-MINUTE limit ("(TPM)", "per min") must NOT match: that one
+ * clears within the retry budget. The ONE place this wording is read.
+ */
+const LONG_WINDOW_QUOTA_PROSE = /per day|per hour|\(TPD\)|\(RPD\)|daily/i;
+
+/**
+ * True when a 429 (not an empty balance) is a QUOTA refusal: the vendor asks for
+ * a wait longer than the longest `Retry-After` we honour, or names a per-day /
+ * per-hour cap. Generic for every vendor, never keyed on one.
+ */
+export function isQuotaRefusal(retryAfterMs: number | null, bodyText: string): boolean {
+  return (retryAfterMs !== null && retryAfterMs > MAX_RETRY_AFTER_MS) || LONG_WINDOW_QUOTA_PROSE.test(bodyText);
 }
 
 export interface VendorCompleteOptions {
@@ -1939,6 +2119,25 @@ export async function postVendorChatCompletion(args: {
       // waiting, so retrying it would burn the budget on a certainty and delay
       // the error the owner needs to see.
       if (res.status === 429 && !outOfCredit) {
+        // A cap that does not clear within the retry budget (a daily quota, a
+        // Retry-After of minutes) is named at once, with no retry: the route
+        // moves the call down the fallback order (OPEN-LLM-FREE-1124).
+        const askedWaitMs = readRetryAfterMs(res.headers?.get?.("retry-after"));
+        if (isQuotaRefusal(askedWaitMs, text)) {
+          const retryAfterSeconds = askedWaitMs === null ? null : Math.ceil(askedWaitMs / 1000);
+          console.warn(
+            `[chat-service] [vendor:${vendor}] Quota exhausted on "${model}"` +
+              `${retryAfterSeconds !== null ? ` (retry after ${retryAfterSeconds}s)` : ""}, not retried: ${text.slice(0, 200)}`,
+          );
+          throw new VendorQuotaExhaustedError(
+            `[vendor:${vendor}] ${config.label} quota is exhausted for "${model}"` +
+              `${retryAfterSeconds !== null ? ` (the vendor asks to wait ${retryAfterSeconds}s)` : ""}: ${text.slice(0, 300)}`,
+            vendor,
+            model,
+            retryAfterSeconds,
+            text,
+          );
+        }
         if (rateLimitAttempt < MAX_RATE_LIMIT_RETRIES) {
           const wait = parseRetryAfterMs(res.headers?.get?.("retry-after")) ??
             jittered(RATE_LIMIT_BACKOFF_MS[rateLimitAttempt] ?? 7500);

@@ -978,14 +978,19 @@ describe("POST /complete — direct vendor routing", () => {
     expect(actual.length).toBeGreaterThan(0);
   }, 20_000);
 
-  it("surfaces a persistently saturated vendor as 429, not as a generic failure", async () => {
+  it("surfaces a persistently saturated vendor as 429 on an org's own key, not as a generic failure", async () => {
     // Retrying must not HIDE capacity: after the bounded budget the caller is
     // told the vendor is at capacity, with retryable true, so "we are asking
-    // for more parallelism than we bought" stays visible.
+    // for more parallelism than we bought" stays visible. On OUR platform key
+    // the call moves down the fallback order instead (OPEN-LLM-FREE-1124,
+    // tests/integration/open-llm-free.test.ts); an org's own key keeps the 429.
     const cap = { postedItems: [] as CostItem[][], patchedStatuses: [] as string[] };
     routes.push(
       mockRunsCreate(),
-      mockVendorKey("zai"),
+      {
+        match: (url: string) => url.includes("/keys/zai/decrypt"),
+        respond: () => ({ ok: true, body: { provider: "zai", key: "fake-zai-key", keySource: "org" } }),
+      },
       mockBilling(),
       {
         match: (url: string) => url.startsWith(ZAI_URL),

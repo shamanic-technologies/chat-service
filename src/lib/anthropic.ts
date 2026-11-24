@@ -142,7 +142,7 @@ export function prepareAnthropicSchema<T>(schema: T): T {
 
 import { LLM_DYNASTIES, callableModelNames, dynastyOfModel } from "./llm-dynasties.js";
 
-export type Provider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai";
+export type Provider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai" | "cerebras" | "groq";
 /**
  * A name `/complete` accepts as `model`: an LLM dynasty slug (`gemini-flash`,
  * runs the dynasty's head), the head's exact model id (pins that version), or a
@@ -489,6 +489,37 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       capabilityTier: "strong",
     },
   },
+  // OPEN-LLM-FREE-1124: open-weight models the Rating compares to the private ones.
+  // Cost prefixes are costs-service's (seeded at the vendors' FULL list price: a free
+  // tier is a vendor discount, our margin). Cerebras prices no cache hit.
+  cerebras: {
+    "cerebras-gpt-oss": {
+      apiModelId: "gpt-oss-120b",
+      costPrefix: "cerebras-gpt-oss-120b",
+      provider: "cerebras",
+      capabilityTier: "cheap",
+    },
+    "cerebras-qwen": {
+      apiModelId: "qwen-3.8-27b",
+      costPrefix: "cerebras-qwen-3.8-27b",
+      provider: "cerebras",
+      capabilityTier: "cheap",
+    },
+  },
+  groq: {
+    "groq-gpt-oss": {
+      apiModelId: "openai/gpt-oss-120b",
+      costPrefix: "groq-gpt-oss-120b",
+      provider: "groq",
+      capabilityTier: "cheap",
+    },
+    "groq-qwen": {
+      apiModelId: "qwen/qwen3.8-27b",
+      costPrefix: "groq-qwen3.8-27b",
+      provider: "groq",
+      capabilityTier: "cheap",
+    },
+  },
 };
 
 /**
@@ -502,6 +533,8 @@ export const PROVIDER_MODELS: Record<Provider, readonly ModelAlias[]> = {
   zai: callableModelNames("zai"),
   moonshot: callableModelNames("moonshot"),
   openai: callableModelNames("openai"),
+  cerebras: callableModelNames("cerebras"),
+  groq: callableModelNames("groq"),
 };
 
 /**
@@ -791,6 +824,11 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "gpt-5.6-terra": "openai-gpt-5.6-terra",
   "gpt-6.1-sol": "openai-gpt-6.1-sol",
   "gpt-6.1-terra": "openai-gpt-6.1-terra",
+  // OPEN-LLM-FREE-1124: open-weight models on Cerebras and Groq.
+  "gpt-oss-120b": "cerebras-gpt-oss-120b",
+  "qwen-3.8-27b": "cerebras-qwen-3.8-27b",
+  "openai/gpt-oss-120b": "groq-gpt-oss-120b",
+  "qwen/qwen3.8-27b": "groq-qwen3.8-27b",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */
