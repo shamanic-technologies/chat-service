@@ -23,6 +23,11 @@ const EXPECTED: Record<string, { head: string; legacy: string[] }> = {
   "gpt-astra": { head: "gpt-6-astra", legacy: ["gpt-pro"] },
   "gpt-sol": { head: "gpt-6.1-sol", legacy: ["gpt-sol"] },
   "gpt-terra": { head: "gpt-6.1-terra", legacy: ["gpt-terra"] },
+  // OPEN-LLM-FREE-1124: the same open weights on two hosts are two lines (own price, speed, limits).
+  "cerebras-gpt-oss": { head: "gpt-oss-120b", legacy: [] },
+  "cerebras-qwen": { head: "qwen-3.8-27b", legacy: [] },
+  "groq-gpt-oss": { head: "openai/gpt-oss-120b", legacy: [] },
+  "groq-qwen": { head: "qwen/qwen3.8-27b", legacy: [] },
 };
 
 const completeBody = (provider: string, model: string) => ({ message: "hi", systemPrompt: "s", provider, model });

@@ -90,6 +90,7 @@ import {
   keyResolutionErrorMessage,
   VendorUnsupportedOptionError,
   VendorRateLimitError,
+  VendorQuotaExhaustedError,
   VendorOutOfCreditError,
   type VendorId,
 } from "./lib/openai-compatible.js";
@@ -431,9 +432,11 @@ import { scrapeUrl } from "./lib/scraping-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import { ModelJsonOutputError, parseModelJsonOutput } from "./lib/json-output.js";
 import { NOT_JSON, buildSchemaConformanceRead, checkResponseSchema, loadSchemaConformanceRows, recordSchemaConformance } from "./lib/response-schema.js";
+import { missingPlatformKeySentence, refreshPlatformKeyPresence, PLATFORM_KEY_REFRESH_MS } from "./lib/platform-key-presence.js";
 import {
   resolveKey,
   resolvePlatformKey,
+  KeyNotConfiguredError,
   type ResolvedKey,
   listOrgKeys,
   getKeySource,
@@ -954,7 +957,27 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
  * cost names of the model it calls. `tried` = every model this request already called.
  */
 class RetryOnFallback {
-  constructor(readonly model: ReturnType<typeof resolveModel>, readonly tried: readonly string[]) {}
+  constructor(
+    readonly model: ReturnType<typeof resolveModel>,
+    readonly tried: readonly string[],
+    /** Why the call left the model it was asked on (served back as `fallback.reason`). */
+    readonly reason: FallbackReason,
+  ) {}
+}
+
+/** Why a completion was served by another model than the one asked. */
+type FallbackReason = "out_of_credit" | "rate_limited" | "quota_exhausted";
+
+/** `fallback.reason` of a served attempt: the retry's own, else the pre-call detour around a vendor out of credit. */
+function fallbackReasonOf(retry: RetryOnFallback | null): FallbackReason {
+  return retry?.reason ?? "out_of_credit";
+}
+
+/** The vendor's cap that refused this attempt (OPEN-LLM-FREE-1124), or null: a quota, or a rate limit that outlasted the retries. */
+function capRefusalOf(err: unknown): Exclude<FallbackReason, "out_of_credit"> | null {
+  if (err instanceof VendorQuotaExhaustedError) return "quota_exhausted";
+  if (err instanceof VendorRateLimitError) return "rate_limited";
+  return null;
 }
 
 /** How many models one completion tries before it fails loud (the first one included). */
@@ -976,6 +999,9 @@ interface FailedAttemptOutcome {
  *  - an empty balance on OUR key is stored (red on Monitoring) and the call moves down the order;
  *  - a FALLBACK that fails for any reason before answering moves down the order too (the caller never asked for
  *    that model, so its refusal is not the caller's answer);
+ *  - a rate limit that outlasted the retries, or a quota (a per-day cap, a Retry-After of minutes), on OUR key
+ *    moves the call down the order too (OPEN-LLM-FREE-1124: a free tier's cap must never leave a writer without a
+ *    completion). Nothing is stored for it: a cap is not a broken vendor, Monitoring stays in normal colours;
  *  - a primary that fails for another reason is the caller's own failure: unchanged;
  *  - a model that ANSWERED (unparseable JSON) or a tool loop that already spent rounds is never run twice.
  * No model left = the call is counted refused on the vendor it was asked on, and named.
@@ -1001,28 +1027,60 @@ function afterFailedAttempt(args: {
       message: err instanceof Error ? err.message : String(err),
     });
   }
-  if (!creditRefusal && !choice.fallbackFrom) return { next: null, refusal: null };
+  // The primary refused on our key for a cap of the vendor's (an org's own key: the caller's own 429).
+  const capRefusal = platformKey && !creditRefusal && !choice.fallbackFrom ? capRefusalOf(err) : null;
+  if (!creditRefusal && !capRefusal && !choice.fallbackFrom) return { next: null, refusal: null };
   const requested = choice.fallbackFrom ?? resolved;
   const tried = [...(retry?.tried ?? []), resolved.apiModelId];
   if (!spent && tried.length < MAX_SERVING_ATTEMPTS) {
     const [next] = fallbackOrderFor(requested, accepts, new Date(), new Set(tried));
     if (next) {
+      const why = creditRefusal ? "is out of credit" : capRefusal === "quota_exhausted" ? "has its quota exhausted" : capRefusal ? "is rate limited" : "failed as a fallback";
       console.warn(
-        `[chat-service] [vendor-credit] ${resolved.apiModelId} ${creditRefusal ? "is out of credit" : "failed as a fallback"} ` +
+        `[chat-service] [vendor-credit] ${resolved.apiModelId} ${why} ` +
           `(asked: ${requested.apiModelId}): the call runs on ${next.apiModelId}, next of the fallback order (tried ${tried.join(", ")}).`,
       );
-      return { next: new RetryOnFallback(next, tried), refusal: null };
+      // The reason the call left the model it was asked on stays the same down the whole order.
+      const reason: FallbackReason = choice.fallbackFrom ? fallbackReasonOf(retry) : capRefusal ?? "out_of_credit";
+      return { next: new RetryOnFallback(next, tried, reason), refusal: null };
     }
   }
-  // No model served this call: the only thing `refusedCalls` counts.
+  // No model served this call: the only thing `refusedCalls` counts (a no-op unless the vendor is out of credit).
   recordUnserved(requested.provider);
-  if (!creditRefusal) return { next: null, refusal: null };
-  return { next: null, refusal: noServingModelRefusal(requested, tried) };
+  if (creditRefusal) return { next: null, refusal: noServingModelRefusal(requested, tried) };
+  if (capRefusal) return { next: null, refusal: noServingModelRefusal(requested, tried, { reason: capRefusal, err }) };
+  return { next: null, refusal: null };
 }
 
-/** The named answer of a call that ended on an empty balance with no model left to serve it. */
-function noServingModelRefusal(requested: ReturnType<typeof resolveModel>, tried: readonly string[]): { status: number; body: Record<string, unknown> } {
+/**
+ * The named answer of a call that ended on an empty balance, or on the vendor's cap (`cap`: a rate limit or a
+ * quota on our key), with no model left to serve it.
+ */
+function noServingModelRefusal(
+  requested: ReturnType<typeof resolveModel>,
+  tried: readonly string[],
+  cap?: { reason: Exclude<FallbackReason, "out_of_credit">; err: unknown },
+): { status: number; body: Record<string, unknown> } {
   const out = providersOutOfCredit();
+  if (cap) {
+    const label = PROVIDER_LABELS[requested.provider];
+    const retryAfterSeconds = cap.err instanceof VendorQuotaExhaustedError ? cap.err.retryAfterSeconds : null;
+    return {
+      status: 502,
+      body: {
+        error:
+          `No model can serve this request: ${label} ${cap.reason === "quota_exhausted" ? "quota is exhausted" : "is rate limiting"} ` +
+          `our account on ${requested.apiModelId}, and no other served model takes this request as sent.`,
+        code: "no_serving_model",
+        requestedModel: requested.apiModelId,
+        outOfCredit: out,
+        rateLimited: { provider: requested.provider, reason: cap.reason, retryAfterSeconds },
+        tried,
+        // A cap lifts by itself: the same request can be sent again later.
+        retryable: true,
+      },
+    };
+  }
   return {
     status: 502,
     body: {
@@ -1034,6 +1092,33 @@ function noServingModelRefusal(requested: ReturnType<typeof resolveModel>, tried
       retryable: false,
     },
   };
+}
+
+/**
+ * The NAMED answer of a completion whose provider has no platform key in key-service (OPEN-LLM-FREE-1124: a model
+ * can be served by this code before its key is registered). The same 502 + vendor-naming message as before, now
+ * with `code: "platform_key_missing"`; never a silent fallback: the caller named this model. null = the failure is
+ * something else (a failed read, an org's own missing key).
+ */
+function platformKeyMissingRefusal(provider: Provider, err: unknown): { status: number; body: Record<string, unknown> } | null {
+  if (!(err instanceof KeyNotConfiguredError) || err.scope !== "platform") return null;
+  return {
+    status: 502,
+    body: { error: keyResolutionErrorMessage(provider, "platform"), code: "platform_key_missing", provider, retryable: false },
+  };
+}
+
+/** The 429 a caller reads when the vendor's cap refused the call and it was not moved to another model (an org's own key, a fallback). */
+function rateLimitAnswer(err: VendorRateLimitError): Record<string, unknown> {
+  if (err instanceof VendorQuotaExhaustedError) {
+    return {
+      error: "Provider quota is exhausted for this model.",
+      detail: err.message,
+      retryable: true,
+      ...(err.retryAfterSeconds !== null ? { retryAfterSeconds: err.retryAfterSeconds } : {}),
+    };
+  }
+  return { error: "Provider is at capacity for this model.", detail: err.message, retryable: true };
 }
 
 /** Run a completion handler down the fallback order: again while it asks for the next model. */
@@ -1210,6 +1295,8 @@ async function handleComplete(req: express.Request, res: express.Response, retry
     // A fallback with no usable key hands the call to the next model of the order.
     const after = afterFailedAttempt({ choice, err, accepts, retry, platformKey: false, spent: false });
     if (after.next) return after.next;
+    const missing = platformKeyMissingRefusal(provider, err);
+    if (missing) return res.status(missing.status).json(missing.body);
     return res.status(502).json({
       error: keyResolutionErrorMessage(provider, "org"),
     });
@@ -1432,14 +1519,15 @@ async function handleComplete(req: express.Request, res: express.Response, retry
     // Our platform key answered: whatever was wrong with this provider's
     // balance is not wrong now. An org's own key says nothing about ours.
     if (costSource === "platform") markProviderServing(provider);
-    if (choice.fallbackFrom) recordReroute(choice.fallbackFrom.provider);
+    // A reroute is a fact of the vendor-credit outage only: a call moved for a rate limit or a quota counts nothing there.
+    if (choice.fallbackFrom && fallbackReasonOf(retry) === "out_of_credit") recordReroute(choice.fallbackFrom.provider);
 
     const response: Record<string, unknown> = {
       content: jsonMode ? result.content : appendSources(result.content, result.sources),
       tokensInput: result.tokensInput,
       tokensOutput: result.tokensOutput,
       model: result.model,
-      ...(choice.fallbackFrom ? { fallback: { from: choice.fallbackFrom.apiModelId, reason: "out_of_credit" } } : {}),
+      ...(choice.fallbackFrom ? { fallback: { from: choice.fallbackFrom.apiModelId, reason: fallbackReasonOf(retry) } } : {}),
       ...(brandToolCalls !== null ? { brandToolCalls } : {}),
     };
 
@@ -1505,11 +1593,7 @@ async function handleComplete(req: express.Request, res: express.Response, retry
       // a saturated vendor is a capacity fact someone has to act on (fewer
       // concurrent runs, a higher-concurrency model, a raised limit), and it
       // must not read as one more flaky upstream.
-      res.status(429).json({
-        error: "Provider is at capacity for this model.",
-        detail: err.message,
-        retryable: true,
-      });
+      res.status(429).json(rateLimitAnswer(err));
     } else {
       res.status(502).json({
         error: err instanceof ModelJsonOutputError ? "LLM returned invalid JSON." : "LLM call failed. Please try again.",
@@ -3177,6 +3261,8 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
     // A fallback with no usable key hands the call to the next model of the order.
     const after = afterFailedAttempt({ choice, err, accepts, retry, platformKey: false, spent: false });
     if (after.next) return after.next;
+    const missing = platformKeyMissingRefusal(provider, err);
+    if (missing) return res.status(missing.status).json(missing.body);
     return res.status(502).json({
       error: keyResolutionErrorMessage(provider, "platform"),
     });
@@ -3326,7 +3412,8 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
 
     // Same as /complete: the platform key answered, so the balance is fine.
     markProviderServing(provider);
-    if (choice.fallbackFrom) recordReroute(choice.fallbackFrom.provider);
+    // A reroute is a fact of the vendor-credit outage only: a call moved for a rate limit or a quota counts nothing there.
+    if (choice.fallbackFrom && fallbackReasonOf(retry) === "out_of_credit") recordReroute(choice.fallbackFrom.provider);
 
     const response: Record<string, unknown> = {
       content: jsonMode ? result.content : appendSources(result.content, result.sources),
@@ -3334,7 +3421,7 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
       tokensOutput: result.tokensOutput,
       model: result.model,
       runId,
-      ...(choice.fallbackFrom ? { fallback: { from: choice.fallbackFrom.apiModelId, reason: "out_of_credit" } } : {}),
+      ...(choice.fallbackFrom ? { fallback: { from: choice.fallbackFrom.apiModelId, reason: fallbackReasonOf(retry) } } : {}),
       ...(brandToolCalls !== null ? { brandToolCalls } : {}),
     };
 
@@ -3394,11 +3481,7 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
       });
     } else if (err instanceof VendorRateLimitError) {
       // Same split as /complete: a saturated vendor is a 429, not a 502.
-      res.status(429).json({
-        error: "Provider is at capacity for this model.",
-        detail: err.message,
-        retryable: true,
-      });
+      res.status(429).json(rateLimitAnswer(err));
     } else {
       res.status(502).json({
         error: err instanceof ModelJsonOutputError ? "LLM returned invalid JSON." : "LLM call failed. Please try again.",
@@ -6912,7 +6995,8 @@ async function distryModelsPanel() {
     pricesRead: listPricesRead(),
     current: { provider: current.provider, model: current.model, effort: current.effort ?? null },
     now: new Date(),
-    outOfCredit: distryOutageSentence,
+    // Why a vendor cannot serve a turn now: out of credit (the stored fact), or no platform key registered yet.
+    outOfCredit: (p) => distryOutageSentence(p) ?? missingPlatformKeySentence(p, PROVIDER_LABELS[p]),
   });
 }
 
@@ -7771,6 +7855,10 @@ if (process.env.NODE_ENV !== "test") {
       const server = app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });
+      // OPEN-LLM-FREE-1124: which providers have a platform key (key-service's list), read in the
+      // background after listen and every 5 min. Until read, every provider is assumed to have one.
+      void refreshPlatformKeyPresence();
+      setInterval(() => void refreshPlatformKeyPresence(), PLATFORM_KEY_REFRESH_MS).unref();
       // Proactive turns a restart cut off: marked failed, never re-run (one message per fact).
       failInterruptedProactiveTurns(db, bootedAt)
         .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
