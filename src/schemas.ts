@@ -133,12 +133,13 @@ registry.registerPath({
  * Providers and model names a /chat config may run on: every provider and every
  * name chat-service can call (DISTRY-ALL-MODELS-1122, owner 2026-11-22 « tous
  * ceux qu'on a dans chat-service »). Anthropic and Google run their own loops;
- * DeepSeek, Z.ai, Moonshot and OpenAI share ONE direct-vendor tool loop
+ * DeepSeek, Z.ai, Moonshot, OpenAI, Cerebras and Groq share ONE direct-vendor tool loop
  * (src/lib/vendor-chat.ts), probed live with a tool turn on each served model
  * (GLM-5.3 + Flash, GPT-6 Astra, GPT-6.1 Sol + Terra 2026-11-22; Moonshot's
- * account was out of credit that day, same loop and request shape).
+ * account was out of credit that day, same loop and request shape; Cerebras and
+ * Groq, OPEN-LLM-FREE-1124, had no key on 2026-11-24: same loop, not yet probed).
  */
-export const CHAT_CONFIG_PROVIDERS = ["anthropic", "google", "deepseek", "zai", "moonshot", "openai"] as const;
+export const CHAT_CONFIG_PROVIDERS = ["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "cerebras", "groq"] as const;
 export type ChatConfigProvider = (typeof CHAT_CONFIG_PROVIDERS)[number];
 export const CHAT_CONFIG_MODELS_BY_PROVIDER: Record<ChatConfigProvider, readonly string[]> = Object.fromEntries(
   CHAT_CONFIG_PROVIDERS.map((p) => [p, callableModelNames(p)]),
@@ -187,7 +188,7 @@ export const AppConfigRequestSchema = z
         "LLM provider for this chat mode. Omit to use the default (google).\n\n" +
         "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
         "- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n" +
-        "- `deepseek`, `zai`, `moonshot`, `openai` — the direct vendors (DeepSeek, GLM, Kimi, GPT), on one shared tool loop",
+        "- `deepseek`, `zai`, `moonshot`, `openai`, `cerebras`, `groq` — the direct vendors (DeepSeek, GLM, Kimi, GPT, and the open-weight GPT-OSS / Qwen on Cerebras and Groq), on one shared tool loop",
       example: "google",
     }),
     model: z.enum(CHAT_CONFIG_MODELS).optional().openapi({
@@ -360,7 +361,7 @@ export const PlatformConfigRequestSchema = z
         "LLM provider for this chat mode. Omit to use the default (google).\n\n" +
         "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
         "- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n" +
-        "- `deepseek`, `zai`, `moonshot`, `openai` — the direct vendors (DeepSeek, GLM, Kimi, GPT), on one shared tool loop",
+        "- `deepseek`, `zai`, `moonshot`, `openai`, `cerebras`, `groq` — the direct vendors (DeepSeek, GLM, Kimi, GPT, and the open-weight GPT-OSS / Qwen on Cerebras and Groq), on one shared tool loop",
       example: "google",
     }),
     model: z.enum(CHAT_CONFIG_MODELS).optional().openapi({
@@ -489,7 +490,8 @@ const DYNASTY_MODEL_DOC =
   "versions is `GET /internal/model-dynasties`). The slug always runs the dynasty's head (newest " +
   "served version): anthropic → claude-haiku|claude-sonnet|claude-opus|claude-fable, google → " +
   "gemini-flash-lite|gemini-flash|gemini-pro, deepseek → deepseek-flash, zai → glm-flash|glm, " +
-  "moonshot → kimi-k2|kimi-k3, openai → gpt-astra|gpt-sol|gpt-terra. The head's exact model id " +
+  "moonshot → kimi-k2|kimi-k3, openai → gpt-astra|gpt-sol|gpt-terra, cerebras → cerebras-gpt-oss|cerebras-qwen, " +
+  "groq → groq-gpt-oss|groq-qwen (open-weight models). The head's exact model id " +
   "(e.g. `gemini-4-hydrogen`) is also accepted, to pin that version. Spend is declared under the " +
   "concrete model that ran, whatever name called it.\n\n";
 
@@ -544,11 +546,11 @@ export const CompleteRequestSchema = z
         "prevents a burst of concurrent calls from over-reserving against your org balance.",
       example: 4096,
     }),
-    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot", "openai"]).openapi({
+    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "cerebras", "groq"]).openapi({
       description:
         "LLM provider to use. `anthropic` and `google` are native clients with the full feature " +
         "set (vision, web search, thinking controls). `deepseek`, `zai` (Z.ai / GLM), " +
-        "`moonshot` (Kimi) and `openai` (GPT) are called directly over their OpenAI-compatible " +
+        "`moonshot` (Kimi), `openai` (GPT), `cerebras` and `groq` (open-weight GPT-OSS and Qwen) are called directly over their OpenAI-compatible " +
         "APIs by one shared adapter — text in / text out only, opt-in per call, no existing " +
         "caller reaches them implicitly. Each vendor resolves its OWN API key from key-service " +
         "under this exact slug.",
@@ -573,11 +575,15 @@ export const CompleteRequestSchema = z
         "**openai:** `gpt-pro` → GPT-6 Astra (flagship; 1.05M context, 128k output, always-on " +
         "reasoning floored at `low`), `gpt-sol` → GPT-6 Sol, `gpt-terra` → GPT-5.6 Terra (the latest " +
         "Terra; there is no GPT-6 Terra). On `gpt-sol` / `gpt-terra`, `disableThinking: true` turns " +
-        "reasoning fully off. All three reject `temperature`.\n\n" +
-        "The four direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\n" +
+        "reasoning fully off. All three reject `temperature`.\n" +
+        "**cerebras:** `cerebras-gpt-oss` → `gpt-oss-120b`, `cerebras-qwen` → `qwen-3.8-27b`. " +
+        "**groq:** `groq-gpt-oss` → `openai/gpt-oss-120b`, `groq-qwen` → `qwen/qwen3.8-27b`. Open-weight models on " +
+        "free tiers with daily caps: a call the vendor refuses for a rate limit or a quota is served by the next model " +
+        "of the fallback order (`fallback.reason`). GPT-OSS cannot turn reasoning off: `disableThinking` sends its lowest effort (`low`).\n\n" +
+        "The direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\n" +
         "The model must match the provider: anthropic → haiku|sonnet|opus|fable, google → flash-lite|flash|flash-pro|pro, " +
         "deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro, " +
-        "openai → gpt-pro|gpt-sol|gpt-terra.",
+        "openai → gpt-pro|gpt-sol|gpt-terra, cerebras → cerebras-gpt-oss|cerebras-qwen, groq → groq-gpt-oss|groq-qwen.",
       example: "sonnet",
     }),
     webSearch: z.boolean().optional().openapi({
@@ -715,13 +721,17 @@ export const CompleteResponseSchema = z
     }),
     fallback: z
       .object({
-        from: z.string().openapi({ description: "Versioned model ID the caller asked for (its provider is out of credit)." }),
-        reason: z.literal("out_of_credit"),
+        from: z.string().openapi({ description: "Versioned model ID the caller asked for." }),
+        reason: z.enum(["out_of_credit", "rate_limited", "quota_exhausted"]).openapi({
+          description:
+            "`out_of_credit`: the asked model's provider has no credit on our account. `rate_limited`: it still answered 429 after the retry budget. " +
+            "`quota_exhausted`: it refused for a per-day / per-hour cap or asked for a wait longer than the retries (OPEN-LLM-FREE-1124).",
+        }),
       })
       .optional()
       .openapi({
         description:
-          "Present only when the requested model's provider has no credit and the call was served by another vendor's model: the cheapest of the same tier that takes the request " +
+          "Present only when the requested model's provider could not serve on our platform key (no credit, a rate limit that outlasted the retries, an exhausted quota) and the call was served by another vendor's model: the cheapest of the same tier that takes the request " +
           "(VENDOR-CREDIT-1030, LLM-CREDIT-GENERIC-1108). `model` is then the fallback that ran, and the run declares the fallback's own cost names.",
         example: { from: "deepseek-flash", reason: "out_of_credit" },
       }),
@@ -762,6 +772,8 @@ Callers specify a provider and a version-free model alias. The service resolves 
 | \`google\` | \`pro\` | Most powerful Google model for complex tasks |
 
 All Google models require a Google API key configured in key-service (provider: \`google\`).
+
+**When the vendor cannot serve on our platform key (OPEN-LLM-FREE-1124):** an empty balance, a 429 that outlasts the retries, or a quota (a per-day / per-hour cap, a Retry-After longer than the retries) moves the call to the next model of the fallback order; the response carries \`fallback: {from, reason}\` (\`out_of_credit | rate_limited | quota_exhausted\`) and the run declares the model that ran. No model left = \`502 {code: "no_serving_model"}\`. An org's own key keeps the vendor's 429. A provider with no platform key registered answers \`503 {code: "platform_key_missing", provider}\`.
 
 **Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with \`imageUrl\` + google/flash-lite), any service that needs a quick LLM call without conversation context.`,
   request: {
@@ -961,10 +973,10 @@ export const InternalPlatformCompleteRequestSchema = z
         "any cost is held; the parameter is never silently dropped.",
       example: 0.3,
     }),
-    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot", "openai"]).openapi({
+    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "cerebras", "groq"]).openapi({
       description:
         "LLM provider to use. `anthropic` and `google` are native clients; `deepseek`, `zai` " +
-        "(Z.ai / GLM), `moonshot` (Kimi) and `openai` (GPT) are called directly over their " +
+        "(Z.ai / GLM), `moonshot` (Kimi), `openai` (GPT), `cerebras` and `groq` (open-weight GPT-OSS / Qwen) are called directly over their " +
         "OpenAI-compatible APIs, text-only. Each vendor resolves its own platform key from " +
         "key-service under this exact slug.",
       example: "anthropic",
@@ -1085,6 +1097,8 @@ registry.registerPath({
 **Whose work (required):** send the caller's run in \`x-run-id\` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither = 400, before any spend.
 
 **Key resolution:** Uses the platform key directly via \`GET /keys/platform/{provider}/decrypt\` — no org-level key lookup.
+
+**When the vendor cannot serve on our platform key (OPEN-LLM-FREE-1124):** an empty balance, a 429 that outlasts the retries, or a quota (a per-day / per-hour cap, a Retry-After longer than the retries) moves the call to the next model of the fallback order; the response carries \`fallback: {from, reason}\` (\`out_of_credit | rate_limited | quota_exhausted\`) and the run declares the model that ran. No model left = \`502 {code: "no_serving_model"}\`. An org's own key keeps the vendor's 429. A provider with no platform key registered answers \`503 {code: "platform_key_missing", provider}\`.
 
 **No org billing.** Spend is declared on a platform run (platform-billed). This endpoint is for internal service-to-service calls (e.g. workflow upgrades at startup) where there is no org to bill and no user-initiated run to track.
 
@@ -1416,7 +1430,7 @@ export const VendorCreditQuerySchema = z.object({
 });
 
 const VendorCreditVendorSchema = z.object({
-  provider: z.enum(["deepseek", "zai", "moonshot", "openai", "anthropic", "google"]),
+  provider: z.enum(["deepseek", "zai", "moonshot", "openai", "cerebras", "groq", "anthropic", "google"]),
   label: z.string().openapi({ description: "The vendor's name.", example: "DeepSeek" }),
   outOfCredit: z.boolean().openapi({ description: "True while the vendor refuses our platform key for an empty balance: broken (red). Turns false on the first call that succeeds." }),
   since: z.string().nullable().openapi({ description: "ISO time of the first refused call of the open outage; null when serving." }),
@@ -1431,7 +1445,7 @@ const VendorCreditVendorSchema = z.object({
 
 const VendorCreditDaySchema = z.object({
   day: z.string().openapi({ description: "UTC day, YYYY-MM-DD." }),
-  provider: z.enum(["deepseek", "zai", "moonshot", "openai", "anthropic", "google"]),
+  provider: z.enum(["deepseek", "zai", "moonshot", "openai", "cerebras", "groq", "anthropic", "google"]),
   outOfCredit: z.boolean().openapi({ description: "True when the vendor was out of credit at any moment of that day (broken)." }),
   refusedCalls: z.number().int(),
   reroutedCalls: z.number().int(),

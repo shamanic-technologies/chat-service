@@ -19,7 +19,7 @@
  * Pure data, no imports: `schemas.ts` builds the `/complete` model enum from it.
  */
 
-export type DynastyProvider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai";
+export type DynastyProvider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai" | "cerebras" | "groq";
 export type DynastyTier = "cheap" | "strong" | "frontier";
 
 export interface LlmDynasty {
@@ -228,6 +228,44 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     servedToday: true,
     legacyAliases: ["gpt-terra"],
   },
+  // Cerebras and Groq (OPEN-LLM-FREE-1124): open-weight models. The same weights on
+  // two hosts are two lines: each host has its own price, speed and limits.
+  {
+    slug: "cerebras-gpt-oss",
+    name: "GPT-OSS on Cerebras",
+    provider: "cerebras",
+    capabilityTier: "cheap",
+    models: ["gpt-oss-120b"],
+    servedToday: true,
+    legacyAliases: [],
+  },
+  {
+    slug: "cerebras-qwen",
+    name: "Qwen on Cerebras",
+    provider: "cerebras",
+    capabilityTier: "cheap",
+    models: ["qwen-3.8-27b"],
+    servedToday: true,
+    legacyAliases: [],
+  },
+  {
+    slug: "groq-gpt-oss",
+    name: "GPT-OSS on Groq",
+    provider: "groq",
+    capabilityTier: "cheap",
+    models: ["openai/gpt-oss-120b"],
+    servedToday: true,
+    legacyAliases: [],
+  },
+  {
+    slug: "groq-qwen",
+    name: "Qwen on Groq",
+    provider: "groq",
+    capabilityTier: "cheap",
+    models: ["qwen/qwen3.8-27b"],
+    servedToday: true,
+    legacyAliases: [],
+  },
 ];
 
 /** The dynasty a concrete model id belongs to, or undefined (a test forbids that for any catalogue id). */
@@ -251,7 +289,7 @@ export function callableModelNames(provider: DynastyProvider): string[] {
   return names;
 }
 
-export const DYNASTY_PROVIDERS: readonly DynastyProvider[] = ["anthropic", "google", "deepseek", "zai", "moonshot", "openai"];
+export const DYNASTY_PROVIDERS: readonly DynastyProvider[] = ["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "cerebras", "groq"];
 
 /** Every name `/complete` accepts, all providers. */
 export const ALL_CALLABLE_MODEL_NAMES: readonly string[] = DYNASTY_PROVIDERS.flatMap(callableModelNames).filter(
