@@ -23,11 +23,15 @@ const EXPECTED: Record<string, { head: string; legacy: string[] }> = {
   "gpt-astra": { head: "gpt-6-astra", legacy: ["gpt-pro"] },
   "gpt-sol": { head: "gpt-6.1-sol", legacy: ["gpt-sol"] },
   "gpt-terra": { head: "gpt-6.1-terra", legacy: ["gpt-terra"] },
-  // OPEN-LLM-FREE-1124: the same open weights on two hosts are two lines (own price, speed, limits).
-  "cerebras-gpt-oss": { head: "gpt-oss-120b", legacy: [] },
-  "cerebras-qwen": { head: "qwen-3.8-27b", legacy: [] },
-  "groq-gpt-oss": { head: "openai/gpt-oss-120b", legacy: [] },
-  "groq-qwen": { head: "qwen/qwen3.8-27b", legacy: [] },
+  // OPENROUTER-CHEAP-LLM-1124: the cheapest open models, one host each (the id names the host).
+  "openrouter-ling-tiny": { head: "inclusionai/ling-3.0-tiny@antdigital", legacy: [] },
+  "openrouter-nex-mini": { head: "nex-agi/nex-n2.5-mini@nex-agi", legacy: [] },
+  "openrouter-hy-flash": { head: "tencent/hy4-flash@tencent", legacy: [] },
+  "openrouter-deepseek-flash": { head: "deepseek/deepseek-v4.1-flash-1017@alibaba", legacy: [] },
+  "openrouter-qwen-flash": { head: "qwen/qwen3.7-flash@alibaba", legacy: [] },
+  "openrouter-llama-8b": { head: "meta-llama/llama-3.1-8b-instruct@deepinfra", legacy: [] },
+  "openrouter-gpt-oss-20b": { head: "openai/gpt-oss-20b@deepinfra", legacy: [] },
+  "openrouter-gpt-oss-120b": { head: "openai/gpt-oss-120b@deepinfra", legacy: [] },
 };
 
 const completeBody = (provider: string, model: string) => ({ message: "hi", systemPrompt: "s", provider, model });
