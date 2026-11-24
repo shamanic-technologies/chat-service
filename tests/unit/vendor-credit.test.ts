@@ -13,6 +13,9 @@ import {
   PROBE_INTERVAL_MS,
   buildVendorCreditRead,
   fallbackModelFor,
+  fallbackOrderFor,
+  recordUnserved,
+  providersOutOfCredit,
   initVendorCredit,
   isOutOfCreditError,
   isProviderOutOfCredit,
@@ -228,6 +231,7 @@ function recordingStore(open: Array<{ provider: "deepseek"; firstSeenAt: Date }>
   const store: VendorCreditStore = {
     recordRefusal: async (i) => void calls.push(["refusal", i]),
     recordReroute: async (i) => void calls.push(["reroute", i]),
+    recordUnserved: async (i) => void calls.push(["unserved", i]),
     closeOutage: async (i) => void calls.push(["close", i]),
     loadOpen: async () => open,
   };
@@ -349,6 +353,37 @@ describe("one fallback rule for every model (LLM-CREDIT-GENERIC-1108)", () => {
     expect(fallbackModelFor(resolveModel("anthropic", "claude-opus"), () => true, at)?.capabilityTier).toBe("frontier");
   });
 
+  // FALLBACK-REFUSED-1124 (owner 2026-11-24: « il faut prendre le deuxième meilleur quand ça arrive »).
+  it("the fallback is the head of an ORDER: same tier cheapest first, then the nearest tier, one entry per model", () => {
+    const flashLite = resolveModel("google", "gemini-flash-lite");
+    const order = fallbackOrderFor(flashLite, textWithSchema, at);
+    expect(order[0]).toEqual(fallbackModelFor(flashLite, textWithSchema, at));
+    expect(order.slice(0, 2).map((m) => m.apiModelId)).toEqual(["claude-haiku-5-5", "glm-5.3-flash"]);
+    expect(new Set(order.map((m) => m.apiModelId)).size).toBe(order.length);
+    expect(order.every((m) => m.provider !== "google" && m.apiModelId !== "claude-haiku-4-5")).toBe(true);
+    // Tiers never interleave: every cheap model, then every strong one, then the frontier ones.
+    const tiers = order.map((m) => m.capabilityTier);
+    expect(tiers).toEqual([...tiers].sort((a, b) => ["cheap", "strong", "frontier"].indexOf(a) - ["cheap", "strong", "frontier"].indexOf(b)));
+    expect(tiers).toContain("strong");
+  });
+
+  it("the next model of the order leaves out every model the call already tried", () => {
+    const flashLite = resolveModel("google", "gemini-flash-lite");
+    const [first, second, third] = fallbackOrderFor(flashLite, textWithSchema, at);
+    expect(fallbackOrderFor(flashLite, textWithSchema, at, new Set([first.apiModelId]))[0]).toEqual(second);
+    expect(fallbackOrderFor(flashLite, textWithSchema, at, new Set([first.apiModelId, second.apiModelId]))[0]).toEqual(third);
+  });
+
+  it("a tier with no model left hands the call to the nearest tier instead of failing", () => {
+    const opus = resolveModel("anthropic", "claude-opus");
+    const frontier = fallbackOrderFor(opus, textWithSchema, at).filter((m) => m.capabilityTier === "frontier");
+    expect(frontier.length).toBeGreaterThan(0);
+    for (const m of frontier) recordOutOfCredit({ provider: m.provider, model: m.apiModelId, message: "x" });
+    const next = fallbackModelFor(opus, textWithSchema, at);
+    expect(next).not.toBeNull();
+    expect(next!.capabilityTier).toBe("strong");
+  });
+
   it("no list prices read yet = no detour (the call fails loud as before)", () => {
     resetVendorCredit();
     expect(fallbackModelFor(resolveModel("google", "gemini-flash-lite"), () => true, at)).toBeNull();
@@ -423,6 +458,19 @@ describe("routing while a provider is out of credit", () => {
     markProviderServing("deepseek"); // already serving: nothing more to store
     await vi.waitFor(() => expect(calls.map((c) => c[0])).toEqual(["refusal", "reroute", "close"]));
     expect(calls[0][1]).toMatchObject({ provider: "deepseek", model: "deepseek-flash" });
+  });
+
+  it("a vendor's refusal counts no refused call; only a call no model served does, and only during an outage", async () => {
+    const { store, calls } = recordingStore();
+    await initVendorCredit(store);
+    recordUnserved("deepseek"); // not out of credit: an ordinary failure, nothing stored
+    recordOutOfCredit({ provider: "deepseek", model: "deepseek-flash", status: 402, message: "Insufficient Balance" });
+    recordReroute("deepseek");
+    await vi.waitFor(() => expect(calls.map((c) => c[0])).toEqual(["refusal", "reroute"]));
+    recordUnserved("deepseek");
+    await vi.waitFor(() => expect(calls.map((c) => c[0])).toEqual(["refusal", "reroute", "unserved"]));
+    expect(calls[2][1]).toMatchObject({ provider: "deepseek" });
+    expect(providersOutOfCredit()).toEqual(["deepseek"]);
   });
 
   it("a restart mid-outage keeps the detour: open outages reload at boot", async () => {

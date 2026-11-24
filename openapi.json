@@ -2126,11 +2126,11 @@
                 },
                 "refusedCalls": {
                   "type": "integer",
-                  "description": "Calls refused for an empty balance during the latest outage."
+                  "description": "Calls NO model served during the latest outage (the fallback order was empty for the request, or every model of it failed). A call the vendor refused that then ran on another model is a rerouted call, never counted here (FALLBACK-REFUSED-1124)."
                 },
                 "reroutedCalls": {
                   "type": "integer",
-                  "description": "Calls the fallback served during the latest outage."
+                  "description": "Calls a model of the fallback order served during the latest outage."
                 },
                 "sentence": {
                   "type": "string",
@@ -9078,6 +9078,22 @@
           {
             "schema": {
               "type": "string",
+              "enum": [
+                "basic",
+                "full"
+              ],
+              "default": "full",
+              "description": "Response detail level. `basic` strips `toolCalls[].args` and `toolCalls[].result` from every message (keeps only tool names), cutting payload size ~90%. Use for session-list / panel-load where tool detail is not rendered. Omitted or `full` = unchanged (backward-compatible).",
+              "example": "basic"
+            },
+            "required": false,
+            "description": "Response detail level. `basic` strips `toolCalls[].args` and `toolCalls[].result` from every message (keeps only tool names), cutting payload size ~90%. Use for session-list / panel-load where tool detail is not rendered. Omitted or `full` = unchanged (backward-compatible).",
+            "name": "view",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "description": "Service-to-service API key"
             },
             "required": true,
@@ -9242,6 +9258,22 @@
             "required": false,
             "description": "A message id (`olderCursor` of the previous page): serve the page just older than it. Requires `limit`.",
             "name": "before",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "basic",
+                "full"
+              ],
+              "default": "full",
+              "description": "Response detail level. `basic` strips `toolCalls[].args` and `toolCalls[].result` from every message (keeps only tool names), cutting payload size ~90%. Use for session-list / panel-load where tool detail is not rendered. Omitted or `full` = unchanged (backward-compatible).",
+              "example": "basic"
+            },
+            "required": false,
+            "description": "Response detail level. `basic` strips `toolCalls[].args` and `toolCalls[].result` from every message (keeps only tool names), cutting payload size ~90%. Use for session-list / panel-load where tool detail is not rendered. Omitted or `full` = unchanged (backward-compatible).",
+            "name": "view",
             "in": "query"
           },
           {
