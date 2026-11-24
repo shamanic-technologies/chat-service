@@ -1,3 +1,4 @@
+import { loadRegimeCatalogue } from "../regime-hours.fixture.js";
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 
@@ -230,6 +231,7 @@ describe("POST /complete — direct vendor routing", () => {
   let app: Awaited<ReturnType<typeof loadApp>>;
   async function loadApp() {
     vi.resetModules();
+    await loadRegimeCatalogue();
     return (await import("../../src/index.js")).default;
   }
   beforeAll(async () => {
@@ -1046,6 +1048,7 @@ describe("POST /internal/platform-complete — direct vendor routing", () => {
   let app: Awaited<ReturnType<typeof loadApp>>;
   async function loadApp() {
     vi.resetModules();
+    await loadRegimeCatalogue();
     return (await import("../../src/index.js")).default;
   }
   beforeAll(async () => {

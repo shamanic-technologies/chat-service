@@ -412,7 +412,9 @@ deepseek-v4.1-flash-{peak,off-peak}-tokens-{input,cached-input,output}
 
 `buildLlmCostNames` (`src/lib/cost-names.ts`) selects the regime from the **UTC clock at declaration**, never from the date: costs-service gave both regimes an identical price point before the schedule takes effect (2026-08-16T16:00Z) and effective-dated the new rates, so the catalog resolves the right price for when the cost was written. Each window is half-open `[start, end)` — 01:00:00 is the first peak minute, 04:00:00 the first off-peak minute again — so at every instant exactly one name matches and no regime-free fallback is needed.
 
-**Weekends are off-peak.** From 00:00 Beijing on Sunday 2026-08-23 (2026-08-22T16:00Z) DeepSeek applies off-peak rates "throughout the day on weekends (Saturdays and Sundays, Beijing Time)", so a Saturday 02:00 UTC call declares the **off-peak** name even though that hour is a peak window on a weekday. The scope is dated: an instant before 2026-08-22T16:00Z still resolves to peak, which is what the vendor charged then.
+**Weekends are off-peak.** From 00:00 Beijing on Sunday 2026-08-23 (2026-08-22T16:00Z) DeepSeek applies off-peak rates "throughout the day on weekends (Saturdays and Sundays, Beijing Time)", so a Saturday 02:00 UTC call declares the **off-peak** name even though that hour is a peak window on a weekday.
+
+**The schedule lives in costs-service only** (DEEPSEEK-HOLIDAYS-1124, owner 2026-11-25). chat-service holds no hours, weekdays or holidays: at boot and hourly (`refreshFallbackPrices`) it reads `regimeHoursUtc` from `GET /v1/platform-prices` (`[!]<scope>@HH:MM-HH:MM`, scope = weekday range, UTC date or inclusive UTC date range; an instant is in a regime when a plain window covers it and no `!` window does) and picks the ONE regime that covers the instant. Chinese public holidays are off-peak in full because the peak row excludes them and the off-peak row adds them. Never read, a missing or unreadable rule, or an instant covered by no regime or by both = the DeepSeek call is refused before any spend (`AmbiguousPricingRegimeError`), never a guessed regime; an unreadable read keeps the last good one. A window or holiday change is a costs-service-only change.
 
 The vendor states its weekend in Beijing days while the selector reads the UTC weekday. The two agree only because every peak window ends by 10:00 UTC, six hours before the Beijing day rolls over at 16:00 UTC. `selectPricingRegime` asserts that rather than assuming it, and throws `AmbiguousPricingRegimeError` if the vendor ever publishes a peak window running past 16:00 UTC — at which point the day has to be evaluated in the vendor's own timezone, deliberately, instead of being silently mispriced.
 
@@ -852,6 +854,24 @@ Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
 - **Caller**: crm-service, for a voice note someone sent to a brand's assistant line (SOPHIE-VOICE-1019): it shows the transcript in the Unibox / owner ping and hands it to the Copilot as `🎤 Voice note: <words>` (or `🎤 Voice note (could not be understood)`), which the Copilot's WhatsApp block explains. The assistant always answers in text (owner 2026-10-19).
 - **Cost**: org-billed like `/complete`: run under the caller's `x-run-id`, worst-case hold PROVISIONED (32 audio tokens per second + 500, output 1000 + 10 per second; duration = `durationSeconds` else size at 8 kbit/s) then AUTHORIZED (platform key), the real `google-flash-3.8-tokens-*` lines posted `actual`, the hold cancelled. Google prices audio input like text for these models.
 - **Errors**: 413 `file_too_large`, 422 `not_media` (before any spend), 402 billing refusal, 502 `provider_refused` / `transcript_truncated` / `unparseable_transcript` (tokens spent are still declared).
+
+## Transcription of a long recording on our own box, $0 (REELS-1124)
+
+`POST /orgs/media-transcriptions` with `{ "url": "<https GET url of a video/audio file, public internet>", "language"?: "fr", "idempotencyKey"?: "..." }` (`x-api-key` + `x-org-id` + `x-user-id`, `x-run-id` = the caller's run) answers **202 at once** with the transcription's summary (`status: "downloading"`). Poll `GET /orgs/media-transcriptions/:id` (summary only, cheap) until `completed` or `failed`; read the transcript in pieces with `?include=segments,words&fromSeconds=&toSeconds=`.
+
+- **What runs**: an open speech model (NVIDIA Parakeet TDT 0.6b v3 through onnx-asr) in the `transcriber/` sidecar container on our own server, one recording at a time. No vendor, no key, **no cost line, no hold**: the run exists and its cost is $0. Same for every org, local-LLM orgs included (`GET /orgs/local-llm` lists it under `runsOnOurServer`).
+- **Speed** (measured on the box 2026-11-24, 4 threads, load ~24-34 on 16 cores): 180 s of English and of French speech in 74-80 s, so about **25 min per hour of audio**. Every faster-whisper size (base to large-v3-turbo) ran at or slower than real time under the same load, which is why Whisper was not kept.
+- **Answer**: `{ id, status: downloading | transcribing | completed | failed, source, model, language (null: the model reports none), durationSeconds, progress {transcribedSeconds, durationSeconds, fraction}, segmentCount, wordCount, usage {audioSeconds, computeSeconds}, charged {usd: 0, reason}, error?, runId, createdAt, completedAt }`; with `include`: `segments [{startSeconds, endSeconds, text}]` (+ `text`) overlapping the range, `words [{startSeconds, endSeconds, word, probability}]` starting in it.
+- **Flow**: the source is checked (`probeSource`, 4 GB limit) and streamed through `publicFetch` straight into the sidecar (`PUT /jobs/{id}/media`, never buffered); a 15 s in-process tick follows the sidecar's job, stores segments + words, closes the run and frees the sidecar's files.
+- **Idempotency**: same org + same `idempotencyKey` = the same transcription (200), whatever its status. A `failed` one is final: retry with a new key.
+- **Unit**: chat-service declares no outcome. The transcription `id` is stable: the caller's run declares its Unit with `subjectService: "chat-service"`, `subjectId: <id>`.
+- **Restarts**: a download cut by a chat-service restart is stored `failed` / `interrupted` by the tick (2 min); a job the sidecar no longer holds, the same. A sidecar restart re-runs its waiting/running jobs from the start (files on its volume).
+- **Errors**: at the POST, nothing started: 422 `source_unreachable` / `source_size_unknown` / `not_media`, 413 `file_too_large`, 503 `box_transcriber_not_configured`. On the job: `source_unreachable`, `box_transcriber_unreachable`, `transcription_failed`, `interrupted`.
+- **Languages**: 25 European languages (English, French, Spanish, German...). Another language needs another model in the sidecar.
+
+### The `transcriber/` sidecar
+
+Its own image (`transcriber/Dockerfile`, Python, `server.py` + `engine.py`), compose service `transcriber` on the box, reachable only inside the compose network, every route but `/health` behind `x-api-key` = `TRANSCRIBER_SERVICE_API_KEY`. It receives BYTES only and never fetches a URL. Env: `TRANSCRIBER_MODEL` (default `nemo-parakeet-tdt-0.6b-v3`), `TRANSCRIBER_THREADS` (default 4), `TRANSCRIBER_QUANTIZATION` (unset = full precision), `WORK_DIR`, `MODEL_DIR` (model files downloaded once into the volume). Tests: `cd transcriber && python3 -m unittest`. **The box's deploy tick does not rebuild it**: after a change under `transcriber/`, on the box: `cd /root/distribute && docker compose build transcriber && docker compose up -d transcriber`.
 
 ## Internal: Transfer Brand
 
@@ -1830,6 +1850,8 @@ Each brand plugs, in its Integrations, the MCP server(s) it gives to the AI that
 | `LOCAL_LLM_PICKUP_WAIT_MS` | No | How long a local-LLM call waits for the org's runner to pick it up before `local_runner_waiting` (default `45000`) |
 | `LOCAL_LLM_ANSWER_WAIT_MS` | No | How long a picked-up local-LLM call may run on the user's machine before `local_runner_timeout` (default `240000`) |
 | `PORT` | No | Server port (default: `3002`) |
+| `TRANSCRIBER_SERVICE_URL` | No | URL of the `transcriber` sidecar on the box (`http://transcriber:8080`). Unset = `POST /orgs/media-transcriptions` answers 503 `box_transcriber_not_configured` |
+| `TRANSCRIBER_SERVICE_API_KEY` | No | Shared key the sidecar compares on every route (same value in its own env) |
 
 ## Database
 
