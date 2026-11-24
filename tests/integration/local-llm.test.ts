@@ -219,6 +219,12 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     expect(put.body.declared).toBe(true);
     expect(put.body.runner.connected).toBe(false);
     expect(put.body.stillOnPlatform.map((f: { family: string }) => f.family)).toContain("image generation");
+    // REELS-1124: a long recording runs on our own server at $0, so it is no longer listed as a platform spend.
+    expect(put.body.stillOnPlatform.map((f: { family: string }) => f.family)).not.toContain("audio and video transcription");
+    expect(put.body.stillOnPlatform.some((f: { family: string }) => f.family.includes("/orgs/media-transcriptions"))).toBe(false);
+    expect(put.body.runsOnOurServer).toEqual([
+      { family: "transcription of a long audio or video recording (/orgs/media-transcriptions)", reason: "an open speech model on our own server, charged $0." },
+    ]);
 
     await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, runner: { name: "mac-app" } });
     const after = await request(app).get("/orgs/local-llm").set(AUTH);

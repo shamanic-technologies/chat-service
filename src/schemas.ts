@@ -1325,6 +1325,203 @@ registry.registerPath({
   },
 });
 
+// --- Org transcription of a long recording on our own server (REELS-1124) ---
+
+export const MEDIA_TRANSCRIPTION_ERROR_CODES = [
+  "source_unreachable",
+  "source_size_unknown",
+  "file_too_large",
+  "not_media",
+  "box_transcriber_not_configured",
+  "box_transcriber_unreachable",
+  "transcription_failed",
+  "interrupted",
+] as const;
+
+export const MediaTranscriptionErrorCodeSchema = z.enum(MEDIA_TRANSCRIPTION_ERROR_CODES).openapi("MediaTranscriptionErrorCode", {
+  description:
+    "Refused at the POST, nothing started: `source_unreachable` the URL failed, expired or is not on the public internet · `source_size_unknown` no Content-Length/Content-Range · `file_too_large` over 4 GB · `not_media` not a video/audio type · `box_transcriber_not_configured` our transcriber is not set up in this environment (503). On a started job (`error.code` of a `failed` transcription): `source_unreachable` the download failed or the file changed · `box_transcriber_unreachable` our transcriber did not take the file · `transcription_failed` the recording could not be decoded or transcribed · `interrupted` a service restart cut the job. Every failed job is final: start it again with a NEW `idempotencyKey`.",
+});
+
+export const StartMediaTranscriptionRequestSchema = z
+  .object({
+    url: z
+      .string()
+      .url()
+      .refine((u) => u.startsWith("https://"), { message: "url must be https" })
+      .openapi({
+        description:
+          "HTTPS GET URL of the video or audio file, on the public internet (a presigned bucket URL is fine; it must stay valid until the status leaves `downloading`, a few minutes for 2 GB). Range requests are used for the check; the file is then streamed once. Max 4 GB. The query string (signature) is never stored.",
+        example: "https://bucket.example.r2.cloudflarestorage.com/videos/interview.mp4?X-Amz-Signature=...",
+      }),
+    language: z
+      .string()
+      .regex(/^[a-zA-Z]{2}$/, "language must be an ISO 639-1 code (2 letters), e.g. fr")
+      .optional()
+      .openapi({ description: "ISO 639-1 code of the language spoken (`fr`, `en`). Optional and not needed: the current model follows the speech itself (25 European languages, English and French among them) and reports no language, so `language` in the answer is null.", example: "fr" }),
+    idempotencyKey: z.string().min(1).max(200).optional().openapi({
+      description:
+        "Your own key for this transcription, unique per org. A POST with a key this org already used answers THAT transcription (200), whatever its status, and starts nothing. A transcription that `failed` is final: retry with a NEW key.",
+    }),
+  })
+  .openapi("StartMediaTranscriptionRequest");
+
+export const MediaTranscriptionIdParamsSchema = z.object({ id: z.string().uuid() });
+
+export const MediaTranscriptionQuerySchema = z
+  .object({
+    include: z
+      .string()
+      .regex(/^(segments|words)(,(segments|words))*$/, "include is a comma-separated list of: segments, words")
+      .optional()
+      .openapi({
+        description: "Which parts of the transcript to add to the summary, once `completed`: `segments`, `words` or `segments,words`. Omitted = the summary only (what a status poll wants).",
+        example: "segments,words",
+      }),
+    fromSeconds: z.coerce.number().min(0).optional().openapi({ description: "Start of the time range, in seconds of the recording. Omitted = from the start." }),
+    toSeconds: z.coerce.number().min(0).optional().openapi({ description: "End of the time range, in seconds of the recording. Omitted = to the end." }),
+  })
+  .refine((q) => q.fromSeconds === undefined || q.toSeconds === undefined || q.fromSeconds <= q.toSeconds, {
+    message: "fromSeconds must not be after toSeconds",
+    path: ["fromSeconds"],
+  });
+
+export const MediaTranscriptSegmentSchema = z
+  .object({
+    startSeconds: z.number().openapi({ description: "Where this passage starts in the recording, in seconds (3 decimals)." }),
+    endSeconds: z.number().openapi({ description: "Where it ends." }),
+    text: z.string().openapi({ description: "The words spoken, in the language spoken (never translated)." }),
+  })
+  .openapi("MediaTranscriptSegment");
+
+export const MediaTranscriptWordSchema = z
+  .object({
+    startSeconds: z.number().openapi({ description: "When this word starts in the recording, in seconds (3 decimals)." }),
+    endSeconds: z.number().openapi({ description: "When it ends." }),
+    word: z.string().openapi({ description: "The word as spoken, with its punctuation." }),
+    probability: z.number().openapi({ description: "The model's confidence in this word, 0..1." }),
+  })
+  .openapi("MediaTranscriptWord");
+
+export const MediaTranscriptionResponseSchema = z
+  .object({
+    id: z.string().uuid().openapi({ description: "The transcript's id. Stable: it never changes, and it is the `subjectId` a caller declares its outcome on." }),
+    status: z.enum(["downloading", "transcribing", "completed", "failed"]).openapi({
+      description: "`downloading` the file goes from its URL to our server · `transcribing` waiting its turn or being transcribed (one recording at a time) · `completed` · `failed` (see `error`).",
+    }),
+    source: z.object({
+      url: z.string().openapi({ description: "Source URL WITHOUT its query string." }),
+      mimeType: z.string().nullable(),
+      sizeBytes: z.number().int().nullable(),
+    }),
+    model: z.string().nullable().openapi({ description: "The open speech model that transcribes (null until our transcriber took the file).", example: "nemo-parakeet-tdt-0.6b-v3" }),
+    language: z.string().nullable().openapi({ description: "ISO 639-1 code of the language spoken, when the model reports one. The current model reports none: null." }),
+    languageProbability: z.number().nullable().openapi({ description: "The model's confidence in `language`, 0..1." }),
+    durationSeconds: z.number().nullable().openapi({ description: "Length of the recording, in seconds. Null until transcription starts." }),
+    progress: z.object({
+      transcribedSeconds: z.number().openapi({ description: "Up to which second of the recording the transcript is written." }),
+      durationSeconds: z.number().nullable(),
+      fraction: z.number().openapi({ description: "`transcribedSeconds / durationSeconds`, 0..1. 0 while downloading or waiting; 1 once `completed`." }),
+    }),
+    segmentCount: z.number().int().nullable().openapi({ description: "Completed only: how many passages the whole transcript holds." }),
+    wordCount: z.number().int().nullable().openapi({ description: "Completed only: how many words the whole transcript holds." }),
+    usage: z.object({
+      audioSeconds: z.number().nullable().openapi({ description: "Seconds of recording transcribed." }),
+      computeSeconds: z.number().nullable().openapi({ description: "Seconds our server worked on it." }),
+    }),
+    charged: z.object({ usd: z.literal(0), reason: z.string() }).openapi({ description: "Always $0: this runs on our own server, no vendor is paid, the run carries no cost line." }),
+    error: z
+      .object({ code: MediaTranscriptionErrorCodeSchema.nullable(), message: z.string().nullable() })
+      .optional()
+      .openapi({ description: "Failed only. Why, as a code and in words." }),
+    segments: z.array(MediaTranscriptSegmentSchema).optional().openapi({
+      description: "Only with `include=segments` on a completed transcription: the passages that OVERLAP `[fromSeconds, toSeconds]`, in order (a passage cut by a bound is served whole).",
+    }),
+    text: z.string().optional().openapi({ description: "Only with `include=segments`: the text of the served segments, one per line." }),
+    words: z.array(MediaTranscriptWordSchema).optional().openapi({
+      description: "Only with `include=words` on a completed transcription: the words that START in `[fromSeconds, toSeconds)`, in order. Consecutive ranges serve every word exactly once.",
+    }),
+    runId: z.string().uuid().nullable().openapi({ description: "The org run of this transcription (child of the caller's `x-run-id`). It carries no cost line." }),
+    createdAt: z.string(),
+    completedAt: z.string().nullable(),
+  })
+  .openapi("MediaTranscriptionResponse");
+
+export const MediaTranscriptionErrorResponseSchema = z
+  .object({
+    error: z.string().openapi({ description: "The reason, in words." }),
+    code: MediaTranscriptionErrorCodeSchema,
+  })
+  .openapi("MediaTranscriptionErrorResponse");
+
+const mediaTranscriptionHeaders = z.object({
+  "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+  "x-org-id": z.string().openapi({ description: "Internal org UUID from client-service (the org that owns the transcription)" }),
+  "x-user-id": z.string().openapi({ description: "Internal user UUID from client-service" }),
+  "x-run-id": z.string().uuid().openapi({ description: "Caller's run ID (the transcription's run is its child)" }),
+  ...workflowTrackingHeaders,
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/media-transcriptions",
+  tags: ["Transcription"],
+  summary: "Transcribe a long audio or video recording on our own server (async, word timestamps, charged $0)",
+  description: `Starts the transcription of the video or audio file at \`url\` (up to 4 GB, 1-2 h interviews) and **answers at once** with **202** and the transcription (\`status: "downloading"\`). Then poll \`GET /orgs/media-transcriptions/{id}\`.
+
+**How it runs:** an open speech model on our own server, one recording at a time (a second one waits its turn in \`transcribing\`, \`progress.fraction\` at 0). The model follows the speech itself (25 European languages, English and French among them) and reports no language. About 25 min per hour of audio, measured on a busy box. The result carries a start and end time for every passage AND every word.
+
+**States:** \`downloading\` (the file goes from its URL to our server) → \`transcribing\` (\`progress.fraction\` moves from 0 to 1) → \`completed\` or \`failed\` (\`error.code\` + \`error.message\`). Both ends are final.
+
+**Charged $0:** no vendor is paid, so there is no key, no hold, no billing check and no cost line: the run (\`runId\`, a child of your \`x-run-id\`) carries none. This is the same for every org.
+
+**Your outcome, your Unit:** chat-service declares NO outcome and NO Unit for a transcription. The caller's run declares it, with \`subjectService: "chat-service"\` and \`subjectId\` = the transcription \`id\` (stable, never reused).
+
+**Idempotency:** with an \`idempotencyKey\` this org already used, the answer is that transcription (**200**), whatever its status, and nothing is started. A retry after \`failed\` needs a NEW key.
+
+**Errors, nothing started:** 422 \`source_unreachable\` (also a URL that is not on the public internet) / \`source_size_unknown\` / \`not_media\`, 413 \`file_too_large\` (over 4 GB), 503 \`box_transcriber_not_configured\`.`,
+  request: {
+    headers: mediaTranscriptionHeaders,
+    body: { content: { "application/json": { schema: StartMediaTranscriptionRequestSchema } } },
+  },
+  responses: {
+    200: { description: "This org already used this `idempotencyKey`: that transcription, nothing started", content: { "application/json": { schema: MediaTranscriptionResponseSchema } } },
+    202: { description: "Started", content: { "application/json": { schema: MediaTranscriptionResponseSchema } } },
+    400: { description: "Missing or invalid request fields", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing or wrong x-api-key", content: { "application/json": { schema: ErrorResponseSchema } } },
+    413: { description: "File over 4 GB (`file_too_large`)", content: { "application/json": { schema: MediaTranscriptionErrorResponseSchema } } },
+    422: {
+      description: "The source cannot be transcribed (`source_unreachable`, `source_size_unknown`, `not_media`)",
+      content: { "application/json": { schema: MediaTranscriptionErrorResponseSchema } },
+    },
+    502: { description: "Run tracking failed (nothing started)", content: { "application/json": { schema: ErrorResponseSchema } } },
+    503: { description: "Our transcriber is not set up in this environment (`box_transcriber_not_configured`)", content: { "application/json": { schema: MediaTranscriptionErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/orgs/media-transcriptions/{id}",
+  tags: ["Transcription"],
+  summary: "Read a transcription: its progress, then its words for a time range",
+  description: `The transcription started by \`POST /orgs/media-transcriptions\`, for the org in \`x-org-id\` only (another org's id is the same 404 as an unknown one).
+
+**Polling:** without \`include\` the body is the summary only (status, \`progress.fraction\`, counts, \`error\`), small at any length of recording. Poll it every 15-30 s: a 1 h recording takes several minutes.
+
+**The transcript:** once \`completed\`, \`include=segments\`, \`include=words\` or both add the transcript. \`fromSeconds\` / \`toSeconds\` cut it to a time range (segments that overlap it; words that start in \`[fromSeconds, toSeconds)\`), so a caller reads the words of one clip without loading two hours. Both bounds are optional. Before \`completed\`, \`include\` adds nothing.`,
+  request: {
+    headers: mediaTranscriptionHeaders,
+    params: MediaTranscriptionIdParamsSchema,
+    query: MediaTranscriptionQuerySchema,
+  },
+  responses: {
+    200: { description: "The transcription", content: { "application/json": { schema: MediaTranscriptionResponseSchema } } },
+    400: { description: "Invalid id, include or range", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing or wrong x-api-key", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "No such transcription for this org", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 // --- The Copilot on WhatsApp (SOPHIE-COPILOT-WA-1018) ---
 
 const E164 = z.string().regex(/^\+[1-9]\d{6,14}$/, "phone must be E.164, e.g. +33612345678");
@@ -4268,6 +4465,7 @@ export const LocalLlmStateSchema = z
     }),
     runsLocally: z.array(z.string()).openapi({ description: "Call families that run on the runner for a declaring org." }),
     stillOnPlatform: z.array(z.object({ family: z.string(), reason: z.string() })).openapi({ description: "Call families that still run on a platform key for a declaring org, and why." }),
+    runsOnOurServer: z.array(z.object({ family: z.string(), reason: z.string() })).openapi({ description: "Call families that run on our own server for every org, declared or not, charged $0 (no vendor is paid), and how." }),
   })
   .openapi("LocalLlmState");
 

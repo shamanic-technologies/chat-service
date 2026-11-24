@@ -847,6 +847,24 @@ Error responses: 400 (validation), 401 (auth), 502 (upstream failure).
 - **Cost**: org-billed like `/complete`: run under the caller's `x-run-id`, worst-case hold PROVISIONED (32 audio tokens per second + 500, output 1000 + 10 per second; duration = `durationSeconds` else size at 8 kbit/s) then AUTHORIZED (platform key), the real `google-flash-3.8-tokens-*` lines posted `actual`, the hold cancelled. Google prices audio input like text for these models.
 - **Errors**: 413 `file_too_large`, 422 `not_media` (before any spend), 402 billing refusal, 502 `provider_refused` / `transcript_truncated` / `unparseable_transcript` (tokens spent are still declared).
 
+## Transcription of a long recording on our own box, $0 (REELS-1124)
+
+`POST /orgs/media-transcriptions` with `{ "url": "<https GET url of a video/audio file, public internet>", "language"?: "fr", "idempotencyKey"?: "..." }` (`x-api-key` + `x-org-id` + `x-user-id`, `x-run-id` = the caller's run) answers **202 at once** with the transcription's summary (`status: "downloading"`). Poll `GET /orgs/media-transcriptions/:id` (summary only, cheap) until `completed` or `failed`; read the transcript in pieces with `?include=segments,words&fromSeconds=&toSeconds=`.
+
+- **What runs**: an open speech model (NVIDIA Parakeet TDT 0.6b v3 through onnx-asr) in the `transcriber/` sidecar container on our own server, one recording at a time. No vendor, no key, **no cost line, no hold**: the run exists and its cost is $0. Same for every org, local-LLM orgs included (`GET /orgs/local-llm` lists it under `runsOnOurServer`).
+- **Speed** (measured on the box 2026-11-24, 4 threads, load ~24-34 on 16 cores): 180 s of English and of French speech in 74-80 s, so about **25 min per hour of audio**. Every faster-whisper size (base to large-v3-turbo) ran at or slower than real time under the same load, which is why Whisper was not kept.
+- **Answer**: `{ id, status: downloading | transcribing | completed | failed, source, model, language (null: the model reports none), durationSeconds, progress {transcribedSeconds, durationSeconds, fraction}, segmentCount, wordCount, usage {audioSeconds, computeSeconds}, charged {usd: 0, reason}, error?, runId, createdAt, completedAt }`; with `include`: `segments [{startSeconds, endSeconds, text}]` (+ `text`) overlapping the range, `words [{startSeconds, endSeconds, word, probability}]` starting in it.
+- **Flow**: the source is checked (`probeSource`, 4 GB limit) and streamed through `publicFetch` straight into the sidecar (`PUT /jobs/{id}/media`, never buffered); a 15 s in-process tick follows the sidecar's job, stores segments + words, closes the run and frees the sidecar's files.
+- **Idempotency**: same org + same `idempotencyKey` = the same transcription (200), whatever its status. A `failed` one is final: retry with a new key.
+- **Unit**: chat-service declares no outcome. The transcription `id` is stable: the caller's run declares its Unit with `subjectService: "chat-service"`, `subjectId: <id>`.
+- **Restarts**: a download cut by a chat-service restart is stored `failed` / `interrupted` by the tick (2 min); a job the sidecar no longer holds, the same. A sidecar restart re-runs its waiting/running jobs from the start (files on its volume).
+- **Errors**: at the POST, nothing started: 422 `source_unreachable` / `source_size_unknown` / `not_media`, 413 `file_too_large`, 503 `box_transcriber_not_configured`. On the job: `source_unreachable`, `box_transcriber_unreachable`, `transcription_failed`, `interrupted`.
+- **Languages**: 25 European languages (English, French, Spanish, German...). Another language needs another model in the sidecar.
+
+### The `transcriber/` sidecar
+
+Its own image (`transcriber/Dockerfile`, Python, `server.py` + `engine.py`), compose service `transcriber` on the box, reachable only inside the compose network, every route but `/health` behind `x-api-key` = `TRANSCRIBER_SERVICE_API_KEY`. It receives BYTES only and never fetches a URL. Env: `TRANSCRIBER_MODEL` (default `nemo-parakeet-tdt-0.6b-v3`), `TRANSCRIBER_THREADS` (default 4), `TRANSCRIBER_QUANTIZATION` (unset = full precision), `WORK_DIR`, `MODEL_DIR` (model files downloaded once into the volume). Tests: `cd transcriber && python3 -m unittest`. **The box's deploy tick does not rebuild it**: after a change under `transcriber/`, on the box: `cd /root/distribute && docker compose build transcriber && docker compose up -d transcriber`.
+
 ## Internal: Transfer Brand
 
 `POST /internal/transfer-brand` — moves everything chat-service holds for one brand from one org to another (brand-service orchestrates it across the fleet).
@@ -1824,6 +1842,8 @@ Each brand plugs, in its Integrations, the MCP server(s) it gives to the AI that
 | `LOCAL_LLM_PICKUP_WAIT_MS` | No | How long a local-LLM call waits for the org's runner to pick it up before `local_runner_waiting` (default `45000`) |
 | `LOCAL_LLM_ANSWER_WAIT_MS` | No | How long a picked-up local-LLM call may run on the user's machine before `local_runner_timeout` (default `240000`) |
 | `PORT` | No | Server port (default: `3002`) |
+| `TRANSCRIBER_SERVICE_URL` | No | URL of the `transcriber` sidecar on the box (`http://transcriber:8080`). Unset = `POST /orgs/media-transcriptions` answers 503 `box_transcriber_not_configured` |
+| `TRANSCRIBER_SERVICE_API_KEY` | No | Shared key the sidecar compares on every route (same value in its own env) |
 
 ## Database
 

@@ -221,10 +221,21 @@ export const LOCAL_FAMILIES = [
 /** Families that still run on a platform or vendor key for a declaring org, and why. */
 export const NOT_LOCAL_FAMILIES = [
   { family: "image generation", reason: "Claude does not generate images." },
-  { family: "audio and video transcription", reason: "Claude Code takes no audio or video input." },
+  {
+    family: "voice notes sent to an assistant line (/orgs/transcriptions)",
+    reason: "short inline audio still runs on a platform model; a long recording runs on our own server through /orgs/media-transcriptions.",
+  },
   { family: "embeddings and relevance scoring (/orgs/rag)", reason: "Claude has no embeddings model." },
   { family: "completions and judgments with an image input", reason: "the work item carries text only; the image would need to reach the user's machine." },
   { family: "completions with the brand's own MCP tools (brandTools)", reason: "those tools run on our side with the brand's credentials; not wired to the local runner yet." },
+] as const;
+
+/** Families that run on OUR OWN server for every org, declared or not: no vendor is paid (REELS-1124). */
+export const ON_OUR_SERVER_FAMILIES = [
+  {
+    family: "transcription of a long audio or video recording (/orgs/media-transcriptions)",
+    reason: "an open speech model on our own server, charged $0.",
+  },
 ] as const;
 
 export interface LocalLlmState {
@@ -236,6 +247,7 @@ export interface LocalLlmState {
   usageLast30Days: { calls: number; inputTokens: number; outputTokens: number; notionalCostUsd: number; chargedUsd: 0 };
   runsLocally: readonly string[];
   stillOnPlatform: ReadonlyArray<{ family: string; reason: string }>;
+  runsOnOurServer: ReadonlyArray<{ family: string; reason: string }>;
 }
 
 export async function localLlmState(orgId: string, now = new Date()): Promise<LocalLlmState> {
@@ -260,6 +272,7 @@ export async function localLlmState(orgId: string, now = new Date()): Promise<Lo
     usageLast30Days: { ...usage, chargedUsd: 0 },
     runsLocally: LOCAL_FAMILIES,
     stillOnPlatform: NOT_LOCAL_FAMILIES,
+    runsOnOurServer: ON_OUR_SERVER_FAMILIES,
   };
 }
 
