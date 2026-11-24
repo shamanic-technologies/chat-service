@@ -485,8 +485,11 @@ export async function askEngine(
       ran: true,
       outcome,
       status: data.status ?? null,
-      unit: compactAnswer(data.content ?? data.result ?? null),
-      unmade: data.unmade ?? null,
+      // workflow-service's RunScriptResponse: `unit` = {outcome, subject, content} when made; `error` = why not
+      // (an `unmade` status is the world's answer, e.g. a page already held); any `answer` it carries is handed on.
+      unit: compactAnswer(data.unit ?? null),
+      ...(data.status === "made" ? {} : { why: cut(data.error, 600) }),
+      ...(data.answer !== undefined ? { answer: compactAnswer(data.answer) } : {}),
       script: pick.dynasty ? `${String(pick.dynasty)} v${String(pick.version ?? "?")}` : null,
       runId: data.runId ?? runId,
     };

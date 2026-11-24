@@ -72,7 +72,7 @@ function fakes(over: Partial<OutcomeDeps> = {}): { deps: OutcomeDeps; seen: Seen
       outcome === "email_checked" ? [{ dynasty: "dy_email_check", name: "Email address check", description: "Checks one email address (request.email).", materials: [], runnable: true }] : [],
     makeUnit: async (outcome, body, headers) => {
       seen.push({ kind: "make", outcome, body, headers });
-      return { status: 200, data: { status: "made", content: { verdict: "valid" }, runId: "script-run", pick: { dynasty: "bounceban", version: 3 } } };
+      return { status: 200, data: { status: "made", unit: { outcome: "email_checked", subject: { service: "runs-service", id: "ask-run" }, content: { verdict: "valid" } }, error: null, runId: "script-run", pick: { dynasty: "bounceban", version: 3 } } };
     },
     openAskRun: async (identity) => {
       seen.push({ kind: "run", ...identity });
@@ -175,7 +175,7 @@ describe("ask_engine = a Script's ctx.ask: one Unit, after the person's yes, on 
       { kind: "run", orgId: ORG, userId: "user-1" },
       { kind: "make", outcome: "email_checked", body: { units: {}, request: { email: "k.lourd@smartdistribute.com" } }, headers: { "x-org-id": ORG, "x-user-id": "user-1", "x-run-id": "ask-run" } },
     ]);
-    expect(ran).toMatchObject({ ran: true, outcome: "email_checked", status: "made", unit: { verdict: "valid" }, script: "bounceban v3" });
+    expect(ran).toMatchObject({ ran: true, outcome: "email_checked", status: "made", unit: { outcome: "email_checked", subject: { service: "runs-service", id: "ask-run" }, content: { verdict: "valid" } }, script: "bounceban v3" });
 
     const used = [...history, { toolCalls: [{ name: ASK_ENGINE_TOOL_NAME, args: { confirmationToken: proposal.confirmationToken }, result: ran }] }];
     expect(() => resolveAskProposal(proposal.confirmationToken, used)).toThrow(/already used/);
