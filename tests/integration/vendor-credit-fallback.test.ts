@@ -1,3 +1,4 @@
+import { loadRegimeCatalogue } from "../regime-hours.fixture.js";
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 
@@ -184,6 +185,7 @@ describe("out of credit: reroute to the cheapest model that takes the request", 
   let credit: typeof import("../../src/lib/vendor-credit.js");
   async function loadApp() {
     vi.resetModules();
+    await loadRegimeCatalogue();
     return (await import("../../src/index.js")).default;
   }
   beforeAll(async () => {
@@ -342,6 +344,7 @@ describe("out of credit: the call goes DOWN the fallback order, never fails whil
   let stored: string[];
   async function loadApp() {
     vi.resetModules();
+    await loadRegimeCatalogue();
     return (await import("../../src/index.js")).default;
   }
   function platformRoutes(statuses: string[]): MockRoute[] {

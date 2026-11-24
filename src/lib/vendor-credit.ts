@@ -41,7 +41,7 @@
 // ---------------------------------------------------------------------------
 
 import { modelCatalogue, resolveModel, type Provider } from "./anthropic.js";
-import { buildLlmCostNames } from "./cost-names.js";
+import { buildLlmCostNames, setRegimeCatalogue } from "./cost-names.js";
 import { MODEL_DISPLAY_NAMES } from "./model-ids.js";
 import { providerHasNoPlatformKey } from "./platform-key-presence.js";
 
@@ -123,6 +123,15 @@ export async function refreshFallbackPrices(): Promise<void> {
     const body = (await res.json()) as unknown;
     if (!Array.isArray(body)) throw new Error("costs-service /v1/platform-prices: not an array");
     setFallbackPrices(body as Array<{ name: string; pricePerUnitInUsdCents: string | number | null }>);
+    // DEEPSEEK-HOLIDAYS-1124: the peak/off-peak hours are costs-service's alone; a bad read keeps the last good one.
+    try {
+      setRegimeCatalogue(body as Array<{ name: string; pricingRegime?: string | null; regimeHoursUtc?: string | null }>);
+    } catch (regimeErr) {
+      console.error(
+        "[chat-service] [cost] regime hours unreadable in costs-service's price list (keeping the last good read; none = every DeepSeek call refused):",
+        regimeErr instanceof Error ? regimeErr.message : String(regimeErr),
+      );
+    }
   } catch (err) {
     console.error(
       `[chat-service] [vendor-credit] list prices unreadable${prices ? " (keeping the last read)" : ": no detour until they are read"}:`,
