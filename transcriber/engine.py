@@ -19,6 +19,10 @@ SAMPLE_RATE = 16000
 # A word ends where the next one starts, but never later than this after its last
 # token: the model gives token STARTS only, and a pause must not stretch a word.
 WORD_TAIL_SECONDS = 0.5
+# Silence needed to end a segment. Measured on the box 2026-11-24, 130 s of read
+# English: 100 ms (library default) = 38 segments, 2 words repeated at a cut;
+# 600 ms = 15 segments (whole sentences, longest 15 s), none repeated.
+MIN_SILENCE_MS = 600
 
 
 class Info:
@@ -111,7 +115,10 @@ def make_transcriber(config):
                 vad = onnx_asr.load_vad("silero", sess_options=options)
                 # The voice detector cuts the recording into spoken stretches: each is
                 # one segment, so progress is real and silence is never transcribed.
-                holder["model"] = model.with_vad(vad).with_timestamps()
+                # A cut needs a real pause (MIN_SILENCE_MS): at the library's 100 ms
+                # it cut inside sentences and the model REPEATED the word at the cut
+                # ("...joining battle, but" | "But indirect methods...").
+                holder["model"] = model.with_vad(vad, min_silence_duration_ms=MIN_SILENCE_MS).with_timestamps()
         wav = path + ".wav"
         duration = decode_to_wav(path, wav)
 
