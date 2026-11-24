@@ -23,6 +23,21 @@ import {
   type SourceInfo,
 } from "./lib/transcription.js";
 import { readTranscription, runTranscriptionJob, toTranscriptionBody } from "./lib/transcription-job.js";
+import {
+  MAX_MEDIA_TRANSCRIPTION_BYTES,
+  attachRun,
+  boxTranscriberConfig,
+  discardMediaTranscription,
+  findMediaTranscriptionByKey,
+  holdDownload,
+  insertMediaTranscription,
+  parseInclude,
+  readMediaTranscriptionBody,
+  releaseDownload,
+  runMediaDownload,
+  startMediaTranscriptionTick,
+  toMediaTranscriptionBody,
+} from "./lib/media-transcription.js";
 import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions, channelInboundMessages, copilotProactiveTurns, copilotLeadTurns } from "./db/schema.js";
 import { transferBrand } from "./lib/transfer-brand.js";
 import { dynastyCatalogue, modelDisplayName, modelIdCatalogue } from "./lib/model-ids.js";
@@ -444,7 +459,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, SkillListQuerySchema, SkillMoveRequestSchema, SkillDeleteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryPromptPreviewQuerySchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type AnthropicEffort, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, SkillListQuerySchema, SkillMoveRequestSchema, SkillDeleteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, StartMediaTranscriptionRequestSchema, MediaTranscriptionIdParamsSchema, MediaTranscriptionQuerySchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryPromptPreviewQuerySchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type AnthropicEffort, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -3770,6 +3785,103 @@ app.post("/orgs/transcriptions", requireAuth, async (req, res) => {
       console.error(`[orgs/transcriptions] failed to finalize run runId="${runId}":`, runErr),
     );
   }
+});
+
+// --- Org transcription of a long recording on OUR OWN server (REELS-1124) ---
+//
+// An open speech model in the `transcriber/` sidecar, on our CPU: no vendor, so NO
+// key, NO hold, NO billing check and NO cost line (the run's cost is $0 by
+// carrying none). The same for every org, local-LLM orgs included. POST checks
+// the source (named 4xx, nothing started), opens an org run, stores a
+// `downloading` row and answers 202; the file is streamed to the sidecar in the
+// background and the tick (src/lib/media-transcription.ts) follows it to the end.
+app.post("/orgs/media-transcriptions", requireAuth, async (req, res) => {
+  const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
+  const trackingHeaders = buildTrackingHeaders(workflowTracking);
+  const parsed = StartMediaTranscriptionRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const { url } = parsed.data;
+  const idempotencyKey = parsed.data.idempotencyKey ?? null;
+  const languageHint = parsed.data.language?.toLowerCase() ?? null;
+
+  const box = boxTranscriberConfig();
+  if (!box) {
+    return res.status(503).json({
+      error: "Our transcriber is not set up in this environment (TRANSCRIBER_SERVICE_URL and TRANSCRIBER_SERVICE_API_KEY).",
+      code: "box_transcriber_not_configured",
+    });
+  }
+
+  if (idempotencyKey) {
+    const existing = await findMediaTranscriptionByKey(db, orgId, idempotencyKey);
+    if (existing) return res.status(200).json(toMediaTranscriptionBody(existing));
+  }
+
+  let source: SourceInfo;
+  try {
+    source = await probeSource(url, { maxBytes: MAX_MEDIA_TRANSCRIPTION_BYTES });
+  } catch (err) {
+    if (err instanceof TranscriptionError) {
+      return res.status(err.httpStatus).json({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
+
+  // Held BEFORE the row exists: the tick never reads this row as cut by a restart.
+  const id = crypto.randomUUID();
+  holdDownload(id);
+  let started = false;
+  try {
+    const inserted = await insertMediaTranscription(db, { id, orgId, userId, idempotencyKey, sourceUrl: redactSourceUrl(url), source, languageHint });
+    if (!inserted) {
+      // The same org + key was stored a moment ago by a parallel request: answer that one.
+      const winner = idempotencyKey ? await findMediaTranscriptionByKey(db, orgId, idempotencyKey) : null;
+      if (!winner) throw new Error(`[orgs/media-transcriptions] org="${orgId}" insert conflicted with no row to answer`);
+      return res.status(200).json(toMediaTranscriptionBody(winner));
+    }
+
+    let runId: string;
+    try {
+      runId = (await createRun({ serviceName: "chat-service", taskName: "transcribe-media-on-box" }, { orgId, userId, runId: parentRunId }, trackingHeaders)).id;
+    } catch (runErr) {
+      console.error(`[orgs/media-transcriptions] org="${orgId}" run creation failed:`, runErr);
+      // Nothing started: the row goes, so the same idempotencyKey can be sent again.
+      await discardMediaTranscription(db, id);
+      return res.status(502).json({ error: "Service temporarily unavailable (run tracking). Please try again." });
+    }
+    const row = await attachRun(db, id, runId);
+
+    started = true;
+    runMediaDownload(db, box, { id, orgId, userId, runId, url, source, languageHint }).catch((err) =>
+      console.error(`[orgs/media-transcriptions] job ${id} crashed:`, err),
+    );
+    return res.status(202).json(toMediaTranscriptionBody(row));
+  } finally {
+    // Once started, the download releases its own hold when it ends.
+    if (!started) releaseDownload(id);
+  }
+});
+
+app.get("/orgs/media-transcriptions/:id", requireAuth, async (req, res) => {
+  const { orgId } = res.locals as AuthLocals;
+  const params = MediaTranscriptionIdParamsSchema.safeParse(req.params);
+  if (!params.success) {
+    return res.status(400).json({ error: "Invalid request", details: params.error.flatten() });
+  }
+  const query = MediaTranscriptionQuerySchema.safeParse(req.query);
+  if (!query.success) {
+    return res.status(400).json({ error: "Invalid request", details: query.error.flatten() });
+  }
+  const body = await readMediaTranscriptionBody(db, orgId, params.data.id, {
+    include: parseInclude(query.data.include),
+    fromSeconds: query.data.fromSeconds,
+    toSeconds: query.data.toSeconds,
+  });
+  // Another org's transcription is the same answer as an unknown id.
+  if (!body) return res.status(404).json({ error: `No transcription "${params.data.id}".` });
+  return res.json(body);
 });
 
 app.get("/internal/platform-transcriptions/:id", requireInternalAuth, async (req, res) => {
@@ -7778,6 +7890,10 @@ if (process.env.NODE_ENV !== "test") {
       };
       setTimeout(measureDistry, 20_000).unref();
       setInterval(measureDistry, 60_000).unref();
+
+      // REELS-1124: recordings our own transcriber works on are followed to their end here (first
+      // pass ~60 s after boot, then every 15 s); a download a restart cut is marked `interrupted`.
+      startMediaTranscriptionTick(db);
 
       // Telegram messages a restart cut off mid-turn: answered once the port is up.
       setTimeout(() => {

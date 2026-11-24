@@ -381,6 +381,61 @@ export const transcriptions = pgTable("transcriptions", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });
 
+export interface MediaTranscriptSegment {
+  startSeconds: number;
+  endSeconds: number;
+  text: string;
+}
+
+export interface MediaTranscriptWord {
+  startSeconds: number;
+  endSeconds: number;
+  word: string;
+  probability: number;
+}
+
+// REELS-1124 (migration 0047): one transcription of a long audio/video
+// recording run on OUR OWN server (the transcriber sidecar), charged $0: no key, no
+// cost line. Org-scoped. The source URL is stored WITHOUT its query string.
+// `segments` / `words` are large (a 2 h recording ≈ 1.5 MB): select them only
+// when a caller asks for them.
+export const mediaTranscriptions = pgTable(
+  "media_transcriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    idempotencyKey: text("idempotency_key"),
+    status: text("status").notNull().$type<"downloading" | "transcribing" | "completed" | "failed">(),
+    sourceUrl: text("source_url").notNull(),
+    mimeType: text("mime_type"),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    languageHint: text("language_hint"),
+    runId: uuid("run_id"),
+    model: text("model"),
+    language: text("language"),
+    languageProbability: real("language_probability"),
+    durationSeconds: real("duration_seconds"),
+    transcribedSeconds: real("transcribed_seconds"),
+    computeSeconds: real("compute_seconds"),
+    segments: jsonb("segments").$type<MediaTranscriptSegment[]>(),
+    words: jsonb("words").$type<MediaTranscriptWord[]>(),
+    segmentCount: integer("segment_count"),
+    wordCount: integer("word_count"),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("media_transcriptions_org_idempotency_idx")
+      .on(table.orgId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    index("media_transcriptions_status_idx").on(table.status),
+  ],
+);
+
 /** One inbound channel message crm-service handed over (migration 0024). */
 export const channelInboundMessages = pgTable(
   "channel_inbound_messages",
