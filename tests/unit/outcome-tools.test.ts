@@ -50,7 +50,7 @@ const specs = new Map<string, Record<string, unknown>>([
 ]);
 
 const engines: EngineListing[] = [
-  { outcome: "email_checked", name: "Email checked", callable: true, reason: null, inputs: [{ units: [], channel: null }], counts: { scripts: 1, live: 1, runnable: 1 }, ask: { possible: true, needsNothing: true, reason: null } },
+  { outcome: "email_checked", name: "Email checked", callable: true, reason: null, inputs: [{ units: [], channel: null }], counts: { scripts: 1, live: 1, runnable: 1 }, ask: { possible: true, needsNothing: true, reason: null }, scripts: [{ dynasty: "dy_email_check", name: "Email address check", units: [], requestFields: ["email"], requestHandedOn: false }] },
   { outcome: "backlink_earned", name: "Backlink earned", callable: false, reason: "No script can run now.", inputs: [], counts: { scripts: 0, live: 0, runnable: 0 }, ask: { possible: false, needsNothing: false, reason: "No script can run now." } },
 ];
 
@@ -69,7 +69,7 @@ function fakes(over: Partial<OutcomeDeps> = {}): { deps: OutcomeDeps; seen: Seen
       return engines;
     },
     engineScripts: async (outcome) =>
-      outcome === "email_checked" ? [{ name: "Email address check", description: "Checks one email address (request.email).", materials: [], runnable: true }] : [],
+      outcome === "email_checked" ? [{ dynasty: "dy_email_check", name: "Email address check", description: "Checks one email address (request.email).", materials: [], runnable: true }] : [],
     makeUnit: async (outcome, body, headers) => {
       seen.push({ kind: "make", outcome, body, headers });
       return { status: 200, data: { status: "made", content: { verdict: "valid" }, runId: "script-run", pick: { dynasty: "bounceban", version: 3 } } };
@@ -124,7 +124,7 @@ describe("find_outcome reads the doc, spends nothing", () => {
     expect(out.ask).toBe("no Engine makes email_sent");
     const checked = (await findOutcome({ outcome: "email_checked" }, { orgId: ORG }, deps, createProviderIndex(deps))) as { ask: { scripts: unknown[]; canMake: boolean } };
     expect(checked.ask.canMake).toBe(true);
-    expect(checked.ask.scripts).toEqual([{ name: "Email address check", does: "Checks one email address (request.email).", takes: [] }]);
+    expect(checked.ask.scripts).toEqual([{ name: "Email address check", does: "Checks one email address (request.email).", takes: [], readsRequest: ["email"] }]);
     const none = (await findOutcome({ outcome: "backlink_earned" }, { orgId: ORG }, deps, createProviderIndex(deps))) as { ask: { whyNot: string } };
     expect(none.ask.whyNot).toBe("No script can run now.");
   });

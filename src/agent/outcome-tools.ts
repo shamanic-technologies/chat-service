@@ -136,10 +136,13 @@ export interface EngineListing {
   counts?: { scripts: number; live: number; runnable: number };
   /** Whether a DIRECT ask (no campaign) can make one now (workflow-service, ENGINE-GET-ASK-1123). */
   ask?: { possible: boolean; needsNothing: boolean; reason: string | null };
+  /** Each live script, with the top-level `request` fields its code reads (read off the script by workflow-service). */
+  scripts?: Array<{ dynasty: string; name: string | null; units: string[]; requestFields?: string[]; requestHandedOn?: boolean }>;
 }
 
 /** One live script of an Engine, as workflow-service serves it: what it does, in its author's words. */
 export interface EngineScript {
+  dynasty: string;
   name: string | null;
   description: string | null;
   materials: string[];
@@ -324,7 +327,16 @@ export async function findOutcome(args: Record<string, unknown>, identity: Pick<
   const key = outcomeArg(FIND_OUTCOME_TOOL_NAME, outcome);
   const reads = (byOutcome.get(key) ?? []).map(readDoc);
   const e = engineOf.get(key);
-  const scripts = e ? (await deps.engineScripts(key)).filter((x) => x.runnable) : [];
+  const described = e ? new Map((await deps.engineScripts(key)).filter((x) => x.runnable).map((x) => [x.dynasty, x])) : new Map<string, EngineScript>();
+  const scripts = (e?.scripts ?? [])
+    .filter((x) => described.has(x.dynasty))
+    .map((x) => ({
+      name: x.name,
+      does: cut(described.get(x.dynasty)!.description, 600),
+      takes: x.units,
+      readsRequest: x.requestFields ?? [],
+      ...(x.requestHandedOn ? { alsoHandsItsRequestOn: true } : {}),
+    }));
   return {
     outcome: key,
     name: e?.name ?? null,
@@ -334,8 +346,8 @@ export async function findOutcome(args: Record<string, unknown>, identity: Pick<
           canMake: e.ask?.possible ?? false,
           needsNothing: e.ask?.needsNothing ?? false,
           ...(e.ask?.reason ? { whyNot: e.ask.reason } : {}),
-          scripts: scripts.map((x) => ({ name: x.name, does: cut(x.description, 600), takes: x.materials })),
-          note: "The Rating picks one of these scripts. inputs.units = the materials a script takes (by outcome); inputs.request = what its description says it reads; nothing else.",
+          scripts,
+          note: "The Rating picks one of these scripts. inputs.units = the materials a script takes (by outcome); inputs.request = the fields it reads (readsRequest; alsoHandsItsRequestOn = it passes the request on to another Engine, whose fields count too); nothing else.",
         }
       : `no Engine makes ${key}`,
     ...(unread.length ? { notRead: `the docs of ${unread.join(", ")} could not be read: a read they document is unknown this turn` } : {}),
@@ -538,6 +550,7 @@ export function outcomeDepsFromEnv(identity: { orgId: string; userId: string }, 
       const scripts = (JSON.parse(text) as { scripts?: unknown }).scripts;
       if (!Array.isArray(scripts)) throw new Error(`workflow-service answered no scripts: ${text.slice(0, 300)}`);
       return (scripts as Array<Record<string, unknown>>).map((x) => ({
+        dynasty: String(x.dynasty ?? ""),
         name: typeof x.name === "string" ? x.name : null,
         description: typeof x.description === "string" ? x.description : null,
         materials: Array.isArray(x.materials) ? x.materials.map(String) : [],
