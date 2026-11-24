@@ -51,8 +51,8 @@ export const FIND_OUTCOME_TOOL: Anthropic.Tool = {
   name: FIND_OUTCOME_TOOL_NAME,
   description:
     "Read how to get or make Units of an outcome (an outcome is one kind of result we produce: an email found, an email sent, a message written...). " +
-    "Without `outcome`: every outcome we know, whether its Engine can make one now, and how many Provider reads it has (`q` narrows by words). " +
-    "With `outcome`: its Provider reads (get_units: each read's route, what it filters on and what it answers, as its service documents it) and its Engine's ask (ask_engine: can it make one now, what it takes). " +
+    "Without `outcome`: every outcome we know, how many scripts its Engine can run and how many Provider reads it has (`q` narrows by words). " +
+    "With `outcome`: its Provider reads (get_units: each read's route, what it filters on and what it answers, as its service documents it) and its Engine's scripts (ask_engine: what each does and reads). " +
     "The game, the same one our Scripts play: a fact we already hold is READ (get_units, free); the Engine MAKES a new Unit (ask_engine, it costs money) only when no held Unit fits what the person wants (none, or too old for them). Reading this costs nothing.",
   input_schema: {
     type: "object",
@@ -133,6 +133,15 @@ export interface EngineListing {
   callable: boolean;
   reason: string | null;
   inputs: Array<{ units: string[]; channel: string | null }>;
+  counts?: { scripts: number; live: number; runnable: number };
+}
+
+/** One live script of an Engine, as workflow-service serves it: what it does, in its author's words. */
+export interface EngineScript {
+  name: string | null;
+  description: string | null;
+  materials: string[];
+  runnable: boolean;
 }
 
 /** Who the call is for: the conversation's org and person, and the turn's run. */
@@ -151,6 +160,8 @@ export interface OutcomeDeps {
   callService(service: string, req: { method: string; path: string; body?: unknown; headers: Record<string, string> }): Promise<{ status: number; ok: boolean; data: unknown }>;
   /** workflow-service's live Engine list for this org. */
   listEngines(orgId: string): Promise<EngineListing[]>;
+  /** The active scripts of one Engine (what each does: the request it reads is in its description). */
+  engineScripts(outcome: string): Promise<EngineScript[]>;
   /** workflow-service's ask door. */
   makeUnit(outcome: string, body: Record<string, unknown>, headers: Record<string, string>): Promise<{ status: number; data: unknown }>;
   /** A run of ours under the org, for one ask. */
@@ -299,7 +310,7 @@ export async function findOutcome(args: Record<string, unknown>, identity: Pick<
     const rows = keys
       .map((k) => {
         const e = engineOf.get(k);
-        return { outcome: k, name: e?.name ?? null, reads: byOutcome.get(k)?.length ?? 0, engineCanMake: e ? e.callable : false };
+        return { outcome: k, name: e?.name ?? null, reads: byOutcome.get(k)?.length ?? 0, engineScripts: e ? (e.counts?.runnable ?? null) : 0 };
       })
       .filter((r) => q.every((w) => `${r.outcome} ${r.name ?? ""}`.toLowerCase().includes(w)));
     return {
@@ -311,16 +322,16 @@ export async function findOutcome(args: Record<string, unknown>, identity: Pick<
   const key = outcomeArg(FIND_OUTCOME_TOOL_NAME, outcome);
   const reads = (byOutcome.get(key) ?? []).map(readDoc);
   const e = engineOf.get(key);
+  const scripts = e ? (await deps.engineScripts(key)).filter((x) => x.runnable) : [];
   return {
     outcome: key,
     name: e?.name ?? null,
     get: reads.length ? reads : `no Provider read is documented for ${key}: no held Unit can be read`,
     ask: e
       ? {
-          canMake: e.callable,
-          whyNot: e.reason,
-          takes: e.inputs.map((i) => ({ units: i.units, channel: i.channel })),
-          note: "inputs.units = the materials named here; inputs.request = what the scripts read (the doc of their Engine says it); nothing else.",
+          scripts: scripts.map((x) => ({ name: x.name, does: cut(x.description, 600), takes: x.materials })),
+          ...(scripts.length ? {} : { whyNot: e.reason ?? "no script of this Engine can run now" }),
+          note: "The Rating picks one of these scripts. inputs.units = the materials a script takes (by outcome); inputs.request = what its description says it reads; nothing else.",
         }
       : `no Engine makes ${key}`,
     ...(unread.length ? { notRead: `the docs of ${unread.join(", ")} could not be read: a read they document is unknown this turn` } : {}),
@@ -435,7 +446,6 @@ export async function askEngine(
     const ask: AskProposal = { outcome: outcomeArg(ASK_ENGINE_TOOL_NAME, args.outcome), inputs: askInputs(args.inputs) };
     const engine = (await deps.listEngines(identity.orgId)).find((e) => e.outcome === ask.outcome);
     if (!engine) throw new Error(`[${ASK_ENGINE_TOOL_NAME}] no Engine makes ${ask.outcome} (find_outcome lists the outcomes)`);
-    if (!engine.callable) return { status: "cannot_make_now", outcome: ask.outcome, whyNot: engine.reason };
     return {
       yesRequired: true,
       confirmationToken: randomUUID(),
@@ -515,6 +525,20 @@ export function outcomeDepsFromEnv(identity: { orgId: string; userId: string }, 
       const engines = (JSON.parse(text) as { engines?: unknown }).engines;
       if (!Array.isArray(engines)) throw new Error(`workflow-service answered no engines: ${text.slice(0, 300)}`);
       return engines as EngineListing[];
+    },
+    async engineScripts(outcome) {
+      const { url, key } = workflow();
+      const res = await fetch(`${url}/internal/scripts?outcome=${encodeURIComponent(outcome)}`, { headers: { "x-api-key": key }, signal: AbortSignal.timeout(60_000) });
+      const text = await res.text();
+      if (!res.ok) throw new Error(`workflow-service scripts of ${outcome} ${res.status}: ${text.slice(0, 300)}`);
+      const scripts = (JSON.parse(text) as { scripts?: unknown }).scripts;
+      if (!Array.isArray(scripts)) throw new Error(`workflow-service answered no scripts: ${text.slice(0, 300)}`);
+      return (scripts as Array<Record<string, unknown>>).map((x) => ({
+        name: typeof x.name === "string" ? x.name : null,
+        description: typeof x.description === "string" ? x.description : null,
+        materials: Array.isArray(x.materials) ? x.materials.map(String) : [],
+        runnable: x.runnable === true,
+      }));
     },
     async makeUnit(outcome, body, headers) {
       const { url, key } = workflow();

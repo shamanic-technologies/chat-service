@@ -50,8 +50,8 @@ const specs = new Map<string, Record<string, unknown>>([
 ]);
 
 const engines: EngineListing[] = [
-  { outcome: "email_found", name: "Email found", callable: true, reason: null, inputs: [{ units: [], channel: null }] },
-  { outcome: "backlink_earned", name: "Backlink earned", callable: false, reason: "No script can run now.", inputs: [] },
+  { outcome: "email_checked", name: "Email checked", callable: true, reason: null, inputs: [{ units: [], channel: null }], counts: { scripts: 1, live: 1, runnable: 1 } },
+  { outcome: "backlink_earned", name: "Backlink earned", callable: false, reason: "No script can run now.", inputs: [], counts: { scripts: 0, live: 0, runnable: 0 } },
 ];
 
 type Seen = { kind: string; [k: string]: unknown };
@@ -68,6 +68,8 @@ function fakes(over: Partial<OutcomeDeps> = {}): { deps: OutcomeDeps; seen: Seen
       seen.push({ kind: "engines", orgId });
       return engines;
     },
+    engineScripts: async (outcome) =>
+      outcome === "email_checked" ? [{ name: "Email address check", description: "Checks one email address (request.email).", materials: [], runnable: true }] : [],
     makeUnit: async (outcome, body, headers) => {
       seen.push({ kind: "make", outcome, body, headers });
       return { status: 200, data: { status: "made", content: { verdict: "valid" }, runId: "script-run", pick: { dynasty: "bounceban", version: 3 } } };
@@ -106,9 +108,10 @@ describe("the Provider reads are discovered by tag, never listed in code (ENGINE
 describe("find_outcome reads the doc, spends nothing", () => {
   it("without an outcome: every outcome known, from the Engines and the tags, with the org's Engine list", async () => {
     const { deps, seen } = fakes();
-    const out = (await findOutcome({}, { orgId: ORG }, deps, createProviderIndex(deps))) as { outcomes: Array<{ outcome: string; reads: number; engineCanMake: boolean }>; notRead: string };
-    expect(out.outcomes.map((o) => o.outcome)).toEqual(["backlink_earned", "email_found", "email_queued", "email_sent"]);
-    expect(out.outcomes.find((o) => o.outcome === "email_found")).toMatchObject({ reads: 2, engineCanMake: true });
+    const out = (await findOutcome({}, { orgId: ORG }, deps, createProviderIndex(deps))) as { outcomes: Array<{ outcome: string; reads: number; engineScripts: number }>; notRead: string };
+    expect(out.outcomes.map((o) => o.outcome)).toEqual(["backlink_earned", "email_checked", "email_found", "email_queued", "email_sent"]);
+    expect(out.outcomes.find((o) => o.outcome === "email_found")).toMatchObject({ reads: 2, engineScripts: 0 });
+    expect(out.outcomes.find((o) => o.outcome === "email_checked")).toMatchObject({ reads: 0, engineScripts: 1 });
     expect(out.notRead).toContain("broken");
     expect(seen).toEqual([{ kind: "engines", orgId: ORG }]);
   });
@@ -119,6 +122,10 @@ describe("find_outcome reads the doc, spends nothing", () => {
     expect(out.get[0]).toMatchObject({ route: "listEmailSentUnits", method: "GET", description: "Scope: every brand of the CALLING org." });
     expect(out.get[0].filters).toEqual([{ name: "emails", in: "query", required: false, type: "string", description: "Comma-separated addresses" }]);
     expect(out.ask).toBe("no Engine makes email_sent");
+    const checked = (await findOutcome({ outcome: "email_checked" }, { orgId: ORG }, deps, createProviderIndex(deps))) as { ask: { scripts: unknown[] } };
+    expect(checked.ask.scripts).toEqual([{ name: "Email address check", does: "Checks one email address (request.email).", takes: [] }]);
+    const none = (await findOutcome({ outcome: "backlink_earned" }, { orgId: ORG }, deps, createProviderIndex(deps))) as { ask: { whyNot: string } };
+    expect(none.ask.whyNot).toBe("No script can run now.");
   });
 });
 
@@ -157,26 +164,26 @@ describe("get_units = a Script's ctx.get: only a tagged read, as the conversatio
 describe("ask_engine = a Script's ctx.ask: one Unit, after the person's yes, on a run of ours", () => {
   it("first call: nothing runs, a proposal; the token from a later message runs exactly that ask", async () => {
     const { deps, seen } = fakes();
-    const proposal = (await askEngine({ outcome: "email_found", inputs: { request: { emails: ["k.lourd@smartdistribute.com"] } } }, who, [], deps)) as { confirmationToken: string };
-    expect(proposal).toMatchObject({ yesRequired: true, ask: { outcome: "email_found" } });
+    const proposal = (await askEngine({ outcome: "email_checked", inputs: { request: { email: "k.lourd@smartdistribute.com" } } }, who, [], deps)) as { confirmationToken: string };
+    expect(proposal).toMatchObject({ yesRequired: true, ask: { outcome: "email_checked" } });
     expect(seen.some((s) => s.kind === "make" || s.kind === "run")).toBe(false);
 
     const history = [{ toolCalls: [{ name: ASK_ENGINE_TOOL_NAME, args: {}, result: proposal }] }];
     const ran = (await askEngine({ confirmationToken: proposal.confirmationToken, outcome: "backlink_earned" }, who, history, deps)) as Record<string, unknown>;
     expect(seen.filter((s) => s.kind !== "engines")).toEqual([
       { kind: "run", orgId: ORG, userId: "user-1" },
-      { kind: "make", outcome: "email_found", body: { units: {}, request: { emails: ["k.lourd@smartdistribute.com"] } }, headers: { "x-org-id": ORG, "x-user-id": "user-1", "x-run-id": "ask-run" } },
+      { kind: "make", outcome: "email_checked", body: { units: {}, request: { email: "k.lourd@smartdistribute.com" } }, headers: { "x-org-id": ORG, "x-user-id": "user-1", "x-run-id": "ask-run" } },
     ]);
-    expect(ran).toMatchObject({ ran: true, outcome: "email_found", status: "made", unit: { verdict: "valid" }, script: "bounceban v3" });
+    expect(ran).toMatchObject({ ran: true, outcome: "email_checked", status: "made", unit: { verdict: "valid" }, script: "bounceban v3" });
 
     const used = [...history, { toolCalls: [{ name: ASK_ENGINE_TOOL_NAME, args: { confirmationToken: proposal.confirmationToken }, result: ran }] }];
     expect(() => resolveAskProposal(proposal.confirmationToken, used)).toThrow(/already used/);
     expect(() => resolveAskProposal("nope", history)).toThrow(/unknown confirmationToken/);
   });
 
-  it("an Engine that cannot make one now says why, no proposal; a proactive turn never asks; inputs carry nothing else", async () => {
+  it("an outcome no Engine makes is refused; a proactive turn never asks; inputs carry nothing else", async () => {
     const { deps } = fakes();
-    expect(await askEngine({ outcome: "backlink_earned" }, who, [], deps)).toEqual({ status: "cannot_make_now", outcome: "backlink_earned", whyNot: "No script can run now." });
+    await expect(askEngine({ outcome: "email_sent_nowhere" }, who, [], deps)).rejects.toThrow(/no Engine makes/);
     await expect(askEngine({ outcome: "email_found" }, who, [], deps, { readOnly: true })).rejects.toThrow(/only reads/);
     await expect(askEngine({ outcome: "email_found", inputs: { orgId: "other" } }, who, [], deps)).rejects.toThrow(/units, request and channel only/);
     expect(isProactiveReadTool("find_outcome")).toBe(true);
@@ -186,7 +193,7 @@ describe("ask_engine = a Script's ctx.ask: one Unit, after the person's yes, on 
 
   it("a refusal is answered in workflow-service's words", async () => {
     const { deps } = fakes({ makeUnit: async () => ({ status: 404, data: { code: "no_runnable_script", error: "no script of Engine email_found can run" } }) });
-    const p = (await askEngine({ outcome: "email_found" }, who, [], deps)) as { confirmationToken: string };
+    const p = (await askEngine({ outcome: "email_checked" }, who, [], deps)) as { confirmationToken: string };
     const out = await askEngine({ confirmationToken: p.confirmationToken }, who, [{ toolCalls: [{ name: ASK_ENGINE_TOOL_NAME, result: p }] }], deps);
     expect(out).toMatchObject({ ran: true, refused: true, httpStatus: 404, code: "no_runnable_script" });
   });
