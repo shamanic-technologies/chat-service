@@ -1418,7 +1418,7 @@ Every request result carries `kind` and `destination` (where it landed, in words
 |---|---|
 | `list_funnel_campaigns` | `GET /sales-funnel-campaigns?brandId&offerId&salesFunnelId&status` |
 | `get_funnel_caps` | `GET /v1/brands/:b/offers/:o/sales-funnels/:f/caps` (billing) |
-| `set_funnel_caps` | `PUT` same path `{maxBudget:{amountCents,period}\|null, maxVolume:{count,period}\|null}`; both keys always sent (null = the user wants no such cap; the strings `"null"`/`"none"` read as null), at least one non-null (owner 2026-10-11: max budget and/or max volume). The answer carries `funding`: billing's served `funded` verdict in words |
+| `set_funnel_caps` | `PUT` same path `{maxBudget:{amountCents,period}\|null, maxVolume:{count,period}\|null}`; both keys always sent (null = the user wants no such cap; the strings `"null"`/`"none"` read as null), maxBudget always non-null (VOL-NEEDS-USD-1124, owner 2026-11-24: a max volume always comes with a max budget in $ beside it; a max budget alone is valid). The answer carries `funding`: billing's served `funded` verdict in words |
 | `create_funnel_campaign` | `POST /sales-funnel-campaigns` with `status: "stopped"` ALWAYS (whatever the model sends) and the `brief` the agent wrote from the user's words (required, HUMAN-BRIEF-1121): one or two plain sentences, the one text the judge and every writer read |
 | `stop_funnel_campaign` | `PATCH /sales-funnel-campaigns/:id {status:"stop"}` |
 

@@ -302,11 +302,11 @@ Fired by the client's own push: one email they wrote, for one person (POST /v1/t
 # Launch, change or stop a campaign
 A campaign is ONE sales funnel run for one offer (brand x offer x funnel). It runs every step of the funnel and is started or stopped as a whole. A new account first has its brand, offer, audiences, preview email and payment: \`new-account\`.
 
-## Money: at least one cap, from the client
-A campaign needs a max budget, a max volume, or both. Either alone is valid; only NEITHER is refused.
-- **Proactive:** "Max budget" (amount + period: one_off, daily, weekly, monthly) and/or "Max volume" (first contacts + period).
-- **Reactive:** read as "Up to $X" and/or "Up to N prospects handled" per period (spends only when its trigger fires).
-- Ask once, in plain text, for what they have not stated. "No volume cap" is an answer: that cap is null. Never invent a cap, never ask again for a declined one.
+## Money: a max budget, from the client
+A campaign needs a max budget. A max volume is optional and never alone: a max budget sits beside it, as a safety.
+- **Proactive:** "Max budget" (amount + period: one_off, daily, weekly, monthly), plus "Max volume" (first contacts + period) if wanted.
+- **Reactive:** "Up to $X", plus "Up to N prospects handled" if wanted, per period (spends only when its trigger fires).
+- Ask once, in plain text, for what is not stated. "No volume cap" is an answer: null. A volume alone: ask the budget. Never invent a cap.
 - Billing says if it is FUNDED (with the caps). Not funded (today: no max budget) = it spends nothing yet: never say it runs.
 - A funnel served \`mixed\` is refused: make two. **Leads only** (a source, then their team): no email goes out; say so.
 
