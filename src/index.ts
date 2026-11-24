@@ -3621,7 +3621,7 @@ app.get("/sessions/latest", requireAuth, async (req, res) => {
       .status(400)
       .json({ error: "Invalid request", details: parsed.error.flatten() });
   }
-  const { configKey, limit, before } = parsed.data;
+  const { configKey, limit, before, view } = parsed.data;
   if (before !== undefined && limit === undefined) {
     return res.status(400).json({ error: "`before` requires `limit`" });
   }
@@ -3660,7 +3660,7 @@ app.get("/sessions/latest", requireAuth, async (req, res) => {
   }
 
   const { rows, hasOlder } = await readSessionMessages(session.id, { limit, before });
-  return res.json(serializeSessionHistory(session, rows, { hasOlder }));
+  return res.json(serializeSessionHistory(session, rows, { hasOlder }, view));
 });
 
 app.get("/sessions/:sessionId", requireAuth, async (req, res) => {
@@ -3674,7 +3674,7 @@ app.get("/sessions/:sessionId", requireAuth, async (req, res) => {
       .json({ error: "Invalid request", details: (parsed.success ? page.error : parsed.error)?.flatten() });
   }
   const { sessionId } = parsed.data;
-  const { limit, before } = page.data;
+  const { limit, before, view } = page.data;
   if (before !== undefined && limit === undefined) {
     return res.status(400).json({ error: "`before` requires `limit`" });
   }
@@ -3697,7 +3697,7 @@ app.get("/sessions/:sessionId", requireAuth, async (req, res) => {
   }
 
   const { rows, hasOlder } = await readSessionMessages(sessionId, { limit, before });
-  return res.json(serializeSessionHistory(session, rows, { hasOlder }));
+  return res.json(serializeSessionHistory(session, rows, { hasOlder }, view));
 });
 
 /** The session a stored message belongs to (a paging cursor), or undefined. */

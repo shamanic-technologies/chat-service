@@ -2725,6 +2725,13 @@ const sessionHistoryPageFields = {
     description:
       "A message id (`olderCursor` of the previous page): serve the page just older than it. Requires `limit`.",
   }),
+  view: z.enum(["basic", "full"]).optional().default("full").openapi({
+    description:
+      "Response detail level. `basic` strips `toolCalls[].args` and `toolCalls[].result` from every message " +
+      "(keeps only tool names), cutting payload size ~90%. Use for session-list / panel-load where tool " +
+      "detail is not rendered. Omitted or `full` = unchanged (backward-compatible).",
+    example: "basic",
+  }),
 };
 
 export const SessionHistoryPageQuerySchema = z
