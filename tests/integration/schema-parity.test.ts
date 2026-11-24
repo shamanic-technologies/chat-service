@@ -29,6 +29,7 @@ const tables = [
   schema.skillVersions,
   schema.staffRequests,
   schema.transcriptions,
+  schema.mediaTranscriptions,
   schema.vendorCreditOutages,
   schema.vendorCreditDays,
   schema.localLlmOrgs,

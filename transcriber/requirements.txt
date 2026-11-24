@@ -1,0 +1,4 @@
+# Pinned EXACTLY (REELS-1124), the versions measured on the box 2026-11-24. Move one
+# only after a real transcription in the built image (EN + FR sample, word times).
+onnx-asr[cpu,hub]==0.12.0
+av==18.1.1
