@@ -36,12 +36,14 @@ describe("vendor credit: stored fact + GET /internal/vendor-credit", () => {
     ]);
     await store.recordRefusal({ provider: "deepseek", model: "deepseek-flash", at: t2, message: "Insufficient Balance" });
     await store.recordReroute({ provider: "deepseek", at: t2 });
+    // FALLBACK-REFUSED-1124: the vendor's refusals count no call; only a call no model served is a refused call.
+    await store.recordUnserved({ provider: "deepseek", at: t2 });
     expect(await store.loadOpen()).toEqual([{ provider: "deepseek", firstSeenAt: t1 }]);
 
     const res = await request(app).get("/internal/vendor-credit?days=2").set({ "x-api-key": "test-key" });
     expect(res.status).toBe(200);
     const ds = res.body.vendors[0];
-    expect(ds).toMatchObject({ provider: "deepseek", outOfCredit: true, since: t1.toISOString(), lastSeenAt: t2.toISOString(), refusedCalls: 3, reroutedCalls: 1, fallbackModel: "claude-haiku-5-5" });
+    expect(ds).toMatchObject({ provider: "deepseek", outOfCredit: true, since: t1.toISOString(), lastSeenAt: t2.toISOString(), refusedCalls: 1, reroutedCalls: 1, fallbackModel: "claude-haiku-5-5" });
     expect(res.body.vendors).toHaveLength(6);
 
     await store.closeOutage({ provider: "deepseek", at: new Date("2026-10-30T09:00:00Z") });
@@ -51,7 +53,7 @@ describe("vendor credit: stored fact + GET /internal/vendor-credit", () => {
     expect(ds2.outOfCredit).toBe(false);
     expect(ds2.recoveredAt).toBe("2026-10-30T09:00:00.000Z");
     const day = after.body.days.find((d: { provider: string; day: string }) => d.provider === "deepseek" && d.day === "2026-10-29");
-    if (day) expect(day).toMatchObject({ outOfCredit: true, refusedCalls: 3, reroutedCalls: 1 });
+    if (day) expect(day).toMatchObject({ outOfCredit: true, refusedCalls: 1, reroutedCalls: 1 });
 
     // A new outage after recovery opens a new row.
     await store.recordRefusal({ provider: "deepseek", model: "deepseek-flash", at: new Date(), message: "x" });

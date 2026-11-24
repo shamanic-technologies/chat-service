@@ -80,11 +80,14 @@ import {
 } from "./lib/openai-compatible.js";
 import {
   pickServingModel,
-  fallbackModelFor,
+  fallbackOrderFor,
   isOutOfCreditError,
   isProviderOutOfCredit,
   recordOutOfCredit,
   recordReroute,
+  recordUnserved,
+  providersOutOfCredit,
+  PROVIDER_LABELS,
   markProviderServing,
   initVendorCredit,
   buildVendorCreditRead,
@@ -930,28 +933,102 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
 // --- Complete (synchronous LLM call) ---
 
 /**
- * A completion whose provider refused for an empty balance asks its route to
- * run ONCE more on the declared fallback (VENDOR-CREDIT-1030). The first
- * attempt's run is closed failed with no cost (nothing ran); the second attempt
- * opens its own run and declares the fallback's own cost names.
+ * A completion that must run again on the NEXT model of its fallback order (VENDOR-CREDIT-1030,
+ * FALLBACK-REFUSED-1124): its provider refused for an empty balance, or it was already a fallback and failed.
+ * The failed attempt's run is closed failed (nothing ran); the next attempt opens its own run and declares the
+ * cost names of the model it calls. `tried` = every model this request already called.
  */
 class RetryOnFallback {
-  constructor(readonly model: ReturnType<typeof resolveModel>) {}
+  constructor(readonly model: ReturnType<typeof resolveModel>, readonly tried: readonly string[]) {}
 }
 
-/** A refusal for an empty balance on our platform key: store the fact, and say where to retry (if anywhere). */
-function onOutOfCredit(choice: ServingChoice, err: unknown, accepts: AcceptsRequest): RetryOnFallback | null {
+/** How many models one completion tries before it fails loud (the first one included). */
+const MAX_SERVING_ATTEMPTS = 4;
+
+/** What a failed attempt of a completion does next: run again on `next`, or answer `refusal` (null = the route's own error answer). */
+interface FailedAttemptOutcome {
+  next: RetryOnFallback | null;
+  /** Set when the call ends on an empty balance with no model left: the NAMED error, never the vendor's raw words. */
+  refusal: { status: number; body: Record<string, unknown> } | null;
+}
+
+/**
+ * ONE rule for every completion route and every failure of an attempt (FALLBACK-REFUSED-1124, owner 2026-11-24:
+ * « il faut prendre le deuxième meilleur quand ça arrive »). Prod 11-17..11-24: 8 % of the calls a vendor refused
+ * for credit still failed, because the detour was ONE model tried ONCE: a fallback that refused the request's
+ * shape (148 calls, Kimi -> Haiku on a schema keyword), ran dry in the same minute, or was down, ended the call.
+ *
+ *  - an empty balance on OUR key is stored (red on Monitoring) and the call moves down the order;
+ *  - a FALLBACK that fails for any reason before answering moves down the order too (the caller never asked for
+ *    that model, so its refusal is not the caller's answer);
+ *  - a primary that fails for another reason is the caller's own failure: unchanged;
+ *  - a model that ANSWERED (unparseable JSON) or a tool loop that already spent rounds is never run twice.
+ * No model left = the call is counted refused on the vendor it was asked on, and named.
+ */
+function afterFailedAttempt(args: {
+  choice: ServingChoice;
+  err: unknown;
+  accepts: AcceptsRequest;
+  retry: RetryOnFallback | null;
+  /** The attempt ran on our platform key (an org's own key is the org's account: its balance is not our fact). */
+  platformKey: boolean;
+  /** The model answered or tool rounds were already spent: nothing to run again. */
+  spent: boolean;
+}): FailedAttemptOutcome {
+  const { choice, err, accepts, retry, platformKey, spent } = args;
   const { resolved } = choice;
-  recordOutOfCredit({
-    provider: resolved.provider,
-    model: resolved.apiModelId,
-    status: err instanceof VendorOutOfCreditError ? err.status : undefined,
-    message: err instanceof Error ? err.message : String(err),
-  });
-  if (choice.fallbackFrom) return null; // already the fallback: fail loud
-  const fallback = fallbackModelFor(resolved, accepts);
-  if (!fallback || isProviderOutOfCredit(fallback.provider)) return null;
-  return new RetryOnFallback(fallback);
+  const creditRefusal = platformKey && isOutOfCreditError(resolved.provider, err);
+  if (creditRefusal) {
+    recordOutOfCredit({
+      provider: resolved.provider,
+      model: resolved.apiModelId,
+      status: err instanceof VendorOutOfCreditError ? err.status : undefined,
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+  if (!creditRefusal && !choice.fallbackFrom) return { next: null, refusal: null };
+  const requested = choice.fallbackFrom ?? resolved;
+  const tried = [...(retry?.tried ?? []), resolved.apiModelId];
+  if (!spent && tried.length < MAX_SERVING_ATTEMPTS) {
+    const [next] = fallbackOrderFor(requested, accepts, new Date(), new Set(tried));
+    if (next) {
+      console.warn(
+        `[chat-service] [vendor-credit] ${resolved.apiModelId} ${creditRefusal ? "is out of credit" : "failed as a fallback"} ` +
+          `(asked: ${requested.apiModelId}): the call runs on ${next.apiModelId}, next of the fallback order (tried ${tried.join(", ")}).`,
+      );
+      return { next: new RetryOnFallback(next, tried), refusal: null };
+    }
+  }
+  // No model served this call: the only thing `refusedCalls` counts.
+  recordUnserved(requested.provider);
+  if (!creditRefusal) return { next: null, refusal: null };
+  return { next: null, refusal: noServingModelRefusal(requested, tried) };
+}
+
+/** The named answer of a call that ended on an empty balance with no model left to serve it. */
+function noServingModelRefusal(requested: ReturnType<typeof resolveModel>, tried: readonly string[]): { status: number; body: Record<string, unknown> } {
+  const out = providersOutOfCredit();
+  return {
+    status: 502,
+    body: {
+      error: `No model can serve this request: ${out.map((p) => PROVIDER_LABELS[p]).join(", ") || PROVIDER_LABELS[requested.provider]} out of credit on our account, and no other served model takes this request as sent.`,
+      code: "no_serving_model",
+      requestedModel: requested.apiModelId,
+      outOfCredit: out,
+      tried,
+      retryable: false,
+    },
+  };
+}
+
+/** Run a completion handler down the fallback order: again while it asks for the next model. */
+async function runDownFallbackOrder(attempt: (retry: RetryOnFallback | null) => Promise<unknown>): Promise<void> {
+  let retry: RetryOnFallback | null = null;
+  for (;;) {
+    const outcome = await attempt(retry);
+    if (!(outcome instanceof RetryOnFallback)) return;
+    retry = outcome;
+  }
 }
 
 /** Which model this attempt calls: the forced fallback on a retry, else the credit-aware pick. */
@@ -971,9 +1048,11 @@ function acceptsRequest(req: {
   temperature?: number | null;
   effort?: Parameters<typeof assertAnthropicEffortSupported>[1];
   disableThinking?: boolean | null;
+  brandTools?: Parameters<typeof brandToolsRefusalFor>[0];
 }): AcceptsRequest {
   return (m) => {
     if (isVendorProvider(m.provider) && (req.webSearch || req.imageUrl)) return false;
+    if (brandToolsRefusalFor(req.brandTools, m.provider, { webSearch: req.webSearch, imageUrl: Boolean(req.imageUrl) })) return false;
     if (m.provider === "anthropic" && req.responseFormat === "json" && req.responseSchema == null) return false;
     if (samplingRefusalFor(m.provider, m.apiModelId, m.apiModelId, req.temperature)) return false;
     if (m.provider === "anthropic") {
@@ -988,8 +1067,7 @@ function acceptsRequest(req: {
 }
 
 app.post("/complete", requireAuth, async (req, res) => {
-  const outcome = await handleComplete(req, res, null);
-  if (outcome instanceof RetryOnFallback) await handleComplete(req, res, outcome);
+  await runDownFallbackOrder((retry) => handleComplete(req, res, retry));
 });
 
 async function handleComplete(req: express.Request, res: express.Response, retry: RetryOnFallback | null): Promise<unknown> {
@@ -1025,7 +1103,7 @@ async function handleComplete(req: express.Request, res: express.Response, retry
   // Resolve versioned model from (provider, alias) pair, then route around a
   // provider that is out of credit (VENDOR-CREDIT-1030): `resolved` is the
   // model this attempt CALLS, so key, cost names and run all follow it.
-  const accepts = acceptsRequest({ imageUrl, webSearch, responseFormat, responseSchema, temperature, effort, disableThinking: disableThinkingRaw });
+  const accepts = acceptsRequest({ imageUrl, webSearch, responseFormat, responseSchema, temperature, effort, disableThinking: disableThinkingRaw, brandTools });
   const choice = servingChoiceFor(resolveModel(requestedProvider as Provider, requestedModel as ModelAlias), retry, accepts);
   const resolved = choice.resolved;
   const effectiveModel = resolved.apiModelId;
@@ -1114,6 +1192,9 @@ async function handleComplete(req: express.Request, res: express.Response, retry
     });
   } catch (err) {
     console.error(`[complete] Failed to resolve ${provider} key for org="${orgId}":`, err);
+    // A fallback with no usable key hands the call to the next model of the order.
+    const after = afterFailedAttempt({ choice, err, accepts, retry, platformKey: false, spent: false });
+    if (after.next) return after.next;
     return res.status(502).json({
       error: keyResolutionErrorMessage(provider, "org"),
     });
@@ -1375,12 +1456,19 @@ async function handleComplete(req: express.Request, res: express.Response, retry
         data: { provider, model: effectiveModel },
       });
     }
-    // An empty balance on OUR key: stored (red on Monitoring) and retried once
-    // on the declared fallback. Nothing ran, so this run closes failed with no
-    // cost and the retry opens its own. An org's own key is the org's account.
-    if (costSource === "platform" && isOutOfCreditError(provider, err)) {
-      const next = onOutOfCredit(choice, err, accepts);
-      if (next) return next;
+    // An empty balance on OUR key is stored (red on Monitoring), and the call
+    // runs on the next model of its fallback order; so does a fallback that
+    // failed (`afterFailedAttempt`). Nothing ran, so this run closes failed with
+    // no cost and the next attempt opens its own. An org's own key is the org's account.
+    const after = afterFailedAttempt({
+      choice, err, accepts, retry,
+      platformKey: costSource === "platform",
+      spent: err instanceof ModelJsonOutputError || geminiCostLines !== null,
+    });
+    if (after.next) return after.next;
+    if (after.refusal) {
+      res.status(after.refusal.status).json(after.refusal.body);
+      return;
     }
     // A provider that refused the request's SHAPE will refuse it identically
     // forever, so it must not be dressed as a transient failure — "please try
@@ -2974,8 +3062,7 @@ app.post("/internal/platform-judgments", requireInternalAuth, async (req, res) =
 // --- Internal Platform Complete (platform run tracking + cost, no org billing) ---
 
 app.post("/internal/platform-complete", requireInternalAuth, async (req, res) => {
-  const outcome = await handlePlatformComplete(req, res, null);
-  if (outcome instanceof RetryOnFallback) await handlePlatformComplete(req, res, outcome);
+  await runDownFallbackOrder((retry) => handlePlatformComplete(req, res, retry));
 });
 
 async function handlePlatformComplete(req: express.Request, res: express.Response, retry: RetryOnFallback | null): Promise<unknown> {
@@ -2994,7 +3081,7 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
   const disableThinking = disableThinkingRaw === true;
 
   // Same credit-aware routing as /complete (VENDOR-CREDIT-1030, LLM-CREDIT-GENERIC-1108).
-  const accepts = acceptsRequest({ webSearch, responseFormat, responseSchema, temperature, effort, disableThinking: disableThinkingRaw });
+  const accepts = acceptsRequest({ webSearch, responseFormat, responseSchema, temperature, effort, disableThinking: disableThinkingRaw, brandTools });
   const choice = servingChoiceFor(resolveModel(requestedProvider as Provider, requestedModel as ModelAlias), retry, accepts);
   const resolved = choice.resolved;
   const effectiveModel = resolved.apiModelId;
@@ -3072,6 +3159,9 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
     apiKey = platformKey.key;
   } catch (err) {
     console.error(`[internal/platform-complete] Failed to resolve platform ${provider} key:`, err);
+    // A fallback with no usable key hands the call to the next model of the order.
+    const after = afterFailedAttempt({ choice, err, accepts, retry, platformKey: false, spent: false });
+    if (after.next) return after.next;
     return res.status(502).json({
       error: keyResolutionErrorMessage(provider, "platform"),
     });
@@ -3265,10 +3355,16 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
         console.error(`[internal/platform-complete] could not declare the spent brand-tools rounds runId="${runId}":`, costErr),
       );
     }
-    // Same as /complete: store the empty balance, retry once on the fallback.
-    if (isOutOfCreditError(provider, err)) {
-      const next = onOutOfCredit(choice, err, accepts);
-      if (next) return next;
+    // Same as /complete: store the empty balance, run on the next model of the order.
+    const after = afterFailedAttempt({
+      choice, err, accepts, retry,
+      platformKey: true,
+      spent: err instanceof ModelJsonOutputError || spentItems.length > 0,
+    });
+    if (after.next) return after.next;
+    if (after.refusal) {
+      res.status(after.refusal.status).json(after.refusal.body);
+      return;
     }
     // Same split as /complete: a refused request option is a 400, not a 502.
     if (
@@ -6517,7 +6613,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   } catch (err) {
     // Our platform key refused for an empty balance (SOPHIE-HAIKU-BACKUP-1112): store the fact, so the
     // next Sophie turn runs on her backup and Monitoring shows it red. This turn still fails loud.
-    if (resolvedKey.keySource !== "org" && isOutOfCreditError(chatProvider, err)) {
+    const chatCreditRefusal = resolvedKey.keySource !== "org" && isOutOfCreditError(chatProvider, err);
+    if (chatCreditRefusal) {
       recordOutOfCredit({
         provider: chatProvider,
         model: resolvedModelInfo.apiModelId,
@@ -6538,6 +6635,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           toolCount: failoverState.toolCount(),
           textSent: failoverState.textSent(),
           failed: { provider: chatProvider, modelId: resolvedModelInfo.apiModelId },
+          outOfCredit: chatCreditRefusal,
           previous: distryAttempt,
           order: distryFallbackOrder,
         });
@@ -6545,6 +6643,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         console.error(`[chat] org="${orgId}" Distry's fallback order could not be read, the turn fails:`, orderErr);
       }
     }
+    // A turn that ends on an empty balance with no model left is the only refused call counted (FALLBACK-REFUSED-1124).
+    if (!failoverTo && !(err instanceof ChatCostGateError) && (chatCreditRefusal || turnModel.backupFor)) recordUnserved(turnModel.backupFor ?? chatProvider);
     if (failoverTo) {
       chatFailed = true;
       console.warn(`[chat] org="${orgId}" ${chatProvider}/${resolvedModelInfo.apiModelId} failed before any tool or word (${err instanceof Error ? err.message.slice(0, 200) : String(err)}): retrying on ${fallbackLine(failoverTo.next)}`);

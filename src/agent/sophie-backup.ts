@@ -23,6 +23,11 @@
 //     the model that ran. Fail loud only when no candidate is left.
 // A Sophie turn never probes an empty vendor: the outage closes when any other
 // call on that vendor succeeds.
+//
+// FALLBACK-REFUSED-1124 (owner 2026-11-24: « il faut prendre le deuxième
+// meilleur quand ça arrive »): an EMPTY BALANCE moves EVERY chat config down
+// this same order, before the turn and during it; only the retry on another
+// kind of failure stays Distry's own.
 // ---------------------------------------------------------------------------
 
 import type { ModelAlias, Provider } from "../lib/anthropic.js";
@@ -56,9 +61,9 @@ export interface DistryAttempt {
 }
 
 /**
- * The model this turn runs on. Distry only (every other config keeps its own model): a forced next
- * candidate (a retry), else the first fallback while the configured vendor is out of credit, else
- * the configured model. `order` reads the ranked list (only called when needed).
+ * The model this turn runs on, for every chat config: a forced next candidate (a retry), else the first
+ * fallback while the configured vendor is out of credit, else the configured model. `order` reads the
+ * ranked list (only called when needed).
  */
 export async function sophieTurnModel(
   configKey: string,
@@ -67,7 +72,6 @@ export async function sophieTurnModel(
   attempt?: DistryAttempt,
 ): Promise<SophieTurnModel> {
   const base = { provider: primary.provider, modelAlias: primary.modelAlias, backupFor: null, backupLevel: null };
-  if (configKey !== SOPHIE_CONFIG_KEY) return base;
   if (attempt) return toTurnModel(attempt.next, attempt.primaryProvider);
   if (!isProviderOutOfCredit(primary.provider)) return base;
   const [first] = await order(new Set([fallbackKey(primary.provider, primary.modelId)]));
@@ -89,9 +93,10 @@ export function distryOutageSentence(provider: Provider): string | null {
 }
 
 /**
- * Whether a failed Distry turn runs again, and on which model (null = it fails loud). Only Distry, on our
- * platform key (an org's own key is the org's account), never a billing refusal, and only when the failure
- * left nothing behind: no tool ran, no word reached the person. At most MAX_DISTRY_ATTEMPTS models.
+ * Whether a failed turn runs again, and on which model (null = it fails loud). Distry on any failure, every
+ * other config only when its vendor refused for an empty balance (`outOfCredit`); on our platform key (an
+ * org's own key is the org's account), never a billing refusal, and only when the failure left nothing
+ * behind: no tool ran, no word reached the person. At most MAX_DISTRY_ATTEMPTS models.
  */
 export async function nextDistryAttempt(args: {
   configKey: string;
@@ -102,11 +107,13 @@ export async function nextDistryAttempt(args: {
   toolCount: number;
   textSent: boolean;
   failed: { provider: Provider; modelId: string };
+  /** The failure is our platform key refused for an empty balance. */
+  outOfCredit?: boolean;
   previous?: DistryAttempt;
   order: (exclude: ReadonlySet<string>) => Promise<FallbackCandidate[]>;
 }): Promise<DistryAttempt | null> {
   const { configKey, platformKey, billingRefusal, sessionId, userMessageId, toolCount, textSent, failed, previous, order } = args;
-  if (configKey !== SOPHIE_CONFIG_KEY || !platformKey || billingRefusal || !sessionId || !userMessageId || toolCount > 0 || textSent) return null;
+  if ((configKey !== SOPHIE_CONFIG_KEY && !args.outOfCredit) || !platformKey || billingRefusal || !sessionId || !userMessageId || toolCount > 0 || textSent) return null;
   const tried = [...(previous?.tried ?? []), fallbackKey(failed.provider, failed.modelId)];
   if (tried.length >= MAX_DISTRY_ATTEMPTS) return null;
   const [next] = await order(new Set(tried));
