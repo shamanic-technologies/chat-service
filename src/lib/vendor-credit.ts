@@ -48,7 +48,7 @@ import { providerHasNoPlatformKey } from "./platform-key-presence.js";
 type ResolvedModel = ReturnType<typeof resolveModel>;
 
 /** Every provider chat-service calls, in the order the staff read lists them. */
-export const CREDIT_PROVIDERS: readonly Provider[] = ["deepseek", "zai", "moonshot", "openai", "cerebras", "groq", "anthropic", "google"];
+export const CREDIT_PROVIDERS: readonly Provider[] = ["deepseek", "zai", "moonshot", "openai", "openrouter", "anthropic", "google"];
 
 /** The vendor's own name, as the staff read prints it. */
 export const PROVIDER_LABELS: Record<Provider, string> = {
@@ -56,8 +56,7 @@ export const PROVIDER_LABELS: Record<Provider, string> = {
   zai: "Z.ai",
   moonshot: "Moonshot (Kimi)",
   openai: "OpenAI",
-  cerebras: "Cerebras",
-  groq: "Groq",
+  openrouter: "OpenRouter",
   anthropic: "Anthropic",
   google: "Google Gemini",
 };

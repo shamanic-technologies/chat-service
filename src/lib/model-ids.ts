@@ -72,12 +72,15 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "gpt-5.6-terra": "GPT-5.6 Terra",
   "gpt-6.1-sol": "GPT-6.1 Sol",
   "gpt-6.1-terra": "GPT-6.1 Terra",
-  // Cerebras (OPEN-LLM-FREE-1124)
-  "gpt-oss-120b": "GPT-OSS 120B (Cerebras)",
-  "qwen-3.8-27b": "Qwen 3.8 27B (Cerebras)",
-  // Groq (OPEN-LLM-FREE-1124)
-  "openai/gpt-oss-120b": "GPT-OSS 120B (Groq)",
-  "qwen/qwen3.8-27b": "Qwen 3.8 27B (Groq)",
+  // OpenRouter, one host each (OPENROUTER-CHEAP-LLM-1124)
+  "inclusionai/ling-3.0-tiny@antdigital": "Ling 3.0 Tiny (OpenRouter, Ant Digital)",
+  "nex-agi/nex-n2.5-mini@nex-agi": "Nex-N2.5-Mini (OpenRouter, Nex AGI)",
+  "tencent/hy4-flash@tencent": "Hy4 Flash (OpenRouter, Tencent)",
+  "deepseek/deepseek-v4.1-flash-1017@alibaba": "DeepSeek V4.1 Flash 1017 (OpenRouter, Alibaba)",
+  "qwen/qwen3.7-flash@alibaba": "Qwen3.7 Flash (OpenRouter, Alibaba)",
+  "meta-llama/llama-3.1-8b-instruct@deepinfra": "Llama 3.1 8B Instruct (OpenRouter, DeepInfra)",
+  "openai/gpt-oss-20b@deepinfra": "GPT-OSS 20B (OpenRouter, DeepInfra)",
+  "openai/gpt-oss-120b@deepinfra": "GPT-OSS 120B (OpenRouter, DeepInfra)",
 };
 
 interface RetiredModel {
