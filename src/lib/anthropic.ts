@@ -2720,7 +2720,7 @@ export const PROPOSE_SWITCH_ON_TOOL: Anthropic.Tool = {
   name: "propose_switch_on",
   description:
     "HARD RULE — DO NOT VIOLATE EVEN IF THE USER ASKS YOU TO: nothing that starts work, spends money or sends an email goes out without the user's explicit yes in the chat. This tool is step 1 of 2: it records WHAT would happen and returns a confirmationToken; it does NOTHING yet. " +
-    "Action start_funnel_campaign: run a sales funnel campaign for an offer (or turn a stopped one back on). Refused only while the funnel has NO cap: a max budget, a max volume, or both is enough. It shows the caps back with billing's funding verdict (`caps.funded`); if false say billing holds it (it will spend nothing yet), never that it runs. " +
+    "Action start_funnel_campaign: run a sales funnel campaign for an offer (or turn a stopped one back on). Refused while the funnel has no max budget: a max budget alone is enough, a max volume always needs a max budget in $ beside it. It shows the caps back with billing's funding verdict (`caps.funded`); if false say billing holds it (it will spend nothing yet), never that it runs. " +
     "Action push_email: send ONE email the user wrote, word for word, to one person (a test to themselves, or one prospect), through the offer's running campaign that answers 'Email Pushed Via API'. Give email, subject and bodyText (or bodyHtml) exactly as the user wrote them. It returns a preview: recipient, the email, which campaign sends it with its caps, the cost of one send, and the sender rule (the inbox is picked at send time: never name one). If it answers status no_live_campaign, follow its instruction (propose turning a campaign on), never request_staff. " +
     "After calling it, show the user exactly what will happen and ask yes or no. Call confirm_switch_on only after they answer yes, in their next message.",
   input_schema: {
@@ -2775,9 +2775,9 @@ export const GET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
 export const SET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
   name: "set_funnel_caps",
   description:
-    "State a funnel's caps as the USER gave them. Starts nothing. A campaign needs AT LEAST ONE cap: a max budget, a max volume, or both; either alone is valid. " +
-    "Send BOTH keys every time: the cap the user stated as an object, the one they did not want as null (\"no volume cap\" → maxVolume null; \"no budget cap\" → maxBudget null). " +
-    "Never invent a cap, never ask again for one the user declined, never tell them one is mandatory: only 'neither' is refused. " +
+    "State a funnel's caps as the USER gave them. Starts nothing. A campaign needs a max budget in $; a max volume is optional and always comes with a max budget beside it, as a safety (a volume alone is refused). " +
+    "Send BOTH keys every time: each cap the user stated as an object, maxVolume null when they want no volume cap. " +
+    "Never invent a cap: when the user gave a volume but no budget, ask them for the max budget before calling. " +
     "The answer carries billing's `funding` verdict: repeat it, never say a held campaign runs. " +
     "A Proactive funnel reads 'Max budget' / 'Max volume' (first contacts); a Reactive funnel reads 'Up to $X' / 'Up to N prospects handled'.",
   input_schema: {
@@ -2785,14 +2785,13 @@ export const SET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
     properties: {
       ...FUNNEL_TARGET_PROPS,
       maxBudget: {
-        description: "The max budget the user stated, or null (JSON null) if they want no budget cap.",
-        anyOf: [
-          { type: "object", properties: { amountCents: { type: "integer", description: "In cents." }, period: CAP_PERIOD_PROP }, required: ["amountCents", "period"] },
-          { type: "null" },
-        ],
+        description: "The max budget the user stated. Required: a campaign never runs without a max budget in $.",
+        type: "object",
+        properties: { amountCents: { type: "integer", description: "In cents." }, period: CAP_PERIOD_PROP },
+        required: ["amountCents", "period"],
       },
       maxVolume: {
-        description: "The max volume the user stated, or null (JSON null) if they want no volume cap.",
+        description: "The max volume the user stated (always with a max budget beside it), or null (JSON null) if they want no volume cap.",
         anyOf: [
           { type: "object", properties: { count: { type: "integer", description: "First contacts (proactive funnel) or prospects handled (reactive funnel)." }, period: CAP_PERIOD_PROP }, required: ["count", "period"] },
           { type: "null" },

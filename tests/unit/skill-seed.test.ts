@@ -282,7 +282,7 @@ describe("one kind per funnel (owner 2026-10-10)", () => {
     const f = SEED_SKILLS.find((s) => s.slug === "catalogue-sales-funnels")!.content;
     expect(f).toMatch(/ALSO a Reactive funnel from the list \(its line starts at the trigger step/);
     const c = SEED_SKILLS.find((s) => s.slug === "campaigns")!.content;
-    expect(c).toMatch(/"Up to \$X" and\/or "Up to N prospects handled"/);
+    expect(c).toMatch(/"Up to \$X", plus "Up to N prospects handled" if wanted/);
     expect(c).toMatch(/served `mixed` is refused/);
     expect(c).toMatch(/no email goes out/);
   });
@@ -341,10 +341,11 @@ describe("no per-step writes in the Copilot's skills (owner 2026-10-10)", () => 
 });
 
 describe("caps and cards (owner 2026-10-11, Doc Dinners: 'no volume cap' answered with 20,000 / 50,000 cards)", () => {
-  it("a campaign needs at least one cap, either alone, never invented or asked again", () => {
+  it("a campaign needs a max budget, a max volume never alone (VOL-NEEDS-USD-1124), never invented", () => {
     const c = SEED_SKILLS.find((s) => s.slug === "campaigns")!.content;
-    expect(c).toMatch(/a max budget, a max volume, or both\. Either alone is valid; only NEITHER is refused/);
-    expect(c).toMatch(/never ask again for a declined one/);
+    expect(c).toMatch(/A campaign needs a max budget\. A max volume is optional and never alone: a max budget sits beside it/);
+    expect(c).toMatch(/A volume alone: ask the budget\. Never invent a cap/);
+    expect(c).not.toMatch(/Either alone is valid|and\/or "Max volume"/);
     expect(c).not.toMatch(/Ask the user both with present_choices/);
   });
 

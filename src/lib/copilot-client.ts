@@ -231,7 +231,7 @@ export interface SwitchOnProposal {
 
 /**
  * Validate and record what WOULD be switched on: a sales funnel campaign,
- * refused until at least one cap (max budget and/or max volume) is stated (the caps are data; nothing starts). Returns a token the model hands to confirm_switch_on in a
+ * refused until a max budget is stated (a max volume always comes with a max budget beside it, VOL-NEEDS-USD-1124) (the caps are data; nothing starts). Returns a token the model hands to confirm_switch_on in a
  * LATER turn, after the user said yes.
  */
 export async function proposeSwitchOn(a: Record<string, unknown>, p: ApiCallParams): Promise<SwitchOnProposal & { budget?: unknown }> {
@@ -250,7 +250,7 @@ export async function proposeSwitchOn(a: Record<string, unknown>, p: ApiCallPara
   };
   if (action === "start_funnel_campaign") {
     // A funnel campaign's money is ONLY its caps: the proposal is refused until
-    // the user stated at least one (max budget and/or max volume, set_funnel_caps).
+    // the user stated a max budget (a max volume only beside one, set_funnel_caps).
     // It carries billing's funding verdict so the agent never says a held one runs.
     const target = {
       brandId: rawId("brandId", a.brandId),
