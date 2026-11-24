@@ -15,7 +15,7 @@ import type { TypeSafeAnswer, TypeSafeQuestion } from "./typesafe.js";
 // in the staff Unibox); nothing here is a special path.
 //
 // Recipe proven in prod by campaign-service (kelowna-v4, 2026-10-11):
-//   create STOPPED -> cap (max volume 1, one_off) -> activate; edit/cancel by
+//   create STOPPED -> cap (max volume 1 + max budget $2, one_off) -> activate; edit/cancel by
 //   PATCH; list by personEmail; fire = report the `follow_up_due` trigger for
 //   the person's lead id.
 // The person is ALWAYS the user of this chat (email from client-service): the
@@ -48,6 +48,16 @@ export function githubIssueArg(v: unknown): { repo: string; number: number } | n
   return { repo: m[1], number: Number(m[2]) };
 }
 const MAX_INSTRUCTION = 4000;
+
+/**
+ * The $ ceiling beside the one-send volume (VOL-NEEDS-USD-1124, owner 2026-11-24:
+ * every max volume carries a max budget, as a safety). This flow picks the volume
+ * itself (one email), so it picks the $ too: $2 in all covers one AI-written
+ * email many times over (an LLM write + one send are cents), and stops any spend
+ * the volume cannot count (a volume billing could not count let "Threads Posts"
+ * spend $8.12 in one morning). Our brand, our money.
+ */
+export const FOLLOWUP_MAX_BUDGET = { amountCents: 200, period: "one_off" } as const;
 
 export class FollowupError extends Error {
   constructor(message: string) {
@@ -317,7 +327,7 @@ export async function createFollowup(a: Record<string, unknown>, ctx: FollowupCo
     `/internal/brands/${enc(s.brandId)}/offers/${enc(offerId)}/sales-funnels/${enc(salesFunnelId)}/campaigns/${enc(campaign.id)}/caps`,
     s,
     null,
-    { maxBudget: null, maxVolume: { count: 1, period: "one_off" } },
+    { maxBudget: FOLLOWUP_MAX_BUDGET, maxVolume: { count: 1, period: "one_off" } },
   );
   // Billing's verdict, never our reading of the caps: an unfunded promise would never send.
   if (caps.funded !== true) {

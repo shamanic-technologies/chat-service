@@ -64,10 +64,10 @@ describe("funnel campaign tools (campaign-service / billing-service, direct, cha
     expect(call(1)).toMatchObject({ method: "PUT", body: { maxBudget: { amountCents: 5000, period: "weekly" }, maxVolume: { count: 200, period: "monthly" } } });
   });
 
-  it("set_funnel_caps needs at least one cap: either alone is accepted, neither is refused (owner 2026-10-11)", async () => {
+  it("set_funnel_caps needs a max budget: budget alone is accepted, neither or a volume alone is refused (VOL-NEEDS-USD-1124)", async () => {
     const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
     const t = { brandId: "b", offerId: "o", salesFunnelId: FUNNEL };
-    await expect(FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps({ ...t, maxBudget: null, maxVolume: null }, p)).rejects.toThrow(/at least one cap: a max budget, a max volume, or both/);
+    await expect(FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps({ ...t, maxBudget: null, maxVolume: null }, p)).rejects.toThrow(/needs a max budget/);
     // Both keys every time, so changing one cap never silently clears the other.
     await expect(FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps({ ...t, maxBudget: { amountCents: 100, period: "daily" } }, p)).rejects.toThrow(/send both maxBudget and maxVolume/);
     await expect(FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps({ ...t, maxBudget: { amountCents: 100, period: "yearly" }, maxVolume: null }, p)).rejects.toThrow(/period/);
@@ -86,12 +86,14 @@ describe("funnel campaign tools (campaign-service / billing-service, direct, cha
     await expect(FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps({ ...t, maxBudget: { amountCents: 100, period: "daily" }, maxVolume: 500 }, p)).rejects.toThrow(/maxVolume must be \{count, period\} when the user stated it, or null/);
     fetchMock().mockClear();
 
-    // Volume only: accepted, and billing's verdict says whether it runs.
-    fetchMock().mockResolvedValueOnce(res(200, { maxBudget: null, maxVolume: { count: 500, period: "monthly" } }));
-    const volumeOnly = (await FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps({ ...t, maxBudget: null, maxVolume: { count: 500, period: "monthly" } }, p)) as Record<string, unknown>;
-    expect(call(0).body).toEqual({ maxBudget: null, maxVolume: { count: 500, period: "monthly" } });
-    expect(volumeOnly.funding).toMatch(/Held by billing/);
-    expect(volumeOnly.funding).toMatch(/never say it runs/);
+    // Volume only (owner 2026-11-24 « ajoute aussi un max en $ »): refused before any write, asking for the $ beside it.
+    await expect(FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps({ ...t, maxBudget: null, maxVolume: { count: 500, period: "monthly" } }, p)).rejects.toThrow(
+      /a max volume needs a max budget in \$ beside it/,
+    );
+    await expect(FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps({ ...t, maxBudget: "none", maxVolume: { count: 1, period: "daily" } }, p)).rejects.toThrow(
+      /a max volume needs a max budget/,
+    );
+    expect(fetchMock()).not.toHaveBeenCalled();
   });
 
   it("funding is billing's served verdict, never our reading of the caps", async () => {
@@ -207,7 +209,7 @@ describe("start_funnel_campaign goes through the switch-on gate", () => {
     const { proposeSwitchOn } = await copilot();
     await expect(
       proposeSwitchOn({ action: "start_funnel_campaign", summary: "s", brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" }, p),
-    ).rejects.toThrow(/needs a max budget, a max volume, or both/);
+    ).rejects.toThrow(/needs a max budget \(a max volume can come beside it\)/);
     expect(fetchMock()).toHaveBeenCalledTimes(2);
     expect(fetchMock().mock.calls.every((c) => (c[1] as RequestInit).method === "GET")).toBe(true);
   });
@@ -220,12 +222,22 @@ describe("start_funnel_campaign goes through the switch-on gate", () => {
     expect(out.caps).toMatchObject({ maxVolume: null, funded: true });
   });
 
-  it("propose is accepted with a max volume alone, carrying billing's hold verdict", async () => {
+  it("propose is refused with a max volume alone: a $ max must be stated beside it (VOL-NEEDS-USD-1124)", async () => {
     fetchMock().mockResolvedValueOnce(proactiveFunnel()).mockResolvedValue(res(200, { maxBudget: null, maxVolume: { count: 500, period: "monthly" } }));
     const { proposeSwitchOn } = await copilot();
+    await expect(
+      proposeSwitchOn({ action: "start_funnel_campaign", summary: "s", brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" }, p),
+    ).rejects.toThrow(/max volume but no max budget/);
+    expect(fetchMock().mock.calls.every((c) => (c[1] as RequestInit).method === "GET")).toBe(true);
+  });
+
+  it("propose is accepted with a max volume and a max budget beside it", async () => {
+    fetchMock()
+      .mockResolvedValueOnce(proactiveFunnel())
+      .mockResolvedValue(res(200, { funded: true, maxBudget: { amountCents: "1000", period: "daily" }, maxVolume: { count: 500, period: "monthly" } }));
+    const { proposeSwitchOn } = await copilot();
     const out = await proposeSwitchOn({ action: "start_funnel_campaign", summary: "s", brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" }, p);
-    expect(out.caps).toMatchObject({ maxBudget: null, maxVolume: { count: 500, period: "monthly" }, funded: false });
-    expect((out.caps as { funding: string }).funding).toMatch(/Held by billing/);
+    expect(out.caps).toMatchObject({ maxVolume: { count: 500, period: "monthly" }, funded: true });
   });
 
   it("a mixed funnel is never proposed for start", async () => {
@@ -468,12 +480,12 @@ describe("a campaign IS a sales funnel campaign (owner rule; prod 2026-10-10 NOV
 });
 
 describe("set_funnel_caps tool schema (prod 2026-10-11: the model sent the string \"null\" under nullable:true)", () => {
-  it("declares each cap as an object OR JSON null, both keys required", async () => {
+  it("declares maxBudget as a required object and maxVolume as an object OR JSON null (VOL-NEEDS-USD-1124)", async () => {
     const { SET_FUNNEL_CAPS_TOOL } = await import("../../src/lib/anthropic.js");
-    const props = SET_FUNNEL_CAPS_TOOL.input_schema.properties as Record<string, { anyOf?: Array<{ type: string }> }>;
-    for (const k of ["maxBudget", "maxVolume"]) {
-      expect(props[k].anyOf?.map((x) => x.type)).toEqual(["object", "null"]);
-    }
+    const props = SET_FUNNEL_CAPS_TOOL.input_schema.properties as Record<string, { type?: string; anyOf?: Array<{ type: string }> }>;
+    expect(props.maxVolume.anyOf?.map((x) => x.type)).toEqual(["object", "null"]);
+    expect(props.maxBudget.type).toBe("object");
+    expect(props.maxBudget.anyOf).toBeUndefined();
     expect(SET_FUNNEL_CAPS_TOOL.input_schema.required).toEqual(expect.arrayContaining(["maxBudget", "maxVolume"]));
   });
 });

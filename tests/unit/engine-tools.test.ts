@@ -51,7 +51,7 @@ describe("Distry's Engine tools come from the live list (DISTRY-PRINCIPAL-1119)"
     expect(tools.every((t) => isPrincipalToolName(t.name))).toBe(true);
     const props = tools[0].input_schema.properties as Record<string, unknown>;
     expect(Object.keys(props).sort()).toEqual(["brandId", "brief", "maxBudget", "maxVolume", "offerId", "orgId"]);
-    expect(tools[0].input_schema.required).toEqual(["brief"]);
+    expect(tools[0].input_schema.required).toEqual(["brief", "maxBudget"]);
     expect(tools[1].description).toContain("Units of lead_found (channel email)");
   });
 
@@ -93,16 +93,17 @@ describe("an Engine call is ALWAYS a campaign (DISTRY-CALL-IS-CAMPAIGN-1121)", (
 
   it("a stated offer rides the campaign and its caps path", async () => {
     const { fetchImpl, seen } = producers();
-    await startEngineCampaign("newsletter_drafted", { brief: "b", offerId: "offer-9", maxVolume: { count: 3, period: "weekly" } }, target, fetchImpl);
+    await startEngineCampaign("newsletter_drafted", { brief: "b", offerId: "offer-9", maxBudget: { usd: 5, period: "weekly" } }, target, fetchImpl);
     expect(seen[0].body).toMatchObject({ offerId: "offer-9" });
     expect(seen[1].path).toBe(`/v1/brands/brand-1/offers/offer-9/sales-funnels/newsletter_drafted/campaigns/${CAMPAIGN_ID}/caps`);
-    expect(seen[1].body).toEqual({ maxVolume: { count: 3, period: "weekly" }, maxBudget: null });
+    expect(seen[1].body).toEqual({ maxVolume: null, maxBudget: { amountCents: 500, period: "weekly" } });
   });
 
-  it("refuses before any call: no brief, no cap, a bad period", async () => {
+  it("refuses before any call: no brief, no cap, a volume with no $ beside it (VOL-NEEDS-USD-1124), a bad period", async () => {
     const { fetchImpl, seen } = producers();
     await expect(startEngineCampaign("x", { maxVolume: { count: 1, period: "one_off" } }, target, fetchImpl)).rejects.toThrow(/brief is required/);
-    await expect(startEngineCampaign("x", { brief: "b" }, target, fetchImpl)).rejects.toThrow(/max volume, a max budget, or both/);
+    await expect(startEngineCampaign("x", { brief: "b" }, target, fetchImpl)).rejects.toThrow(/state a max budget/);
+    await expect(startEngineCampaign("x", { brief: "b", maxVolume: { count: 1, period: "daily" } }, target, fetchImpl)).rejects.toThrow(/a max volume needs a max budget in dollars beside it/);
     await expect(startEngineCampaign("x", { brief: "b", maxBudget: { usd: 1, period: "hourly" } }, target, fetchImpl)).rejects.toThrow(/period must be one of/);
     await expect(startEngineCampaign("x", { brief: "b", maxVolume: { count: 0, period: "daily" } }, target, fetchImpl)).rejects.toThrow(/at least 1/);
     expect(seen).toEqual([]);
@@ -110,13 +111,13 @@ describe("an Engine call is ALWAYS a campaign (DISTRY-CALL-IS-CAMPAIGN-1121)", (
 
   it("a producer's refusal (4xx) is answered in its own words; a 5xx fails loud", async () => {
     const refused = producers({ "campaign POST": () => Response.json({ error: "Nothing makes it yet.", reason: "engine_not_live" }, { status: 409 }) });
-    expect(await startEngineCampaign("x", { brief: "b", maxVolume: { count: 1, period: "one_off" } }, target, refused.fetchImpl)).toMatchObject({
+    expect(await startEngineCampaign("x", { brief: "b", maxVolume: { count: 1, period: "one_off" }, maxBudget: { usd: 1, period: "one_off" } }, target, refused.fetchImpl)).toMatchObject({
       status: "refused",
       by: "campaign-service",
       reason: "engine_not_live",
     });
     const down = producers({ "billing PUT": () => Response.json({ error: "boom" }, { status: 502 }) });
-    await expect(startEngineCampaign("x", { brief: "b", maxVolume: { count: 1, period: "one_off" } }, target, down.fetchImpl)).rejects.toThrow(/billing-service campaign caps 502: boom/);
+    await expect(startEngineCampaign("x", { brief: "b", maxVolume: { count: 1, period: "one_off" }, maxBudget: { usd: 1, period: "one_off" } }, target, down.fetchImpl)).rejects.toThrow(/billing-service campaign caps 502: boom/);
   });
 
   it("progress is read from campaign-service, by campaign id", async () => {

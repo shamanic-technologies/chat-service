@@ -12,10 +12,13 @@ import { assertFunnelNotMixed } from "./funnel-mix.js";
 // with its service keys and the chat's identity (x-org-id, x-user-id, x-run-id).
 //
 // Money rules (owner 2026-10-11, "il FAUT une contrainte qui doit être SOIT un
-// max $ ET/OU un max volume"):
-//   - a funnel campaign needs AT LEAST ONE cap stated by the user: a max budget,
-//     a max volume, or both. Either alone is valid; none is refused. The agent
-//     never invents a cap nor asks again for one the user declined;
+// max $ ET/OU un max volume"; volume side replaced 2026-11-24, VOL-NEEDS-USD-1124,
+// « Option B -> ajoute aussi un max en $ »):
+//   - a funnel campaign needs a max budget stated by the user; a max volume is
+//     optional and ALWAYS comes with a max budget beside it (a volume billing
+//     cannot count stops nothing: "Threads Posts" spent $8.12 in one morning
+//     under "max 1 new person a day"). A max budget alone is valid; a max
+//     volume alone or no cap is refused. The agent never invents a cap: it asks;
 //   - whether billing FUNDS the funnel (spends on it) is billing's verdict, read
 //     from what it serves (`fundingOf`), never assumed from the caps;
 //   - a create from the chat is ALWAYS `stopped`; starting goes through the
@@ -140,7 +143,8 @@ function capArg(name: string, v: unknown, shape: string): Record<string, unknown
 /**
  * PUT billing caps. Both keys are REQUIRED by the owner (object = state, null
  * = no cap), so a call that changes one cap never silently clears the other.
- * At least one must be stated: a funnel with neither cap is refused.
+ * A max budget must be stated: a funnel with neither cap, or with a max volume
+ * and no max budget, is refused (VOL-NEEDS-USD-1124: a volume needs a $ beside it).
  */
 export async function setFunnelCaps(a: Record<string, unknown>, p: ApiCallParams) {
   if (!("maxBudget" in a) || !("maxVolume" in a)) {
@@ -152,7 +156,12 @@ export async function setFunnelCaps(a: Record<string, unknown>, p: ApiCallParams
   const mv = capArg("maxVolume", a.maxVolume, "{count, period}");
   if (mb === null && mv === null) {
     throw new Error(
-      "[funnel-campaigns] a campaign needs at least one cap: a max budget, a max volume, or both. Ask the user for the one they want.",
+      "[funnel-campaigns] a campaign needs a max budget (and a max volume beside it if the user wants one). Ask the user for the max budget.",
+    );
+  }
+  if (mb === null) {
+    throw new Error(
+      "[funnel-campaigns] a max volume needs a max budget in $ beside it, as a safety: ask the user for the max budget, then send both.",
     );
   }
   const body = {
@@ -178,7 +187,7 @@ export function fundingOf(caps: CapsBody): boolean {
 /** What to tell the user about funding, in words. */
 export function fundingWords(caps: CapsBody): string {
   if (fundingOf(caps)) return "Funded: once started, it spends within these caps.";
-  if (!caps.maxBudget && !caps.maxVolume) return "No cap stated: it cannot start. Ask the user for a max budget or a max volume.";
+  if (!caps.maxBudget && !caps.maxVolume) return "No cap stated: it cannot start. Ask the user for a max budget (a max volume can come beside it).";
   return "Held by billing: a campaign with no max budget is not funded yet, so it spends nothing even once started. Say so plainly; never say it runs.";
 }
 
@@ -191,7 +200,7 @@ export function fundingWords(caps: CapsBody): string {
  * so the very next question uses the right words.
  */
 export function capsAskFor(type: "proactive" | "reactive"): string {
-  const rule = "It needs at least one cap: budget, volume, or both. Skip any cap the user already stated or declined; never invent one. Then set_funnel_caps.";
+  const rule = "It needs a max budget; a max volume is optional and always comes with a max budget beside it. Skip any cap the user already stated or declined; never invent one. Then set_funnel_caps.";
   return type === "reactive"
     ? `Reactive funnel: the caps read 'Up to $X' (per one-off, day, week or month) and 'Up to N prospects handled' (per period). Never say 'max budget' or 'first contacts' for it. ${rule}`
     : `Proactive funnel: the caps read 'Max budget' (per one-off, day, week or month) and 'Max volume' in first contacts (per period). ${rule}`;
@@ -230,14 +239,19 @@ export async function stopFunnelCampaign(a: Record<string, unknown>, p: ApiCallP
 
 // --- Start (only from confirm_switch_on) ----------------------------------------
 
-/** propose_switch_on guard: the funnel's caps as stated now; refuses while NEITHER cap is stated. */
+/** propose_switch_on guard: the funnel's caps as stated now; refuses while no max budget is stated (VOL-NEEDS-USD-1124). */
 export async function requireStatedCap(target: { brandId: string; offerId: string; salesFunnelId: string }, p: ApiCallParams) {
   // A mixed funnel is never started either (its budget would starve the proactive part).
   await assertFunnelNotMixed(target.salesFunnelId);
   const caps = (await getFunnelCaps(target, p)) as CapsBody;
   if (!caps.maxBudget && !caps.maxVolume) {
     throw new Error(
-      "[funnel-campaigns] this funnel has no cap: a campaign needs a max budget, a max volume, or both. Ask the user, set it with set_funnel_caps, then propose again.",
+      "[funnel-campaigns] this funnel has no cap: a campaign needs a max budget (a max volume can come beside it). Ask the user, set it with set_funnel_caps, then propose again.",
+    );
+  }
+  if (!caps.maxBudget) {
+    throw new Error(
+      "[funnel-campaigns] this funnel has a max volume but no max budget: a max volume needs a max budget in $ beside it. Ask the user for the max budget, set both with set_funnel_caps, then propose again.",
     );
   }
   return { maxBudget: caps.maxBudget ?? null, maxVolume: caps.maxVolume ?? null, funded: fundingOf(caps), funding: fundingWords(caps) };
