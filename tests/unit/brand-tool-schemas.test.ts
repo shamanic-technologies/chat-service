@@ -148,7 +148,8 @@ describe("openai: tools need reasoning_effort none on chat/completions", () => {
       vendor,
       apiKey: "k",
       model,
-      costPrefix: "p",
+      // A real catalog prefix: DeepSeek's regime is read from costs-service's rows (DEEPSEEK-HOLIDAYS-1124).
+      costPrefix: vendor === "deepseek" ? "deepseek-v4.1-flash" : "p",
       systemPrompt: "SYS",
       turnContext: "",
       history: [],

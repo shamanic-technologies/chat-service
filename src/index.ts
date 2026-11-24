@@ -117,6 +117,7 @@ import {
 import { createVendorCreditStore, loadVendorCreditRows } from "./lib/vendor-credit-store.js";
 import {
   buildLlmCostNames,
+  regimeCatalogueRead,
   vendorCostLines,
   flatCostNames,
   UnpricedModelError,
@@ -7825,6 +7826,10 @@ if (process.env.NODE_ENV !== "test") {
       // The detour ranks fallbacks by list price: read costs-service now and hourly (fail-soft, logged).
       await refreshFallbackPrices();
       setInterval(() => void refreshFallbackPrices(), PRICE_REFRESH_MS).unref();
+      // DEEPSEEK-HOLIDAYS-1124: until the regime hours are read, every DeepSeek call is refused, so retry each minute.
+      setInterval(() => {
+        if (!regimeCatalogueRead()) void refreshFallbackPrices();
+      }, 60_000).unref();
       // Copilot skill tree: insert absent skills, refresh rows still holding
       // seed content, NEVER touch a human-edited one. ~16 rows, safe to await.
       // LOCAL-CLAUDE-1116: the orgs whose LLM runs on their own Claude Code (a handful of rows),
