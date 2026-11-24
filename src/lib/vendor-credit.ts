@@ -43,11 +43,12 @@
 import { modelCatalogue, resolveModel, type Provider } from "./anthropic.js";
 import { buildLlmCostNames } from "./cost-names.js";
 import { MODEL_DISPLAY_NAMES } from "./model-ids.js";
+import { providerHasNoPlatformKey } from "./platform-key-presence.js";
 
 type ResolvedModel = ReturnType<typeof resolveModel>;
 
 /** Every provider chat-service calls, in the order the staff read lists them. */
-export const CREDIT_PROVIDERS: readonly Provider[] = ["deepseek", "zai", "moonshot", "openai", "anthropic", "google"];
+export const CREDIT_PROVIDERS: readonly Provider[] = ["deepseek", "zai", "moonshot", "openai", "cerebras", "groq", "anthropic", "google"];
 
 /** The vendor's own name, as the staff read prints it. */
 export const PROVIDER_LABELS: Record<Provider, string> = {
@@ -55,6 +56,8 @@ export const PROVIDER_LABELS: Record<Provider, string> = {
   zai: "Z.ai",
   moonshot: "Moonshot (Kimi)",
   openai: "OpenAI",
+  cerebras: "Cerebras",
+  groq: "Groq",
   anthropic: "Anthropic",
   google: "Google Gemini",
 };
@@ -164,8 +167,9 @@ const TIER_RANK: Record<ResolvedModel["capabilityTier"], number> = { cheap: 0, s
  *   - same capability tier first, cheapest first;
  *   - then, only when no model of the tier is left, the nearest tier, cheapest first (a call never fails while a
  *     model that takes it serves);
- *   - never the primary's own vendor, a vendor out of credit, an unpriced model, a model in `exclude` (the ones
- *     this call already tried) or Claude Haiku 4.5.
+ *   - never the primary's own vendor, a vendor out of credit, a vendor known to have no platform key
+ *     (OPEN-LLM-FREE-1124), an unpriced model, a model in `exclude` (the ones this call already tried) or
+ *     Claude Haiku 4.5.
  * Empty = no model can serve this request shape.
  */
 export function fallbackOrderFor(
@@ -180,6 +184,7 @@ export function fallbackOrderFor(
     if (model.apiModelId === NEVER_A_FALLBACK) continue;
     if (exclude.has(model.apiModelId)) continue;
     if (outOfCredit.has(model.provider)) continue;
+    if (providerHasNoPlatformKey(model.provider)) continue;
     if (!accepts(model)) continue;
     const cents = typicalCallCents(model, at);
     if (cents === null) continue;

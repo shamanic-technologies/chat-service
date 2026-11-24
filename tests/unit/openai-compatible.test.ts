@@ -972,6 +972,10 @@ describe("published vendor concurrency", () => {
       expect(concurrency.observedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       if (concurrency.scope === "per-model") {
         expect(Object.keys(concurrency.limits).length).toBeGreaterThan(0);
+      } else if (concurrency.scope === "unpublished") {
+        // OPEN-LLM-FREE-1124: Cerebras / Groq publish per-minute and per-day rates, no in-flight cap: nothing typed.
+        expect(concurrency.note.length).toBeGreaterThan(0);
+        expect(publishedConcurrency(id, "any-model")).toBeNull();
       } else {
         expect(Object.keys(concurrency.tierLimits).length).toBeGreaterThan(0);
       }

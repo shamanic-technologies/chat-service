@@ -37,6 +37,27 @@ export interface ResolvedKey {
   keySource: "org" | "platform";
 }
 
+/**
+ * key-service holds no key for this provider (its 404), as opposed to a failed
+ * read. `scope` says whose key is missing: `org` only when key-service names the
+ * org's own key; else the platform key (no platform row, or a provider nobody
+ * registered a key for yet).
+ */
+export class KeyNotConfiguredError extends Error {
+  constructor(
+    message: string,
+    readonly provider: string,
+    readonly scope: "org" | "platform",
+  ) {
+    super(message);
+    this.name = "KeyNotConfiguredError";
+  }
+}
+
+function keyNotConfigured(provider: string, path: string, text: string, scope: "org" | "platform"): KeyNotConfiguredError {
+  return new KeyNotConfiguredError(`[key-client] GET ${path} returned 404: ${text}`, provider, scope);
+}
+
 export async function resolveKey(
   params: KeyResolutionParams,
 ): Promise<ResolvedKey> {
@@ -71,6 +92,9 @@ export async function resolveKey(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    if (res.status === 404) {
+      throw keyNotConfigured(provider, `/keys/${provider}/decrypt`, text, /org key configured/i.test(text) ? "org" : "platform");
+    }
     throw new Error(
       `[key-client] GET /keys/${provider}/decrypt returned ${res.status}: ${text}`,
     );
@@ -112,12 +136,32 @@ export async function resolvePlatformKey(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    if (res.status === 404) throw keyNotConfigured(provider, `/keys/platform/${provider}/decrypt`, text, "platform");
     throw new Error(
       `[key-client] GET /keys/platform/${provider}/decrypt returned ${res.status}: ${text}`,
     );
   }
 
   return (await res.json()) as PlatformResolvedKey;
+}
+
+/**
+ * The providers that have a platform key, read from key-service's own list
+ * (`GET /platform-keys`: provider names + masked keys; no key is decrypted or
+ * kept here). Throws on any failed read: the caller keeps what it knew.
+ */
+export async function listPlatformKeyProviders(): Promise<string[]> {
+  if (!KEY_SERVICE_API_KEY) {
+    throw new Error("[key-client] KEY_SERVICE_API_KEY is required to list platform keys");
+  }
+  const res = await fetch(`${KEY_SERVICE_URL}/platform-keys`, {
+    method: "GET",
+    headers: { "x-api-key": KEY_SERVICE_API_KEY, "X-Caller-Service": CALLER_SERVICE },
+  });
+  if (!res.ok) throw new Error(`[key-client] GET /platform-keys returned ${res.status}`);
+  const body = (await res.json()) as { keys?: Array<{ provider?: unknown }> };
+  if (!Array.isArray(body.keys)) throw new Error("[key-client] GET /platform-keys: no `keys` array");
+  return body.keys.map((k) => k.provider).filter((p): p is string => typeof p === "string");
 }
 
 // ---------------------------------------------------------------------------

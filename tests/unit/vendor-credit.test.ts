@@ -180,6 +180,27 @@ const REFUSALS: Array<{
       },
     ],
   },
+  // OPEN-LLM-FREE-1124: docs-only (no key on 2026-11-24). Cerebras documents 402 PaymentRequired (the free tier is
+  // a $5 credit); Groq's free tier is capped by rate, so only a 402 reads as an empty balance. A daily-cap 429 is a
+  // QUOTA refusal (VendorQuotaExhaustedError), never out of credit.
+  ...(["cerebras", "groq"] as const).map((vendor) => ({
+    vendor,
+    outOfCredit: { status: 402, body: JSON.stringify({ error: { message: "Payment required", type: "payment_required" } }) },
+    quiet: [
+      {
+        label: "daily token cap",
+        status: 429,
+        body: JSON.stringify({
+          error: {
+            message: "Rate limit reached for model `openai/gpt-oss-120b` on tokens per day (TPD): Limit 200000, Used 199850, Requested 900. Please try again in 7m12s.",
+            type: "tokens",
+            code: "rate_limit_exceeded",
+          },
+        }),
+      },
+      { label: "auth failure", status: 401, body: JSON.stringify({ error: { message: "Invalid API Key", type: "invalid_request_error" } }) },
+    ],
+  })),
 ];
 
 describe("out-of-credit classification", () => {

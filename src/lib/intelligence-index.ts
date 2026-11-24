@@ -706,7 +706,10 @@ export function buildModelPanel(args: {
   pricesRead: boolean;
   current: { provider: string; model: string; effort: string | null };
   now: Date;
-  /** The stored out-of-credit fact per provider (vendor-credit.ts); omitted = every vendor serves. */
+  /**
+   * Why a provider cannot serve now, in words, or null: the stored out-of-credit fact (vendor-credit.ts) or no
+   * platform key registered yet (platform-key-presence.ts). Omitted = every vendor serves.
+   */
   outOfCredit?: (provider: Provider) => string | null;
 }): ModelPanel {
   const { choices, state, keyConfigured, priceOf, pricesRead, current, now } = args;

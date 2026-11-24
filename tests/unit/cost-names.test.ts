@@ -247,7 +247,10 @@ describe("buildLlmCostNames — per-vendor dimensions", () => {
     for (const [provider, costPrefix] of models) {
       const names = buildLlmCostNames({ provider, costPrefix, at: at("2026-08-20T02:00:00Z") });
       expect(names.input.startsWith(costPrefix), costPrefix).toBe(true);
-      expect(names.cachedInput, costPrefix).not.toBeNull();
+      // A vendor that prices no cache hit apart (Cerebras bills it at the input rate) declares no cached row.
+      const cachePriced = (VENDORS[provider as keyof typeof VENDORS].pricing as { cachedInput?: boolean }).cachedInput !== false;
+      if (cachePriced) expect(names.cachedInput, costPrefix).not.toBeNull();
+      else expect(names.cachedInput, costPrefix).toBeNull();
       expect(names.output.endsWith("-tokens-output"), costPrefix).toBe(true);
     }
   });

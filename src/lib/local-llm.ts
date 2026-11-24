@@ -33,6 +33,7 @@ import { capabilityTierFor, resolveModel, type CapabilityTier, type ModelAlias, 
 import { anthropicCostLines } from "./anthropic-usage.js";
 import { dynastyOfModel } from "./llm-dynasties.js";
 import { isVendorProvider } from "./openai-compatible.js";
+import { providerHasNoPlatformKey } from "./platform-key-presence.js";
 import type { CostItem } from "./runs-client.js";
 import type { LocalAnswerOutcome, LocalJobKind, LocalJobRow, LocalLlmStore, LocalUsage } from "./local-llm-store.js";
 import type { TypeSafeAnswer, TypeSafeCriterion, TypeSafeQuestion } from "./typesafe.js";
@@ -383,10 +384,15 @@ export interface ServedLlmNeeds {
 
 /**
  * Which model serves each stated LLM for one org. A non-local org runs every LLM
- * as stated. A local org runs a Claude model it names as itself; any other LLM
+ * as stated, except one whose provider is known to have no platform key (`runsAsStated: null`). A local org runs a Claude model it names as itself; any other LLM
  * runs on the Claude model of its tier (the same `localClaudeModelFor` the calls use).
  */
-export function servedLlmsFor(llms: readonly string[], local: boolean, needs: ServedLlmNeeds = {}): ServedLlmAnswer[] {
+export function servedLlmsFor(
+  llms: readonly string[],
+  local: boolean,
+  needs: ServedLlmNeeds = {},
+  hasNoPlatformKey: (provider: string) => boolean = providerHasNoPlatformKey,
+): ServedLlmAnswer[] {
   const asked = needs.webSearch === true || needs.imageUrl === true;
   return llms.map((llm) => {
     const slash = llm.indexOf("/");
@@ -398,6 +404,11 @@ export function servedLlmsFor(llms: readonly string[], local: boolean, needs: Se
       resolved = resolveModel(provider as Provider, model);
     } catch (err) {
       return { llm, runsAsStated: null, error: err instanceof Error ? err.message : String(err) };
+    }
+    // OPEN-LLM-FREE-1124: a provider known to have no platform key serves nothing, so the script naming it is
+    // never drawn. (A local org's call runs on its own Claude Code: no platform key involved.)
+    if (!local && hasNoPlatformKey(resolved.provider)) {
+      return { llm, runsAsStated: null, error: `no platform key for ${resolved.provider}` };
     }
     const modelId = local ? localClaudeModelFor(resolved, provider as Provider, model) : resolved.apiModelId;
     const servedProvider = local ? "anthropic" : resolved.provider;

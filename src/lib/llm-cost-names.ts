@@ -72,6 +72,12 @@ export const MODEL_COST_PREFIXES: Record<string, readonly string[]> = {
   "gpt-6-sol": ["openai-gpt-6-sol"],
   "gpt-6.1-terra": ["openai-gpt-6.1-terra"],
   "gpt-5.6-terra": ["openai-gpt-5.6-terra"],
+  // Cerebras (OPEN-LLM-FREE-1124)
+  "gpt-oss-120b": ["cerebras-gpt-oss-120b"],
+  "qwen-3.8-27b": ["cerebras-qwen-3.8-27b"],
+  // Groq (OPEN-LLM-FREE-1124)
+  "openai/gpt-oss-120b": ["groq-gpt-oss-120b"],
+  "qwen/qwen3.8-27b": ["groq-qwen3.8-27b"],
 };
 
 /**
@@ -99,6 +105,9 @@ const VENDOR_NAME_SHAPES: Record<DynastyProvider, { segments: readonly string[];
     segments: ["", "-long-context"],
     dimensions: ["tokens-input", "tokens-cached-input", "tokens-cache-write", "tokens-output"],
   },
+  // Cerebras bills a cache hit at the input rate: no cached row.
+  cerebras: { segments: [""], dimensions: ["tokens-input", "tokens-output"] },
+  groq: { segments: [""], dimensions: ["tokens-input", "tokens-cached-input", "tokens-output"] },
 };
 
 export interface LlmCostNameEntry {
