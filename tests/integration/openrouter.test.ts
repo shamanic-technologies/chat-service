@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 
-// OPEN-LLM-FREE-1124 (owner 2026-11-24): open-weight models on the free tiers of Cerebras and Groq. A free tier's
-// cap (per minute, per day) must never leave a writer without a completion: on our platform key the call moves down
-// the fallback order and names why; a provider whose platform key is not registered yet fails loud, named.
+// OPENROUTER-CHEAP-LLM-1124 (owner 2026-11-24): the cheapest open models through OpenRouter, each pinned to ONE host.
+// The request names the host (no router fallback), the answer must come from it, and the cost is declared under that
+// host's names. A cap (per minute, per day; OPEN-LLM-FREE-1124, generic) never leaves a writer without a completion:
+// on our platform key the call moves down the fallback order and names why; a provider whose platform key is not
+// registered yet fails loud, named.
 
 process.env.NODE_ENV = "test";
 process.env.KEY_SERVICE_API_KEY = process.env.KEY_SERVICE_API_KEY || "test-key-svc-key";
@@ -18,11 +20,10 @@ process.env.BILLING_SERVICE_URL = process.env.BILLING_SERVICE_URL || "https://bi
 const TEST_PLATFORM_SUPPORT = { kind: "staff_experiment", reason: "chat-service test" };
 const INTERNAL_AUTH = { "x-api-key": "test-key" };
 const AUTH = { "x-api-key": "test-key", "x-org-id": "org-1", "x-user-id": "user-1", "x-run-id": "parent-run-1" };
-const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const CEREBRAS_URL = "https://api.cerebras.ai/v1/chat/completions";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
 const ZAI_URL = "https://api.z.ai/api/paas/v4/chat/completions";
-const ASK = { message: "Reply: yes please send pricing", systemPrompt: "Label the reply as JSON.", provider: "groq", model: "groq-qwen", responseFormat: "json", temperature: 0 };
+const ASK = { message: "Reply: yes please send pricing", systemPrompt: "Label the reply as JSON.", provider: "openrouter", model: "openrouter-qwen-flash", responseFormat: "json", temperature: 0 };
 
 interface Out { ok: boolean; status?: number; body: unknown; headers?: Record<string, string> }
 interface MockRoute { match: (url: string, init?: RequestInit) => boolean; respond: (url: string, init?: RequestInit) => Out }
@@ -63,8 +64,8 @@ function vendorOk(host: string, model: string, cap: { calls: number }): MockRout
   };
 }
 
-function groqRefuses(cap: { calls: number }, status: number, body: string, headers: Record<string, string> = {}): MockRoute {
-  return { match: (url) => url.startsWith(GROQ_URL), respond: () => { cap.calls += 1; return { ok: false, status, body, headers }; } };
+function routerRefuses(cap: { calls: number }, status: number, body: string, headers: Record<string, string> = {}): MockRoute {
+  return { match: (url) => url.startsWith(OPENROUTER_URL), respond: () => { cap.calls += 1; return { ok: false, status, body, headers }; } };
 }
 
 /** Platform runs + costs (the /internal/platform-complete path), capturing declared cost names. */
@@ -125,7 +126,7 @@ function orgScopedKeys(source: "org" | "platform"): MockRoute {
 
 import { LIST_PRICES_2026_11_08 } from "../unit/llm-list-prices.fixture.js";
 
-describe("a free-tier cap moves the call down the fallback order (OPEN-LLM-FREE-1124)", () => {
+describe("OpenRouter: one host per model; a cap moves the call down the fallback order", () => {
   let app: Awaited<ReturnType<typeof loadApp>>;
   let credit: typeof import("../../src/lib/vendor-credit.js");
   async function loadApp() {
@@ -154,66 +155,66 @@ describe("a free-tier cap moves the call down the fallback order (OPEN-LLM-FREE-
   }
 
   it("a daily cap (Retry-After of minutes): no retry, served by the next model, `fallback.reason: quota_exhausted`", async () => {
-    const groq = { calls: 0 };
+    const router = { calls: 0 };
     const others = { calls: 0 };
     const costs = { names: [] as string[] };
     routes.push(
       platformKeys(),
       ...platformRuns(costs),
-      groqRefuses(groq, 429, JSON.stringify({ error: { message: "Rate limit reached for model `qwen/qwen3.8-27b` on tokens per day (TPD): Limit 200000, Used 199990. Please try again in 7m12s.", type: "tokens" } }), { "retry-after": "432" }),
+      routerRefuses(router, 429, JSON.stringify({ error: { message: "Rate limit reached for model `qwen/qwen3.8-27b` on tokens per day (TPD): Limit 200000, Used 199990. Please try again in 7m12s.", type: "tokens" } }), { "retry-after": "432" }),
       ...othersServe(others),
     );
     const res = await request(app).post("/internal/platform-complete").set(INTERNAL_AUTH).send({ ...ASK, support: TEST_PLATFORM_SUPPORT });
     expect(res.status).toBe(200);
-    expect(res.body.fallback).toEqual({ from: "qwen/qwen3.8-27b", reason: "quota_exhausted" });
+    expect(res.body.fallback).toEqual({ from: "qwen/qwen3.7-flash@alibaba", reason: "quota_exhausted" });
     expect(res.body.json).toEqual({ label: "lead_interested" });
-    expect(groq.calls).toBe(1);
+    expect(router.calls).toBe(1);
     expect(others.calls).toBe(1);
-    // The model that ran is the one billed (the Rating credits it): never a Groq name.
+    // The model that ran is the one billed (the Rating credits it): never an OpenRouter name.
     expect(costs.names.length).toBeGreaterThan(0);
-    expect(costs.names.some((n) => n.startsWith("groq-"))).toBe(false);
+    expect(costs.names.some((n) => n.startsWith("openrouter-"))).toBe(false);
     // A cap is not a broken vendor: no out-of-credit outage is stored.
-    expect(credit.isProviderOutOfCredit("groq")).toBe(false);
+    expect(credit.isProviderOutOfCredit("openrouter")).toBe(false);
   });
 
   it("a per-day cap named in the body with no Retry-After moves down the same way", async () => {
-    const groq = { calls: 0 };
+    const router = { calls: 0 };
     const others = { calls: 0 };
     routes.push(
       platformKeys(),
       ...platformRuns({ names: [] }),
-      groqRefuses(groq, 429, JSON.stringify({ error: { message: "Rate limit reached on requests per day (RPD): Limit 1000, Used 1000." } })),
+      routerRefuses(router, 429, JSON.stringify({ error: { message: "Rate limit reached on requests per day (RPD): Limit 1000, Used 1000." } })),
       ...othersServe(others),
     );
     const res = await request(app).post("/internal/platform-complete").set(INTERNAL_AUTH).send({ ...ASK, support: TEST_PLATFORM_SUPPORT });
     expect(res.status).toBe(200);
     expect(res.body.fallback.reason).toBe("quota_exhausted");
-    expect(groq.calls).toBe(1);
+    expect(router.calls).toBe(1);
   });
 
   it("a per-minute cap is retried first, then moves down once the retries are spent (`rate_limited`)", async () => {
-    const groq = { calls: 0 };
+    const router = { calls: 0 };
     const others = { calls: 0 };
     routes.push(
       platformKeys(),
       ...platformRuns({ names: [] }),
-      groqRefuses(groq, 429, JSON.stringify({ error: { message: "Rate limit reached on tokens per minute (TPM): Limit 8000." } }), { "retry-after": "0.05" }),
+      routerRefuses(router, 429, JSON.stringify({ error: { message: "Rate limit reached on tokens per minute (TPM): Limit 8000." } }), { "retry-after": "0.05" }),
       ...othersServe(others),
     );
     const res = await request(app).post("/internal/platform-complete").set(INTERNAL_AUTH).send({ ...ASK, support: TEST_PLATFORM_SUPPORT });
     expect(res.status).toBe(200);
-    expect(res.body.fallback).toEqual({ from: "qwen/qwen3.8-27b", reason: "rate_limited" });
-    expect(groq.calls).toBeGreaterThan(1);
+    expect(res.body.fallback).toEqual({ from: "qwen/qwen3.7-flash@alibaba", reason: "rate_limited" });
+    expect(router.calls).toBeGreaterThan(1);
     expect(others.calls).toBe(1);
   }, 30_000);
 
   it("/complete on an org's OWN key: the cap is the caller's answer, a named 429", async () => {
-    const groq = { calls: 0 };
+    const router = { calls: 0 };
     const others = { calls: 0 };
     routes.push(
       orgScopedKeys("org"),
       ...orgRuns(),
-      groqRefuses(groq, 429, JSON.stringify({ error: { message: "Rate limit reached on tokens per day (TPD)." } }), { "retry-after": "600" }),
+      routerRefuses(router, 429, JSON.stringify({ error: { message: "Rate limit reached on tokens per day (TPD)." } }), { "retry-after": "600" }),
       ...othersServe(others),
     );
     const res = await request(app).post("/complete").set(AUTH).send(ASK);
@@ -227,26 +228,74 @@ describe("a free-tier cap moves the call down the fallback order (OPEN-LLM-FREE-
     routes.push(
       orgScopedKeys("platform"),
       ...orgRuns(),
-      groqRefuses({ calls: 0 }, 429, JSON.stringify({ error: { message: "tokens per day (TPD)" } }), { "retry-after": "600" }),
+      routerRefuses({ calls: 0 }, 429, JSON.stringify({ error: { message: "tokens per day (TPD)" } }), { "retry-after": "600" }),
       ...othersServe(others),
     );
     const res = await request(app).post("/complete").set(AUTH).send(ASK);
     expect(res.status).toBe(200);
-    expect(res.body.fallback).toEqual({ from: "qwen/qwen3.8-27b", reason: "quota_exhausted" });
+    expect(res.body.fallback).toEqual({ from: "qwen/qwen3.7-flash@alibaba", reason: "quota_exhausted" });
   });
 
   it("no platform key registered yet: a NAMED 502 (`platform_key_missing`), no vendor called, no silent fallback", async () => {
     const others = { calls: 0 };
-    const cerebras = { calls: 0 };
-    routes.push(platformKeys(["cerebras"]), ...platformRuns({ names: [] }), vendorOk(CEREBRAS_URL, "gpt-oss-120b", cerebras), ...othersServe(others));
+    const router = { calls: 0 };
+    routes.push(platformKeys(["openrouter"]), ...platformRuns({ names: [] }), vendorOk(OPENROUTER_URL, "qwen/qwen3.7-flash", router), ...othersServe(others));
+    const res = await request(app).post("/internal/platform-complete").set(INTERNAL_AUTH).send({ ...ASK, support: TEST_PLATFORM_SUPPORT });
+    expect(res.status).toBe(502);
+    expect(res.body).toMatchObject({ code: "platform_key_missing", provider: "openrouter", retryable: false });
+    expect(res.body.error).toMatch(/OpenRouter API key \(key-service provider "openrouter"\)/);
+    expect(router.calls).toBe(0);
+    expect(others.calls).toBe(0);
+  });
+
+  it("sends the router's model id pinned to ONE host, and bills that host's names under our model id", async () => {
+    const costs = { names: [] as string[] };
+    let sent: Record<string, unknown> = {};
+    routes.push(platformKeys(), ...platformRuns(costs), {
+      match: (u) => u.startsWith(OPENROUTER_URL),
+      respond: (_u, i) => {
+        sent = JSON.parse(i!.body as string);
+        return {
+          ok: true,
+          body: {
+            id: "gen-1",
+            model: "deepseek/deepseek-v4.1-flash-20261017",
+            provider: "Alibaba",
+            choices: [{ message: { content: '{"label":"lead_interested"}' }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 100, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 40, cache_write_tokens: 0 } },
+          },
+        };
+      },
+    });
     const res = await request(app)
       .post("/internal/platform-complete")
       .set(INTERNAL_AUTH)
-      .send({ ...ASK, provider: "cerebras", model: "cerebras-gpt-oss", support: TEST_PLATFORM_SUPPORT });
-    expect(res.status).toBe(502);
-    expect(res.body).toMatchObject({ code: "platform_key_missing", provider: "cerebras", retryable: false });
-    expect(res.body.error).toMatch(/Cerebras API key \(key-service provider "cerebras"\)/);
-    expect(cerebras.calls).toBe(0);
-    expect(others.calls).toBe(0);
+      .send({ ...ASK, model: "openrouter-deepseek-flash", support: TEST_PLATFORM_SUPPORT });
+    expect(res.status).toBe(200);
+    expect(res.body.model).toBe("deepseek/deepseek-v4.1-flash-1017@alibaba");
+    expect(res.body.fallback).toBeUndefined();
+    expect(sent.model).toBe("deepseek/deepseek-v4.1-flash-1017");
+    expect(sent.provider).toEqual({ order: ["alibaba"], only: ["alibaba"], allow_fallbacks: false });
+    expect(sent.response_format).toEqual({ type: "json_object" });
+    expect(sent.reasoning).toEqual({ enabled: false });
+    expect(costs.names.sort()).toEqual([
+      "openrouter-alibaba-deepseek-v4.1-flash-1017-tokens-cached-input",
+      "openrouter-alibaba-deepseek-v4.1-flash-1017-tokens-input",
+      "openrouter-alibaba-deepseek-v4.1-flash-1017-tokens-output",
+    ]);
+  });
+
+  it("an answer from ANOTHER host is refused: never billed at the pinned host's price", async () => {
+    const costs = { names: [] as string[] };
+    routes.push(platformKeys(), ...platformRuns(costs), {
+      match: (u) => u.startsWith(OPENROUTER_URL),
+      respond: () => ({
+        ok: true,
+        body: { id: "gen-2", model: "qwen/qwen3.7-flash", provider: "Novita", choices: [{ message: { content: '{"label":"x"}' }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 2 } },
+      }),
+    });
+    const res = await request(app).post("/internal/platform-complete").set(INTERNAL_AUTH).send({ ...ASK, support: TEST_PLATFORM_SUPPORT });
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(costs.names.some((n) => n.startsWith("openrouter-"))).toBe(false);
   });
 });

@@ -44,7 +44,7 @@ describe("vendor credit: stored fact + GET /internal/vendor-credit", () => {
     expect(res.status).toBe(200);
     const ds = res.body.vendors[0];
     expect(ds).toMatchObject({ provider: "deepseek", outOfCredit: true, since: t1.toISOString(), lastSeenAt: t2.toISOString(), refusedCalls: 1, reroutedCalls: 1, fallbackModel: "claude-haiku-5-5" });
-    expect(res.body.vendors).toHaveLength(8);
+    expect(res.body.vendors).toHaveLength(7);
 
     await store.closeOutage({ provider: "deepseek", at: new Date("2026-10-30T09:00:00Z") });
     expect(await store.loadOpen()).toEqual([]);

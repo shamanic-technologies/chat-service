@@ -19,7 +19,7 @@
  * Pure data, no imports: `schemas.ts` builds the `/complete` model enum from it.
  */
 
-export type DynastyProvider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai" | "cerebras" | "groq";
+export type DynastyProvider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai" | "openrouter";
 export type DynastyTier = "cheap" | "strong" | "frontier";
 
 export interface LlmDynasty {
@@ -228,41 +228,78 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     servedToday: true,
     legacyAliases: ["gpt-terra"],
   },
-  // Cerebras and Groq (OPEN-LLM-FREE-1124): open-weight models. The same weights on
-  // two hosts are two lines: each host has its own price, speed and limits.
+  // OpenRouter (OPENROUTER-CHEAP-LLM-1124): the cheapest open models, each pinned to ONE host (the price is that
+  // host's). The model id is `<router id>@<host>`: the price, speed and quantization are the host's, so the
+  // concrete id names the host too.
   {
-    slug: "cerebras-gpt-oss",
-    name: "GPT-OSS on Cerebras",
-    provider: "cerebras",
+    slug: "openrouter-ling-tiny",
+    name: "Ling 3.0 Tiny (Ant Digital, via OpenRouter)",
+    provider: "openrouter",
     capabilityTier: "cheap",
-    models: ["gpt-oss-120b"],
+    models: ["inclusionai/ling-3.0-tiny@antdigital"],
     servedToday: true,
     legacyAliases: [],
   },
   {
-    slug: "cerebras-qwen",
-    name: "Qwen on Cerebras",
-    provider: "cerebras",
+    slug: "openrouter-nex-mini",
+    name: "Nex-N2.5-Mini (Nex AGI, via OpenRouter)",
+    provider: "openrouter",
     capabilityTier: "cheap",
-    models: ["qwen-3.8-27b"],
+    models: ["nex-agi/nex-n2.5-mini@nex-agi"],
     servedToday: true,
     legacyAliases: [],
   },
   {
-    slug: "groq-gpt-oss",
-    name: "GPT-OSS on Groq",
-    provider: "groq",
+    slug: "openrouter-hy-flash",
+    name: "Hy4 Flash (Tencent, via OpenRouter)",
+    provider: "openrouter",
     capabilityTier: "cheap",
-    models: ["openai/gpt-oss-120b"],
+    models: ["tencent/hy4-flash@tencent"],
     servedToday: true,
     legacyAliases: [],
   },
   {
-    slug: "groq-qwen",
-    name: "Qwen on Groq",
-    provider: "groq",
+    slug: "openrouter-deepseek-flash",
+    name: "DeepSeek V4.1 Flash 1017 (Alibaba, via OpenRouter)",
+    provider: "openrouter",
     capabilityTier: "cheap",
-    models: ["qwen/qwen3.8-27b"],
+    models: ["deepseek/deepseek-v4.1-flash-1017@alibaba"],
+    servedToday: true,
+    legacyAliases: [],
+  },
+  {
+    slug: "openrouter-qwen-flash",
+    name: "Qwen3.7 Flash (Alibaba, via OpenRouter)",
+    provider: "openrouter",
+    capabilityTier: "cheap",
+    models: ["qwen/qwen3.7-flash@alibaba"],
+    servedToday: true,
+    legacyAliases: [],
+  },
+  {
+    slug: "openrouter-llama-8b",
+    name: "Llama 3.1 8B Instruct (DeepInfra, via OpenRouter)",
+    provider: "openrouter",
+    capabilityTier: "cheap",
+    models: ["meta-llama/llama-3.1-8b-instruct@deepinfra"],
+    servedToday: true,
+    legacyAliases: [],
+  },
+  {
+    slug: "openrouter-gpt-oss-20b",
+    name: "gpt-oss-20b (DeepInfra, via OpenRouter)",
+    provider: "openrouter",
+    capabilityTier: "cheap",
+    models: ["openai/gpt-oss-20b@deepinfra"],
+    servedToday: true,
+    legacyAliases: [],
+  },
+  {
+    slug: "openrouter-gpt-oss-120b",
+    name: "gpt-oss-120b (DeepInfra, via OpenRouter)",
+    provider: "openrouter",
+    capabilityTier: "cheap",
+    models: ["openai/gpt-oss-120b@deepinfra"],
     servedToday: true,
     legacyAliases: [],
   },
@@ -289,7 +326,7 @@ export function callableModelNames(provider: DynastyProvider): string[] {
   return names;
 }
 
-export const DYNASTY_PROVIDERS: readonly DynastyProvider[] = ["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "cerebras", "groq"];
+export const DYNASTY_PROVIDERS: readonly DynastyProvider[] = ["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "openrouter"];
 
 /** Every name `/complete` accepts, all providers. */
 export const ALL_CALLABLE_MODEL_NAMES: readonly string[] = DYNASTY_PROVIDERS.flatMap(callableModelNames).filter(

@@ -142,7 +142,7 @@ export function prepareAnthropicSchema<T>(schema: T): T {
 
 import { LLM_DYNASTIES, callableModelNames, dynastyOfModel } from "./llm-dynasties.js";
 
-export type Provider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai" | "cerebras" | "groq";
+export type Provider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai" | "openrouter";
 /**
  * A name `/complete` accepts as `model`: an LLM dynasty slug (`gemini-flash`,
  * runs the dynasty's head), the head's exact model id (pins that version), or a
@@ -489,34 +489,55 @@ const MODEL_MAP: Record<string, Record<string, ResolvedModel>> = {
       capabilityTier: "strong",
     },
   },
-  // OPEN-LLM-FREE-1124: open-weight models the Rating compares to the private ones.
-  // Cost prefixes are costs-service's (seeded at the vendors' FULL list price: a free
-  // tier is a vendor discount, our margin). Cerebras prices no cache hit.
-  cerebras: {
-    "cerebras-gpt-oss": {
-      apiModelId: "gpt-oss-120b",
-      costPrefix: "cerebras-gpt-oss-120b",
-      provider: "cerebras",
+  // OPENROUTER-CHEAP-LLM-1124: the cheapest open models, each pinned to one host (VENDORS.openrouter.hostPins).
+  // Cost prefixes name the router AND the host: the price is that host's (+ the router's credit fee).
+  openrouter: {
+    "openrouter-ling-tiny": {
+      apiModelId: "inclusionai/ling-3.0-tiny@antdigital",
+      costPrefix: "openrouter-antdigital-ling-3.0-tiny",
+      provider: "openrouter",
       capabilityTier: "cheap",
     },
-    "cerebras-qwen": {
-      apiModelId: "qwen-3.8-27b",
-      costPrefix: "cerebras-qwen-3.8-27b",
-      provider: "cerebras",
+    "openrouter-nex-mini": {
+      apiModelId: "nex-agi/nex-n2.5-mini@nex-agi",
+      costPrefix: "openrouter-nexagi-nex-n2.5-mini",
+      provider: "openrouter",
       capabilityTier: "cheap",
     },
-  },
-  groq: {
-    "groq-gpt-oss": {
-      apiModelId: "openai/gpt-oss-120b",
-      costPrefix: "groq-gpt-oss-120b",
-      provider: "groq",
+    "openrouter-hy-flash": {
+      apiModelId: "tencent/hy4-flash@tencent",
+      costPrefix: "openrouter-tencent-hy4-flash",
+      provider: "openrouter",
       capabilityTier: "cheap",
     },
-    "groq-qwen": {
-      apiModelId: "qwen/qwen3.8-27b",
-      costPrefix: "groq-qwen3.8-27b",
-      provider: "groq",
+    "openrouter-deepseek-flash": {
+      apiModelId: "deepseek/deepseek-v4.1-flash-1017@alibaba",
+      costPrefix: "openrouter-alibaba-deepseek-v4.1-flash-1017",
+      provider: "openrouter",
+      capabilityTier: "cheap",
+    },
+    "openrouter-qwen-flash": {
+      apiModelId: "qwen/qwen3.7-flash@alibaba",
+      costPrefix: "openrouter-alibaba-qwen3.7-flash",
+      provider: "openrouter",
+      capabilityTier: "cheap",
+    },
+    "openrouter-llama-8b": {
+      apiModelId: "meta-llama/llama-3.1-8b-instruct@deepinfra",
+      costPrefix: "openrouter-deepinfra-llama-3.1-8b-instruct",
+      provider: "openrouter",
+      capabilityTier: "cheap",
+    },
+    "openrouter-gpt-oss-20b": {
+      apiModelId: "openai/gpt-oss-20b@deepinfra",
+      costPrefix: "openrouter-deepinfra-gpt-oss-20b",
+      provider: "openrouter",
+      capabilityTier: "cheap",
+    },
+    "openrouter-gpt-oss-120b": {
+      apiModelId: "openai/gpt-oss-120b@deepinfra",
+      costPrefix: "openrouter-deepinfra-gpt-oss-120b",
+      provider: "openrouter",
       capabilityTier: "cheap",
     },
   },
@@ -533,8 +554,7 @@ export const PROVIDER_MODELS: Record<Provider, readonly ModelAlias[]> = {
   zai: callableModelNames("zai"),
   moonshot: callableModelNames("moonshot"),
   openai: callableModelNames("openai"),
-  cerebras: callableModelNames("cerebras"),
-  groq: callableModelNames("groq"),
+  openrouter: callableModelNames("openrouter"),
 };
 
 /**
@@ -824,11 +844,15 @@ export const SUPPORTED_MODELS: Record<string, string> = {
   "gpt-5.6-terra": "openai-gpt-5.6-terra",
   "gpt-6.1-sol": "openai-gpt-6.1-sol",
   "gpt-6.1-terra": "openai-gpt-6.1-terra",
-  // OPEN-LLM-FREE-1124: open-weight models on Cerebras and Groq.
-  "gpt-oss-120b": "cerebras-gpt-oss-120b",
-  "qwen-3.8-27b": "cerebras-qwen-3.8-27b",
-  "openai/gpt-oss-120b": "groq-gpt-oss-120b",
-  "qwen/qwen3.8-27b": "groq-qwen3.8-27b",
+  // OpenRouter, one host each (OPENROUTER-CHEAP-LLM-1124).
+  "inclusionai/ling-3.0-tiny@antdigital": "openrouter-antdigital-ling-3.0-tiny",
+  "nex-agi/nex-n2.5-mini@nex-agi": "openrouter-nexagi-nex-n2.5-mini",
+  "tencent/hy4-flash@tencent": "openrouter-tencent-hy4-flash",
+  "deepseek/deepseek-v4.1-flash-1017@alibaba": "openrouter-alibaba-deepseek-v4.1-flash-1017",
+  "qwen/qwen3.7-flash@alibaba": "openrouter-alibaba-qwen3.7-flash",
+  "meta-llama/llama-3.1-8b-instruct@deepinfra": "openrouter-deepinfra-llama-3.1-8b-instruct",
+  "openai/gpt-oss-20b@deepinfra": "openrouter-deepinfra-gpt-oss-20b",
+  "openai/gpt-oss-120b@deepinfra": "openrouter-deepinfra-gpt-oss-120b",
 };
 
 /** Resolve the cost prefix for a given model ID (falls back to default). */

@@ -973,7 +973,7 @@ describe("published vendor concurrency", () => {
       if (concurrency.scope === "per-model") {
         expect(Object.keys(concurrency.limits).length).toBeGreaterThan(0);
       } else if (concurrency.scope === "unpublished") {
-        // OPEN-LLM-FREE-1124: Cerebras / Groq publish per-minute and per-day rates, no in-flight cap: nothing typed.
+        // OpenRouter publishes no in-flight cap: nothing typed.
         expect(concurrency.note.length).toBeGreaterThan(0);
         expect(publishedConcurrency(id, "any-model")).toBeNull();
       } else {
