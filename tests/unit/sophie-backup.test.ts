@@ -39,9 +39,11 @@ describe("before the turn: the configured vendor is out of credit", () => {
     expect((await sophieTurnModel(SOPHIE_CONFIG_KEY, primary, order)).backupFor).toBeNull();
   });
 
-  it("leaves every other chat config on its own model", async () => {
-    recordOutOfCredit({ provider: "anthropic", model: "claude-haiku-5-5", status: 400, message: "Your credit balance is too low to access the Anthropic API." });
+  // FALLBACK-REFUSED-1124: an empty balance moves EVERY chat config down the same order.
+  it("every other chat config runs on the first of the fallback order too while its vendor is out of credit", async () => {
     expect((await sophieTurnModel("workflow", primary, order)).backupFor).toBeNull();
+    recordOutOfCredit({ provider: "anthropic", model: "claude-haiku-5-5", status: 400, message: "You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC." });
+    expect(await sophieTurnModel("workflow", primary, order)).toEqual({ provider: "openai", modelAlias: "gpt-terra", backupFor: "anthropic", backupLevel: "medium" });
   });
 
   it("no candidate serves: stays on the configured model (the turn fails loud)", async () => {
@@ -70,11 +72,21 @@ describe("during the turn: the model failed before any tool or word", () => {
     expect(await nextDistryAttempt({ ...base, failed: { provider: "zai", modelId: "glm-5.3" }, previous: second! })).toBeNull();
   });
 
+  // FALLBACK-REFUSED-1124: a vendor refusing for credit mid-turn is retried on any config.
+  it("another config's turn refused for an empty balance runs again on the next candidate", async () => {
+    const first = await nextDistryAttempt({ ...base, configKey: "workflow", outOfCredit: true });
+    expect(first).toMatchObject({ tried: ["anthropic:claude-haiku-5-5"], next: terraMedium });
+    const second = await nextDistryAttempt({ ...base, configKey: "workflow", outOfCredit: true, failed: { provider: "openai", modelId: "gpt-6.1-terra" }, previous: first! });
+    expect(second).toMatchObject({ next: glmLow });
+  });
+
   it("never re-runs a turn that already did something, a billing refusal, another config or an org's own key", async () => {
     expect(await nextDistryAttempt({ ...base, toolCount: 1 })).toBeNull();
     expect(await nextDistryAttempt({ ...base, textSent: true })).toBeNull();
     expect(await nextDistryAttempt({ ...base, billingRefusal: true })).toBeNull();
     expect(await nextDistryAttempt({ ...base, configKey: "workflow" })).toBeNull();
+    expect(await nextDistryAttempt({ ...base, configKey: "workflow", outOfCredit: true, platformKey: false })).toBeNull();
+    expect(await nextDistryAttempt({ ...base, configKey: "workflow", outOfCredit: true, toolCount: 1 })).toBeNull();
     expect(await nextDistryAttempt({ ...base, platformKey: false })).toBeNull();
     expect(order).not.toHaveBeenCalled();
   });

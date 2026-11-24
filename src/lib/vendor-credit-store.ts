@@ -16,14 +16,20 @@ export function createVendorCreditStore(database: Database): VendorCreditStore {
     async recordRefusal({ provider, model, at, message }) {
       const ts = at.toISOString();
       // One statement opens the outage or extends the open one: the partial
-      // unique index makes two concurrent first refusals land on one row.
+      // unique index makes two concurrent first refusals land on one row. It
+      // counts no call (FALLBACK-REFUSED-1124): a refused call is one no model
+      // served (`recordUnserved`); the vendor's refusal alone is usually rerouted.
       await database.execute(sql`
         INSERT INTO vendor_credit_outages (provider, model, first_seen_at, last_seen_at, refused_calls, last_message)
-        VALUES (${provider}, ${model}, ${ts}::timestamptz, ${ts}::timestamptz, 1, ${message})
+        VALUES (${provider}, ${model}, ${ts}::timestamptz, ${ts}::timestamptz, 0, ${message})
         ON CONFLICT (provider) WHERE recovered_at IS NULL
         DO UPDATE SET last_seen_at = GREATEST(vendor_credit_outages.last_seen_at, EXCLUDED.last_seen_at),
-                      refused_calls = vendor_credit_outages.refused_calls + 1,
                       last_message = EXCLUDED.last_message`);
+    },
+    async recordUnserved({ provider, at }) {
+      await database.execute(sql`
+        UPDATE vendor_credit_outages SET refused_calls = refused_calls + 1
+        WHERE provider = ${provider} AND recovered_at IS NULL`);
       await database.execute(sql`
         INSERT INTO vendor_credit_days (day, provider, refused_calls) VALUES (${utcDay(at)}::date, ${provider}, 1)
         ON CONFLICT (day, provider) DO UPDATE SET refused_calls = vendor_credit_days.refused_calls + 1`);

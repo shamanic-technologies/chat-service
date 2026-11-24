@@ -1424,8 +1424,8 @@ const VendorCreditVendorSchema = z.object({
   recoveredAt: z.string().nullable().openapi({ description: "ISO time the latest outage ended (a call succeeded); null if open or never." }),
   fallbackModel: z.string().nullable().openapi({ description: "Model ID a PLAIN call on this vendor's cheapest model goes to while it is out of credit: the cheapest model of the same tier on a vendor with credit, ranked by costs-service list price (LLM-CREDIT-GENERIC-1108). A call that model cannot take (an image, JSON without a schema) goes to the next one that can. null = no model qualifies (or list prices unread), its calls fail.", example: "claude-haiku-5-5" }),
   fallbackLabel: z.string().nullable().openapi({ description: "Display name of fallbackModel.", example: "Claude Haiku 5.5" }),
-  refusedCalls: z.number().int().openapi({ description: "Calls refused for an empty balance during the latest outage." }),
-  reroutedCalls: z.number().int().openapi({ description: "Calls the fallback served during the latest outage." }),
+  refusedCalls: z.number().int().openapi({ description: "Calls NO model served during the latest outage (the fallback order was empty for the request, or every model of it failed). A call the vendor refused that then ran on another model is a rerouted call, never counted here (FALLBACK-REFUSED-1124)." }),
+  reroutedCalls: z.number().int().openapi({ description: "Calls a model of the fallback order served during the latest outage." }),
   sentence: z.string().openapi({ description: "One plain sentence to print as is." }),
 });
 
@@ -2724,6 +2724,13 @@ const sessionHistoryPageFields = {
   before: z.string().uuid("before must be a message id").optional().openapi({
     description:
       "A message id (`olderCursor` of the previous page): serve the page just older than it. Requires `limit`.",
+  }),
+  view: z.enum(["basic", "full"]).optional().default("full").openapi({
+    description:
+      "Response detail level. `basic` strips `toolCalls[].args` and `toolCalls[].result` from every message " +
+      "(keeps only tool names), cutting payload size ~90%. Use for session-list / panel-load where tool " +
+      "detail is not rendered. Omitted or `full` = unchanged (backward-compatible).",
+    example: "basic",
   }),
 };
 

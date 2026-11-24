@@ -100,6 +100,60 @@ describe("serializeSessionHistory", () => {
     expect("result" in tc).toBe(false);
   });
 
+  it("view=basic strips toolCalls args and result (MON-COPILOT-SLOW-1124)", () => {
+    const bigArgs = { query: "SELECT * FROM large_table", options: { limit: 1000, verbose: true, nested: { a: 1, b: 2 } } };
+    const bigResult = { rows: Array.from({ length: 50 }, (_, i) => ({ id: i, name: `row-${i}` })) };
+    const out = serializeSessionHistory(
+      baseSession,
+      [
+        msg({
+          id: "m1",
+          role: "assistant",
+          content: "Here are results",
+          toolCalls: [
+            { name: "run_query", args: bigArgs, result: bigResult },
+            { name: "request_user_input", args: { field: "brand_url" } },
+          ],
+        }),
+      ],
+      { hasOlder: false },
+      "basic",
+    );
+    const tc = out.messages[0].toolCalls!;
+    // Tool names preserved
+    expect(tc[0].name).toBe("run_query");
+    expect(tc[1].name).toBe("request_user_input");
+    // Args stripped to empty object
+    expect(tc[0].args).toEqual({});
+    expect(tc[1].args).toEqual({});
+    // Result nulled (but key present when original had a result)
+    expect(tc[0].result).toBeNull();
+    // No result key when original had none
+    expect("result" in tc[1]).toBe(false);
+
+    // Full view preserves everything (control)
+    const full = serializeSessionHistory(
+      baseSession,
+      [
+        msg({
+          id: "m1",
+          role: "assistant",
+          content: "Here are results",
+          toolCalls: [{ name: "run_query", args: bigArgs, result: bigResult }],
+        }),
+      ],
+      { hasOlder: false },
+      "full",
+    );
+    expect(full.messages[0].toolCalls![0].args).toEqual(bigArgs);
+    expect(full.messages[0].toolCalls![0].result).toEqual(bigResult);
+
+    // Payload size comparison
+    const basicJson = JSON.stringify(out);
+    const fullJson = JSON.stringify(full);
+    expect(basicJson.length).toBeLessThan(fullJson.length);
+  });
+
   it("drops the internal Gemini thoughtSignature from tool calls", () => {
     const out = serializeSessionHistory(baseSession, [
       msg({

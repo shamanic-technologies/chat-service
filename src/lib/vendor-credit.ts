@@ -17,7 +17,9 @@
 //     caller (org-scoped `/complete` or platform `/internal/platform-complete`),
 //     is stored: one open outage row per provider (first seen, last seen,
 //     refused calls, rerouted calls) plus a per-UTC-day counter row. The outage
-//     closes the moment a call on that provider succeeds.
+//     closes the moment a call on that provider succeeds. A REFUSED call is a
+//     call no model served (FALLBACK-REFUSED-1124); a call the vendor refused
+//     that then ran on another model is a rerouted call, never a refused one.
 //
 //  2. READ. `GET /internal/vendor-credit` serves every provider's verdict and a
 //     daily series, so Monitoring shows the vendor red until a call succeeds.
@@ -30,7 +32,9 @@
 //     calls), so the fallback is visible in the ledger at its true price. Once
 //     per `PROBE_INTERVAL_MS` one call goes to the primary first (and falls
 //     back inline if refused again), so traffic returns to the primary as soon
-//     as the balance is topped up.
+//     as the balance is topped up. A fallback that fails (dry too, refuses the
+//     shape, down) hands the call to the NEXT model of the order
+//     (`fallbackOrderFor`), up to the route's attempt cap.
 //
 // Only refusals on OUR platform key are recorded or detoured: an org that
 // brings its own key and empties it is that org's account, not the fleet's.
@@ -150,20 +154,44 @@ function servedModels(): ResolvedModel[] {
   return [...byId.values()];
 }
 
-/** Where a call on `primary` goes while its vendor is out of credit, or null when no model qualifies. */
-export function fallbackModelFor(primary: ResolvedModel, accepts: AcceptsRequest = ACCEPTS_ANY, at: Date = new Date()): ResolvedModel | null {
-  let best: { model: ResolvedModel; cents: number } | null = null;
+const TIER_RANK: Record<ResolvedModel["capabilityTier"], number> = { cheap: 0, strong: 1, frontier: 2 };
+
+/**
+ * THE fallback order of a call on `primary` (FALLBACK-REFUSED-1124, owner 2026-11-24: « il faut prendre le
+ * deuxième meilleur quand ça arrive »): every served model that can take the request now, best choice first.
+ * Same rule as above, as a LIST, so a call whose first fallback fails (its vendor ran dry in the same minute, it
+ * refused the request's shape, it was down) runs on the next one instead of failing:
+ *   - same capability tier first, cheapest first;
+ *   - then, only when no model of the tier is left, the nearest tier, cheapest first (a call never fails while a
+ *     model that takes it serves);
+ *   - never the primary's own vendor, a vendor out of credit, an unpriced model, a model in `exclude` (the ones
+ *     this call already tried) or Claude Haiku 4.5.
+ * Empty = no model can serve this request shape.
+ */
+export function fallbackOrderFor(
+  primary: ResolvedModel,
+  accepts: AcceptsRequest = ACCEPTS_ANY,
+  at: Date = new Date(),
+  exclude: ReadonlySet<string> = new Set(),
+): ResolvedModel[] {
+  const ranked: Array<{ model: ResolvedModel; tierGap: number; cents: number }> = [];
   for (const model of servedModels()) {
     if (model.provider === primary.provider) continue;
-    if (model.capabilityTier !== primary.capabilityTier) continue;
     if (model.apiModelId === NEVER_A_FALLBACK) continue;
+    if (exclude.has(model.apiModelId)) continue;
     if (outOfCredit.has(model.provider)) continue;
     if (!accepts(model)) continue;
     const cents = typicalCallCents(model, at);
     if (cents === null) continue;
-    if (!best || cents < best.cents || (cents === best.cents && model.apiModelId < best.model.apiModelId)) best = { model, cents };
+    ranked.push({ model, tierGap: Math.abs(TIER_RANK[model.capabilityTier] - TIER_RANK[primary.capabilityTier]), cents });
   }
-  return best?.model ?? null;
+  ranked.sort((a, b) => a.tierGap - b.tierGap || a.cents - b.cents || (a.model.apiModelId < b.model.apiModelId ? -1 : 1));
+  return ranked.map((r) => r.model);
+}
+
+/** Where a call on `primary` goes while its vendor is out of credit (the head of its fallback order), or null. */
+export function fallbackModelFor(primary: ResolvedModel, accepts: AcceptsRequest = ACCEPTS_ANY, at: Date = new Date()): ResolvedModel | null {
+  return fallbackOrderFor(primary, accepts, at)[0] ?? null;
 }
 
 /** How often, while a provider is out of credit, one call tries it first. */
@@ -208,8 +236,10 @@ export interface OpenOutage {
 }
 
 export interface VendorCreditStore {
-  /** A refused call: open the provider's outage (or extend the open one) and count it on its UTC day. */
+  /** The vendor refused for an empty balance: open the provider's outage (or extend the open one). Counts no call. */
   recordRefusal(input: { provider: Provider; model: string; at: Date; message: string }): Promise<void>;
+  /** A call NO model could serve while the provider is out of credit: counted on the open outage and its UTC day. */
+  recordUnserved(input: { provider: Provider; at: Date }): Promise<void>;
   /** A call served by the fallback because the provider is out of credit. */
   recordReroute(input: { provider: Provider; at: Date }): Promise<void>;
   /** A call on the provider succeeded: close its open outage. */
@@ -252,7 +282,11 @@ export async function initVendorCredit(s: VendorCreditStore): Promise<void> {
   }
 }
 
-/** A platform-key call was refused in the provider's out-of-credit words. */
+/**
+ * A platform-key call was refused in the provider's out-of-credit words: the FACT (outage open, last seen). It
+ * counts no refused call: the call usually runs on the next model of the fallback order (`recordReroute`); only
+ * a call no model served is a refused call (`recordUnserved`, FALLBACK-REFUSED-1124).
+ */
 export function recordOutOfCredit(input: { provider: Provider; model: string; status?: number; message: string; at?: Date }): void {
   const at = input.at ?? new Date();
   const state = outOfCredit.get(input.provider);
@@ -275,6 +309,21 @@ export function markProviderServing(provider: Provider, at: Date = new Date()): 
   outOfCredit.delete(provider);
   console.log(`[chat-service] [vendor-credit] ${PROVIDER_LABELS[provider]} serves again; calls return to it.`);
   persist("a recovery", store?.closeOutage({ provider, at }));
+}
+
+/**
+ * A call asked on `provider` that NO model served while it is out of credit (the fallback order was empty for
+ * its request shape, or every model of it failed): the only thing `refusedCalls` counts. No-op when the
+ * provider is not out of credit (the failure is then an ordinary one).
+ */
+export function recordUnserved(provider: Provider, at: Date = new Date()): void {
+  if (!outOfCredit.has(provider)) return;
+  persist("an unserved call", store?.recordUnserved({ provider, at }));
+}
+
+/** The vendors out of credit now, in the staff read's order. */
+export function providersOutOfCredit(): Provider[] {
+  return CREDIT_PROVIDERS.filter((p) => outOfCredit.has(p));
 }
 
 /** A call was served by the fallback because `provider` is out of credit. */
