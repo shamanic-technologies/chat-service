@@ -302,6 +302,12 @@ class WordsFromTokens(unittest.TestCase):
         self.assertAlmostEqual(words[0].end, 10.0 + engine.WORD_TAIL_SECONDS, places=3)
         self.assertAlmostEqual(words[1].end, 16.0 + engine.WORD_TAIL_SECONDS, places=3)
 
+    def test_a_segment_needs_a_real_pause(self):
+        import engine
+
+        # Prod probe 2026-11-24: at 100 ms the model repeated the word at each cut.
+        self.assertGreaterEqual(engine.MIN_SILENCE_MS, 600)
+
     def test_no_tokens_no_words(self):
         import engine
 
