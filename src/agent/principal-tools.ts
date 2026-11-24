@@ -8,11 +8,11 @@
 //    and Unibox timeline, through the gateway, on distribute.you's own brand).
 //  - Finance: what each client pays us, costs us and the margin, plus fleet
 //    totals, as features-service serves them (never computed here).
-//  - Engines: one tool per Engine of the live catalogue (`engines` family),
-//    each running that Engine's best script as the Rating picks it and waiting
-//    for its Unit (workflow-service).
 //
-// Every one of them reads across clients or spends on our account: they load
+// Engines are not principal tools: Distry reads and asks Outcomes like a
+// Script does, as the conversation's org (outcome-tools.ts, ENGINE-GET-ASK-1123).
+//
+// Every one of them reads across clients: they load
 // ONLY in a conversation with distribute.you staff, never with a client, a
 // prospect or a guest (`principalToolsAllowed`, pinned by tests). The staff
 // check is the same one the prompt-template tools use (staff-only-tools.ts).
@@ -28,10 +28,6 @@ export const FIND_STAKEHOLDERS_TOOL_NAME = "find_stakeholders";
 export const READ_PERSON_UNIBOX_TOOL_NAME = "read_person_unibox";
 export const READ_ORGANIZATION_UNIBOX_TOOL_NAME = "read_organization_unibox";
 export const READ_COMPANY_FINANCIALS_TOOL_NAME = "read_company_financials";
-/** The config entry that turns on one tool per callable Engine (built at run time). */
-export const ENGINES_TOOL_FAMILY = "engines";
-/** Every Engine tool's name starts with this. */
-export const ENGINE_TOOL_PREFIX = "engine__";
 
 export const STAKEHOLDER_TOOL_NAMES = [FIND_STAKEHOLDERS_TOOL_NAME, READ_PERSON_UNIBOX_TOOL_NAME, READ_ORGANIZATION_UNIBOX_TOOL_NAME] as const;
 
@@ -41,16 +37,12 @@ export const PRINCIPAL_TOOL_DESCRIPTIONS: Readonly<Record<string, string>> = {
   [READ_PERSON_UNIBOX_TOOL_NAME]: "Staff only. One person's whole Unibox: every message and event with us, every channel, newest last.",
   [READ_ORGANIZATION_UNIBOX_TOOL_NAME]: "Staff only. One organization's people and everything that happened with each of them, merged by date.",
   [READ_COMPANY_FINANCIALS_TOOL_NAME]: "Staff only. Revenue, cost and margin per client and for the whole company, as served by features-service.",
-  [ENGINES_TOOL_FAMILY]: "Staff only. One tool per Engine of the live catalogue that can run now: starts a campaign on its outcome (brief, max volume and/or max budget, optional offer) and answers when it first runs; read_engine_campaign reads its progress.",
 };
 
-/** The names a config can list that are principal tools (Engine tools included by prefix). */
+/** The names a config can list that are principal tools. */
 export function isPrincipalToolName(name: string): boolean {
-  return Object.prototype.hasOwnProperty.call(PRINCIPAL_TOOL_DESCRIPTIONS, name) || name.startsWith(ENGINE_TOOL_PREFIX) || name === "read_engine_campaign";
+  return Object.prototype.hasOwnProperty.call(PRINCIPAL_TOOL_DESCRIPTIONS, name);
 }
-
-/** The run an Engine call rides under the account it is for (an order of work, not support). */
-export const DISTRY_ENGINE_CALL_TASK_NAME = "distry-engine-call";
 
 /**
  * Who may hold a principal tool in a turn: distribute.you staff talking for

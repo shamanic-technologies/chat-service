@@ -35,7 +35,8 @@ import {
   type SkillLinks,
 } from "../lib/skill-mentions.js";
 import { SOPHIE_CONFIG } from "../lib/seed-platform-configs.js";
-import { PRINCIPAL_TOOL_DESCRIPTIONS, ENGINES_TOOL_FAMILY } from "./principal-tools.js";
+import { PRINCIPAL_TOOL_DESCRIPTIONS } from "./principal-tools.js";
+import { OUTCOME_TOOL_NAMES } from "./outcome-tools.js";
 import {
   codePromptOverrides,
   normalizePromptOverrides,
@@ -95,10 +96,28 @@ export function codeDistryDefinition(): DistryDefinition {
   };
 }
 
+/**
+ * The retired `engines` entry (one campaign-launching tool per Engine, DISTRY-CALL-IS-CAMPAIGN-1121)
+ * stands for the Outcome tools that replaced it (ENGINE-GET-ASK-1123, owner 2026-11-23 « Distry must
+ * use Outcomes exactly like a Script »): a stored version listing it reads as listing them, in its place.
+ */
+export const RETIRED_ENGINES_ENTRY = "engines";
+export function withOutcomeToolsForEngines(tools: readonly string[]): string[] {
+  if (!tools.includes(RETIRED_ENGINES_ENTRY)) return [...tools];
+  const out: string[] = [];
+  for (const t of tools) {
+    for (const n of t === RETIRED_ENGINES_ENTRY ? OUTCOME_TOOL_NAMES : [t]) if (!out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
+/** Who wrote the one-time move of a stored `engines` entry to the Outcome tools. */
+export const ENGINES_FOLD_EDITOR = "fold ENGINE-GET-ASK-1123";
+
 export function definitionOf(v: DistryConfigVersion): DistryDefinition {
   return {
     systemPrompt: v.systemPrompt,
-    enabledTools: [...v.enabledTools],
+    enabledTools: withOutcomeToolsForEngines(v.enabledTools),
     provider: v.provider,
     model: v.model,
     effort: v.effort ?? null,
@@ -112,8 +131,7 @@ export function sameDefinition(a: DistryDefinition, b: DistryDefinition): boolea
 
 /**
  * Every tool a version may turn on, with what it does: the tool registry, plus
- * Distry's principal tools (`engines` = one tool per callable Engine, built at
- * run time). Served to the editor (each description whole, as the model reads it), and the check a save passes.
+ * Distry's principal tools. Served to the editor (each description whole, as the model reads it), and the check a save passes.
  */
 export function availableDistryTools(): Array<{ name: string; description: string; staffOnly: boolean }> {
   const registry = Object.values(TOOL_REGISTRY).map((t) => ({
@@ -315,6 +333,15 @@ export async function seedDistryConfig(database: Database): Promise<DistryConfig
     console.log(`[chat-service] Distry config: version ${current.version} seeded from code`);
     return current;
   }
+  if (current.enabledTools.includes(RETIRED_ENGINES_ENTRY)) {
+    // A staff save is never overwritten: the new version keeps every value, the retired entry read as its replacement.
+    current = await saveDistryVersion(database, definitionOf(current), {
+      editedBy: ENGINES_FOLD_EDITOR,
+      note: "Engines: the per-Engine campaign tools became find_outcome, get_units and ask_engine (read held Units, ask an Engine for one new Unit).",
+    });
+    console.log(`[chat-service] Distry config: version ${current.version} moved the engines entry to the Outcome tools`);
+    return current;
+  }
   if (differs) {
     console.log(`[chat-service] Distry config: version ${current.version} (saved by ${current.editedBy}) kept; the code's definition differs and is not applied`);
   }
@@ -338,16 +365,14 @@ export function toDistryVersionBody(v: DistryConfigVersion) {
   };
 }
 
-export { ENGINES_TOOL_FAMILY };
-
 // --- Mentions (DISTRY-SKILL-MENTIONS-1122) -----------------------------------
 
 /** Who wrote the one-time move from the stored tree to mentions. */
 export const MENTIONS_FOLD_EDITOR = "fold DISTRY-SKILL-MENTIONS-1122";
 
-/** Tools a text may mention: every tool Distry can turn on, except Engines (calling one is a campaign). */
+/** Tools a text may mention: every tool Distry can turn on. */
 export function mentionableTools(): string[] {
-  return availableDistryTools().map((t) => t.name).filter((n) => n !== ENGINES_TOOL_FAMILY);
+  return availableDistryTools().map((t) => t.name);
 }
 
 /**

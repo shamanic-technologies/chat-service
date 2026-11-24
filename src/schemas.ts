@@ -4502,7 +4502,7 @@ export const DistryDefinitionSchema = z
   .object({
     systemPrompt: z.string().min(1).max(100_000).openapi({ description: "Distry's whole system prompt (the role). The skill index and the turn's context are added at each turn." }),
     enabledTools: z.array(z.string().min(1).max(100)).max(300).openapi({
-      description: "The tools Distry may call: names from `availableTools`. `engines` = one tool per callable Engine, built at each turn. Staff-only tools load only in a staff conversation, whatever this list says.",
+      description: "The tools Distry may call: names from `availableTools`. Staff-only tools load only in a staff conversation, whatever this list says.",
     }),
     provider: z.enum(CHAT_CONFIG_PROVIDERS),
     model: z.string().min(1).max(100).openapi({ description: "A model name the provider accepts (see `models`).", example: "claude-haiku" }),
@@ -4575,8 +4575,8 @@ export const DistryPromptPartSchema = z
     kind: z.enum(["marker", "text", "template", "live"]).openapi({
       description: "marker = where the tools / the conversation sit (no text); text = fixed words; template = words + named data; live = a block built from the account each turn, wrapped by its template.",
     }),
-    place: z.enum(["ordered", "message", "loop", "tool"]).openapi({
-      description: "ordered = in the drag-and-drop order; message = sent in the person's place (a trigger they did not write); loop = a note beside the last tool results; tool = the Engine tools' description.",
+    place: z.enum(["ordered", "message", "loop"]).openapi({
+      description: "ordered = in the drag-and-drop order; message = sent in the person's place (a trigger they did not write); loop = a note beside the last tool results.",
     }),
     placeholders: z.array(z.object({ name: z.string(), means: z.string() })).openapi({ description: "The data `{{name}}` a template part can use." }),
     editable: z.boolean(),
@@ -4625,11 +4625,11 @@ export const DistryConfigResponseSchema = z
       }),
     ),
     promptParts: z.array(DistryPromptPartSchema).openapi({
-      description: "Every text Distry reads, in the current version's order (ordered parts, then the loop notes and the Engine tool template). Tool descriptions are in `availableTools`.",
+      description: "Every text Distry reads, in the current version's order (ordered parts, then the loop notes). Tool descriptions are in `availableTools`.",
     }),
     skills: z.array(z.object({ slug: z.string(), parentSlug: z.string().nullable(), title: z.string(), description: z.string() }).merge(SkillLinksSchema)),
     promptMentions: z.array(SkillMentionSchema).openapi({ description: "What the current Prompt mentions, in text order (DISTRY-SKILL-MENTIONS-1122)." }),
-    mentionableTools: z.array(z.string()).openapi({ description: "Tools a text may mention as `@tool:<name>` (Engines are not mentionable)." }),
+    mentionableTools: z.array(z.string()).openapi({ description: "Tools a text may mention as `@tool:<name>`." }),
     models: z.record(z.string(), z.array(z.string())).openapi({ description: "Per provider, the model names accepted." }),
     efforts: z.array(z.string()),
   })

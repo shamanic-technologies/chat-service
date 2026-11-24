@@ -21,9 +21,8 @@
 // The ORDER is part of Distry's definition: the parts above `conversation`
 // form the system prompt (cached on Anthropic), the parts below it are this
 // turn's context, sent after the person's message (CHAT-COST-1101). `tools`
-// stays first (that is where every provider reads them); the loop notes and
-// the Engine tool template are not in the order (they are sent where they
-// apply). Code values = what /chat sent before this module, byte for byte
+// stays first (that is where every provider reads them); the loop notes are
+// not in the order (they are sent where they apply). Code values = what /chat sent before this module, byte for byte
 // (pinned by tests/unit/distry-prompt.test.ts).
 //
 // Overrides are stored ONLY where staff changed the code's text, so a code
@@ -36,13 +35,12 @@ import { brandToolsBlock } from "../lib/lead-turn.js";
 import { EMPTY_ANSWER_NOTE, FINAL_ROUND_NOTE, type LoopNotes } from "../lib/tool-budget.js";
 import { SKILL_INDEX_TEMPLATE, type SkillIndexPieces } from "../lib/skills.js";
 import { fillTemplate, placeholdersIn } from "../lib/prompt-template.js";
-import { ENGINE_TOOL_DESCRIPTION_TEMPLATE } from "./engine-tools.js";
 import { NUDGE_TRIGGER_MESSAGE } from "../lib/copilot-nudge.js";
 
 export type PartKind = "marker" | "text" | "template" | "live";
 
 /** Where the model reads a part: by its position for ordered parts, fixed for the rest. */
-export type PartPlace = "ordered" | "message" | "loop" | "tool";
+export type PartPlace = "ordered" | "message" | "loop";
 
 export interface PromptPartSpec {
   id: string;
@@ -189,16 +187,6 @@ export const PROMPT_PARTS: readonly PromptPartSpec[] = [
     codeText: dashboardPagesBlock(),
   },
   {
-    id: "engines-unreadable",
-    name: "Engines not read",
-    purpose: "Says the Engine list could not be read this turn, so no Engine can be called.",
-    when: "A staff conversation, when workflow-service's Engine list failed.",
-    kind: "template",
-    place: "ordered",
-    placeholders: { why: "Why the read failed (first 200 characters)." },
-    codeText: "\n\n---\n(Not read this turn: the list of Engines ({{why}}). No Engine can be called in this turn.)",
-  },
-  {
     id: "client-brief",
     name: "Their business",
     purpose: "What the client's business sells and to whom, read from their website and account.",
@@ -277,19 +265,6 @@ export const PROMPT_PARTS: readonly PromptPartSpec[] = [
     place: "loop",
     placeholders: { toolName: "The tool the turn must end on (answer_person)." },
     codeText: SILENT_END_TOOL_TEMPLATE,
-  },
-  {
-    id: "engine-tool",
-    name: "Engine tool description",
-    purpose: "The description of each Engine tool (one tool per Engine that can run).",
-    when: "A staff conversation, for each Engine in workflow-service's live list.",
-    kind: "template",
-    place: "tool",
-    placeholders: {
-      engineName: "The Engine's name (e.g. Message written).",
-      waysToCall: "How the Engine can be called: its channels and the Units it takes.",
-    },
-    codeText: ENGINE_TOOL_DESCRIPTION_TEMPLATE,
   },
 ];
 
@@ -381,7 +356,6 @@ export interface TurnPromptData {
   websiteBlock: string | null;
   whatsappBlock: string | null;
   dashboard: boolean;
-  enginesUnreadable: string | null;
   clientBrief: string | null;
   situationBrief: string | null;
   brandTools: boolean;
@@ -390,7 +364,7 @@ export interface TurnPromptData {
 export function emptyTurnPromptData(role: string): TurnPromptData {
   return {
     role, skillIndex: null, modelName: null, campaignInputs: null, requestContext: null, leadTurnBlock: null, telegram: false,
-    websiteBlock: null, whatsappBlock: null, dashboard: false, enginesUnreadable: null, clientBrief: null, situationBrief: null, brandTools: false,
+    websiteBlock: null, whatsappBlock: null, dashboard: false, clientBrief: null, situationBrief: null, brandTools: false,
   };
 }
 
@@ -407,7 +381,6 @@ function partValues(id: string, d: TurnPromptData): Record<string, string> | nul
     case "website": return d.websiteBlock !== null ? { websiteBlock: d.websiteBlock } : null;
     case "whatsapp": return d.whatsappBlock !== null ? { whatsappBlock: d.whatsappBlock } : null;
     case "dashboard-pages": return d.dashboard ? {} : null;
-    case "engines-unreadable": return d.enginesUnreadable !== null ? { why: d.enginesUnreadable } : null;
     case "client-brief": return d.clientBrief !== null ? { clientBrief: d.clientBrief } : null;
     case "situation-brief": return d.situationBrief !== null ? { situationBrief: d.situationBrief } : null;
     case "brand-tools": return d.brandTools ? {} : null;
