@@ -109,7 +109,8 @@ describe("Copilot follow-ups", () => {
     // The campaign's ONE text is its brief (ONE-BRIEF-1105): the retired `instruction` field is never written.
     expect(calls[2].body).toMatchObject({ brief: "Tell Marie her cost per meeting is $37." });
     expect(calls[2].body).not.toHaveProperty("instruction");
-    expect(calls[3].body).toEqual({ maxBudget: null, maxVolume: { count: 1, period: "one_off" } });
+    // One send, with a $ ceiling beside the volume (VOL-NEEDS-USD-1124): never a volume alone.
+    expect(calls[3].body).toEqual({ maxBudget: { amountCents: 200, period: "one_off" }, maxVolume: { count: 1, period: "one_off" } });
     expect(calls[4].body).toEqual({ status: "activate" });
     expect(out).toMatchObject({ created: true, followUpId: "fu-1", to: "marie@example.com", sendsAtMost: 1 });
   });

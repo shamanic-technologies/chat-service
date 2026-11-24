@@ -10,7 +10,8 @@
 // Calling one is ALWAYS a campaign (DISTRY-CALL-IS-CAMPAIGN-1121, owner 2026-11-21:
 // « tout appel de Distry sur un de ces engines est TOUJOURS une campagne,
 // obligatoirement »): a normal campaign on campaign-service whose Target is the
-// Engine's outcome, with the brief, max volume and/or max budget (one-off /
+// Engine's outcome, with the brief, a max budget and an optional max volume
+// beside it (VOL-NEEDS-USD-1124: a volume never goes alone; one-off /
 // daily / weekly / monthly, stated at billing on that campaign) and an optional
 // offer Distry states. It answers at once with the campaign and when its first
 // run happens (« It is okay to wait ... as long as Distry gets back the info
@@ -95,7 +96,7 @@ function waysToCall(e: EngineListing): string {
 /** The words of every Engine tool's description (Distry's editor part `engine-tool`, DISTRY-PROMPT-PARTS-1120). */
 export const ENGINE_TOOL_DESCRIPTION_TEMPLATE =
   `Engine "{{engineName}}": starts a campaign that makes Units of this outcome, run by the Engine's best scripts (the Rating picks them). ` +
-  `State the brief, and a max volume (how many Units) and/or a max budget, each one-off, daily, weekly or monthly: the campaign stops by itself at its cap. ` +
+  `State the brief and a max budget in dollars, plus a max volume (how many Units) beside it if you want one (a max volume never goes alone), each one-off, daily, weekly or monthly: the campaign stops by itself at its first cap reached. ` +
   `It answers at once with the campaign and when its first run happens (nothing is made during this call): tell the person, or read its progress later with ${READ_ENGINE_CAMPAIGN_TOOL_NAME}. ` +
   `The same outcome on the same brand (and the same offer, or none) is always the same campaign: a new call restates its brief and caps and starts it again, and a one-off max volume counts every Unit it ever made, so state the total you want. ` +
   `Its scripts work from: {{waysToCall}} ` +
@@ -116,19 +117,19 @@ export function engineTool(e: EngineListing, template: string = ENGINE_TOOL_DESC
           type: "object",
           properties: { count: { type: "integer", minimum: 1 }, period: periodSchema },
           required: ["count", "period"],
-          description: "How many Units at most. Omit when you state a max budget only.",
+          description: "How many Units at most, always with a max budget beside it. Omit when the max budget is enough.",
         },
         maxBudget: {
           type: "object",
           properties: { usd: { type: "number", exclusiveMinimum: 0 }, period: periodSchema },
           required: ["usd", "period"],
-          description: "How many dollars at most, to avoid bad surprises. Omit when you state a max volume only.",
+          description: "How many dollars at most, to avoid bad surprises. Always required, a max volume included.",
         },
         offerId: { type: "string", description: "The offer it sells, when it sells one. Omit = no offer." },
         orgId: { type: "string", description: "Another account to run it for (with brandId). Omit = distribute.you's own." },
         brandId: { type: "string", description: "That account's brand." },
       },
-      required: ["brief"],
+      required: ["brief", "maxBudget"],
     },
   };
 }
@@ -231,7 +232,13 @@ function capArgs(outcome: string, args: Record<string, unknown>): { maxVolume: {
     if (amountCents < 1) throw new Error(`[${outcome}] maxBudget.usd must be at least $0.01`);
     maxBudget = { amountCents, period: period("maxBudget", b.period) };
   }
-  if (!maxVolume && !maxBudget) throw new Error(`[${outcome}] state a max volume, a max budget, or both: a campaign never runs without a cap`);
+  if (!maxBudget) {
+    throw new Error(
+      maxVolume
+        ? `[${outcome}] a max volume needs a max budget in dollars beside it, as a safety: state maxBudget too`
+        : `[${outcome}] state a max budget (and a max volume beside it if you want one): a campaign never runs without a cap in dollars`,
+    );
+  }
   return { maxVolume, maxBudget };
 }
 
