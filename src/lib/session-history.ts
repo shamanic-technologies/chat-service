@@ -87,6 +87,8 @@ export function serializeSessionHistory(
   session: Session,
   messages: Message[],
   page: { hasOlder: boolean } = { hasOlder: false },
+  /** `basic` strips toolCalls args/result (MON-COPILOT-SLOW-1124). */
+  view: "basic" | "full" = "full",
 ): SessionHistoryResponse {
   const shown = messages.filter(isShownMessage);
   return {
@@ -107,11 +109,11 @@ export function serializeSessionHistory(
       content: m.content,
       contentBlocks: m.contentBlocks ?? null,
       toolCalls: m.toolCalls
-        ? m.toolCalls.map((tc) => ({
-            name: tc.name,
-            args: tc.args,
-            ...(tc.result !== undefined ? { result: tc.result } : {}),
-          }))
+        ? m.toolCalls.map((tc) =>
+            view === "basic"
+              ? { name: tc.name, args: {}, ...(tc.result !== undefined ? { result: null } : {}) }
+              : { name: tc.name, args: tc.args, ...(tc.result !== undefined ? { result: tc.result } : {}) },
+          )
         : null,
       buttons: m.buttons ?? null,
       choices: m.choices ?? null,
