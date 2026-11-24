@@ -133,13 +133,13 @@ registry.registerPath({
  * Providers and model names a /chat config may run on: every provider and every
  * name chat-service can call (DISTRY-ALL-MODELS-1122, owner 2026-11-22 « tous
  * ceux qu'on a dans chat-service »). Anthropic and Google run their own loops;
- * DeepSeek, Z.ai, Moonshot, OpenAI, Cerebras and Groq share ONE direct-vendor tool loop
+ * DeepSeek, Z.ai, Moonshot, OpenAI and OpenRouter share ONE direct-vendor tool loop
  * (src/lib/vendor-chat.ts), probed live with a tool turn on each served model
  * (GLM-5.3 + Flash, GPT-6 Astra, GPT-6.1 Sol + Terra 2026-11-22; Moonshot's
- * account was out of credit that day, same loop and request shape; Cerebras and
- * Groq, OPEN-LLM-FREE-1124, had no key on 2026-11-24: same loop, not yet probed).
+ * account was out of credit that day, same loop and request shape; OpenRouter,
+ * OPENROUTER-CHEAP-LLM-1124, had no key on 2026-11-24: same loop, not yet probed).
  */
-export const CHAT_CONFIG_PROVIDERS = ["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "cerebras", "groq"] as const;
+export const CHAT_CONFIG_PROVIDERS = ["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "openrouter"] as const;
 export type ChatConfigProvider = (typeof CHAT_CONFIG_PROVIDERS)[number];
 export const CHAT_CONFIG_MODELS_BY_PROVIDER: Record<ChatConfigProvider, readonly string[]> = Object.fromEntries(
   CHAT_CONFIG_PROVIDERS.map((p) => [p, callableModelNames(p)]),
@@ -188,7 +188,7 @@ export const AppConfigRequestSchema = z
         "LLM provider for this chat mode. Omit to use the default (google).\n\n" +
         "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
         "- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n" +
-        "- `deepseek`, `zai`, `moonshot`, `openai`, `cerebras`, `groq` — the direct vendors (DeepSeek, GLM, Kimi, GPT, and the open-weight GPT-OSS / Qwen on Cerebras and Groq), on one shared tool loop",
+        "- `deepseek`, `zai`, `moonshot`, `openai`, `openrouter` — the direct vendors (DeepSeek, GLM, Kimi, GPT, and the cheapest open models through OpenRouter, each pinned to one host), on one shared tool loop",
       example: "google",
     }),
     model: z.enum(CHAT_CONFIG_MODELS).optional().openapi({
@@ -361,7 +361,7 @@ export const PlatformConfigRequestSchema = z
         "LLM provider for this chat mode. Omit to use the default (google).\n\n" +
         "- `anthropic` — Claude models (haiku, sonnet, opus)\n" +
         "- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n" +
-        "- `deepseek`, `zai`, `moonshot`, `openai`, `cerebras`, `groq` — the direct vendors (DeepSeek, GLM, Kimi, GPT, and the open-weight GPT-OSS / Qwen on Cerebras and Groq), on one shared tool loop",
+        "- `deepseek`, `zai`, `moonshot`, `openai`, `openrouter` — the direct vendors (DeepSeek, GLM, Kimi, GPT, and the cheapest open models through OpenRouter, each pinned to one host), on one shared tool loop",
       example: "google",
     }),
     model: z.enum(CHAT_CONFIG_MODELS).optional().openapi({
@@ -490,8 +490,9 @@ const DYNASTY_MODEL_DOC =
   "versions is `GET /internal/model-dynasties`). The slug always runs the dynasty's head (newest " +
   "served version): anthropic → claude-haiku|claude-sonnet|claude-opus|claude-fable, google → " +
   "gemini-flash-lite|gemini-flash|gemini-pro, deepseek → deepseek-flash, zai → glm-flash|glm, " +
-  "moonshot → kimi-k2|kimi-k3, openai → gpt-astra|gpt-sol|gpt-terra, cerebras → cerebras-gpt-oss|cerebras-qwen, " +
-  "groq → groq-gpt-oss|groq-qwen (open-weight models). The head's exact model id " +
+  "moonshot → kimi-k2|kimi-k3, openai → gpt-astra|gpt-sol|gpt-terra, openrouter → openrouter-ling-tiny|openrouter-nex-mini|" +
+  "openrouter-hy-flash|openrouter-deepseek-flash|openrouter-qwen-flash|openrouter-llama-8b|openrouter-gpt-oss-20b|" +
+  "openrouter-gpt-oss-120b (the cheapest open models, each pinned to one host). The head's exact model id " +
   "(e.g. `gemini-4-hydrogen`) is also accepted, to pin that version. Spend is declared under the " +
   "concrete model that ran, whatever name called it.\n\n";
 
@@ -546,11 +547,11 @@ export const CompleteRequestSchema = z
         "prevents a burst of concurrent calls from over-reserving against your org balance.",
       example: 4096,
     }),
-    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "cerebras", "groq"]).openapi({
+    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "openrouter"]).openapi({
       description:
         "LLM provider to use. `anthropic` and `google` are native clients with the full feature " +
         "set (vision, web search, thinking controls). `deepseek`, `zai` (Z.ai / GLM), " +
-        "`moonshot` (Kimi), `openai` (GPT), `cerebras` and `groq` (open-weight GPT-OSS and Qwen) are called directly over their OpenAI-compatible " +
+        "`moonshot` (Kimi), `openai` (GPT), `openrouter` (cheapest open models, one host each) are called directly over their OpenAI-compatible " +
         "APIs by one shared adapter — text in / text out only, opt-in per call, no existing " +
         "caller reaches them implicitly. Each vendor resolves its OWN API key from key-service " +
         "under this exact slug.",
@@ -576,14 +577,15 @@ export const CompleteRequestSchema = z
         "reasoning floored at `low`), `gpt-sol` → GPT-6 Sol, `gpt-terra` → GPT-5.6 Terra (the latest " +
         "Terra; there is no GPT-6 Terra). On `gpt-sol` / `gpt-terra`, `disableThinking: true` turns " +
         "reasoning fully off. All three reject `temperature`.\n" +
-        "**cerebras:** `cerebras-gpt-oss` → `gpt-oss-120b`, `cerebras-qwen` → `qwen-3.8-27b`. " +
-        "**groq:** `groq-gpt-oss` → `openai/gpt-oss-120b`, `groq-qwen` → `qwen/qwen3.8-27b`. Open-weight models on " +
-        "free tiers with daily caps: a call the vendor refuses for a rate limit or a quota is served by the next model " +
+        "**openrouter:** the cheapest open models, each pinned to ONE host (the price is that host's): `openrouter-ling-tiny`, " +
+        "`openrouter-nex-mini`, `openrouter-hy-flash`, `openrouter-deepseek-flash`, `openrouter-qwen-flash`, `openrouter-llama-8b`, " +
+        "`openrouter-gpt-oss-20b`, `openrouter-gpt-oss-120b`. " +
+        "A call the vendor refuses for a rate limit or a quota is served by the next model " +
         "of the fallback order (`fallback.reason`). GPT-OSS cannot turn reasoning off: `disableThinking` sends its lowest effort (`low`).\n\n" +
         "The direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\n" +
         "The model must match the provider: anthropic → haiku|sonnet|opus|fable, google → flash-lite|flash|flash-pro|pro, " +
         "deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro, " +
-        "openai → gpt-pro|gpt-sol|gpt-terra, cerebras → cerebras-gpt-oss|cerebras-qwen, groq → groq-gpt-oss|groq-qwen.",
+        "openai → gpt-pro|gpt-sol|gpt-terra, openrouter → openrouter-*.",
       example: "sonnet",
     }),
     webSearch: z.boolean().optional().openapi({
@@ -973,10 +975,10 @@ export const InternalPlatformCompleteRequestSchema = z
         "any cost is held; the parameter is never silently dropped.",
       example: 0.3,
     }),
-    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "cerebras", "groq"]).openapi({
+    provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "openrouter"]).openapi({
       description:
         "LLM provider to use. `anthropic` and `google` are native clients; `deepseek`, `zai` " +
-        "(Z.ai / GLM), `moonshot` (Kimi), `openai` (GPT), `cerebras` and `groq` (open-weight GPT-OSS / Qwen) are called directly over their " +
+        "(Z.ai / GLM), `moonshot` (Kimi), `openai` (GPT), `openrouter` (cheapest open models, one host each) are called directly over their " +
         "OpenAI-compatible APIs, text-only. Each vendor resolves its own platform key from " +
         "key-service under this exact slug.",
       example: "anthropic",
@@ -1430,7 +1432,7 @@ export const VendorCreditQuerySchema = z.object({
 });
 
 const VendorCreditVendorSchema = z.object({
-  provider: z.enum(["deepseek", "zai", "moonshot", "openai", "cerebras", "groq", "anthropic", "google"]),
+  provider: z.enum(["deepseek", "zai", "moonshot", "openai", "openrouter", "anthropic", "google"]),
   label: z.string().openapi({ description: "The vendor's name.", example: "DeepSeek" }),
   outOfCredit: z.boolean().openapi({ description: "True while the vendor refuses our platform key for an empty balance: broken (red). Turns false on the first call that succeeds." }),
   since: z.string().nullable().openapi({ description: "ISO time of the first refused call of the open outage; null when serving." }),
@@ -1445,7 +1447,7 @@ const VendorCreditVendorSchema = z.object({
 
 const VendorCreditDaySchema = z.object({
   day: z.string().openapi({ description: "UTC day, YYYY-MM-DD." }),
-  provider: z.enum(["deepseek", "zai", "moonshot", "openai", "cerebras", "groq", "anthropic", "google"]),
+  provider: z.enum(["deepseek", "zai", "moonshot", "openai", "openrouter", "anthropic", "google"]),
   outOfCredit: z.boolean().openapi({ description: "True when the vendor was out of credit at any moment of that day (broken)." }),
   refusedCalls: z.number().int(),
   reroutedCalls: z.number().int(),
