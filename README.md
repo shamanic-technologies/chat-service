@@ -422,6 +422,8 @@ The request body deliberately carries **no** `models` fallback array, **no** `so
 
 There is likewise **no cross-vendor fallback**. A vendor being down fails loud: substituting another model would hand the caller an answer from a model it did not choose and bill it under a name that does not describe what ran.
 
+**One exception: a vendor out of credit on OUR account.** The call then runs on the next model of its fallback order (same capability tier cheapest first, then the nearest tier; only models on a vendor with credit that take the request as sent), and keeps going down that order if the fallback itself fails (dry too, refuses the shape, down), four models at most. The response says so (`fallback: {from, reason: "out_of_credit"}`) and the run declares the cost names of the model that ran. When no model can serve the request, `/complete` and `/internal/platform-complete` answer `502 {code: "no_serving_model", requestedModel, outOfCredit, tried, retryable: false}`; `GET /internal/vendor-credit` counts those calls, and only those, as `refusedCalls`. On `/chat` the same empty balance moves every config down Distry's ranked fallback order.
+
 ### JSON mode is per-vendor, and best-effort here
 
 "OpenAI-compatible" describes the request *shape*, not which values inside it a vendor implements — and structured output is where the three diverge. Each states the strongest `response_format` it accepts in `VENDORS[...].structuredOutput`:

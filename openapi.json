@@ -2126,11 +2126,11 @@
                 },
                 "refusedCalls": {
                   "type": "integer",
-                  "description": "Calls refused for an empty balance during the latest outage."
+                  "description": "Calls NO model served during the latest outage (the fallback order was empty for the request, or every model of it failed). A call the vendor refused that then ran on another model is a rerouted call, never counted here (FALLBACK-REFUSED-1124)."
                 },
                 "reroutedCalls": {
                   "type": "integer",
-                  "description": "Calls the fallback served during the latest outage."
+                  "description": "Calls a model of the fallback order served during the latest outage."
                 },
                 "sentence": {
                   "type": "string",
