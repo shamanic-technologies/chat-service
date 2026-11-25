@@ -562,7 +562,9 @@ The lesson is not "GLM-5.3 was bad", it is that a swap justified on one axis is 
 
 ### Retry behaviour
 
-Two independent, bounded retry budgets. Everything else fails on the first response.
+Three independent, bounded retry budgets. Everything else fails on the first response.
+
+**Hung call (Z.ai, streamed)** — Z.ai is called with `stream: true` and its answer reassembled, so callers still get one whole answer. A call that sends no byte for 60 s, or whose stream closes before its finish chunk, gave no answer: it is asked again on the SAME model, twice at most, then fails as a named 502 (`VendorHungError`). Before this (2026-11-23..25) such calls waited 300 s for nothing and failed (GLM-FLASH-502-1125). Never another model.
 
 **Connect-phase** — a thrown fetch rejection whose cause is a transient socket code (`ECONNRESET`, `ECONNREFUSED`, `ETIMEDOUT`, …). Retried 3 times with 250/500/1000 ms backoff. The request never reached the server, so replaying it cannot double-spend.
 
