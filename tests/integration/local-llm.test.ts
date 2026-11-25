@@ -352,6 +352,31 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     expect(fetchCalls.filter((c) => !c.url.includes("runs.test.local"))).toEqual([]);
   });
 
+  it("SOLO-PLAN-1125: a SYNC judgment caller (an MCP agent one call at a time): fails, claims the kept item, answers, retries, is served the stored answer", async () => {
+    process.env.LOCAL_LLM_PICKUP_WAIT_MS = "200";
+    const { app, store } = await boot();
+    await request(app).put("/orgs/local-llm").set(AUTH).send({ enabled: true });
+    const body = { state: "Offer: B2B bookkeeping.", questions: { step: { type: "noul", instructions: "Does the offer have a demo step?" } } };
+    // 1. The read needing a judgment fails while nobody runs the work.
+    const first = await request(app).post("/orgs/judgments").set(AUTH).send(body);
+    expect(first.status).toBe(503);
+    expect(first.body).toMatchObject({ code: "local_runner_waiting", answerKept: true });
+    // 2. The founder's Claude claims: the item is still there (it did not expire with its caller).
+    const claim = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, max: 10, runner: { kind: "routine" } });
+    expect(claim.body.items).toHaveLength(1);
+    const item = claim.body.items[0];
+    expect(item.kind).toBe("judgment");
+    // 3. It answers.
+    const posted = await request(app).post(`/orgs/local-llm/work/${item.id}/result`).set(AUTH)
+      .send({ leaseId: item.leaseId, ok: true, model: "claude-haiku-5-5", structured: { step: { yes: 0.8, no: 0.2 } }, usage: { inputTokens: 10, outputTokens: 4 } });
+    expect(posted.body).toMatchObject({ stored: true });
+    // 4. The same read again: served from that answer, no new item.
+    const retry = await request(app).post("/orgs/judgments").set(AUTH).send(body);
+    expect(retry.status).toBe(200);
+    expect(retry.body.answers.step).toEqual({ type: "noul", noul: 0.8 });
+    expect(store.jobs.size).toBe(1);
+  });
+
   it("SOLO-PLAN-1125: a resumed call naming its job (x-llm-job-id) gets THAT job whatever its body, never a new one", async () => {
     process.env.LOCAL_LLM_PICKUP_WAIT_MS = "200";
     const { app, store } = await boot();
