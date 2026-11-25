@@ -344,6 +344,20 @@
       "when": 1795000000000,
       "tag": "0048_copilot_handoffs",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1795086400000,
+      "tag": "0049_local_llm_routine",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795172800000,
+      "tag": "0050_distry_debt_whatsapp_alert",
+      "breakpoints": true
     }
   ]
 }

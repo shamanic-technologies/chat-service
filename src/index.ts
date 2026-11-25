@@ -1,3 +1,4 @@
+import { trackServer, PREVIOUS_PROCESS_DRAIN_MS } from "./lib/graceful-drain.js";
 import { SEED_SKILLS } from "./lib/skill-seed.js";
 import { withToolApi } from "./lib/skill-tool-operations.js";
 import express from "express";
@@ -288,6 +289,7 @@ import {
 } from "./lib/distry-spend.js";
 import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
 import { stripNul } from "./lib/strip-nul.js";
+import { notifySilentRunners, SILENCE_TICK_MS } from "./lib/local-llm-silence.js";
 import { chatTurnSupport, COPILOT_SUPPORT, type RunSupport } from "./lib/support-marks.js";
 import { COPILOT_CONFIG_KEY, pushCopilotTurnInBackground, type CopilotTurnMessage } from "./lib/copilot-unibox.js";
 import {
@@ -550,6 +552,7 @@ import {
   judgmentCall,
   localClaudeModelFor,
   localFailureChatMessage,
+  SHORT_LIVED_KINDS,
   localFailureResponse,
   localLlmState,
   localLlmStore,
@@ -1207,7 +1210,7 @@ async function handleComplete(req: express.Request, res: express.Response, retry
   // tools are not carried by a work item yet (served in GET /orgs/local-llm).
   if (!retry && !imageUrl && !brandTools && (await isLocalLlmOrg(orgId))) {
     return handleLocalComplete(res, {
-      orgId, userId, parentRunId, workflowTracking,
+      orgId, userId, parentRunId, workflowTracking, resumeJobId: llmJobIdHeader(req),
       systemPrompt, message, responseSchema: responseSchema as Record<string, unknown> | undefined, jsonMode, webSearch,
       model: localClaudeModelFor(resolveModel(requestedProvider as Provider, requestedModel as ModelAlias), requestedProvider as Provider, requestedModel as ModelAlias),
     });
@@ -1672,6 +1675,12 @@ async function handleComplete(req: express.Request, res: express.Response, retry
   return undefined;
 }
 
+/** SOLO-PLAN-1125: a resumed local-LLM call names the job it waits on (`x-llm-job-id`, set by workflow-service). */
+function llmJobIdHeader(req: express.Request): string | null {
+  const v = req.header("x-llm-job-id")?.trim();
+  return v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
+}
+
 /**
  * /complete for an org whose LLM runs on its own Claude Code (LOCAL-CLAUDE-1116):
  * a child run with NO cost (the org pays $0, no hold, no affordability check),
@@ -1682,6 +1691,8 @@ async function handleLocalComplete(
   res: express.Response,
   a: {
     orgId: string; userId: string; parentRunId: string; workflowTracking: AuthLocals["workflowTracking"];
+    /** SOLO-PLAN-1125: `x-llm-job-id`, a resumed call names the job it waits on. */
+    resumeJobId: string | null;
     systemPrompt: string | undefined; message: string; responseSchema: Record<string, unknown> | undefined;
     jsonMode: boolean; webSearch: boolean; model: string;
   },
@@ -1706,6 +1717,7 @@ async function handleLocalComplete(
       kind: "complete",
       route: "/complete",
       runId,
+      resumeJobId: a.resumeJobId,
       call: completeCall({ systemPrompt: a.systemPrompt, message: a.message, responseSchema: a.responseSchema, jsonMode: a.jsonMode, webSearch: a.webSearch, model: a.model }),
     });
     // LOCAL-CLAUDE-RATING-1116: the model that ran, stated on the run (never charged: costSource org).
@@ -2732,6 +2744,8 @@ async function runOrgJudgment(args: {
   image?: PreparedJudgmentImage;
   /** The judgment serves a support function (the Copilot nudge); omitted = the caller's production. */
   support?: RunSupport;
+  /** SOLO-PLAN-1125: `x-llm-job-id` of a resumed call (local-LLM orgs only). */
+  resumeJobId?: string | null;
 }): Promise<OrgJudgmentOutcome> {
   const { orgId, userId, parentRunId, workflowTracking, taskName, callerPath, state, questions, model, image } = args;
   const judge = args.judge ?? DEFAULT_JUDGE;
@@ -2741,7 +2755,7 @@ async function runOrgJudgment(args: {
 
   // LOCAL-CLAUDE-1116: the org's own Claude Code answers (no key, no hold, $0).
   if (!image && (await isLocalLlmOrg(orgId))) {
-    return runLocalJudgment({ orgId, userId, parentRunId, workflowTracking, taskName, state, questions, support: args.support });
+    return runLocalJudgment({ orgId, userId, parentRunId, workflowTracking, taskName, state, questions, support: args.support, resumeJobId: args.resumeJobId ?? null });
   }
 
   let runId: string | null = null;
@@ -2943,6 +2957,7 @@ async function runLocalJudgment(args: {
   state: unknown;
   questions: Record<string, TypeSafeQuestion>;
   support?: RunSupport;
+  resumeJobId: string | null;
 }): Promise<OrgJudgmentOutcome> {
   const { orgId, userId, parentRunId, workflowTracking, taskName, questions } = args;
   const trackingHeaders = buildTrackingHeaders(workflowTracking);
@@ -2956,7 +2971,7 @@ async function runLocalJudgment(args: {
   }
   let failed = false;
   try {
-    const answer = await runLocally({ orgId, kind: "judgment", route: `/${taskName}`, runId, call: judgmentCall(args.state, questions) });
+    const answer = await runLocally({ orgId, kind: "judgment", route: `/${taskName}`, runId, call: judgmentCall(args.state, questions), resumeJobId: args.resumeJobId });
     await addRunCosts(runId, localCostItems(answer), { orgId, userId, runId }, trackingHeaders);
     const answers = judgmentAnswers(questions, answer.structured);
     traceEvent(runId, "judgments-done", { orgId, userId }, workflowTracking, {
@@ -3019,6 +3034,7 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
     userId,
     parentRunId,
     workflowTracking,
+    resumeJobId: llmJobIdHeader(req),
     taskName: "judgments",
     callerPath: "/orgs/judgments",
     state,
@@ -7978,7 +7994,7 @@ app.post("/orgs/local-llm/work/claim", requireAuth, async (req, res) => {
   const items = await claimWork(orgId, {
     max: parsed.data.max ?? 1,
     waitMs: parsed.data.waitMs ?? CLAIM_DEFAULT_WAIT_MS,
-    runner: { name: parsed.data.runner?.name ?? null, version: parsed.data.runner?.version ?? null },
+    runner: { name: parsed.data.runner?.name ?? null, version: parsed.data.runner?.version ?? null, kind: parsed.data.runner?.kind ?? null },
     signal: left.signal,
   });
   res.json({ items });
@@ -8011,6 +8027,22 @@ app.post("/orgs/local-llm/work/:id/result", requireAuth, async (req, res) => {
   return res.status(409).json({ error: words[verdict], code: `local_job_${verdict}` });
 });
 
+/**
+ * SOLO-PLAN-1125: one WhatsApp to the owner (OWNER_ALERT_WHATSAPP_PHONE, default his pro number), from the
+ * Copilot's own line. Throws unless crm sent it (the caller records the error and retries).
+ */
+const OWNER_ALERT_WHATSAPP_PHONE_DEFAULT = "+33680478402";
+async function sendCopilotLineWhatsapp(phone: string, text: string, idempotencyKey: string): Promise<void> {
+  const line = copilotLineFromEnv();
+  const runId = await createChannelRootRun(line);
+  const reach = await reachWhatsapp({ line, runId, phone });
+  if (!reach.reachable) throw new Error(`WhatsApp not reachable from the Copilot line (${reach.code}): ${reach.error}`);
+  await sendWhatsappReply({ orgId: line.orgId, brandId: line.brandId, userId: line.userId, runId, phone, fromAccount: reach.fromAccount, text, idempotencyKey });
+}
+function sendOwnerWhatsapp(text: string, idempotencyKey: string): Promise<void> {
+  return sendCopilotLineWhatsapp(process.env.OWNER_ALERT_WHATSAPP_PHONE || OWNER_ALERT_WHATSAPP_PHONE_DEFAULT, text, idempotencyKey);
+}
+
 // Only start server if not in test environment
 if (process.env.NODE_ENV !== "test") {
   // SEC-CHAT-IDENTITY-1120: every route trusts x-org-id / x-user-id from a
@@ -8040,11 +8072,9 @@ if (process.env.NODE_ENV !== "test") {
       // Copilot skill tree: insert absent skills, refresh rows still holding
       // seed content, NEVER touch a human-edited one. ~16 rows, safe to await.
       // LOCAL-CLAUDE-1116: the orgs whose LLM runs on their own Claude Code (a handful of rows),
-      // loaded before any call is served so none slips onto a platform key; calls the previous
-      // process was waiting on are ended (their callers are gone).
+      // loaded before any call is served so none slips onto a platform key. Calls the previous
+      // process was waiting on are ended once it has had its drain (below, GLM-FLASH-502-1125).
       const localStore = createPgLocalLlmStore(db);
-      const abandoned = await localStore.expireAbandoned(new Date(), new Date());
-      if (abandoned > 0) console.log(`[local-llm] ${abandoned} local call(s) cut off by a restart ended`);
       await startLocalLlm(localStore);
       // Old-style references (backticks, bare names) still to become mention tokens, counted before the seed converts its own rows.
       const pendingRefs = await countPendingReferences(db);
@@ -8067,14 +8097,30 @@ if (process.env.NODE_ENV !== "test") {
       const server = app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });
+      // GLM-FLASH-502-1125: a deploy starts the next container BESIDE this one, then drains
+      // this one (graceful-drain.ts). Background writers the next process owns stop at drain.
+      const stopAtDrain: Array<() => void> = [];
+      const drainTracker = trackServer(server, stopAtDrain);
       // OPEN-LLM-FREE-1124: which providers have a platform key (key-service's list), read in the
       // background after listen and every 5 min. Until read, every provider is assumed to have one.
       void refreshPlatformKeyPresence();
       setInterval(() => void refreshPlatformKeyPresence(), PLATFORM_KEY_REFRESH_MS).unref();
-      // Proactive turns a restart cut off: marked failed, never re-run (one message per fact).
-      failInterruptedProactiveTurns(db, bootedAt)
-        .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
-        .catch((err) => console.error("[chat-service] proactive turn recovery failed:", err));
+      // Work the PREVIOUS process left unfinished is judged once that process has had its whole
+      // drain (it runs beside this one during a deploy and may still be finishing it):
+      // proactive turns are marked failed (never re-run: one message per fact), local calls
+      // ended, Telegram messages answered.
+      setTimeout(() => {
+        failInterruptedProactiveTurns(db, bootedAt)
+          .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
+          .catch((err) => console.error("[chat-service] proactive turn recovery failed:", err));
+        // SOLO-PLAN-1125: only chat rounds (their loop died with the process); other calls stay queued for a resend.
+        localStore.expireAbandoned(bootedAt, new Date(), SHORT_LIVED_KINDS)
+          .then((n) => { if (n > 0) console.log(`[local-llm] ${n} local call(s) cut off by a restart ended`); })
+          .catch((err) => console.error("[local-llm] recovery of cut calls failed:", err));
+        recoverTelegramMessages(telegramDeps, new Date(), bootedAt)
+          .then((n) => { if (n > 0) console.log(`[chat-service] re-running ${n} Telegram message(s) cut off by a restart`); })
+          .catch((err) => console.error("[chat-service] Telegram recovery failed:", err));
+      }, PREVIOUS_PROCESS_DRAIN_MS).unref();
 
       // DISTRY-MODELS-1119: Artificial Analysis Intelligence Index, read once a day from their API (the tick reads only when no
       // success in 24 h and no attempt in the last hour; a failure is stored and served as broken).
@@ -8087,8 +8133,9 @@ if (process.env.NODE_ENV !== "test") {
           .catch((err) => console.error("[intelligence-index] refresh tick failed:", err))
           .finally(() => { indexReading = false; });
       };
-      setTimeout(readIndex, 60_000).unref();
-      setInterval(readIndex, INDEX_TICK_MS).unref();
+      const indexFirst = setTimeout(readIndex, 60_000).unref();
+      const indexTick = setInterval(readIndex, INDEX_TICK_MS).unref();
+      stopAtDrain.push(() => { clearTimeout(indexFirst); clearInterval(indexTick); });
 
       // Distry's non-client spend: measured every minute from the runs ledger, the day's alert
       // sent once (DISTRY-GUEST-CAPS-1119). After listen (network reads), one at a time.
@@ -8096,23 +8143,38 @@ if (process.env.NODE_ENV !== "test") {
       const measureDistry = () => {
         if (distryMeasuring) return;
         distryMeasuring = true;
-        refreshDistrySpendDay({ db, ...distrySpend, sendTelegram: sendStaffTelegram, sendEmail: (f) => sendDistryAlertEmail(f) })
+        refreshDistrySpendDay({ db, ...distrySpend, sendTelegram: sendStaffTelegram, sendEmail: (f) => sendDistryAlertEmail(f), sendWhatsapp: (text, day) => sendOwnerWhatsapp(text, `distry-debt-growth:${day}`) })
           .catch((err) => console.error("[chat-service] Distry spend measure failed (the day limit reads the last stored measure):", err))
           .finally(() => { distryMeasuring = false; });
       };
-      setTimeout(measureDistry, 20_000).unref();
-      setInterval(measureDistry, 60_000).unref();
+      const distryFirst = setTimeout(measureDistry, 20_000).unref();
+      const distryTick = setInterval(measureDistry, 60_000).unref();
+      stopAtDrain.push(() => { clearTimeout(distryFirst); clearInterval(distryTick); });
+
+      // SOLO-PLAN-1125: a founder whose Claude routine took no work for ~2 h is told once, fixed text, on their door.
+      let silenceChecking = false;
+      const checkSilentRunners = () => {
+        if (silenceChecking) return;
+        silenceChecking = true;
+        notifySilentRunners({
+          store: localStore,
+          db,
+          telegramLinker: (orgId) => orgTelegramLinker(orgId),
+          sendTelegram: (args) => sendTelegramToOrg(args),
+          sendWhatsapp: (args) => sendCopilotLineWhatsapp(args.phone, args.text, args.idempotencyKey),
+        })
+          .catch((err) => console.error("[local-llm] silent-runner check failed:", err))
+          .finally(() => { silenceChecking = false; });
+      };
+      setTimeout(checkSilentRunners, 90_000).unref();
+      setInterval(checkSilentRunners, SILENCE_TICK_MS).unref();
 
       // REELS-1124: recordings our own transcriber works on are followed to their end here (first
-      // pass ~60 s after boot, then every 15 s); a download a restart cut is marked `interrupted`.
-      startMediaTranscriptionTick(db);
-
-      // Telegram messages a restart cut off mid-turn: answered once the port is up.
-      setTimeout(() => {
-        recoverTelegramMessages(telegramDeps)
-          .then((n) => { if (n > 0) console.log(`[chat-service] re-running ${n} Telegram message(s) cut off by a restart`); })
-          .catch((err) => console.error("[chat-service] Telegram recovery failed:", err));
-      }, 60_000).unref();
+      // pass once the previous process has drained, then every 15 s); a download a restart cut is
+      // marked `interrupted`. Started late: a draining process's own downloads are not held HERE.
+      let stopMediaTick: (() => void) | null = null;
+      const mediaStart = setTimeout(() => { stopMediaTick = startMediaTranscriptionTick(db); }, PREVIOUS_PROCESS_DRAIN_MS).unref();
+      stopAtDrain.push(() => { clearTimeout(mediaStart); stopMediaTick?.(); });
 
       // Node 20 defaults requestTimeout to 300s (5 min). SSE chat streams
       // can run for 30–60 min when the LLM makes many tool calls, so we
@@ -8122,20 +8184,20 @@ if (process.env.NODE_ENV !== "test") {
       server.headersTimeout = 60_000;
       server.keepAliveTimeout = 120_000;
 
-      // Graceful shutdown: let in-flight SSE streams finish before exiting
-      const DRAIN_TIMEOUT_MS = 25_000; // Railway sends SIGKILL after 30s
-
+      // Graceful shutdown (GLM-FLASH-502-1125): keep answering, close each socket after its
+      // answer, exit once none is open or after DRAIN_TIMEOUT_MS. Never server.close() first:
+      // a refused connection is a failed call for callers that do not retry.
       const shutdown = (signal: string) => {
-        console.log(`[shutdown] Received ${signal}, draining connections…`);
-        server.close(() => {
-          console.log("[shutdown] All connections closed, exiting.");
+        if (drainTracker.draining()) return;
+        console.log(`[shutdown] Received ${signal}, draining: ${drainTracker.inFlight()} call(s) in flight, ${drainTracker.openSockets()} socket(s) open`);
+        void drainTracker.drain().then((why) => {
+          console.log(
+            why === "idle"
+              ? "[shutdown] Every socket closed, exiting."
+              : `[shutdown] Drain timeout reached with ${drainTracker.inFlight()} call(s) in flight, exiting.`,
+          );
           process.exit(0);
         });
-
-        setTimeout(() => {
-          console.log("[shutdown] Drain timeout reached, forcing exit.");
-          process.exit(0);
-        }, DRAIN_TIMEOUT_MS).unref();
       };
 
       process.on("SIGTERM", () => shutdown("SIGTERM"));

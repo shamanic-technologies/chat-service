@@ -8,9 +8,14 @@
  *     from the runs ledger: what their guest turns cost (each turn's run tree,
  *     under our org) plus what their plan org spent (the signup page's kind of
  *     org opened for their conversation). Never a message count.
- *  3. Every non-client together: $30 a day of our money. Non-client = any turn
- *     not run under a paying client's org: guests on every surface, and accounts
- *     that never paid (their org runs on the advance we gave).
+ *  3. Every non-client together: their debt to us may not grow by more than $20
+ *     in a UTC day versus the day before (SOLO-PLAN-1125, owner 2026-11-25:
+ *     « jamais plus que $20 par jour de plus par rapport à la veille »; replaced
+ *     the $30/day limit). Non-client = any turn not run under a paying client's
+ *     org: guests on every surface, and accounts that never paid. What their
+ *     debt grew today = what we spent on them today, measured on the runs
+ *     ledger; a repayment that day is not subtracted (a payer leaves the
+ *     non-clients), so the guard can only stop earlier, never later.
  *
  * "Paying client" is a served billing fact: billing-service says the org paid
  * us money (`cash_paid_cents` > 0: payments net of refunds and lost disputes,
@@ -20,14 +25,15 @@
  * A turn past a limit runs NO model: the person gets the limit notice below.
  * The day's spend is re-measured every minute (`refreshDistrySpendDay`) and
  * stored per UTC day with its threshold; the first time it reaches the
- * threshold the owner is alerted once (Telegram + email), and the series is
+ * threshold the owner is alerted once (Telegram + email + WhatsApp), and the series is
  * served for dashboard v2 Monitoring (`distrySpendDays`).
  */
 import { and, count, eq, gte, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import type { db as Db } from "../db/index.js";
 import { distrySpendDays, distrySpendOrgs, distrySpendTurns } from "../db/schema.js";
 
-export const DISTRY_NONCLIENT_DAILY_USD_DEFAULT = 30;
+/** SOLO-PLAN-1125: the most the non-payers' debt may grow in one UTC day (owner: $20). */
+export const DISTRY_NONPAYER_DEBT_GROWTH_USD_DEFAULT = 20;
 export const DISTRY_VISITOR_USD_DEFAULT = 5;
 export const SIGN_UP_URL = "https://dashboard.distribute.you/sign-up";
 export const DASHBOARD_HOME_URL = "https://dashboard.distribute.you";
@@ -63,9 +69,9 @@ function usdEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number 
   return n;
 }
 
-/** The day's limit for all non-clients together, in cents (`DISTRY_NONCLIENT_DAILY_USD`, default $30). */
+/** The most all non-clients' debt may grow today, in cents (`DISTRY_NONPAYER_DEBT_GROWTH_USD`, default $20). */
 export function nonClientDailyCents(env: NodeJS.ProcessEnv = process.env): number {
-  return Math.round(usdEnv(env, "DISTRY_NONCLIENT_DAILY_USD", DISTRY_NONCLIENT_DAILY_USD_DEFAULT) * 100);
+  return Math.round(usdEnv(env, "DISTRY_NONPAYER_DEBT_GROWTH_USD", DISTRY_NONPAYER_DEBT_GROWTH_USD_DEFAULT) * 100);
 }
 
 /** One unidentified visitor's limit, in cents (`DISTRY_VISITOR_USD`, default $5). */
@@ -265,6 +271,8 @@ export async function measureDaySpendCents(deps: DistrySpendDeps, day: string): 
 
 export interface DistryAlertDeps {
   sendTelegram: (html: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** The owner's WhatsApp (owner 2026-11-25: on top of Telegram + email); throws unless sent. */
+  sendWhatsapp: (text: string, day: string) => Promise<void>;
   /** The staff email (transactional-email-service platform staff alert); one id per day, a repeat never mails twice. */
   sendEmail: (alert: DistryAlertFacts) => Promise<void>;
 }
@@ -280,11 +288,20 @@ export interface DistryAlertFacts {
 /** The Telegram text of the day's alert (HTML). */
 export function distryAlertTelegram(f: DistryAlertFacts): string {
   return [
-    `🚨 <b>Distry hit today's $${f.limitUsd} limit for non-clients</b>`,
-    `Spent on non-clients today (${f.day} UTC): <b>$${f.spentUsd}</b> of $${f.limitUsd}.`,
-    "Every non-client now gets the limit notice (sign up, or WhatsApp) instead of an answer, until midnight UTC. Paying clients are not affected.",
-    `Visitors stopped at their own $5 today: ${f.visitorsCut}. Messages refused by the day limit so far: ${f.turnsRefused}.`,
-    "Raise it with DISTRY_NONCLIENT_DAILY_USD in env/chat-service.env on the box.",
+    `🚨 <b>Non-payers' debt grew $${f.spentUsd} today, the most allowed is $${f.limitUsd} a day</b>`,
+    `What we spent on people who never paid today (${f.day} UTC): <b>$${f.spentUsd}</b> of $${f.limitUsd}.`,
+    "Every non-payer now gets the limit notice instead of an answer, until midnight UTC. Paying clients are not affected.",
+    `Visitors stopped at their own limit today: ${f.visitorsCut}. Messages refused by the day limit so far: ${f.turnsRefused}.`,
+    "Raise it with DISTRY_NONPAYER_DEBT_GROWTH_USD in env/chat-service.env on the box.",
+  ].join("\n");
+}
+
+/** The WhatsApp text of the same alert (plain text). */
+export function distryAlertWhatsapp(f: DistryAlertFacts): string {
+  return [
+    `Distry alert: non-payers' debt grew $${f.spentUsd} today (${f.day} UTC), the most allowed is $${f.limitUsd} a day.`,
+    "Every non-payer gets the limit notice instead of an answer until midnight UTC. Paying clients are not affected.",
+    `Visitors stopped at their own limit: ${f.visitorsCut}. Messages refused so far: ${f.turnsRefused}.`,
   ].join("\n");
 }
 
@@ -319,7 +336,7 @@ export async function refreshDistrySpendDay(deps: DistrySpendDeps & DistryAlertD
   if (spendCents < thresholdCents) return { day, spendCents, thresholdCents, alerted };
   await deps.db.update(distrySpendDays).set({ alertFiredAt: now }).where(and(eq(distrySpendDays.day, day), isNull(distrySpendDays.alertFiredAt)));
   const [row] = await deps.db.select().from(distrySpendDays).where(eq(distrySpendDays.day, day));
-  if (!row || (row.alertTelegramAt && row.alertEmailAt)) return { day, spendCents, thresholdCents, alerted };
+  if (!row || (row.alertTelegramAt && row.alertEmailAt && row.alertWhatsappAt)) return { day, spendCents, thresholdCents, alerted };
   const counts = await dayCounts(deps.db, day);
   const facts: DistryAlertFacts = {
     day,
@@ -342,6 +359,23 @@ export async function refreshDistrySpendDay(deps: DistrySpendDeps & DistryAlertD
       else {
         await deps.db.update(distrySpendDays).set({ alertTelegramAt: null }).where(eq(distrySpendDays.day, day));
         errors.push(`telegram: ${sent.error}`);
+      }
+    }
+  }
+  if (!row.alertWhatsappAt) {
+    // Claim first, like Telegram: a second process never sends it twice.
+    const claimed = await deps.db
+      .update(distrySpendDays)
+      .set({ alertWhatsappAt: now })
+      .where(and(eq(distrySpendDays.day, day), isNull(distrySpendDays.alertWhatsappAt)))
+      .returning({ day: distrySpendDays.day });
+    if (claimed.length > 0) {
+      try {
+        await deps.sendWhatsapp(distryAlertWhatsapp(facts), day);
+        alerted.push("whatsapp");
+      } catch (err) {
+        await deps.db.update(distrySpendDays).set({ alertWhatsappAt: null }).where(eq(distrySpendDays.day, day));
+        errors.push(`whatsapp: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
@@ -473,7 +507,7 @@ export async function sendDistryAlertEmail(f: DistryAlertFacts, fetchImpl: typeo
         budgetUsd: f.limitUsd,
         visitorsCapped: f.visitorsCut,
         messagesRefused: f.turnsRefused,
-        budgetEnvVar: "DISTRY_NONCLIENT_DAILY_USD",
+        budgetEnvVar: "DISTRY_NONPAYER_DEBT_GROWTH_USD",
       },
     }),
     signal: AbortSignal.timeout(30_000),

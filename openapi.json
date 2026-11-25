@@ -2334,7 +2334,7 @@
                 },
                 "thresholdUsd": {
                   "type": "number",
-                  "description": "The day's limit for all non-clients together (DISTRY_NONCLIENT_DAILY_USD, default 30). At or above it every non-client gets the limit notice."
+                  "description": "The most all non-payers' debt may grow that day (DISTRY_NONPAYER_DEBT_GROWTH_USD, default 20 since SOLO-PLAN-1125; 30 before). At or above it every non-payer gets the limit notice."
                 },
                 "visitorsCut": {
                   "type": "integer",
@@ -5555,7 +5555,7 @@
             "properties": {
               "connected": {
                 "type": "boolean",
-                "description": "A runner asked for work in the last 60 s."
+                "description": "A runner asked for work recently: within 60 s for an installed app, within 2 h for a routine (the founder's Claude, about hourly)."
               },
               "lastSeenAt": {
                 "type": "string",
@@ -5568,13 +5568,24 @@
               "version": {
                 "type": "string",
                 "nullable": true
+              },
+              "kind": {
+                "type": "string",
+                "nullable": true,
+                "enum": [
+                  "app",
+                  "routine",
+                  null
+                ],
+                "description": "What the runner said it is; null = never said (an installed app)."
               }
             },
             "required": [
               "connected",
               "lastSeenAt",
               "name",
-              "version"
+              "version",
+              "kind"
             ]
           },
           "pendingCalls": {
@@ -5709,7 +5720,7 @@
                   "properties": {
                     "connected": {
                       "type": "boolean",
-                      "description": "A runner asked for this org's work in the last 60 s."
+                      "description": "A runner asked for work recently: within 60 s for an installed app, within 2 h for a routine (the founder's Claude, about hourly)."
                     },
                     "lastSeenAt": {
                       "type": "string",
@@ -5722,13 +5733,24 @@
                     "version": {
                       "type": "string",
                       "nullable": true
+                    },
+                    "kind": {
+                      "type": "string",
+                      "nullable": true,
+                      "enum": [
+                        "app",
+                        "routine",
+                        null
+                      ],
+                      "description": "What the runner said it is; null = never said (an installed app)."
                     }
                   },
                   "required": [
                     "connected",
                     "lastSeenAt",
                     "name",
-                    "version"
+                    "version",
+                    "kind"
                   ]
                 },
                 "pendingCalls": {
@@ -5846,7 +5868,7 @@
           },
           "answerBy": {
             "type": "string",
-            "description": "After this instant the caller has stopped waiting (an answer then gets 410)."
+            "description": "Answer before this instant; after it the call has ended (an answer then gets 410). A claim has 30 minutes."
           },
           "claude": {
             "type": "object",
@@ -5923,9 +5945,17 @@
               "version": {
                 "type": "string",
                 "maxLength": 100
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "app",
+                  "routine"
+                ],
+                "description": "`app` = an installed runner polling all the time; `routine` = the founder's own Claude (a routine / scheduled task) taking the waiting work about once an hour. Omitted = app."
               }
             },
-            "description": "Shown in the org's state (e.g. the Mac app and its version)."
+            "description": "Shown in the org's state (e.g. the Mac app and its version, or the founder's Claude routine)."
           }
         },
         "additionalProperties": false
@@ -8813,7 +8843,7 @@
           "Internal"
         ],
         "summary": "Distry's spend on non-clients per day, against the day's limit (Monitoring)",
-        "description": "Owner 2026-11-19: a visitor with no account stops at $5, all non-clients together at $30 a day of our money; a paying client is never capped. Each day: the measured spend, the limit, visitors stopped at their own limit, messages refused by the day's limit, and whether the alert fired. A day with `alertFired` is red.",
+        "description": "Owner 2026-11-19: a visitor with no account stops at $5; owner 2026-11-25 (SOLO-PLAN-1125): all non-payers' debt may grow at most $20 a day (it was $30 a day of our money); a paying client is never capped. The alert goes to Telegram, WhatsApp and email once a day. Each day: the measured spend, the limit, visitors stopped at their own limit, messages refused by the day's limit, and whether the alert fired. A day with `alertFired` is red.",
         "parameters": [
           {
             "schema": {
@@ -9072,7 +9102,7 @@
           "Internal"
         ],
         "summary": "A visitor of our public site wrote in the page: the Copilot answers (synchronous)",
-        "description": "Called by the distribute.you site's SERVER (never the browser: it carries the service key) for every message a visitor types in the page chat. The SAME assistant as on WhatsApp and email: same voice, skills and tools, keyed on who the visitor is. The visitor id finds the conversation; until they prove an email they are a guest (no account is read). They can sign up or in right in the chat (their email, a phone number, the code sent to the email): the session then runs with their account, and they set up, pay through a link and launch without leaving the page. Answers in the response, usually within 5-20 s; an onboarding step can take minutes. A turn runs to its end even when the caller stops waiting: send the SAME messageId again and it answers `in_progress` at once, then the whole stored answer. One turn at a time per visitor. When a guest gives their WhatsApp number or email to continue there, the assistant ties it to the conversation (`continuedOn`, `handOff`). No answer count walls a visitor. A guard bounds abuse (`busy`): 20 messages per visitor per 10 minutes. Spend is bounded in dollars read from the runs ledger: a visitor with no account stops at $5 (`DISTRY_VISITOR_USD`), all non-clients together at $30 a day (`DISTRY_NONCLIENT_DAILY_USD`); past either the answer is the limit notice (status `answered`, no model ran). A guest's spend is a Copilot support run under distribute.you's org; a signed-in visitor's turns are their own org's.",
+        "description": "Called by the distribute.you site's SERVER (never the browser: it carries the service key) for every message a visitor types in the page chat. The SAME assistant as on WhatsApp and email: same voice, skills and tools, keyed on who the visitor is. The visitor id finds the conversation; until they prove an email they are a guest (no account is read). They can sign up or in right in the chat (their email, a phone number, the code sent to the email): the session then runs with their account, and they set up, pay through a link and launch without leaving the page. Answers in the response, usually within 5-20 s; an onboarding step can take minutes. A turn runs to its end even when the caller stops waiting: send the SAME messageId again and it answers `in_progress` at once, then the whole stored answer. One turn at a time per visitor. When a guest gives their WhatsApp number or email to continue there, the assistant ties it to the conversation (`continuedOn`, `handOff`). No answer count walls a visitor. A guard bounds abuse (`busy`): 20 messages per visitor per 10 minutes. Spend is bounded in dollars read from the runs ledger: a visitor with no account stops at $5 (`DISTRY_VISITOR_USD`), all non-payers' debt may grow at most $20 a day (`DISTRY_NONPAYER_DEBT_GROWTH_USD`); past either the answer is the limit notice (status `answered`, no model ran). A guest's spend is a Copilot support run under distribute.you's org; a signed-in visitor's turns are their own org's.",
         "parameters": [
           {
             "schema": {
