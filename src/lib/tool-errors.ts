@@ -129,6 +129,15 @@ const TOOL_HINTS: Record<string, string> = {
     "Pass slug as a string. Returns the full feature definition.",
 };
 
+/** An env var named in the error (`WORKFLOW_SERVICE_API_KEY is required`): ours to fix, not the model's. */
+const MISSING_ENV_VAR = /\b[A-Z][A-Z0-9]*_[A-Z0-9_]+ is required\b/;
+/** api-service wraps a downstream 4xx as a 500: the arguments were refused, not our side. */
+const NESTED_CLIENT_ERROR = /returned 4\d\d\b|"status"\s*:\s*4\d\d\b/;
+
+export const SERVER_SIDE_FAILURE =
+  "This failed on our side and clears within minutes, never within this answer: do not call it again in this turn. " +
+  "Answer now with what you already have, and say in one plain sentence that this part cannot be read right now.";
+
 export function formatToolError(toolName: string, rawError: string): ToolErrorResult {
   const status = parseStatusCode(rawError);
   const fieldErrors = parseValidationErrors(rawError);
@@ -152,9 +161,22 @@ export function formatToolError(toolName: string, rawError: string): ToolErrorRe
   } else if (status === 401 || status === 403) {
     error = "Authentication or authorization failed.";
     suggestion = "This is a server configuration issue, not something you can fix. Inform the user.";
-  } else if (rawError.includes("is required")) {
+  } else if (MISSING_ENV_VAR.test(rawError)) {
     error = rawError;
     suggestion = "This is a server configuration issue (missing env var). Inform the user.";
+  } else if (status !== null && status >= 500 && !NESTED_CLIENT_ERROR.test(rawError)) {
+    // COPILOT-LATENCY-1125 (prod 2026-11-25): a features-service 502 ("retry in a
+    // minute") was answered "Check the parameters and try again", and the model
+    // re-called it twice in the same turn. A failure on our side clears in
+    // minutes, never between two rounds of one answer.
+    error = `Failed on our side (${status}), not because of your arguments: ${rawError.replace(/.*returned \d{3}: ?/, "").slice(0, 200)}`;
+    suggestion = SERVER_SIDE_FAILURE;
+  } else if (/\bis required\b/.test(rawError)) {
+    // The tool refused the arguments it was given (a field of yours, never an env
+    // var): until 2026-11-25 this read "server configuration issue, inform the user"
+    // and request_staff was re-called six times in one turn.
+    error = rawError.slice(0, 300);
+    suggestion = TOOL_HINTS[toolName] ?? "Your arguments were refused: change them as the error says, then call once more.";
   } else {
     error = rawError.slice(0, 300);
     suggestion = TOOL_HINTS[toolName] ?? "Check the parameters and try again.";
