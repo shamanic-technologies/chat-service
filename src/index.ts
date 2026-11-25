@@ -1,3 +1,4 @@
+import { trackServer, PREVIOUS_PROCESS_DRAIN_MS } from "./lib/graceful-drain.js";
 import { SEED_SKILLS } from "./lib/skill-seed.js";
 import { withToolApi } from "./lib/skill-tool-operations.js";
 import express from "express";
@@ -8039,12 +8040,9 @@ if (process.env.NODE_ENV !== "test") {
       // Copilot skill tree: insert absent skills, refresh rows still holding
       // seed content, NEVER touch a human-edited one. ~16 rows, safe to await.
       // LOCAL-CLAUDE-1116: the orgs whose LLM runs on their own Claude Code (a handful of rows),
-      // loaded before any call is served so none slips onto a platform key; calls the previous
-      // process was waiting on are ended (their callers are gone).
+      // loaded before any call is served so none slips onto a platform key. Calls the previous
+      // process was waiting on are ended once it has had its drain (below, GLM-FLASH-502-1125).
       const localStore = createPgLocalLlmStore(db);
-      // SOLO-PLAN-1125: only chat rounds (their loop died with the process); other calls stay queued for a resend.
-      const abandoned = await localStore.expireAbandoned(new Date(), new Date(), SHORT_LIVED_KINDS);
-      if (abandoned > 0) console.log(`[local-llm] ${abandoned} local call(s) cut off by a restart ended`);
       await startLocalLlm(localStore);
       // Old-style references (backticks, bare names) still to become mention tokens, counted before the seed converts its own rows.
       const pendingRefs = await countPendingReferences(db);
@@ -8067,14 +8065,30 @@ if (process.env.NODE_ENV !== "test") {
       const server = app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });
+      // GLM-FLASH-502-1125: a deploy starts the next container BESIDE this one, then drains
+      // this one (graceful-drain.ts). Background writers the next process owns stop at drain.
+      const stopAtDrain: Array<() => void> = [];
+      const drainTracker = trackServer(server, stopAtDrain);
       // OPEN-LLM-FREE-1124: which providers have a platform key (key-service's list), read in the
       // background after listen and every 5 min. Until read, every provider is assumed to have one.
       void refreshPlatformKeyPresence();
       setInterval(() => void refreshPlatformKeyPresence(), PLATFORM_KEY_REFRESH_MS).unref();
-      // Proactive turns a restart cut off: marked failed, never re-run (one message per fact).
-      failInterruptedProactiveTurns(db, bootedAt)
-        .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
-        .catch((err) => console.error("[chat-service] proactive turn recovery failed:", err));
+      // Work the PREVIOUS process left unfinished is judged once that process has had its whole
+      // drain (it runs beside this one during a deploy and may still be finishing it):
+      // proactive turns are marked failed (never re-run: one message per fact), local calls
+      // ended, Telegram messages answered.
+      setTimeout(() => {
+        failInterruptedProactiveTurns(db, bootedAt)
+          .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
+          .catch((err) => console.error("[chat-service] proactive turn recovery failed:", err));
+        // SOLO-PLAN-1125: only chat rounds (their loop died with the process); other calls stay queued for a resend.
+        localStore.expireAbandoned(bootedAt, new Date(), SHORT_LIVED_KINDS)
+          .then((n) => { if (n > 0) console.log(`[local-llm] ${n} local call(s) cut off by a restart ended`); })
+          .catch((err) => console.error("[local-llm] recovery of cut calls failed:", err));
+        recoverTelegramMessages(telegramDeps, new Date(), bootedAt)
+          .then((n) => { if (n > 0) console.log(`[chat-service] re-running ${n} Telegram message(s) cut off by a restart`); })
+          .catch((err) => console.error("[chat-service] Telegram recovery failed:", err));
+      }, PREVIOUS_PROCESS_DRAIN_MS).unref();
 
       // DISTRY-MODELS-1119: Artificial Analysis Intelligence Index, read once a day from their API (the tick reads only when no
       // success in 24 h and no attempt in the last hour; a failure is stored and served as broken).
@@ -8087,8 +8101,9 @@ if (process.env.NODE_ENV !== "test") {
           .catch((err) => console.error("[intelligence-index] refresh tick failed:", err))
           .finally(() => { indexReading = false; });
       };
-      setTimeout(readIndex, 60_000).unref();
-      setInterval(readIndex, INDEX_TICK_MS).unref();
+      const indexFirst = setTimeout(readIndex, 60_000).unref();
+      const indexTick = setInterval(readIndex, INDEX_TICK_MS).unref();
+      stopAtDrain.push(() => { clearTimeout(indexFirst); clearInterval(indexTick); });
 
       // Distry's non-client spend: measured every minute from the runs ledger, the day's alert
       // sent once (DISTRY-GUEST-CAPS-1119). After listen (network reads), one at a time.
@@ -8100,8 +8115,9 @@ if (process.env.NODE_ENV !== "test") {
           .catch((err) => console.error("[chat-service] Distry spend measure failed (the day limit reads the last stored measure):", err))
           .finally(() => { distryMeasuring = false; });
       };
-      setTimeout(measureDistry, 20_000).unref();
-      setInterval(measureDistry, 60_000).unref();
+      const distryFirst = setTimeout(measureDistry, 20_000).unref();
+      const distryTick = setInterval(measureDistry, 60_000).unref();
+      stopAtDrain.push(() => { clearTimeout(distryFirst); clearInterval(distryTick); });
 
       // SOLO-PLAN-1125: a founder whose Claude routine took no work for ~2 h is told once, fixed text, on their door.
       let silenceChecking = false;
@@ -8122,15 +8138,11 @@ if (process.env.NODE_ENV !== "test") {
       setInterval(checkSilentRunners, SILENCE_TICK_MS).unref();
 
       // REELS-1124: recordings our own transcriber works on are followed to their end here (first
-      // pass ~60 s after boot, then every 15 s); a download a restart cut is marked `interrupted`.
-      startMediaTranscriptionTick(db);
-
-      // Telegram messages a restart cut off mid-turn: answered once the port is up.
-      setTimeout(() => {
-        recoverTelegramMessages(telegramDeps)
-          .then((n) => { if (n > 0) console.log(`[chat-service] re-running ${n} Telegram message(s) cut off by a restart`); })
-          .catch((err) => console.error("[chat-service] Telegram recovery failed:", err));
-      }, 60_000).unref();
+      // pass once the previous process has drained, then every 15 s); a download a restart cut is
+      // marked `interrupted`. Started late: a draining process's own downloads are not held HERE.
+      let stopMediaTick: (() => void) | null = null;
+      const mediaStart = setTimeout(() => { stopMediaTick = startMediaTranscriptionTick(db); }, PREVIOUS_PROCESS_DRAIN_MS).unref();
+      stopAtDrain.push(() => { clearTimeout(mediaStart); stopMediaTick?.(); });
 
       // Node 20 defaults requestTimeout to 300s (5 min). SSE chat streams
       // can run for 30–60 min when the LLM makes many tool calls, so we
@@ -8140,20 +8152,20 @@ if (process.env.NODE_ENV !== "test") {
       server.headersTimeout = 60_000;
       server.keepAliveTimeout = 120_000;
 
-      // Graceful shutdown: let in-flight SSE streams finish before exiting
-      const DRAIN_TIMEOUT_MS = 25_000; // Railway sends SIGKILL after 30s
-
+      // Graceful shutdown (GLM-FLASH-502-1125): keep answering, close each socket after its
+      // answer, exit once none is open or after DRAIN_TIMEOUT_MS. Never server.close() first:
+      // a refused connection is a failed call for callers that do not retry.
       const shutdown = (signal: string) => {
-        console.log(`[shutdown] Received ${signal}, draining connections…`);
-        server.close(() => {
-          console.log("[shutdown] All connections closed, exiting.");
+        if (drainTracker.draining()) return;
+        console.log(`[shutdown] Received ${signal}, draining: ${drainTracker.inFlight()} call(s) in flight, ${drainTracker.openSockets()} socket(s) open`);
+        void drainTracker.drain().then((why) => {
+          console.log(
+            why === "idle"
+              ? "[shutdown] Every socket closed, exiting."
+              : `[shutdown] Drain timeout reached with ${drainTracker.inFlight()} call(s) in flight, exiting.`,
+          );
           process.exit(0);
         });
-
-        setTimeout(() => {
-          console.log("[shutdown] Drain timeout reached, forcing exit.");
-          process.exit(0);
-        }, DRAIN_TIMEOUT_MS).unref();
       };
 
       process.on("SIGTERM", () => shutdown("SIGTERM"));
