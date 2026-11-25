@@ -2925,7 +2925,7 @@ export const REQUEST_STAFF_TOOL: Anthropic.Tool = {
       },
       newStepOrTrigger: {
         type: "object",
-        description: "Send ONLY when the missing piece is a new step (a stage a lead can reach) or a new trigger (an entry door of a reactive campaign). Ask the user for any field you do not know.",
+        description: "Send ONLY with kind \"feature\", when the missing piece is a new step (a stage a lead can reach) or a new trigger (an entry door of a reactive campaign); a bug or any other feature leaves it out entirely. Ask the user for any field you do not know.",
         properties: {
           kind: { type: "string", enum: ["step", "trigger"] },
           name: { type: "string", description: "The step or trigger in the user's words, e.g. \"Followed on LinkedIn\", \"Contract signed\"." },

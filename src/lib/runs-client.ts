@@ -124,6 +124,27 @@ export async function createRun(
   return runsRequest<RunsRun>("POST", "/v1/runs", identity, params, trackingHeaders);
 }
 
+/**
+ * A run with no parent, under the org: for work that must not sit under the
+ * caller's run because that run carries other tracking fields (a brand read for
+ * another brand than the turn's: runs-service refuses a child whose brandIds
+ * differ from its parent's, COPILOT-LATENCY-1125).
+ */
+export async function createRootRun(
+  params: CreateRunParams,
+  identity: { orgId: string; userId: string },
+  trackingHeaders?: TrackingHeaders,
+): Promise<RunsRun> {
+  const headers = buildHeaders({ ...identity, runId: "" }, trackingHeaders);
+  delete headers["x-run-id"];
+  const res = await fetch(`${RUNS_SERVICE_URL}/v1/runs`, { method: "POST", headers, body: JSON.stringify(params) });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`[runs-client] POST /v1/runs (root) returned ${res.status}: ${text}`);
+  }
+  return (await res.json()) as RunsRun;
+}
+
 export async function updateRunStatus(
   id: string,
   status: "completed" | "failed",

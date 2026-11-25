@@ -131,8 +131,15 @@ export function parseStaffRequestArgs(args: Record<string, unknown>): StaffReque
     };
   });
   const missingPiece = str("missingPiece", 4000);
+  // Checked before the gap's own fields: a bug sent with newStepOrTrigger was told
+  // "newStepOrTrigger.name is required", filled it, then "a new step or trigger is a
+  // feature request", six calls in one turn (COPILOT-LATENCY-1125). Say the way out.
+  if (kind !== "feature" && args.newStepOrTrigger !== undefined && args.newStepOrTrigger !== null) {
+    throw new StaffRequestValidationError(
+      `newStepOrTrigger is only for a "feature" asking for a NEW step or trigger. For this ${kind}, call request_staff again with the same fields and WITHOUT newStepOrTrigger.`,
+    );
+  }
   const gap = parseNewStepOrTrigger(args.newStepOrTrigger);
-  if (gap && kind !== "feature") throw new StaffRequestValidationError(`a new step or trigger is a "feature" request`);
   return {
     kind,
     repo,
@@ -177,7 +184,10 @@ export function parseNewStepOrTrigger(raw: unknown): NewStepOrTrigger | null {
   const field = (name: "name" | "tool" | "event" | "example", max: number): string => {
     const v = o[name];
     if (typeof v !== "string" || v.trim() === "") {
-      throw new StaffRequestValidationError(`newStepOrTrigger.${name} is required: ask the user if you do not know it`);
+      throw new StaffRequestValidationError(
+        `newStepOrTrigger.${name} is required when the request is a new step or trigger: ask the user if you do not know it. ` +
+          `Not a new step or trigger? Call request_staff again WITHOUT newStepOrTrigger.`,
+      );
     }
     if (v.length > max) throw new StaffRequestValidationError(`newStepOrTrigger.${name} must be at most ${max} characters`);
     return v.trim();

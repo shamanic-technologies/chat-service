@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { trimGeminiHistoryToBudget, GEMINI_TRIM_TRIGGER_TOKENS, GEMINI_TRIM_TARGET_TOKENS } from "../../src/lib/gemini-trim.js";
+import { trimGeminiHistoryToBudget, GEMINI_TRIM_TRIGGER_TOKENS, GEMINI_TRIM_TARGET_TOKENS, STALE_HISTORY_MS } from "../../src/lib/gemini-trim.js";
 
 const CHAR_PER_TOKEN = 4;
 
@@ -60,5 +60,20 @@ describe("trimGeminiHistoryToBudget", () => {
     const result = trimGeminiHistoryToBudget([]);
     expect(result.history).toEqual([]);
     expect(result.trimmed).toBe(false);
+  });
+
+  // COPILOT-LATENCY-1125 (prod 2026-11-25): 3-week-old turns re-sent on every round of a new question.
+  it("drops messages older than a day first, keeps the recent ones and always the last exchange", () => {
+    const now = new Date("2026-11-25T11:05:51Z");
+    const old = (role: "user" | "assistant") => ({ role, content: "old", createdAt: new Date("2026-11-07T22:43:52Z") });
+    const recent = (role: "user" | "assistant") => ({ role, content: "recent", createdAt: new Date(now.getTime() - 60_000) });
+    const r1 = trimGeminiHistoryToBudget([old("user"), old("assistant"), recent("user"), recent("assistant")], now);
+    expect(r1.history.map((m) => m.content)).toEqual(["recent", "recent"]);
+    expect(r1.trimmed).toBe(true);
+    const r2 = trimGeminiHistoryToBudget([old("user"), old("assistant"), old("user"), old("assistant")], now);
+    expect(r2.history).toHaveLength(2);
+    const undated = [makeMessage("user", 10), makeMessage("assistant", 10)];
+    expect(trimGeminiHistoryToBudget(undated, now)).toEqual({ history: undated, trimmed: false, estimatedInputTokens: 5 });
+    expect(STALE_HISTORY_MS).toBe(24 * 60 * 60_000);
   });
 });

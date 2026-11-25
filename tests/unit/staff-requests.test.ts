@@ -74,6 +74,16 @@ describe("a new step or trigger is a feature request, never a bare row (owner 20
     expect(() => parseStaffRequestArgs({ ...req, kind: "bug" })).toThrow(/feature/);
   });
 
+  // COPILOT-LATENCY-1125 (prod 2026-11-25): six refused calls in one turn. Each refusal names the way out.
+  it("tells a bug sent with newStepOrTrigger to drop it, before any of its fields is checked", () => {
+    expect(() => parseStaffRequestArgs({ ...req, kind: "bug", newStepOrTrigger: { kind: "step" } })).toThrow(
+      /call request_staff again with the same fields and WITHOUT newStepOrTrigger/,
+    );
+    expect(() => parseStaffRequestArgs({ ...req, newStepOrTrigger: { ...gap, name: "" } })).toThrow(/Not a new step or trigger\? Call request_staff again WITHOUT newStepOrTrigger/);
+    const { newStepOrTrigger: _drop, ...bug } = req;
+    expect(parseStaffRequestArgs({ ...bug, kind: "bug" }).kind).toBe("bug");
+  });
+
   it("no tool the model can be given creates a step or a trigger", () => {
     for (const name of ["create_step", "declare_trigger_type"]) {
       expect(TOOL_REGISTRY[name], name).toBeUndefined();
