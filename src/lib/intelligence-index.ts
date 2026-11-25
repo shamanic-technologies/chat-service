@@ -19,7 +19,6 @@
  * and served as `refresh.broken` (red on Monitoring), never a silent stale value.
  */
 import { desc, eq, ne } from "drizzle-orm";
-import { isOnTrial } from "./llm-dynasties.js";
 import { z } from "zod";
 import type { db } from "../db/index.js";
 import { intelligenceIndexReads, intelligenceIndexScores } from "../db/schema.js";
@@ -815,8 +814,7 @@ export function buildModelPanel(args: {
       thinking: thinking.words,
       thinkingLevels: [...levels],
       availability: (() => {
-        // OPENROUTER-TRIAL-1125: a line on trial keeps its row but never runs as Distry's backup.
-        const reason = isOnTrial(c.modelId) ? "On trial: not live until the owner reads the comparison and says go." : outOfCredit(c.provider);
+        const reason = outOfCredit(c.provider);
         return { runsNow: reason === null, reason };
       })(),
       price: { inputPer1mUsd, outputPer1mUsd, costNames, reason: priceReason },

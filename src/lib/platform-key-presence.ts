@@ -2,7 +2,7 @@
 // Which providers have a platform key: one in-memory fact (OPEN-LLM-FREE-1124)
 //
 // A provider can be served by this code before anyone registered its platform
-// key in key-service (OpenRouter shipped that way). Two readers must not
+// key in key-service (Cerebras and Groq, then OpenRouter, shipped that way, 2026-11-24). Two readers must not
 // pick such a provider:
 //   - the fallback orders (`fallbackOrderFor`, Distry's `rankFallbacks`): a
 //     model with no key can serve nothing;

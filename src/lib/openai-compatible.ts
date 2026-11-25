@@ -200,7 +200,7 @@ export class VendorQuotaExhaustedError extends VendorRateLimitError {
  * Vendors reachable through this adapter. The id doubles as the API `provider`
  * value AND the key-service provider slug — one vendor, one key, one name.
  */
-export type VendorId = "deepseek" | "zai" | "moonshot" | "openai" | "openrouter";
+export type VendorId = "deepseek" | "zai" | "moonshot" | "openai";
 
 /** Raw `usage` object as returned by an OpenAI-compatible chat completion. */
 export interface VendorUsage {
@@ -270,12 +270,6 @@ export type VendorPricing =
        * `-long-context-` rows for EVERY token of that request. Absent = one tier.
        */
       longContextAboveInputTokens?: number;
-      /**
-       * The same tier per cost prefix, for a vendor whose models differ
-       * (OPENROUTER-CHEAP-LLM-1124: only Qwen 3.7 Flash on Alibaba prices by
-       * prompt length). A prefix absent here has one tier.
-       */
-      longContextAboveInputTokensByPrefix?: Record<string, number>;
     }
   | {
       kind: "unpriced";
@@ -654,37 +648,6 @@ export interface VendorConfig {
    * follow-up round with reasoning tokens answered with no reasoning item sent back).
    */
   toolReasoningOnResponsesApi?: boolean;
-  /**
-   * A router vendor's host pin per concrete model (OPENROUTER-CHEAP-LLM-1124).
-   * OpenRouter serves one model from several hosts at different prices and
-   * quantizations, so each model we call names the ONE host its catalog price
-   * is read from: `postVendorChatCompletion` sends `wireModel` with
-   * `provider: {order: [slug], only: [slug], allow_fallbacks: false}`, and
-   * refuses an answer that names another host or model (the same doctrine as
-   * `assertModelMatches`: a cost row must name what ran). The key is OUR model id
-   * (`<wireModel>@<host>`), because the same weights already exist under the
-   * bare id would name the same weights at every host. This is a
-   * RESTRICTION to one host, never a fallback: nothing here lets the router
-   * pick another one.
-   */
-  hostPins?: Record<string, HostPin>;
-  /**
-   * The JSON form per concrete model, where a vendor's models differ (a router
-   * forwards to hosts that implement different forms). Absent = `structuredOutput`.
-   */
-  structuredOutputByModel?: Record<string, "json_schema" | "json_object">;
-}
-
-/** One model pinned to one host of a router vendor (`VendorConfig.hostPins`). */
-export interface HostPin {
-  /** The router's model id, sent as `model`. */
-  wireModel: string;
-  /** The router's canonical (dated) id of the same model, also accepted back in `model`. */
-  canonical: string;
-  /** The endpoint slug, `provider[/variant]` (a variant such as `fp8` pins the quantization too). */
-  slug: string;
-  /** The host's display name, as the router echoes it in `provider`. */
-  name: string;
 }
 
 /**
@@ -1179,139 +1142,6 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     isOutOfCreditRefusal: (s) =>
       s.code === "credit_balance_exhausted" || s.type === "insufficient_quota",
   },
-  // OPENROUTER-CHEAP-LLM-1124 (owner 2026-11-24): the cheapest open models of the market, compared by the Rating
-  // to ours, through ONE router account (its 5.5% credit fee sits in the catalogue price, beside each host's list
-  // price) instead of one account per host. Each model is PINNED to one host (`hostPins`): the catalogue prices
-  // that host, so the router may never pick a cheaper or quantized one. Every fact below is read on 2026-11-24
-  // from https://openrouter.ai/api/v1/models/<id>/endpoints and the router's docs, NOT probed live: no key existed
-  // that day. Re-probe each (structured output per model, the reasoning fields, a tool round, the `provider` and
-  // `model` echoed back) when the platform key is registered.
-  openrouter: {
-    id: "openrouter",
-    label: "OpenRouter",
-    baseUrl: "https://openrouter.ai/api/v1",
-    docsUrl: "https://openrouter.ai/docs",
-    // The OpenAI location, both counts (usage accounting doc: `cache_write_tokens` only for hosts with explicit
-    // caching and a write price).
-    readCachedTokens: (usage) => usage.prompt_tokens_details?.cached_tokens ?? 0,
-    readCacheWriteTokens: (usage) => usage.prompt_tokens_details?.cache_write_tokens ?? 0,
-    // Every model carries the same four rows: a host that prices no cache hit (Llama on DeepInfra) or no cache
-    // write has those rows at its input price (what it invoices). Qwen 3.7 Flash on Alibaba is priced by prompt
-    // length (over 32K and over 256K tokens): its `-long-context-` rows carry the TOP tier, so a long prompt is
-    // never billed under what the host charges. DeepSeek V4.1 Flash on Alibaba doubles its price 00:00-14:00 UTC:
-    // its rows carry that peak price, the cheap hours are margin (the catalogue's peak rule).
-    pricing: {
-      kind: "priced",
-      cachedInput: true,
-      regime: null,
-      cacheWrite: true,
-      longContextAboveInputTokensByPrefix: { "openrouter-alibaba-qwen3.7-flash": 32_000 },
-    },
-    concurrency: {
-      scope: "unpublished",
-      note:
-        "OpenRouter publishes no in-flight cap for paid models (rate limits scale with the credit balance); each " +
-        "pinned host has its own capacity, unread. A 429 the retries do not clear moves the call down the fallback order.",
-      source: "https://openrouter.ai/docs/api-reference/limits",
-      observedOn: "2026-11-24",
-    },
-    sampling: {
-      accepted: true,
-      note: "Every pinned endpoint lists temperature in its supported parameters (endpoints API, 2026-11-24).",
-    },
-    // Every pinned endpoint lists `max_tokens`; HY4 Flash's lists `max_completion_tokens` too, the others not.
-    maxOutputTokensField: "max_tokens",
-    imageInput: false,
-    // The pinned endpoint's `supported_parameters` decide the form: `structured_outputs` = the schema form is
-    // honoured; `response_format` alone = the host takes JSON mode only (the router passes a schema it cannot
-    // honour through, or drops it).
-    structuredOutput: "json_schema",
-    structuredOutputByModel: {
-      "deepseek/deepseek-v4.1-flash-1017@alibaba": "json_object",
-      "qwen/qwen3.7-flash@alibaba": "json_object",
-      "meta-llama/llama-3.1-8b-instruct@deepinfra": "json_object",
-    },
-    schemaEnforced: false,
-    // The router's own field, `reasoning`, the same for every host. GPT-OSS cannot stop reasoning
-    // (`mandatory: true`, efforts high|medium|low): `low` is its floor. Llama 3.1 8B does not reason: nothing sent.
-    reasoning: {
-      kind: "disablable",
-      requestFields: { reasoning: { enabled: false } },
-      perModel: {
-        "openai/gpt-oss-20b@deepinfra": { reasoning: { effort: "low" } },
-        "openai/gpt-oss-120b@deepinfra": { reasoning: { effort: "low" } },
-        "meta-llama/llama-3.1-8b-instruct@deepinfra": {},
-      },
-      refusedBy: {},
-      source: "https://openrouter.ai/docs/guides/best-practices/reasoning-tokens",
-      evidence:
-        "Models API read 2026-11-24, NOT probed live (no key): mandatory=false on Ling 3.0 Tiny, Nex-N2.5-Mini, " +
-        "HY4 Flash, DeepSeek V4.1 Flash 1017, Qwen 3.7 Flash; mandatory=true (high|medium|low) on gpt-oss-20b/120b; " +
-        "no reasoning on Llama 3.1 8B.",
-    },
-    // Levels only where the model publishes its efforts and the pinned endpoint takes `reasoning_effort`
-    // (models + endpoints API, 2026-11-24, not probed with a tool call). The others run at their default.
-    thinkingLevels: {
-      "deepseek/deepseek-v4.1-flash-1017@alibaba": ["none", "low", "high", "max"],
-      "nex-agi/nex-n2.5-mini@nex-agi": ["none", "medium", "high"],
-      "openai/gpt-oss-20b@deepinfra": ["low", "medium", "high"],
-      "openai/gpt-oss-120b@deepinfra": ["low", "medium", "high"],
-    },
-    hostPins: {
-      "inclusionai/ling-3.0-tiny@antdigital": {
-        wireModel: "inclusionai/ling-3.0-tiny",
-        canonical: "inclusionai/ling-3.0-tiny-20260806",
-        slug: "antdigital/fp8",
-        name: "Ant Digital",
-      },
-      "nex-agi/nex-n2.5-mini@nex-agi": {
-        wireModel: "nex-agi/nex-n2.5-mini",
-        canonical: "nex-agi/nex-n2.5-mini-20260908",
-        slug: "nex-agi/bf16",
-        name: "Nex AGI",
-      },
-      "tencent/hy4-flash@tencent": {
-        wireModel: "tencent/hy4-flash",
-        canonical: "tencent/hy4-flash-20261116",
-        slug: "tencent/fp8",
-        name: "Tencent",
-      },
-      "deepseek/deepseek-v4.1-flash-1017@alibaba": {
-        wireModel: "deepseek/deepseek-v4.1-flash-1017",
-        canonical: "deepseek/deepseek-v4.1-flash-20261017",
-        slug: "alibaba",
-        name: "Alibaba",
-      },
-      "qwen/qwen3.7-flash@alibaba": {
-        wireModel: "qwen/qwen3.7-flash",
-        canonical: "qwen/qwen3.7-flash-20260727",
-        slug: "alibaba",
-        name: "Alibaba",
-      },
-      "meta-llama/llama-3.1-8b-instruct@deepinfra": {
-        wireModel: "meta-llama/llama-3.1-8b-instruct",
-        canonical: "meta-llama/llama-3.1-8b-instruct",
-        slug: "deepinfra/fp8",
-        name: "DeepInfra",
-      },
-      // `deepinfra/bf16` never matches the `deepinfra/bf16/flex` tier endpoint (a dropped tier segment never
-      // matches a tier endpoint, routing doc).
-      "openai/gpt-oss-20b@deepinfra": {
-        wireModel: "openai/gpt-oss-20b",
-        canonical: "openai/gpt-oss-20b",
-        slug: "deepinfra/bf16",
-        name: "DeepInfra",
-      },
-      "openai/gpt-oss-120b@deepinfra": {
-        wireModel: "openai/gpt-oss-120b",
-        canonical: "openai/gpt-oss-120b",
-        slug: "deepinfra/bf16",
-        name: "DeepInfra",
-      },
-    },
-    // OpenRouter answers 402 when the credit balance cannot pay the request (errors doc).
-    isOutOfCreditRefusal: (s) => s.status === 402,
-  },
 };
 
 /**
@@ -1540,8 +1370,6 @@ export interface VendorResponseBody {
   choices?: VendorChoice[];
   usage?: VendorUsage;
   error?: { message?: string; type?: string; code?: string } | string;
-  /** OpenRouter: the host that served the request (its display name). */
-  provider?: string;
 }
 
 /** Walk an error (and any `cause` / AggregateError chain) for a transient connect code. */
@@ -1694,8 +1522,7 @@ export function buildVendorRequestBody(options: VendorCompleteOptions): Record<s
   // The schema is not sent because the vendor has nowhere to put it, so it
   // stops being enforced provider-side; the strict parse downstream still is.
   if (responseSchema != null) {
-    const vendorForm = vendorConfig(options.vendor);
-    if ((vendorForm.structuredOutputByModel?.[model] ?? vendorForm.structuredOutput) === "json_schema") {
+    if (vendorConfig(options.vendor).structuredOutput === "json_schema") {
       body.response_format = {
         type: "json_schema",
         json_schema: { name: "response", schema: responseSchema },
@@ -2058,9 +1885,7 @@ export async function postVendorChatCompletion(args: {
   const config = vendorConfig(vendor);
   const responsesApi = usesResponsesApi(vendor, model, body);
   const url = `${config.baseUrl}${responsesApi ? "/responses" : "/chat/completions"}`;
-  const pin = config.hostPins?.[model];
-  const pinnedBody = pin ? withHostPin(body, pin) : body;
-  const wireBody = responsesApi ? toResponsesRequest(pinnedBody) : pinnedBody;
+  const wireBody = responsesApi ? toResponsesRequest(body) : body;
 
   let lastConnectError: unknown = null;
   let connectAttempt = 0;
@@ -2219,39 +2044,10 @@ export async function postVendorChatCompletion(args: {
     }
 
     const json = await res.json();
-    const answer = responsesApi ? fromResponsesBody(json as ResponsesApiBody) : (json as VendorResponseBody);
-    return pin ? fromPinnedHost(vendor, model, pin, answer) : answer;
+    return responsesApi ? fromResponsesBody(json as ResponsesApiBody) : (json as VendorResponseBody);
   }
 }
 
-/** The request a host-pinned model is sent as: the router's model id + the one host allowed (`hostPins`). */
-export function withHostPin(
-  body: Record<string, unknown>,
-  pin: HostPin,
-): Record<string, unknown> {
-  return { ...body, model: pin.wireModel, provider: { order: [pin.slug], only: [pin.slug], allow_fallbacks: false } };
-}
-
-/**
- * The answer of a host-pinned model, checked and named back as OUR model id. A
- * different host, or a model the router did not ask for, throws: the cost would
- * be declared at the pinned host's price for work another host did.
- */
-export function fromPinnedHost(
-  vendor: VendorId,
-  model: string,
-  pin: HostPin,
-  answer: VendorResponseBody,
-): VendorResponseBody {
-  if (answer.provider && answer.provider.trim().toLowerCase() !== pin.name.toLowerCase()) {
-    throw new VendorProviderError(
-      `[vendor:${vendor}] Host mismatch: "${model}" is pinned to ${pin.name} but was served by "${answer.provider}". ` +
-        `Refusing to declare cost at ${pin.name}'s price.`,
-    );
-  }
-  if (answer.model?.trim().toLowerCase() !== pin.canonical.toLowerCase()) assertModelMatches(pin.wireModel, answer.model);
-  return { ...answer, model };
-}
 
 /**
  * Caller-facing message for a key-service resolution failure.
