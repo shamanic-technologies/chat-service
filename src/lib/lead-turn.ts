@@ -32,7 +32,7 @@ import type { db as Db } from "../db/index.js";
 import { copilotLeadTurns, sessions } from "../db/schema.js";
 import type { LeadTurnRequest } from "../schemas.js";
 import { todayLine } from "../agent/situation.js";
-import { AFTER_SIGN_IN_LINE, AMBIGUITY_LINE, QUOTE_AND_PHOTO_LINES, buildChannelBlock, type PhoneAccount } from "./channel-copilot.js";
+import { AFTER_SIGN_IN_LINE, AMBIGUITY_LINE, QUOTE_AND_PHOTO_LINES, buildChannelBlock, identityLines, type PhoneAccount } from "./channel-copilot.js";
 import { COPILOT_CONFIG_KEY } from "./copilot-unibox.js";
 import { BRAND_TOOLS_LINE } from "./brand-mcp.js";
 import { REACH_ELSEWHERE_TOOL_NAME, forgetLeadTurnCaller, registerLeadTurnCaller } from "./lead-contact.js";
@@ -106,6 +106,11 @@ export interface LeadTurnFrame {
   guest: boolean;
   /** The session is tied to the person's WhatsApp number (sign-in possible). */
   phoneBound: boolean;
+  /**
+   * Our own brand, by email: the session is tied to the address they write from
+   * (DISTRY-START-DOOR-1125), so they sign up right in the thread.
+   */
+  emailBound?: boolean;
   afterSignIn: boolean;
   /** The clock of the turn (a replay passes the scenario's day). */
   now?: Date;
@@ -177,11 +182,17 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
       `Our records hold an email for them (${payload.recipient.email}), but no distribute.you account uses it: it may be old or not the one they want. Never start a sign-in with it on your own; when they want to start, ask which email their account should use.`,
     );
   }
-  if (ownBrand && guest && !phoneBound) {
+  const emailDoor = ownBrand && frame.emailBound === true && Boolean(payload.recipient.email);
+  if (emailDoor) {
+    // The same identity lines as every channel (channel-copilot.ts): the thread is where they sign up.
+    lines.push(
+      ...identityLines({ guest, place: "This email thread", numberKnown: false, canSignIn: true, writesFrom: guest ? payload.recipient.email ?? undefined : undefined, afterSignIn: frame.afterSignIn }),
+    );
+  } else if (ownBrand && guest && !phoneBound) {
     lines.push("We host no account for this person that you can read: you see no account and can change nothing; never claim to see their brands, campaigns or figures.");
   }
-  // The channel block already carries it (one line for every channel, channel-copilot.ts).
-  if (frame.afterSignIn && !channelBlock) lines.push(AFTER_SIGN_IN_LINE);
+  // The channel block (or the identity lines) already carries it (one line for every channel, channel-copilot.ts).
+  if (frame.afterSignIn && !channelBlock && !emailDoor) lines.push(AFTER_SIGN_IN_LINE);
   lines.push(todayLine(frame.now ?? new Date()));
   lines.push("### How the campaign asks you to decide", payload.systemPrompt.trim(), "### What the campaign knows", payload.message.trim());
   const moment = payload.medium === "whatsapp" && frame.whatsapp ? whatsappMomentBlock(frame.whatsapp, REPLY_TO_FIELD) : "";
@@ -392,9 +403,21 @@ export async function pickLeadSession(
       .limit(1);
     if (guestSession) return { sessionId: guestSession.id, orgId: guestSession.orgId, userId: guestSession.userId!, guest: true, phoneBound: true, planOrgId: guestSession.planOrgId ?? null };
   }
+  // A stranger writing to us by email (DISTRY-START-DOOR-1125): ONE conversation per address on our
+  // brand, as a number has, so the sign-up and their plan carry from one email to the next.
+  const email = ownBrand && !phone && payload.medium === "email" && payload.recipient.email ? payload.recipient.email.trim().toLowerCase() : null;
+  if (email) {
+    const [guestSession] = await db
+      .select()
+      .from(sessions)
+      .where(and(eq(sessions.channelEmail, email), eq(sessions.guest, true), eq(sessions.leadThread, true), eq(sessions.configKey, COPILOT_CONFIG_KEY), isNull(sessions.webVisitorId)))
+      .orderBy(desc(sessions.updatedAt))
+      .limit(1);
+    if (guestSession) return { sessionId: guestSession.id, orgId: guestSession.orgId, userId: guestSession.userId!, guest: true, phoneBound: false, planOrgId: guestSession.planOrgId ?? null };
+  }
   const [created] = await db
     .insert(sessions)
-    .values({ orgId: caller.orgId, userId: caller.userId, parentRunId: caller.runId, configKey: COPILOT_CONFIG_KEY, channelPhone: phone, guest: true, leadThread: true, brandIds: [payload.brandId] })
+    .values({ orgId: caller.orgId, userId: caller.userId, parentRunId: caller.runId, configKey: COPILOT_CONFIG_KEY, channelPhone: phone, channelEmail: email, guest: true, leadThread: true, brandIds: [payload.brandId] })
     .returning({ id: sessions.id });
   return { sessionId: created.id, orgId: caller.orgId, userId: caller.userId, guest: true, phoneBound: Boolean(phone) };
 }

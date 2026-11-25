@@ -306,12 +306,17 @@ import {
   TELEGRAM_CHANNEL,
   TELEGRAM_TASK_NAME,
   acceptTelegramMessage,
+  buildTelegramDoorBlock,
   enqueueTelegramMessage,
+  linkTelegramChat,
   orgTelegramLinker,
   recoverTelegramMessages,
   resolveTelegramChat,
+  sendTelegramToChat,
   sendTelegramToOrg,
+  telegramOpening,
   type TelegramDeps,
+  type TelegramDoorFacts,
 } from "./lib/telegram-copilot.js";
 import {
   WEB_CHANNEL,
@@ -4182,12 +4187,18 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // the sign-in tools only; a known person keeps every tool plus sign-in.
   let channelSession: { channelPhone: string; guest: boolean } | null = null;
   let sessionIsGuest = false;
+  // The conversation's own handles (set only by chat-service): the Telegram chat
+  // that opened it with no account, the email a guest writes to us from.
+  let sessionDoor: { telegramChatId: string | null; channelEmail: string | null; webVisitorId: string | null; leadThread: boolean } | null = null;
   if (sessionId) {
     const [s] = await db
-      .select({ orgId: sessions.orgId, userId: sessions.userId, channelPhone: sessions.channelPhone, guest: sessions.guest })
+      .select({ orgId: sessions.orgId, userId: sessions.userId, channelPhone: sessions.channelPhone, guest: sessions.guest, telegramChatId: sessions.telegramChatId, channelEmail: sessions.channelEmail, webVisitorId: sessions.webVisitorId, leadThread: sessions.leadThread })
       .from(sessions)
       .where(eq(sessions.id, sessionId));
-    if (s && isSessionOwner(s, { orgId, userId })) sessionIsGuest = s.guest;
+    if (s && isSessionOwner(s, { orgId, userId })) {
+      sessionIsGuest = s.guest;
+      sessionDoor = { telegramChatId: s.telegramChatId, channelEmail: s.channelEmail, webVisitorId: s.webVisitorId, leadThread: s.leadThread };
+    }
     if (s?.channelPhone && isSessionOwner(s, { orgId, userId })) {
       channelSession = { channelPhone: s.channelPhone, guest: s.guest };
     }
@@ -4213,6 +4224,10 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       ownBrand: copilotOwnBrandId() === payload.brandId,
       guest: sessionIsGuest,
       phoneBound: channelSession !== null,
+      // A guest who writes to us by email (DISTRY-START-DOOR-1125): their lead thread is tied to the
+      // address they write from (lead-turn.ts pickLeadSession), and they sign up from there.
+      emailBound:
+        copilotOwnBrandId() === payload.brandId && payload.medium === "email" && Boolean(sessionDoor?.channelEmail) && !sessionDoor?.webVisitorId && sessionDoor?.leadThread === true,
       afterSignIn: t.signedIn && !sessionIsGuest,
       // The WhatsApp conversation as WhatsApp shows it, read by processLeadTurn (SOPHIE-WA-HUMAN-1106).
       whatsapp: payload.medium === "whatsapp" ? leadTurnMoment(parsed.data.leadTurnId) : null,
@@ -4247,12 +4262,15 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // session, unlocks the Telegram form. A proactive turn delivered to the org's
   // linked Telegram asks for the same form through context.channel.
   let telegramTurn = false;
+  // A Telegram chat that opened the bot with no account (DISTRY-START-DOOR-1125): its own
+  // conversation, where the person signs up; null on a linked account's own thread.
+  let telegramDoor: (TelegramDoorFacts & { opening: boolean }) | null = null;
   // A visitor of our public site (POST /internal/copilot/web-messages,
   // DISTRY-WEB-CHAT-1117): same unlock, its own form + the WhatsApp hand-off tool.
   let webTurn: WebTurnFacts | null = null;
   if (parsed.data.channelMessageId) {
     const [m] = await db
-      .select({ channel: channelInboundMessages.channel, status: channelInboundMessages.status, orgId: channelInboundMessages.orgId, userId: channelInboundMessages.userId, sessionId: channelInboundMessages.sessionId, senderPhone: channelInboundMessages.senderPhone, signedIn: channelInboundMessages.signedIn })
+      .select({ channel: channelInboundMessages.channel, status: channelInboundMessages.status, orgId: channelInboundMessages.orgId, userId: channelInboundMessages.userId, sessionId: channelInboundMessages.sessionId, senderPhone: channelInboundMessages.senderPhone, signedIn: channelInboundMessages.signedIn, payload: channelInboundMessages.payload })
       .from(channelInboundMessages)
       .where(eq(channelInboundMessages.id, parsed.data.channelMessageId));
     if (nudge || leadTurn || proactiveTurn || !m || (m.channel !== TELEGRAM_CHANNEL && m.channel !== WEB_CHANNEL) || m.status !== "processing" || m.orgId !== orgId || m.userId !== userId || !sessionId || m.sessionId !== sessionId) {
@@ -4267,6 +4285,15 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       webTurn = { whatsapp: s?.channelPhone ?? null, email: s?.channelEmail ?? null, guest: sessionIsGuest, afterSignIn: m.signedIn && !sessionIsGuest };
     } else {
       telegramTurn = true;
+      if (sessionDoor?.telegramChatId && sessionDoor.telegramChatId === m.senderPhone) {
+        const afterSignIn = m.signedIn && !sessionIsGuest;
+        telegramDoor = {
+          guest: sessionIsGuest,
+          afterSignIn,
+          // The bot's deep link opened the chat: the message is our trigger, never their words.
+          opening: !afterSignIn && telegramOpening((m.payload as { text?: string | null } | null)?.text) !== null,
+        };
+      }
     }
   } else if (proactiveTurn && (context?.channel as { kind?: unknown } | undefined)?.kind === TELEGRAM_CHANNEL) {
     telegramTurn = true;
@@ -4294,15 +4321,15 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   const sessionToolNames: string[] = sessionToolNamesFor({
     configTools: configAllowedToolNames,
     guest: sessionIsGuest,
-    // Where the session can become theirs: a WhatsApp number or a website visitor is tied to it.
-    canSignIn: channelSession !== null || webTurn !== null,
+    // Where the session can become theirs: a WhatsApp number, a website visitor or a Telegram chat is tied to it.
+    canSignIn: channelSession !== null || webTurn !== null || telegramDoor !== null,
     website: webTurn !== null,
   });
   // A lead turn: the person's tools only on our brand (their account's, or a
   // guest's); another brand's lead turn gets the answer only.
   const leadSessionToolNames: string[] = !leadTurn || !leadTurn.ownBrand
     ? []
-    : sessionToolNamesFor({ configTools: configAllowedToolNames, guest: leadTurn.guest, canSignIn: channelSession !== null, website: false });
+    : sessionToolNamesFor({ configTools: configAllowedToolNames, guest: leadTurn.guest, canSignIn: channelSession !== null || leadTurn.emailBound === true, website: false });
   // A config that speaks to a person (it reads our skills) also reads our public
   // site, guests included; another brand's lead turn does not speak for us.
   const speaksForUs = configAllowedToolNames.includes("read_skill") && (!leadTurn || leadTurn.ownBrand);
@@ -4336,7 +4363,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // A trigger the user did not write (nudge, proactive turn, the answer right
   // after a WhatsApp sign-in): stored hidden, never filed in the staff Unibox
   // as the user's words.
-  const hiddenTrigger = nudge === true || proactiveTurn || leadTurn !== null || channelTurn?.afterSignIn === true || webTurn?.afterSignIn === true;
+  const hiddenTrigger = nudge === true || proactiveTurn || leadTurn !== null || channelTurn?.afterSignIn === true || webTurn?.afterSignIn === true || telegramDoor?.afterSignIn === true || telegramDoor?.opening === true;
   const promptContext = context && "channel" in context
     ? Object.fromEntries(Object.entries(context).filter(([k]) => k !== "channel"))
     : context;
@@ -4522,6 +4549,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   promptData.campaignInputs = campaignFeatureInputs;
   promptData.requestContext = (promptContext as Record<string, unknown> | undefined) ?? null;
   if (leadTurn) promptData.leadTurnBlock = buildLeadTurnBlock(leadTurn);
+  else if (telegramDoor) promptData.telegramDoorBlock = buildTelegramDoorBlock(telegramDoor);
   else if (telegramTurn) promptData.telegram = true;
   else if (webTurn) promptData.websiteBlock = buildWebBlock(webTurn);
   else if (channelTurn && channelSession) promptData.whatsappBlock = buildChannelBlock(channelTurn, channelSession.guest);
@@ -4872,7 +4900,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     // A guest's plan (DISTRY-ONE-AI-1118 B): opened on their website, then every call runs AS the
     // unclaimed org, on one run of its own per turn (its spend lands on that org's trial seed).
     let planRun: { orgId: string; runId: Promise<string> } | null = null;
-    const planChannel = webTurn ? "website_chat" : leadTurn?.payload.medium === "email" ? "email_chat" : "whatsapp_chat";
+    const planChannel = webTurn ? "website_chat" : telegramDoor ? "telegram_chat" : leadTurn?.payload.medium === "email" ? "email_chat" : "whatsapp_chat";
     const guestPlanDeps = (args: Record<string, unknown>) => ({
       readPlan: () => readSessionPlan(currentSessionId!),
       savePlan: (plan: PlanOrg) => saveSessionPlan(currentSessionId!, plan),
@@ -5217,7 +5245,9 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       // delivered message), never the model's or the caller's.
       if (call.name === START_SIGN_IN_TOOL_NAME || call.name === COMPLETE_SIGN_IN_TOOL_NAME) {
         const args = (call.args as Record<string, unknown>) || {};
-        if (!channelSession && !webTurn) throw new Error(`${call.name} works only in a conversation tied to the person (WhatsApp or our website).`);
+        if (!channelSession && !webTurn && !telegramDoor && !leadTurn?.emailBound) {
+          throw new Error(`${call.name} works only in a conversation tied to the person (WhatsApp, Telegram, their email or our website).`);
+        }
         // WhatsApp verified the sender's number: it is the session's, and the
         // completion ties it to the account. On our website nothing verified one:
         // the visitor types it (every signup leaves a number) and it is never
@@ -5265,7 +5295,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           ok: true,
           signedIn: signed.account.email,
           accountCreated: signed.account.created,
-          note: `${webTurn ? "This conversation" : "This WhatsApp number"} is now tied to this account. Right after this reply you answer again, automatically, with its access, and that answer is the one they read in place of this reply: here just say in a few words that they are in. Never ask them to send anything to continue.`,
+          note: `${channelSession ? "This WhatsApp number" : "This conversation"} is now tied to this account. Right after this reply you answer again, automatically, with its access, and that answer is the one they read in place of this reply: here just say in a few words that they are in. Never ask them to send anything to continue.`,
           ...(plan ? { plan: `The plan built in this conversation${plan.domain ? ` (${plan.domain})` : ""} is now in this account.` } : {}),
         };
         toolCalls.push({ name: call.name, args: { email: args.email }, result });
@@ -7238,6 +7268,7 @@ app.get("/internal/copilot/distry-spend/daily", requireInternalAuth, async (req,
 
 const telegramDeps: TelegramDeps = {
   db,
+  copilotLine: () => copilotLineFromEnv(),
   resolveChat: (chatId) => resolveTelegramChat(chatId),
   listBrandIds: (identity) => listOrgBrandIds(identity),
   createRootRun: (identity) => createChannelRootRun(identity, fetch, TELEGRAM_TASK_NAME),
@@ -7256,7 +7287,8 @@ const telegramDeps: TelegramDeps = {
     });
     return { status: res.status, body: await res.text() };
   },
-  sendReply: (args) => sendTelegramToOrg(args),
+  sendReply: (args) => sendTelegramToChat(args),
+  linkChat: (args) => linkTelegramChat(args),
   spend: distryGateLive,
 };
 
@@ -7269,7 +7301,7 @@ app.post("/internal/copilot/telegram-messages", requireInternalAuth, async (req,
   try {
     accepted = await acceptTelegramMessage(telegramDeps, parsed.data);
   } catch (err) {
-    console.error(`[chat-service] telegram chat ${parsed.data.chatId}: could not read its link:`, err);
+    console.error(`[chat-service] telegram chat ${parsed.data.chatId}: could not read who it is:`, err);
     return res.status(502).json({ error: `Could not read whether this chat is linked: ${err instanceof Error ? err.message : String(err)}` });
   }
   if (accepted.status !== "accepted") return res.status(200).json({ status: accepted.status });

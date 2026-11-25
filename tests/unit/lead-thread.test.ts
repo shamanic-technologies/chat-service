@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { leadTurnStoredText, pickLeadSession } from "../../src/lib/lead-turn.js";
+import { buildLeadTurnBlock, leadTurnStoredText, pickLeadSession } from "../../src/lib/lead-turn.js";
 import type { LeadTurnRequest } from "../../src/schemas.js";
 
 // SOPHIE-JCURVE-1102, prod 2026-11-01: four Lead event turns about Jcurve's CMO
@@ -65,5 +65,52 @@ describe("lead turns run in a lead thread, never the person's web chat", () => {
       '(Nothing sent to them now. Decision: {"decision":"later","followUpAt":"2026-11-05"})',
     );
     expect(leadTurnStoredText({ message: "   " }, "message")).toBe("(Nothing sent to them now.)");
+  });
+});
+
+// DISTRY-START-DOOR-1125: a stranger who writes to us by email talks with Distry in ONE
+// conversation per address on our brand (as a WhatsApp number has), and signs up there.
+describe("the email door: a stranger writing to our brand", () => {
+  const stranger = { ...payload, recipient: { email: "Visitor@Example.com", phone: null } } as unknown as LeadTurnRequest;
+
+  it("a first email opens a guest lead thread tied to the address they write from", async () => {
+    const { db, inserts } = fakeDb([]);
+    const picked = await pickLeadSession({ db: db as never, listBrandIds: async () => [] }, { payload: stranger, ownBrand: true, account: null, caller, runId: "run-1" });
+    expect(inserts[0]).toMatchObject({ channelEmail: "visitor@example.com", guest: true, leadThread: true, orgId: "org-ours" });
+    expect(picked).toMatchObject({ guest: true, phoneBound: false });
+  });
+
+  it("their next email continues that same conversation (its plan and sign-up carry)", async () => {
+    const { db, wheres, inserts } = fakeDb([{ id: "s-email", orgId: "org-ours", userId: "u-ours", guest: true, planOrgId: "plan-1" }]);
+    const picked = await pickLeadSession({ db: db as never, listBrandIds: async () => [] }, { payload: stranger, ownBrand: true, account: null, caller, runId: "run-1" });
+    expect(wheres[0]).toContain('"channel_email" = $');
+    expect(wheres[0]).toContain('"web_visitor_id" is null');
+    expect(inserts).toHaveLength(0);
+    expect(picked).toMatchObject({ sessionId: "s-email", guest: true, planOrgId: "plan-1" });
+  });
+
+  it("another brand's lead is never tied to an address of ours", async () => {
+    const { db, inserts } = fakeDb([]);
+    await pickLeadSession({ db: db as never, listBrandIds: async () => [] }, { payload: stranger, ownBrand: false, account: null, caller, runId: "run-1" });
+    expect(inserts[0]).toMatchObject({ channelEmail: null });
+  });
+
+  it("the turn tells Distry they sign up right in the thread, with the address they write from", () => {
+    const frame = {
+      payload: { ...stranger, systemPrompt: "Decide.", message: "Thread.", recipient: { email: "visitor@example.com", phone: null } } as unknown as LeadTurnRequest,
+      ownBrand: true,
+      guest: true,
+      phoneBound: false,
+      emailBound: true,
+      afterSignIn: false,
+      now: new Date("2026-11-25T10:00:00Z"),
+    };
+    const block = buildLeadTurnBlock(frame);
+    expect(block).toContain("They write to us from visitor@example.com");
+    expect(block).toContain("start_sign_in");
+    expect(block).not.toContain("We host no account for this person");
+    expect(buildLeadTurnBlock({ ...frame, emailBound: false })).toContain("We host no account for this person");
+    const after = buildLeadTurnBlock({ ...frame, guest: false, afterSignIn: true });
+    expect(after.match(/They signed in a moment ago/g)).toHaveLength(1);
   });
 });
