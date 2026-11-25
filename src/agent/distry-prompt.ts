@@ -159,6 +159,16 @@ export const PROMPT_PARTS: readonly PromptPartSpec[] = [
     codeText: buildTelegramBlock(),
   },
   {
+    id: "telegram-door",
+    name: "Telegram, before their account",
+    purpose: "How to write on Telegram in a chat that opened our bot with no account: the form, who the person is, the sign-up in the chat (DISTRY-START-DOOR-1125).",
+    when: "A Telegram turn in a chat that opened our bot with no account: before their sign-up, and the answer right after it.",
+    kind: "live",
+    place: "ordered",
+    placeholders: { telegramDoorBlock: "The block built for this chat: form, identity, sign-up." },
+    codeText: "{{telegramDoorBlock}}",
+  },
+  {
     id: "website",
     name: "Website form",
     purpose: "How to write in the chat window of our website, who the visitor is, and the hand-off to another channel.",
@@ -400,6 +410,8 @@ export interface TurnPromptData {
   requestContext: Record<string, unknown> | null;
   leadTurnBlock: string | null;
   telegram: boolean;
+  /** A Telegram chat that opened our bot with no account (telegram-copilot.ts buildTelegramDoorBlock). */
+  telegramDoorBlock: string | null;
   websiteBlock: string | null;
   whatsappBlock: string | null;
   dashboard: boolean;
@@ -415,7 +427,7 @@ export interface TurnPromptData {
 
 export function emptyTurnPromptData(role: string): TurnPromptData {
   return {
-    role, skillIndex: null, modelName: null, campaignInputs: null, requestContext: null, leadTurnBlock: null, telegram: false,
+    role, skillIndex: null, modelName: null, campaignInputs: null, requestContext: null, leadTurnBlock: null, telegram: false, telegramDoorBlock: null,
     websiteBlock: null, whatsappBlock: null, dashboard: false, enginesUnreadable: null, clientBrief: null, situationBrief: null, waitingCampaignId: null, brandTools: false,
     carriedWork: null,
   };
@@ -431,6 +443,7 @@ function partValues(id: string, d: TurnPromptData): Record<string, string> | nul
     case "request-context": return d.requestContext && Object.keys(d.requestContext).length > 0 ? { requestContext: JSON.stringify(d.requestContext, null, 2) } : null;
     case "lead-turn": return d.leadTurnBlock !== null ? { leadTurnBlock: d.leadTurnBlock } : null;
     case "telegram": return d.telegram ? {} : null;
+    case "telegram-door": return d.telegramDoorBlock !== null ? { telegramDoorBlock: d.telegramDoorBlock } : null;
     case "website": return d.websiteBlock !== null ? { websiteBlock: d.websiteBlock } : null;
     case "whatsapp": return d.whatsappBlock !== null ? { whatsappBlock: d.whatsappBlock } : null;
     case "dashboard-pages": return d.dashboard ? {} : null;
