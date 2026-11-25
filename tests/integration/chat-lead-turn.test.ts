@@ -164,6 +164,8 @@ function baseRoutes(gemini: { bodies: Array<Record<string, unknown>>; replies: G
     { match: (url) => url.includes("/internal/users?email="), respond: () => ({ ok: true, body: { users: [] } }) },
     // DISTRY-GUEST-CAPS-1119: an account's turn asks billing whether the org pays (a paying client is never capped).
     { match: (url) => url.includes("/internal/accounts/by-org/") && url.endsWith("/cash"), respond: () => ({ ok: true, body: { cash_paid_cents: 5000, credited_cents: 5000, non_cash_credit_cents: 0 } }) },
+    // SOLO-PLAN-1125: billing's solo-plan verdict, read on every Distry turn of an account (this one is not on the plan).
+    { match: (url) => url.includes("/internal/accounts/by-org/") && url.endsWith("/solo-plan/ai-gate"), respond: () => ({ ok: true, body: { on_solo_plan: false, plan: null, may_use_our_keys: true, refused_reason: null, debt_cents: null, debt_limit_cents: null, upgrade_url: null, next_step: null } }) },
     { match: (url) => url.includes("/internal/users/"), respond: () => ({ ok: true, body: { user: { email: "owner@acme.example" } } }) },
     { match: (url) => url.includes("/keys/google/decrypt"), respond: () => ({ ok: true, body: { provider: "google", key: "fake", keySource: "platform" } }) },
     { match: (url, init) => url.endsWith("/v1/runs") && init?.method === "POST", respond: () => ({ ok: true, status: 201, body: { id: RUN, status: "running" } }) },
