@@ -155,6 +155,21 @@ export class VendorUnsupportedOptionError extends VendorProviderError {
  * long — so a persistently saturated vendor stays VISIBLE instead of being
  * smoothed away by the retry that precedes it.
  */
+/**
+ * The vendor sent nothing (no response headers) within the caller's silence
+ * limit (COPILOT-LATENCY-1125, owner 2026-11-25 « Limit must be 30s non? » → B).
+ * These calls do not stream: no byte arrives until the model's whole step is
+ * done, so "silent" means the step outlived the limit. Only the Copilot's /chat
+ * rounds pass one (a person is waiting); the turn moves to the next model of
+ * Distry's fallback order with what it already looked up.
+ */
+export class VendorSilentError extends VendorProviderError {
+  constructor(readonly vendor: VendorId, readonly model: string, readonly silentMs: number) {
+    super(`[vendor:${vendor}] "${model}" sent nothing for ${Math.round(silentMs / 1000)}s: the call was cut`);
+    this.name = "VendorSilentError";
+  }
+}
+
 export class VendorRateLimitError extends VendorProviderError {
   /** Total attempts made, including the first. */
   readonly attempts: number;
@@ -1888,8 +1903,10 @@ export async function postVendorChatCompletion(args: {
   body: Record<string, unknown>;
   reasoningDisabled: boolean;
   signal?: AbortSignal;
+  /** Cut an attempt whose response has not started after this long (VendorSilentError). Omitted = no cut. */
+  silentAfterMs?: number;
 }): Promise<VendorResponseBody> {
-  const { vendor, apiKey, model, body, reasoningDisabled, signal } = args;
+  const { vendor, apiKey, model, body, reasoningDisabled, signal, silentAfterMs } = args;
   const config = vendorConfig(vendor);
   const responsesApi = usesResponsesApi(vendor, model, body);
   const url = `${config.baseUrl}${responsesApi ? "/responses" : "/chat/completions"}`;
@@ -1908,6 +1925,11 @@ export async function postVendorChatCompletion(args: {
   for (;;) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), VENDOR_TIMEOUT_MS);
+    let silent = false;
+    const silenceTimer = silentAfterMs === undefined ? undefined : setTimeout(() => {
+      silent = true;
+      controller.abort();
+    }, silentAfterMs);
 
     let res: Response;
     try {
@@ -1922,6 +1944,8 @@ export async function postVendorChatCompletion(args: {
       });
     } catch (err) {
       clearTimeout(timeout);
+      clearTimeout(silenceTimer);
+      if (silent && !signal?.aborted) throw new VendorSilentError(vendor, model, silentAfterMs!);
       if (isTransientConnectError(err) && connectAttempt < MAX_CONNECT_RETRIES) {
         lastConnectError = err;
         console.warn(
@@ -1935,6 +1959,7 @@ export async function postVendorChatCompletion(args: {
       throw err instanceof Error ? err : new VendorProviderError(String(err ?? lastConnectError));
     } finally {
       clearTimeout(timeout);
+      clearTimeout(silenceTimer);
     }
 
     if (!res.ok) {
