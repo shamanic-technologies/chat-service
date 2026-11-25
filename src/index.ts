@@ -191,7 +191,7 @@ import { hasStaffOnlyTool, lookupRequester, toolsForRequester, type Requester } 
 import { isStaffUser } from "./lib/staff-identity.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
 import { readPlatformCaller, platformRunCreateFailure } from "./lib/platform-parent-run.js";
-import { createRun, updateRunStatus, addRunCosts, updateRunCostStatus, createPlatformRun, addPlatformRunCosts, updatePlatformRunStatus, type CostItem, type RunIdentityHeaders } from "./lib/runs-client.js";
+import { createRun, createRootRun, updateRunStatus, addRunCosts, updateRunCostStatus, createPlatformRun, addPlatformRunCosts, updatePlatformRunStatus, type CostItem, type RunIdentityHeaders } from "./lib/runs-client.js";
 import { traceEvent } from "./lib/trace-event.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
 import { extractBrandFields, BrandError } from "./lib/brand-client.js";
@@ -446,7 +446,9 @@ import {
 } from "./lib/key-client.js";
 import { authorizeCredits, BillingError, isAgentApiOrg, type AuthorizeCreditResult, type BillingRefusalReason, type SalesFunnelCap } from "./lib/billing-client.js";
 import { holdSseUntilOpen } from "./lib/held-sse.js";
-import { oneTurnAtATime, turnKeyOf } from "./lib/turn-queue.js";
+import { oneTurnAtATime, turnKeyOf, turnRunning } from "./lib/turn-queue.js";
+import { startEarlyStream, type EarlyStream } from "./lib/early-stream.js";
+import { brandIdsOfHeader, briefReadsOnTurnRun } from "./lib/brief-run.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
 import {
   createBrandFromUrl,
@@ -4040,10 +4042,51 @@ async function readSessionMessages(
 }
 
 // One turn at a time per conversation (SOPHIE-CORE-1111): a second message waits for the first turn.
+// The first bytes leave within seconds, even behind a running turn (COPILOT-LATENCY-1125, early-stream.ts).
 app.post("/chat", requireAuth, async (req, res) => {
-  const { orgId, userId } = res.locals as AuthLocals;
-  await oneTurnAtATime(turnKeyOf(req.body, { orgId, userId }), () => handleChatTurn(req, res));
+  const { orgId, userId, parentRunId } = res.locals as AuthLocals;
+  const key = turnKeyOf(req.body, { orgId, userId });
+  const startedAt = Date.now();
+  const early = opensEarly(req.body)
+    ? startEarlyStream(res, {
+        waitingBehindTurn: () => waiting,
+        keepsHttp402: () => isAgentApiOrgCached(orgId, userId, parentRunId),
+      })
+    : null;
+  res.locals.earlyStream = early;
+  let waiting = turnRunning(key);
+  let turnStartedMs = 0;
+  try {
+    await oneTurnAtATime(key, () => {
+      waiting = false;
+      turnStartedMs = Date.now() - startedAt;
+      return handleChatTurn(req, res);
+    });
+  } finally {
+    early?.stop();
+    const t = early?.timings();
+    console.log(
+      `[chat-latency] ${key} waitedMs=${turnStartedMs} firstByteMs=${t?.firstByteMs ?? "n/a"} firstTextMs=${t?.firstTextMs ?? "n/a"} ` +
+        `openedEarly=${t?.openedEarly ?? false} totalMs=${Date.now() - startedAt}`,
+    );
+  }
 });
+
+/** A person's turn read through a browser (dashboard, Telegram/WhatsApp relays excluded: chat-service's own callers). */
+function opensEarly(body: unknown): boolean {
+  const b = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  return !b.nudge && !b.leadTurnId && !b.proactiveTurnId && !b.channelMessageId && !b.webVisitorId;
+}
+
+const agentOrgMarks = new Map<string, { value: boolean; at: number }>();
+/** billing's `agent_api` mark, read once per org per 10 minutes (it is set when the org is opened). */
+async function isAgentApiOrgCached(orgId: string, userId: string, runId: string): Promise<boolean> {
+  const hit = agentOrgMarks.get(orgId);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.value;
+  const value = await isAgentApiOrg(orgId, userId, runId);
+  agentOrgMarks.set(orgId, { value, at: Date.now() });
+  return value;
+}
 
 async function handleChatTurn(req: express.Request, res: express.Response): Promise<unknown> {
   const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
@@ -4397,6 +4440,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // through the API, refused for lack of money before any byte left, then still
   // gets an HTTP 402 (the gateway turns it into its prepay instructions).
   const sse = holdSseUntilOpen(res);
+  (res.locals.earlyStream as EarlyStream | null | undefined)?.registerHold(sse);
 
   // Build system prompt with optional context and campaign feature inputs
   // A config that allows read_skill gets the skill INDEX (method + map of
@@ -4784,15 +4828,43 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     // A guest whose website opened their plan gets the same brief, read AS the plan org (the signup
     // page's reads, billed to its advance): what their site says they sell is read, never asked
     // (DISTRY-GUEST-CAPS-1119, prod 2026-11-19 dutrou.com: « you didn't check our site? »).
+    // Sophie reads where the account stands before she answers
+    // (SOPHIE-REFONTE-1102): campaigns, results, replies waiting, money, beside
+    // the client brief below. Not on a lead turn (it runs in the writing
+    // brand's org), a proactive turn or a guest (no account). Read AT THE SAME
+    // TIME as the client brief (COPILOT-LATENCY-1125: one after the other, they
+    // stood between the message and the first model call).
+    const situationRead: Promise<{ brief: string } | { error: unknown }> | null =
+      configKey === SOPHIE_CONFIG_KEY && !leadTurn && !proactiveTurn && !sessionIsGuest
+        ? buildSituationBrief(gatewaySituationReader(featureCallParams), {
+            brandId: brandIds[0] ?? null,
+            offerId: offerId ?? null,
+          }).then((b) => ({ brief: b }), (error: unknown) => ({ error }))
+        : null;
     let brief: string | null = null;
     if (speaksForUs && !sessionIsGuest && !(leadTurn && (!leadTurn.ownBrand || leadTurn.guest))) {
+      // A brand's website is read under a run that may carry that brand: the turn's run when it
+      // carries none or exactly it, else one run of the brief's own (runs-service 409s a child
+      // whose brands differ from its parent's: COPILOT-LATENCY-1125).
+      const turnRunBrandIds = brandIdsOfHeader(trackingHeaders["x-brand-id"]);
+      let briefRun: Promise<string> | null = null;
+      const siteReadParams = async (brandId: string) => {
+        if (briefReadsOnTurnRun(turnRunBrandIds, brandId)) {
+          return { ...featureCallParams, trackingHeaders: { ...(downstreamTrackingHeaders ?? {}), "x-brand-id": brandId } };
+        }
+        briefRun ??= createRootRun(
+          { serviceName: "chat-service", taskName: "client-brief", support: COPILOT_SUPPORT },
+          { orgId, userId },
+        ).then((r) => r.id);
+        return { orgId, userId, runId: await briefRun, trackingHeaders: { "x-brand-id": brandId } };
+      };
       try {
         brief = formatClientBrief(
           await readClientBrief({
             listBrands: () => listBrands(featureCallParams),
             listOffers: (brandId) => listOffers(brandId, featureCallParams),
             readWebsite: async (brandId) =>
-              readSiteFields(await extractBrandFields([...CLIENT_BRIEF_FIELDS], [brandId], featureCallParams)),
+              readSiteFields(await extractBrandFields([...CLIENT_BRIEF_FIELDS], [brandId], await siteReadParams(brandId))),
           }),
         );
       } catch (err) {
@@ -4816,15 +4888,10 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       promptData.clientBrief = brief;
       reassemblePrompt();
     }
-    // Sophie reads where the account stands before she answers
-    // (SOPHIE-REFONTE-1102): campaigns, results, replies waiting, money, after
-    // the client brief above. Not on a lead turn (it runs in the writing
-    // brand's org), a proactive turn or a guest (no account).
-    if (configKey === SOPHIE_CONFIG_KEY && !leadTurn && !proactiveTurn && !sessionIsGuest) {
-      promptData.situationBrief = await buildSituationBrief(gatewaySituationReader(featureCallParams), {
-        brandId: brandIds[0] ?? null,
-        offerId: offerId ?? null,
-      });
+    if (situationRead) {
+      const read = await situationRead;
+      if ("error" in read) throw read.error;
+      promptData.situationBrief = read.brief;
       reassemblePrompt();
     }
     // The writing brand's own MCP tools (BRAND-MCP-1109): every lead turn, any
@@ -6245,7 +6312,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         turnContext: turnContextBlock,
         history: history
           .filter((m) => m.role !== "tool")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as string, toolCalls: m.toolCalls })),
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as string, toolCalls: m.toolCalls, createdAt: m.createdAt })),
         userMessage: message.trim(),
         images: turnImages,
         tools: allTools.map((t) => ({
@@ -6301,7 +6368,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         turnContext: turnContextBlock,
         history: history
           .filter((m) => m.role !== "tool")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as string, toolCalls: m.toolCalls })),
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as string, toolCalls: m.toolCalls, createdAt: m.createdAt })),
         userMessage: message.trim(),
         images: turnImages,
         tools: allTools.map((t) => ({
@@ -6354,6 +6421,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           role: m.role as "user" | "assistant",
           content: m.content as string,
           toolCalls: m.toolCalls,
+          createdAt: m.createdAt,
         }));
 
       const geminiResult = await streamGeminiChat({

@@ -1951,6 +1951,12 @@ Uses `node:20-alpine`. Requires Node >= 20.
 
 On `SIGTERM` / `SIGINT`, the server stops accepting new connections and waits up to 25 seconds for in-flight SSE streams to finish before exiting. This prevents active chat streams from being killed during Railway deployments.
 
+### First bytes within seconds, even behind a running turn (COPILOT-LATENCY-1125)
+
+A person's `/chat` turn (dashboard; not a nudge, lead, proactive, channel or website-visitor turn) that has sent nothing after 2 s opens its stream and sends a status reasoning part (`thinking_start` / `thinking_delta` / `thinking_stop`, each with `status: true`): "Answering your previous message first." while it waits behind another turn of the same person, else "Reading your account.". A `: keep-alive` comment follows every 15 s (Cloudflare cuts a silent response at 100 s). An org billing marks `agent_api` keeps the hold, so its out-of-money refusal is still an HTTP 402. A refusal decided after the stream opened arrives as `{"type":"error","code":"request_refused","message","status"}` + `[DONE]`. Every turn logs `[chat-latency] <key> waitedMs firstByteMs firstTextMs openedEarly totalMs`.
+
+History older than 24 h is dropped first on the Gemini and direct-vendor loops (the last exchange is always kept): the account is read fresh every turn. A client-brief website read of a brand other than the turn's runs under its own Copilot-support run (runs-service refuses a child run whose brands differ from its parent's). A tool that fails on our side (5xx) tells the model not to call it again in this turn.
+
 ### SSE Stream Timeouts
 
 Node 20 defaults `requestTimeout` to 300s (5 min), which would kill long-running SSE streams. The server disables `requestTimeout` entirely (`0`) since chat streams can run for 30–60 min when the LLM makes many tool calls. `headersTimeout` stays at 60s to reject slow/malformed initial requests. `keepAliveTimeout` is set to 120s.
