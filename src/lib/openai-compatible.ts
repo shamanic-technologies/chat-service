@@ -1778,6 +1778,14 @@ export function toResponsesRequest(body: Record<string, unknown>): Record<string
           name: t.function.name,
           ...(t.function.description != null ? { description: t.function.description } : {}),
           parameters: t.function.parameters,
+          // The Responses API defaults function tools to strict, which makes every
+          // optional field REQUIRED: GPT-6.1 Terra then sent "" for each id it did not
+          // need (open_page refused) and filled newStepOrTrigger on every bug
+          // (request_staff refused five times in one turn), whatever the error said.
+          // Probed live 2026-11-25: default -> {"page":"offers","campaignId":"",...},
+          // strict false -> {"page":"offers"} (COPILOT-LATENCY-1125). chat/completions
+          // is non-strict already: same tool contract on both transports.
+          strict: false,
         }));
         break;
       case "max_completion_tokens":
