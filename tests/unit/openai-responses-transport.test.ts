@@ -65,7 +65,8 @@ describe("toResponsesRequest: the request shape per model", () => {
         { type: "function_call_output", call_id: "call_1", output: "{\"name\":\"Reed\"}" },
       ],
       max_output_tokens: 32000,
-      tools: [{ type: "function", name: "get_brand", description: "The brand", parameters: { type: "object", properties: { id: { type: "string" } } } }],
+      // strict false: the Responses API's strict default makes every optional field required (COPILOT-LATENCY-1125).
+      tools: [{ type: "function", name: "get_brand", description: "The brand", parameters: { type: "object", properties: { id: { type: "string" } } }, strict: false }],
       reasoning: { effort: "low" },
     });
   });
