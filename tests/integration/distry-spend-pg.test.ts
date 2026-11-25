@@ -14,7 +14,7 @@ import {
   type SoloAiGate,
 } from "../../src/lib/distry-spend.js";
 
-const NOT_ON_PLAN: SoloAiGate = { on_solo_plan: false, may_use_our_keys: true, refused_reason: null, debt_cents: null, debt_limit_cents: null, upgrade_url: null };
+const NOT_ON_PLAN: SoloAiGate = { on_solo_plan: false, may_use_our_keys: true, refused_reason: null, debt_cents: null, debt_limit_cents: null, upgrade_url: null, next_step: null };
 const UPGRADE = "https://distribute.you/upgrade?org=staff-test";
 
 // DISTRY-GUEST-CAPS-1119 on a real Postgres (CI's throwaway container, migrated
@@ -228,7 +228,7 @@ describe("Distry's spend on non-clients", { timeout: 30_000 }, () => {
 
   it("SOLO-PLAN-1125: a solo-plan account at -$2 gets the fixed notice with billing's upgrade link, no model; under it, it runs", async () => {
     const org = "org-staff-solo";
-    solo.set(org, { on_solo_plan: true, may_use_our_keys: false, refused_reason: "debt_limit", debt_cents: "200.0000000000", debt_limit_cents: 200, upgrade_url: UPGRADE });
+    solo.set(org, { on_solo_plan: true, may_use_our_keys: false, refused_reason: "debt_limit_reached", debt_cents: "200.0000000000", debt_limit_cents: 200, upgrade_url: UPGRADE, next_step: { action: "start_plan", amount_cents: 9900 } });
     const v = await distryGate(deps(), account(org));
     expect(v).toMatchObject({ run: false, reason: "plan_limit", notice: soloPlanLimitNotice(UPGRADE) });
     expect(soloPlanLimitNotice(UPGRADE)).toContain(UPGRADE);
@@ -236,18 +236,21 @@ describe("Distry's spend on non-clients", { timeout: 30_000 }, () => {
     const [row] = await client`SELECT verdict, person_key FROM distry_spend_turns WHERE verdict = 'plan_limit'`;
     expect(row).toEqual({ verdict: "plan_limit", person_key: `org:${org}` });
     // Room left on the plan (debt $1.50): the turn runs, tracked as a non-payer's.
-    solo.set(org, { on_solo_plan: true, may_use_our_keys: true, refused_reason: null, debt_cents: "150.0000000000", debt_limit_cents: 200, upgrade_url: UPGRADE });
+    solo.set(org, { on_solo_plan: true, may_use_our_keys: true, refused_reason: null, debt_cents: "150.0000000000", debt_limit_cents: 200, upgrade_url: UPGRADE, next_step: { action: "start_plan", amount_cents: 9900 } });
     expect(await distryGate(deps(), account(org))).toMatchObject({ run: true, tracked: true });
   });
 
   it("SOLO-PLAN-1125: a paid solo plan out of credit stops too; an org on its own Claude never; a legacy account is untouched", async () => {
-    solo.set("org-solo-paid", { on_solo_plan: true, may_use_our_keys: false, refused_reason: "out_of_credit", debt_cents: "0", debt_limit_cents: null, upgrade_url: UPGRADE });
+    solo.set("org-solo-paid", { on_solo_plan: true, may_use_our_keys: false, refused_reason: "credit_used_up", debt_cents: "0", debt_limit_cents: null, upgrade_url: UPGRADE, next_step: { action: "start_plan", amount_cents: 9900 } });
     paying.add("org-solo-paid");
     expect(await distryGate(deps(), account("org-solo-paid"))).toMatchObject({ run: false, reason: "plan_limit" });
-    solo.set("org-solo-local", { on_solo_plan: true, may_use_our_keys: false, refused_reason: "debt_limit", debt_cents: "250", debt_limit_cents: 200, upgrade_url: null });
+    solo.set("org-solo-local", { on_solo_plan: true, may_use_our_keys: false, refused_reason: "debt_limit_reached", debt_cents: "250", debt_limit_cents: 200, upgrade_url: null, next_step: null });
     localOrgs.add("org-solo-local");
     expect(await distryGate(deps(), account("org-solo-local"))).toMatchObject({ run: true });
     expect(soloPlanLimitNotice(null)).not.toContain("http");
+    // No upgrade page configured yet (billing env unset): the notice names billing's next step, never a link.
+    expect(soloPlanLimitNotice(null, { action: "start_plan", amount_cents: 9900 })).toContain("start your distribute.you plan ($99 a month)");
+    expect(soloPlanLimitNotice(null, { action: "add_layer", amount_cents: 19900 })).toContain("add budget to your distribute.you plan ($199 a month)");
     paying.add("org-legacy");
     expect(await distryGate(deps(), account("org-legacy"))).toMatchObject({ run: true, tracked: false });
   });

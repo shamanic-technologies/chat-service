@@ -72,13 +72,26 @@ export function distryLimitNotice(guest: boolean): string {
  * SOLO-PLAN-1125: the notice for a solo-founder account past its plan's limit (fixed
  * text, no model call), linking billing's upgrade page; never a dashboard link.
  */
-export function soloPlanLimitNotice(upgradeUrl: string | null): string {
+export function soloPlanLimitNotice(upgradeUrl: string | null, nextStep: SoloNextStep | null = null): string {
   return [
     "Distry has used all the AI room on your distribute.you account for now.",
     upgradeUrl
       ? `Keep your campaigns and Distry going by upgrading your plan: ${upgradeUrl}`
-      : "Keep your campaigns and Distry going: ask your AI to start your distribute.you plan.",
+      : `Keep your campaigns and Distry going: ${NEXT_STEP_WORDS[nextStep?.action ?? "start_plan"](nextStep?.amount_cents ?? null)}`,
   ].join("\n");
+}
+
+/** billing's `next_step` in the founder's words, for the notice while no upgrade page is configured (owner: no dashboard link). */
+const NEXT_STEP_WORDS: Record<SoloNextStep["action"], (amountCents: number | null) => string> = {
+  start_plan: (c) => `ask your AI to start your distribute.you plan${c ? ` ($${Math.round(c / 100)} a month)` : ""}.`,
+  start_paid_now: (c) => `ask your AI to start your paid distribute.you plan now${c ? ` ($${Math.round(c / 100)} a month)` : ""}.`,
+  add_layer: (c) => `ask your AI to add budget to your distribute.you plan${c ? ` ($${Math.round(c / 100)} a month)` : ""}.`,
+  update_card: () => "ask your AI to update the card on your distribute.you plan.",
+};
+
+export interface SoloNextStep {
+  action: "start_plan" | "start_paid_now" | "add_layer" | "update_card";
+  amount_cents: number | null;
 }
 
 /** billing-service `GET /internal/accounts/by-org/:orgId/solo-plan/ai-gate` (the fields read here). */
@@ -89,6 +102,7 @@ export interface SoloAiGate {
   debt_cents: string | null;
   debt_limit_cents: number | null;
   upgrade_url: string | null;
+  next_step: SoloNextStep | null;
 }
 
 function usdEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
@@ -205,7 +219,7 @@ export async function distryGate(deps: DistrySpendDeps, input: DistryPerson): Pr
       console.warn(
         `[chat-service] Distry: org ${input.turnOrgId} is past its solo-plan limit (${solo.refused_reason ?? "no reason"}, debt ${solo.debt_cents ?? "?"} of ${solo.debt_limit_cents ?? "?"} cents) on ${input.surface}: limit notice, no model call`,
       );
-      return { run: false, reason: "plan_limit", notice: soloPlanLimitNotice(solo.upgrade_url), person: { ...input, key } };
+      return { run: false, reason: "plan_limit", notice: soloPlanLimitNotice(solo.upgrade_url, solo.next_step), person: { ...input, key } };
     }
     if (await deps.isPayingOrg(input.turnOrgId)) return { run: true, tracked: false, person };
     person = { ...input, key: accountKey(input.turnOrgId), planOrgId: null };
@@ -548,7 +562,17 @@ export async function soloAiGateFromBilling(orgId: string, fetchImpl: typeof fet
     debt_cents: typeof json.debt_cents === "string" ? json.debt_cents : null,
     debt_limit_cents: typeof json.debt_limit_cents === "number" ? json.debt_limit_cents : null,
     upgrade_url: typeof json.upgrade_url === "string" ? json.upgrade_url : null,
+    next_step: readNextStep(json.next_step),
   };
+}
+
+const NEXT_STEP_ACTIONS = new Set<string>(["start_plan", "start_paid_now", "add_layer", "update_card"]);
+
+function readNextStep(v: unknown): SoloNextStep | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as { action?: unknown; amount_cents?: unknown };
+  if (typeof o.action !== "string" || !NEXT_STEP_ACTIONS.has(o.action)) return null;
+  return { action: o.action as SoloNextStep["action"], amount_cents: typeof o.amount_cents === "number" ? o.amount_cents : null };
 }
 
 /** Test hook. */
