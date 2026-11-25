@@ -32,6 +32,11 @@ export const sessions = pgTable(
     // DISTRY-WEB-CHAT-1117): the site's opaque visitor id, one conversation per
     // visitor. Set only by chat-service (POST /internal/copilot/web-messages).
     webVisitorId: text("web_visitor_id"),
+    // A Telegram chat with no account linked yet, writing to our bot (migration
+    // 0051, DISTRY-START-DOOR-1125): one conversation per chat, a guest under
+    // our line until they prove an email, then re-keyed to their account.
+    // Set only by chat-service (telegram-copilot.ts).
+    telegramChatId: text("telegram_chat_id"),
     // The email a web visitor gave to continue there (migration 0036): the page
     // conversation is handed to crm-service, whose Lead event campaign writes by email.
     channelEmail: text("channel_email"),
@@ -61,6 +66,7 @@ export const sessions = pgTable(
     index("sessions_org_user_config_updated_idx").on(table.orgId, table.userId, table.configKey, table.updatedAt),
     index("sessions_channel_phone_idx").on(table.channelPhone),
     index("sessions_web_visitor_idx").on(table.webVisitorId),
+    index("sessions_telegram_chat_idx").on(table.telegramChatId),
   ],
 );
 

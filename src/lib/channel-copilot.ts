@@ -166,6 +166,8 @@ export interface PersonIdentity {
   canSignIn: boolean;
   /** Emails our own records tie to them (a guest we already know). */
   knownEmails?: readonly string[];
+  /** The address they write to us from (an email thread): their sign-up email unless they name another. */
+  writesFrom?: string;
   /** They signed in a moment ago, in this same exchange. */
   afterSignIn?: boolean;
 }
@@ -181,7 +183,15 @@ export function identityLines(id: PersonIdentity): string[] {
   const lines: string[] = [];
   const knownEmails = (id.knownEmails ?? []).filter((e) => e.trim());
   if (id.guest) {
-    if (knownEmails.length > 0) {
+    if (id.writesFrom) {
+      lines.push(
+        `They write to us from ${id.writesFrom}, and no distribute.you account is tied to it yet: you see no account and can change nothing, never claim to see their brands, campaigns or figures. ` +
+          PUBLIC_FIRST +
+          (id.canSignIn ? PLAN_BEFORE_ACCOUNT : "") +
+          `When their next step needs an account (paying, launching, their campaigns and figures), or they say they already have one, sign them up or in right here: with ${id.writesFrom} unless they name another address, and a phone number for urgent matters with its country code (ask once). Call start_sign_in, tell them a 6-digit code just went to that inbox, then call complete_sign_in with the code they send back. ` +
+          SIGN_IN_ANSWERS_AT_ONCE,
+      );
+    } else if (knownEmails.length > 0) {
       lines.push(
         `We already know this person: our own records tie their number to ${knownEmails.join(", ")}. Never ask who they are or for their email. ` +
           "This number is not tied to their distribute.you account yet, so you see no account and can change nothing: never claim to see their brands, campaigns or figures. " +

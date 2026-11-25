@@ -1817,7 +1817,7 @@ const TelegramMessageResponseSchema = z
   .object({
     status: z.enum(["accepted", "duplicate", "not_linked"]).openapi({
       description:
-        "`accepted`: the chat is linked to an org; the Copilot answers in that chat shortly (sent by chat-service). `duplicate`: this message was already taken. `not_linked`: the chat is linked to no org, nothing runs; the bot answers it with the linking guidance.",
+        "`accepted`: the Copilot answers in that chat shortly (sent by chat-service): as the member who linked it, else in the chat's own conversation, as a guest who signs up there (DISTRY-START-DOOR-1125). `duplicate`: this message was already taken. `not_linked`: no longer answered (kept for older callers).",
     }),
   })
   .openapi("TelegramMessageResponse");
