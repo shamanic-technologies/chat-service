@@ -47,6 +47,14 @@ export interface LlmDynasty {
    * dynasty an old workflow belongs to. May equal the slug.
    */
   legacyAliases: readonly string[];
+  /**
+   * ON TRIAL (OPENROUTER-TRIAL-1125, owner 2026-11-25 « les 8 modèles restent bloqués pour les vrais prospects
+   * jusqu'à ce que tu aies lu le comparatif »): the slug answers `/complete` by name (staff evals), but the line is
+   * never drawn for a real send: `served-llms` answers it `runsAsStated: null` (workflow-service draws no script
+   * stating it) and every fallback order skips it (`/complete` detours, Distry's backup). Leaves trial only on the
+   * owner's go, by deleting this field. Absent = live.
+   */
+  onTrial?: true;
 }
 
 export const LLM_DYNASTIES: readonly LlmDynasty[] = [
@@ -236,6 +244,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "Ling 3.0 Tiny (Ant Digital, via OpenRouter)",
     provider: "openrouter",
     capabilityTier: "cheap",
+    onTrial: true,
     models: ["inclusionai/ling-3.0-tiny@antdigital"],
     servedToday: true,
     legacyAliases: [],
@@ -245,6 +254,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "Nex-N2.5-Mini (Nex AGI, via OpenRouter)",
     provider: "openrouter",
     capabilityTier: "cheap",
+    onTrial: true,
     models: ["nex-agi/nex-n2.5-mini@nex-agi"],
     servedToday: true,
     legacyAliases: [],
@@ -254,6 +264,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "Hy4 Flash (Tencent, via OpenRouter)",
     provider: "openrouter",
     capabilityTier: "cheap",
+    onTrial: true,
     models: ["tencent/hy4-flash@tencent"],
     servedToday: true,
     legacyAliases: [],
@@ -263,6 +274,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "DeepSeek V4.1 Flash 1017 (Alibaba, via OpenRouter)",
     provider: "openrouter",
     capabilityTier: "cheap",
+    onTrial: true,
     models: ["deepseek/deepseek-v4.1-flash-1017@alibaba"],
     servedToday: true,
     legacyAliases: [],
@@ -272,6 +284,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "Qwen3.7 Flash (Alibaba, via OpenRouter)",
     provider: "openrouter",
     capabilityTier: "cheap",
+    onTrial: true,
     models: ["qwen/qwen3.7-flash@alibaba"],
     servedToday: true,
     legacyAliases: [],
@@ -281,6 +294,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "Llama 3.1 8B Instruct (DeepInfra, via OpenRouter)",
     provider: "openrouter",
     capabilityTier: "cheap",
+    onTrial: true,
     models: ["meta-llama/llama-3.1-8b-instruct@deepinfra"],
     servedToday: true,
     legacyAliases: [],
@@ -290,6 +304,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "gpt-oss-20b (DeepInfra, via OpenRouter)",
     provider: "openrouter",
     capabilityTier: "cheap",
+    onTrial: true,
     models: ["openai/gpt-oss-20b@deepinfra"],
     servedToday: true,
     legacyAliases: [],
@@ -299,11 +314,17 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     name: "gpt-oss-120b (DeepInfra, via OpenRouter)",
     provider: "openrouter",
     capabilityTier: "cheap",
+    onTrial: true,
     models: ["openai/gpt-oss-120b@deepinfra"],
     servedToday: true,
     legacyAliases: [],
   },
 ];
+
+/** True when the model's line is on trial (`LlmDynasty.onTrial`): callable by name, never drawn, never a fallback. */
+export function isOnTrial(modelId: string): boolean {
+  return dynastyOfModel(modelId)?.onTrial === true;
+}
 
 /** The dynasty a concrete model id belongs to, or undefined (a test forbids that for any catalogue id). */
 export function dynastyOfModel(modelId: string): LlmDynasty | undefined {

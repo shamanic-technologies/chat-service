@@ -44,6 +44,7 @@ import { modelCatalogue, resolveModel, type Provider } from "./anthropic.js";
 import { buildLlmCostNames, setRegimeCatalogue } from "./cost-names.js";
 import { MODEL_DISPLAY_NAMES } from "./model-ids.js";
 import { providerHasNoPlatformKey } from "./platform-key-presence.js";
+import { isOnTrial } from "./llm-dynasties.js";
 
 type ResolvedModel = ReturnType<typeof resolveModel>;
 
@@ -193,6 +194,7 @@ export function fallbackOrderFor(
     if (exclude.has(model.apiModelId)) continue;
     if (outOfCredit.has(model.provider)) continue;
     if (providerHasNoPlatformKey(model.provider)) continue;
+    if (isOnTrial(model.apiModelId)) continue;
     if (!accepts(model)) continue;
     const cents = typicalCallCents(model, at);
     if (cents === null) continue;
