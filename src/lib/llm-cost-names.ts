@@ -72,15 +72,6 @@ export const MODEL_COST_PREFIXES: Record<string, readonly string[]> = {
   "gpt-6-sol": ["openai-gpt-6-sol"],
   "gpt-6.1-terra": ["openai-gpt-6.1-terra"],
   "gpt-5.6-terra": ["openai-gpt-5.6-terra"],
-  // OpenRouter, one host each (OPENROUTER-CHEAP-LLM-1124)
-  "inclusionai/ling-3.0-tiny@antdigital": ["openrouter-antdigital-ling-3.0-tiny"],
-  "nex-agi/nex-n2.5-mini@nex-agi": ["openrouter-nexagi-nex-n2.5-mini"],
-  "tencent/hy4-flash@tencent": ["openrouter-tencent-hy4-flash"],
-  "deepseek/deepseek-v4.1-flash-1017@alibaba": ["openrouter-alibaba-deepseek-v4.1-flash-1017"],
-  "qwen/qwen3.7-flash@alibaba": ["openrouter-alibaba-qwen3.7-flash"],
-  "meta-llama/llama-3.1-8b-instruct@deepinfra": ["openrouter-deepinfra-llama-3.1-8b-instruct"],
-  "openai/gpt-oss-20b@deepinfra": ["openrouter-deepinfra-gpt-oss-20b"],
-  "openai/gpt-oss-120b@deepinfra": ["openrouter-deepinfra-gpt-oss-120b"],
 };
 
 /**
@@ -105,11 +96,6 @@ const VENDOR_NAME_SHAPES: Record<DynastyProvider, { segments: readonly string[];
   zai: { segments: [""], dimensions: ["tokens-input", "tokens-cached-input", "tokens-output"] },
   moonshot: { segments: [""], dimensions: ["tokens-input", "tokens-cached-input", "tokens-output"] },
   openai: {
-    segments: ["", "-long-context"],
-    dimensions: ["tokens-input", "tokens-cached-input", "tokens-cache-write", "tokens-output"],
-  },
-  // Every OpenRouter model carries the four rows; only Qwen 3.7 Flash has long-context rows (a superset here).
-  openrouter: {
     segments: ["", "-long-context"],
     dimensions: ["tokens-input", "tokens-cached-input", "tokens-cache-write", "tokens-output"],
   },

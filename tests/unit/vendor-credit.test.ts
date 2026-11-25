@@ -180,20 +180,6 @@ const REFUSALS: Array<{
       },
     ],
   },
-  // OPENROUTER-CHEAP-LLM-1124: docs-only (no key on 2026-11-24). OpenRouter answers 402 when the credit balance
-  // cannot pay; a 429 (a host's cap, or the router's own) is a rate limit or a QUOTA refusal, never out of credit.
-  {
-    vendor: "openrouter" as const,
-    outOfCredit: { status: 402, body: JSON.stringify({ error: { code: 402, message: "Insufficient credits. Add more using https://openrouter.ai/settings/credits" } }) },
-    quiet: [
-      {
-        label: "rate limit",
-        status: 429,
-        body: JSON.stringify({ error: { code: 429, message: "Rate limit exceeded: qwen/qwen3.7-flash is temporarily rate-limited upstream." } }),
-      },
-      { label: "auth failure", status: 401, body: JSON.stringify({ error: { code: 401, message: "No auth credentials found" } }) },
-    ],
-  },
 ];
 
 describe("out-of-credit classification", () => {

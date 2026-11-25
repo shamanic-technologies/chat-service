@@ -19,7 +19,7 @@
  * Pure data, no imports: `schemas.ts` builds the `/complete` model enum from it.
  */
 
-export type DynastyProvider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai" | "openrouter";
+export type DynastyProvider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot" | "openai";
 export type DynastyTier = "cheap" | "strong" | "frontier";
 
 export interface LlmDynasty {
@@ -47,14 +47,6 @@ export interface LlmDynasty {
    * dynasty an old workflow belongs to. May equal the slug.
    */
   legacyAliases: readonly string[];
-  /**
-   * ON TRIAL (OPENROUTER-TRIAL-1125, owner 2026-11-25 « les 8 modèles restent bloqués pour les vrais prospects
-   * jusqu'à ce que tu aies lu le comparatif »): the slug answers `/complete` by name (staff evals), but the line is
-   * never drawn for a real send: `served-llms` answers it `runsAsStated: null` (workflow-service draws no script
-   * stating it) and every fallback order skips it (`/complete` detours, Distry's backup). Leaves trial only on the
-   * owner's go, by deleting this field. Absent = live.
-   */
-  onTrial?: true;
 }
 
 export const LLM_DYNASTIES: readonly LlmDynasty[] = [
@@ -236,95 +228,7 @@ export const LLM_DYNASTIES: readonly LlmDynasty[] = [
     servedToday: true,
     legacyAliases: ["gpt-terra"],
   },
-  // OpenRouter (OPENROUTER-CHEAP-LLM-1124): the cheapest open models, each pinned to ONE host (the price is that
-  // host's). The model id is `<router id>@<host>`: the price, speed and quantization are the host's, so the
-  // concrete id names the host too.
-  {
-    slug: "openrouter-ling-tiny",
-    name: "Ling 3.0 Tiny (Ant Digital, via OpenRouter)",
-    provider: "openrouter",
-    capabilityTier: "cheap",
-    onTrial: true,
-    models: ["inclusionai/ling-3.0-tiny@antdigital"],
-    servedToday: true,
-    legacyAliases: [],
-  },
-  {
-    slug: "openrouter-nex-mini",
-    name: "Nex-N2.5-Mini (Nex AGI, via OpenRouter)",
-    provider: "openrouter",
-    capabilityTier: "cheap",
-    onTrial: true,
-    models: ["nex-agi/nex-n2.5-mini@nex-agi"],
-    servedToday: true,
-    legacyAliases: [],
-  },
-  {
-    slug: "openrouter-hy-flash",
-    name: "Hy4 Flash (Tencent, via OpenRouter)",
-    provider: "openrouter",
-    capabilityTier: "cheap",
-    onTrial: true,
-    models: ["tencent/hy4-flash@tencent"],
-    servedToday: true,
-    legacyAliases: [],
-  },
-  {
-    slug: "openrouter-deepseek-flash",
-    name: "DeepSeek V4.1 Flash 1017 (Alibaba, via OpenRouter)",
-    provider: "openrouter",
-    capabilityTier: "cheap",
-    onTrial: true,
-    models: ["deepseek/deepseek-v4.1-flash-1017@alibaba"],
-    servedToday: true,
-    legacyAliases: [],
-  },
-  {
-    slug: "openrouter-qwen-flash",
-    name: "Qwen3.7 Flash (Alibaba, via OpenRouter)",
-    provider: "openrouter",
-    capabilityTier: "cheap",
-    onTrial: true,
-    models: ["qwen/qwen3.7-flash@alibaba"],
-    servedToday: true,
-    legacyAliases: [],
-  },
-  {
-    slug: "openrouter-llama-8b",
-    name: "Llama 3.1 8B Instruct (DeepInfra, via OpenRouter)",
-    provider: "openrouter",
-    capabilityTier: "cheap",
-    onTrial: true,
-    models: ["meta-llama/llama-3.1-8b-instruct@deepinfra"],
-    servedToday: true,
-    legacyAliases: [],
-  },
-  {
-    slug: "openrouter-gpt-oss-20b",
-    name: "gpt-oss-20b (DeepInfra, via OpenRouter)",
-    provider: "openrouter",
-    capabilityTier: "cheap",
-    onTrial: true,
-    models: ["openai/gpt-oss-20b@deepinfra"],
-    servedToday: true,
-    legacyAliases: [],
-  },
-  {
-    slug: "openrouter-gpt-oss-120b",
-    name: "gpt-oss-120b (DeepInfra, via OpenRouter)",
-    provider: "openrouter",
-    capabilityTier: "cheap",
-    onTrial: true,
-    models: ["openai/gpt-oss-120b@deepinfra"],
-    servedToday: true,
-    legacyAliases: [],
-  },
 ];
-
-/** True when the model's line is on trial (`LlmDynasty.onTrial`): callable by name, never drawn, never a fallback. */
-export function isOnTrial(modelId: string): boolean {
-  return dynastyOfModel(modelId)?.onTrial === true;
-}
 
 /** The dynasty a concrete model id belongs to, or undefined (a test forbids that for any catalogue id). */
 export function dynastyOfModel(modelId: string): LlmDynasty | undefined {
@@ -347,7 +251,7 @@ export function callableModelNames(provider: DynastyProvider): string[] {
   return names;
 }
 
-export const DYNASTY_PROVIDERS: readonly DynastyProvider[] = ["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "openrouter"];
+export const DYNASTY_PROVIDERS: readonly DynastyProvider[] = ["anthropic", "google", "deepseek", "zai", "moonshot", "openai"];
 
 /** Every name `/complete` accepts, all providers. */
 export const ALL_CALLABLE_MODEL_NAMES: readonly string[] = DYNASTY_PROVIDERS.flatMap(callableModelNames).filter(

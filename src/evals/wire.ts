@@ -31,7 +31,7 @@ export interface WireReport {
   requestsWithToolsOff: number;
 }
 
-const MODEL_HOSTS = ["api.anthropic.com", "api.deepseek.com", "api.z.ai", "api.moonshot.ai", "api.openai.com", "openrouter.ai", "generativelanguage.googleapis.com"];
+const MODEL_HOSTS = ["api.anthropic.com", "api.deepseek.com", "api.z.ai", "api.moonshot.ai", "api.openai.com", "generativelanguage.googleapis.com"];
 
 function headerValue(headers: unknown, name: string): string | null {
   if (!headers) return null;
