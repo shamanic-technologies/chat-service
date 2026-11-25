@@ -1796,6 +1796,21 @@ A campaign step (workflow) calls it when a fact needs the team's decision. Today
 3. **Delivery:** on WhatsApp (crm-service, key `copilot-proactive:<id>`, from the linked account that last answered them) when that thread is tied to a number, else the answer waits in the web thread. A refusal that can clear by waiting (`422 whatsapp_not_connected`, `429`, `5xx`, a network cut) is retried with the SAME text and key over ~7.5 min (15 s, 30 s, 1 min, 2 min, 4 min), never a new turn; after that the row is `failed` with `error` naming the attempts and the last refusal, `replyText` holds the message, and it waits in the web Copilot thread. Out of credits: stored, not sent to a phone.
 4. **Once per fact:** unique on (`orgId`, `idempotencyKey`) in `copilot_proactive_turns`: a retry answers `200 duplicate: true` with the stored row. A turn cut off by a restart is marked `failed`, never re-run.
 
+## The signup hands the founder to Distry (`/orgs/copilot/handoff`, DISTRY-CHANNEL-HANDOFF-1125)
+
+Signed-in founder only (service key + `x-org-id` + `x-user-id`, through the gateway).
+
+```
+POST /orgs/copilot/handoff   { "campaignId"?: uuid, "sayHelloOn"?: "whatsapp" | "email" }   (at least one)
+GET  /orgs/copilot/handoff
+→ { campaignId, campaignWaiting, campaignStartedAt, campaignStartedVia, hellos: { whatsapp?, email? } }
+```
+
+- `campaignId`: the campaign built and paid for on the signup page, created stopped. It waits for the founder's first message to Distry on ANY channel; that turn starts it (once) and says so on the same channel.
+- `sayHelloOn: "whatsapp"`: Distry writes first from our line (+33 6 80 47 87 02) to the number the account holds (linked, else typed at signup). 409 `no_phone` when none. The hello's outcome (`processing` → `sent`/`failed`) is read with GET.
+- `sayHelloOn: "email"`: the choice is filed on their thread through crm-service's « continue by email » hand-off, which reports one Lead event: our Lead event campaign emails them, and their reply is answered by Distry in the same thread. 502 `hello_not_sent` when crm refuses.
+- Once per channel: a hello sent or on its way is never sent again (a failed one is retried by the next call).
+
 ## A brand's own MCP servers as tools of our AI (BRAND-MCP-1109)
 
 Each brand plugs, in its Integrations, the MCP server(s) it gives to the AI that writes to its leads and clients. Generic: no per-brand, per-channel or per-tool code, and every tool a server lists is offered, read AND write (owner 2026-11-09, « go wild pour now »). Code: `src/lib/mcp-client.ts` (a minimal Streamable HTTP client, spec 2025-06-18: `initialize`, `tools/list`, `tools/call`, JSON or SSE answers, `Mcp-Session-Id`, no SDK), `src/lib/brand-mcp.ts` (store, check, the tools of one turn), `src/lib/complete-brand-tools.ts` (the `/complete` loop).
