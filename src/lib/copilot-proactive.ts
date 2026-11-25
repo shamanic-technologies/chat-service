@@ -105,6 +105,30 @@ export function withoutAskingCampaign(toolName: string, result: unknown, asking:
   return result;
 }
 
+/** The payload of a `hello` turn (copilot-handoff.ts): the founder chose this channel on the signup page. */
+export interface HelloTurnPayload {
+  kind: "hello";
+  channel: "whatsapp";
+  /** Their campaign is built and paid, created stopped, and starts on their first answer. */
+  campaignWaiting: boolean;
+}
+
+/**
+ * The hidden user turn of a `hello` (DISTRY-CHANNEL-HANDOFF-1125): Distry writes
+ * FIRST on the channel the founder picked on the signup page. The facts, then the
+ * game; never canned wording. The turn reads only (proactive): a start waits for
+ * their answer, which is the act the owner wants from them.
+ */
+export function buildHelloTriggerMessage(p: HelloTurnPayload): string {
+  return [
+    "(Not written by the user. They just went through our signup page and chose to continue with you on WhatsApp, on the number they gave us. This is your FIRST message to them there: they have not written yet.",
+    p.campaignWaiting
+      ? "Their campaign is set up and paid, and it is waiting for them: it starts as soon as they answer you here, nothing runs before. Say so in a few words, so their answer is the go."
+      : "They have no campaign running yet: the next step is to finish their setup here with you, one step at a time.",
+    "Write ONE short WhatsApp message: hello as yourself, that from now on everything happens right here in this conversation (no dashboard), and the ONE next step for them. Read their account with your tools first if it helps you name what they built. Never ask them to type a code or open a page to continue.)",
+  ].join(" ");
+}
+
 const THREAD_MESSAGES_SHOWN = 6;
 const THREAD_TEXT_CHARS = 600;
 
@@ -347,6 +371,7 @@ export async function processProactiveTurn(
   const { db } = deps;
   const [row] = await db.select().from(copilotProactiveTurns).where(eq(copilotProactiveTurns.id, rowId));
   if (!row || row.status !== "processing") return;
+  const hello = row.kind === "hello" ? (row.payload as HelloTurnPayload) : null;
   const req = row.payload as ProactiveTurnRequest;
   let status: "delivered" | "out_of_credits" | "failed" = "failed";
   let replyText: string | null = null;
@@ -355,7 +380,7 @@ export async function processProactiveTurn(
     // What they wrote: the caller's text, else their thread with the brand. A
     // failed read never blocks the notification; the turn is told it has no words.
     let thread: PersonThreadMessage[] = [];
-    if (!req.inbound?.text) {
+    if (!hello && row.brandId && !req.inbound?.text) {
       try {
         thread = await deps.readThread({ orgId: row.orgId, userId: recipient.userId, runId: row.parentRunId, brandId: row.brandId, lead: req.lead });
       } catch (err) {
@@ -365,7 +390,7 @@ export async function processProactiveTurn(
     // The campaign that asked: named in the turn and hidden from its reads (the
     // /chat handler resolves it again from the same header for the guard).
     const askingId = trackingHeaders["x-campaign-id"];
-    const asking = askingId
+    const asking = askingId && !hello
       ? await deps.resolveAskingCampaign({ orgId: row.orgId, userId: recipient.userId, runId: row.parentRunId, campaignId: askingId })
       : null;
     // The Copilot's line answers on WhatsApp (its pro_ai account): asked BEFORE
@@ -388,9 +413,9 @@ export async function processProactiveTurn(
       userId: recipient.userId,
       runId: row.parentRunId,
       sessionId: recipient.sessionId,
-      message: buildProactiveTriggerMessage(req, { thread, asking }),
+      message: hello ? buildHelloTriggerMessage(hello) : buildProactiveTriggerMessage(req, { thread, asking }),
       context: {
-        brandId: row.brandId,
+        ...(row.brandId ? { brandId: row.brandId } : {}),
         ...(recipient.telegram ? { channel: { kind: "telegram" } } : recipient.whatsapp && line ? { channel: proactiveChannelContext(recipient.whatsapp.phone, persona) } : {}),
       },
       proactiveTurnId: row.id,

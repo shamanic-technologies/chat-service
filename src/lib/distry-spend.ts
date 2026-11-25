@@ -32,7 +32,7 @@ export const DISTRY_VISITOR_USD_DEFAULT = 5;
 export const SIGN_UP_URL = "https://dashboard.distribute.you/sign-up";
 export const DASHBOARD_HOME_URL = "https://dashboard.distribute.you";
 /** Kevin's pro WhatsApp number (owner 2026-11-19), as a wa.me link. */
-export const OUR_WHATSAPP_URL = "https://wa.me/33680478402";
+export const OUR_WHATSAPP_URL = "https://wa.me/33680478702";
 
 /**
  * The automatic limit notice (no model call). A limit notice, never an answer

@@ -260,7 +260,7 @@ describe("Distry's limits on a lead turn of our own brand (DISTRY-GUEST-CAPS-111
     expect(a.message).toBe("");
     expect(a.bodyHtml).toContain('<p>Thanks for talking with Distry!');
     expect(a.bodyHtml).toContain('<a href="https://dashboard.distribute.you/sign-up">https://dashboard.distribute.you/sign-up</a>');
-    expect(a.bodyHtml).toContain('<a href="https://wa.me/33680478402">');
+    expect(a.bodyHtml).toContain('<a href="https://wa.me/33680478702">');
   });
 
   it("a guest past the limit: the notice is the answer, no model runs, the row says why", async () => {

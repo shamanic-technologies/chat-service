@@ -245,7 +245,7 @@ import { buildSituationBrief } from "./agent/situation.js";
 import { gatewaySituationReader } from "./agent/situation-reader.js";
 import { SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
 import { distryOutageSentence, fallbackLine, nextDistryAttempt, sophieTurnModel, type DistryAttempt } from "./agent/sophie-backup.js";
-import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi, requestOfCall } from "./agent/catalogue-tools.js";
+import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, failedCallAnswer, findApi, requestOfCall } from "./agent/catalogue-tools.js";
 import { createPlanRun, domainClaim, openUnclaimedOrg, runGuestPlanCall, seedTrialCredit, type PlanOrg } from "./lib/guest-plan.js";
 import { REPORT_NOT_GOOD_TOOL_NAME, reportNotGood } from "./lib/unit-report.js";
 import {
@@ -321,6 +321,7 @@ import {
   buildWebBlock,
   type WebTurnFacts,
   handOverByEmailToCrm,
+  conversationForHandOver,
   parseContinueArgs,
   readWebConversation,
   type WebDeps,
@@ -373,7 +374,8 @@ import {
   proposeSwitchOn,
   resolveSwitchOnProposal,
 } from "./lib/copilot-client.js";
-import type { ApiCallParams } from "./lib/api-client.js";
+import { apiServiceFetch, type ApiCallParams } from "./lib/api-client.js";
+import { fetchHandoffUser, handoffBody, markCampaignStarted, readHandoff, refreshWhatsappHello, sayHello, startsWaitingCampaign, upsertHandoff, waitingCampaignId, NoPhoneError, type HelloDeps } from "./lib/copilot-handoff.js";
 import {
   declareChannel,
   declareLeg,
@@ -465,7 +467,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, SkillListQuerySchema, SkillMoveRequestSchema, SkillDeleteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, StartMediaTranscriptionRequestSchema, MediaTranscriptionIdParamsSchema, MediaTranscriptionQuerySchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryPromptPreviewQuerySchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type AnthropicEffort, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, SkillListQuerySchema, SkillMoveRequestSchema, SkillDeleteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, StartMediaTranscriptionRequestSchema, MediaTranscriptionIdParamsSchema, MediaTranscriptionQuerySchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, CopilotHandoffRequestSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryPromptPreviewQuerySchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type AnthropicEffort, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -4829,6 +4831,28 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       trackingHeaders: downstreamTrackingHeaders,
     };
 
+    // run_operation as the person. The ONE request the signup page's yes already covers (the start of the
+    // campaign waiting for this person, DISTRY-CHANNEL-HANDOFF-1125) runs without a second proposal,
+    // once; every other call keeps the gateway's yes rule.
+    const callOrStartWaiting = async (args: Record<string, unknown>): Promise<unknown> => {
+      const waiting = !proactiveTurn && !sessionIsGuest && !args.confirmationToken ? await waitingCampaignId(db, orgId, userId!) : null;
+      const req = waiting ? await requestOfCall(args, history) : null;
+      if (!waiting || !startsWaitingCampaign(req, waiting)) return callApi(args, featureCallParams, history, { readOnly: proactiveTurn });
+      const res = await apiServiceFetch(req!.path, "PATCH", featureCallParams, { status: "activate" });
+      const text = await res.text();
+      let body: unknown = text;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        /* the gateway's words, as text */
+      }
+      if (!res.ok) return failedCallAnswer(res.status, body);
+      const via = telegramTurn ? "telegram" : leadTurn ? leadTurn.payload.medium : channelTurn ? "whatsapp" : webTurn ? "website" : "web";
+      await markCampaignStarted(db, { orgId, userId: userId!, campaignId: waiting, via });
+      console.log(`[handoff] org="${orgId}" user="${userId}" campaign="${waiting}" started on their first message (${via})`);
+      return { ok: true, status: res.status, body };
+    };
+
     // A guest's plan (DISTRY-ONE-AI-1118 B): opened on their website, then every call runs AS the
     // unclaimed org, on one run of its own per turn (its spend lands on that org's trial seed).
     let planRun: { orgId: string; runId: Promise<string> } | null = null;
@@ -4916,6 +4940,18 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       const read = await situationRead;
       if ("error" in read) throw read.error;
       promptData.situationBrief = read.brief;
+      reassemblePrompt();
+    }
+    // The campaign the founder built and paid for on the signup page waits for their
+    // first message to Distry, whatever the channel (DISTRY-CHANNEL-HANDOFF-1125): every
+    // turn of that person reads it. Not a proactive turn (it reads only), not a guest, not
+    // another brand's lead (the turn runs in that brand's org).
+    const waitingCampaign =
+      configKey === SOPHIE_CONFIG_KEY && !proactiveTurn && !sessionIsGuest && (!leadTurn || leadTurn.ownBrand)
+        ? await waitingCampaignId(db, orgId, userId)
+        : null;
+    if (waitingCampaign) {
+      promptData.waitingCampaignId = waitingCampaign;
       reassemblePrompt();
     }
     // The writing brand's own MCP tools (BRAND-MCP-1109): every lead turn, any
@@ -5390,7 +5426,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
                     (await requestOfCall(args, history)) ?? { method: String(args.method ?? "GET"), path: String(args.path ?? ""), body: args.body },
                     guestPlanDeps(args),
                   )
-                : await callApi(args, featureCallParams, history, { readOnly: proactiveTurn });
+                : await callOrStartWaiting(args);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -7819,6 +7855,46 @@ app.get("/internal/staff-requests", requireInternalAuth, async (req, res) => {
 });
 
 // --- Local LLM: an org's calls on the user's own Claude Code (LOCAL-CLAUDE-1116) ---
+
+// --- The web signup hands the founder to Distry (DISTRY-CHANNEL-HANDOFF-1125) ---------
+const helloDeps: HelloDeps = {
+  db,
+  fetchUser: (userId) => fetchHandoffUser(userId),
+  createSupportRun: (identity) => createChannelRootRun(identity, fetch, "copilot-hello"),
+  startProactiveTurn: (rowId, recipient) => {
+    void processProactiveTurn(proactiveDeps, rowId, recipient, {}).catch((err) => console.error(`[handoff] hello turn "${rowId}" crashed:`, err));
+  },
+  conversation: (sessionId) => conversationForHandOver(db, sessionId),
+  handOverByEmail: (body) => handOverByEmailToCrm(body),
+};
+
+app.post("/orgs/copilot/handoff", requireAuth, async (req, res) => {
+  const { orgId, userId } = res.locals as AuthLocals;
+  if (!userId) return res.status(400).json({ error: "x-user-id is required: the handoff is the founder's own" });
+  const parsed = CopilotHandoffRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  let row = await upsertHandoff(db, { orgId, userId, campaignId: parsed.data.campaignId ?? null });
+  if (parsed.data.sayHelloOn) {
+    try {
+      row = await sayHello(helloDeps, row, parsed.data.sayHelloOn);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[handoff] org="${orgId}" user="${userId}" hello on ${parsed.data.sayHelloOn} failed: ${message}`);
+      if (err instanceof NoPhoneError) return res.status(409).json({ error: "no_phone", detail: message });
+      return res.status(502).json({ error: "hello_not_sent", detail: message });
+    }
+  }
+  console.log(`[handoff] org="${orgId}" user="${userId}" campaign="${row.campaignId ?? "none"}" hello=${parsed.data.sayHelloOn ?? "none"}`);
+  res.json(handoffBody(row));
+});
+
+app.get("/orgs/copilot/handoff", requireAuth, async (_req, res) => {
+  const { orgId, userId } = res.locals as AuthLocals;
+  if (!userId) return res.status(400).json({ error: "x-user-id is required: the handoff is the founder's own" });
+  const row = await readHandoff(db, orgId, userId);
+  if (!row) return res.status(404).json({ error: "No handoff for this user" });
+  res.json(handoffBody(await refreshWhatsappHello(db, row)));
+});
 
 app.get("/orgs/local-llm", requireAuth, async (_req, res) => {
   const { orgId } = res.locals as AuthLocals;

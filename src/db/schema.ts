@@ -477,7 +477,8 @@ export const copilotProactiveTurns = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     kind: text("kind").notNull(),
     orgId: text("org_id").notNull(),
-    brandId: text("brand_id").notNull(),
+    // NULL for a `hello` (DISTRY-CHANNEL-HANDOFF-1125, migration 0048): the founder may have no brand yet.
+    brandId: text("brand_id"),
     recipientUserId: text("recipient_user_id").notNull(),
     sessionId: uuid("session_id").notNull(),
     delivery: text("delivery").notNull().$type<"telegram" | "whatsapp" | "web">(),
@@ -490,6 +491,25 @@ export const copilotProactiveTurns = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("copilot_proactive_turns_org_key_idx").on(table.orgId, table.idempotencyKey)],
+);
+
+// The web signup hands the founder to Distry (migration 0048, DISTRY-CHANNEL-HANDOFF-1125):
+// one row per person, the campaign they built and paid for (created stopped, waiting for
+// their first message to Distry) and the hellos Distry sent first (lib/copilot-handoff.ts).
+export const copilotHandoffs = pgTable(
+  "copilot_handoffs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    campaignId: text("campaign_id"),
+    campaignStartedAt: timestamp("campaign_started_at", { withTimezone: true }),
+    campaignStartedVia: text("campaign_started_via"),
+    hellos: jsonb("hellos").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("copilot_handoffs_org_user_idx").on(table.orgId, table.userId)],
 );
 
 // One Copilot answer per Lead event occurrence (migration 0028,
