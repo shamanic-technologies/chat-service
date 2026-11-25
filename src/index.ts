@@ -4043,6 +4043,13 @@ async function readSessionMessages(
 }
 
 // One turn at a time per conversation (SOPHIE-CORE-1111): a second message waits for the first turn.
+/**
+ * How long a turn waits for a brand's FIRST website read (a scrape, up to tens of seconds) before
+ * answering without it: brand-service keeps reading and caches it 30 days, so the next turn has it
+ * at once (COPILOT-LATENCY-1125: the 40 s default stood between the message and the first model call).
+ */
+const CLIENT_BRIEF_SITE_WAIT_MS = 10_000;
+
 // The first bytes leave within seconds, even behind a running turn (COPILOT-LATENCY-1125, early-stream.ts).
 app.post("/chat", requireAuth, async (req, res) => {
   const { orgId, userId, parentRunId } = res.locals as AuthLocals;
@@ -4866,7 +4873,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
             listOffers: (brandId) => listOffers(brandId, featureCallParams),
             readWebsite: async (brandId) =>
               readSiteFields(await extractBrandFields([...CLIENT_BRIEF_FIELDS], [brandId], await siteReadParams(brandId))),
-          }),
+          }, CLIENT_BRIEF_SITE_WAIT_MS),
         );
       } catch (err) {
         console.error(`[chat] session="${currentSessionId}" client brief unreadable:`, err);

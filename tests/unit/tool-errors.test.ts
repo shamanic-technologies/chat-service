@@ -162,7 +162,7 @@ describe("formatToolError", () => {
   it("keeps a downstream 4xx wrapped in a 500 as the caller's error", () => {
     const raw = '[api-client] POST /v1/x returned 500: {"error":"[svc] POST /y returned 400: bad field"}';
     const result = formatToolError("run_operation", raw);
-    expect(result.suggestion).not.toContain("do not call it again");
+    expect(result.suggestion).not.toContain("failed on our side");
   });
 
   it("reads a refused argument as the model's to fix, never a server configuration issue", () => {
@@ -172,4 +172,12 @@ describe("formatToolError", () => {
     expect(result.suggestion).not.toContain("server configuration");
     expect(result.suggestion).toContain("call once more");
   });
+
+  it("never invites a blind retry of refused arguments (open_page sent an empty id, prod replay 2026-11-25)", () => {
+    const raw = '[open_page] invalid arguments: [{"origin":"string","code":"too_small","minimum":1,"path":["campaignId"]}]';
+    const result = formatToolError("open_page", raw);
+    expect(result.suggestion).not.toContain("try again");
+    expect(result.suggestion).toContain("never sent empty");
+  });
 });
+
