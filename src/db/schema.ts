@@ -739,7 +739,7 @@ export const distrySpendTurns = pgTable(
     /** The org the turn runs under: ours for a guest, the account's otherwise. */
     orgId: text("org_id").notNull(),
     runId: text("run_id"),
-    /** ran | person_cap | day_cap */
+    /** ran | person_cap | day_cap | plan_limit (SOLO-PLAN-1125) */
     verdict: text("verdict").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
