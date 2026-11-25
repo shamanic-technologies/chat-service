@@ -34,6 +34,20 @@ const MAX_CONNECT_RETRIES = 3;
 const RETRY_DELAYS_MS = [250, 500, 1000];
 
 /**
+ * A streamed call (`VendorConfig.streamsAnswer`) that sends no byte for this long
+ * is HUNG: cut and asked again on the same model (GLM-FLASH-502-1125). Measured on
+ * Z.ai 2026-11-25: headers under 1 s, chunks every <0.5 s while the model reasons;
+ * the hung calls sent nothing for 300 s. 60 s leaves two orders of magnitude.
+ */
+export const STREAM_SILENCE_MS = 60_000;
+
+/**
+ * Hung or cut streamed calls replayed before the call fails (3 attempts in all).
+ * The caller waits up to 600 s for a whole answer; a hang now costs 60 s, not 300 s.
+ */
+export const MAX_HUNG_RETRIES = 2;
+
+/**
  * Backoff schedule for a vendor RATE LIMIT (429), in ms — a SECOND, independent
  * budget from the connect-phase one above.
  *
@@ -167,6 +181,27 @@ export class VendorSilentError extends VendorProviderError {
   constructor(readonly vendor: VendorId, readonly model: string, readonly silentMs: number) {
     super(`[vendor:${vendor}] "${model}" sent nothing for ${Math.round(silentMs / 1000)}s: the call was cut`);
     this.name = "VendorSilentError";
+  }
+}
+
+/**
+ * A streamed call hung (no byte for `STREAM_SILENCE_MS`) or its stream ended
+ * before the answer did, on every attempt (GLM-FLASH-502-1125). No answer came
+ * back, so nothing is declared for it; the route answers 502 as for any other
+ * vendor failure, named.
+ */
+export class VendorHungError extends VendorProviderError {
+  constructor(readonly vendor: VendorId, readonly model: string, readonly attempts: number, readonly lastCause: string) {
+    super(`[vendor:${vendor}] "${model}" gave no whole answer on ${attempts} attempt(s): ${lastCause}`);
+    this.name = "VendorHungError";
+  }
+}
+
+/** The vendor's stream closed before its finish chunk: the answer never arrived whole. */
+export class VendorStreamCutError extends VendorProviderError {
+  constructor(message: string) {
+    super(message);
+    this.name = "VendorStreamCutError";
   }
 }
 
@@ -616,6 +651,14 @@ export interface VendorConfig {
    */
   imageInput: boolean;
   /**
+   * True when every call to this vendor is STREAMED on the wire and reassembled
+   * here, so a call the vendor holds open without answering is seen within
+   * `STREAM_SILENCE_MS` and asked again on the SAME model (GLM-FLASH-502-1125).
+   * Callers still get one whole answer. Set only after a live probe of the
+   * vendor's stream (chunk shape, tool-call deltas, `usage` in the last chunk).
+   */
+  streamsAnswer: boolean;
+  /**
    * Fields a request carrying function TOOLS must add, per concrete model
    * (GEMINI-BRAND-TOOLS-1112). OpenAI refuses function tools beside its default
    * reasoning on /v1/chat/completions ("Function tools with reasoning_effort are
@@ -736,6 +779,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     },
     maxOutputTokensField: "max_tokens",
     imageInput: true,
+    streamsAnswer: false,
     // DISTRY-THINKING-1122, probed live 2026-11-22: V4.1 Flash validates reasoning_effort (a junk value 422s
     // naming the set) and runs a tool call at high and max; thinking disabled = 0 reasoning tokens (none).
     thinkingLevels: { "deepseek-flash": ["none", "high", "max"] },
@@ -830,6 +874,10 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     },
     maxOutputTokensField: "max_tokens",
     imageInput: true,
+    // GLM-FLASH-502-1125, probed live 2026-11-25 on glm-5.3-flash: SSE headers in <1 s, chunks every <0.5 s
+    // (reasoning streams too), tool calls whole per index, `usage` (same fields) on the finish chunk. Not streamed,
+    // 15 calls in 48 h hung with no answer until undici's 300 s headers cut ("fetch failed" → 502).
+    streamsAnswer: true,
     // DISTRY-THINKING-1122, probed live 2026-11-22 with a function tool: GLM-5.3 and its Flash take
     // reasoning_effort low | high | max (medium → 400 code 1210 "please use low, high, or max"); never off.
     thinkingLevels: { "glm-5.3": ["low", "high", "max"], "glm-5.3-flash": ["low", "high", "max"] },
@@ -940,6 +988,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     },
     maxOutputTokensField: "max_tokens",
     imageInput: false,
+    streamsAnswer: false,
     structuredOutput: "json_schema",
     schemaEnforced: false,
     // Moonshot reasons the hardest of the three and answers the shortest while
@@ -1062,6 +1111,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     },
     maxOutputTokensField: "max_completion_tokens",
     imageInput: true,
+    streamsAnswer: false,
     toolCallRequestFields: { "gpt-6.1-terra": { reasoning_effort: "none" } },
     toolRoundsOnResponsesApi: ["gpt-6-astra", "gpt-6.1-sol"],
     // DISTRY-THINKING-1122, probed live 2026-11-22 with a function tool on /v1/responses:
@@ -1910,18 +1960,29 @@ export async function postVendorChatCompletion(args: {
   const config = vendorConfig(vendor);
   const responsesApi = usesResponsesApi(vendor, model, body);
   const url = `${config.baseUrl}${responsesApi ? "/responses" : "/chat/completions"}`;
-  const wireBody = responsesApi ? toResponsesRequest(body) : body;
+  // A streamed vendor is asked for its answer as a stream and it is reassembled here
+  // (`readVendorStream`), so a call the vendor holds open without answering is seen
+  // within STREAM_SILENCE_MS instead of at undici's 300 s cut (GLM-FLASH-502-1125).
+  const streamed = config.streamsAnswer && !responsesApi;
+  const wireBody = responsesApi
+    ? toResponsesRequest(body)
+    : streamed
+      ? { ...body, stream: true, stream_options: { include_usage: true } }
+      : body;
 
   let lastConnectError: unknown = null;
   let connectAttempt = 0;
   let rateLimitAttempt = 0;
   let rateLimitWaitedMs = 0;
+  let hungAttempt = 0;
 
   // Two independent budgets, because the two failures are different events. A
   // connect failure never reached the vendor; a 429 reached it and was turned
   // away. Sharing one counter would let a burst of socket resets eat the
   // rate-limit budget (or the reverse) and cut short the retry that had a
-  // chance of working.
+  // chance of working. A HUNG streamed call (third budget) reached the vendor and
+  // never answered whole: no answer came back, so nothing is declared for it and
+  // the same model is asked again; another model never answers in its place.
   for (;;) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), VENDOR_TIMEOUT_MS);
@@ -1930,6 +1991,32 @@ export async function postVendorChatCompletion(args: {
       silent = true;
       controller.abort();
     }, silentAfterMs);
+    let hung = false;
+    let hungTimer: ReturnType<typeof setTimeout> | undefined;
+    const stillAlive = () => {
+      if (!streamed) return;
+      clearTimeout(hungTimer);
+      hungTimer = setTimeout(() => {
+        hung = true;
+        controller.abort();
+      }, STREAM_SILENCE_MS);
+    };
+    const settle = () => {
+      clearTimeout(timeout);
+      clearTimeout(silenceTimer);
+      clearTimeout(hungTimer);
+    };
+    // A hung or cut streamed attempt: asked again on the same model, bounded.
+    const replayHung = async (cause: string): Promise<void> => {
+      if (hungAttempt >= MAX_HUNG_RETRIES) throw new VendorHungError(vendor, model, hungAttempt + 1, cause);
+      hungAttempt++;
+      console.warn(
+        `[chat-service] [vendor:${vendor}] "${model}" gave no whole answer (${cause}), ` +
+          `asking again (attempt ${hungAttempt + 1}/${MAX_HUNG_RETRIES + 1}).`,
+      );
+      await sleep(RETRY_DELAYS_MS[hungAttempt - 1] ?? 1000);
+    };
+    stillAlive();
 
     let res: Response;
     try {
@@ -1943,9 +2030,12 @@ export async function postVendorChatCompletion(args: {
         signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       });
     } catch (err) {
-      clearTimeout(timeout);
-      clearTimeout(silenceTimer);
+      settle();
       if (silent && !signal?.aborted) throw new VendorSilentError(vendor, model, silentAfterMs!);
+      if (hung && !signal?.aborted) {
+        await replayHung(`no response for ${STREAM_SILENCE_MS / 1000}s`);
+        continue;
+      }
       if (isTransientConnectError(err) && connectAttempt < MAX_CONNECT_RETRIES) {
         lastConnectError = err;
         console.warn(
@@ -1957,11 +2047,9 @@ export async function postVendorChatCompletion(args: {
         continue;
       }
       throw err instanceof Error ? err : new VendorProviderError(String(err ?? lastConnectError));
-    } finally {
-      clearTimeout(timeout);
-      clearTimeout(silenceTimer);
     }
 
+    if (!res.ok) settle();
     if (!res.ok) {
       const text = await res.text().catch(() => "");
 
@@ -2076,9 +2164,134 @@ export async function postVendorChatCompletion(args: {
       );
     }
 
-    const json = await res.json();
-    return responsesApi ? fromResponsesBody(json as ResponsesApiBody) : (json as VendorResponseBody);
+    // The whole answer is read under the same timers: the Copilot's silence limit
+    // counts until the answer is in, and a streamed call stays watched for hangs.
+    stillAlive();
+    try {
+      if (streamed) return await readVendorStream(vendor, res, stillAlive);
+      const json = await res.json();
+      return responsesApi ? fromResponsesBody(json as ResponsesApiBody) : (json as VendorResponseBody);
+    } catch (err) {
+      if (silent && !signal?.aborted) throw new VendorSilentError(vendor, model, silentAfterMs!);
+      if (streamed && !signal?.aborted && (hung || err instanceof VendorStreamCutError || isTransientConnectError(err))) {
+        settle();
+        await replayHung(hung ? `no byte for ${STREAM_SILENCE_MS / 1000}s mid-answer` : err instanceof Error ? err.message : String(err));
+        continue;
+      }
+      throw err;
+    } finally {
+      settle();
+    }
   }
+}
+
+/**
+ * Reassemble one streamed chat completion (OpenAI-compatible SSE) into the body a
+ * non-streamed call returns, so every reader downstream is unchanged
+ * (GLM-FLASH-502-1125). `onChunk` is called on every byte received (hang watch).
+ * An in-band `error` chunk is the vendor's answer (VendorProviderError, never
+ * replayed); a stream that closes before its finish chunk is VendorStreamCutError.
+ */
+export async function readVendorStream(
+  vendor: VendorId,
+  res: Response,
+  onChunk: () => void,
+): Promise<VendorResponseBody> {
+  // A vendor that answers a stream request with one JSON body has still answered whole.
+  const contentType = res.headers?.get?.("content-type") ?? "";
+  if (!contentType.includes("text/event-stream")) return (await res.json()) as VendorResponseBody;
+  if (!res.body) throw new VendorStreamCutError(`[vendor:${vendor}] streamed answer had no body`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let id: string | undefined;
+  let model: string | undefined;
+  let usage: VendorUsage | undefined;
+  let finishReason: string | undefined;
+  let content = "";
+  let reasoning = "";
+  const toolCalls: VendorToolCall[] = [];
+  let done = false;
+
+  const take = (line: string) => {
+    if (!line.startsWith("data:")) return;
+    const data = line.slice(5).trim();
+    if (data === "") return;
+    if (data === "[DONE]") {
+      done = true;
+      return;
+    }
+    const chunk = JSON.parse(data) as {
+      id?: string;
+      model?: string;
+      usage?: VendorUsage | null;
+      error?: unknown;
+      choices?: Array<{
+        finish_reason?: string | null;
+        delta?: {
+          content?: string | null;
+          reasoning_content?: string | null;
+          tool_calls?: Array<{ index?: number; id?: string; type?: "function"; function?: { name?: string; arguments?: string } }>;
+        };
+      }>;
+    };
+    if (chunk.error) {
+      throw new VendorProviderError(`[vendor:${vendor}] Provider returned an error mid-stream: ${JSON.stringify(chunk.error).slice(0, 500)}`);
+    }
+    id ??= chunk.id;
+    model ??= chunk.model;
+    if (chunk.usage) usage = chunk.usage;
+    const choice = chunk.choices?.[0];
+    if (!choice) return;
+    if (choice.finish_reason) finishReason = choice.finish_reason;
+    const delta = choice.delta;
+    if (!delta) return;
+    if (typeof delta.content === "string") content += delta.content;
+    if (typeof delta.reasoning_content === "string") reasoning += delta.reasoning_content;
+    for (const part of delta.tool_calls ?? []) {
+      const index = part.index ?? toolCalls.length;
+      const call = (toolCalls[index] ??= { id: "", type: "function", function: { name: "", arguments: "" } });
+      if (part.id) call.id = part.id;
+      if (part.type) call.type = part.type;
+      if (part.function?.name && !call.function.name) call.function.name = part.function.name;
+      if (part.function?.arguments) call.function.arguments += part.function.arguments;
+    }
+  };
+
+  for (;;) {
+    const { done: ended, value } = await reader.read();
+    if (ended) break;
+    onChunk();
+    buffer += decoder.decode(value, { stream: true });
+    let cut: number;
+    while ((cut = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, cut).replace(/\r$/, "");
+      buffer = buffer.slice(cut + 1);
+      take(line);
+    }
+  }
+  buffer += decoder.decode();
+  if (buffer.trim()) take(buffer.trim());
+
+  if (!finishReason || !usage) {
+    throw new VendorStreamCutError(
+      `[vendor:${vendor}] stream closed before the answer was whole (finish=${finishReason ?? "none"}, usage=${usage ? "yes" : "none"}, done=${done})`,
+    );
+  }
+  const calls = toolCalls.filter(Boolean);
+  return {
+    id,
+    model,
+    usage,
+    choices: [{
+      finish_reason: finishReason,
+      message: {
+        content,
+        ...(reasoning ? { reasoning_content: reasoning } : {}),
+        ...(calls.length > 0 ? { tool_calls: calls } : {}),
+      },
+    }],
+  };
 }
 
 
