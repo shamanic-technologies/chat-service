@@ -12,6 +12,7 @@ import {
   withToolDescriptions,
   PromptPartsError,
   type TurnPromptData,
+  formatCarriedWork,
 } from "../../src/agent/distry-prompt.js";
 import { examplesByPart, previewBody, promptAudience } from "../../src/agent/distry-prompt-samples.js";
 import { buildSystemPrompt } from "../../src/lib/anthropic.js";
@@ -200,3 +201,16 @@ describe("Distry's prompt parts (DISTRY-PROMPT-PARTS-1120)", () => {
     expect(ex.has("telegram")).toBe(false);
   });
 });
+
+// COPILOT-LATENCY-1125: a turn handed on by a silent model tells the next one what was already looked up.
+describe("carried-work part", () => {
+  it("is absent on a first model, present with each lookup and its result after a hand-over", () => {
+    const d = emptyTurnPromptData("ROLE");
+    expect(assemblePrompt(codePromptOverrides(), d).turn).not.toContain("Already looked up");
+    d.carriedWork = formatCarriedWork([{ name: "list_offers", args: { brandId: "b" }, result: { offers: [{ name: "Product" }] } }]);
+    const turn = assemblePrompt(codePromptOverrides(), d).turn;
+    expect(turn).toContain("## Already looked up for this message");
+    expect(turn).toContain('- list_offers({"brandId":"b"}) returned {"offers":[{"name":"Product"}]}');
+  });
+});
+

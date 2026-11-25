@@ -93,6 +93,7 @@ import {
   VendorRateLimitError,
   VendorQuotaExhaustedError,
   VendorOutOfCreditError,
+  VendorSilentError,
   type VendorId,
 } from "./lib/openai-compatible.js";
 import {
@@ -163,6 +164,7 @@ import {
   codePromptOverrides,
   currentDistryPrompt,
   emptyTurnPromptData,
+  formatCarriedWork,
   loopNotesFrom,
   partText,
   partsForEditor,
@@ -4052,6 +4054,13 @@ async function readSessionMessages(
  */
 const CLIENT_BRIEF_SITE_WAIT_MS = 10_000;
 
+/**
+ * How long a Copilot step on a direct vendor may stay silent before the turn moves to the next model
+ * (owner 2026-11-25 « Limit must be 30s non? », option B). Those calls send nothing until the step is
+ * done; measured 2026-11-25 on GPT-6.1 Terra: 8 s typical, 18 s slowest, one hung for 300 s.
+ */
+const COPILOT_SILENT_MODEL_MS = 30_000;
+
 // The first bytes leave within seconds, even behind a running turn (COPILOT-LATENCY-1125, early-stream.ts).
 app.post("/chat", requireAuth, async (req, res) => {
   const { orgId, userId, parentRunId } = res.locals as AuthLocals;
@@ -4557,7 +4566,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // What the out-of-credits answer needs from inside the try (set once known).
   const creditsTurn: { sessionId: string | null; text: () => string; userMessage: CopilotTurnMessage | null } = { sessionId: null, text: () => "", userMessage: null };
   // What a failed Distry turn needs to re-run on the next model (DISTRY-THINKING-1122): set once known.
-  const failoverState = { userMessageId: null as string | null, toolCount: () => 0, textSent: () => false };
+  const failoverState = { userMessageId: null as string | null, toolCount: () => 0, textSent: () => false, toolCalls: (): ToolCallRecord[] => [] };
   let failoverTo: DistryAttempt | null = null;
 
   try {
@@ -4714,7 +4723,13 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     // A nudge's trigger is not the user's words: the staff Unibox gets the answer only.
     creditsTurn.userMessage = hiddenTrigger ? null : userTurnMessage;
     let emittedInputRequest = false;
-    const toolCalls: ToolCallRecord[] = [];
+    // A turn moved here after a silent model starts from the lookups it left (COPILOT-LATENCY-1125):
+    // stored with this answer, shown to this model, never run again.
+    const toolCalls: ToolCallRecord[] = [...(distryAttempt?.carried ?? [])];
+    if (toolCalls.length > 0) {
+      promptData.carriedWork = formatCarriedWork(toolCalls);
+      reassemblePrompt();
+    }
     // Rich UI emitted this turn (present_choices / open_page), persisted on the
     // assistant message so GET /sessions/* re-renders them.
     // (A holder, not a `let`: it is set inside executeTool, a closure TS
@@ -4724,6 +4739,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     // present_choices intro streamed in its place when none did.
     const turnText: { streamed: boolean; intro: string | null } = { streamed: false, intro: null };
     failoverState.toolCount = () => toolCalls.length;
+    failoverState.toolCalls = () => toolCalls;
     failoverState.textSent = () => turnText.streamed || fullResponse.trim() !== "";
     const openedPages: OpenPageRecord[] = [];
     let lastContentBlocks: Anthropic.ContentBlock[] = [];
@@ -6404,6 +6420,9 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     } else if (chatVendor) {
       // --- Direct vendor path (DeepSeek): one non-streaming request per round ---
       const vendorResult = await streamVendorChat({
+        // A person waits on Distry: a model silent past COPILOT_SILENT_MODEL_MS hands the turn to the
+        // next model of its fallback order (COPILOT-LATENCY-1125). Other configs keep no cut.
+        silentAfterMs: configKey === SOPHIE_CONFIG_KEY ? COPILOT_SILENT_MODEL_MS : undefined,
         vendor: chatVendor,
         apiKey: resolvedKey.key,
         model: resolvedModelInfo.apiModelId,
@@ -6944,6 +6963,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           textSent: failoverState.textSent(),
           failed: { provider: chatProvider, modelId: resolvedModelInfo.apiModelId },
           outOfCredit: chatCreditRefusal,
+          silentModel: err instanceof VendorSilentError,
+          carried: failoverState.toolCalls(),
           previous: distryAttempt,
           order: distryFallbackOrder,
         });

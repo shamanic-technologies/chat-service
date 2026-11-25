@@ -1,3 +1,4 @@
+import type { ToolCallRecord } from "../db/schema.js";
 // ---------------------------------------------------------------------------
 // Where Distry's turn runs when its model cannot serve.
 //
@@ -58,6 +59,11 @@ export interface DistryAttempt {
   /** The session and the user's message already stored by the first attempt (never stored twice). */
   sessionId: string;
   userMessageId: string;
+  /**
+   * The lookups this turn already made before a model went silent (COPILOT-LATENCY-1125): the next
+   * model reads them (the `carried-work` part) and they are stored with the answer, never run twice.
+   */
+  carried: ToolCallRecord[];
 }
 
 /**
@@ -109,16 +115,24 @@ export async function nextDistryAttempt(args: {
   failed: { provider: Provider; modelId: string };
   /** The failure is our platform key refused for an empty balance. */
   outOfCredit?: boolean;
+  /**
+   * The model went silent past the turn's limit (`VendorSilentError`): the turn moves on even after
+   * tools ran, carrying what they returned (`carried`), as long as no word reached the person.
+   */
+  silentModel?: boolean;
+  /** The lookups made so far this turn (carried ones included), kept for the next model. */
+  carried?: ToolCallRecord[];
   previous?: DistryAttempt;
   order: (exclude: ReadonlySet<string>) => Promise<FallbackCandidate[]>;
 }): Promise<DistryAttempt | null> {
   const { configKey, platformKey, billingRefusal, sessionId, userMessageId, toolCount, textSent, failed, previous, order } = args;
-  if ((configKey !== SOPHIE_CONFIG_KEY && !args.outOfCredit) || !platformKey || billingRefusal || !sessionId || !userMessageId || toolCount > 0 || textSent) return null;
+  if ((configKey !== SOPHIE_CONFIG_KEY && !args.outOfCredit) || !platformKey || billingRefusal || !sessionId || !userMessageId || textSent) return null;
+  if (toolCount > 0 && !args.silentModel) return null;
   const tried = [...(previous?.tried ?? []), fallbackKey(failed.provider, failed.modelId)];
   if (tried.length >= MAX_DISTRY_ATTEMPTS) return null;
   const [next] = await order(new Set(tried));
   if (!next) return null;
-  return { tried, primaryProvider: previous?.primaryProvider ?? failed.provider, next, sessionId, userMessageId };
+  return { tried, primaryProvider: previous?.primaryProvider ?? failed.provider, next, sessionId, userMessageId, carried: args.carried ?? previous?.carried ?? [] };
 }
 
 /** The log line of a turn moving to a fallback. */

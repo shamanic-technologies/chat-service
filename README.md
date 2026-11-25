@@ -562,7 +562,9 @@ The lesson is not "GLM-5.3 was bad", it is that a swap justified on one axis is 
 
 ### Retry behaviour
 
-Two independent, bounded retry budgets. Everything else fails on the first response.
+Three independent, bounded retry budgets. Everything else fails on the first response.
+
+**Hung call (Z.ai, streamed)** — Z.ai is called with `stream: true` and its answer reassembled, so callers still get one whole answer. A call that sends no byte for 60 s, or whose stream closes before its finish chunk, gave no answer: it is asked again on the SAME model, twice at most, then fails as a named 502 (`VendorHungError`). Before this (2026-11-23..25) such calls waited 300 s for nothing and failed (GLM-FLASH-502-1125). Never another model.
 
 **Connect-phase** — a thrown fetch rejection whose cause is a transient socket code (`ECONNRESET`, `ECONNREFUSED`, `ETIMEDOUT`, …). Retried 3 times with 250/500/1000 ms backoff. The request never reached the server, so replaying it cannot double-spend.
 
@@ -1970,7 +1972,7 @@ On `SIGTERM` / `SIGINT`, the server stops accepting new connections and waits up
 
 A person's `/chat` turn (dashboard; not a nudge, lead, proactive, channel or website-visitor turn) that has sent nothing after 2 s opens its stream and sends a status reasoning part (`thinking_start` / `thinking_delta` / `thinking_stop`, each with `status: true`): "Answering your previous message first." while it waits behind another turn of the same person, else "Reading your account.". A `: keep-alive` comment follows every 15 s (Cloudflare cuts a silent response at 100 s). An org billing marks `agent_api` keeps the hold, so its out-of-money refusal is still an HTTP 402. A refusal decided after the stream opened arrives as `{"type":"error","code":"request_refused","message","status"}` + `[DONE]`. Every turn logs `[chat-latency] <key> waitedMs firstByteMs firstTextMs openedEarly totalMs`.
 
-History older than 24 h is dropped first on the Gemini and direct-vendor loops (the last exchange is always kept): the account is read fresh every turn. A client-brief website read of a brand other than the turn's runs under its own Copilot-support run (runs-service refuses a child run whose brands differ from its parent's). A tool that fails on our side (5xx) tells the model not to call it again in this turn. OpenAI tool rounds on the Responses API send `strict: false` (its strict default turns every optional field into a required one: the model sent empty ids).
+History older than 24 h is dropped first on the Gemini and direct-vendor loops (the last exchange is always kept): the account is read fresh every turn. A client-brief website read of a brand other than the turn's runs under its own Copilot-support run (runs-service refuses a child run whose brands differ from its parent's). A tool that fails on our side (5xx) tells the model not to call it again in this turn. A Copilot step on a direct vendor that sends nothing for 30 s moves the turn to the next model of Distry's fallback order, with the lookups already made (logged `retrying on ...`). OpenAI tool rounds on the Responses API send `strict: false` (its strict default turns every optional field into a required one: the model sent empty ids).
 
 ### SSE Stream Timeouts
 
