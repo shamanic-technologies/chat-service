@@ -115,7 +115,10 @@ describe("local LLM — answers", () => {
     expect(answerOutcome(schemaJob, { ok: true, model: "claude-sonnet-5-5", structured: { a: 1 }, usage: USAGE })).toMatchObject({ ok: true, result: { structured: { a: 1 } } });
     // LOCAL-CLAUDE-RATING-1116: an answer that cannot be stated under the model that ran is refused.
     expect(answerOutcome(schemaJob, { ok: true, model: "claude-sonnet-5-5", structured: { a: 1 } })).toMatchObject({ ok: false });
-    expect(answerOutcome(schemaJob, { ok: true, model: "claude-opus-4-6", structured: { a: 1 }, usage: USAGE })).toMatchObject({ ok: false });
+    // SOLO-PLAN-1125: a founder's plan may run a Claude model we do not price (claude -p reported `claude-opus-4-6[1m]`): used.
+    expect(answerOutcome(schemaJob, { ok: true, model: "claude-opus-4-6[1m]", structured: { a: 1 }, usage: USAGE })).toMatchObject({ ok: true, model: "claude-opus-4-6" });
+    expect(answerOutcome(schemaJob, { ok: true, model: "gpt-6", structured: { a: 1 }, usage: USAGE })).toMatchObject({ ok: false, error: expect.stringContaining("not a Claude model") });
+    expect(answerOutcome(schemaJob, { ok: true, model: "claude-haiku-4-5", structured: { a: 1 }, usage: USAGE })).toMatchObject({ ok: false });
     expect(answerOutcome(jobWith({ jsonSchema: null }), { ok: false, error: "CLI not signed in" })).toMatchObject({ ok: false, error: "CLI not signed in" });
   });
 
@@ -190,6 +193,12 @@ describe("local LLM — answers", () => {
 });
 
 describe("LOCAL-CLAUDE-RATING-1116 — a local call states the model that ran", () => {
+  it("SOLO-PLAN-1125: an unpriced Claude model that ran is stated under the model the call asked for", () => {
+    const items = localCostItems({ jobId: "j9", model: "claude-opus-4-6", costModel: "claude-haiku-5-5", usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: null, cacheWriteTokens: null, notionalCostUsd: null, durationMs: null } });
+    expect(items.map((i) => i.costName)).toEqual(["anthropic-haiku-5.5-tokens-input", "anthropic-haiku-5.5-tokens-output"]);
+    expect(items.every((i) => i.costSource === "org")).toBe(true);
+  });
+
   const usage = (u: Partial<LocalJobRow["usage"]>): LocalJobRow["usage"] => ({
     inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, notionalCostUsd: null, durationMs: null, ...u,
   });

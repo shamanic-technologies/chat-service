@@ -370,11 +370,30 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     const posted = await request(app).post(`/orgs/local-llm/work/${item.id}/result`).set(AUTH)
       .send({ leaseId: item.leaseId, ok: true, model: "claude-haiku-5-5", structured: { step: { yes: 0.8, no: 0.2 } }, usage: { inputTokens: 10, outputTokens: 4 } });
     expect(posted.body).toMatchObject({ stored: true });
+    // 3b. A founder's Claude on a model we do not price (claude -p said claude-opus-4-6[1m]) is used too; a non-Claude answer
+    // is stored as failed and the result call says why.
+    const other = await request(app).post("/orgs/judgments").set(AUTH).send({ ...body, state: "Offer: B2C shoes." });
+    expect(other.status).toBe(503);
+    const claim2 = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, max: 10 });
+    const item2 = claim2.body.items[0];
+    const refused = await request(app).post(`/orgs/local-llm/work/${item2.id}/result`).set(AUTH)
+      .send({ leaseId: item2.leaseId, ok: true, model: "gpt-6", structured: { step: { yes: 0.1, no: 0.9 } }, usage: { inputTokens: 10, outputTokens: 4 } });
+    expect(refused.body).toMatchObject({ stored: true, status: "failed", error: expect.stringContaining("not a Claude model") });
+    const opus = await request(app).post("/orgs/judgments").set(AUTH).send({ ...body, state: "Offer: B2B payroll." });
+    expect(opus.status).toBe(503);
+    const claim3 = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, max: 10 });
+    const item3 = claim3.body.items[0];
+    await request(app).post(`/orgs/local-llm/work/${item3.id}/result`).set(AUTH)
+      .send({ leaseId: item3.leaseId, ok: true, model: "claude-opus-4-6[1m]", structured: { step: { yes: 0.7, no: 0.3 } }, usage: { inputTokens: 10, outputTokens: 4 } });
+    const opusRetry = await request(app).post("/orgs/judgments").set(AUTH).send({ ...body, state: "Offer: B2B payroll." });
+    expect(opusRetry.status).toBe(200);
+    expect(opusRetry.body.answers.step).toEqual({ type: "noul", noul: 0.7 });
+    expect(opusRetry.body.model).toBe("claude-opus-4-6");
     // 4. The same read again: served from that answer, no new item.
     const retry = await request(app).post("/orgs/judgments").set(AUTH).send(body);
     expect(retry.status).toBe(200);
     expect(retry.body.answers.step).toEqual({ type: "noul", noul: 0.8 });
-    expect(store.jobs.size).toBe(1);
+    expect(store.jobs.size).toBe(3);
   });
 
   it("SOLO-PLAN-1125: a resumed call naming its job (x-llm-job-id) gets THAT job whatever its body, never a new one", async () => {
