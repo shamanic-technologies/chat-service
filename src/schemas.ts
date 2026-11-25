@@ -3955,6 +3955,23 @@ export const SkillMentionSchema = z
     kind: z.enum(["skill", "tool"]),
     ref: z.string().openapi({ description: "The skill's slug or the tool's name. In the text: `@skill:<slug>` / `@tool:<name>`." }),
     known: z.boolean().openapi({ description: "true = a live skill / a tool Distry can call. false = a deleted or unknown skill, or a tool that does not exist: the mention leads nowhere." }),
+    api: z
+      .object({
+        operations: z
+          .array(
+            z.object({
+              method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+              path: z.string().openapi({ description: "The gateway path, e.g. `/v1/brands/{id}/offers/confirm`." }),
+              operationId: z.string().nullable().openapi({ description: "The gateway's own id for this operation; null when its public document does not list it." }),
+              describeUrl: z.string().nullable().openapi({ description: "Serves this one operation's request body and answer schemas (`/openapi.json?operation=<operationId>`)." }),
+            }),
+          )
+          .openapi({ description: "The public API call(s) doing what the tool does. Empty: `noRoute` says why." }),
+        noRoute: z.string().optional().openapi({ description: "Why no public call does it (a chat screen, the API explorer itself, no route yet)." }),
+        documentUnread: z.string().optional().openapi({ description: "The gateway's document could not be read: operationIds are null." }),
+      })
+      .optional()
+      .openapi({ description: "Tool mentions on a one-skill read: the public API call an outside agent makes for that tool (AGENT-SIGNUP-UX-1125)." }),
   })
   .openapi("SkillMention");
 
