@@ -243,7 +243,12 @@ export function parseSkillUpgradeArgs(args: Record<string, unknown>): StaffReque
   if (!skillSlug && !docRepo) {
     throw new StaffRequestValidationError("name what to upgrade: skillSlug (a skill) or repo (the service whose doc is wrong)");
   }
-  if (skillSlug && docRepo) throw new StaffRequestValidationError("send skillSlug OR repo, not both");
+  // Prod replay 2026-11-25: the bare "not both" was re-sent unchanged four times (COPILOT-LATENCY-1125).
+  if (skillSlug && docRepo) {
+    throw new StaffRequestValidationError(
+      "send skillSlug OR repo, not both: one of our skills misled you = skillSlug alone; a service's API documentation misled you = repo alone. Call again with only one of them.",
+    );
+  }
   if (docRepo && !(STAFF_REQUEST_REPOS as readonly string[]).includes(docRepo)) {
     throw new StaffRequestValidationError(`repo "${docRepo}" is not a fleet repo. Use one of: ${STAFF_REQUEST_REPOS.join(", ")}`);
   }

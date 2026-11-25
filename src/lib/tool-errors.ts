@@ -134,6 +134,11 @@ const MISSING_ENV_VAR = /\b[A-Z][A-Z0-9]*_[A-Z0-9_]+ is required\b/;
 /** api-service wraps a downstream 4xx as a 500: the arguments were refused, not our side. */
 const NESTED_CLIENT_ERROR = /returned 4\d\d\b|"status"\s*:\s*4\d\d\b/;
 
+/** Not "try again": the same arguments get the same refusal (prod 2026-11-25: open_page re-sent with an empty id, COPILOT-LATENCY-1125). */
+export const ARGUMENTS_REFUSED =
+  "Your arguments were refused: change them as the error says, then call once more. A field you do not need is left out entirely, never sent empty. " +
+  "If you cannot tell what to change, do not call it again: answer with what you have.";
+
 export const SERVER_SIDE_FAILURE =
   "This failed on our side and clears within minutes, never within this answer: do not call it again in this turn. " +
   "Answer now with what you already have, and say in one plain sentence that this part cannot be read right now.";
@@ -157,7 +162,7 @@ export function formatToolError(toolName: string, rawError: string): ToolErrorRe
     suggestion = TOOL_HINTS[toolName] ?? "Verify the resource ID.";
   } else if (status === 400) {
     error = `Bad request: ${rawError.replace(/.*returned \d{3}: ?/, "").slice(0, 200)}`;
-    suggestion = TOOL_HINTS[toolName] ?? "Check the parameters and try again.";
+    suggestion = TOOL_HINTS[toolName] ?? ARGUMENTS_REFUSED;
   } else if (status === 401 || status === 403) {
     error = "Authentication or authorization failed.";
     suggestion = "This is a server configuration issue, not something you can fix. Inform the user.";
@@ -176,10 +181,10 @@ export function formatToolError(toolName: string, rawError: string): ToolErrorRe
     // var): until 2026-11-25 this read "server configuration issue, inform the user"
     // and request_staff was re-called six times in one turn.
     error = rawError.slice(0, 300);
-    suggestion = TOOL_HINTS[toolName] ?? "Your arguments were refused: change them as the error says, then call once more.";
+    suggestion = TOOL_HINTS[toolName] ?? ARGUMENTS_REFUSED;
   } else {
     error = rawError.slice(0, 300);
-    suggestion = TOOL_HINTS[toolName] ?? "Check the parameters and try again.";
+    suggestion = TOOL_HINTS[toolName] ?? ARGUMENTS_REFUSED;
   }
 
   return { error, tool: toolName, suggestion };
