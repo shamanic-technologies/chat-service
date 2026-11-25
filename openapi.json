@@ -12634,6 +12634,10 @@
                         "done",
                         "failed"
                       ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Why the answer was stored as a failure (status failed): what the runner should fix."
                     }
                   },
                   "required": [

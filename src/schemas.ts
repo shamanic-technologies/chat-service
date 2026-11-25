@@ -4723,7 +4723,7 @@ registry.registerPath({
     body: { content: { "application/json": { schema: LocalLlmResultSchema } } },
   },
   responses: {
-    200: { description: "Stored; the caller gets it now", content: { "application/json": { schema: z.object({ stored: z.literal(true), status: z.enum(["done", "failed"]) }) } } },
+    200: { description: "Stored; the caller gets it now", content: { "application/json": { schema: z.object({ stored: z.literal(true), status: z.enum(["done", "failed"]), error: z.string().optional().openapi({ description: "Why the answer was stored as a failure (status failed): what the runner should fix." }) }) } } },
     404: { description: "No such item for this org", content: { "application/json": { schema: ErrorResponseSchema } } },
     409: { description: "Already answered, not claimed, or another claim's lease", content: { "application/json": { schema: ErrorResponseSchema } } },
     410: { description: "The caller stopped waiting (`local_job_expired`): drop it", content: { "application/json": { schema: ErrorResponseSchema } } },

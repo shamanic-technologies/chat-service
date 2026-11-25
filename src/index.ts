@@ -8016,7 +8016,8 @@ app.post("/orgs/local-llm/work/:id/result", requireAuth, async (req, res) => {
   const verdict = await store.submit(id, orgId, parsed.data.leaseId, outcome, new Date());
   if (verdict === "stored") {
     console.log(`[local-llm] org="${orgId}" job="${id}" answered ok=${outcome.ok} model=${outcome.model ?? "?"} in=${outcome.usage.inputTokens ?? "?"} out=${outcome.usage.outputTokens ?? "?"}`);
-    return res.json({ stored: true, status: outcome.ok ? "done" : "failed" });
+    // SOLO-PLAN-1125: a stored failure says why, so the founder's Claude knows what to fix.
+    return res.json({ stored: true, status: outcome.ok ? "done" : "failed", ...(outcome.ok ? {} : { error: outcome.error }) });
   }
   if (verdict === "not_found") return res.status(404).json({ error: "No such work item for this org" });
   if (verdict === "expired") {
