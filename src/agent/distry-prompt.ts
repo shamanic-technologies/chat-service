@@ -219,6 +219,17 @@ export const PROMPT_PARTS: readonly PromptPartSpec[] = [
     codeText: "{{situationBrief}}",
   },
   {
+    id: "waiting-campaign",
+    name: "Their campaign waits for them",
+    purpose: "The campaign the founder built and paid for on the signup page, created stopped: it starts on their first message to Distry, on any channel (DISTRY-CHANNEL-HANDOFF-1125).",
+    when: "A turn of that person (web, WhatsApp, email reply, Telegram) while that campaign has not been started yet.",
+    kind: "template",
+    place: "ordered",
+    placeholders: { campaignId: "The id of the waiting campaign (campaign-service)." },
+    codeText:
+      "\n\n---\n## Their campaign is waiting for them\nOn our signup page they built a campaign (id {{campaignId}}), paid, and asked us to start it when they first talk to you. This message is that moment: start it in this turn with run_operation, method PATCH, path /v1/sales-funnel-campaigns/{{campaignId}}, body {\"status\": \"activate\"}. Their yes was given on the signup page, so this one call runs at once with no proposal; then tell them in a few words that it is running, and answer what they wrote. If they ask you to wait, or not to start it, do not start it.",
+  },
+  {
     id: "brand-tools",
     name: "The brand's own tools",
     purpose: "How to use the MCP tools the writing brand plugged in.",
@@ -384,13 +395,15 @@ export interface TurnPromptData {
   enginesUnreadable: string | null;
   clientBrief: string | null;
   situationBrief: string | null;
+  /** The campaign waiting for this person's first message (copilot-handoff.ts), or null. */
+  waitingCampaignId: string | null;
   brandTools: boolean;
 }
 
 export function emptyTurnPromptData(role: string): TurnPromptData {
   return {
     role, skillIndex: null, modelName: null, campaignInputs: null, requestContext: null, leadTurnBlock: null, telegram: false,
-    websiteBlock: null, whatsappBlock: null, dashboard: false, enginesUnreadable: null, clientBrief: null, situationBrief: null, brandTools: false,
+    websiteBlock: null, whatsappBlock: null, dashboard: false, enginesUnreadable: null, clientBrief: null, situationBrief: null, waitingCampaignId: null, brandTools: false,
   };
 }
 
@@ -410,6 +423,7 @@ function partValues(id: string, d: TurnPromptData): Record<string, string> | nul
     case "engines-unreadable": return d.enginesUnreadable !== null ? { why: d.enginesUnreadable } : null;
     case "client-brief": return d.clientBrief !== null ? { clientBrief: d.clientBrief } : null;
     case "situation-brief": return d.situationBrief !== null ? { situationBrief: d.situationBrief } : null;
+    case "waiting-campaign": return d.waitingCampaignId !== null ? { campaignId: d.waitingCampaignId } : null;
     case "brand-tools": return d.brandTools ? {} : null;
     default: throw new Error(`[distry-prompt] no data rule for part "${id}"`);
   }

@@ -7108,6 +7108,123 @@
         "required": [
           "editedBy"
         ]
+      },
+      "CopilotHandoffResponse": {
+        "type": "object",
+        "properties": {
+          "campaignId": {
+            "type": "string",
+            "nullable": true
+          },
+          "campaignWaiting": {
+            "type": "boolean",
+            "description": "true while the campaign waits for the founder's first message to Distry."
+          },
+          "campaignStartedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "campaignStartedVia": {
+            "type": "string",
+            "nullable": true,
+            "description": "Where their first message came from: web, whatsapp, email, telegram, website."
+          },
+          "hellos": {
+            "type": "object",
+            "properties": {
+              "whatsapp": {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "sent",
+                      "on_its_way",
+                      "processing",
+                      "failed"
+                    ],
+                    "description": "`processing`: Distry is writing it (WhatsApp). `on_its_way`: queued in our sending (email). `sent`: it left. `failed`: see `error` (`no_phone` = the account holds no number)."
+                  },
+                  "ref": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "error": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "at",
+                  "status",
+                  "ref",
+                  "error"
+                ]
+              },
+              "email": {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "sent",
+                      "on_its_way",
+                      "processing",
+                      "failed"
+                    ],
+                    "description": "`processing`: Distry is writing it (WhatsApp). `on_its_way`: queued in our sending (email). `sent`: it left. `failed`: see `error` (`no_phone` = the account holds no number)."
+                  },
+                  "ref": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "error": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "at",
+                  "status",
+                  "ref",
+                  "error"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "campaignId",
+          "campaignWaiting",
+          "campaignStartedAt",
+          "campaignStartedVia",
+          "hellos"
+        ]
+      },
+      "CopilotHandoffRequest": {
+        "type": "object",
+        "properties": {
+          "campaignId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The ONE campaign the founder built and paid for on the signup page, created stopped (`status: \"stopped\"`). It waits for their first message to Distry on any channel (web, WhatsApp, email reply, Telegram), then Distry starts it once and says so there. A newer one replaces it."
+          },
+          "sayHelloOn": {
+            "type": "string",
+            "enum": [
+              "whatsapp",
+              "email"
+            ],
+            "description": "Distry writes FIRST, now: `whatsapp` = to the number this user holds (their linked number, else the one typed at signup), from our WhatsApp line; `email` = one email from our inboxes to their account email. Once per channel: a hello already sent or on its way is not sent again (a failed one is tried again). Their answer reaches the same Distry, in the same conversation."
+          }
+        },
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -13012,6 +13129,154 @@
           },
           "409": {
             "description": "Another save landed first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/copilot/handoff": {
+      "post": {
+        "tags": [
+          "Copilot"
+        ],
+        "summary": "Hand the signed-in founder to Distry: their waiting campaign, and a first hello on WhatsApp or email",
+        "description": "Called by the signup page for the signed-in user. Records the campaign that waits for their first message to Distry (started once, by Distry, on whatever channel they write from) and/or makes Distry write first on WhatsApp or by email. Idempotent per person.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The founder's org (internal UUID)."
+            },
+            "required": true,
+            "description": "The founder's org (internal UUID).",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The founder (internal UUID): the person Distry writes to."
+            },
+            "required": true,
+            "description": "The founder (internal UUID): the person Distry writes to.",
+            "name": "x-user-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopilotHandoffRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The handoff (a WhatsApp hello is `processing`: read GET for its outcome)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotHandoffResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`no_phone`: a WhatsApp hello for an account that holds no number",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The email hello could not be sent (the reason in `error`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Copilot"
+        ],
+        "summary": "The signed-in founder's handoff: waiting campaign and hellos",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The founder's org (internal UUID)."
+            },
+            "required": true,
+            "description": "The founder's org (internal UUID).",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The founder (internal UUID): the person Distry writes to."
+            },
+            "required": true,
+            "description": "The founder (internal UUID): the person Distry writes to.",
+            "name": "x-user-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The handoff",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotHandoffResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No handoff for this user",
             "content": {
               "application/json": {
                 "schema": {

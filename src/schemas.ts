@@ -5042,3 +5042,73 @@ registry.registerPath({
     ...distryErrors,
   },
 });
+
+// --- The web signup hands the founder to Distry (DISTRY-CHANNEL-HANDOFF-1125) ---
+
+export const CopilotHandoffRequestSchema = z
+  .object({
+    campaignId: z.string().uuid().optional().openapi({
+      description:
+        "The ONE campaign the founder built and paid for on the signup page, created stopped (`status: \"stopped\"`). It waits for their first message to Distry on any channel (web, WhatsApp, email reply, Telegram), then Distry starts it once and says so there. A newer one replaces it.",
+    }),
+    sayHelloOn: z.enum(["whatsapp", "email"]).optional().openapi({
+      description:
+        "Distry writes FIRST, now: `whatsapp` = to the number this user holds (their linked number, else the one typed at signup), from our WhatsApp line; `email` = one email from our inboxes to their account email. Once per channel: a hello already sent or on its way is not sent again (a failed one is tried again). Their answer reaches the same Distry, in the same conversation.",
+    }),
+  })
+  .strict()
+  .refine((b) => Boolean(b.campaignId || b.sayHelloOn), { message: "Give campaignId, sayHelloOn, or both." })
+  .openapi("CopilotHandoffRequest");
+
+const HelloRecordSchema = z.object({
+  at: z.string(),
+  status: z.enum(["sent", "on_its_way", "processing", "failed"]).openapi({
+    description: "`processing`: Distry is writing it (WhatsApp). `on_its_way`: queued in our sending (email). `sent`: it left. `failed`: see `error` (`no_phone` = the account holds no number).",
+  }),
+  ref: z.string().nullable(),
+  error: z.string().nullable(),
+});
+
+export const CopilotHandoffResponseSchema = z
+  .object({
+    campaignId: z.string().nullable(),
+    campaignWaiting: z.boolean().openapi({ description: "true while the campaign waits for the founder's first message to Distry." }),
+    campaignStartedAt: z.string().nullable(),
+    campaignStartedVia: z.string().nullable().openapi({ description: "Where their first message came from: web, whatsapp, email, telegram, website." }),
+    hellos: z.object({ whatsapp: HelloRecordSchema.optional(), email: HelloRecordSchema.optional() }),
+  })
+  .openapi("CopilotHandoffResponse");
+
+const handoffHeaders = z.object({
+  "x-api-key": z.string(),
+  "x-org-id": z.string().openapi({ description: "The founder's org (internal UUID)." }),
+  "x-user-id": z.string().openapi({ description: "The founder (internal UUID): the person Distry writes to." }),
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/copilot/handoff",
+  tags: ["Copilot"],
+  summary: "Hand the signed-in founder to Distry: their waiting campaign, and a first hello on WhatsApp or email",
+  description:
+    "Called by the signup page for the signed-in user. Records the campaign that waits for their first message to Distry (started once, by Distry, on whatever channel they write from) and/or makes Distry write first on WhatsApp or by email. Idempotent per person.",
+  request: { headers: handoffHeaders, body: { content: { "application/json": { schema: CopilotHandoffRequestSchema } } } },
+  responses: {
+    200: { description: "The handoff (a WhatsApp hello is `processing`: read GET for its outcome)", content: { "application/json": { schema: CopilotHandoffResponseSchema } } },
+    400: { description: "Invalid body", content: { "application/json": { schema: ErrorResponseSchema } } },
+    409: { description: "`no_phone`: a WhatsApp hello for an account that holds no number", content: { "application/json": { schema: ErrorResponseSchema } } },
+    502: { description: "The email hello could not be sent (the reason in `error`)", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/orgs/copilot/handoff",
+  tags: ["Copilot"],
+  summary: "The signed-in founder's handoff: waiting campaign and hellos",
+  request: { headers: handoffHeaders },
+  responses: {
+    200: { description: "The handoff", content: { "application/json": { schema: CopilotHandoffResponseSchema } } },
+    404: { description: "No handoff for this user", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
