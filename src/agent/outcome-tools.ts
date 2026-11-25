@@ -50,39 +50,24 @@ export const OUTCOME_RESULT_MAX_CHARS = 6000;
 export const FIND_OUTCOME_TOOL: Anthropic.Tool = {
   name: FIND_OUTCOME_TOOL_NAME,
   description:
-    "Read how to get or make Units of an outcome (an outcome is one kind of result we produce: an email found, an email sent, a message written...). " +
-    "Without `outcome`: every outcome we know, whether its Engine can make one now and how many Provider reads it has (`q` narrows by words). " +
-    "With `outcome`: its Provider reads (get_units: each read's route, what it filters on and what it answers, as its service documents it) and its Engine's ask (ask_engine: can it make one now, what it needs handed, what each script does and reads). " +
-    "The game, the same one our Scripts play: a fact we already hold is READ (get_units, free); the Engine MAKES a new Unit (ask_engine, it costs money) only when no held Unit fits what the person wants (none, or too old for them). Reading this costs nothing.",
+    "How to read or make results of one kind (an outcome: email found, email sent...). No outcome = the list. With one = its reads (get_units) and what its Engine needs (ask_engine). Free.",
   input_schema: {
     type: "object",
     properties: {
-      outcome: { type: "string", description: "The outcome key (e.g. email_sent), from the list this tool answers without it." },
-      q: { type: "string", description: "Words to narrow the list (without outcome)." },
+      outcome: { type: "string" },
+      q: { type: "string", description: "Words to narrow the list." },
     },
   },
 };
 
 export const GET_UNITS_TOOL: Anthropic.Tool = {
   name: GET_UNITS_TOOL_NAME,
-  description:
-    "Read Units of an outcome that already exist, from the service that owns them (its Provider read), for this account. Free: nothing is made, sent or spent. " +
-    "Read find_outcome(outcome) first: it gives each read's route and its filters. `filters` is that read's own request as its doc states it: `params` (path), `query`, `body` (a POST read), and `route` (the read's operationId) when the outcome has several reads. " +
-    "An empty answer means none is held: say so, and ask the Engine only if the person wants a new one.",
+  description: "Read results we already hold for an outcome, for this account. Free. `filters` = the read's request as find_outcome documents it.",
   input_schema: {
     type: "object",
     properties: {
-      outcome: { type: "string", description: "The outcome key." },
-      filters: {
-        type: "object",
-        description: "The read's request: {route?, params?, query?, body?}, as find_outcome documents it.",
-        properties: {
-          route: { type: "string", description: "The read's operationId, when the outcome has several reads." },
-          params: { type: "object", description: "Path parameters by name." },
-          query: { type: "object", description: "Query parameters by name (a list = comma-separated, as the doc says)." },
-          body: { type: "object", description: "The body of a POST read." },
-        },
-      },
+      outcome: { type: "string" },
+      filters: { type: "object", description: "{route?, params?, query?, body?}" },
     },
     required: ["outcome"],
   },
@@ -91,25 +76,13 @@ export const GET_UNITS_TOOL: Anthropic.Tool = {
 export const ASK_ENGINE_TOOL: Anthropic.Tool = {
   name: ASK_ENGINE_TOOL_NAME,
   description:
-    "Ask an outcome's Engine to MAKE one new Unit now, for this account: the Rating picks the Engine's best script, which runs while you wait and answers the Unit (or why it made none). " +
-    "It spends this account's money and can reach real people, so read first (get_units): ask only when no held Unit fits what the person wants. " +
-    "First call it WITHOUT confirmationToken: nothing runs, it answers a proposal; tell the person in one line what will be made and that it costs money, and ask yes or no. After their yes, in a later message, call it with just that confirmationToken. " +
-    "`inputs` is what the Engine's scripts take (find_outcome shows it): `units` = materials by outcome (each {content, subject?}), `request` = the request their scripts read (e.g. {emails: [...]} or the topic), `channel` when one is stated. " +
-    "One ask makes ONE Unit, once. For ongoing production (many Units over time, a budget, a brief) the person wants a Campaign (the campaigns skill), never repeated asks.",
+    "Make ONE new result now, when nothing held fits. Costs money: the first call only proposes; after the person's yes in a later message, call again with the confirmationToken. Ongoing production is a campaign.",
   input_schema: {
     type: "object",
     properties: {
-      outcome: { type: "string", description: "The outcome key." },
-      inputs: {
-        type: "object",
-        description: "{units?, request?, channel?}: what the Engine's scripts take, as find_outcome documents it.",
-        properties: {
-          units: { type: "object", description: "Materials by outcome: {<outcome>: {content, subject?} or a list of them}." },
-          request: { type: "object", description: "The request the Engine's scripts read." },
-          channel: { type: "string", description: "The channel the Unit is for, when the Engine states one." },
-        },
-      },
-      confirmationToken: { type: "string", description: "Only after the person said yes to a proposal this tool answered in an earlier message: runs exactly that ask." },
+      outcome: { type: "string" },
+      inputs: { type: "object", description: "{units?, request?, channel?} as find_outcome documents it." },
+      confirmationToken: { type: "string" },
     },
   },
 };
