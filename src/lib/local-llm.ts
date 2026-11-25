@@ -148,6 +148,12 @@ export interface LocalAnswer {
   jobId: string;
   /** The model the CLI says wrote the answer. */
   model: string;
+  /**
+   * SOLO-PLAN-1125: the model whose catalog names state the call: the one that ran when we price
+   * it, else the Claude model the call asked for (a founder's plan may run a Claude model our
+   * catalog does not carry, e.g. an older Opus: its answer is still used).
+   */
+  costModel: string;
   text: string | null;
   structured: unknown;
   usage: LocalUsage;
@@ -362,6 +368,8 @@ const TIER_MODEL: Record<CapabilityTier, string> = {
   strong: "claude-sonnet-5-5",
   frontier: "claude-opus-5-5",
 };
+/** A Claude model id as the CLI reports it (`claude-opus-4-6`, `claude-sonnet-5-5`, a dated build). */
+const CLAUDE_MODEL_ID = /^claude-[a-z0-9.-]+$/i;
 /** Owner rule: nothing goes to Haiku 4.5. */
 const BANNED_MODEL = /haiku-4-5|haiku-4\.5/i;
 
@@ -400,9 +408,10 @@ function pricedClaudeModel(modelId: string): { apiModelId: string; costPrefix: s
  * them at list, so the Rating reads what that writing would cost through a key.
  * Idempotent per job (a retried post never states a call twice).
  */
-export function localCostItems(answer: { jobId: string; model: string; usage: LocalUsage }): CostItem[] {
-  const priced = pricedClaudeModel(answer.model);
-  if (!priced) throw new Error(`[local-llm] job ${answer.jobId}: "${answer.model}" is not a Claude model this service prices`);
+export function localCostItems(answer: { jobId: string; model: string; costModel?: string; usage: LocalUsage }): CostItem[] {
+  const costModel = answer.costModel ?? answer.model;
+  const priced = pricedClaudeModel(costModel);
+  if (!priced) throw new Error(`[local-llm] job ${answer.jobId}: "${costModel}" is not a Claude model this service prices`);
   const u = answer.usage;
   if (typeof u.inputTokens !== "number" || typeof u.outputTokens !== "number") {
     throw new Error(`[local-llm] job ${answer.jobId}: the runner reported no token usage, the call cannot be stated`);
@@ -601,9 +610,11 @@ export async function runLocally(args: {
 function finished(job: LocalJobRow): LocalAnswer {
   if (job.status === "done") {
     const r = (job.result ?? {}) as { text?: unknown; structured?: unknown };
+    const model = job.model ?? "unknown";
     return {
       jobId: job.id,
-      model: job.model ?? "unknown",
+      model,
+      costModel: pricedClaudeModel(model) ? model : (job.request as LocalClaudeCall).model,
       text: typeof r.text === "string" ? r.text : null,
       structured: r.structured ?? null,
       usage: job.usage,
@@ -625,11 +636,17 @@ export function answerOutcome(job: LocalJobRow, a: LocalRunnerAnswer): LocalAnsw
     notionalCostUsd: a.notionalCostUsd ?? null,
     durationMs: a.durationMs ?? null,
   };
-  const model = a.model ?? null;
+  // The CLI names a context variant in brackets (`claude-opus-4-6[1m]`): the model is the id before it.
+  const model = a.model ? a.model.trim().replace(/\[[^\]]*\]$/, "") : null;
   if (!a.ok) return { ok: false, error: a.error ?? "The local runner reported a failure without a message.", model, usage };
   if (!model) return { ok: false, error: "The runner's answer did not say which model wrote it (the CLI's init `model`).", model, usage };
   if (BANNED_MODEL.test(model)) return { ok: false, error: `The answer was written by ${model}, a model we never use (owner rule).`, model, usage };
-  if (!pricedClaudeModel(model)) return { ok: false, error: `The answer was written by "${model}", not a Claude model this service prices: the call could not be credited to the model that ran.`, model, usage };
+  // SOLO-PLAN-1125: a founder's Claude plan runs whatever Claude model their app picks (older, newer, a
+  // variant): any real Claude model's answer is used; one we do not price is stated under the model
+  // the call asked for (`costModel`). Only a non-Claude model is refused.
+  if (!pricedClaudeModel(model) && !CLAUDE_MODEL_ID.test(model)) {
+    return { ok: false, error: `The answer was written by "${model}", which is not a Claude model: answer with Claude (claude -p).`, model, usage };
+  }
   if (typeof usage.inputTokens !== "number" || typeof usage.outputTokens !== "number") {
     return { ok: false, error: "The answer carries no token usage (`usage.inputTokens` + `usage.outputTokens`, the CLI's result usage): the call could not be stated on its run.", model, usage };
   }
