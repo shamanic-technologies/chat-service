@@ -562,7 +562,9 @@ The lesson is not "GLM-5.3 was bad", it is that a swap justified on one axis is 
 
 ### Retry behaviour
 
-Two independent, bounded retry budgets. Everything else fails on the first response.
+Three independent, bounded retry budgets. Everything else fails on the first response.
+
+**Hung call (Z.ai, streamed)** — Z.ai is called with `stream: true` and its answer reassembled, so callers still get one whole answer. A call that sends no byte for 60 s, or whose stream closes before its finish chunk, gave no answer: it is asked again on the SAME model, twice at most, then fails as a named 502 (`VendorHungError`). Before this (2026-11-23..25) such calls waited 300 s for nothing and failed (GLM-FLASH-502-1125). Never another model.
 
 **Connect-phase** — a thrown fetch rejection whose cause is a transient socket code (`ECONNRESET`, `ECONNREFUSED`, `ETIMEDOUT`, …). Retried 3 times with 250/500/1000 ms backoff. The request never reached the server, so replaying it cannot double-spend.
 
@@ -1793,6 +1795,21 @@ A campaign step (workflow) calls it when a fact needs the team's decision. Today
 2. **One turn, reads only:** `POST /chat` on this process on that member's latest `copilot` session (the thread web and WhatsApp share), with `proactiveTurnId`. `/chat` honours it only for a row in progress for that org, user and session, keeps the `get_*` / `list_*` / `find_*` tools and `read_skill`, stores the trigger hidden (`proactive_trigger`) and skips the campaign context. Before the turn, when the caller sent no `inbound.text`, the person's thread is read from crm-service's merged timeline (`GET /v1/orgs/people/timeline`, by email, then phone, then person id) and its latest messages go into the hidden trigger. The asking campaign (`x-campaign-id`, a STEP of a funnel campaign) is resolved through campaign-service (`GET /campaigns/:id`, then its `GET /sales-funnel-campaigns/:id`; an id that is already a funnel campaign is read as one; unknown = the turn fails) and named in the trigger by the funnel campaign's name, funnel and channel as the notification itself; `/chat` resolves it again and drops it from the turn's `list_campaigns` / `list_funnel_campaigns` rows and its sales funnel from `find_sales_funnels`, with a `hidden` note, so the turn can only propose something that acts for the person. With no words of theirs to read, the message says so in a few words and never describes the rest of their thread. The message: who the person is, a short quote of their words, one proposal of what to set up FOR them from what we run today with its cap, ending with a request for the team's go. No he/she for the person: their name, or they/them. Nothing is created, started or sent for the lead until the team answers in that thread.
 3. **Delivery:** on WhatsApp (crm-service, key `copilot-proactive:<id>`, from the linked account that last answered them) when that thread is tied to a number, else the answer waits in the web thread. A refusal that can clear by waiting (`422 whatsapp_not_connected`, `429`, `5xx`, a network cut) is retried with the SAME text and key over ~7.5 min (15 s, 30 s, 1 min, 2 min, 4 min), never a new turn; after that the row is `failed` with `error` naming the attempts and the last refusal, `replyText` holds the message, and it waits in the web Copilot thread. Out of credits: stored, not sent to a phone.
 4. **Once per fact:** unique on (`orgId`, `idempotencyKey`) in `copilot_proactive_turns`: a retry answers `200 duplicate: true` with the stored row. A turn cut off by a restart is marked `failed`, never re-run.
+
+## The signup hands the founder to Distry (`/orgs/copilot/handoff`, DISTRY-CHANNEL-HANDOFF-1125)
+
+Signed-in founder only (service key + `x-org-id` + `x-user-id`, through the gateway).
+
+```
+POST /orgs/copilot/handoff   { "campaignId"?: uuid, "sayHelloOn"?: "whatsapp" | "email" }   (at least one)
+GET  /orgs/copilot/handoff
+→ { campaignId, campaignWaiting, campaignStartedAt, campaignStartedVia, hellos: { whatsapp?, email? } }
+```
+
+- `campaignId`: the campaign built and paid for on the signup page, created stopped. It waits for the founder's first message to Distry on ANY channel; that turn starts it (once) and says so on the same channel.
+- `sayHelloOn: "whatsapp"`: Distry writes first from our line (+33 6 80 47 87 02) to the number the account holds (linked, else typed at signup). 409 `no_phone` when none. The hello's outcome (`processing` → `sent`/`failed`) is read with GET.
+- `sayHelloOn: "email"`: the choice is filed on their thread through crm-service's « continue by email » hand-off, which reports one Lead event: our Lead event campaign emails them, and their reply is answered by Distry in the same thread. 502 `hello_not_sent` when crm refuses.
+- Once per channel: a hello sent or on its way is never sent again (a failed one is retried by the next call).
 
 ## A brand's own MCP servers as tools of our AI (BRAND-MCP-1109)
 
