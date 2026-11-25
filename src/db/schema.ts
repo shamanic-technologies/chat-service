@@ -660,6 +660,12 @@ export const localLlmOrgs = pgTable("local_llm_orgs", {
   runnerLastSeenAt: timestamp("runner_last_seen_at", { withTimezone: true }),
   runnerName: text("runner_name"),
   runnerVersion: text("runner_version"),
+  /** SOLO-PLAN-1125 (migration 0049): `app` (an installed runner polling all the time) | `routine` (the founder's Claude, about hourly). */
+  runnerKind: text("runner_kind"),
+  /** When the founder was told no runner took their work for ~2 h; cleared when a runner claims again. */
+  silenceNotifiedAt: timestamp("silence_notified_at", { withTimezone: true }),
+  /** The door that notice went out on (telegram | whatsapp | chat). */
+  silenceNoticeChannel: text("silence_notice_channel"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -693,9 +699,16 @@ export const localLlmJobs = pgTable(
     /** What the CLI says the call WOULD cost at API prices: measured, never billed. */
     notionalCostUsd: real("notional_cost_usd"),
     durationMs: integer("duration_ms"),
+    /** SOLO-PLAN-1125: hash of (kind, route, work item): a resent identical call attaches to this job. */
+    requestKey: text("request_key"),
+    /** When a caller received this answer; a delivered answer is never handed out again. */
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("local_llm_jobs_org_status_idx").on(table.orgId, table.status, table.createdAt)],
+  (table) => [
+    index("local_llm_jobs_org_status_idx").on(table.orgId, table.status, table.createdAt),
+    index("local_llm_jobs_org_request_key_idx").on(table.orgId, table.requestKey),
+  ],
 );
 
 // ---------------------------------------------------------------------------
@@ -752,6 +765,8 @@ export const distrySpendDays = pgTable("distry_spend_days", {
   alertFiredAt: timestamp("alert_fired_at", { withTimezone: true }),
   alertTelegramAt: timestamp("alert_telegram_at", { withTimezone: true }),
   alertEmailAt: timestamp("alert_email_at", { withTimezone: true }),
+  /** SOLO-PLAN-1125 (migration 0050): the owner's WhatsApp copy of the alert. */
+  alertWhatsappAt: timestamp("alert_whatsapp_at", { withTimezone: true }),
   /** The last delivery error per channel, null once delivered. */
   alertError: text("alert_error"),
 });

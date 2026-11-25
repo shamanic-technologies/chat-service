@@ -188,7 +188,7 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     await store.enqueue({
       orgId: B, kind: "complete", route: "/complete", runId: null,
       request: { prompt: "q", systemPrompt: "", jsonSchema: null, model: "claude-haiku-5-5", tools: [] },
-      pickupDeadlineAt: new Date(Date.now() + 60_000), answerDeadlineAt: new Date(Date.now() + 120_000),
+      requestKey: null, pickupDeadlineAt: new Date(Date.now() + 60_000), answerDeadlineAt: new Date(Date.now() + 120_000),
     });
 
     const all = await request(app).get("/internal/local-llm/orgs").set({ "x-api-key": "test-key" });
@@ -329,11 +329,79 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     expect(res.body).toMatchObject({ code: "local_runner_waiting", retryable: true, servedBy: "local-claude-code" });
     // Provider call count: zero (no vendor, no key, no billing).
     expect(fetchCalls.filter((c) => !c.url.includes("runs.test.local"))).toEqual([]);
+    expect(res.body).toMatchObject({ answerKept: true });
+    // SOLO-PLAN-1125 AC1: the call stays queued. 90 minutes later the founder's routine takes it and answers.
     const [job] = [...store.jobs.values()];
-    expect(job.status).toBe("expired");
-    // A runner arriving late cannot run it.
-    const claim = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0 });
-    expect(claim.body.items).toEqual([]);
+    expect(job.status).toBe("pending");
+    job.createdAt = new Date(job.createdAt.getTime() - 90 * 60_000);
+    job.pickupDeadlineAt = new Date(job.pickupDeadlineAt.getTime() - 90 * 60_000);
+    const claim = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, max: 10, runner: { name: "claude-routine", kind: "routine" } });
+    expect(claim.body.items).toHaveLength(1);
+    expect(new Date(claim.body.items[0].answerBy).getTime()).toBeGreaterThan(Date.now() + 25 * 60_000);
+    const item = claim.body.items[0];
+    const posted = await request(app).post(`/orgs/local-llm/work/${item.id}/result`).set(AUTH)
+      .send({ leaseId: item.leaseId, ok: true, model: "claude-haiku-5-5", text: "late but used", usage: { inputTokens: 12, outputTokens: 4 } });
+    expect(posted.body).toMatchObject({ stored: true });
+    const state = await request(app).get("/orgs/local-llm").set(AUTH);
+    expect(state.body.runner).toMatchObject({ connected: true, kind: "routine", name: "claude-routine" });
+    // The caller resends the same call: the answer that came in is used, nothing is queued again.
+    const again = await request(app).post("/complete").set(AUTH).send({ message: "Hi", systemPrompt: "S.", provider: "google", model: "flash-pro" });
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ content: "late but used", localJobId: item.id, servedBy: "local-claude-code" });
+    expect(store.jobs.size).toBe(1);
+    expect(fetchCalls.filter((c) => !c.url.includes("runs.test.local"))).toEqual([]);
+  });
+
+  it("SOLO-PLAN-1125: a SYNC judgment caller (an MCP agent one call at a time): fails, claims the kept item, answers, retries, is served the stored answer", async () => {
+    process.env.LOCAL_LLM_PICKUP_WAIT_MS = "200";
+    const { app, store } = await boot();
+    await request(app).put("/orgs/local-llm").set(AUTH).send({ enabled: true });
+    const body = { state: "Offer: B2B bookkeeping.", questions: { step: { type: "noul", instructions: "Does the offer have a demo step?" } } };
+    // 1. The read needing a judgment fails while nobody runs the work.
+    const first = await request(app).post("/orgs/judgments").set(AUTH).send(body);
+    expect(first.status).toBe(503);
+    expect(first.body).toMatchObject({ code: "local_runner_waiting", answerKept: true });
+    // 2. The founder's Claude claims: the item is still there (it did not expire with its caller).
+    const claim = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, max: 10, runner: { kind: "routine" } });
+    expect(claim.body.items).toHaveLength(1);
+    const item = claim.body.items[0];
+    expect(item.kind).toBe("judgment");
+    // 3. It answers.
+    const posted = await request(app).post(`/orgs/local-llm/work/${item.id}/result`).set(AUTH)
+      .send({ leaseId: item.leaseId, ok: true, model: "claude-haiku-5-5", structured: { step: { yes: 0.8, no: 0.2 } }, usage: { inputTokens: 10, outputTokens: 4 } });
+    expect(posted.body).toMatchObject({ stored: true });
+    // 4. The same read again: served from that answer, no new item.
+    const retry = await request(app).post("/orgs/judgments").set(AUTH).send(body);
+    expect(retry.status).toBe(200);
+    expect(retry.body.answers.step).toEqual({ type: "noul", noul: 0.8 });
+    expect(store.jobs.size).toBe(1);
+  });
+
+  it("SOLO-PLAN-1125: a resumed call naming its job (x-llm-job-id) gets THAT job whatever its body, never a new one", async () => {
+    process.env.LOCAL_LLM_PICKUP_WAIT_MS = "200";
+    const { app, store } = await boot();
+    await request(app).put("/orgs/local-llm").set(AUTH).send({ enabled: true });
+    const first = await request(app).post("/complete").set(AUTH).send({ message: "Today is 10:00. Write it.", systemPrompt: "S.", provider: "google", model: "flash-pro" });
+    expect(first.status).toBe(503);
+    expect(first.body).toMatchObject({ code: "local_runner_waiting", retryable: true, answerKept: true, retryAfterSeconds: 600 });
+    const jobId = first.body.jobId as string;
+    // Still waiting: the resume (a prompt carrying a new time) answers the same waiting state, queues nothing.
+    const look = await request(app).post("/complete").set({ ...AUTH, "x-llm-job-id": jobId }).send({ message: "Today is 10:10. Write it.", systemPrompt: "S.", provider: "google", model: "flash-pro" });
+    expect(look.status).toBe(503);
+    expect(look.body).toMatchObject({ jobId, answerKept: true });
+    expect(store.jobs.size).toBe(1);
+    const claim = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, runner: { kind: "routine" } });
+    const item = claim.body.items[0];
+    await request(app).post(`/orgs/local-llm/work/${item.id}/result`).set(AUTH).send({ leaseId: item.leaseId, ok: true, model: "claude-haiku-5-5", text: "done", usage: { inputTokens: 3, outputTokens: 1 } });
+    const resumed = await request(app).post("/complete").set({ ...AUTH, "x-llm-job-id": jobId }).send({ message: "Today is 10:20. Write it.", systemPrompt: "S.", provider: "google", model: "flash-pro" });
+    expect(resumed.status).toBe(200);
+    expect(resumed.body).toMatchObject({ content: "done", localJobId: jobId });
+    expect(store.jobs.size).toBe(1);
+    // Another org naming this job never reads it: its call is its own.
+    await request(app).put("/orgs/local-llm").set({ ...AUTH, "x-org-id": "org-local-2" }).send({ enabled: true });
+    const foreign = await request(app).post("/complete").set({ ...AUTH, "x-org-id": "org-local-2", "x-llm-job-id": jobId }).send({ message: "x", systemPrompt: "S.", provider: "google", model: "flash-pro" });
+    expect(foreign.status).toBe(503);
+    expect(foreign.body.jobId).not.toBe(jobId);
   });
 
   it("10 calls at once: none deadlocks, each runs exactly once", async () => {
