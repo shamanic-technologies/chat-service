@@ -1,4 +1,5 @@
 import { SEED_SKILLS } from "./lib/skill-seed.js";
+import { withToolApi } from "./lib/skill-tool-operations.js";
 import express from "express";
 import cors from "cors";
 import { buildModelPanel, distryModelChoices, fallbackKey, rankFallbacks, readIndexState, refreshIntelligenceIndex, INDEX_TICK_MS, type FallbackCandidate } from "./lib/intelligence-index.js";
@@ -7539,7 +7540,9 @@ app.get("/internal/skills/:slug", requireInternalAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
   try {
     const skill = await getSkill(db, parsed.data.slug);
-    return res.json({ ...toSkillBody(skill), ...linksOf(await skillMentionGraph(db), skill) });
+    const links = linksOf(await skillMentionGraph(db), skill);
+    // AGENT-SIGNUP-UX-1125: each tool it mentions carries the public API call doing the same act.
+    return res.json({ ...toSkillBody(skill), ...links, mentions: await withToolApi(links.mentions) });
   } catch (err) {
     const mapped = skillErrorStatus(err);
     return res.status(mapped.status).json({ error: mapped.error });

@@ -4651,6 +4651,62 @@
           "known": {
             "type": "boolean",
             "description": "true = a live skill / a tool Distry can call. false = a deleted or unknown skill, or a tool that does not exist: the mention leads nowhere."
+          },
+          "api": {
+            "type": "object",
+            "properties": {
+              "operations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "GET",
+                        "POST",
+                        "PUT",
+                        "PATCH",
+                        "DELETE"
+                      ]
+                    },
+                    "path": {
+                      "type": "string",
+                      "description": "The gateway path, e.g. `/v1/brands/{id}/offers/confirm`."
+                    },
+                    "operationId": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "The gateway's own id for this operation; null when its public document does not list it."
+                    },
+                    "describeUrl": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Serves this one operation's request body and answer schemas (`/openapi.json?operation=<operationId>`)."
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "path",
+                    "operationId",
+                    "describeUrl"
+                  ]
+                },
+                "description": "The public API call(s) doing what the tool does. Empty: `noRoute` says why."
+              },
+              "noRoute": {
+                "type": "string",
+                "description": "Why no public call does it (a chat screen, the API explorer itself, no route yet)."
+              },
+              "documentUnread": {
+                "type": "string",
+                "description": "The gateway's document could not be read: operationIds are null."
+              }
+            },
+            "required": [
+              "operations"
+            ],
+            "description": "Tool mentions on a one-skill read: the public API call an outside agent makes for that tool (AGENT-SIGNUP-UX-1125)."
           }
         },
         "required": [
