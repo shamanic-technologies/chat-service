@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseStaffRequestArgs, buildTelegramMessage, buildIssueBody } from "../../src/lib/staff-requests.js";
+import { parseStaffRequestArgs, parseSkillUpgradeArgs, buildTelegramMessage, buildIssueBody } from "../../src/lib/staff-requests.js";
 import type { StaffRequest } from "../../src/db/schema.js";
 import { RETIRED_TOOL_NAMES, TOOL_REGISTRY, resolveToolSet } from "../../src/lib/anthropic.js";
 
@@ -80,6 +80,7 @@ describe("a new step or trigger is a feature request, never a bare row (owner 20
       /call request_staff again with the same fields and WITHOUT newStepOrTrigger/,
     );
     expect(() => parseStaffRequestArgs({ ...req, newStepOrTrigger: { ...gap, name: "" } })).toThrow(/Not a new step or trigger\? Call request_staff again WITHOUT newStepOrTrigger/);
+    expect(() => parseSkillUpgradeArgs({ skillSlug: "campaigns", repo: "features-service", title: "t", problem: "p", proposedChange: "c" })).toThrow(/skillSlug alone.*repo alone/);
     const { newStepOrTrigger: _drop, ...bug } = req;
     expect(parseStaffRequestArgs({ ...bug, kind: "bug" }).kind).toBe("bug");
   });
