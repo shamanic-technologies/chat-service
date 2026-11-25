@@ -318,10 +318,7 @@ export function vendorCostLines(args: {
     throw new Error(`[cost] vendorCostLines called for non-vendor provider "${provider}"`);
   }
   const { pricing } = VENDORS[provider];
-  const longContextAbove =
-    pricing.kind === "priced"
-      ? (pricing.longContextAboveInputTokens ?? pricing.longContextAboveInputTokensByPrefix?.[costPrefix])
-      : undefined;
+  const longContextAbove = pricing.kind === "priced" ? pricing.longContextAboveInputTokens : undefined;
   const longContext = longContextAbove !== undefined && tokensInput > longContextAbove;
   const names = buildLlmCostNames({ provider, costPrefix: longContext ? `${costPrefix}-long-context` : costPrefix, at });
   const cached = names.cachedInput ? Math.min(args.cachedInputTokens, tokensInput) : 0;

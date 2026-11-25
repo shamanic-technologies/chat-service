@@ -638,7 +638,6 @@
               "zai",
               "moonshot",
               "openai",
-              "openrouter",
               null
             ],
             "description": "LLM provider. Null means default (google)."
@@ -740,10 +739,9 @@
               "deepseek",
               "zai",
               "moonshot",
-              "openai",
-              "openrouter"
+              "openai"
             ],
-            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n- `deepseek`, `zai`, `moonshot`, `openai`, `openrouter` — the direct vendors (DeepSeek, GLM, Kimi, GPT, and the cheapest open models through OpenRouter, each pinned to one host), on one shared tool loop",
+            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n- `deepseek`, `zai`, `moonshot`, `openai` — the direct vendors (DeepSeek, GLM, Kimi, GPT), on one shared tool loop",
             "example": "google"
           },
           "model": {
@@ -792,23 +790,7 @@
               "gpt-sol",
               "gpt-6.1-sol",
               "gpt-terra",
-              "gpt-6.1-terra",
-              "openrouter-ling-tiny",
-              "inclusionai/ling-3.0-tiny@antdigital",
-              "openrouter-nex-mini",
-              "nex-agi/nex-n2.5-mini@nex-agi",
-              "openrouter-hy-flash",
-              "tencent/hy4-flash@tencent",
-              "openrouter-deepseek-flash",
-              "deepseek/deepseek-v4.1-flash-1017@alibaba",
-              "openrouter-qwen-flash",
-              "qwen/qwen3.7-flash@alibaba",
-              "openrouter-llama-8b",
-              "meta-llama/llama-3.1-8b-instruct@deepinfra",
-              "openrouter-gpt-oss-20b",
-              "openai/gpt-oss-20b@deepinfra",
-              "openrouter-gpt-oss-120b",
-              "openai/gpt-oss-120b@deepinfra"
+              "gpt-6.1-terra"
             ],
             "description": "Model alias (version-free). Omit to use the provider's default (sonnet for anthropic, flash-pro for google, the first served model otherwise). Must be a name that provider accepts.",
             "example": "pro"
@@ -860,7 +842,6 @@
               "zai",
               "moonshot",
               "openai",
-              "openrouter",
               null
             ],
             "description": "LLM provider. Null means default (google)."
@@ -978,10 +959,9 @@
               "deepseek",
               "zai",
               "moonshot",
-              "openai",
-              "openrouter"
+              "openai"
             ],
-            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n- `deepseek`, `zai`, `moonshot`, `openai`, `openrouter` — the direct vendors (DeepSeek, GLM, Kimi, GPT, and the cheapest open models through OpenRouter, each pinned to one host), on one shared tool loop",
+            "description": "LLM provider for this chat mode. Omit to use the default (google).\n\n- `anthropic` — Claude models (haiku, sonnet, opus)\n- `google` — Gemini models (flash-lite, flash, flash-pro, pro)\n- `deepseek`, `zai`, `moonshot`, `openai` — the direct vendors (DeepSeek, GLM, Kimi, GPT), on one shared tool loop",
             "example": "google"
           },
           "model": {
@@ -1030,23 +1010,7 @@
               "gpt-sol",
               "gpt-6.1-sol",
               "gpt-terra",
-              "gpt-6.1-terra",
-              "openrouter-ling-tiny",
-              "inclusionai/ling-3.0-tiny@antdigital",
-              "openrouter-nex-mini",
-              "nex-agi/nex-n2.5-mini@nex-agi",
-              "openrouter-hy-flash",
-              "tencent/hy4-flash@tencent",
-              "openrouter-deepseek-flash",
-              "deepseek/deepseek-v4.1-flash-1017@alibaba",
-              "openrouter-qwen-flash",
-              "qwen/qwen3.7-flash@alibaba",
-              "openrouter-llama-8b",
-              "meta-llama/llama-3.1-8b-instruct@deepinfra",
-              "openrouter-gpt-oss-20b",
-              "openai/gpt-oss-20b@deepinfra",
-              "openrouter-gpt-oss-120b",
-              "openai/gpt-oss-120b@deepinfra"
+              "gpt-6.1-terra"
             ],
             "description": "Model alias (version-free). Omit to use the provider's default (sonnet for anthropic, flash-pro for google, the first served model otherwise). Must be a name that provider accepts.",
             "example": "pro"
@@ -1313,10 +1277,9 @@
               "deepseek",
               "zai",
               "moonshot",
-              "openai",
-              "openrouter"
+              "openai"
             ],
-            "description": "LLM provider to use. `anthropic` and `google` are native clients with the full feature set (vision, web search, thinking controls). `deepseek`, `zai` (Z.ai / GLM), `moonshot` (Kimi), `openai` (GPT), `openrouter` (cheapest open models, one host each) are called directly over their OpenAI-compatible APIs by one shared adapter — text in / text out only, opt-in per call, no existing caller reaches them implicitly. Each vendor resolves its OWN API key from key-service under this exact slug.",
+            "description": "LLM provider to use. `anthropic` and `google` are native clients with the full feature set (vision, web search, thinking controls). `deepseek`, `zai` (Z.ai / GLM), `moonshot` (Kimi), `openai` (GPT) are called directly over their OpenAI-compatible APIs by one shared adapter — text in / text out only, opt-in per call, no existing caller reaches them implicitly. Each vendor resolves its OWN API key from key-service under this exact slug.",
             "example": "anthropic"
           },
           "model": {
@@ -1365,25 +1328,9 @@
               "gpt-sol",
               "gpt-6.1-sol",
               "gpt-terra",
-              "gpt-6.1-terra",
-              "openrouter-ling-tiny",
-              "inclusionai/ling-3.0-tiny@antdigital",
-              "openrouter-nex-mini",
-              "nex-agi/nex-n2.5-mini@nex-agi",
-              "openrouter-hy-flash",
-              "tencent/hy4-flash@tencent",
-              "openrouter-deepseek-flash",
-              "deepseek/deepseek-v4.1-flash-1017@alibaba",
-              "openrouter-qwen-flash",
-              "qwen/qwen3.7-flash@alibaba",
-              "openrouter-llama-8b",
-              "meta-llama/llama-3.1-8b-instruct@deepinfra",
-              "openrouter-gpt-oss-20b",
-              "openai/gpt-oss-20b@deepinfra",
-              "openrouter-gpt-oss-120b",
-              "openai/gpt-oss-120b@deepinfra"
+              "gpt-6.1-terra"
             ],
-            "description": "**Preferred: an LLM dynasty slug** (one vendor line, its versions pooled; the full list with versions is `GET /internal/model-dynasties`). The slug always runs the dynasty's head (newest served version): anthropic → claude-haiku|claude-sonnet|claude-opus|claude-fable, google → gemini-flash-lite|gemini-flash|gemini-pro, deepseek → deepseek-flash, zai → glm-flash|glm, moonshot → kimi-k2|kimi-k3, openai → gpt-astra|gpt-sol|gpt-terra, openrouter → openrouter-ling-tiny|openrouter-nex-mini|openrouter-hy-flash|openrouter-deepseek-flash|openrouter-qwen-flash|openrouter-llama-8b|openrouter-gpt-oss-20b|openrouter-gpt-oss-120b (the cheapest open models, each pinned to one host). The head's exact model id (e.g. `gemini-4-hydrogen`) is also accepted, to pin that version. Spend is declared under the concrete model that ran, whatever name called it.\n\nLegacy aliases (version-free, each a redirect to its dynasty's head):\n\n**anthropic:** `haiku` → Claude Haiku 5.5 (fast/cheap), `sonnet` → Claude Sonnet 5.5 (balanced), `opus` → Claude Opus 5.5 (high quality), `fable` → Claude Fable 5.2, the tier above Opus (1M context, always-on reasoning). `sonnet`, `opus` and `fable` reject `temperature` with a 400 — Anthropic removed the sampling parameters on its always-thinking models, as OpenAI did on its GPT models. On `sonnet` and `opus`, `disableThinking: true` minimizes reasoning (effort `low`); thinking cannot be fully disabled there.\n**google:** `flash-lite` and `flash` → Gemini 3.5 Flash-Lite (cheapest, vision), `flash-pro` → Gemini 3.8 Flash (mid-tier), `pro` → Gemini 3.1 Pro (most powerful).\n**deepseek:** `deepseek-flash` → DeepSeek V4.1 Flash (1M context, 2500 concurrent requests). `deepseek-pro` is a **deprecated synonym** resolving to the same model: DeepSeek discontinued V4 Pro on 2026-09-14 and routes it to V4.1 Flash at the Flash price. Prefer `deepseek-flash`.\n**zai:** `glm-flash` → `glm-5.3-flash` (fast, cheap, 50 concurrent requests), `glm-pro` → `glm-5.3` (flagship, 15 concurrent requests).\n**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n**openai:** `gpt-pro` → GPT-6 Astra (flagship; 1.05M context, 128k output, always-on reasoning floored at `low`), `gpt-sol` → GPT-6 Sol, `gpt-terra` → GPT-5.6 Terra (the latest Terra; there is no GPT-6 Terra). On `gpt-sol` / `gpt-terra`, `disableThinking: true` turns reasoning fully off. All three reject `temperature`.\n**openrouter:** the cheapest open models, each pinned to ONE host (the price is that host's): `openrouter-ling-tiny`, `openrouter-nex-mini`, `openrouter-hy-flash`, `openrouter-deepseek-flash`, `openrouter-qwen-flash`, `openrouter-llama-8b`, `openrouter-gpt-oss-20b`, `openrouter-gpt-oss-120b`. A call the vendor refuses for a rate limit or a quota is served by the next model of the fallback order (`fallback.reason`). GPT-OSS cannot turn reasoning off: `disableThinking` sends its lowest effort (`low`).\n\nThe direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\nThe model must match the provider: anthropic → haiku|sonnet|opus|fable, google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro, openai → gpt-pro|gpt-sol|gpt-terra, openrouter → openrouter-*.",
+            "description": "**Preferred: an LLM dynasty slug** (one vendor line, its versions pooled; the full list with versions is `GET /internal/model-dynasties`). The slug always runs the dynasty's head (newest served version): anthropic → claude-haiku|claude-sonnet|claude-opus|claude-fable, google → gemini-flash-lite|gemini-flash|gemini-pro, deepseek → deepseek-flash, zai → glm-flash|glm, moonshot → kimi-k2|kimi-k3, openai → gpt-astra|gpt-sol|gpt-terra. The head's exact model id (e.g. `gemini-4-hydrogen`) is also accepted, to pin that version. Spend is declared under the concrete model that ran, whatever name called it.\n\nLegacy aliases (version-free, each a redirect to its dynasty's head):\n\n**anthropic:** `haiku` → Claude Haiku 5.5 (fast/cheap), `sonnet` → Claude Sonnet 5.5 (balanced), `opus` → Claude Opus 5.5 (high quality), `fable` → Claude Fable 5.2, the tier above Opus (1M context, always-on reasoning). `sonnet`, `opus` and `fable` reject `temperature` with a 400 — Anthropic removed the sampling parameters on its always-thinking models, as OpenAI did on its GPT models. On `sonnet` and `opus`, `disableThinking: true` minimizes reasoning (effort `low`); thinking cannot be fully disabled there.\n**google:** `flash-lite` and `flash` → Gemini 3.5 Flash-Lite (cheapest, vision), `flash-pro` → Gemini 3.8 Flash (mid-tier), `pro` → Gemini 3.1 Pro (most powerful).\n**deepseek:** `deepseek-flash` → DeepSeek V4.1 Flash (1M context, 2500 concurrent requests). `deepseek-pro` is a **deprecated synonym** resolving to the same model: DeepSeek discontinued V4 Pro on 2026-09-14 and routes it to V4.1 Flash at the Flash price. Prefer `deepseek-flash`.\n**zai:** `glm-flash` → `glm-5.3-flash` (fast, cheap, 50 concurrent requests), `glm-pro` → `glm-5.3` (flagship, 15 concurrent requests).\n**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n**openai:** `gpt-pro` → GPT-6 Astra (flagship; 1.05M context, 128k output, always-on reasoning floored at `low`), `gpt-sol` → GPT-6 Sol, `gpt-terra` → GPT-5.6 Terra (the latest Terra; there is no GPT-6 Terra). On `gpt-sol` / `gpt-terra`, `disableThinking: true` turns reasoning fully off. All three reject `temperature`.\nA call the vendor refuses for a rate limit or a quota is served by the next model of the fallback order (`fallback.reason`).\n\nThe direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\nThe model must match the provider: anthropic → haiku|sonnet|opus|fable, google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro, openai → gpt-pro|gpt-sol|gpt-terra.",
             "example": "sonnet"
           },
           "webSearch": {
@@ -1619,10 +1566,9 @@
               "deepseek",
               "zai",
               "moonshot",
-              "openai",
-              "openrouter"
+              "openai"
             ],
-            "description": "LLM provider to use. `anthropic` and `google` are native clients; `deepseek`, `zai` (Z.ai / GLM), `moonshot` (Kimi), `openai` (GPT), `openrouter` (cheapest open models, one host each) are called directly over their OpenAI-compatible APIs, text-only. Each vendor resolves its own platform key from key-service under this exact slug.",
+            "description": "LLM provider to use. `anthropic` and `google` are native clients; `deepseek`, `zai` (Z.ai / GLM), `moonshot` (Kimi), `openai` (GPT) are called directly over their OpenAI-compatible APIs, text-only. Each vendor resolves its own platform key from key-service under this exact slug.",
             "example": "anthropic"
           },
           "model": {
@@ -1671,25 +1617,9 @@
               "gpt-sol",
               "gpt-6.1-sol",
               "gpt-terra",
-              "gpt-6.1-terra",
-              "openrouter-ling-tiny",
-              "inclusionai/ling-3.0-tiny@antdigital",
-              "openrouter-nex-mini",
-              "nex-agi/nex-n2.5-mini@nex-agi",
-              "openrouter-hy-flash",
-              "tencent/hy4-flash@tencent",
-              "openrouter-deepseek-flash",
-              "deepseek/deepseek-v4.1-flash-1017@alibaba",
-              "openrouter-qwen-flash",
-              "qwen/qwen3.7-flash@alibaba",
-              "openrouter-llama-8b",
-              "meta-llama/llama-3.1-8b-instruct@deepinfra",
-              "openrouter-gpt-oss-20b",
-              "openai/gpt-oss-20b@deepinfra",
-              "openrouter-gpt-oss-120b",
-              "openai/gpt-oss-120b@deepinfra"
+              "gpt-6.1-terra"
             ],
-            "description": "**Preferred: an LLM dynasty slug** (one vendor line, its versions pooled; the full list with versions is `GET /internal/model-dynasties`). The slug always runs the dynasty's head (newest served version): anthropic → claude-haiku|claude-sonnet|claude-opus|claude-fable, google → gemini-flash-lite|gemini-flash|gemini-pro, deepseek → deepseek-flash, zai → glm-flash|glm, moonshot → kimi-k2|kimi-k3, openai → gpt-astra|gpt-sol|gpt-terra, openrouter → openrouter-ling-tiny|openrouter-nex-mini|openrouter-hy-flash|openrouter-deepseek-flash|openrouter-qwen-flash|openrouter-llama-8b|openrouter-gpt-oss-20b|openrouter-gpt-oss-120b (the cheapest open models, each pinned to one host). The head's exact model id (e.g. `gemini-4-hydrogen`) is also accepted, to pin that version. Spend is declared under the concrete model that ran, whatever name called it.\n\nLegacy aliases, each a redirect to its dynasty's head. Must match the provider: anthropic → haiku|sonnet|opus|fable (`sonnet` = Claude Sonnet 5.5, `opus` = Claude Opus 5.5, `fable` = Claude Fable 5.2; all three reject `temperature` with a 400), google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro (both DeepSeek V4.1 Flash; `deepseek-pro` is a deprecated synonym), zai → glm-flash|glm-pro (`glm-5.3-flash` / `glm-5.3`), moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`), openai → gpt-pro|gpt-sol|gpt-terra (`gpt-6-astra` / `gpt-6-sol` / `gpt-5.6-terra`, all rejecting `temperature`). The direct-vendor models are text-only: `webSearch` is rejected with 400.",
+            "description": "**Preferred: an LLM dynasty slug** (one vendor line, its versions pooled; the full list with versions is `GET /internal/model-dynasties`). The slug always runs the dynasty's head (newest served version): anthropic → claude-haiku|claude-sonnet|claude-opus|claude-fable, google → gemini-flash-lite|gemini-flash|gemini-pro, deepseek → deepseek-flash, zai → glm-flash|glm, moonshot → kimi-k2|kimi-k3, openai → gpt-astra|gpt-sol|gpt-terra. The head's exact model id (e.g. `gemini-4-hydrogen`) is also accepted, to pin that version. Spend is declared under the concrete model that ran, whatever name called it.\n\nLegacy aliases, each a redirect to its dynasty's head. Must match the provider: anthropic → haiku|sonnet|opus|fable (`sonnet` = Claude Sonnet 5.5, `opus` = Claude Opus 5.5, `fable` = Claude Fable 5.2; all three reject `temperature` with a 400), google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro (both DeepSeek V4.1 Flash; `deepseek-pro` is a deprecated synonym), zai → glm-flash|glm-pro (`glm-5.3-flash` / `glm-5.3`), moonshot → kimi-flash|kimi-pro (`kimi-k2.6` / `kimi-k3`), openai → gpt-pro|gpt-sol|gpt-terra (`gpt-6-astra` / `gpt-6-sol` / `gpt-5.6-terra`, all rejecting `temperature`). The direct-vendor models are text-only: `webSearch` is rejected with 400.",
             "example": "sonnet"
           },
           "webSearch": {
@@ -2462,7 +2392,6 @@
                     "zai",
                     "moonshot",
                     "openai",
-                    "openrouter",
                     "anthropic",
                     "google"
                   ]
@@ -2548,7 +2477,6 @@
                     "zai",
                     "moonshot",
                     "openai",
-                    "openrouter",
                     "anthropic",
                     "google"
                   ]
@@ -6306,8 +6234,7 @@
               "deepseek",
               "zai",
               "moonshot",
-              "openai",
-              "openrouter"
+              "openai"
             ]
           },
           "model": {

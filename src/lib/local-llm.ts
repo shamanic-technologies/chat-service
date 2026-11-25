@@ -31,7 +31,7 @@
 
 import { capabilityTierFor, resolveModel, type CapabilityTier, type ModelAlias, type Provider } from "./anthropic.js";
 import { anthropicCostLines } from "./anthropic-usage.js";
-import { dynastyOfModel, isOnTrial } from "./llm-dynasties.js";
+import { dynastyOfModel } from "./llm-dynasties.js";
 import { isVendorProvider } from "./openai-compatible.js";
 import { providerHasNoPlatformKey } from "./platform-key-presence.js";
 import type { CostItem } from "./runs-client.js";
@@ -422,10 +422,6 @@ export function servedLlmsFor(
     // never drawn. (A local org's call runs on its own Claude Code: no platform key involved.)
     if (!local && hasNoPlatformKey(resolved.provider)) {
       return { llm, runsAsStated: null, error: `no platform key for ${resolved.provider}` };
-    }
-    // OPENROUTER-TRIAL-1125: a line on trial is never drawn for a real send (staff call it by name only).
-    if (isOnTrial(resolved.apiModelId)) {
-      return { llm, runsAsStated: null, error: `${resolved.apiModelId} is on trial: not live for real sends until the owner's go` };
     }
     const modelId = local ? localClaudeModelFor(resolved, provider as Provider, model) : resolved.apiModelId;
     const servedProvider = local ? "anthropic" : resolved.provider;
