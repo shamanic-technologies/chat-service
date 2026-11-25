@@ -181,7 +181,7 @@ export const OPEN_PAGE_TOOL: Anthropic.Tool = {
   description:
     "Open a dashboard page in the panel beside the chat, to show the user what you are talking about. " +
     "`page` is one of the page identifiers listed in your instructions — never a URL, never an invented id. " +
-    "Pass the ids the page needs (brandId, offerId, campaignId, audienceId, leadId), taken from tool results. " +
+    "Pass only the ids the page needs (brandId, offerId, campaignId, audienceId, leadId), taken from tool results; leave every other id out entirely, never as an empty string (an empty id is refused). " +
     "Does not end your turn: keep answering after it. Open at most one page per answer.",
   input_schema: {
     type: "object" as const,

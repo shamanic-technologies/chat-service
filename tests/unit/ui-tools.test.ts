@@ -149,3 +149,10 @@ describe("the text above the cards is an ANSWER, never a working note (prod 2026
     expect(src).toContain('holdTextBesideToolCalls: holdTextBesideToolCallsFor(configKey) || allowedToolNames.includes("present_choices"),');
   });
 });
+
+// COPILOT-LATENCY-1125 (prod replay 2026-11-25): GPT-6.1 Terra sent open_page with campaignId "" twice in one turn.
+describe("open_page tells the model to leave unneeded ids out", () => {
+  it("says an empty id is refused", () => {
+    expect(OPEN_PAGE_TOOL.description).toContain("never as an empty string");
+  });
+});
