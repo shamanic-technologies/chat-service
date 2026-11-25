@@ -286,6 +286,7 @@ import {
   refreshDistrySpendDay,
   runTreeCentsFromLedger,
   sendDistryAlertEmail,
+  soloAiGateFromBilling,
 } from "./lib/distry-spend.js";
 import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
 import { stripNul } from "./lib/strip-nul.js";
@@ -7223,6 +7224,8 @@ const distrySpend = {
     return orgId;
   },
   isPayingOrg: (orgId: string) => isPayingOrgFromBilling(orgId),
+  soloAiGate: (orgId: string) => soloAiGateFromBilling(orgId),
+  isLocalLlmOrg: (orgId: string) => isLocalLlmOrg(orgId),
   runTreeCents: (orgId: string, runIds: string[]) => runTreeCentsFromLedger(orgId, runIds),
   orgTotalCents: (orgId: string) => orgTotalCentsFromLedger(orgId),
 };

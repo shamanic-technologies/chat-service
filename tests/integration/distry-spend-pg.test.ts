@@ -8,9 +8,14 @@ import {
   distrySpendDaysSeries,
   recordDistryTurn,
   refreshDistrySpendDay,
+  soloPlanLimitNotice,
   type DistryPerson,
   type DistrySpendDeps,
+  type SoloAiGate,
 } from "../../src/lib/distry-spend.js";
+
+const NOT_ON_PLAN: SoloAiGate = { on_solo_plan: false, may_use_our_keys: true, refused_reason: null, debt_cents: null, debt_limit_cents: null, upgrade_url: null };
+const UPGRADE = "https://distribute.you/upgrade?org=staff-test";
 
 // DISTRY-GUEST-CAPS-1119 on a real Postgres (CI's throwaway container, migrated
 // from the journal): the caps read DOLLARS from the ledger (faked here, staff
@@ -30,11 +35,16 @@ describe("Distry's spend on non-clients", { timeout: 30_000 }, () => {
   let paying: Set<string>;
   let now: Date;
   let env: NodeJS.ProcessEnv;
+  // SOLO-PLAN-1125: billing's solo-plan verdict per org (absent = not on the plan) + local-Claude orgs.
+  let solo: Map<string, SoloAiGate>;
+  let localOrgs: Set<string>;
 
   const deps = (): DistrySpendDeps => ({
     db,
     ourOrgId: () => OURS,
     isPayingOrg: vi.fn(async (orgId: string) => paying.has(orgId)),
+    soloAiGate: vi.fn(async (orgId: string) => solo.get(orgId) ?? NOT_ON_PLAN),
+    isLocalLlmOrg: vi.fn(async (orgId: string) => localOrgs.has(orgId)),
     runTreeCents: vi.fn(async (orgId: string, runIds: string[]) => {
       expect(orgId).toBe(OURS);
       return runIds.reduce((s, id) => s + (runCents.get(id) ?? 0), 0);
@@ -60,6 +70,8 @@ describe("Distry's spend on non-clients", { timeout: 30_000 }, () => {
     runCents = new Map();
     orgCents = new Map();
     paying = new Set();
+    solo = new Map();
+    localOrgs = new Set();
     now = new Date("2026-11-19T10:00:00Z");
     env = {};
   });
@@ -212,5 +224,36 @@ describe("Distry's spend on non-clients", { timeout: 30_000 }, () => {
     expect(days.map((x) => x.day)).toEqual(["2026-11-17", "2026-11-18", "2026-11-19"]);
     expect(days[0]).toEqual({ day: "2026-11-17", nonClientSpendUsd: 0, thresholdUsd: 30, visitorsCut: 0, turnsRefusedByDayCap: 0, alertFired: false, alertFiredAt: null, measuredAt: null });
     expect(days[2]).toMatchObject({ nonClientSpendUsd: 31, thresholdUsd: 30, visitorsCut: 1, turnsRefusedByDayCap: 1, alertFired: true });
+  });
+
+  it("SOLO-PLAN-1125: a solo-plan account at -$2 gets the fixed notice with billing's upgrade link, no model; under it, it runs", async () => {
+    const org = "org-staff-solo";
+    solo.set(org, { on_solo_plan: true, may_use_our_keys: false, refused_reason: "debt_limit", debt_cents: "200.0000000000", debt_limit_cents: 200, upgrade_url: UPGRADE });
+    const v = await distryGate(deps(), account(org));
+    expect(v).toMatchObject({ run: false, reason: "plan_limit", notice: soloPlanLimitNotice(UPGRADE) });
+    expect(soloPlanLimitNotice(UPGRADE)).toContain(UPGRADE);
+    expect(soloPlanLimitNotice(UPGRADE)).not.toMatch(/dashboard|free|gift|[\u2014\u2013]/i);
+    const [row] = await client`SELECT verdict, person_key FROM distry_spend_turns WHERE verdict = 'plan_limit'`;
+    expect(row).toEqual({ verdict: "plan_limit", person_key: `org:${org}` });
+    // Room left on the plan (debt $1.50): the turn runs, tracked as a non-payer's.
+    solo.set(org, { on_solo_plan: true, may_use_our_keys: true, refused_reason: null, debt_cents: "150.0000000000", debt_limit_cents: 200, upgrade_url: UPGRADE });
+    expect(await distryGate(deps(), account(org))).toMatchObject({ run: true, tracked: true });
+  });
+
+  it("SOLO-PLAN-1125: a paid solo plan out of credit stops too; an org on its own Claude never; a legacy account is untouched", async () => {
+    solo.set("org-solo-paid", { on_solo_plan: true, may_use_our_keys: false, refused_reason: "out_of_credit", debt_cents: "0", debt_limit_cents: null, upgrade_url: UPGRADE });
+    paying.add("org-solo-paid");
+    expect(await distryGate(deps(), account("org-solo-paid"))).toMatchObject({ run: false, reason: "plan_limit" });
+    solo.set("org-solo-local", { on_solo_plan: true, may_use_our_keys: false, refused_reason: "debt_limit", debt_cents: "250", debt_limit_cents: 200, upgrade_url: null });
+    localOrgs.add("org-solo-local");
+    expect(await distryGate(deps(), account("org-solo-local"))).toMatchObject({ run: true });
+    expect(soloPlanLimitNotice(null)).not.toContain("http");
+    paying.add("org-legacy");
+    expect(await distryGate(deps(), account("org-legacy"))).toMatchObject({ run: true, tracked: false });
+  });
+
+  it("SOLO-PLAN-1125: billing unreadable fails the turn loudly, never answers on an unknown verdict", async () => {
+    const d = { ...deps(), soloAiGate: vi.fn(async () => { throw new Error("billing-service solo-plan ai-gate 502"); }) };
+    await expect(distryGate(d, account("org-x"))).rejects.toThrow(/ai-gate 502/);
   });
 });

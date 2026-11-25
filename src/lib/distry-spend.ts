@@ -17,6 +17,13 @@
  *     ledger; a repayment that day is not subtracted (a payer leaves the
  *     non-clients), so the guard can only stop earlier, never later.
  *
+ *  4. An account on the SOLO-FOUNDER plan (SOLO-PLAN-1125, owner 2026-11-25: « une dette
+ *     de crédit qu'on accepte jusqu'à -$2 »): billing-service owns its debt and plan
+ *     state and serves the verdict (`/solo-plan/ai-gate`, `may_use_our_keys`); past it
+ *     the turn runs no model and the notice links billing's upgrade page. Read first,
+ *     paid or not (a paid plan out of credit stops too). An org whose LLM runs on its
+ *     own Claude (LOCAL-CLAUDE-1116) spends none of our keys: never stopped by it.
+ *
  * "Paying client" is a served billing fact: billing-service says the org paid
  * us money (`cash_paid_cents` > 0: payments net of refunds and lost disputes,
  * off-platform payments included). Our own org's signed-in turns are staff:
@@ -59,6 +66,29 @@ export const DISTRY_LIMIT_SUBJECT = "Today's free conversation limit with Distry
 
 export function distryLimitNotice(guest: boolean): string {
   return guest ? DISTRY_LIMIT_NOTICE_GUEST : DISTRY_LIMIT_NOTICE_ACCOUNT;
+}
+
+/**
+ * SOLO-PLAN-1125: the notice for a solo-founder account past its plan's limit (fixed
+ * text, no model call), linking billing's upgrade page; never a dashboard link.
+ */
+export function soloPlanLimitNotice(upgradeUrl: string | null): string {
+  return [
+    "Distry has used all the AI room on your distribute.you account for now.",
+    upgradeUrl
+      ? `Keep your campaigns and Distry going by upgrading your plan: ${upgradeUrl}`
+      : "Keep your campaigns and Distry going: ask your AI to start your distribute.you plan.",
+  ].join("\n");
+}
+
+/** billing-service `GET /internal/accounts/by-org/:orgId/solo-plan/ai-gate` (the fields read here). */
+export interface SoloAiGate {
+  on_solo_plan: boolean;
+  may_use_our_keys: boolean;
+  refused_reason: string | null;
+  debt_cents: string | null;
+  debt_limit_cents: number | null;
+  upgrade_url: string | null;
 }
 
 function usdEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
@@ -104,6 +134,10 @@ export interface DistrySpendDeps {
   ourOrgId: () => string;
   /** billing-service: has this org paid us money? */
   isPayingOrg: (orgId: string) => Promise<boolean>;
+  /** billing-service: the solo-founder plan's verdict for one org (SOLO-PLAN-1125). */
+  soloAiGate: (orgId: string) => Promise<SoloAiGate>;
+  /** This org's LLM runs on its own Claude (LOCAL-CLAUDE-1116): its turns spend none of our keys. */
+  isLocalLlmOrg: (orgId: string) => Promise<boolean>;
   /** runs-service: each run tree's committed cost (gross cents), all runs under one org. */
   runTreeCents: (orgId: string, runIds: string[]) => Promise<number>;
   /** runs-service: an org's whole ledger total (gross cents). */
@@ -115,7 +149,7 @@ export interface DistrySpendDeps {
 export type DistryVerdict =
   /** Runs. `tracked` = non-client spend (record the run after). */
   | { run: true; tracked: boolean; person: DistryPerson }
-  | { run: false; reason: "person_cap" | "day_cap"; notice: string; person: DistryPerson };
+  | { run: false; reason: "person_cap" | "day_cap" | "plan_limit"; notice: string; person: DistryPerson };
 
 /** PURE: the verdict from the measured figures (cents). The day first: it stops everyone. */
 export function distryCapVerdict(a: { guest: boolean; daySpend: number; dayCap: number; personSpend: number; personCap: number }): "day_cap" | "person_cap" | null {
@@ -164,6 +198,15 @@ export async function distryGate(deps: DistrySpendDeps, input: DistryPerson): Pr
   let person: DistryPerson = input;
   if (!input.guest) {
     if (input.turnOrgId === ours) return { run: true, tracked: false, person };
+    const solo = await deps.soloAiGate(input.turnOrgId);
+    if (solo.on_solo_plan && !solo.may_use_our_keys && !(await deps.isLocalLlmOrg(input.turnOrgId))) {
+      const key = accountKey(input.turnOrgId);
+      await deps.db.insert(distrySpendTurns).values({ day: utcDay(now), personKey: key, surface: input.surface, orgId: input.turnOrgId, runId: null, verdict: "plan_limit" });
+      console.warn(
+        `[chat-service] Distry: org ${input.turnOrgId} is past its solo-plan limit (${solo.refused_reason ?? "no reason"}, debt ${solo.debt_cents ?? "?"} of ${solo.debt_limit_cents ?? "?"} cents) on ${input.surface}: limit notice, no model call`,
+      );
+      return { run: false, reason: "plan_limit", notice: soloPlanLimitNotice(solo.upgrade_url), person: { ...input, key } };
+    }
     if (await deps.isPayingOrg(input.turnOrgId)) return { run: true, tracked: false, person };
     person = { ...input, key: accountKey(input.turnOrgId), planOrgId: null };
   }
@@ -484,6 +527,28 @@ export async function isPayingOrgFromBilling(orgId: string, fetchImpl: typeof fe
   const paying = cents(paid, `org ${orgId}'s cash paid`) > 0;
   payingCache.set(orgId, { paying, at: now });
   return paying;
+}
+
+/** billing-service GET /internal/accounts/by-org/:orgId/solo-plan/ai-gate: the plan's verdict for one turn (not cached: it moves with each spend). */
+export async function soloAiGateFromBilling(orgId: string, fetchImpl: typeof fetch = fetch): Promise<SoloAiGate> {
+  const res = await fetchImpl(`${process.env.BILLING_SERVICE_URL || "https://billing.mcpfactory.org"}/internal/accounts/by-org/${encodeURIComponent(orgId)}/solo-plan/ai-gate`, {
+    headers: { "x-api-key": env("BILLING_SERVICE_API_KEY") },
+    signal: AbortSignal.timeout(15_000),
+  });
+  const text = await res.text().catch(() => "");
+  if (!res.ok) throw new Error(`billing-service solo-plan ai-gate ${res.status}: ${text.slice(0, 300)}`);
+  const json = JSON.parse(text) as Partial<SoloAiGate>;
+  if (typeof json.on_solo_plan !== "boolean" || typeof json.may_use_our_keys !== "boolean") {
+    throw new Error(`billing-service solo-plan ai-gate answered no verdict: ${text.slice(0, 300)}`);
+  }
+  return {
+    on_solo_plan: json.on_solo_plan,
+    may_use_our_keys: json.may_use_our_keys,
+    refused_reason: typeof json.refused_reason === "string" ? json.refused_reason : null,
+    debt_cents: typeof json.debt_cents === "string" ? json.debt_cents : null,
+    debt_limit_cents: typeof json.debt_limit_cents === "number" ? json.debt_limit_cents : null,
+    upgrade_url: typeof json.upgrade_url === "string" ? json.upgrade_url : null,
+  };
 }
 
 /** Test hook. */

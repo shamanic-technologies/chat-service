@@ -1868,6 +1868,7 @@ The box deploys chat-service blue-green (`deploy.sh` `swap_blue_green`, in `sham
 | `LOCAL_LLM_ANSWER_WAIT_MS` | No | How long a caller holds a picked-up local-LLM call before `local_runner_timeout` (default `240000`) |
 | `LOCAL_LLM_JOB_LIFETIME_MS` | No | How long a local `/complete` / judgment work item stays claimable for a resend (default `86400000`, 24 h: workflow-service resumes for 24 h) |
 | `LOCAL_LLM_CLAIM_ANSWER_MS` | No | How long a runner has to answer the items it claimed (default `1800000`) |
+| `BILLING_SERVICE_URL` / `BILLING_SERVICE_API_KEY` (already set) | Yes | Also read per Distry turn of an account for the solo-founder plan's verdict (`/internal/accounts/by-org/:orgId/solo-plan/ai-gate`, SOLO-PLAN-1125): past its -$2 debt or out of credit, a fixed notice links billing's upgrade page, no model runs |
 | `DISTRY_NONPAYER_DEBT_GROWTH_USD` | No | The most all non-payers' debt (what Distry spent on them today) may grow in one UTC day before every non-payer gets the limit notice (default `20`, SOLO-PLAN-1125; replaced `DISTRY_NONCLIENT_DAILY_USD` = 30) |
 | `OWNER_ALERT_WHATSAPP_PHONE` | No | The owner's number for the debt-growth WhatsApp alert, sent from the Copilot's line (default his pro number) |
 | `PORT` | No | Server port (default: `3002`) |
