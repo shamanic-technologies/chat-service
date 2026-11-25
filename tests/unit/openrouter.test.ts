@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { buildVendorRequestBody, fromPinnedHost, isQuotaRefusal, readRetryAfterMs, parseRetryAfterMs, VENDORS, withHostPin } from "../../src/lib/openai-compatible.js";
 import { resolveModel } from "../../src/lib/anthropic.js";
+import { LLM_DYNASTIES, isOnTrial } from "../../src/lib/llm-dynasties.js";
 import { servedLlmsFor } from "../../src/lib/local-llm.js";
 import { fallbackOrderFor, setFallbackPrices, resetVendorCredit } from "../../src/lib/vendor-credit.js";
 import { providerHasNoPlatformKey, refreshPlatformKeyPresence, setPlatformKeyProviders } from "../../src/lib/platform-key-presence.js";
@@ -106,11 +107,28 @@ describe("the eight OpenRouter dynasties", () => {
     expect(VENDORS.openrouter.isOutOfCreditRefusal({ status: 429 } as never)).toBe(false);
   });
 
-  it("the unscored small models stay drawable: served today, no exclusion", () => {
-    for (const [slug] of EIGHT) {
+  it("ON TRIAL until the owner's go: callable by name, never drawn for a real send (served-llms null), never a fallback", () => {
+    setPlatformKeyProviders(["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "openrouter"]);
+    for (const [slug, modelId] of EIGHT) {
+      expect(isOnTrial(modelId), slug).toBe(true);
+      expect(resolveModel("openrouter", slug).apiModelId).toBe(modelId);
       const [row] = servedLlmsFor([`openrouter/${slug}`], false);
-      expect(row.runsAsStated, slug).toBe(true);
+      expect(row, slug).toMatchObject({ runsAsStated: null });
+      expect(row.error).toMatch(/on trial/);
     }
+    const prices = [...LIST_PRICES_2026_11_08, ...EIGHT.flatMap(([, , prefix]) =>
+      ["tokens-input", "tokens-cached-input", "tokens-cache-write", "tokens-output"].map((d) => ({ name: `${prefix}-${d}`, pricePerUnitInUsdCents: "0.0000001000" })))];
+    setFallbackPrices(prices);
+    const at = new Date("2026-11-25T12:00:00Z");
+    for (const primary of [resolveModel("deepseek", "deepseek-flash"), resolveModel("google", "gemini-flash-lite")]) {
+      const order = fallbackOrderFor(primary, () => true, at).map((m) => m.provider);
+      expect(order.length).toBeGreaterThan(0);
+      expect(order).not.toContain("openrouter");
+    }
+  });
+
+  it("no live line is on trial (the gate is keyed on the line, never on a vendor)", () => {
+    for (const d of LLM_DYNASTIES) expect(d.onTrial === true, d.slug).toBe(d.provider === "openrouter");
   });
 });
 
@@ -130,18 +148,18 @@ describe("a cap that does not clear in the retry budget is a QUOTA refusal (gene
 
 describe("a provider with no platform key is never drawn (key-service's list)", () => {
   it("unknown (never read) = every provider assumed to have a key: nothing changes for a live provider", () => {
-    expect(providerHasNoPlatformKey("openrouter")).toBe(false);
-    const [row] = servedLlmsFor(["openrouter/openrouter-qwen-flash"], false);
+    expect(providerHasNoPlatformKey("moonshot")).toBe(false);
+    const [row] = servedLlmsFor(["moonshot/kimi-k2"], false);
     expect(row.runsAsStated).toBe(true);
   });
 
   it("served-llms answers runsAsStated: null for a provider with no key, so workflow-service never draws its script", async () => {
-    await refreshPlatformKeyPresence(async () => ["anthropic", "google", "deepseek", "zai", "moonshot", "openai"]);
-    const rows = servedLlmsFor(["openrouter/openrouter-qwen-flash", "deepseek/deepseek-flash"], false);
-    expect(rows[0]).toMatchObject({ runsAsStated: null, error: "no platform key for openrouter" });
+    await refreshPlatformKeyPresence(async () => ["anthropic", "google", "deepseek", "zai", "openai", "openrouter"]);
+    const rows = servedLlmsFor(["moonshot/kimi-k2", "deepseek/deepseek-flash"], false);
+    expect(rows[0]).toMatchObject({ runsAsStated: null, error: "no platform key for moonshot" });
     expect(rows[1].runsAsStated).toBe(true);
     // A local org runs on its own Claude Code: no platform key involved.
-    expect(servedLlmsFor(["openrouter/openrouter-qwen-flash"], true)[0].runsAsStated).toBe(false);
+    expect(servedLlmsFor(["moonshot/kimi-k2"], true)[0].runsAsStated).toBe(false);
   });
 
   it("a failed key-service read keeps the last answer", async () => {
@@ -149,25 +167,17 @@ describe("a provider with no platform key is never drawn (key-service's list)", 
     await refreshPlatformKeyPresence(async () => {
       throw new Error("key-service down");
     });
-    expect(providerHasNoPlatformKey("openrouter")).toBe(true);
+    expect(providerHasNoPlatformKey("moonshot")).toBe(true);
     expect(providerHasNoPlatformKey("deepseek")).toBe(false);
   });
 
   it("the fallback order skips a provider with no key, and takes it once its key is registered", () => {
-    const prices = [
-      ...LIST_PRICES_2026_11_08,
-      // Llama 3.1 8B on DeepInfra x the router's 5.5% credit fee: cheaper than every cheap model of the fixture.
-      { name: "openrouter-deepinfra-llama-3.1-8b-instruct-tokens-input", pricePerUnitInUsdCents: "0.0000021100" },
-      { name: "openrouter-deepinfra-llama-3.1-8b-instruct-tokens-cached-input", pricePerUnitInUsdCents: "0.0000021100" },
-      { name: "openrouter-deepinfra-llama-3.1-8b-instruct-tokens-cache-write", pricePerUnitInUsdCents: "0.0000021100" },
-      { name: "openrouter-deepinfra-llama-3.1-8b-instruct-tokens-output", pricePerUnitInUsdCents: "0.0000042200" },
-    ];
-    setFallbackPrices(prices);
+    setFallbackPrices(LIST_PRICES_2026_11_08);
     const primary = resolveModel("deepseek", "deepseek-flash");
     const at = new Date("2026-11-24T12:00:00Z");
-    setPlatformKeyProviders(["anthropic", "google", "deepseek", "zai", "moonshot", "openai"]);
-    expect(fallbackOrderFor(primary, () => true, at).map((m) => m.provider)).not.toContain("openrouter");
-    setPlatformKeyProviders(["anthropic", "google", "deepseek", "zai", "moonshot", "openai", "openrouter"]);
-    expect(fallbackOrderFor(primary, () => true, at).map((m) => m.apiModelId)).toContain("meta-llama/llama-3.1-8b-instruct@deepinfra");
+    setPlatformKeyProviders(["anthropic", "google", "deepseek", "moonshot", "openai"]);
+    expect(fallbackOrderFor(primary, () => true, at).map((m) => m.provider)).not.toContain("zai");
+    setPlatformKeyProviders(["anthropic", "google", "deepseek", "moonshot", "openai", "zai"]);
+    expect(fallbackOrderFor(primary, () => true, at).map((m) => m.provider)).toContain("zai");
   });
 });
