@@ -1834,6 +1834,10 @@ Each brand plugs, in its Integrations, the MCP server(s) it gives to the AI that
 
 **On the run:** each call is one event `brand-mcp-tool-call` on the turn's (or the call's) run: `{serverId, serverName, brandId, tool, durationMs, ok, error?, argsChars, resultChars}`, level `info` or `warn`; never the secret, never the content. The brand's server bills us nothing: no cost name.
 
+## Deploys never cut a call in flight (GLM-FLASH-502-1125)
+
+The box deploys chat-service blue-green (`deploy.sh` `swap_blue_green`, in `shamanic-technologies/distribute-box`): the new container starts beside the old one and must answer `/health`; the old one then leaves the `chat-service` DNS name (network reconnect on the same IP, its open calls keep going) and gets `SIGTERM`. On `SIGTERM` this service keeps listening (a connection that still reaches it is answered, never refused), answers each request with `Connection: close`, stops its background writers, and exits once no socket is open or after 300 s (`src/lib/graceful-drain.ts`, covers a ~280 s `/complete`). A new process waits `PREVIOUS_PROCESS_DRAIN_MS` (330 s) before treating the previous one's unfinished work as cut (proactive turns, local LLM calls, Telegram messages, media downloads).
+
 ## Environment Variables
 
 | Variable | Required | Description |
