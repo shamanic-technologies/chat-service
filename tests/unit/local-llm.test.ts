@@ -39,6 +39,8 @@ const jobWith = (request: unknown): LocalJobRow => ({
   error: null,
   model: null,
   usage: { inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, notionalCostUsd: null, durationMs: null },
+  requestKey: null,
+  deliveredAt: null,
   createdAt: new Date(),
 });
 
@@ -127,17 +129,58 @@ describe("local LLM — answers", () => {
     const err = await runLocally({ orgId: "o", kind: "complete", route: "/complete", runId: null, call }).catch((e) => e);
     expect(err).toBeInstanceOf(LocalRunnerError);
     expect(localFailureResponse(err).status).toBe(503);
+    // SOLO-PLAN-1125: the call stays queued for the runner; the resend below attaches to it.
+    expect(localFailureResponse(err).body).toMatchObject({ answerKept: true, retryable: true });
+    expect(store.jobs.size).toBe(1);
 
     process.env.LOCAL_LLM_PICKUP_WAIT_MS = "5000";
     const pending = runLocally({ orgId: "o", kind: "complete", route: "/complete", runId: null, call }).catch((e) => e);
     await new Promise((r) => setTimeout(r, 20));
-    const [claimed] = await store.claim("o", 1, new Date());
+    const [claimed] = await store.claim("o", 1, new Date(), 60_000);
+    expect(store.jobs.size).toBe(1);
     await store.submit(claimed.id, "o", claimed.leaseId!, { ok: false, error: "not signed in", model: null, usage: claimed.usage }, new Date());
     const failed = await pending;
     expect(failed.code).toBe("local_runner_failed");
     expect(localFailureResponse(failed).status).toBe(502);
     await declareLocalLlm("o", false, "u");
     expect(await isLocalLlmOrg("o")).toBe(false);
+  });
+
+  it("SOLO-PLAN-1125 AC1: a call left unanswered 90 minutes, then answered by the founder's routine, is used by its caller's resend", async () => {
+    process.env.LOCAL_LLM_PICKUP_WAIT_MS = "30";
+    const store = createMemoryLocalLlmStore();
+    await startLocalLlm(store, { refresh: false });
+    await declareLocalLlm("o", true, "u");
+    const call = completeCall({ systemPrompt: "S", message: "write it", responseSchema: null, jsonMode: false, webSearch: false, model: "claude-haiku-5-5" });
+    const first = await runLocally({ orgId: "o", kind: "complete", route: "/complete", runId: "run-1", call }).catch((e) => e);
+    expect(first).toMatchObject({ code: "local_runner_waiting", answerKept: true });
+    // 90 minutes pass: the job is still claimable (it lives 3 h).
+    const [job] = [...store.jobs.values()];
+    job.createdAt = new Date(job.createdAt.getTime() - 90 * 60_000);
+    job.pickupDeadlineAt = new Date(job.pickupDeadlineAt.getTime() - 90 * 60_000);
+    expect(job.status).toBe("pending");
+    await store.touchRunner("o", new Date(), { name: "claude-routine", version: null, kind: "routine" });
+    const [claimed] = await store.claim("o", 10, new Date(), 30 * 60_000);
+    expect(claimed.id).toBe(job.id);
+    await store.submit(claimed.id, "o", claimed.leaseId!, { ok: true, result: { text: "the late answer" }, model: "claude-haiku-5-5", usage: { ...claimed.usage, inputTokens: 9, outputTokens: 3 } }, new Date());
+    // The caller resends the same call (its run is new): it gets the stored answer at once, no new job.
+    const second = await runLocally({ orgId: "o", kind: "complete", route: "/complete", runId: "run-2", call });
+    expect(second).toMatchObject({ jobId: job.id, text: "the late answer", model: "claude-haiku-5-5" });
+    expect(store.jobs.size).toBe(1);
+    // Delivered once: the same call made again later is new work.
+    const third = await runLocally({ orgId: "o", kind: "complete", route: "/complete", runId: "run-3", call }).catch((e) => e);
+    expect(third).toMatchObject({ code: "local_runner_waiting" });
+    expect(store.jobs.size).toBe(2);
+  });
+
+  it("SOLO-PLAN-1125: a chat round still ends with its caller (its loop cannot resend)", async () => {
+    process.env.LOCAL_LLM_PICKUP_WAIT_MS = "30";
+    const store = createMemoryLocalLlmStore();
+    await startLocalLlm(store, { refresh: false });
+    const call = completeCall({ systemPrompt: "", message: "hi", responseSchema: null, jsonMode: false, webSearch: false, model: "claude-haiku-5-5" });
+    const err = await runLocally({ orgId: "o", kind: "chat_round", route: "/chat", runId: null, call }).catch((e) => e);
+    expect(err).toMatchObject({ code: "local_runner_waiting", answerKept: false });
+    expect([...store.jobs.values()][0].status).toBe("expired");
   });
 
   it("refuses to ask the runner for Haiku 4.5", async () => {

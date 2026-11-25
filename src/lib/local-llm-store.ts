@@ -22,6 +22,25 @@ export interface LocalOrgRow {
   runnerLastSeenAt: Date | null;
   runnerName: string | null;
   runnerVersion: string | null;
+  /** SOLO-PLAN-1125: `app` (installed, polls all the time) | `routine` (the founder's Claude, about hourly); null = never said (an app). */
+  runnerKind: RunnerKind | null;
+  /** The founder was told their runner went silent; cleared when a runner claims again. */
+  silenceNotifiedAt: Date | null;
+  silenceNoticeChannel: string | null;
+}
+
+export type RunnerKind = "app" | "routine";
+
+export interface RunnerInfo {
+  name: string | null;
+  version: string | null;
+  kind?: RunnerKind | null;
+}
+
+/** A declaring org whose work waits for a runner that has not come back. */
+export interface SilentLocalOrg extends LocalOrgRow {
+  pendingCalls: number;
+  oldestPendingAt: Date;
 }
 
 export interface LocalUsage {
@@ -50,6 +69,10 @@ export interface LocalJobRow {
   error: string | null;
   model: string | null;
   usage: LocalUsage;
+  /** SOLO-PLAN-1125: hash of the call; a resent identical call attaches to this job. */
+  requestKey: string | null;
+  /** When a caller received the answer (never handed out twice). */
+  deliveredAt: Date | null;
   createdAt: Date;
 }
 
@@ -59,6 +82,7 @@ export interface NewLocalJob {
   route: string;
   runId: string | null;
   request: unknown;
+  requestKey: string | null;
   pickupDeadlineAt: Date;
   answerDeadlineAt: Date;
 }
@@ -88,17 +112,31 @@ export interface LocalLlmStore {
   listDeclaredOrgs(at: Date, orgIds?: string[]): Promise<DeclaredLocalOrg[]>;
   getOrg(orgId: string): Promise<LocalOrgRow | null>;
   setDeclared(orgId: string, declared: boolean, userId: string, at: Date): Promise<LocalOrgRow>;
-  touchRunner(orgId: string, at: Date, runner: { name: string | null; version: string | null }): Promise<void>;
+  /** A runner asked for work: marks it seen and clears a silence notice (it is back). */
+  touchRunner(orgId: string, at: Date, runner: RunnerInfo): Promise<void>;
   enqueue(job: NewLocalJob): Promise<LocalJobRow>;
-  /** Atomically hands up to `max` pending, still-wanted jobs of the org to ONE caller. */
-  claim(orgId: string, max: number, at: Date): Promise<LocalJobRow[]>;
+  /** Atomically hands up to `max` pending, still-wanted jobs of the org to ONE caller; each must be answered within `answerWindowMs`. */
+  claim(orgId: string, max: number, at: Date, answerWindowMs: number): Promise<LocalJobRow[]>;
   getJob(id: string): Promise<LocalJobRow | null>;
+  /**
+   * SOLO-PLAN-1125: the job an identical call already made and nobody received yet: still waiting
+   * (pending/claimed, in time) or answered since `answeredSince` and not delivered. Newest first.
+   */
+  findReusable(orgId: string, requestKey: string, at: Date, answeredSince: Date): Promise<LocalJobRow | null>;
+  /** A caller received this answer: it is never handed out again. */
+  markDelivered(id: string, at: Date): Promise<void>;
+  /** Declared orgs whose oldest waiting call is older than `silentSince` and whose runner was not seen since then, not yet told. */
+  listSilentOrgs(at: Date, silentSince: Date): Promise<SilentLocalOrg[]>;
+  /** Claims the one silence notice (false = already told). */
+  claimSilenceNotice(orgId: string, at: Date): Promise<boolean>;
+  /** Records the door the notice went out on, or releases the claim (null) when it could not be delivered. */
+  settleSilenceNotice(orgId: string, channel: string | null): Promise<void>;
   submit(id: string, orgId: string, leaseId: string, outcome: LocalAnswerOutcome, at: Date): Promise<SubmitVerdict>;
   /** Gives up on a job still pending/claimed. false = it was answered (or ended) first. */
   expire(id: string, reason: string, at: Date): Promise<boolean>;
   pendingCount(orgId: string, at: Date): Promise<number>;
-  /** Boot: jobs whose caller died with the previous process are ended, never run. */
-  expireAbandoned(createdBefore: Date, at: Date): Promise<number>;
+  /** Boot: jobs of these kinds whose caller died with the previous process are ended, never run. */
+  expireAbandoned(createdBefore: Date, at: Date, kinds: readonly LocalJobKind[]): Promise<number>;
   usageSince(orgId: string, since: Date): Promise<LocalUsageTotals>;
 }
 
@@ -124,6 +162,9 @@ export function createMemoryLocalLlmStore(): LocalLlmStore & { jobs: Map<string,
     runnerLastSeenAt: null,
     runnerName: null,
     runnerVersion: null,
+    runnerKind: null,
+    silenceNotifiedAt: null,
+    silenceNoticeChannel: null,
   });
   return {
     orgs,
@@ -159,6 +200,9 @@ export function createMemoryLocalLlmStore(): LocalLlmStore & { jobs: Map<string,
       row.runnerLastSeenAt = at;
       if (runner.name) row.runnerName = runner.name;
       if (runner.version) row.runnerVersion = runner.version;
+      if (runner.kind) row.runnerKind = runner.kind;
+      row.silenceNotifiedAt = null;
+      row.silenceNoticeChannel = null;
       orgs.set(orgId, row);
     },
     async enqueue(job) {
@@ -173,12 +217,13 @@ export function createMemoryLocalLlmStore(): LocalLlmStore & { jobs: Map<string,
         error: null,
         model: null,
         usage: NO_USAGE,
+        deliveredAt: null,
         createdAt: new Date(),
       };
       jobs.set(row.id, row);
       return row;
     },
-    async claim(orgId, max, at) {
+    async claim(orgId, max, at, answerWindowMs) {
       // Synchronous body: no await between the read and the write, so two
       // concurrent claims can never take the same job (the JS twin of SKIP LOCKED).
       const picked = [...jobs.values()]
@@ -189,12 +234,54 @@ export function createMemoryLocalLlmStore(): LocalLlmStore & { jobs: Map<string,
         j.status = "claimed";
         j.leaseId = crypto.randomUUID();
         j.claimedAt = at;
+        j.answerDeadlineAt = new Date(at.getTime() + answerWindowMs);
       }
       return picked.map((j) => ({ ...j }));
     },
     async getJob(id) {
       const j = jobs.get(id);
       return j ? { ...j } : null;
+    },
+    async findReusable(orgId, requestKey, at, answeredSince) {
+      const hit = [...jobs.values()]
+        .filter(
+          (j) =>
+            j.orgId === orgId &&
+            j.requestKey === requestKey &&
+            ((j.status === "pending" && j.pickupDeadlineAt > at) ||
+              (j.status === "claimed" && j.answerDeadlineAt > at) ||
+              ((j.status === "done" || j.status === "failed") && j.deliveredAt === null && (j.completedAt ?? at) >= answeredSince)),
+        )
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+      return hit ? { ...hit } : null;
+    },
+    async markDelivered(id, at) {
+      const j = jobs.get(id);
+      if (j && j.deliveredAt === null) j.deliveredAt = at;
+    },
+    async listSilentOrgs(at, silentSince) {
+      const out: SilentLocalOrg[] = [];
+      for (const o of orgs.values()) {
+        if (!o.declared || o.silenceNotifiedAt !== null) continue;
+        if (o.runnerLastSeenAt !== null && o.runnerLastSeenAt > silentSince) continue;
+        const waiting = [...jobs.values()].filter((j) => j.orgId === o.orgId && j.status === "pending" && j.pickupDeadlineAt > at);
+        if (waiting.length === 0) continue;
+        const oldest = waiting.reduce((m, j) => (j.createdAt < m ? j.createdAt : m), waiting[0].createdAt);
+        if (oldest > silentSince) continue;
+        out.push({ ...o, pendingCalls: waiting.length, oldestPendingAt: oldest });
+      }
+      return out;
+    },
+    async claimSilenceNotice(orgId, at) {
+      const o = orgs.get(orgId);
+      if (!o || o.silenceNotifiedAt !== null) return false;
+      orgs.set(orgId, { ...o, silenceNotifiedAt: at });
+      return true;
+    },
+    async settleSilenceNotice(orgId, channel) {
+      const o = orgs.get(orgId);
+      if (!o) return;
+      orgs.set(orgId, channel === null ? { ...o, silenceNotifiedAt: null, silenceNoticeChannel: null } : { ...o, silenceNoticeChannel: channel });
     },
     async submit(id, orgId, leaseId, outcome, at) {
       const j = jobs.get(id);
@@ -219,10 +306,10 @@ export function createMemoryLocalLlmStore(): LocalLlmStore & { jobs: Map<string,
       j.completedAt = at;
       return true;
     },
-    async expireAbandoned(createdBefore, at) {
+    async expireAbandoned(createdBefore, at, kinds) {
       let n = 0;
       for (const j of jobs.values()) {
-        if ((j.status === "pending" || j.status === "claimed") && j.createdAt < createdBefore) {
+        if ((j.status === "pending" || j.status === "claimed") && j.createdAt < createdBefore && kinds.includes(j.kind)) {
           j.status = "expired";
           j.error = "caller_restarted";
           j.completedAt = at;
@@ -275,6 +362,9 @@ function toOrg(r: Raw): LocalOrgRow {
     runnerLastSeenAt: dateOrNull(r.runner_last_seen_at),
     runnerName: (r.runner_name as string | null) ?? null,
     runnerVersion: (r.runner_version as string | null) ?? null,
+    runnerKind: (r.runner_kind as RunnerKind | null) ?? null,
+    silenceNotifiedAt: dateOrNull(r.silence_notified_at),
+    silenceNoticeChannel: (r.silence_notice_channel as string | null) ?? null,
   };
 }
 
@@ -303,6 +393,8 @@ function toJob(r: Raw): LocalJobRow {
       notionalCostUsd: numOrNull(r.notional_cost_usd),
       durationMs: numOrNull(r.duration_ms),
     },
+    requestKey: (r.request_key as string | null) ?? null,
+    deliveredAt: dateOrNull(r.delivered_at),
     createdAt: dateOrNull(r.created_at)!,
   };
 }
@@ -346,23 +438,26 @@ export function createPgLocalLlmStore(db: SqlExecutor): LocalLlmStore {
     },
     async touchRunner(orgId, at, runner) {
       await run(sql`
-        INSERT INTO local_llm_orgs (org_id, runner_last_seen_at, runner_name, runner_version, updated_at)
-        VALUES (${orgId}, ${iso(at)}, ${runner.name}, ${runner.version}, ${iso(at)})
+        INSERT INTO local_llm_orgs (org_id, runner_last_seen_at, runner_name, runner_version, runner_kind, updated_at)
+        VALUES (${orgId}, ${iso(at)}, ${runner.name}, ${runner.version}, ${runner.kind ?? null}, ${iso(at)})
         ON CONFLICT (org_id) DO UPDATE SET runner_last_seen_at = ${iso(at)},
           runner_name = COALESCE(${runner.name}, local_llm_orgs.runner_name),
-          runner_version = COALESCE(${runner.version}, local_llm_orgs.runner_version)`);
+          runner_version = COALESCE(${runner.version}, local_llm_orgs.runner_version),
+          runner_kind = COALESCE(${runner.kind ?? null}, local_llm_orgs.runner_kind),
+          silence_notified_at = NULL, silence_notice_channel = NULL`);
     },
     async enqueue(job) {
       const [r] = await run(sql`
-        INSERT INTO local_llm_jobs (org_id, kind, route, run_id, request, pickup_deadline_at, answer_deadline_at)
-        VALUES (${job.orgId}, ${job.kind}, ${job.route}, ${job.runId}, ${JSON.stringify(job.request)}::jsonb,
+        INSERT INTO local_llm_jobs (org_id, kind, route, run_id, request, request_key, pickup_deadline_at, answer_deadline_at)
+        VALUES (${job.orgId}, ${job.kind}, ${job.route}, ${job.runId}, ${JSON.stringify(job.request)}::jsonb, ${job.requestKey ?? null},
           ${iso(job.pickupDeadlineAt)}, ${iso(job.answerDeadlineAt)})
         RETURNING *`);
       return toJob(r);
     },
-    async claim(orgId, max, at) {
+    async claim(orgId, max, at, answerWindowMs) {
       const rows = await run(sql`
-        UPDATE local_llm_jobs SET status = 'claimed', lease_id = gen_random_uuid(), claimed_at = ${iso(at)}
+        UPDATE local_llm_jobs SET status = 'claimed', lease_id = gen_random_uuid(), claimed_at = ${iso(at)},
+          answer_deadline_at = ${iso(new Date(at.getTime() + answerWindowMs))}
         WHERE id IN (
           SELECT id FROM local_llm_jobs
           WHERE org_id = ${orgId} AND status = 'pending' AND pickup_deadline_at > ${iso(at)}
@@ -376,6 +471,48 @@ export function createPgLocalLlmStore(db: SqlExecutor): LocalLlmStore {
     async getJob(id) {
       const [r] = await run(sql`SELECT * FROM local_llm_jobs WHERE id = ${id}`);
       return r ? toJob(r) : null;
+    },
+    async findReusable(orgId, requestKey, at, answeredSince) {
+      const [r] = await run(sql`
+        SELECT * FROM local_llm_jobs
+        WHERE org_id = ${orgId} AND request_key = ${requestKey} AND (
+          (status = 'pending' AND pickup_deadline_at > ${iso(at)})
+          OR (status = 'claimed' AND answer_deadline_at > ${iso(at)})
+          OR (status IN ('done', 'failed') AND delivered_at IS NULL AND completed_at >= ${iso(answeredSince)})
+        )
+        ORDER BY created_at DESC
+        LIMIT 1`);
+      return r ? toJob(r) : null;
+    },
+    async markDelivered(id, at) {
+      await run(sql`UPDATE local_llm_jobs SET delivered_at = ${iso(at)} WHERE id = ${id} AND delivered_at IS NULL RETURNING id`);
+    },
+    async listSilentOrgs(at, silentSince) {
+      const rows = await run(sql`
+        SELECT o.*, w.pending_calls, w.oldest_pending_at FROM local_llm_orgs o
+        JOIN (
+          SELECT org_id, count(*)::int AS pending_calls, min(created_at) AS oldest_pending_at
+          FROM local_llm_jobs WHERE status = 'pending' AND pickup_deadline_at > ${iso(at)}
+          GROUP BY org_id
+        ) w ON w.org_id = o.org_id
+        WHERE o.declared = true AND o.silence_notified_at IS NULL
+          AND (o.runner_last_seen_at IS NULL OR o.runner_last_seen_at <= ${iso(silentSince)})
+          AND w.oldest_pending_at <= ${iso(silentSince)}`);
+      return rows.map((r) => ({ ...toOrg(r), pendingCalls: Number(r.pending_calls), oldestPendingAt: dateOrNull(r.oldest_pending_at)! }));
+    },
+    async claimSilenceNotice(orgId, at) {
+      const rows = await run(sql`
+        UPDATE local_llm_orgs SET silence_notified_at = ${iso(at)}
+        WHERE org_id = ${orgId} AND silence_notified_at IS NULL
+        RETURNING org_id`);
+      return rows.length > 0;
+    },
+    async settleSilenceNotice(orgId, channel) {
+      if (channel === null) {
+        await run(sql`UPDATE local_llm_orgs SET silence_notified_at = NULL, silence_notice_channel = NULL WHERE org_id = ${orgId} RETURNING org_id`);
+      } else {
+        await run(sql`UPDATE local_llm_orgs SET silence_notice_channel = ${channel} WHERE org_id = ${orgId} RETURNING org_id`);
+      }
     },
     async submit(id, orgId, leaseId, outcome, at) {
       const u = outcome.usage;
@@ -406,10 +543,12 @@ export function createPgLocalLlmStore(db: SqlExecutor): LocalLlmStore {
         RETURNING id`);
       return rows.length > 0;
     },
-    async expireAbandoned(createdBefore, at) {
+    async expireAbandoned(createdBefore, at, kinds) {
+      if (kinds.length === 0) return 0;
       const rows = await run(sql`
         UPDATE local_llm_jobs SET status = 'expired', error = 'caller_restarted', completed_at = ${iso(at)}
         WHERE status IN ('pending', 'claimed') AND created_at < ${iso(createdBefore)}
+          AND kind IN (${sql.join(kinds.map((k) => sql`${k}`), sql`, `)})
         RETURNING id`);
       return rows.length;
     },

@@ -21,7 +21,7 @@
  * detail): the Telegram block below says how to write here, the strategy lines
  * are the WhatsApp ones.
  */
-import { and, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lt } from "drizzle-orm";
 import type { db as Db } from "../db/index.js";
 import { channelInboundMessages, sessions } from "../db/schema.js";
 import type { TelegramMessageRequest } from "../schemas.js";
@@ -235,8 +235,11 @@ export function enqueueTelegramMessage(deps: TelegramDeps, chatId: string, rowId
   return next;
 }
 
-/** Messages a restart cut off in the last 30 minutes are answered once the port is up. */
-export async function recoverTelegramMessages(deps: TelegramDeps, now = new Date()): Promise<number> {
+/**
+ * Messages a restart cut off in the last 30 minutes are answered again. `createdBefore` (this
+ * process's boot) keeps a message THIS process is answering out of it.
+ */
+export async function recoverTelegramMessages(deps: TelegramDeps, now = new Date(), createdBefore?: Date): Promise<number> {
   const since = new Date(now.getTime() - 30 * 60_000);
   const rows = await deps.db
     .update(channelInboundMessages)
@@ -246,6 +249,7 @@ export async function recoverTelegramMessages(deps: TelegramDeps, now = new Date
         eq(channelInboundMessages.channel, TELEGRAM_CHANNEL),
         inArray(channelInboundMessages.status, ["received", "processing"]),
         gt(channelInboundMessages.createdAt, since),
+        createdBefore ? lt(channelInboundMessages.createdAt, createdBefore) : undefined,
       ),
     )
     .returning({ id: channelInboundMessages.id, chatId: channelInboundMessages.senderPhone });
