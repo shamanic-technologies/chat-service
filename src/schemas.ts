@@ -1586,7 +1586,7 @@ const DistrySpendDaySchema = z.object({
     description:
       "What Distry spent of OUR money on non-clients that day, read from the runs ledger (committed cost, gross): guest turns on every surface (their run trees under our org) + what guests' plan orgs spent + what accounts that never paid spent. Re-measured every minute.",
   }),
-  thresholdUsd: z.number().openapi({ description: "The day's limit for all non-clients together (DISTRY_NONCLIENT_DAILY_USD, default 30). At or above it every non-client gets the limit notice." }),
+  thresholdUsd: z.number().openapi({ description: "The most all non-payers' debt may grow that day (DISTRY_NONPAYER_DEBT_GROWTH_USD, default 20 since SOLO-PLAN-1125; 30 before). At or above it every non-payer gets the limit notice." }),
   visitorsCut: z.number().int().openapi({ description: "Distinct visitors with no account stopped at their own limit (DISTRY_VISITOR_USD, default 5) that day." }),
   turnsRefusedByDayCap: z.number().int().openapi({ description: "Messages answered by the limit notice (no model) because the day's limit was reached." }),
   alertFired: z.boolean().openapi({ description: "The spend reached the limit that day and the owner was alerted (Telegram + email, once per day). Red on Monitoring." }),
@@ -1604,7 +1604,7 @@ registry.registerPath({
   tags: ["Internal"],
   summary: "Distry's spend on non-clients per day, against the day's limit (Monitoring)",
   description:
-    "Owner 2026-11-19: a visitor with no account stops at $5, all non-clients together at $30 a day of our money; a paying client is never capped. Each day: the measured spend, the limit, visitors stopped at their own limit, messages refused by the day's limit, and whether the alert fired. A day with `alertFired` is red.",
+    "Owner 2026-11-19: a visitor with no account stops at $5; owner 2026-11-25 (SOLO-PLAN-1125): all non-payers' debt may grow at most $20 a day (it was $30 a day of our money); a paying client is never capped. The alert goes to Telegram, WhatsApp and email once a day. Each day: the measured spend, the limit, visitors stopped at their own limit, messages refused by the day's limit, and whether the alert fired. A day with `alertFired` is red.",
   request: {
     headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
     query: DistrySpendDaysQuerySchema,
@@ -1934,7 +1934,7 @@ registry.registerPath({
     "They can sign up or in right in the chat (their email, a phone number, the code sent to the email): the session then runs with their account, and they set up, pay through a link and launch without leaving the page. " +
     "Answers in the response, usually within 5-20 s; an onboarding step can take minutes. A turn runs to its end even when the caller stops waiting: send the SAME messageId again and it answers `in_progress` at once, then the whole stored answer. One turn at a time per visitor. " +
     "When a guest gives their WhatsApp number or email to continue there, the assistant ties it to the conversation (`continuedOn`, `handOff`). " +
-    "No answer count walls a visitor. A guard bounds abuse (`busy`): 20 messages per visitor per 10 minutes. Spend is bounded in dollars read from the runs ledger: a visitor with no account stops at $5 (`DISTRY_VISITOR_USD`), all non-clients together at $30 a day (`DISTRY_NONCLIENT_DAILY_USD`); past either the answer is the limit notice (status `answered`, no model ran). A guest's spend is a Copilot support run under distribute.you's org; a signed-in visitor's turns are their own org's.",
+    "No answer count walls a visitor. A guard bounds abuse (`busy`): 20 messages per visitor per 10 minutes. Spend is bounded in dollars read from the runs ledger: a visitor with no account stops at $5 (`DISTRY_VISITOR_USD`), all non-payers' debt may grow at most $20 a day (`DISTRY_NONPAYER_DEBT_GROWTH_USD`); past either the answer is the limit notice (status `answered`, no model ran). A guest's spend is a Copilot support run under distribute.you's org; a signed-in visitor's turns are their own org's.",
   request: {
     headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
     body: { content: { "application/json": { schema: WebMessageRequestSchema } } },
@@ -4477,10 +4477,11 @@ export const LocalLlmStateSchema = z
     declaredAt: z.string().nullable(),
     declaredByUserId: z.string().nullable(),
     runner: z.object({
-      connected: z.boolean().openapi({ description: "A runner asked for work in the last 60 s." }),
+      connected: z.boolean().openapi({ description: "A runner asked for work recently: within 60 s for an installed app, within 2 h for a routine (the founder's Claude, about hourly)." }),
       lastSeenAt: z.string().nullable(),
       name: z.string().nullable(),
       version: z.string().nullable(),
+      kind: z.enum(["app", "routine"]).nullable().openapi({ description: "What the runner said it is; null = never said (an installed app)." }),
     }),
     pendingCalls: z.number().int().openapi({ description: "Calls waiting for the runner right now." }),
     usageLast30Days: z.object({
@@ -4501,9 +4502,16 @@ export const LocalLlmClaimSchema = z
     waitMs: z.number().int().min(0).max(25_000).optional().openapi({ description: "Hold the request open up to this long waiting for work (default 20000, max 25000)." }),
     max: z.number().int().min(1).max(10).optional().openapi({ description: "Most items to take at once (default 1, max 10)." }),
     runner: z
-      .object({ name: z.string().max(100).optional(), version: z.string().max(100).optional() })
+      .object({
+        name: z.string().max(100).optional(),
+        version: z.string().max(100).optional(),
+        kind: z
+          .enum(["app", "routine"])
+          .optional()
+          .openapi({ description: "`app` = an installed runner polling all the time; `routine` = the founder's own Claude (a routine / scheduled task) taking the waiting work about once an hour. Omitted = app." }),
+      })
       .optional()
-      .openapi({ description: "Shown in the org's state (e.g. the Mac app and its version)." }),
+      .openapi({ description: "Shown in the org's state (e.g. the Mac app and its version, or the founder's Claude routine)." }),
   })
   .strict()
   .openapi("LocalLlmClaim");
@@ -4513,7 +4521,7 @@ export const LocalLlmWorkItemSchema = z
     id: z.string().uuid(),
     leaseId: z.string().uuid().openapi({ description: "Send it back with the answer: only this claim may answer." }),
     kind: z.enum(["complete", "judgment", "chat_round"]),
-    answerBy: z.string().openapi({ description: "After this instant the caller has stopped waiting (an answer then gets 410)." }),
+    answerBy: z.string().openapi({ description: "Answer before this instant; after it the call has ended (an answer then gets 410). A claim has 30 minutes." }),
     claude: z.object({
       systemPrompt: z.string().openapi({ description: "→ `--system-prompt`, verbatim." }),
       prompt: z.string().openapi({ description: "→ the prompt of `claude -p`, verbatim." }),
@@ -4598,10 +4606,11 @@ export const LocalLlmOrgsResponseSchema = z
         declaredAt: z.string().nullable(),
         declaredByUserId: z.string().nullable().openapi({ description: "The user who declared it (a runner may prefer the orgs its own user declared)." }),
         runner: z.object({
-          connected: z.boolean().openapi({ description: "A runner asked for this org's work in the last 60 s." }),
+          connected: z.boolean().openapi({ description: "A runner asked for work recently: within 60 s for an installed app, within 2 h for a routine (the founder's Claude, about hourly)." }),
           lastSeenAt: z.string().nullable(),
           name: z.string().nullable(),
           version: z.string().nullable(),
+          kind: z.enum(["app", "routine"]).nullable().openapi({ description: "What the runner said it is; null = never said (an installed app)." }),
         }),
         pendingCalls: z.number().int().openapi({ description: "Calls waiting for a runner right now." }),
       }),
