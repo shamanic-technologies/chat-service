@@ -139,7 +139,7 @@ export async function previewEmailPush(t: EmailPushTarget, p: ApiCallParams): Pr
   }
   const sentBy = await Promise.all(
     live.map(async ({ campaign, funnel }) => {
-      const caps = (await getFunnelCaps({ brandId: t.brandId, offerId: t.offerId, salesFunnelId: campaign.salesFunnelId }, p)) as Parameters<typeof fundingOf>[0];
+      const caps = (await getFunnelCaps({ brandId: t.brandId, offerId: t.offerId, salesFunnelId: campaign.salesFunnelId, salesFunnelCampaignId: campaign.id }, p)) as Parameters<typeof fundingOf>[0];
       const funded = fundingOf(caps);
       return {
         campaignId: campaign.id,
