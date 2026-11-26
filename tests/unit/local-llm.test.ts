@@ -107,14 +107,16 @@ describe("local LLM — work items", () => {
 });
 
 describe("local LLM — answers", () => {
-  it("refuses an answer that names no model, a banned model, or misses its structured value", () => {
-    const schemaJob = jobWith({ jsonSchema: { type: "object" } });
-    expect(answerOutcome(schemaJob, { ok: true, structured: { a: 1 } }).ok).toBe(false);
+  it("refuses a banned model or a missing structured value; a routine's answer with no model or usage is used (SOLO-PLAN-1125)", () => {
+    const schemaJob = jobWith({ systemPrompt: "S", prompt: "Write it.", jsonSchema: { type: "object" }, model: "claude-haiku-5-5", tools: [] });
     expect(answerOutcome(schemaJob, { ok: true, model: "claude-haiku-4-5-20251001", structured: { a: 1 } }).ok).toBe(false);
     expect(answerOutcome(schemaJob, { ok: true, model: "claude-sonnet-5-5", text: "x", usage: USAGE }).ok).toBe(false);
     expect(answerOutcome(schemaJob, { ok: true, model: "claude-sonnet-5-5", structured: { a: 1 }, usage: USAGE })).toMatchObject({ ok: true, result: { structured: { a: 1 } } });
-    // LOCAL-CLAUDE-RATING-1116: an answer that cannot be stated under the model that ran is refused.
-    expect(answerOutcome(schemaJob, { ok: true, model: "claude-sonnet-5-5", structured: { a: 1 } })).toMatchObject({ ok: false });
+    // SOLO-PLAN-1125: a routine answering inside a Claude chat reports no usage (nor maybe a model): used, sized by us.
+    const routine = answerOutcome(schemaJob, { ok: true, structured: { a: 1 } });
+    expect(routine).toMatchObject({ ok: true, model: (schemaJob.request as { model: string }).model, result: { structured: { a: 1 }, usageCountedBy: expect.stringContaining("chat-service") } });
+    expect(routine.usage.outputTokens).toBe(Math.ceil(JSON.stringify({ a: 1 }).length / 4));
+    expect(routine.usage.inputTokens).toBeGreaterThan(0);
     // SOLO-PLAN-1125: a founder's plan may run a Claude model we do not price (claude -p reported `claude-opus-4-6[1m]`): used.
     expect(answerOutcome(schemaJob, { ok: true, model: "claude-opus-4-6[1m]", structured: { a: 1 }, usage: USAGE })).toMatchObject({ ok: true, model: "claude-opus-4-6" });
     expect(answerOutcome(schemaJob, { ok: true, model: "gpt-6", structured: { a: 1 }, usage: USAGE })).toMatchObject({ ok: false, error: expect.stringContaining("not a Claude model") });

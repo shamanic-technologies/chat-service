@@ -626,8 +626,15 @@ function finished(job: LocalJobRow): LocalAnswer {
   throw new LocalRunnerError("local_runner_timeout", `The local call ended: ${job.error ?? "expired"}.`, job.id, null);
 }
 
+/** How a call's size is counted when the runner reports none: ~4 characters a token (Anthropic's rule of thumb), rounded up. */
+export const USAGE_COUNTED_BY_US = "chat-service: ~4 characters per token, from the work item and the answer";
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
 /** Turns the runner's posted answer into what is stored; refuses what cannot be served. */
 export function answerOutcome(job: LocalJobRow, a: LocalRunnerAnswer): LocalAnswerOutcome {
+  const call = job.request as LocalClaudeCall;
   const usage: LocalUsage = {
     inputTokens: a.usage?.inputTokens ?? null,
     outputTokens: a.usage?.outputTokens ?? null,
@@ -637,9 +644,11 @@ export function answerOutcome(job: LocalJobRow, a: LocalRunnerAnswer): LocalAnsw
     durationMs: a.durationMs ?? null,
   };
   // The CLI names a context variant in brackets (`claude-opus-4-6[1m]`): the model is the id before it.
-  const model = a.model ? a.model.trim().replace(/\[[^\]]*\]$/, "") : null;
+  // SOLO-PLAN-1125: a founder's routine answers inside a Claude chat and may not know its model id:
+  // the answer is then stated as the Claude model the call asked for.
+  const model = a.model ? a.model.trim().replace(/\[[^\]]*\]$/, "") : a.ok ? call.model : null;
   if (!a.ok) return { ok: false, error: a.error ?? "The local runner reported a failure without a message.", model, usage };
-  if (!model) return { ok: false, error: "The runner's answer did not say which model wrote it (the CLI's init `model`).", model, usage };
+  if (!model) return { ok: false, error: "The runner's answer did not say which model wrote it.", model, usage };
   if (BANNED_MODEL.test(model)) return { ok: false, error: `The answer was written by ${model}, a model we never use (owner rule).`, model, usage };
   // SOLO-PLAN-1125: a founder's Claude plan runs whatever Claude model their app picks (older, newer, a
   // variant): any real Claude model's answer is used; one we do not price is stated under the model
@@ -647,18 +656,31 @@ export function answerOutcome(job: LocalJobRow, a: LocalRunnerAnswer): LocalAnsw
   if (!pricedClaudeModel(model) && !CLAUDE_MODEL_ID.test(model)) {
     return { ok: false, error: `The answer was written by "${model}", which is not a Claude model: answer with Claude (claude -p).`, model, usage };
   }
-  if (typeof usage.inputTokens !== "number" || typeof usage.outputTokens !== "number") {
-    return { ok: false, error: "The answer carries no token usage (`usage.inputTokens` + `usage.outputTokens`, the CLI's result usage): the call could not be stated on its run.", model, usage };
-  }
-  const call = job.request as LocalClaudeCall;
+  let body: { structured: unknown } | { text: string };
   if (call.jsonSchema) {
     if (a.structured === undefined || a.structured === null) {
       return { ok: false, error: "The call asked for a JSON schema and the answer carries no `structured` value (the CLI's structured_output).", model, usage };
     }
-    return { ok: true, result: { structured: a.structured }, model, usage };
+    body = { structured: a.structured };
+  } else {
+    if (typeof a.text !== "string") return { ok: false, error: "The answer carries no `text` (the CLI's result).", model, usage };
+    body = { text: a.text };
   }
-  if (typeof a.text !== "string") return { ok: false, error: "The answer carries no `text` (the CLI's result).", model, usage };
-  return { ok: true, result: { text: a.text }, model, usage };
+  // SOLO-PLAN-1125: a founder's routine answers inside a Claude chat and cannot read its own token
+  // counts. Its answer is used; the call's size is then counted by US from the work item and the
+  // answer (`estimateTokens`), and the stored result says so (`usageCountedBy`). A runner that
+  // reports its usage (the CLI) is stated as reported.
+  if (typeof usage.inputTokens !== "number" || typeof usage.outputTokens !== "number") {
+    const counted: LocalUsage = {
+      ...usage,
+      inputTokens: estimateTokens(call.systemPrompt) + estimateTokens(call.prompt) + (call.jsonSchema ? estimateTokens(JSON.stringify(call.jsonSchema)) : 0),
+      outputTokens: estimateTokens("text" in body ? body.text : JSON.stringify(body.structured)),
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+    };
+    return { ok: true, result: { ...body, usageCountedBy: USAGE_COUNTED_BY_US }, model, usage: counted };
+  }
+  return { ok: true, result: body, model, usage };
 }
 
 export function toWorkItem(job: LocalJobRow): LocalWorkItem {
