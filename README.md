@@ -1163,6 +1163,8 @@ Everything else — the pinned release on the wire, the refusal to flatten an an
 
 **Model pinning:** whichever of the three values a caller asks for, the id sent on the wire is always the pinned release `jev-1.13.0`, and an answer served by anything else is refused rather than billed. The cost name is keyed on the release for the same reason: an alias moves to a new model without notice, and since the vendor echoes the id it was asked for, forwarding `jev-latest` would bill a new model under the old release's name with nothing to show for it. A loud outage on a rename is the cheap failure, exactly as with DeepSeek's 2026-09-10 rename (see above). A new Jev release is a deliberate edit here, after its own catalog row exists.
 
+**Broken characters never cost a judgment (JEV-INVALID-UNICODE-1126):** every string in `state` and `questions` (keys included) is made well-formed before it reaches any judge: half an emoji left by a caller cutting its text (a lone surrogate) becomes U+FFFD. Jev refuses a request carrying one with 400 `Request contains invalid Unicode text.`; nothing else in the text changes.
+
 ## Local LLM: an org's calls on the user's own Claude Code (LOCAL-CLAUDE-1116)
 
 An org can declare that its LLM runs on the user's own Claude Code subscription, on their machine: the org then pays **$0** for its LLM calls (owner 2026-11-16: « le user dépense $0, car tout depuis sa subscription Claude Code »). Org-level: every campaign, script and the Copilot at once, no per-campaign setting.
