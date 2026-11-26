@@ -179,6 +179,10 @@ export const TOOL_OPERATIONS: Readonly<Record<string, readonly ToolOperationRef[
   list_declared_sales_paths: { noRoute: NOT_PUBLIC },
   declare_sales_path: { noRoute: NOT_PUBLIC },
   declare_leg: { noRoute: NOT_PUBLIC },
+  // Outcomes like a Script (ENGINE-GET-ASK-1123): service routes reached by the chat, not the gateway
+  find_outcome: { noRoute: NOT_PUBLIC },
+  get_units: { noRoute: NOT_PUBLIC },
+  ask_engine: { noRoute: NOT_PUBLIC },
   find_workflows: { noRoute: STAFF_KEY },
   create_pipe: { noRoute: STAFF_KEY },
   create_offer: { noRoute: STAFF_KEY },
