@@ -176,8 +176,11 @@ function readSourceSize(res: Response): number | null {
 /**
  * Ask the source for its first byte only (a presigned GET URL is signed for
  * GET, so no HEAD): reachability, size and type without downloading the file.
+ * `maxBytes` defaults to the Gemini Files limit (2 GB).
  */
-export async function probeSource(url: string): Promise<SourceInfo> {
+export async function probeSource(url: string, opts: { maxBytes?: number } = {}): Promise<SourceInfo> {
+  // The Gemini Files limit unless the route states its own (the box transcriber takes 4 GB).
+  const maxBytes = opts.maxBytes ?? MAX_TRANSCRIPTION_BYTES;
   let res: Response;
   try {
     // A caller's file URL: public internet only, every redirect re-checked (SEC-MCP-SSRF-1120).
@@ -213,10 +216,10 @@ export async function probeSource(url: string): Promise<SourceInfo> {
   if (sizeBytes === 0) {
     throw new TranscriptionError("not_media", "The file at the URL is empty.");
   }
-  if (sizeBytes > MAX_TRANSCRIPTION_BYTES) {
+  if (sizeBytes > maxBytes) {
     throw new TranscriptionError(
       "file_too_large",
-      `The file is ${(sizeBytes / 1024 ** 3).toFixed(2)} GB; the limit is 2 GB.`,
+      `The file is ${(sizeBytes / 1024 ** 3).toFixed(2)} GB; the limit is ${maxBytes / 1024 ** 3} GB.`,
       413,
     );
   }

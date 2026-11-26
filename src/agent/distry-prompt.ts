@@ -157,6 +157,16 @@ export const PROMPT_PARTS: readonly PromptPartSpec[] = [
     codeText: buildTelegramBlock(),
   },
   {
+    id: "telegram-door",
+    name: "Telegram, before their account",
+    purpose: "How to write on Telegram in a chat that opened our bot with no account: the form, who the person is, the sign-up in the chat (DISTRY-START-DOOR-1125).",
+    when: "A Telegram turn in a chat that opened our bot with no account: before their sign-up, and the answer right after it.",
+    kind: "live",
+    place: "ordered",
+    placeholders: { telegramDoorBlock: "The block built for this chat: form, identity, sign-up." },
+    codeText: "{{telegramDoorBlock}}",
+  },
+  {
     id: "website",
     name: "Website form",
     purpose: "How to write in the chat window of our website, who the visitor is, and the hand-off to another channel.",
@@ -205,6 +215,28 @@ export const PROMPT_PARTS: readonly PromptPartSpec[] = [
     place: "ordered",
     placeholders: { situationBrief: "The brief read from the account just before the message." },
     codeText: "{{situationBrief}}",
+  },
+  {
+    id: "waiting-campaign",
+    name: "Their campaign waits for them",
+    purpose: "The campaign the founder built and paid for on the signup page, created stopped: it starts on their first message to Distry, on any channel (DISTRY-CHANNEL-HANDOFF-1125).",
+    when: "A turn of that person (web, WhatsApp, email reply, Telegram) while that campaign has not been started yet.",
+    kind: "template",
+    place: "ordered",
+    placeholders: { campaignId: "The id of the waiting campaign (campaign-service)." },
+    codeText:
+      "\n\n---\n## Their campaign is waiting for them\nOn our signup page they built a campaign (id {{campaignId}}), paid, and asked us to start it when they first talk to you. This message is that moment: start it in this turn with run_operation, method PATCH, path /v1/sales-funnel-campaigns/{{campaignId}}, body {\"status\": \"activate\"}. Their yes was given on the signup page, so this one call runs at once with no proposal; then tell them in a few words that it is running, and answer what they wrote. If they ask you to wait, or not to start it, do not start it.",
+  },
+  {
+    id: "carried-work",
+    name: "Lookups already made this turn",
+    purpose: "When the model that started this answer went silent and another model takes over: what was already looked up, so it is not looked up again.",
+    when: "A turn moved to the next model after its first model sent nothing for 30 s.",
+    kind: "template",
+    place: "ordered",
+    placeholders: { lookups: "Each tool already called this turn, its arguments and its result." },
+    codeText:
+      "\n\n---\n## Already looked up for this message\nAnother model started this answer and stopped responding. These calls were made and their results stand: use them, do not make them again, and carry on from there.\n{{lookups}}",
   },
   {
     id: "brand-tools",
@@ -353,18 +385,25 @@ export interface TurnPromptData {
   requestContext: Record<string, unknown> | null;
   leadTurnBlock: string | null;
   telegram: boolean;
+  /** A Telegram chat that opened our bot with no account (telegram-copilot.ts buildTelegramDoorBlock). */
+  telegramDoorBlock: string | null;
   websiteBlock: string | null;
   whatsappBlock: string | null;
   dashboard: boolean;
   clientBrief: string | null;
   situationBrief: string | null;
+  /** The campaign waiting for this person's first message (copilot-handoff.ts), or null. */
+  waitingCampaignId: string | null;
   brandTools: boolean;
+  /** The lookups a silent model left behind (COPILOT-LATENCY-1125), formatted; null = a turn's first model. */
+  carriedWork: string | null;
 }
 
 export function emptyTurnPromptData(role: string): TurnPromptData {
   return {
-    role, skillIndex: null, modelName: null, campaignInputs: null, requestContext: null, leadTurnBlock: null, telegram: false,
-    websiteBlock: null, whatsappBlock: null, dashboard: false, clientBrief: null, situationBrief: null, brandTools: false,
+    role, skillIndex: null, modelName: null, campaignInputs: null, requestContext: null, leadTurnBlock: null, telegram: false, telegramDoorBlock: null,
+    websiteBlock: null, whatsappBlock: null, dashboard: false, clientBrief: null, situationBrief: null, waitingCampaignId: null, brandTools: false,
+    carriedWork: null,
   };
 }
 
@@ -378,12 +417,15 @@ function partValues(id: string, d: TurnPromptData): Record<string, string> | nul
     case "request-context": return d.requestContext && Object.keys(d.requestContext).length > 0 ? { requestContext: JSON.stringify(d.requestContext, null, 2) } : null;
     case "lead-turn": return d.leadTurnBlock !== null ? { leadTurnBlock: d.leadTurnBlock } : null;
     case "telegram": return d.telegram ? {} : null;
+    case "telegram-door": return d.telegramDoorBlock !== null ? { telegramDoorBlock: d.telegramDoorBlock } : null;
     case "website": return d.websiteBlock !== null ? { websiteBlock: d.websiteBlock } : null;
     case "whatsapp": return d.whatsappBlock !== null ? { whatsappBlock: d.whatsappBlock } : null;
     case "dashboard-pages": return d.dashboard ? {} : null;
     case "client-brief": return d.clientBrief !== null ? { clientBrief: d.clientBrief } : null;
     case "situation-brief": return d.situationBrief !== null ? { situationBrief: d.situationBrief } : null;
+    case "waiting-campaign": return d.waitingCampaignId !== null ? { campaignId: d.waitingCampaignId } : null;
     case "brand-tools": return d.brandTools ? {} : null;
+    case "carried-work": return d.carriedWork !== null ? { lookups: d.carriedWork } : null;
     default: throw new Error(`[distry-prompt] no data rule for part "${id}"`);
   }
 }
@@ -499,4 +541,11 @@ export function partsForEditor(overrides: DistryPromptOverrides, role: string) {
     ...overrides.order.map((id) => row(SPEC_BY_ID.get(id)!)),
     ...PROMPT_PARTS.filter((p) => p.place !== "ordered").map(row),
   ];
+}
+
+/** The lookups a silent model left behind, one line each, for the `carried-work` part. */
+export function formatCarriedWork(calls: ReadonlyArray<{ name: string; args: Record<string, unknown>; result?: unknown }>): string {
+  return calls
+    .map((c) => `- ${c.name}(${JSON.stringify(c.args)}) returned ${JSON.stringify(c.result ?? null)}`)
+    .join("\n");
 }

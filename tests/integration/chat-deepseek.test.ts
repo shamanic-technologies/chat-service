@@ -1,3 +1,4 @@
+import { loadRegimeCatalogue } from "../regime-hours.fixture.js";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 
@@ -273,8 +274,9 @@ const AUTH = {
 const DS = /^deepseek-v4\.1-flash-(peak|off-peak)-tokens-(input|cached-input|output)$/;
 
 describe("POST /chat on a DeepSeek config", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
+    await loadRegimeCatalogue();
     routes = [];
     fetchCalls = [];
     inserted.length = 0;

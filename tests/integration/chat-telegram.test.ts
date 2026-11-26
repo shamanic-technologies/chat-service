@@ -15,6 +15,9 @@ process.env.CLIENT_SERVICE_API_KEY = process.env.CLIENT_SERVICE_API_KEY || "test
 process.env.CAMPAIGN_SERVICE_URL = process.env.CAMPAIGN_SERVICE_URL || "https://campaign.test.local";
 process.env.CAMPAIGN_SERVICE_API_KEY = process.env.CAMPAIGN_SERVICE_API_KEY || "test-campaign-key";
 process.env.COPILOT_FOLLOWUP_ORG_ID = process.env.COPILOT_FOLLOWUP_ORG_ID || "99999999-9999-4999-8999-999999999990";
+process.env.COPILOT_FOLLOWUP_BRAND_ID = process.env.COPILOT_FOLLOWUP_BRAND_ID || "99999999-9999-4999-8999-999999999991";
+process.env.COPILOT_FOLLOWUP_USER_ID = process.env.COPILOT_FOLLOWUP_USER_ID || "99999999-9999-4999-8999-999999999992";
+process.env.TELEGRAM_BOT_TOKEN = "123:test";
 
 const ORG = "11111111-1111-4111-8111-111111111111";
 const BRAND = "22222222-2222-4222-8222-222222222222";
@@ -28,6 +31,8 @@ const { state } = vi.hoisted(() => ({
     channelRows: [] as Array<Record<string, unknown>>,
     messageInserts: [] as Array<Record<string, unknown>>,
     tables: {} as Record<string, unknown>,
+    /** The session the db serves (null = the linked member's own thread). */
+    session: null as Record<string, unknown> | null,
   },
 }));
 
@@ -49,7 +54,7 @@ vi.mock("../../src/db/index.js", async () => {
   const session = { id: SESSION, orgId: ORG, userId: USER, channelPhone: null, guest: false, brandIds: [BRAND], updatedAt: new Date() };
   const rowsFor = (table: unknown): unknown[] => {
     if (is(table, "channel_inbound_messages")) return state.channelRows;
-    if (is(table, "sessions")) return [session];
+    if (is(table, "sessions")) return [state.session ?? session];
     if (is(table, "app_configs") || is(table, "platform_configs")) return [appConfig];
     return [];
   };
@@ -131,6 +136,8 @@ function baseRoutes(gemini: { calls: number; bodies: Array<Record<string, unknow
   return [
     // DISTRY-GUEST-CAPS-1119: an account's turn asks billing whether the org pays (a paying client is never capped).
     { match: (url) => url.includes("/internal/accounts/by-org/") && url.endsWith("/cash"), respond: () => ({ ok: true, body: { cash_paid_cents: 5000, credited_cents: 5000, non_cash_credit_cents: 0 } }) },
+    // SOLO-PLAN-1125: billing's solo-plan verdict, read on every Distry turn of an account (this one is not on the plan).
+    { match: (url) => url.includes("/internal/accounts/by-org/") && url.endsWith("/solo-plan/ai-gate"), respond: () => ({ ok: true, body: { on_solo_plan: false, plan: null, may_use_our_keys: true, refused_reason: null, debt_cents: null, debt_limit_cents: null, upgrade_url: null, next_step: null } }) },
     {
       match: (url) => url.startsWith("http://127.0.0.1:") && url.endsWith("/chat"),
       respond: async (_url, init) => {
@@ -144,11 +151,12 @@ function baseRoutes(gemini: { calls: number; bodies: Array<Record<string, unknow
       match: (url) => url === `${process.env.CLIENT_SERVICE_URL}/internal/owner-telegram/chats/12345`,
       respond: () => ({ ok: true, body: { links: linked ? [{ orgId: ORG, orgName: "STAFF TEST", userId: USER, linkedAt: "2026-11-03T00:00:00.000Z" }] : [] } }),
     },
+    // The reply goes to the chat that wrote, through the platform bot.
     {
-      match: (url) => url === `${process.env.CLIENT_SERVICE_URL}/internal/orgs/${ORG}/owner-telegram/messages`,
+      match: (url) => url === "https://api.telegram.org/bot123:test/sendMessage",
       respond: (url, init) => {
         sends.push({ url, body: JSON.parse(init!.body as string) as Record<string, unknown> });
-        return { ok: true, body: { outcome: "sent", target: "linked_chat", telegramMessageId: 9 } };
+        return { ok: true, body: { ok: true, result: { message_id: 9 } } };
       },
     },
     { match: (url) => url.includes("/internal/users/"), respond: () => ({ ok: true, body: { user: { email: "kevin@distribute.you" } } }) },
@@ -189,6 +197,7 @@ describe("POST /internal/copilot/telegram-messages: a linked client talks with t
     fetchCalls = [];
     state.channelRows.length = 0;
     state.messageInserts.length = 0;
+    state.session = null;
     installFetchMock();
   });
   afterEach(() => vi.restoreAllMocks());
@@ -232,19 +241,35 @@ describe("POST /internal/copilot/telegram-messages: a linked client talks with t
     expect(gemini.calls).toBe(1);
   }, 30_000);
 
-  it("an unlinked chat runs no turn on anybody's org: not_linked, nothing stored, nothing sent", async () => {
+  it("a chat linked to no account opens the bot: Distry answers it as a guest on our line, ready to sign them up (DISTRY-START-DOOR-1125)", async () => {
     const app = (await import("../../src/index.js")).default;
     const gemini = { calls: 0, bodies: [] as Array<Record<string, unknown>> };
     const sends: Array<{ url: string; body: Record<string, unknown> }> = [];
     routes.push(...baseRoutes(gemini, app, sends, false));
-    const res = await request(app).post("/internal/copilot/telegram-messages").set(WEBHOOK).send({ chatId: "12345", messageId: "8", text: "hi" });
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: "not_linked" });
-    expect(state.channelRows).toEqual([]);
-    expect(gemini.calls).toBe(0);
-    expect(sends).toEqual([]);
-    expect(fetchCalls.some((c) => c.url.endsWith("/chat"))).toBe(false);
-  });
+    const LINE_ORG = process.env.COPILOT_FOLLOWUP_ORG_ID!;
+    const LINE_USER = process.env.COPILOT_FOLLOWUP_USER_ID!;
+    // The chat's own conversation: a guest under our line, tied to the chat.
+    state.session = { id: SESSION, orgId: LINE_ORG, userId: LINE_USER, channelPhone: null, guest: true, telegramChatId: "12345", leadThread: false, planOrgId: null, brandIds: [BRAND], updatedAt: new Date() };
+    const res = await request(app).post("/internal/copilot/telegram-messages").set(WEBHOOK).send({ chatId: "12345", messageId: "8", text: "/start" });
+    expect(res.status).toBe(202);
+    await vi.waitFor(() => expect(["answered", "failed"]).toContain(state.channelRows[0].status), { timeout: 20_000 });
+    expect(state.channelRows[0].error ?? null).toBeNull();
+    expect(state.channelRows[0].status).toBe("answered");
+
+    const chatCall = fetchCalls.find((c) => c.url.endsWith("/chat"))!;
+    expect((chatCall.init!.headers as Record<string, string>)["x-org-id"]).toBe(LINE_ORG);
+    // The model reads the guest door: not tied to any account, the sign-in right in this chat.
+    const prompt = JSON.stringify(gemini.bodies[0]);
+    expect(prompt).toContain("in the chat this person opened with our bot");
+    expect(prompt).toContain("This Telegram chat is NOT tied to any distribute.you account yet");
+    expect(prompt).toContain("start_sign_in");
+    // /start is our opening trigger, stored hidden, never their words.
+    const userMsg = state.messageInserts.find((m) => m.role === "user")!;
+    expect(String(userMsg.content)).toContain("they just opened this chat from distribute.you");
+    expect(userMsg.proactiveTrigger).toBe(true);
+    expect(sends).toHaveLength(1);
+    expect(sends[0].body.chat_id).toBe("12345");
+  }, 30_000);
 
   it("POST /chat refuses a channelMessageId that names no Telegram message being answered", async () => {
     const app = (await import("../../src/index.js")).default;

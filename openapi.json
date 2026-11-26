@@ -1104,20 +1104,23 @@
             "properties": {
               "from": {
                 "type": "string",
-                "description": "Versioned model ID the caller asked for (its provider is out of credit)."
+                "description": "Versioned model ID the caller asked for."
               },
               "reason": {
                 "type": "string",
                 "enum": [
-                  "out_of_credit"
-                ]
+                  "out_of_credit",
+                  "rate_limited",
+                  "quota_exhausted"
+                ],
+                "description": "`out_of_credit`: the asked model's provider has no credit on our account. `rate_limited`: it still answered 429 after the retry budget. `quota_exhausted`: it refused for a per-day / per-hour cap or asked for a wait longer than the retries (OPEN-LLM-FREE-1124)."
               }
             },
             "required": [
               "from",
               "reason"
             ],
-            "description": "Present only when the requested model's provider has no credit and the call was served by another vendor's model: the cheapest of the same tier that takes the request (VENDOR-CREDIT-1030, LLM-CREDIT-GENERIC-1108). `model` is then the fallback that ran, and the run declares the fallback's own cost names.",
+            "description": "Present only when the requested model's provider could not serve on our platform key (no credit, a rate limit that outlasted the retries, an exhausted quota) and the call was served by another vendor's model: the cheapest of the same tier that takes the request (VENDOR-CREDIT-1030, LLM-CREDIT-GENERIC-1108). `model` is then the fallback that ran, and the run declares the fallback's own cost names.",
             "example": {
               "from": "deepseek-flash",
               "reason": "out_of_credit"
@@ -1276,7 +1279,7 @@
               "moonshot",
               "openai"
             ],
-            "description": "LLM provider to use. `anthropic` and `google` are native clients with the full feature set (vision, web search, thinking controls). `deepseek`, `zai` (Z.ai / GLM), `moonshot` (Kimi) and `openai` (GPT) are called directly over their OpenAI-compatible APIs by one shared adapter — text in / text out only, opt-in per call, no existing caller reaches them implicitly. Each vendor resolves its OWN API key from key-service under this exact slug.",
+            "description": "LLM provider to use. `anthropic` and `google` are native clients with the full feature set (vision, web search, thinking controls). `deepseek`, `zai` (Z.ai / GLM), `moonshot` (Kimi), `openai` (GPT) are called directly over their OpenAI-compatible APIs by one shared adapter — text in / text out only, opt-in per call, no existing caller reaches them implicitly. Each vendor resolves its OWN API key from key-service under this exact slug.",
             "example": "anthropic"
           },
           "model": {
@@ -1327,7 +1330,7 @@
               "gpt-terra",
               "gpt-6.1-terra"
             ],
-            "description": "**Preferred: an LLM dynasty slug** (one vendor line, its versions pooled; the full list with versions is `GET /internal/model-dynasties`). The slug always runs the dynasty's head (newest served version): anthropic → claude-haiku|claude-sonnet|claude-opus|claude-fable, google → gemini-flash-lite|gemini-flash|gemini-pro, deepseek → deepseek-flash, zai → glm-flash|glm, moonshot → kimi-k2|kimi-k3, openai → gpt-astra|gpt-sol|gpt-terra. The head's exact model id (e.g. `gemini-4-hydrogen`) is also accepted, to pin that version. Spend is declared under the concrete model that ran, whatever name called it.\n\nLegacy aliases (version-free, each a redirect to its dynasty's head):\n\n**anthropic:** `haiku` → Claude Haiku 5.5 (fast/cheap), `sonnet` → Claude Sonnet 5.5 (balanced), `opus` → Claude Opus 5.5 (high quality), `fable` → Claude Fable 5.2, the tier above Opus (1M context, always-on reasoning). `sonnet`, `opus` and `fable` reject `temperature` with a 400 — Anthropic removed the sampling parameters on its always-thinking models, as OpenAI did on its GPT models. On `sonnet` and `opus`, `disableThinking: true` minimizes reasoning (effort `low`); thinking cannot be fully disabled there.\n**google:** `flash-lite` and `flash` → Gemini 3.5 Flash-Lite (cheapest, vision), `flash-pro` → Gemini 3.8 Flash (mid-tier), `pro` → Gemini 3.1 Pro (most powerful).\n**deepseek:** `deepseek-flash` → DeepSeek V4.1 Flash (1M context, 2500 concurrent requests). `deepseek-pro` is a **deprecated synonym** resolving to the same model: DeepSeek discontinued V4 Pro on 2026-09-14 and routes it to V4.1 Flash at the Flash price. Prefer `deepseek-flash`.\n**zai:** `glm-flash` → `glm-5.3-flash` (fast, cheap, 50 concurrent requests), `glm-pro` → `glm-5.3` (flagship, 15 concurrent requests).\n**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n**openai:** `gpt-pro` → GPT-6 Astra (flagship; 1.05M context, 128k output, always-on reasoning floored at `low`), `gpt-sol` → GPT-6 Sol, `gpt-terra` → GPT-5.6 Terra (the latest Terra; there is no GPT-6 Terra). On `gpt-sol` / `gpt-terra`, `disableThinking: true` turns reasoning fully off. All three reject `temperature`.\n\nThe four direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\nThe model must match the provider: anthropic → haiku|sonnet|opus|fable, google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro, openai → gpt-pro|gpt-sol|gpt-terra.",
+            "description": "**Preferred: an LLM dynasty slug** (one vendor line, its versions pooled; the full list with versions is `GET /internal/model-dynasties`). The slug always runs the dynasty's head (newest served version): anthropic → claude-haiku|claude-sonnet|claude-opus|claude-fable, google → gemini-flash-lite|gemini-flash|gemini-pro, deepseek → deepseek-flash, zai → glm-flash|glm, moonshot → kimi-k2|kimi-k3, openai → gpt-astra|gpt-sol|gpt-terra. The head's exact model id (e.g. `gemini-4-hydrogen`) is also accepted, to pin that version. Spend is declared under the concrete model that ran, whatever name called it.\n\nLegacy aliases (version-free, each a redirect to its dynasty's head):\n\n**anthropic:** `haiku` → Claude Haiku 5.5 (fast/cheap), `sonnet` → Claude Sonnet 5.5 (balanced), `opus` → Claude Opus 5.5 (high quality), `fable` → Claude Fable 5.2, the tier above Opus (1M context, always-on reasoning). `sonnet`, `opus` and `fable` reject `temperature` with a 400 — Anthropic removed the sampling parameters on its always-thinking models, as OpenAI did on its GPT models. On `sonnet` and `opus`, `disableThinking: true` minimizes reasoning (effort `low`); thinking cannot be fully disabled there.\n**google:** `flash-lite` and `flash` → Gemini 3.5 Flash-Lite (cheapest, vision), `flash-pro` → Gemini 3.8 Flash (mid-tier), `pro` → Gemini 3.1 Pro (most powerful).\n**deepseek:** `deepseek-flash` → DeepSeek V4.1 Flash (1M context, 2500 concurrent requests). `deepseek-pro` is a **deprecated synonym** resolving to the same model: DeepSeek discontinued V4 Pro on 2026-09-14 and routes it to V4.1 Flash at the Flash price. Prefer `deepseek-flash`.\n**zai:** `glm-flash` → `glm-5.3-flash` (fast, cheap, 50 concurrent requests), `glm-pro` → `glm-5.3` (flagship, 15 concurrent requests).\n**moonshot:** `kimi-flash` → `kimi-k2.6` (value tier), `kimi-pro` → `kimi-k3` (flagship, 1M context).\n**openai:** `gpt-pro` → GPT-6 Astra (flagship; 1.05M context, 128k output, always-on reasoning floored at `low`), `gpt-sol` → GPT-6 Sol, `gpt-terra` → GPT-5.6 Terra (the latest Terra; there is no GPT-6 Terra). On `gpt-sol` / `gpt-terra`, `disableThinking: true` turns reasoning fully off. All three reject `temperature`.\nA call the vendor refuses for a rate limit or a quota is served by the next model of the fallback order (`fallback.reason`).\n\nThe direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\nThe model must match the provider: anthropic → haiku|sonnet|opus|fable, google → flash-lite|flash|flash-pro|pro, deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro, openai → gpt-pro|gpt-sol|gpt-terra.",
             "example": "sonnet"
           },
           "webSearch": {
@@ -1565,7 +1568,7 @@
               "moonshot",
               "openai"
             ],
-            "description": "LLM provider to use. `anthropic` and `google` are native clients; `deepseek`, `zai` (Z.ai / GLM), `moonshot` (Kimi) and `openai` (GPT) are called directly over their OpenAI-compatible APIs, text-only. Each vendor resolves its own platform key from key-service under this exact slug.",
+            "description": "LLM provider to use. `anthropic` and `google` are native clients; `deepseek`, `zai` (Z.ai / GLM), `moonshot` (Kimi), `openai` (GPT) are called directly over their OpenAI-compatible APIs, text-only. Each vendor resolves its own platform key from key-service under this exact slug.",
             "example": "anthropic"
           },
           "model": {
@@ -1964,6 +1967,311 @@
           "audio"
         ]
       },
+      "MediaTranscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The transcript's id. Stable: it never changes, and it is the `subjectId` a caller declares its outcome on."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "downloading",
+              "transcribing",
+              "completed",
+              "failed"
+            ],
+            "description": "`downloading` the file goes from its URL to our server · `transcribing` waiting its turn or being transcribed (one recording at a time) · `completed` · `failed` (see `error`)."
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "Source URL WITHOUT its query string."
+              },
+              "mimeType": {
+                "type": "string",
+                "nullable": true
+              },
+              "sizeBytes": {
+                "type": "integer",
+                "nullable": true
+              }
+            },
+            "required": [
+              "url",
+              "mimeType",
+              "sizeBytes"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "nullable": true,
+            "description": "The open speech model that transcribes (null until our transcriber took the file).",
+            "example": "nemo-parakeet-tdt-0.6b-v3"
+          },
+          "language": {
+            "type": "string",
+            "nullable": true,
+            "description": "ISO 639-1 code of the language spoken, when the model reports one. The current model reports none: null."
+          },
+          "languageProbability": {
+            "type": "number",
+            "nullable": true,
+            "description": "The model's confidence in `language`, 0..1."
+          },
+          "durationSeconds": {
+            "type": "number",
+            "nullable": true,
+            "description": "Length of the recording, in seconds. Null until transcription starts."
+          },
+          "progress": {
+            "type": "object",
+            "properties": {
+              "transcribedSeconds": {
+                "type": "number",
+                "description": "Up to which second of the recording the transcript is written."
+              },
+              "durationSeconds": {
+                "type": "number",
+                "nullable": true
+              },
+              "fraction": {
+                "type": "number",
+                "description": "`transcribedSeconds / durationSeconds`, 0..1. 0 while downloading or waiting; 1 once `completed`."
+              }
+            },
+            "required": [
+              "transcribedSeconds",
+              "durationSeconds",
+              "fraction"
+            ]
+          },
+          "segmentCount": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Completed only: how many passages the whole transcript holds."
+          },
+          "wordCount": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Completed only: how many words the whole transcript holds."
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "audioSeconds": {
+                "type": "number",
+                "nullable": true,
+                "description": "Seconds of recording transcribed."
+              },
+              "computeSeconds": {
+                "type": "number",
+                "nullable": true,
+                "description": "Seconds our server worked on it."
+              }
+            },
+            "required": [
+              "audioSeconds",
+              "computeSeconds"
+            ]
+          },
+          "charged": {
+            "type": "object",
+            "properties": {
+              "usd": {
+                "type": "number",
+                "enum": [
+                  0
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "usd",
+              "reason"
+            ],
+            "description": "Always $0: this runs on our own server, no vendor is paid, the run carries no cost line."
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "$ref": "#/components/schemas/MediaTranscriptionErrorCode"
+              },
+              "message": {
+                "type": "string",
+                "nullable": true
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "description": "Failed only. Why, as a code and in words."
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MediaTranscriptSegment"
+            },
+            "description": "Only with `include=segments` on a completed transcription: the passages that OVERLAP `[fromSeconds, toSeconds]`, in order (a passage cut by a bound is served whole)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Only with `include=segments`: the text of the served segments, one per line."
+          },
+          "words": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MediaTranscriptWord"
+            },
+            "description": "Only with `include=words` on a completed transcription: the words that START in `[fromSeconds, toSeconds)`, in order. Consecutive ranges serve every word exactly once."
+          },
+          "runId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "The org run of this transcription (child of the caller's `x-run-id`). It carries no cost line."
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "completedAt": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "source",
+          "model",
+          "language",
+          "languageProbability",
+          "durationSeconds",
+          "progress",
+          "segmentCount",
+          "wordCount",
+          "usage",
+          "charged",
+          "runId",
+          "createdAt",
+          "completedAt"
+        ]
+      },
+      "MediaTranscriptionErrorCode": {
+        "type": "string",
+        "nullable": true,
+        "enum": [
+          "source_unreachable",
+          "source_size_unknown",
+          "file_too_large",
+          "not_media",
+          "box_transcriber_not_configured",
+          "box_transcriber_unreachable",
+          "transcription_failed",
+          "interrupted",
+          null
+        ],
+        "description": "Refused at the POST, nothing started: `source_unreachable` the URL failed, expired or is not on the public internet · `source_size_unknown` no Content-Length/Content-Range · `file_too_large` over 4 GB · `not_media` not a video/audio type · `box_transcriber_not_configured` our transcriber is not set up in this environment (503). On a started job (`error.code` of a `failed` transcription): `source_unreachable` the download failed or the file changed · `box_transcriber_unreachable` our transcriber did not take the file · `transcription_failed` the recording could not be decoded or transcribed · `interrupted` a service restart cut the job. Every failed job is final: start it again with a NEW `idempotencyKey`."
+      },
+      "MediaTranscriptSegment": {
+        "type": "object",
+        "properties": {
+          "startSeconds": {
+            "type": "number",
+            "description": "Where this passage starts in the recording, in seconds (3 decimals)."
+          },
+          "endSeconds": {
+            "type": "number",
+            "description": "Where it ends."
+          },
+          "text": {
+            "type": "string",
+            "description": "The words spoken, in the language spoken (never translated)."
+          }
+        },
+        "required": [
+          "startSeconds",
+          "endSeconds",
+          "text"
+        ]
+      },
+      "MediaTranscriptWord": {
+        "type": "object",
+        "properties": {
+          "startSeconds": {
+            "type": "number",
+            "description": "When this word starts in the recording, in seconds (3 decimals)."
+          },
+          "endSeconds": {
+            "type": "number",
+            "description": "When it ends."
+          },
+          "word": {
+            "type": "string",
+            "description": "The word as spoken, with its punctuation."
+          },
+          "probability": {
+            "type": "number",
+            "description": "The model's confidence in this word, 0..1."
+          }
+        },
+        "required": [
+          "startSeconds",
+          "endSeconds",
+          "word",
+          "probability"
+        ]
+      },
+      "MediaTranscriptionErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "The reason, in words."
+          },
+          "code": {
+            "$ref": "#/components/schemas/MediaTranscriptionErrorCode"
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
+      "StartMediaTranscriptionRequest": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "HTTPS GET URL of the video or audio file, on the public internet (a presigned bucket URL is fine; it must stay valid until the status leaves `downloading`, a few minutes for 2 GB). Range requests are used for the check; the file is then streamed once. Max 4 GB. The query string (signature) is never stored.",
+            "example": "https://bucket.example.r2.cloudflarestorage.com/videos/interview.mp4?X-Amz-Signature=..."
+          },
+          "language": {
+            "type": "string",
+            "pattern": "^[a-zA-Z]{2}$",
+            "description": "ISO 639-1 code of the language spoken (`fr`, `en`). Optional and not needed: the current model follows the speech itself (25 European languages, English and French among them) and reports no language, so `language` in the answer is null.",
+            "example": "fr"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Your own key for this transcription, unique per org. A POST with a key this org already used answers THAT transcription (200), whatever its status, and starts nothing. A transcription that `failed` is final: retry with a NEW key."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
       "ChannelReplyDaysResponse": {
         "type": "object",
         "properties": {
@@ -2026,7 +2334,7 @@
                 },
                 "thresholdUsd": {
                   "type": "number",
-                  "description": "The day's limit for all non-clients together (DISTRY_NONCLIENT_DAILY_USD, default 30). At or above it every non-client gets the limit notice."
+                  "description": "The most all non-payers' debt may grow that day (DISTRY_NONPAYER_DEBT_GROWTH_USD, default 20 since SOLO-PLAN-1125; 30 before). At or above it every non-payer gets the limit notice."
                 },
                 "visitorsCut": {
                   "type": "integer",
@@ -2337,7 +2645,7 @@
               "duplicate",
               "not_linked"
             ],
-            "description": "`accepted`: the chat is linked to an org; the Copilot answers in that chat shortly (sent by chat-service). `duplicate`: this message was already taken. `not_linked`: the chat is linked to no org, nothing runs; the bot answers it with the linking guidance."
+            "description": "`accepted`: the Copilot answers in that chat shortly (sent by chat-service): as the member who linked it, else in the chat's own conversation, as a guest who signs up there (DISTRY-START-DOOR-1125). `duplicate`: this message was already taken. `not_linked`: no longer answered (kept for older callers)."
           }
         },
         "required": [
@@ -4343,6 +4651,62 @@
           "known": {
             "type": "boolean",
             "description": "true = a live skill / a tool Distry can call. false = a deleted or unknown skill, or a tool that does not exist: the mention leads nowhere."
+          },
+          "api": {
+            "type": "object",
+            "properties": {
+              "operations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "GET",
+                        "POST",
+                        "PUT",
+                        "PATCH",
+                        "DELETE"
+                      ]
+                    },
+                    "path": {
+                      "type": "string",
+                      "description": "The gateway path, e.g. `/v1/brands/{id}/offers/confirm`."
+                    },
+                    "operationId": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "The gateway's own id for this operation; null when its public document does not list it."
+                    },
+                    "describeUrl": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Serves this one operation's request body and answer schemas (`/openapi.json?operation=<operationId>`)."
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "path",
+                    "operationId",
+                    "describeUrl"
+                  ]
+                },
+                "description": "The public API call(s) doing what the tool does. Empty: `noRoute` says why."
+              },
+              "noRoute": {
+                "type": "string",
+                "description": "Why no public call does it (a chat screen, the API explorer itself, no route yet)."
+              },
+              "documentUnread": {
+                "type": "string",
+                "description": "The gateway's document could not be read: operationIds are null."
+              }
+            },
+            "required": [
+              "operations"
+            ],
+            "description": "Tool mentions on a one-skill read: the public API call an outside agent makes for that tool (AGENT-SIGNUP-UX-1125)."
           }
         },
         "required": [
@@ -5191,7 +5555,7 @@
             "properties": {
               "connected": {
                 "type": "boolean",
-                "description": "A runner asked for work in the last 60 s."
+                "description": "A runner asked for work recently: within 60 s for an installed app, within 2 h for a routine (the founder's Claude, about hourly)."
               },
               "lastSeenAt": {
                 "type": "string",
@@ -5204,13 +5568,24 @@
               "version": {
                 "type": "string",
                 "nullable": true
+              },
+              "kind": {
+                "type": "string",
+                "nullable": true,
+                "enum": [
+                  "app",
+                  "routine",
+                  null
+                ],
+                "description": "What the runner said it is; null = never said (an installed app)."
               }
             },
             "required": [
               "connected",
               "lastSeenAt",
               "name",
-              "version"
+              "version",
+              "kind"
             ]
           },
           "pendingCalls": {
@@ -5273,6 +5648,25 @@
               ]
             },
             "description": "Call families that still run on a platform key for a declaring org, and why."
+          },
+          "runsOnOurServer": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "family": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "family",
+                "reason"
+              ]
+            },
+            "description": "Call families that run on our own server for every org, declared or not, charged $0 (no vendor is paid), and how."
           }
         },
         "required": [
@@ -5283,7 +5677,8 @@
           "pendingCalls",
           "usageLast30Days",
           "runsLocally",
-          "stillOnPlatform"
+          "stillOnPlatform",
+          "runsOnOurServer"
         ]
       },
       "LocalLlmDeclare": {
@@ -5325,7 +5720,7 @@
                   "properties": {
                     "connected": {
                       "type": "boolean",
-                      "description": "A runner asked for this org's work in the last 60 s."
+                      "description": "A runner asked for work recently: within 60 s for an installed app, within 2 h for a routine (the founder's Claude, about hourly)."
                     },
                     "lastSeenAt": {
                       "type": "string",
@@ -5338,13 +5733,24 @@
                     "version": {
                       "type": "string",
                       "nullable": true
+                    },
+                    "kind": {
+                      "type": "string",
+                      "nullable": true,
+                      "enum": [
+                        "app",
+                        "routine",
+                        null
+                      ],
+                      "description": "What the runner said it is; null = never said (an installed app)."
                     }
                   },
                   "required": [
                     "connected",
                     "lastSeenAt",
                     "name",
-                    "version"
+                    "version",
+                    "kind"
                   ]
                 },
                 "pendingCalls": {
@@ -5462,7 +5868,7 @@
           },
           "answerBy": {
             "type": "string",
-            "description": "After this instant the caller has stopped waiting (an answer then gets 410)."
+            "description": "Answer before this instant; after it the call has ended (an answer then gets 410). A claim has 30 minutes."
           },
           "claude": {
             "type": "object",
@@ -5539,9 +5945,17 @@
               "version": {
                 "type": "string",
                 "maxLength": 100
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "app",
+                  "routine"
+                ],
+                "description": "`app` = an installed runner polling all the time; `routine` = the founder's own Claude (a routine / scheduled task) taking the waiting work about once an hour. Omitted = app."
               }
             },
-            "description": "Shown in the org's state (e.g. the Mac app and its version)."
+            "description": "Shown in the org's state (e.g. the Mac app and its version, or the founder's Claude routine)."
           }
         },
         "additionalProperties": false
@@ -6723,6 +7137,123 @@
         "required": [
           "editedBy"
         ]
+      },
+      "CopilotHandoffResponse": {
+        "type": "object",
+        "properties": {
+          "campaignId": {
+            "type": "string",
+            "nullable": true
+          },
+          "campaignWaiting": {
+            "type": "boolean",
+            "description": "true while the campaign waits for the founder's first message to Distry."
+          },
+          "campaignStartedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "campaignStartedVia": {
+            "type": "string",
+            "nullable": true,
+            "description": "Where their first message came from: web, whatsapp, email, telegram, website."
+          },
+          "hellos": {
+            "type": "object",
+            "properties": {
+              "whatsapp": {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "sent",
+                      "on_its_way",
+                      "processing",
+                      "failed"
+                    ],
+                    "description": "`processing`: Distry is writing it (WhatsApp). `on_its_way`: queued in our sending (email). `sent`: it left. `failed`: see `error` (`no_phone` = the account holds no number)."
+                  },
+                  "ref": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "error": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "at",
+                  "status",
+                  "ref",
+                  "error"
+                ]
+              },
+              "email": {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "sent",
+                      "on_its_way",
+                      "processing",
+                      "failed"
+                    ],
+                    "description": "`processing`: Distry is writing it (WhatsApp). `on_its_way`: queued in our sending (email). `sent`: it left. `failed`: see `error` (`no_phone` = the account holds no number)."
+                  },
+                  "ref": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "error": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "at",
+                  "status",
+                  "ref",
+                  "error"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "campaignId",
+          "campaignWaiting",
+          "campaignStartedAt",
+          "campaignStartedVia",
+          "hellos"
+        ]
+      },
+      "CopilotHandoffRequest": {
+        "type": "object",
+        "properties": {
+          "campaignId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The ONE campaign the founder built and paid for on the signup page, created stopped (`status: \"stopped\"`). It waits for their first message to Distry on any channel (web, WhatsApp, email reply, Telegram), then Distry starts it once and says so there. A newer one replaces it."
+          },
+          "sayHelloOn": {
+            "type": "string",
+            "enum": [
+              "whatsapp",
+              "email"
+            ],
+            "description": "Distry writes FIRST, now: `whatsapp` = to the number this user holds (their linked number, else the one typed at signup), from our WhatsApp line; `email` = one email from our inboxes to their account email. Once per channel: a hello already sent or on its way is not sent again (a failed one is tried again). Their answer reaches the same Distry, in the same conversation."
+          }
+        },
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -7087,7 +7618,7 @@
           "Complete"
         ],
         "summary": "Synchronous LLM completion",
-        "description": "One-shot, non-streaming LLM call for service-to-service use. Returns a JSON response with the model output.\n\nUnlike POST /chat, this endpoint:\n- Does **not** create or use sessions (stateless, one-shot)\n- Accepts an inline `systemPrompt` (no pre-registered config required)\n- Returns JSON instead of SSE\n- Supports `responseFormat: \"json\"` — when set, the parsed object is returned in the `json` field (always use `json`, not `content`, for structured data)\n- Supports optional `temperature` override\n- Supports **vision** via the `imageUrl` field — the image is fetched server-side and sent as visual input to the model\n\n**Provider + model (both required):**\nCallers specify a provider and a version-free model alias. The service resolves the latest versioned model ID internally.\n\n| provider | model | Description |\n|----------|-------|-------------|\n| `anthropic` | `sonnet` | General-purpose, high quality |\n| `anthropic` | `haiku` | Faster/cheaper for simple extraction and classification |\n| `anthropic` | `opus` | Highest quality for complex reasoning |\n| `google` | `flash-lite` | Cheapest, cost-effective vision model for image analysis |\n| `google` | `flash` | Balanced price-performance with reasoning capabilities |\n| `google` | `pro` | Most powerful Google model for complex tasks |\n\nAll Google models require a Google API key configured in key-service (provider: `google`).\n\n**Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with `imageUrl` + google/flash-lite), any service that needs a quick LLM call without conversation context.",
+        "description": "One-shot, non-streaming LLM call for service-to-service use. Returns a JSON response with the model output.\n\nUnlike POST /chat, this endpoint:\n- Does **not** create or use sessions (stateless, one-shot)\n- Accepts an inline `systemPrompt` (no pre-registered config required)\n- Returns JSON instead of SSE\n- Supports `responseFormat: \"json\"` — when set, the parsed object is returned in the `json` field (always use `json`, not `content`, for structured data)\n- Supports optional `temperature` override\n- Supports **vision** via the `imageUrl` field — the image is fetched server-side and sent as visual input to the model\n\n**Provider + model (both required):**\nCallers specify a provider and a version-free model alias. The service resolves the latest versioned model ID internally.\n\n| provider | model | Description |\n|----------|-------|-------------|\n| `anthropic` | `sonnet` | General-purpose, high quality |\n| `anthropic` | `haiku` | Faster/cheaper for simple extraction and classification |\n| `anthropic` | `opus` | Highest quality for complex reasoning |\n| `google` | `flash-lite` | Cheapest, cost-effective vision model for image analysis |\n| `google` | `flash` | Balanced price-performance with reasoning capabilities |\n| `google` | `pro` | Most powerful Google model for complex tasks |\n\nAll Google models require a Google API key configured in key-service (provider: `google`).\n\n**When the vendor cannot serve on our platform key (OPEN-LLM-FREE-1124):** an empty balance, a 429 that outlasts the retries, or a quota (a per-day / per-hour cap, a Retry-After longer than the retries) moves the call to the next model of the fallback order; the response carries `fallback: {from, reason}` (`out_of_credit | rate_limited | quota_exhausted`) and the run declares the model that ran. No model left = `502 {code: \"no_serving_model\"}`. An org's own key keeps the vendor's 429. A provider with no platform key registered answers `503 {code: \"platform_key_missing\", provider}`.\n\n**Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with `imageUrl` + google/flash-lite), any service that needs a quick LLM call without conversation context.",
         "parameters": [
           {
             "schema": {
@@ -7415,7 +7946,7 @@
           "Internal"
         ],
         "summary": "Platform-level LLM completion (no billing, no run tracking)",
-        "description": "Internal endpoint for platform-level LLM calls that do not belong to a specific org or user.\n\n**Auth:** Requires only `x-api-key` (no `x-org-id` or `x-user-id`).\n\n**On behalf of a caller's run:** send that run's id in `x-run-id` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. The response's `runId` names the run that carried the call.\n\n**Whose work (required):** send the caller's run in `x-run-id` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: `support: {kind, reason}`, kind one of `payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product` (reported apart, never on an outcome). Both at once = 400. Neither = 400, before any spend.\n\n**Key resolution:** Uses the platform key directly via `GET /keys/platform/{provider}/decrypt` — no org-level key lookup.\n\n**No org billing.** Spend is declared on a platform run (platform-billed). This endpoint is for internal service-to-service calls (e.g. workflow upgrades at startup) where there is no org to bill and no user-initiated run to track.\n\nDoes not support `imageUrl` or `imageContext` — use `POST /complete` for vision tasks.",
+        "description": "Internal endpoint for platform-level LLM calls that do not belong to a specific org or user.\n\n**Auth:** Requires only `x-api-key` (no `x-org-id` or `x-user-id`).\n\n**On behalf of a caller's run:** send that run's id in `x-run-id` and the platform run opened here becomes its child, so the cost reaches the outcome the caller produced. The response's `runId` names the run that carried the call.\n\n**Whose work (required):** send the caller's run in `x-run-id` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: `support: {kind, reason}`, kind one of `payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product` (reported apart, never on an outcome). Both at once = 400. Neither = 400, before any spend.\n\n**Key resolution:** Uses the platform key directly via `GET /keys/platform/{provider}/decrypt` — no org-level key lookup.\n\n**When the vendor cannot serve on our platform key (OPEN-LLM-FREE-1124):** an empty balance, a 429 that outlasts the retries, or a quota (a per-day / per-hour cap, a Retry-After longer than the retries) moves the call to the next model of the fallback order; the response carries `fallback: {from, reason}` (`out_of_credit | rate_limited | quota_exhausted`) and the run declares the model that ran. No model left = `502 {code: \"no_serving_model\"}`. An org's own key keeps the vendor's 429. A provider with no platform key registered answers `503 {code: \"platform_key_missing\", provider}`.\n\n**No org billing.** Spend is declared on a platform run (platform-billed). This endpoint is for internal service-to-service calls (e.g. workflow upgrades at startup) where there is no org to bill and no user-initiated run to track.\n\nDoes not support `imageUrl` or `imageContext` — use `POST /complete` for vision tasks.",
         "parameters": [
           {
             "schema": {
@@ -7840,6 +8371,390 @@
         }
       }
     },
+    "/orgs/media-transcriptions": {
+      "post": {
+        "tags": [
+          "Transcription"
+        ],
+        "summary": "Transcribe a long audio or video recording on our own server (async, word timestamps, charged $0)",
+        "description": "Starts the transcription of the video or audio file at `url` (up to 4 GB, 1-2 h interviews) and **answers at once** with **202** and the transcription (`status: \"downloading\"`). Then poll `GET /orgs/media-transcriptions/{id}`.\n\n**How it runs:** an open speech model on our own server, one recording at a time (a second one waits its turn in `transcribing`, `progress.fraction` at 0). The model follows the speech itself (25 European languages, English and French among them) and reports no language. About 25 min per hour of audio, measured on a busy box. The result carries a start and end time for every passage AND every word.\n\n**States:** `downloading` (the file goes from its URL to our server) → `transcribing` (`progress.fraction` moves from 0 to 1) → `completed` or `failed` (`error.code` + `error.message`). Both ends are final.\n\n**Charged $0:** no vendor is paid, so there is no key, no hold, no billing check and no cost line: the run (`runId`, a child of your `x-run-id`) carries none. This is the same for every org.\n\n**Your outcome, your Unit:** chat-service declares NO outcome and NO Unit for a transcription. The caller's run declares it, with `subjectService: \"chat-service\"` and `subjectId` = the transcription `id` (stable, never reused).\n\n**Idempotency:** with an `idempotencyKey` this org already used, the answer is that transcription (**200**), whatever its status, and nothing is started. A retry after `failed` needs a NEW key.\n\n**Errors, nothing started:** 422 `source_unreachable` (also a URL that is not on the public internet) / `source_size_unknown` / `not_media`, 413 `file_too_large` (over 4 GB), 503 `box_transcriber_not_configured`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID from client-service (the org that owns the transcription)"
+            },
+            "required": true,
+            "description": "Internal org UUID from client-service (the org that owns the transcription)",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal user UUID from client-service",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Caller's run ID (the transcription's run is its child)"
+            },
+            "required": true,
+            "description": "Caller's run ID (the transcription's run is its child)",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Campaign ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Campaign ID — injected automatically by workflow-service",
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+              "example": "550e8400-e29b-41d4-a716-446655440000,660f9500-f30c-52e5-b827-557766551111"
+            },
+            "required": false,
+            "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Workflow slug — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Workflow slug — injected automatically by workflow-service",
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Feature slug — propagated through the entire service chain"
+            },
+            "required": false,
+            "description": "Feature slug — propagated through the entire service chain",
+            "name": "x-feature-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow."
+            },
+            "required": false,
+            "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow.",
+            "name": "x-audience-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartMediaTranscriptionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "This org already used this `idempotencyKey`: that transcription, nothing started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaTranscriptionResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaTranscriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid request fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File over 4 GB (`file_too_large`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaTranscriptionErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The source cannot be transcribed (`source_unreachable`, `source_size_unknown`, `not_media`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaTranscriptionErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Run tracking failed (nothing started)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Our transcriber is not set up in this environment (`box_transcriber_not_configured`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaTranscriptionErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/media-transcriptions/{id}": {
+      "get": {
+        "tags": [
+          "Transcription"
+        ],
+        "summary": "Read a transcription: its progress, then its words for a time range",
+        "description": "The transcription started by `POST /orgs/media-transcriptions`, for the org in `x-org-id` only (another org's id is the same 404 as an unknown one).\n\n**Polling:** without `include` the body is the summary only (status, `progress.fraction`, counts, `error`), small at any length of recording. Poll it every 15-30 s: a 1 h recording takes several minutes.\n\n**The transcript:** once `completed`, `include=segments`, `include=words` or both add the transcript. `fromSeconds` / `toSeconds` cut it to a time range (segments that overlap it; words that start in `[fromSeconds, toSeconds)`), so a caller reads the words of one clip without loading two hours. Both bounds are optional. Before `completed`, `include` adds nothing.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^(segments|words)(,(segments|words))*$",
+              "description": "Which parts of the transcript to add to the summary, once `completed`: `segments`, `words` or `segments,words`. Omitted = the summary only (what a status poll wants).",
+              "example": "segments,words"
+            },
+            "required": false,
+            "description": "Which parts of the transcript to add to the summary, once `completed`: `segments`, `words` or `segments,words`. Omitted = the summary only (what a status poll wants).",
+            "name": "include",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "number",
+              "nullable": true,
+              "minimum": 0,
+              "description": "Start of the time range, in seconds of the recording. Omitted = from the start."
+            },
+            "required": false,
+            "description": "Start of the time range, in seconds of the recording. Omitted = from the start.",
+            "name": "fromSeconds",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "number",
+              "nullable": true,
+              "minimum": 0,
+              "description": "End of the time range, in seconds of the recording. Omitted = to the end."
+            },
+            "required": false,
+            "description": "End of the time range, in seconds of the recording. Omitted = to the end.",
+            "name": "toSeconds",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Service-to-service API key"
+            },
+            "required": true,
+            "description": "Service-to-service API key",
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal org UUID from client-service (the org that owns the transcription)"
+            },
+            "required": true,
+            "description": "Internal org UUID from client-service (the org that owns the transcription)",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Internal user UUID from client-service"
+            },
+            "required": true,
+            "description": "Internal user UUID from client-service",
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Caller's run ID (the transcription's run is its child)"
+            },
+            "required": true,
+            "description": "Caller's run ID (the transcription's run is its child)",
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Campaign ID — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Campaign ID — injected automatically by workflow-service",
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+              "example": "550e8400-e29b-41d4-a716-446655440000,660f9500-f30c-52e5-b827-557766551111"
+            },
+            "required": false,
+            "description": "Brand ID(s) — injected automatically by workflow-service. May be a single UUID or a comma-separated list of UUIDs for multi-brand campaigns (e.g. 'uuid1,uuid2,uuid3').",
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Workflow slug — injected automatically by workflow-service"
+            },
+            "required": false,
+            "description": "Workflow slug — injected automatically by workflow-service",
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Feature slug — propagated through the entire service chain"
+            },
+            "required": false,
+            "description": "Feature slug — propagated through the entire service chain",
+            "name": "x-feature-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow."
+            },
+            "required": false,
+            "description": "Priority audience ID for the campaign run — injected by campaign-service and propagated through the chain for per-audience cost attribution. Optional outside the campaign flow.",
+            "name": "x-audience-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The transcription",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaTranscriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid id, include or range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong x-api-key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such transcription for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/copilot/channel-replies/daily": {
       "get": {
         "tags": [
@@ -7927,7 +8842,7 @@
           "Internal"
         ],
         "summary": "Distry's spend on non-clients per day, against the day's limit (Monitoring)",
-        "description": "Owner 2026-11-19: a visitor with no account stops at $5, all non-clients together at $30 a day of our money; a paying client is never capped. Each day: the measured spend, the limit, visitors stopped at their own limit, messages refused by the day's limit, and whether the alert fired. A day with `alertFired` is red.",
+        "description": "Owner 2026-11-19: a visitor with no account stops at $5; owner 2026-11-25 (SOLO-PLAN-1125): all non-payers' debt may grow at most $20 a day (it was $30 a day of our money); a paying client is never capped. The alert goes to Telegram, WhatsApp and email once a day. Each day: the measured spend, the limit, visitors stopped at their own limit, messages refused by the day's limit, and whether the alert fired. A day with `alertFired` is red.",
         "parameters": [
           {
             "schema": {
@@ -8186,7 +9101,7 @@
           "Internal"
         ],
         "summary": "A visitor of our public site wrote in the page: the Copilot answers (synchronous)",
-        "description": "Called by the distribute.you site's SERVER (never the browser: it carries the service key) for every message a visitor types in the page chat. The SAME assistant as on WhatsApp and email: same voice, skills and tools, keyed on who the visitor is. The visitor id finds the conversation; until they prove an email they are a guest (no account is read). They can sign up or in right in the chat (their email, a phone number, the code sent to the email): the session then runs with their account, and they set up, pay through a link and launch without leaving the page. Answers in the response, usually within 5-20 s; an onboarding step can take minutes. A turn runs to its end even when the caller stops waiting: send the SAME messageId again and it answers `in_progress` at once, then the whole stored answer. One turn at a time per visitor. When a guest gives their WhatsApp number or email to continue there, the assistant ties it to the conversation (`continuedOn`, `handOff`). No answer count walls a visitor. A guard bounds abuse (`busy`): 20 messages per visitor per 10 minutes. Spend is bounded in dollars read from the runs ledger: a visitor with no account stops at $5 (`DISTRY_VISITOR_USD`), all non-clients together at $30 a day (`DISTRY_NONCLIENT_DAILY_USD`); past either the answer is the limit notice (status `answered`, no model ran). A guest's spend is a Copilot support run under distribute.you's org; a signed-in visitor's turns are their own org's.",
+        "description": "Called by the distribute.you site's SERVER (never the browser: it carries the service key) for every message a visitor types in the page chat. The SAME assistant as on WhatsApp and email: same voice, skills and tools, keyed on who the visitor is. The visitor id finds the conversation; until they prove an email they are a guest (no account is read). They can sign up or in right in the chat (their email, a phone number, the code sent to the email): the session then runs with their account, and they set up, pay through a link and launch without leaving the page. Answers in the response, usually within 5-20 s; an onboarding step can take minutes. A turn runs to its end even when the caller stops waiting: send the SAME messageId again and it answers `in_progress` at once, then the whole stored answer. One turn at a time per visitor. When a guest gives their WhatsApp number or email to continue there, the assistant ties it to the conversation (`continuedOn`, `handOff`). No answer count walls a visitor. A guard bounds abuse (`busy`): 20 messages per visitor per 10 minutes. Spend is bounded in dollars read from the runs ledger: a visitor with no account stops at $5 (`DISTRY_VISITOR_USD`), all non-payers' debt may grow at most $20 a day (`DISTRY_NONPAYER_DEBT_GROWTH_USD`); past either the answer is the limit notice (status `answered`, no model ran). A guest's spend is a Copilot support run under distribute.you's org; a signed-in visitor's turns are their own org's.",
         "parameters": [
           {
             "schema": {
@@ -11718,6 +12633,10 @@
                         "done",
                         "failed"
                       ]
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Why the answer was stored as a failure (status failed): what the runner should fix."
                     }
                   },
                   "required": [
@@ -12243,6 +13162,154 @@
           },
           "409": {
             "description": "Another save landed first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/copilot/handoff": {
+      "post": {
+        "tags": [
+          "Copilot"
+        ],
+        "summary": "Hand the signed-in founder to Distry: their waiting campaign, and a first hello on WhatsApp or email",
+        "description": "Called by the signup page for the signed-in user. Records the campaign that waits for their first message to Distry (started once, by Distry, on whatever channel they write from) and/or makes Distry write first on WhatsApp or by email. Idempotent per person.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The founder's org (internal UUID)."
+            },
+            "required": true,
+            "description": "The founder's org (internal UUID).",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The founder (internal UUID): the person Distry writes to."
+            },
+            "required": true,
+            "description": "The founder (internal UUID): the person Distry writes to.",
+            "name": "x-user-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopilotHandoffRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The handoff (a WhatsApp hello is `processing`: read GET for its outcome)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotHandoffResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`no_phone`: a WhatsApp hello for an account that holds no number",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The email hello could not be sent (the reason in `error`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Copilot"
+        ],
+        "summary": "The signed-in founder's handoff: waiting campaign and hellos",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-api-key",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The founder's org (internal UUID)."
+            },
+            "required": true,
+            "description": "The founder's org (internal UUID).",
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The founder (internal UUID): the person Distry writes to."
+            },
+            "required": true,
+            "description": "The founder (internal UUID): the person Distry writes to.",
+            "name": "x-user-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The handoff",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CopilotHandoffResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No handoff for this user",
             "content": {
               "application/json": {
                 "schema": {

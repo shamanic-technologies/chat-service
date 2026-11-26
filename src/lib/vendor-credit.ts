@@ -41,8 +41,9 @@
 // ---------------------------------------------------------------------------
 
 import { modelCatalogue, resolveModel, type Provider } from "./anthropic.js";
-import { buildLlmCostNames } from "./cost-names.js";
+import { buildLlmCostNames, setRegimeCatalogue } from "./cost-names.js";
 import { MODEL_DISPLAY_NAMES } from "./model-ids.js";
+import { providerHasNoPlatformKey } from "./platform-key-presence.js";
 
 type ResolvedModel = ReturnType<typeof resolveModel>;
 
@@ -121,6 +122,15 @@ export async function refreshFallbackPrices(): Promise<void> {
     const body = (await res.json()) as unknown;
     if (!Array.isArray(body)) throw new Error("costs-service /v1/platform-prices: not an array");
     setFallbackPrices(body as Array<{ name: string; pricePerUnitInUsdCents: string | number | null }>);
+    // DEEPSEEK-HOLIDAYS-1124: the peak/off-peak hours are costs-service's alone; a bad read keeps the last good one.
+    try {
+      setRegimeCatalogue(body as Array<{ name: string; pricingRegime?: string | null; regimeHoursUtc?: string | null }>);
+    } catch (regimeErr) {
+      console.error(
+        "[chat-service] [cost] regime hours unreadable in costs-service's price list (keeping the last good read; none = every DeepSeek call refused):",
+        regimeErr instanceof Error ? regimeErr.message : String(regimeErr),
+      );
+    }
   } catch (err) {
     console.error(
       `[chat-service] [vendor-credit] list prices unreadable${prices ? " (keeping the last read)" : ": no detour until they are read"}:`,
@@ -164,8 +174,9 @@ const TIER_RANK: Record<ResolvedModel["capabilityTier"], number> = { cheap: 0, s
  *   - same capability tier first, cheapest first;
  *   - then, only when no model of the tier is left, the nearest tier, cheapest first (a call never fails while a
  *     model that takes it serves);
- *   - never the primary's own vendor, a vendor out of credit, an unpriced model, a model in `exclude` (the ones
- *     this call already tried) or Claude Haiku 4.5.
+ *   - never the primary's own vendor, a vendor out of credit, a vendor known to have no platform key
+ *     (OPEN-LLM-FREE-1124), an unpriced model, a model in `exclude` (the ones this call already tried) or
+ *     Claude Haiku 4.5.
  * Empty = no model can serve this request shape.
  */
 export function fallbackOrderFor(
@@ -180,6 +191,7 @@ export function fallbackOrderFor(
     if (model.apiModelId === NEVER_A_FALLBACK) continue;
     if (exclude.has(model.apiModelId)) continue;
     if (outOfCredit.has(model.provider)) continue;
+    if (providerHasNoPlatformKey(model.provider)) continue;
     if (!accepts(model)) continue;
     const cents = typicalCallCents(model, at);
     if (cents === null) continue;

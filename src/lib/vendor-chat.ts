@@ -128,6 +128,12 @@ export interface StreamVendorChatOptions {
    */
   onRoundBilled?: (costLines: VendorCostLine[]) => void;
   /**
+   * Cut a round whose answer has not started after this long (`VendorSilentError`,
+   * COPILOT-LATENCY-1125): a person is waiting, the turn moves to the next model.
+   * Omitted = no cut.
+   */
+  silentAfterMs?: number;
+  /**
    * LOCAL-CLAUDE-1116: every round goes to the org's runner instead of a vendor
    * (no key, no cost line: the org pays $0). Same loop, same tools, same events.
    */
@@ -287,6 +293,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
     reasoningLevel,
     onRoundBilled,
     localRound,
+    silentAfterMs,
   } = options;
   if (!vendor && !localRound) throw new Error("[vendor-chat] a turn needs a vendor or a local runner");
 
@@ -471,7 +478,7 @@ export async function streamVendorChat(options: StreamVendorChatOptions): Promis
 
     let json: VendorResponseBody;
     try {
-      json = await postVendorChatCompletion({ vendor: v, apiKey, model, body, reasoningDisabled: reasoningLevel ? reasoningLevel === "none" : reasoningDisabled, signal });
+      json = await postVendorChatCompletion({ vendor: v, apiKey, model, body, reasoningDisabled: reasoningLevel ? reasoningLevel === "none" : reasoningDisabled, signal, silentAfterMs });
     } catch (err) {
       if (signal.aborted) break;
       throw err;

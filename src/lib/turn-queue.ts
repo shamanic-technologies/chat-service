@@ -56,6 +56,11 @@ export async function oneTurnAtATime<T>(key: string, turn: () => Promise<T>, max
   }
 }
 
+/** True while a turn of this conversation runs (or waits): a new message would queue behind it. */
+export function turnRunning(key: string): boolean {
+  return tails.has(key);
+}
+
 /** Test hook: how many conversations hold a queue right now. */
 export function queuedConversations(): number {
   return tails.size;

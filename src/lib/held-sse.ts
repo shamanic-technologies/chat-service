@@ -23,6 +23,9 @@ export interface HeldSse {
 const SSE_HEADERS = ["Content-Type", "Cache-Control", "Connection", "X-Accel-Buffering"];
 
 export function holdSseUntilOpen(res: Response): HeldSse {
+  // Already streaming (opened early while the turn waited, early-stream.ts, or a
+  // retried attempt on the same response): nothing left to hold.
+  if (res.headersSent) return { open: () => {}, isOpen: () => true, discard: () => {} };
   const write = res.write.bind(res) as (chunk: unknown, ...rest: unknown[]) => boolean;
   const end = res.end.bind(res) as (...args: unknown[]) => Response;
   const held: unknown[] = [];

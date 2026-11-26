@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   fromResponsesBody,
   postVendorChatCompletion,
+  VendorSilentError,
   toResponsesRequest,
   usesResponsesApi,
   VENDORS,
@@ -65,7 +66,8 @@ describe("toResponsesRequest: the request shape per model", () => {
         { type: "function_call_output", call_id: "call_1", output: "{\"name\":\"Reed\"}" },
       ],
       max_output_tokens: 32000,
-      tools: [{ type: "function", name: "get_brand", description: "The brand", parameters: { type: "object", properties: { id: { type: "string" } } } }],
+      // strict false: the Responses API's strict default makes every optional field required (COPILOT-LATENCY-1125).
+      tools: [{ type: "function", name: "get_brand", description: "The brand", parameters: { type: "object", properties: { id: { type: "string" } } }, strict: false }],
       reasoning: { effort: "low" },
     });
   });
@@ -139,5 +141,27 @@ describe("postVendorChatCompletion: one transport, two endpoints", () => {
     await postVendorChatCompletion({ vendor: "openai", apiKey: "k", model: "gpt-6.1-terra", body: toolRound("gpt-6.1-terra"), reasoningDisabled: false });
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.openai.com/v1/chat/completions");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).messages).toBeDefined();
+  });
+
+  // COPILOT-LATENCY-1125 (staff replay 2026-11-25: an OpenAI call sent nothing for 300 s and the turn died).
+  const hangs = vi.fn((_url: string, init: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
+    init.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+  }));
+
+  it("cuts a call silent past the caller's limit as VendorSilentError", async () => {
+    globalThis.fetch = hangs as unknown as typeof fetch;
+    const t0 = Date.now();
+    const err = await postVendorChatCompletion({ vendor: "openai", apiKey: "k", model: "gpt-6.1-terra", body: toolRound("gpt-6.1-terra"), reasoningDisabled: false, silentAfterMs: 50 }).catch((e) => e);
+    expect(err).toBeInstanceOf(VendorSilentError);
+    expect(err.silentMs).toBe(50);
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+
+  it("a turn the person aborted is not a silent model", async () => {
+    globalThis.fetch = hangs as unknown as typeof fetch;
+    const turn = new AbortController();
+    setTimeout(() => turn.abort(), 10);
+    const err = await postVendorChatCompletion({ vendor: "openai", apiKey: "k", model: "gpt-6.1-terra", body: toolRound("gpt-6.1-terra"), reasoningDisabled: false, signal: turn.signal, silentAfterMs: 5_000 }).catch((e) => e);
+    expect(err).not.toBeInstanceOf(VendorSilentError);
   });
 });

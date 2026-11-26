@@ -330,6 +330,41 @@
       "when": 1794009600000,
       "tag": "0046_skill_tree_edit",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1794096000000,
+      "tag": "0047_media_transcriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1795000000000,
+      "tag": "0048_copilot_handoffs",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1795086400000,
+      "tag": "0049_local_llm_routine",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795172800000,
+      "tag": "0050_distry_debt_whatsapp_alert",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1795259200000,
+      "tag": "0051_session_telegram_chat",
+      "breakpoints": true
     }
   ]
 }

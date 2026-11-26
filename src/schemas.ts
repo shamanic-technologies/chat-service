@@ -548,7 +548,7 @@ export const CompleteRequestSchema = z
       description:
         "LLM provider to use. `anthropic` and `google` are native clients with the full feature " +
         "set (vision, web search, thinking controls). `deepseek`, `zai` (Z.ai / GLM), " +
-        "`moonshot` (Kimi) and `openai` (GPT) are called directly over their OpenAI-compatible " +
+        "`moonshot` (Kimi), `openai` (GPT) are called directly over their OpenAI-compatible " +
         "APIs by one shared adapter — text in / text out only, opt-in per call, no existing " +
         "caller reaches them implicitly. Each vendor resolves its OWN API key from key-service " +
         "under this exact slug.",
@@ -573,8 +573,10 @@ export const CompleteRequestSchema = z
         "**openai:** `gpt-pro` → GPT-6 Astra (flagship; 1.05M context, 128k output, always-on " +
         "reasoning floored at `low`), `gpt-sol` → GPT-6 Sol, `gpt-terra` → GPT-5.6 Terra (the latest " +
         "Terra; there is no GPT-6 Terra). On `gpt-sol` / `gpt-terra`, `disableThinking: true` turns " +
-        "reasoning fully off. All three reject `temperature`.\n\n" +
-        "The four direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\n" +
+        "reasoning fully off. All three reject `temperature`.\n" +
+        "A call the vendor refuses for a rate limit or a quota is served by the next model " +
+        "of the fallback order (`fallback.reason`).\n\n" +
+        "The direct-vendor providers are **text only**: `imageUrl` and `webSearch` are rejected with 400.\n\n" +
         "The model must match the provider: anthropic → haiku|sonnet|opus|fable, google → flash-lite|flash|flash-pro|pro, " +
         "deepseek → deepseek-flash|deepseek-pro, zai → glm-flash|glm-pro, moonshot → kimi-flash|kimi-pro, " +
         "openai → gpt-pro|gpt-sol|gpt-terra.",
@@ -715,13 +717,17 @@ export const CompleteResponseSchema = z
     }),
     fallback: z
       .object({
-        from: z.string().openapi({ description: "Versioned model ID the caller asked for (its provider is out of credit)." }),
-        reason: z.literal("out_of_credit"),
+        from: z.string().openapi({ description: "Versioned model ID the caller asked for." }),
+        reason: z.enum(["out_of_credit", "rate_limited", "quota_exhausted"]).openapi({
+          description:
+            "`out_of_credit`: the asked model's provider has no credit on our account. `rate_limited`: it still answered 429 after the retry budget. " +
+            "`quota_exhausted`: it refused for a per-day / per-hour cap or asked for a wait longer than the retries (OPEN-LLM-FREE-1124).",
+        }),
       })
       .optional()
       .openapi({
         description:
-          "Present only when the requested model's provider has no credit and the call was served by another vendor's model: the cheapest of the same tier that takes the request " +
+          "Present only when the requested model's provider could not serve on our platform key (no credit, a rate limit that outlasted the retries, an exhausted quota) and the call was served by another vendor's model: the cheapest of the same tier that takes the request " +
           "(VENDOR-CREDIT-1030, LLM-CREDIT-GENERIC-1108). `model` is then the fallback that ran, and the run declares the fallback's own cost names.",
         example: { from: "deepseek-flash", reason: "out_of_credit" },
       }),
@@ -762,6 +768,8 @@ Callers specify a provider and a version-free model alias. The service resolves 
 | \`google\` | \`pro\` | Most powerful Google model for complex tasks |
 
 All Google models require a Google API key configured in key-service (provider: \`google\`).
+
+**When the vendor cannot serve on our platform key (OPEN-LLM-FREE-1124):** an empty balance, a 429 that outlasts the retries, or a quota (a per-day / per-hour cap, a Retry-After longer than the retries) moves the call to the next model of the fallback order; the response carries \`fallback: {from, reason}\` (\`out_of_credit | rate_limited | quota_exhausted\`) and the run declares the model that ran. No model left = \`502 {code: "no_serving_model"}\`. An org's own key keeps the vendor's 429. A provider with no platform key registered answers \`503 {code: "platform_key_missing", provider}\`.
 
 **Use cases:** generating search queries, scoring/analyzing text, image classification and scoring (with \`imageUrl\` + google/flash-lite), any service that needs a quick LLM call without conversation context.`,
   request: {
@@ -964,7 +972,7 @@ export const InternalPlatformCompleteRequestSchema = z
     provider: z.enum(["anthropic", "google", "deepseek", "zai", "moonshot", "openai"]).openapi({
       description:
         "LLM provider to use. `anthropic` and `google` are native clients; `deepseek`, `zai` " +
-        "(Z.ai / GLM), `moonshot` (Kimi) and `openai` (GPT) are called directly over their " +
+        "(Z.ai / GLM), `moonshot` (Kimi), `openai` (GPT) are called directly over their " +
         "OpenAI-compatible APIs, text-only. Each vendor resolves its own platform key from " +
         "key-service under this exact slug.",
       example: "anthropic",
@@ -1085,6 +1093,8 @@ registry.registerPath({
 **Whose work (required):** send the caller's run in \`x-run-id\` (the spend rides the outcome that run produces), OR, when no run stands behind the call, declare the support function in the body: \`support: {kind, reason}\`, kind one of \`payment_fees | brand_setup | copilot | platform_llm | staff_experiment | product_feature | retired_product\` (reported apart, never on an outcome). Both at once = 400. Neither = 400, before any spend.
 
 **Key resolution:** Uses the platform key directly via \`GET /keys/platform/{provider}/decrypt\` — no org-level key lookup.
+
+**When the vendor cannot serve on our platform key (OPEN-LLM-FREE-1124):** an empty balance, a 429 that outlasts the retries, or a quota (a per-day / per-hour cap, a Retry-After longer than the retries) moves the call to the next model of the fallback order; the response carries \`fallback: {from, reason}\` (\`out_of_credit | rate_limited | quota_exhausted\`) and the run declares the model that ran. No model left = \`502 {code: "no_serving_model"}\`. An org's own key keeps the vendor's 429. A provider with no platform key registered answers \`503 {code: "platform_key_missing", provider}\`.
 
 **No org billing.** Spend is declared on a platform run (platform-billed). This endpoint is for internal service-to-service calls (e.g. workflow upgrades at startup) where there is no org to bill and no user-initiated run to track.
 
@@ -1325,6 +1335,203 @@ registry.registerPath({
   },
 });
 
+// --- Org transcription of a long recording on our own server (REELS-1124) ---
+
+export const MEDIA_TRANSCRIPTION_ERROR_CODES = [
+  "source_unreachable",
+  "source_size_unknown",
+  "file_too_large",
+  "not_media",
+  "box_transcriber_not_configured",
+  "box_transcriber_unreachable",
+  "transcription_failed",
+  "interrupted",
+] as const;
+
+export const MediaTranscriptionErrorCodeSchema = z.enum(MEDIA_TRANSCRIPTION_ERROR_CODES).openapi("MediaTranscriptionErrorCode", {
+  description:
+    "Refused at the POST, nothing started: `source_unreachable` the URL failed, expired or is not on the public internet · `source_size_unknown` no Content-Length/Content-Range · `file_too_large` over 4 GB · `not_media` not a video/audio type · `box_transcriber_not_configured` our transcriber is not set up in this environment (503). On a started job (`error.code` of a `failed` transcription): `source_unreachable` the download failed or the file changed · `box_transcriber_unreachable` our transcriber did not take the file · `transcription_failed` the recording could not be decoded or transcribed · `interrupted` a service restart cut the job. Every failed job is final: start it again with a NEW `idempotencyKey`.",
+});
+
+export const StartMediaTranscriptionRequestSchema = z
+  .object({
+    url: z
+      .string()
+      .url()
+      .refine((u) => u.startsWith("https://"), { message: "url must be https" })
+      .openapi({
+        description:
+          "HTTPS GET URL of the video or audio file, on the public internet (a presigned bucket URL is fine; it must stay valid until the status leaves `downloading`, a few minutes for 2 GB). Range requests are used for the check; the file is then streamed once. Max 4 GB. The query string (signature) is never stored.",
+        example: "https://bucket.example.r2.cloudflarestorage.com/videos/interview.mp4?X-Amz-Signature=...",
+      }),
+    language: z
+      .string()
+      .regex(/^[a-zA-Z]{2}$/, "language must be an ISO 639-1 code (2 letters), e.g. fr")
+      .optional()
+      .openapi({ description: "ISO 639-1 code of the language spoken (`fr`, `en`). Optional and not needed: the current model follows the speech itself (25 European languages, English and French among them) and reports no language, so `language` in the answer is null.", example: "fr" }),
+    idempotencyKey: z.string().min(1).max(200).optional().openapi({
+      description:
+        "Your own key for this transcription, unique per org. A POST with a key this org already used answers THAT transcription (200), whatever its status, and starts nothing. A transcription that `failed` is final: retry with a NEW key.",
+    }),
+  })
+  .openapi("StartMediaTranscriptionRequest");
+
+export const MediaTranscriptionIdParamsSchema = z.object({ id: z.string().uuid() });
+
+export const MediaTranscriptionQuerySchema = z
+  .object({
+    include: z
+      .string()
+      .regex(/^(segments|words)(,(segments|words))*$/, "include is a comma-separated list of: segments, words")
+      .optional()
+      .openapi({
+        description: "Which parts of the transcript to add to the summary, once `completed`: `segments`, `words` or `segments,words`. Omitted = the summary only (what a status poll wants).",
+        example: "segments,words",
+      }),
+    fromSeconds: z.coerce.number().min(0).optional().openapi({ description: "Start of the time range, in seconds of the recording. Omitted = from the start." }),
+    toSeconds: z.coerce.number().min(0).optional().openapi({ description: "End of the time range, in seconds of the recording. Omitted = to the end." }),
+  })
+  .refine((q) => q.fromSeconds === undefined || q.toSeconds === undefined || q.fromSeconds <= q.toSeconds, {
+    message: "fromSeconds must not be after toSeconds",
+    path: ["fromSeconds"],
+  });
+
+export const MediaTranscriptSegmentSchema = z
+  .object({
+    startSeconds: z.number().openapi({ description: "Where this passage starts in the recording, in seconds (3 decimals)." }),
+    endSeconds: z.number().openapi({ description: "Where it ends." }),
+    text: z.string().openapi({ description: "The words spoken, in the language spoken (never translated)." }),
+  })
+  .openapi("MediaTranscriptSegment");
+
+export const MediaTranscriptWordSchema = z
+  .object({
+    startSeconds: z.number().openapi({ description: "When this word starts in the recording, in seconds (3 decimals)." }),
+    endSeconds: z.number().openapi({ description: "When it ends." }),
+    word: z.string().openapi({ description: "The word as spoken, with its punctuation." }),
+    probability: z.number().openapi({ description: "The model's confidence in this word, 0..1." }),
+  })
+  .openapi("MediaTranscriptWord");
+
+export const MediaTranscriptionResponseSchema = z
+  .object({
+    id: z.string().uuid().openapi({ description: "The transcript's id. Stable: it never changes, and it is the `subjectId` a caller declares its outcome on." }),
+    status: z.enum(["downloading", "transcribing", "completed", "failed"]).openapi({
+      description: "`downloading` the file goes from its URL to our server · `transcribing` waiting its turn or being transcribed (one recording at a time) · `completed` · `failed` (see `error`).",
+    }),
+    source: z.object({
+      url: z.string().openapi({ description: "Source URL WITHOUT its query string." }),
+      mimeType: z.string().nullable(),
+      sizeBytes: z.number().int().nullable(),
+    }),
+    model: z.string().nullable().openapi({ description: "The open speech model that transcribes (null until our transcriber took the file).", example: "nemo-parakeet-tdt-0.6b-v3" }),
+    language: z.string().nullable().openapi({ description: "ISO 639-1 code of the language spoken, when the model reports one. The current model reports none: null." }),
+    languageProbability: z.number().nullable().openapi({ description: "The model's confidence in `language`, 0..1." }),
+    durationSeconds: z.number().nullable().openapi({ description: "Length of the recording, in seconds. Null until transcription starts." }),
+    progress: z.object({
+      transcribedSeconds: z.number().openapi({ description: "Up to which second of the recording the transcript is written." }),
+      durationSeconds: z.number().nullable(),
+      fraction: z.number().openapi({ description: "`transcribedSeconds / durationSeconds`, 0..1. 0 while downloading or waiting; 1 once `completed`." }),
+    }),
+    segmentCount: z.number().int().nullable().openapi({ description: "Completed only: how many passages the whole transcript holds." }),
+    wordCount: z.number().int().nullable().openapi({ description: "Completed only: how many words the whole transcript holds." }),
+    usage: z.object({
+      audioSeconds: z.number().nullable().openapi({ description: "Seconds of recording transcribed." }),
+      computeSeconds: z.number().nullable().openapi({ description: "Seconds our server worked on it." }),
+    }),
+    charged: z.object({ usd: z.literal(0), reason: z.string() }).openapi({ description: "Always $0: this runs on our own server, no vendor is paid, the run carries no cost line." }),
+    error: z
+      .object({ code: MediaTranscriptionErrorCodeSchema.nullable(), message: z.string().nullable() })
+      .optional()
+      .openapi({ description: "Failed only. Why, as a code and in words." }),
+    segments: z.array(MediaTranscriptSegmentSchema).optional().openapi({
+      description: "Only with `include=segments` on a completed transcription: the passages that OVERLAP `[fromSeconds, toSeconds]`, in order (a passage cut by a bound is served whole).",
+    }),
+    text: z.string().optional().openapi({ description: "Only with `include=segments`: the text of the served segments, one per line." }),
+    words: z.array(MediaTranscriptWordSchema).optional().openapi({
+      description: "Only with `include=words` on a completed transcription: the words that START in `[fromSeconds, toSeconds)`, in order. Consecutive ranges serve every word exactly once.",
+    }),
+    runId: z.string().uuid().nullable().openapi({ description: "The org run of this transcription (child of the caller's `x-run-id`). It carries no cost line." }),
+    createdAt: z.string(),
+    completedAt: z.string().nullable(),
+  })
+  .openapi("MediaTranscriptionResponse");
+
+export const MediaTranscriptionErrorResponseSchema = z
+  .object({
+    error: z.string().openapi({ description: "The reason, in words." }),
+    code: MediaTranscriptionErrorCodeSchema,
+  })
+  .openapi("MediaTranscriptionErrorResponse");
+
+const mediaTranscriptionHeaders = z.object({
+  "x-api-key": z.string().openapi({ description: "Service-to-service API key" }),
+  "x-org-id": z.string().openapi({ description: "Internal org UUID from client-service (the org that owns the transcription)" }),
+  "x-user-id": z.string().openapi({ description: "Internal user UUID from client-service" }),
+  "x-run-id": z.string().uuid().openapi({ description: "Caller's run ID (the transcription's run is its child)" }),
+  ...workflowTrackingHeaders,
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/media-transcriptions",
+  tags: ["Transcription"],
+  summary: "Transcribe a long audio or video recording on our own server (async, word timestamps, charged $0)",
+  description: `Starts the transcription of the video or audio file at \`url\` (up to 4 GB, 1-2 h interviews) and **answers at once** with **202** and the transcription (\`status: "downloading"\`). Then poll \`GET /orgs/media-transcriptions/{id}\`.
+
+**How it runs:** an open speech model on our own server, one recording at a time (a second one waits its turn in \`transcribing\`, \`progress.fraction\` at 0). The model follows the speech itself (25 European languages, English and French among them) and reports no language. About 25 min per hour of audio, measured on a busy box. The result carries a start and end time for every passage AND every word.
+
+**States:** \`downloading\` (the file goes from its URL to our server) → \`transcribing\` (\`progress.fraction\` moves from 0 to 1) → \`completed\` or \`failed\` (\`error.code\` + \`error.message\`). Both ends are final.
+
+**Charged $0:** no vendor is paid, so there is no key, no hold, no billing check and no cost line: the run (\`runId\`, a child of your \`x-run-id\`) carries none. This is the same for every org.
+
+**Your outcome, your Unit:** chat-service declares NO outcome and NO Unit for a transcription. The caller's run declares it, with \`subjectService: "chat-service"\` and \`subjectId\` = the transcription \`id\` (stable, never reused).
+
+**Idempotency:** with an \`idempotencyKey\` this org already used, the answer is that transcription (**200**), whatever its status, and nothing is started. A retry after \`failed\` needs a NEW key.
+
+**Errors, nothing started:** 422 \`source_unreachable\` (also a URL that is not on the public internet) / \`source_size_unknown\` / \`not_media\`, 413 \`file_too_large\` (over 4 GB), 503 \`box_transcriber_not_configured\`.`,
+  request: {
+    headers: mediaTranscriptionHeaders,
+    body: { content: { "application/json": { schema: StartMediaTranscriptionRequestSchema } } },
+  },
+  responses: {
+    200: { description: "This org already used this `idempotencyKey`: that transcription, nothing started", content: { "application/json": { schema: MediaTranscriptionResponseSchema } } },
+    202: { description: "Started", content: { "application/json": { schema: MediaTranscriptionResponseSchema } } },
+    400: { description: "Missing or invalid request fields", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing or wrong x-api-key", content: { "application/json": { schema: ErrorResponseSchema } } },
+    413: { description: "File over 4 GB (`file_too_large`)", content: { "application/json": { schema: MediaTranscriptionErrorResponseSchema } } },
+    422: {
+      description: "The source cannot be transcribed (`source_unreachable`, `source_size_unknown`, `not_media`)",
+      content: { "application/json": { schema: MediaTranscriptionErrorResponseSchema } },
+    },
+    502: { description: "Run tracking failed (nothing started)", content: { "application/json": { schema: ErrorResponseSchema } } },
+    503: { description: "Our transcriber is not set up in this environment (`box_transcriber_not_configured`)", content: { "application/json": { schema: MediaTranscriptionErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/orgs/media-transcriptions/{id}",
+  tags: ["Transcription"],
+  summary: "Read a transcription: its progress, then its words for a time range",
+  description: `The transcription started by \`POST /orgs/media-transcriptions\`, for the org in \`x-org-id\` only (another org's id is the same 404 as an unknown one).
+
+**Polling:** without \`include\` the body is the summary only (status, \`progress.fraction\`, counts, \`error\`), small at any length of recording. Poll it every 15-30 s: a 1 h recording takes several minutes.
+
+**The transcript:** once \`completed\`, \`include=segments\`, \`include=words\` or both add the transcript. \`fromSeconds\` / \`toSeconds\` cut it to a time range (segments that overlap it; words that start in \`[fromSeconds, toSeconds)\`), so a caller reads the words of one clip without loading two hours. Both bounds are optional. Before \`completed\`, \`include\` adds nothing.`,
+  request: {
+    headers: mediaTranscriptionHeaders,
+    params: MediaTranscriptionIdParamsSchema,
+    query: MediaTranscriptionQuerySchema,
+  },
+  responses: {
+    200: { description: "The transcription", content: { "application/json": { schema: MediaTranscriptionResponseSchema } } },
+    400: { description: "Invalid id, include or range", content: { "application/json": { schema: ValidationErrorResponseSchema } } },
+    401: { description: "Missing or wrong x-api-key", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "No such transcription for this org", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
 // --- The Copilot on WhatsApp (SOPHIE-COPILOT-WA-1018) ---
 
 const E164 = z.string().regex(/^\+[1-9]\d{6,14}$/, "phone must be E.164, e.g. +33612345678");
@@ -1379,7 +1586,7 @@ const DistrySpendDaySchema = z.object({
     description:
       "What Distry spent of OUR money on non-clients that day, read from the runs ledger (committed cost, gross): guest turns on every surface (their run trees under our org) + what guests' plan orgs spent + what accounts that never paid spent. Re-measured every minute.",
   }),
-  thresholdUsd: z.number().openapi({ description: "The day's limit for all non-clients together (DISTRY_NONCLIENT_DAILY_USD, default 30). At or above it every non-client gets the limit notice." }),
+  thresholdUsd: z.number().openapi({ description: "The most all non-payers' debt may grow that day (DISTRY_NONPAYER_DEBT_GROWTH_USD, default 20 since SOLO-PLAN-1125; 30 before). At or above it every non-payer gets the limit notice." }),
   visitorsCut: z.number().int().openapi({ description: "Distinct visitors with no account stopped at their own limit (DISTRY_VISITOR_USD, default 5) that day." }),
   turnsRefusedByDayCap: z.number().int().openapi({ description: "Messages answered by the limit notice (no model) because the day's limit was reached." }),
   alertFired: z.boolean().openapi({ description: "The spend reached the limit that day and the owner was alerted (Telegram + email, once per day). Red on Monitoring." }),
@@ -1397,7 +1604,7 @@ registry.registerPath({
   tags: ["Internal"],
   summary: "Distry's spend on non-clients per day, against the day's limit (Monitoring)",
   description:
-    "Owner 2026-11-19: a visitor with no account stops at $5, all non-clients together at $30 a day of our money; a paying client is never capped. Each day: the measured spend, the limit, visitors stopped at their own limit, messages refused by the day's limit, and whether the alert fired. A day with `alertFired` is red.",
+    "Owner 2026-11-19: a visitor with no account stops at $5; owner 2026-11-25 (SOLO-PLAN-1125): all non-payers' debt may grow at most $20 a day (it was $30 a day of our money); a paying client is never capped. The alert goes to Telegram, WhatsApp and email once a day. Each day: the measured spend, the limit, visitors stopped at their own limit, messages refused by the day's limit, and whether the alert fired. A day with `alertFired` is red.",
   request: {
     headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
     query: DistrySpendDaysQuerySchema,
@@ -1610,7 +1817,7 @@ const TelegramMessageResponseSchema = z
   .object({
     status: z.enum(["accepted", "duplicate", "not_linked"]).openapi({
       description:
-        "`accepted`: the chat is linked to an org; the Copilot answers in that chat shortly (sent by chat-service). `duplicate`: this message was already taken. `not_linked`: the chat is linked to no org, nothing runs; the bot answers it with the linking guidance.",
+        "`accepted`: the Copilot answers in that chat shortly (sent by chat-service): as the member who linked it, else in the chat's own conversation, as a guest who signs up there (DISTRY-START-DOOR-1125). `duplicate`: this message was already taken. `not_linked`: no longer answered (kept for older callers).",
     }),
   })
   .openapi("TelegramMessageResponse");
@@ -1727,7 +1934,7 @@ registry.registerPath({
     "They can sign up or in right in the chat (their email, a phone number, the code sent to the email): the session then runs with their account, and they set up, pay through a link and launch without leaving the page. " +
     "Answers in the response, usually within 5-20 s; an onboarding step can take minutes. A turn runs to its end even when the caller stops waiting: send the SAME messageId again and it answers `in_progress` at once, then the whole stored answer. One turn at a time per visitor. " +
     "When a guest gives their WhatsApp number or email to continue there, the assistant ties it to the conversation (`continuedOn`, `handOff`). " +
-    "No answer count walls a visitor. A guard bounds abuse (`busy`): 20 messages per visitor per 10 minutes. Spend is bounded in dollars read from the runs ledger: a visitor with no account stops at $5 (`DISTRY_VISITOR_USD`), all non-clients together at $30 a day (`DISTRY_NONCLIENT_DAILY_USD`); past either the answer is the limit notice (status `answered`, no model ran). A guest's spend is a Copilot support run under distribute.you's org; a signed-in visitor's turns are their own org's.",
+    "No answer count walls a visitor. A guard bounds abuse (`busy`): 20 messages per visitor per 10 minutes. Spend is bounded in dollars read from the runs ledger: a visitor with no account stops at $5 (`DISTRY_VISITOR_USD`), all non-payers' debt may grow at most $20 a day (`DISTRY_NONPAYER_DEBT_GROWTH_USD`); past either the answer is the limit notice (status `answered`, no model ran). A guest's spend is a Copilot support run under distribute.you's org; a signed-in visitor's turns are their own org's.",
   request: {
     headers: z.object({ "x-api-key": z.string().openapi({ description: "Service-to-service API key" }) }),
     body: { content: { "application/json": { schema: WebMessageRequestSchema } } },
@@ -3748,6 +3955,23 @@ export const SkillMentionSchema = z
     kind: z.enum(["skill", "tool"]),
     ref: z.string().openapi({ description: "The skill's slug or the tool's name. In the text: `@skill:<slug>` / `@tool:<name>`." }),
     known: z.boolean().openapi({ description: "true = a live skill / a tool Distry can call. false = a deleted or unknown skill, or a tool that does not exist: the mention leads nowhere." }),
+    api: z
+      .object({
+        operations: z
+          .array(
+            z.object({
+              method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+              path: z.string().openapi({ description: "The gateway path, e.g. `/v1/brands/{id}/offers/confirm`." }),
+              operationId: z.string().nullable().openapi({ description: "The gateway's own id for this operation; null when its public document does not list it." }),
+              describeUrl: z.string().nullable().openapi({ description: "Serves this one operation's request body and answer schemas (`/openapi.json?operation=<operationId>`)." }),
+            }),
+          )
+          .openapi({ description: "The public API call(s) doing what the tool does. Empty: `noRoute` says why." }),
+        noRoute: z.string().optional().openapi({ description: "Why no public call does it (a chat screen, the API explorer itself, no route yet)." }),
+        documentUnread: z.string().optional().openapi({ description: "The gateway's document could not be read: operationIds are null." }),
+      })
+      .optional()
+      .openapi({ description: "Tool mentions on a one-skill read: the public API call an outside agent makes for that tool (AGENT-SIGNUP-UX-1125)." }),
   })
   .openapi("SkillMention");
 
@@ -4253,10 +4477,11 @@ export const LocalLlmStateSchema = z
     declaredAt: z.string().nullable(),
     declaredByUserId: z.string().nullable(),
     runner: z.object({
-      connected: z.boolean().openapi({ description: "A runner asked for work in the last 60 s." }),
+      connected: z.boolean().openapi({ description: "A runner asked for work recently: within 60 s for an installed app, within 2 h for a routine (the founder's Claude, about hourly)." }),
       lastSeenAt: z.string().nullable(),
       name: z.string().nullable(),
       version: z.string().nullable(),
+      kind: z.enum(["app", "routine"]).nullable().openapi({ description: "What the runner said it is; null = never said (an installed app)." }),
     }),
     pendingCalls: z.number().int().openapi({ description: "Calls waiting for the runner right now." }),
     usageLast30Days: z.object({
@@ -4268,6 +4493,7 @@ export const LocalLlmStateSchema = z
     }),
     runsLocally: z.array(z.string()).openapi({ description: "Call families that run on the runner for a declaring org." }),
     stillOnPlatform: z.array(z.object({ family: z.string(), reason: z.string() })).openapi({ description: "Call families that still run on a platform key for a declaring org, and why." }),
+    runsOnOurServer: z.array(z.object({ family: z.string(), reason: z.string() })).openapi({ description: "Call families that run on our own server for every org, declared or not, charged $0 (no vendor is paid), and how." }),
   })
   .openapi("LocalLlmState");
 
@@ -4276,9 +4502,16 @@ export const LocalLlmClaimSchema = z
     waitMs: z.number().int().min(0).max(25_000).optional().openapi({ description: "Hold the request open up to this long waiting for work (default 20000, max 25000)." }),
     max: z.number().int().min(1).max(10).optional().openapi({ description: "Most items to take at once (default 1, max 10)." }),
     runner: z
-      .object({ name: z.string().max(100).optional(), version: z.string().max(100).optional() })
+      .object({
+        name: z.string().max(100).optional(),
+        version: z.string().max(100).optional(),
+        kind: z
+          .enum(["app", "routine"])
+          .optional()
+          .openapi({ description: "`app` = an installed runner polling all the time; `routine` = the founder's own Claude (a routine / scheduled task) taking the waiting work about once an hour. Omitted = app." }),
+      })
       .optional()
-      .openapi({ description: "Shown in the org's state (e.g. the Mac app and its version)." }),
+      .openapi({ description: "Shown in the org's state (e.g. the Mac app and its version, or the founder's Claude routine)." }),
   })
   .strict()
   .openapi("LocalLlmClaim");
@@ -4288,7 +4521,7 @@ export const LocalLlmWorkItemSchema = z
     id: z.string().uuid(),
     leaseId: z.string().uuid().openapi({ description: "Send it back with the answer: only this claim may answer." }),
     kind: z.enum(["complete", "judgment", "chat_round"]),
-    answerBy: z.string().openapi({ description: "After this instant the caller has stopped waiting (an answer then gets 410)." }),
+    answerBy: z.string().openapi({ description: "Answer before this instant; after it the call has ended (an answer then gets 410). A claim has 30 minutes." }),
     claude: z.object({
       systemPrompt: z.string().openapi({ description: "→ `--system-prompt`, verbatim." }),
       prompt: z.string().openapi({ description: "→ the prompt of `claude -p`, verbatim." }),
@@ -4373,10 +4606,11 @@ export const LocalLlmOrgsResponseSchema = z
         declaredAt: z.string().nullable(),
         declaredByUserId: z.string().nullable().openapi({ description: "The user who declared it (a runner may prefer the orgs its own user declared)." }),
         runner: z.object({
-          connected: z.boolean().openapi({ description: "A runner asked for this org's work in the last 60 s." }),
+          connected: z.boolean().openapi({ description: "A runner asked for work recently: within 60 s for an installed app, within 2 h for a routine (the founder's Claude, about hourly)." }),
           lastSeenAt: z.string().nullable(),
           name: z.string().nullable(),
           version: z.string().nullable(),
+          kind: z.enum(["app", "routine"]).nullable().openapi({ description: "What the runner said it is; null = never said (an installed app)." }),
         }),
         pendingCalls: z.number().int().openapi({ description: "Calls waiting for a runner right now." }),
       }),
@@ -4489,7 +4723,7 @@ registry.registerPath({
     body: { content: { "application/json": { schema: LocalLlmResultSchema } } },
   },
   responses: {
-    200: { description: "Stored; the caller gets it now", content: { "application/json": { schema: z.object({ stored: z.literal(true), status: z.enum(["done", "failed"]) }) } } },
+    200: { description: "Stored; the caller gets it now", content: { "application/json": { schema: z.object({ stored: z.literal(true), status: z.enum(["done", "failed"]), error: z.string().optional().openapi({ description: "Why the answer was stored as a failure (status failed): what the runner should fix." }) }) } } },
     404: { description: "No such item for this org", content: { "application/json": { schema: ErrorResponseSchema } } },
     409: { description: "Already answered, not claimed, or another claim's lease", content: { "application/json": { schema: ErrorResponseSchema } } },
     410: { description: "The caller stopped waiting (`local_job_expired`): drop it", content: { "application/json": { schema: ErrorResponseSchema } } },
@@ -4815,5 +5049,75 @@ registry.registerPath({
     404: { description: "No such version", content: { "application/json": { schema: ErrorResponseSchema } } },
     409: { description: "Another save landed first", content: { "application/json": { schema: ErrorResponseSchema } } },
     ...distryErrors,
+  },
+});
+
+// --- The web signup hands the founder to Distry (DISTRY-CHANNEL-HANDOFF-1125) ---
+
+export const CopilotHandoffRequestSchema = z
+  .object({
+    campaignId: z.string().uuid().optional().openapi({
+      description:
+        "The ONE campaign the founder built and paid for on the signup page, created stopped (`status: \"stopped\"`). It waits for their first message to Distry on any channel (web, WhatsApp, email reply, Telegram), then Distry starts it once and says so there. A newer one replaces it.",
+    }),
+    sayHelloOn: z.enum(["whatsapp", "email"]).optional().openapi({
+      description:
+        "Distry writes FIRST, now: `whatsapp` = to the number this user holds (their linked number, else the one typed at signup), from our WhatsApp line; `email` = one email from our inboxes to their account email. Once per channel: a hello already sent or on its way is not sent again (a failed one is tried again). Their answer reaches the same Distry, in the same conversation.",
+    }),
+  })
+  .strict()
+  .refine((b) => Boolean(b.campaignId || b.sayHelloOn), { message: "Give campaignId, sayHelloOn, or both." })
+  .openapi("CopilotHandoffRequest");
+
+const HelloRecordSchema = z.object({
+  at: z.string(),
+  status: z.enum(["sent", "on_its_way", "processing", "failed"]).openapi({
+    description: "`processing`: Distry is writing it (WhatsApp). `on_its_way`: queued in our sending (email). `sent`: it left. `failed`: see `error` (`no_phone` = the account holds no number).",
+  }),
+  ref: z.string().nullable(),
+  error: z.string().nullable(),
+});
+
+export const CopilotHandoffResponseSchema = z
+  .object({
+    campaignId: z.string().nullable(),
+    campaignWaiting: z.boolean().openapi({ description: "true while the campaign waits for the founder's first message to Distry." }),
+    campaignStartedAt: z.string().nullable(),
+    campaignStartedVia: z.string().nullable().openapi({ description: "Where their first message came from: web, whatsapp, email, telegram, website." }),
+    hellos: z.object({ whatsapp: HelloRecordSchema.optional(), email: HelloRecordSchema.optional() }),
+  })
+  .openapi("CopilotHandoffResponse");
+
+const handoffHeaders = z.object({
+  "x-api-key": z.string(),
+  "x-org-id": z.string().openapi({ description: "The founder's org (internal UUID)." }),
+  "x-user-id": z.string().openapi({ description: "The founder (internal UUID): the person Distry writes to." }),
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/orgs/copilot/handoff",
+  tags: ["Copilot"],
+  summary: "Hand the signed-in founder to Distry: their waiting campaign, and a first hello on WhatsApp or email",
+  description:
+    "Called by the signup page for the signed-in user. Records the campaign that waits for their first message to Distry (started once, by Distry, on whatever channel they write from) and/or makes Distry write first on WhatsApp or by email. Idempotent per person.",
+  request: { headers: handoffHeaders, body: { content: { "application/json": { schema: CopilotHandoffRequestSchema } } } },
+  responses: {
+    200: { description: "The handoff (a WhatsApp hello is `processing`: read GET for its outcome)", content: { "application/json": { schema: CopilotHandoffResponseSchema } } },
+    400: { description: "Invalid body", content: { "application/json": { schema: ErrorResponseSchema } } },
+    409: { description: "`no_phone`: a WhatsApp hello for an account that holds no number", content: { "application/json": { schema: ErrorResponseSchema } } },
+    502: { description: "The email hello could not be sent (the reason in `error`)", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/orgs/copilot/handoff",
+  tags: ["Copilot"],
+  summary: "The signed-in founder's handoff: waiting campaign and hellos",
+  request: { headers: handoffHeaders },
+  responses: {
+    200: { description: "The handoff", content: { "application/json": { schema: CopilotHandoffResponseSchema } } },
+    404: { description: "No handoff for this user", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });

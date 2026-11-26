@@ -188,7 +188,7 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     await store.enqueue({
       orgId: B, kind: "complete", route: "/complete", runId: null,
       request: { prompt: "q", systemPrompt: "", jsonSchema: null, model: "claude-haiku-5-5", tools: [] },
-      pickupDeadlineAt: new Date(Date.now() + 60_000), answerDeadlineAt: new Date(Date.now() + 120_000),
+      requestKey: null, pickupDeadlineAt: new Date(Date.now() + 60_000), answerDeadlineAt: new Date(Date.now() + 120_000),
     });
 
     const all = await request(app).get("/internal/local-llm/orgs").set({ "x-api-key": "test-key" });
@@ -219,6 +219,12 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     expect(put.body.declared).toBe(true);
     expect(put.body.runner.connected).toBe(false);
     expect(put.body.stillOnPlatform.map((f: { family: string }) => f.family)).toContain("image generation");
+    // REELS-1124: a long recording runs on our own server at $0, so it is no longer listed as a platform spend.
+    expect(put.body.stillOnPlatform.map((f: { family: string }) => f.family)).not.toContain("audio and video transcription");
+    expect(put.body.stillOnPlatform.some((f: { family: string }) => f.family.includes("/orgs/media-transcriptions"))).toBe(false);
+    expect(put.body.runsOnOurServer).toEqual([
+      { family: "transcription of a long audio or video recording (/orgs/media-transcriptions)", reason: "an open speech model on our own server, charged $0." },
+    ]);
 
     await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, runner: { name: "mac-app" } });
     const after = await request(app).get("/orgs/local-llm").set(AUTH);
@@ -323,11 +329,108 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     expect(res.body).toMatchObject({ code: "local_runner_waiting", retryable: true, servedBy: "local-claude-code" });
     // Provider call count: zero (no vendor, no key, no billing).
     expect(fetchCalls.filter((c) => !c.url.includes("runs.test.local"))).toEqual([]);
+    expect(res.body).toMatchObject({ answerKept: true });
+    // SOLO-PLAN-1125 AC1: the call stays queued. 90 minutes later the founder's routine takes it and answers.
     const [job] = [...store.jobs.values()];
-    expect(job.status).toBe("expired");
-    // A runner arriving late cannot run it.
-    const claim = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0 });
-    expect(claim.body.items).toEqual([]);
+    expect(job.status).toBe("pending");
+    job.createdAt = new Date(job.createdAt.getTime() - 90 * 60_000);
+    job.pickupDeadlineAt = new Date(job.pickupDeadlineAt.getTime() - 90 * 60_000);
+    const claim = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, max: 10, runner: { name: "claude-routine", kind: "routine" } });
+    expect(claim.body.items).toHaveLength(1);
+    expect(new Date(claim.body.items[0].answerBy).getTime()).toBeGreaterThan(Date.now() + 25 * 60_000);
+    const item = claim.body.items[0];
+    const posted = await request(app).post(`/orgs/local-llm/work/${item.id}/result`).set(AUTH)
+      .send({ leaseId: item.leaseId, ok: true, model: "claude-haiku-5-5", text: "late but used", usage: { inputTokens: 12, outputTokens: 4 } });
+    expect(posted.body).toMatchObject({ stored: true });
+    const state = await request(app).get("/orgs/local-llm").set(AUTH);
+    expect(state.body.runner).toMatchObject({ connected: true, kind: "routine", name: "claude-routine" });
+    // The caller resends the same call: the answer that came in is used, nothing is queued again.
+    const again = await request(app).post("/complete").set(AUTH).send({ message: "Hi", systemPrompt: "S.", provider: "google", model: "flash-pro" });
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ content: "late but used", localJobId: item.id, servedBy: "local-claude-code" });
+    expect(store.jobs.size).toBe(1);
+    expect(fetchCalls.filter((c) => !c.url.includes("runs.test.local"))).toEqual([]);
+  });
+
+  it("SOLO-PLAN-1125: a SYNC judgment caller (an MCP agent one call at a time): fails, claims the kept item, answers, retries, is served the stored answer", async () => {
+    process.env.LOCAL_LLM_PICKUP_WAIT_MS = "200";
+    const { app, store } = await boot();
+    await request(app).put("/orgs/local-llm").set(AUTH).send({ enabled: true });
+    const body = { state: "Offer: B2B bookkeeping.", questions: { step: { type: "noul", instructions: "Does the offer have a demo step?" } } };
+    // 1. The read needing a judgment fails while nobody runs the work.
+    const first = await request(app).post("/orgs/judgments").set(AUTH).send(body);
+    expect(first.status).toBe(503);
+    expect(first.body).toMatchObject({ code: "local_runner_waiting", answerKept: true });
+    // 2. The founder's Claude claims: the item is still there (it did not expire with its caller).
+    const claim = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, max: 10, runner: { kind: "routine" } });
+    expect(claim.body.items).toHaveLength(1);
+    const item = claim.body.items[0];
+    expect(item.kind).toBe("judgment");
+    // 3. It answers.
+    const posted = await request(app).post(`/orgs/local-llm/work/${item.id}/result`).set(AUTH)
+      .send({ leaseId: item.leaseId, ok: true, model: "claude-haiku-5-5", structured: { step: { yes: 0.8, no: 0.2 } }, usage: { inputTokens: 10, outputTokens: 4 } });
+    expect(posted.body).toMatchObject({ stored: true });
+    // 3b. A founder's Claude on a model we do not price (claude -p said claude-opus-4-6[1m]) is used too; a non-Claude answer
+    // is stored as failed and the result call says why.
+    const other = await request(app).post("/orgs/judgments").set(AUTH).send({ ...body, state: "Offer: B2C shoes." });
+    expect(other.status).toBe(503);
+    const claim2 = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, max: 10 });
+    const item2 = claim2.body.items[0];
+    const refused = await request(app).post(`/orgs/local-llm/work/${item2.id}/result`).set(AUTH)
+      .send({ leaseId: item2.leaseId, ok: true, model: "gpt-6", structured: { step: { yes: 0.1, no: 0.9 } }, usage: { inputTokens: 10, outputTokens: 4 } });
+    expect(refused.body).toMatchObject({ stored: true, status: "failed", error: expect.stringContaining("not a Claude model") });
+    const opus = await request(app).post("/orgs/judgments").set(AUTH).send({ ...body, state: "Offer: B2B payroll." });
+    expect(opus.status).toBe(503);
+    const claim3 = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, max: 10 });
+    const item3 = claim3.body.items[0];
+    await request(app).post(`/orgs/local-llm/work/${item3.id}/result`).set(AUTH)
+      .send({ leaseId: item3.leaseId, ok: true, model: "claude-opus-4-6[1m]", structured: { step: { yes: 0.7, no: 0.3 } }, usage: { inputTokens: 10, outputTokens: 4 } });
+    const opusRetry = await request(app).post("/orgs/judgments").set(AUTH).send({ ...body, state: "Offer: B2B payroll." });
+    expect(opusRetry.status).toBe(200);
+    expect(opusRetry.body.answers.step).toEqual({ type: "noul", noul: 0.7 });
+    expect(opusRetry.body.model).toBe("claude-opus-4-6");
+    // 3c. A routine answering inside a Claude chat sends no usage and no model: used, sized by us, stated on its run.
+    const routineBody = { ...body, state: "Offer: B2B legal." };
+    expect((await request(app).post("/orgs/judgments").set(AUTH).send(routineBody)).status).toBe(503);
+    const claim4 = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, max: 10, runner: { kind: "routine" } });
+    const item4 = claim4.body.items[0];
+    const r4 = await request(app).post(`/orgs/local-llm/work/${item4.id}/result`).set(AUTH).send({ leaseId: item4.leaseId, ok: true, structured: { step: { yes: 0.6, no: 0.4 } } });
+    expect(r4.body).toMatchObject({ stored: true, status: "done" });
+    const routineRetry = await request(app).post("/orgs/judgments").set(AUTH).send(routineBody);
+    expect(routineRetry.status).toBe(200);
+    expect(routineRetry.body.answers.step).toEqual({ type: "noul", noul: 0.6 });
+    // 4. The same read again: served from that answer, no new item.
+    const retry = await request(app).post("/orgs/judgments").set(AUTH).send(body);
+    expect(retry.status).toBe(200);
+    expect(retry.body.answers.step).toEqual({ type: "noul", noul: 0.8 });
+    expect(store.jobs.size).toBe(4);
+  });
+
+  it("SOLO-PLAN-1125: a resumed call naming its job (x-llm-job-id) gets THAT job whatever its body, never a new one", async () => {
+    process.env.LOCAL_LLM_PICKUP_WAIT_MS = "200";
+    const { app, store } = await boot();
+    await request(app).put("/orgs/local-llm").set(AUTH).send({ enabled: true });
+    const first = await request(app).post("/complete").set(AUTH).send({ message: "Today is 10:00. Write it.", systemPrompt: "S.", provider: "google", model: "flash-pro" });
+    expect(first.status).toBe(503);
+    expect(first.body).toMatchObject({ code: "local_runner_waiting", retryable: true, answerKept: true, retryAfterSeconds: 600 });
+    const jobId = first.body.jobId as string;
+    // Still waiting: the resume (a prompt carrying a new time) answers the same waiting state, queues nothing.
+    const look = await request(app).post("/complete").set({ ...AUTH, "x-llm-job-id": jobId }).send({ message: "Today is 10:10. Write it.", systemPrompt: "S.", provider: "google", model: "flash-pro" });
+    expect(look.status).toBe(503);
+    expect(look.body).toMatchObject({ jobId, answerKept: true });
+    expect(store.jobs.size).toBe(1);
+    const claim = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, runner: { kind: "routine" } });
+    const item = claim.body.items[0];
+    await request(app).post(`/orgs/local-llm/work/${item.id}/result`).set(AUTH).send({ leaseId: item.leaseId, ok: true, model: "claude-haiku-5-5", text: "done", usage: { inputTokens: 3, outputTokens: 1 } });
+    const resumed = await request(app).post("/complete").set({ ...AUTH, "x-llm-job-id": jobId }).send({ message: "Today is 10:20. Write it.", systemPrompt: "S.", provider: "google", model: "flash-pro" });
+    expect(resumed.status).toBe(200);
+    expect(resumed.body).toMatchObject({ content: "done", localJobId: jobId });
+    expect(store.jobs.size).toBe(1);
+    // Another org naming this job never reads it: its call is its own.
+    await request(app).put("/orgs/local-llm").set({ ...AUTH, "x-org-id": "org-local-2" }).send({ enabled: true });
+    const foreign = await request(app).post("/complete").set({ ...AUTH, "x-org-id": "org-local-2", "x-llm-job-id": jobId }).send({ message: "x", systemPrompt: "S.", provider: "google", model: "flash-pro" });
+    expect(foreign.status).toBe(503);
+    expect(foreign.body.jobId).not.toBe(jobId);
   });
 
   it("10 calls at once: none deadlocks, each runs exactly once", async () => {
@@ -370,7 +473,7 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     expect(other.body.declared).toBe(false);
   });
 
-  it("LOCAL-CLAUDE-RATING-1116: an answer that cannot be credited to the model that ran is refused", async () => {
+  it("SOLO-PLAN-1125: an answer with no usage (a founder's routine) is used and stated on its run, sized by chat-service", async () => {
     const { app } = await boot();
     await request(app).put("/orgs/local-llm").set(AUTH).send({ enabled: true });
     const pending = request(app).post("/complete").set(AUTH).send({ message: "Hi", systemPrompt: "S.", provider: "google", model: "flash-pro" }).then((r) => r);
@@ -379,14 +482,14 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
       const c = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 200 });
       item = c.body.items[0];
     }
-    // No usage: the call cannot be stated on its run → the job fails, the caller gets the runner's failure.
+    // No usage: used; chat-service counts the size (~4 chars a token) and states it on the run as the org's own account.
     const noUsage = await request(app).post(`/orgs/local-llm/work/${item!.id}/result`).set(AUTH).send({ leaseId: item!.leaseId, ok: true, model: "claude-haiku-5-5", text: "hello" });
-    expect(noUsage.status).toBe(200);
+    expect(noUsage.body).toMatchObject({ stored: true, status: "done" });
     const res = await pending;
-    expect(res.status).toBe(502);
-    expect(res.body.code).toBe("local_runner_failed");
-    expect(res.body.error).toContain("token usage");
-    expect(fetchCalls.some((c) => c.url.endsWith("/costs"))).toBe(false);
+    expect(res.status).toBe(200);
+    expect(res.body.content).toBe("hello");
+    const items = fetchCalls.filter((c) => c.url.endsWith("/costs")).flatMap((c) => JSON.parse(String(c.init!.body)).items);
+    expect(items.find((i: { costName: string }) => i.costName.endsWith("-tokens-output"))).toMatchObject({ quantity: 2, costSource: "org" });
   });
 
   it("LOCAL-CLAUDE-RATING-1116: the served-llms read says which model runs each stated LLM", async () => {

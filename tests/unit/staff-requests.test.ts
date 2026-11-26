@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseStaffRequestArgs, buildTelegramMessage, buildIssueBody } from "../../src/lib/staff-requests.js";
+import { parseStaffRequestArgs, parseSkillUpgradeArgs, buildTelegramMessage, buildIssueBody } from "../../src/lib/staff-requests.js";
 import type { StaffRequest } from "../../src/db/schema.js";
 import { RETIRED_TOOL_NAMES, TOOL_REGISTRY, resolveToolSet } from "../../src/lib/anthropic.js";
 
@@ -72,6 +72,17 @@ describe("a new step or trigger is a feature request, never a bare row (owner 20
     expect(() => parseStaffRequestArgs({ ...req, newStepOrTrigger: { ...gap, event: "" } })).toThrow(/newStepOrTrigger.event is required/);
     expect(() => parseStaffRequestArgs({ ...req, newStepOrTrigger: { ...gap, kind: "outcome" } })).toThrow(/kind must be one of step, trigger/);
     expect(() => parseStaffRequestArgs({ ...req, kind: "bug" })).toThrow(/feature/);
+  });
+
+  // COPILOT-LATENCY-1125 (prod 2026-11-25): six refused calls in one turn. Each refusal names the way out.
+  it("tells a bug sent with newStepOrTrigger to drop it, before any of its fields is checked", () => {
+    expect(() => parseStaffRequestArgs({ ...req, kind: "bug", newStepOrTrigger: { kind: "step" } })).toThrow(
+      /call request_staff again with the same fields and WITHOUT newStepOrTrigger/,
+    );
+    expect(() => parseStaffRequestArgs({ ...req, newStepOrTrigger: { ...gap, name: "" } })).toThrow(/Not a new step or trigger\? Call request_staff again WITHOUT newStepOrTrigger/);
+    expect(() => parseSkillUpgradeArgs({ skillSlug: "campaigns", repo: "features-service", title: "t", problem: "p", proposedChange: "c" })).toThrow(/skillSlug alone.*repo alone/);
+    const { newStepOrTrigger: _drop, ...bug } = req;
+    expect(parseStaffRequestArgs({ ...bug, kind: "bug" }).kind).toBe("bug");
   });
 
   it("no tool the model can be given creates a step or a trigger", () => {

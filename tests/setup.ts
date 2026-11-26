@@ -1,4 +1,10 @@
 import { beforeAll, afterAll } from "vitest";
+import { setRegimeCatalogue } from "../src/lib/cost-names.js";
+import { REGIME_ROWS_2026_11_25 } from "./regime-hours.fixture.js";
+
+// DeepSeek peak/off-peak is decided ONLY from costs-service's served hours (DEEPSEEK-HOLIDAYS-1124):
+// production reads them at boot; every test starts from the same read, taken from prod.
+setRegimeCatalogue(REGIME_ROWS_2026_11_25);
 
 // Test setup - load env vars for integration tests
 // The one key every test calling chat-service sends (SEC-CHAT-IDENTITY-1120:

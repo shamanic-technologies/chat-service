@@ -66,7 +66,7 @@ describe("during the turn: the model failed before any tool or word", () => {
 
   it("runs again on the next candidate, then the one after, skipping every model already tried", async () => {
     const first = await nextDistryAttempt(base);
-    expect(first).toEqual({ tried: ["anthropic:claude-haiku-5-5"], primaryProvider: "anthropic", next: terraMedium, sessionId: "s1", userMessageId: "m1" });
+    expect(first).toEqual({ tried: ["anthropic:claude-haiku-5-5"], primaryProvider: "anthropic", next: terraMedium, sessionId: "s1", userMessageId: "m1", carried: [] });
     const second = await nextDistryAttempt({ ...base, failed: { provider: "openai", modelId: "gpt-6.1-terra" }, previous: first! });
     expect(second).toMatchObject({ tried: ["anthropic:claude-haiku-5-5", "openai:gpt-6.1-terra"], primaryProvider: "anthropic", next: glmLow });
     expect(await nextDistryAttempt({ ...base, failed: { provider: "zai", modelId: "glm-5.3" }, previous: second! })).toBeNull();
@@ -78,6 +78,16 @@ describe("during the turn: the model failed before any tool or word", () => {
     expect(first).toMatchObject({ tried: ["anthropic:claude-haiku-5-5"], next: terraMedium });
     const second = await nextDistryAttempt({ ...base, configKey: "workflow", outOfCredit: true, failed: { provider: "openai", modelId: "gpt-6.1-terra" }, previous: first! });
     expect(second).toMatchObject({ next: glmLow });
+  });
+
+  // COPILOT-LATENCY-1125 (owner 2026-11-25, option B): a model silent past 30 s hands the turn on, lookups included.
+  it("moves a turn whose model went silent after tools ran, carrying what they returned", async () => {
+    const carried = [{ name: "list_offers", args: { brandId: "b" }, result: { offers: [] } }];
+    const next = await nextDistryAttempt({ ...base, toolCount: 1, silentModel: true, carried });
+    expect(next).toMatchObject({ next: terraMedium, carried });
+    const again = await nextDistryAttempt({ ...base, toolCount: 2, silentModel: true, carried: [...carried, carried[0]], failed: { provider: "openai", modelId: "gpt-6.1-terra" }, previous: next! });
+    expect(again?.carried).toHaveLength(2);
+    expect(await nextDistryAttempt({ ...base, toolCount: 1, silentModel: true, textSent: true, carried })).toBeNull();
   });
 
   it("never re-runs a turn that already did something, a billing refusal, another config or an org's own key", async () => {

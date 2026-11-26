@@ -1,4 +1,6 @@
+import { trackServer, PREVIOUS_PROCESS_DRAIN_MS } from "./lib/graceful-drain.js";
 import { SEED_SKILLS } from "./lib/skill-seed.js";
+import { withToolApi } from "./lib/skill-tool-operations.js";
 import express from "express";
 import cors from "cors";
 import { buildModelPanel, distryModelChoices, fallbackKey, rankFallbacks, readIndexState, refreshIntelligenceIndex, INDEX_TICK_MS, type FallbackCandidate } from "./lib/intelligence-index.js";
@@ -23,6 +25,21 @@ import {
   type SourceInfo,
 } from "./lib/transcription.js";
 import { readTranscription, runTranscriptionJob, toTranscriptionBody } from "./lib/transcription-job.js";
+import {
+  MAX_MEDIA_TRANSCRIPTION_BYTES,
+  attachRun,
+  boxTranscriberConfig,
+  discardMediaTranscription,
+  findMediaTranscriptionByKey,
+  holdDownload,
+  insertMediaTranscription,
+  parseInclude,
+  readMediaTranscriptionBody,
+  releaseDownload,
+  runMediaDownload,
+  startMediaTranscriptionTick,
+  toMediaTranscriptionBody,
+} from "./lib/media-transcription.js";
 import { sessions, messages, appConfigs, platformConfigs, brandProfileEmbeddings, transcriptions, channelInboundMessages, copilotProactiveTurns, copilotLeadTurns } from "./db/schema.js";
 import { transferBrand } from "./lib/transfer-brand.js";
 import { dynastyCatalogue, modelDisplayName, modelIdCatalogue } from "./lib/model-ids.js";
@@ -75,7 +92,9 @@ import {
   keyResolutionErrorMessage,
   VendorUnsupportedOptionError,
   VendorRateLimitError,
+  VendorQuotaExhaustedError,
   VendorOutOfCreditError,
+  VendorSilentError,
   type VendorId,
 } from "./lib/openai-compatible.js";
 import {
@@ -101,6 +120,7 @@ import {
 import { createVendorCreditStore, loadVendorCreditRows } from "./lib/vendor-credit-store.js";
 import {
   buildLlmCostNames,
+  regimeCatalogueRead,
   vendorCostLines,
   flatCostNames,
   UnpricedModelError,
@@ -145,6 +165,7 @@ import {
   codePromptOverrides,
   currentDistryPrompt,
   emptyTurnPromptData,
+  formatCarriedWork,
   loopNotesFrom,
   partText,
   partsForEditor,
@@ -182,7 +203,7 @@ import { hasStaffOnlyTool, lookupRequester, toolsForRequester, type Requester } 
 import { isStaffUser } from "./lib/staff-identity.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
 import { readPlatformCaller, platformRunCreateFailure } from "./lib/platform-parent-run.js";
-import { createRun, updateRunStatus, addRunCosts, updateRunCostStatus, createPlatformRun, addPlatformRunCosts, updatePlatformRunStatus, type CostItem, type RunIdentityHeaders } from "./lib/runs-client.js";
+import { createRun, createRootRun, updateRunStatus, addRunCosts, updateRunCostStatus, createPlatformRun, addPlatformRunCosts, updatePlatformRunStatus, type CostItem, type RunIdentityHeaders } from "./lib/runs-client.js";
 import { traceEvent } from "./lib/trace-event.js";
 import { createFeature, updateFeature, listFeatures, getFeature, getFeatureInputs, prefillFeature, getFeatureStats } from "./lib/features-client.js";
 import { extractBrandFields, BrandError } from "./lib/brand-client.js";
@@ -233,7 +254,7 @@ import { buildSituationBrief } from "./agent/situation.js";
 import { gatewaySituationReader } from "./agent/situation-reader.js";
 import { SOPHIE_CONFIG_KEY } from "./agent/sophie.js";
 import { distryOutageSentence, fallbackLine, nextDistryAttempt, sophieTurnModel, type DistryAttempt } from "./agent/sophie-backup.js";
-import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, findApi, requestOfCall } from "./agent/catalogue-tools.js";
+import { CALL_API_TOOL_NAME, DESCRIBE_API_TOOL_NAME, FIND_API_TOOL_NAME, callApi, describeApi, failedCallAnswer, findApi, requestOfCall } from "./agent/catalogue-tools.js";
 import { createPlanRun, domainClaim, openUnclaimedOrg, runGuestPlanCall, seedTrialCredit, type PlanOrg } from "./lib/guest-plan.js";
 import { REPORT_NOT_GOOD_TOOL_NAME, reportNotGood } from "./lib/unit-report.js";
 import {
@@ -273,9 +294,11 @@ import {
   refreshDistrySpendDay,
   runTreeCentsFromLedger,
   sendDistryAlertEmail,
+  soloAiGateFromBilling,
 } from "./lib/distry-spend.js";
 import { fileAgentRequest, fileContactHuman, fileSkillUpgrade, fileStaffRequest } from "./lib/agent-requests.js";
 import { stripNul } from "./lib/strip-nul.js";
+import { notifySilentRunners, SILENCE_TICK_MS } from "./lib/local-llm-silence.js";
 import { chatTurnSupport, COPILOT_SUPPORT, type RunSupport } from "./lib/support-marks.js";
 import { COPILOT_CONFIG_KEY, pushCopilotTurnInBackground, type CopilotTurnMessage } from "./lib/copilot-unibox.js";
 import {
@@ -292,12 +315,17 @@ import {
   TELEGRAM_CHANNEL,
   TELEGRAM_TASK_NAME,
   acceptTelegramMessage,
+  buildTelegramDoorBlock,
   enqueueTelegramMessage,
+  linkTelegramChat,
   orgTelegramLinker,
   recoverTelegramMessages,
   resolveTelegramChat,
+  sendTelegramToChat,
   sendTelegramToOrg,
+  telegramOpening,
   type TelegramDeps,
+  type TelegramDoorFacts,
 } from "./lib/telegram-copilot.js";
 import {
   WEB_CHANNEL,
@@ -309,6 +337,7 @@ import {
   buildWebBlock,
   type WebTurnFacts,
   handOverByEmailToCrm,
+  conversationForHandOver,
   parseContinueArgs,
   readWebConversation,
   type WebDeps,
@@ -361,7 +390,8 @@ import {
   proposeSwitchOn,
   resolveSwitchOnProposal,
 } from "./lib/copilot-client.js";
-import type { ApiCallParams } from "./lib/api-client.js";
+import { apiServiceFetch, type ApiCallParams } from "./lib/api-client.js";
+import { fetchHandoffUser, handoffBody, markCampaignStarted, readHandoff, refreshWhatsappHello, sayHello, startsWaitingCampaign, upsertHandoff, waitingCampaignId, NoPhoneError, type HelloDeps } from "./lib/copilot-handoff.js";
 import {
   declareChannel,
   declareLeg,
@@ -424,9 +454,11 @@ import { scrapeUrl } from "./lib/scraping-client.js";
 import { formatToolError } from "./lib/tool-errors.js";
 import { ModelJsonOutputError, parseModelJsonOutput } from "./lib/json-output.js";
 import { NOT_JSON, buildSchemaConformanceRead, checkResponseSchema, loadSchemaConformanceRows, recordSchemaConformance } from "./lib/response-schema.js";
+import { missingPlatformKeySentence, refreshPlatformKeyPresence, PLATFORM_KEY_REFRESH_MS } from "./lib/platform-key-presence.js";
 import {
   resolveKey,
   resolvePlatformKey,
+  KeyNotConfiguredError,
   type ResolvedKey,
   listOrgKeys,
   getKeySource,
@@ -435,7 +467,9 @@ import {
 } from "./lib/key-client.js";
 import { authorizeCredits, BillingError, isAgentApiOrg, type AuthorizeCreditResult, type BillingRefusalReason, type SalesFunnelCap } from "./lib/billing-client.js";
 import { holdSseUntilOpen } from "./lib/held-sse.js";
-import { oneTurnAtATime, turnKeyOf } from "./lib/turn-queue.js";
+import { oneTurnAtATime, turnKeyOf, turnRunning } from "./lib/turn-queue.js";
+import { startEarlyStream, type EarlyStream } from "./lib/early-stream.js";
+import { brandIdsOfHeader, briefReadsOnTurnRun } from "./lib/brief-run.js";
 import { getCampaignFeatureInputs } from "./lib/campaign-client.js";
 import {
   createBrandFromUrl,
@@ -449,7 +483,7 @@ import {
   type LaunchCampaignBody,
 } from "./lib/funnel-client.js";
 import { BrandChoiceRequired, createTurnBrandResolver, toOrgBrands } from "./lib/turn-brand.js";
-import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, SkillListQuerySchema, SkillMoveRequestSchema, SkillDeleteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryPromptPreviewQuerySchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type AnthropicEffort, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
+import { ChatRequestSchema, CompleteRequestSchema, GenerateImageRequestSchema, InternalPlatformCompleteRequestSchema, AppConfigRequestSchema, AppConfigKeyParamsSchema, PlatformConfigRequestSchema, TransferBrandRequestSchema, RagScoreRequestSchema, RagEmbedRequestSchema, JudgmentsRequestSchema, GetSessionParamsSchema, LatestSessionQuerySchema, SessionHistoryPageQuerySchema, SkillSlugParamsSchema, SkillVersionParamsSchema, SkillWriteRequestSchema, SkillListQuerySchema, SkillMoveRequestSchema, SkillDeleteRequestSchema, StaffRequestListQuerySchema, StartTranscriptionRequestSchema, TranscriptionIdParamsSchema, OrgTranscriptionRequestSchema, StartMediaTranscriptionRequestSchema, MediaTranscriptionIdParamsSchema, MediaTranscriptionQuerySchema, ChannelReplyDaysQuerySchema, DistrySpendDaysQuerySchema, VendorCreditQuerySchema, SchemaConformanceQuerySchema, ProactiveTurnRequestSchema, LeadTurnRequestSchema, TelegramMessageRequestSchema, WebMessageRequestSchema, BrandMcpServerCreateSchema, LocalLlmDeclareSchema, CopilotHandoffRequestSchema, LocalLlmOrgsQuerySchema, LocalLlmServedLlmsQuerySchema, LocalLlmClaimSchema, LocalLlmResultSchema, DistrySaveRequestSchema, DistryRestoreRequestSchema, DistryPromptPreviewQuerySchema, DistryVersionParamsSchema, CHAT_CONFIG_PROVIDERS, ANTHROPIC_EFFORTS, type AnthropicEffort, type LeadTurnRequest, type ChoicesRecord, type OpenPageRecord } from "./schemas.js";
 import {
   CHOICES_PRESENTED_RESULT,
   CLIENT_UI_TOOL_NAMES,
@@ -527,6 +561,7 @@ import {
   judgmentCall,
   localClaudeModelFor,
   localFailureChatMessage,
+  SHORT_LIVED_KINDS,
   localFailureResponse,
   localLlmState,
   localLlmStore,
@@ -947,7 +982,27 @@ app.put("/platform-config", requireInternalAuth, async (req, res) => {
  * cost names of the model it calls. `tried` = every model this request already called.
  */
 class RetryOnFallback {
-  constructor(readonly model: ReturnType<typeof resolveModel>, readonly tried: readonly string[]) {}
+  constructor(
+    readonly model: ReturnType<typeof resolveModel>,
+    readonly tried: readonly string[],
+    /** Why the call left the model it was asked on (served back as `fallback.reason`). */
+    readonly reason: FallbackReason,
+  ) {}
+}
+
+/** Why a completion was served by another model than the one asked. */
+type FallbackReason = "out_of_credit" | "rate_limited" | "quota_exhausted";
+
+/** `fallback.reason` of a served attempt: the retry's own, else the pre-call detour around a vendor out of credit. */
+function fallbackReasonOf(retry: RetryOnFallback | null): FallbackReason {
+  return retry?.reason ?? "out_of_credit";
+}
+
+/** The vendor's cap that refused this attempt (OPEN-LLM-FREE-1124), or null: a quota, or a rate limit that outlasted the retries. */
+function capRefusalOf(err: unknown): Exclude<FallbackReason, "out_of_credit"> | null {
+  if (err instanceof VendorQuotaExhaustedError) return "quota_exhausted";
+  if (err instanceof VendorRateLimitError) return "rate_limited";
+  return null;
 }
 
 /** How many models one completion tries before it fails loud (the first one included). */
@@ -969,6 +1024,9 @@ interface FailedAttemptOutcome {
  *  - an empty balance on OUR key is stored (red on Monitoring) and the call moves down the order;
  *  - a FALLBACK that fails for any reason before answering moves down the order too (the caller never asked for
  *    that model, so its refusal is not the caller's answer);
+ *  - a rate limit that outlasted the retries, or a quota (a per-day cap, a Retry-After of minutes), on OUR key
+ *    moves the call down the order too (OPEN-LLM-FREE-1124: a free tier's cap must never leave a writer without a
+ *    completion). Nothing is stored for it: a cap is not a broken vendor, Monitoring stays in normal colours;
  *  - a primary that fails for another reason is the caller's own failure: unchanged;
  *  - a model that ANSWERED (unparseable JSON) or a tool loop that already spent rounds is never run twice.
  * No model left = the call is counted refused on the vendor it was asked on, and named.
@@ -994,28 +1052,60 @@ function afterFailedAttempt(args: {
       message: err instanceof Error ? err.message : String(err),
     });
   }
-  if (!creditRefusal && !choice.fallbackFrom) return { next: null, refusal: null };
+  // The primary refused on our key for a cap of the vendor's (an org's own key: the caller's own 429).
+  const capRefusal = platformKey && !creditRefusal && !choice.fallbackFrom ? capRefusalOf(err) : null;
+  if (!creditRefusal && !capRefusal && !choice.fallbackFrom) return { next: null, refusal: null };
   const requested = choice.fallbackFrom ?? resolved;
   const tried = [...(retry?.tried ?? []), resolved.apiModelId];
   if (!spent && tried.length < MAX_SERVING_ATTEMPTS) {
     const [next] = fallbackOrderFor(requested, accepts, new Date(), new Set(tried));
     if (next) {
+      const why = creditRefusal ? "is out of credit" : capRefusal === "quota_exhausted" ? "has its quota exhausted" : capRefusal ? "is rate limited" : "failed as a fallback";
       console.warn(
-        `[chat-service] [vendor-credit] ${resolved.apiModelId} ${creditRefusal ? "is out of credit" : "failed as a fallback"} ` +
+        `[chat-service] [vendor-credit] ${resolved.apiModelId} ${why} ` +
           `(asked: ${requested.apiModelId}): the call runs on ${next.apiModelId}, next of the fallback order (tried ${tried.join(", ")}).`,
       );
-      return { next: new RetryOnFallback(next, tried), refusal: null };
+      // The reason the call left the model it was asked on stays the same down the whole order.
+      const reason: FallbackReason = choice.fallbackFrom ? fallbackReasonOf(retry) : capRefusal ?? "out_of_credit";
+      return { next: new RetryOnFallback(next, tried, reason), refusal: null };
     }
   }
-  // No model served this call: the only thing `refusedCalls` counts.
+  // No model served this call: the only thing `refusedCalls` counts (a no-op unless the vendor is out of credit).
   recordUnserved(requested.provider);
-  if (!creditRefusal) return { next: null, refusal: null };
-  return { next: null, refusal: noServingModelRefusal(requested, tried) };
+  if (creditRefusal) return { next: null, refusal: noServingModelRefusal(requested, tried) };
+  if (capRefusal) return { next: null, refusal: noServingModelRefusal(requested, tried, { reason: capRefusal, err }) };
+  return { next: null, refusal: null };
 }
 
-/** The named answer of a call that ended on an empty balance with no model left to serve it. */
-function noServingModelRefusal(requested: ReturnType<typeof resolveModel>, tried: readonly string[]): { status: number; body: Record<string, unknown> } {
+/**
+ * The named answer of a call that ended on an empty balance, or on the vendor's cap (`cap`: a rate limit or a
+ * quota on our key), with no model left to serve it.
+ */
+function noServingModelRefusal(
+  requested: ReturnType<typeof resolveModel>,
+  tried: readonly string[],
+  cap?: { reason: Exclude<FallbackReason, "out_of_credit">; err: unknown },
+): { status: number; body: Record<string, unknown> } {
   const out = providersOutOfCredit();
+  if (cap) {
+    const label = PROVIDER_LABELS[requested.provider];
+    const retryAfterSeconds = cap.err instanceof VendorQuotaExhaustedError ? cap.err.retryAfterSeconds : null;
+    return {
+      status: 502,
+      body: {
+        error:
+          `No model can serve this request: ${label} ${cap.reason === "quota_exhausted" ? "quota is exhausted" : "is rate limiting"} ` +
+          `our account on ${requested.apiModelId}, and no other served model takes this request as sent.`,
+        code: "no_serving_model",
+        requestedModel: requested.apiModelId,
+        outOfCredit: out,
+        rateLimited: { provider: requested.provider, reason: cap.reason, retryAfterSeconds },
+        tried,
+        // A cap lifts by itself: the same request can be sent again later.
+        retryable: true,
+      },
+    };
+  }
   return {
     status: 502,
     body: {
@@ -1027,6 +1117,33 @@ function noServingModelRefusal(requested: ReturnType<typeof resolveModel>, tried
       retryable: false,
     },
   };
+}
+
+/**
+ * The NAMED answer of a completion whose provider has no platform key in key-service (OPEN-LLM-FREE-1124: a model
+ * can be served by this code before its key is registered). The same 502 + vendor-naming message as before, now
+ * with `code: "platform_key_missing"`; never a silent fallback: the caller named this model. null = the failure is
+ * something else (a failed read, an org's own missing key).
+ */
+function platformKeyMissingRefusal(provider: Provider, err: unknown): { status: number; body: Record<string, unknown> } | null {
+  if (!(err instanceof KeyNotConfiguredError) || err.scope !== "platform") return null;
+  return {
+    status: 502,
+    body: { error: keyResolutionErrorMessage(provider, "platform"), code: "platform_key_missing", provider, retryable: false },
+  };
+}
+
+/** The 429 a caller reads when the vendor's cap refused the call and it was not moved to another model (an org's own key, a fallback). */
+function rateLimitAnswer(err: VendorRateLimitError): Record<string, unknown> {
+  if (err instanceof VendorQuotaExhaustedError) {
+    return {
+      error: "Provider quota is exhausted for this model.",
+      detail: err.message,
+      retryable: true,
+      ...(err.retryAfterSeconds !== null ? { retryAfterSeconds: err.retryAfterSeconds } : {}),
+    };
+  }
+  return { error: "Provider is at capacity for this model.", detail: err.message, retryable: true };
 }
 
 /** Run a completion handler down the fallback order: again while it asks for the next model. */
@@ -1102,7 +1219,7 @@ async function handleComplete(req: express.Request, res: express.Response, retry
   // tools are not carried by a work item yet (served in GET /orgs/local-llm).
   if (!retry && !imageUrl && !brandTools && (await isLocalLlmOrg(orgId))) {
     return handleLocalComplete(res, {
-      orgId, userId, parentRunId, workflowTracking,
+      orgId, userId, parentRunId, workflowTracking, resumeJobId: llmJobIdHeader(req),
       systemPrompt, message, responseSchema: responseSchema as Record<string, unknown> | undefined, jsonMode, webSearch,
       model: localClaudeModelFor(resolveModel(requestedProvider as Provider, requestedModel as ModelAlias), requestedProvider as Provider, requestedModel as ModelAlias),
     });
@@ -1203,6 +1320,8 @@ async function handleComplete(req: express.Request, res: express.Response, retry
     // A fallback with no usable key hands the call to the next model of the order.
     const after = afterFailedAttempt({ choice, err, accepts, retry, platformKey: false, spent: false });
     if (after.next) return after.next;
+    const missing = platformKeyMissingRefusal(provider, err);
+    if (missing) return res.status(missing.status).json(missing.body);
     return res.status(502).json({
       error: keyResolutionErrorMessage(provider, "org"),
     });
@@ -1425,14 +1544,15 @@ async function handleComplete(req: express.Request, res: express.Response, retry
     // Our platform key answered: whatever was wrong with this provider's
     // balance is not wrong now. An org's own key says nothing about ours.
     if (costSource === "platform") markProviderServing(provider);
-    if (choice.fallbackFrom) recordReroute(choice.fallbackFrom.provider);
+    // A reroute is a fact of the vendor-credit outage only: a call moved for a rate limit or a quota counts nothing there.
+    if (choice.fallbackFrom && fallbackReasonOf(retry) === "out_of_credit") recordReroute(choice.fallbackFrom.provider);
 
     const response: Record<string, unknown> = {
       content: jsonMode ? result.content : appendSources(result.content, result.sources),
       tokensInput: result.tokensInput,
       tokensOutput: result.tokensOutput,
       model: result.model,
-      ...(choice.fallbackFrom ? { fallback: { from: choice.fallbackFrom.apiModelId, reason: "out_of_credit" } } : {}),
+      ...(choice.fallbackFrom ? { fallback: { from: choice.fallbackFrom.apiModelId, reason: fallbackReasonOf(retry) } } : {}),
       ...(brandToolCalls !== null ? { brandToolCalls } : {}),
     };
 
@@ -1498,11 +1618,7 @@ async function handleComplete(req: express.Request, res: express.Response, retry
       // a saturated vendor is a capacity fact someone has to act on (fewer
       // concurrent runs, a higher-concurrency model, a raised limit), and it
       // must not read as one more flaky upstream.
-      res.status(429).json({
-        error: "Provider is at capacity for this model.",
-        detail: err.message,
-        retryable: true,
-      });
+      res.status(429).json(rateLimitAnswer(err));
     } else {
       res.status(502).json({
         error: err instanceof ModelJsonOutputError ? "LLM returned invalid JSON." : "LLM call failed. Please try again.",
@@ -1568,6 +1684,12 @@ async function handleComplete(req: express.Request, res: express.Response, retry
   return undefined;
 }
 
+/** SOLO-PLAN-1125: a resumed local-LLM call names the job it waits on (`x-llm-job-id`, set by workflow-service). */
+function llmJobIdHeader(req: express.Request): string | null {
+  const v = req.header("x-llm-job-id")?.trim();
+  return v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
+}
+
 /**
  * /complete for an org whose LLM runs on its own Claude Code (LOCAL-CLAUDE-1116):
  * a child run with NO cost (the org pays $0, no hold, no affordability check),
@@ -1578,6 +1700,8 @@ async function handleLocalComplete(
   res: express.Response,
   a: {
     orgId: string; userId: string; parentRunId: string; workflowTracking: AuthLocals["workflowTracking"];
+    /** SOLO-PLAN-1125: `x-llm-job-id`, a resumed call names the job it waits on. */
+    resumeJobId: string | null;
     systemPrompt: string | undefined; message: string; responseSchema: Record<string, unknown> | undefined;
     jsonMode: boolean; webSearch: boolean; model: string;
   },
@@ -1602,6 +1726,7 @@ async function handleLocalComplete(
       kind: "complete",
       route: "/complete",
       runId,
+      resumeJobId: a.resumeJobId,
       call: completeCall({ systemPrompt: a.systemPrompt, message: a.message, responseSchema: a.responseSchema, jsonMode: a.jsonMode, webSearch: a.webSearch, model: a.model }),
     });
     // LOCAL-CLAUDE-RATING-1116: the model that ran, stated on the run (never charged: costSource org).
@@ -2628,6 +2753,8 @@ async function runOrgJudgment(args: {
   image?: PreparedJudgmentImage;
   /** The judgment serves a support function (the Copilot nudge); omitted = the caller's production. */
   support?: RunSupport;
+  /** SOLO-PLAN-1125: `x-llm-job-id` of a resumed call (local-LLM orgs only). */
+  resumeJobId?: string | null;
 }): Promise<OrgJudgmentOutcome> {
   const { orgId, userId, parentRunId, workflowTracking, taskName, callerPath, state, questions, model, image } = args;
   const judge = args.judge ?? DEFAULT_JUDGE;
@@ -2637,7 +2764,7 @@ async function runOrgJudgment(args: {
 
   // LOCAL-CLAUDE-1116: the org's own Claude Code answers (no key, no hold, $0).
   if (!image && (await isLocalLlmOrg(orgId))) {
-    return runLocalJudgment({ orgId, userId, parentRunId, workflowTracking, taskName, state, questions, support: args.support });
+    return runLocalJudgment({ orgId, userId, parentRunId, workflowTracking, taskName, state, questions, support: args.support, resumeJobId: args.resumeJobId ?? null });
   }
 
   let runId: string | null = null;
@@ -2839,6 +2966,7 @@ async function runLocalJudgment(args: {
   state: unknown;
   questions: Record<string, TypeSafeQuestion>;
   support?: RunSupport;
+  resumeJobId: string | null;
 }): Promise<OrgJudgmentOutcome> {
   const { orgId, userId, parentRunId, workflowTracking, taskName, questions } = args;
   const trackingHeaders = buildTrackingHeaders(workflowTracking);
@@ -2852,7 +2980,7 @@ async function runLocalJudgment(args: {
   }
   let failed = false;
   try {
-    const answer = await runLocally({ orgId, kind: "judgment", route: `/${taskName}`, runId, call: judgmentCall(args.state, questions) });
+    const answer = await runLocally({ orgId, kind: "judgment", route: `/${taskName}`, runId, call: judgmentCall(args.state, questions), resumeJobId: args.resumeJobId });
     await addRunCosts(runId, localCostItems(answer), { orgId, userId, runId }, trackingHeaders);
     const answers = judgmentAnswers(questions, answer.structured);
     traceEvent(runId, "judgments-done", { orgId, userId }, workflowTracking, {
@@ -2915,6 +3043,7 @@ app.post("/orgs/judgments", requireAuth, async (req, res) => {
     userId,
     parentRunId,
     workflowTracking,
+    resumeJobId: llmJobIdHeader(req),
     taskName: "judgments",
     callerPath: "/orgs/judgments",
     state,
@@ -3170,6 +3299,8 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
     // A fallback with no usable key hands the call to the next model of the order.
     const after = afterFailedAttempt({ choice, err, accepts, retry, platformKey: false, spent: false });
     if (after.next) return after.next;
+    const missing = platformKeyMissingRefusal(provider, err);
+    if (missing) return res.status(missing.status).json(missing.body);
     return res.status(502).json({
       error: keyResolutionErrorMessage(provider, "platform"),
     });
@@ -3319,7 +3450,8 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
 
     // Same as /complete: the platform key answered, so the balance is fine.
     markProviderServing(provider);
-    if (choice.fallbackFrom) recordReroute(choice.fallbackFrom.provider);
+    // A reroute is a fact of the vendor-credit outage only: a call moved for a rate limit or a quota counts nothing there.
+    if (choice.fallbackFrom && fallbackReasonOf(retry) === "out_of_credit") recordReroute(choice.fallbackFrom.provider);
 
     const response: Record<string, unknown> = {
       content: jsonMode ? result.content : appendSources(result.content, result.sources),
@@ -3327,7 +3459,7 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
       tokensOutput: result.tokensOutput,
       model: result.model,
       runId,
-      ...(choice.fallbackFrom ? { fallback: { from: choice.fallbackFrom.apiModelId, reason: "out_of_credit" } } : {}),
+      ...(choice.fallbackFrom ? { fallback: { from: choice.fallbackFrom.apiModelId, reason: fallbackReasonOf(retry) } } : {}),
       ...(brandToolCalls !== null ? { brandToolCalls } : {}),
     };
 
@@ -3387,11 +3519,7 @@ async function handlePlatformComplete(req: express.Request, res: express.Respons
       });
     } else if (err instanceof VendorRateLimitError) {
       // Same split as /complete: a saturated vendor is a 429, not a 502.
-      res.status(429).json({
-        error: "Provider is at capacity for this model.",
-        detail: err.message,
-        retryable: true,
-      });
+      res.status(429).json(rateLimitAnswer(err));
     } else {
       res.status(502).json({
         error: err instanceof ModelJsonOutputError ? "LLM returned invalid JSON." : "LLM call failed. Please try again.",
@@ -3697,6 +3825,103 @@ app.post("/orgs/transcriptions", requireAuth, async (req, res) => {
   }
 });
 
+// --- Org transcription of a long recording on OUR OWN server (REELS-1124) ---
+//
+// An open speech model in the `transcriber/` sidecar, on our CPU: no vendor, so NO
+// key, NO hold, NO billing check and NO cost line (the run's cost is $0 by
+// carrying none). The same for every org, local-LLM orgs included. POST checks
+// the source (named 4xx, nothing started), opens an org run, stores a
+// `downloading` row and answers 202; the file is streamed to the sidecar in the
+// background and the tick (src/lib/media-transcription.ts) follows it to the end.
+app.post("/orgs/media-transcriptions", requireAuth, async (req, res) => {
+  const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
+  const trackingHeaders = buildTrackingHeaders(workflowTracking);
+  const parsed = StartMediaTranscriptionRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  }
+  const { url } = parsed.data;
+  const idempotencyKey = parsed.data.idempotencyKey ?? null;
+  const languageHint = parsed.data.language?.toLowerCase() ?? null;
+
+  const box = boxTranscriberConfig();
+  if (!box) {
+    return res.status(503).json({
+      error: "Our transcriber is not set up in this environment (TRANSCRIBER_SERVICE_URL and TRANSCRIBER_SERVICE_API_KEY).",
+      code: "box_transcriber_not_configured",
+    });
+  }
+
+  if (idempotencyKey) {
+    const existing = await findMediaTranscriptionByKey(db, orgId, idempotencyKey);
+    if (existing) return res.status(200).json(toMediaTranscriptionBody(existing));
+  }
+
+  let source: SourceInfo;
+  try {
+    source = await probeSource(url, { maxBytes: MAX_MEDIA_TRANSCRIPTION_BYTES });
+  } catch (err) {
+    if (err instanceof TranscriptionError) {
+      return res.status(err.httpStatus).json({ error: err.message, code: err.code });
+    }
+    throw err;
+  }
+
+  // Held BEFORE the row exists: the tick never reads this row as cut by a restart.
+  const id = crypto.randomUUID();
+  holdDownload(id);
+  let started = false;
+  try {
+    const inserted = await insertMediaTranscription(db, { id, orgId, userId, idempotencyKey, sourceUrl: redactSourceUrl(url), source, languageHint });
+    if (!inserted) {
+      // The same org + key was stored a moment ago by a parallel request: answer that one.
+      const winner = idempotencyKey ? await findMediaTranscriptionByKey(db, orgId, idempotencyKey) : null;
+      if (!winner) throw new Error(`[orgs/media-transcriptions] org="${orgId}" insert conflicted with no row to answer`);
+      return res.status(200).json(toMediaTranscriptionBody(winner));
+    }
+
+    let runId: string;
+    try {
+      runId = (await createRun({ serviceName: "chat-service", taskName: "transcribe-media-on-box" }, { orgId, userId, runId: parentRunId }, trackingHeaders)).id;
+    } catch (runErr) {
+      console.error(`[orgs/media-transcriptions] org="${orgId}" run creation failed:`, runErr);
+      // Nothing started: the row goes, so the same idempotencyKey can be sent again.
+      await discardMediaTranscription(db, id);
+      return res.status(502).json({ error: "Service temporarily unavailable (run tracking). Please try again." });
+    }
+    const row = await attachRun(db, id, runId);
+
+    started = true;
+    runMediaDownload(db, box, { id, orgId, userId, runId, url, source, languageHint }).catch((err) =>
+      console.error(`[orgs/media-transcriptions] job ${id} crashed:`, err),
+    );
+    return res.status(202).json(toMediaTranscriptionBody(row));
+  } finally {
+    // Once started, the download releases its own hold when it ends.
+    if (!started) releaseDownload(id);
+  }
+});
+
+app.get("/orgs/media-transcriptions/:id", requireAuth, async (req, res) => {
+  const { orgId } = res.locals as AuthLocals;
+  const params = MediaTranscriptionIdParamsSchema.safeParse(req.params);
+  if (!params.success) {
+    return res.status(400).json({ error: "Invalid request", details: params.error.flatten() });
+  }
+  const query = MediaTranscriptionQuerySchema.safeParse(req.query);
+  if (!query.success) {
+    return res.status(400).json({ error: "Invalid request", details: query.error.flatten() });
+  }
+  const body = await readMediaTranscriptionBody(db, orgId, params.data.id, {
+    include: parseInclude(query.data.include),
+    fromSeconds: query.data.fromSeconds,
+    toSeconds: query.data.toSeconds,
+  });
+  // Another org's transcription is the same answer as an unknown id.
+  if (!body) return res.status(404).json({ error: `No transcription "${params.data.id}".` });
+  return res.json(body);
+});
+
 app.get("/internal/platform-transcriptions/:id", requireInternalAuth, async (req, res) => {
   const parsed = TranscriptionIdParamsSchema.safeParse(req.params);
   if (!parsed.success) {
@@ -3852,10 +4077,65 @@ async function readSessionMessages(
 }
 
 // One turn at a time per conversation (SOPHIE-CORE-1111): a second message waits for the first turn.
+/**
+ * How long a turn waits for a brand's FIRST website read (a scrape, up to tens of seconds) before
+ * answering without it: brand-service keeps reading and caches it 30 days, so the next turn has it
+ * at once (COPILOT-LATENCY-1125: the 40 s default stood between the message and the first model call).
+ */
+const CLIENT_BRIEF_SITE_WAIT_MS = 10_000;
+
+/**
+ * How long a Copilot step on a direct vendor may stay silent before the turn moves to the next model
+ * (owner 2026-11-25 « Limit must be 30s non? », option B). Those calls send nothing until the step is
+ * done; measured 2026-11-25 on GPT-6.1 Terra: 8 s typical, 18 s slowest, one hung for 300 s.
+ */
+const COPILOT_SILENT_MODEL_MS = 30_000;
+
+// The first bytes leave within seconds, even behind a running turn (COPILOT-LATENCY-1125, early-stream.ts).
 app.post("/chat", requireAuth, async (req, res) => {
-  const { orgId, userId } = res.locals as AuthLocals;
-  await oneTurnAtATime(turnKeyOf(req.body, { orgId, userId }), () => handleChatTurn(req, res));
+  const { orgId, userId, parentRunId } = res.locals as AuthLocals;
+  const key = turnKeyOf(req.body, { orgId, userId });
+  const startedAt = Date.now();
+  const early = opensEarly(req.body)
+    ? startEarlyStream(res, {
+        waitingBehindTurn: () => waiting,
+        keepsHttp402: () => isAgentApiOrgCached(orgId, userId, parentRunId),
+      })
+    : null;
+  res.locals.earlyStream = early;
+  let waiting = turnRunning(key);
+  let turnStartedMs = 0;
+  try {
+    await oneTurnAtATime(key, () => {
+      waiting = false;
+      turnStartedMs = Date.now() - startedAt;
+      return handleChatTurn(req, res);
+    });
+  } finally {
+    early?.stop();
+    const t = early?.timings();
+    console.log(
+      `[chat-latency] ${key} waitedMs=${turnStartedMs} firstByteMs=${t?.firstByteMs ?? "n/a"} firstTextMs=${t?.firstTextMs ?? "n/a"} ` +
+        `openedEarly=${t?.openedEarly ?? false} totalMs=${Date.now() - startedAt}`,
+    );
+  }
 });
+
+/** A person's turn read through a browser (dashboard, Telegram/WhatsApp relays excluded: chat-service's own callers). */
+function opensEarly(body: unknown): boolean {
+  const b = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  return !b.nudge && !b.leadTurnId && !b.proactiveTurnId && !b.channelMessageId && !b.webVisitorId;
+}
+
+const agentOrgMarks = new Map<string, { value: boolean; at: number }>();
+/** billing's `agent_api` mark, read once per org per 10 minutes (it is set when the org is opened). */
+async function isAgentApiOrgCached(orgId: string, userId: string, runId: string): Promise<boolean> {
+  const hit = agentOrgMarks.get(orgId);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.value;
+  const value = await isAgentApiOrg(orgId, userId, runId);
+  agentOrgMarks.set(orgId, { value, at: Date.now() });
+  return value;
+}
 
 async function handleChatTurn(req: express.Request, res: express.Response): Promise<unknown> {
   const { orgId, userId, parentRunId, workflowTracking } = res.locals as AuthLocals;
@@ -3916,12 +4196,18 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // the sign-in tools only; a known person keeps every tool plus sign-in.
   let channelSession: { channelPhone: string; guest: boolean } | null = null;
   let sessionIsGuest = false;
+  // The conversation's own handles (set only by chat-service): the Telegram chat
+  // that opened it with no account, the email a guest writes to us from.
+  let sessionDoor: { telegramChatId: string | null; channelEmail: string | null; webVisitorId: string | null; leadThread: boolean } | null = null;
   if (sessionId) {
     const [s] = await db
-      .select({ orgId: sessions.orgId, userId: sessions.userId, channelPhone: sessions.channelPhone, guest: sessions.guest })
+      .select({ orgId: sessions.orgId, userId: sessions.userId, channelPhone: sessions.channelPhone, guest: sessions.guest, telegramChatId: sessions.telegramChatId, channelEmail: sessions.channelEmail, webVisitorId: sessions.webVisitorId, leadThread: sessions.leadThread })
       .from(sessions)
       .where(eq(sessions.id, sessionId));
-    if (s && isSessionOwner(s, { orgId, userId })) sessionIsGuest = s.guest;
+    if (s && isSessionOwner(s, { orgId, userId })) {
+      sessionIsGuest = s.guest;
+      sessionDoor = { telegramChatId: s.telegramChatId, channelEmail: s.channelEmail, webVisitorId: s.webVisitorId, leadThread: s.leadThread };
+    }
     if (s?.channelPhone && isSessionOwner(s, { orgId, userId })) {
       channelSession = { channelPhone: s.channelPhone, guest: s.guest };
     }
@@ -3947,6 +4233,10 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       ownBrand: copilotOwnBrandId() === payload.brandId,
       guest: sessionIsGuest,
       phoneBound: channelSession !== null,
+      // A guest who writes to us by email (DISTRY-START-DOOR-1125): their lead thread is tied to the
+      // address they write from (lead-turn.ts pickLeadSession), and they sign up from there.
+      emailBound:
+        copilotOwnBrandId() === payload.brandId && payload.medium === "email" && Boolean(sessionDoor?.channelEmail) && !sessionDoor?.webVisitorId && sessionDoor?.leadThread === true,
       afterSignIn: t.signedIn && !sessionIsGuest,
       // The WhatsApp conversation as WhatsApp shows it, read by processLeadTurn (SOPHIE-WA-HUMAN-1106).
       whatsapp: payload.medium === "whatsapp" ? leadTurnMoment(parsed.data.leadTurnId) : null,
@@ -3981,12 +4271,15 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // session, unlocks the Telegram form. A proactive turn delivered to the org's
   // linked Telegram asks for the same form through context.channel.
   let telegramTurn = false;
+  // A Telegram chat that opened the bot with no account (DISTRY-START-DOOR-1125): its own
+  // conversation, where the person signs up; null on a linked account's own thread.
+  let telegramDoor: (TelegramDoorFacts & { opening: boolean }) | null = null;
   // A visitor of our public site (POST /internal/copilot/web-messages,
   // DISTRY-WEB-CHAT-1117): same unlock, its own form + the WhatsApp hand-off tool.
   let webTurn: WebTurnFacts | null = null;
   if (parsed.data.channelMessageId) {
     const [m] = await db
-      .select({ channel: channelInboundMessages.channel, status: channelInboundMessages.status, orgId: channelInboundMessages.orgId, userId: channelInboundMessages.userId, sessionId: channelInboundMessages.sessionId, senderPhone: channelInboundMessages.senderPhone, signedIn: channelInboundMessages.signedIn })
+      .select({ channel: channelInboundMessages.channel, status: channelInboundMessages.status, orgId: channelInboundMessages.orgId, userId: channelInboundMessages.userId, sessionId: channelInboundMessages.sessionId, senderPhone: channelInboundMessages.senderPhone, signedIn: channelInboundMessages.signedIn, payload: channelInboundMessages.payload })
       .from(channelInboundMessages)
       .where(eq(channelInboundMessages.id, parsed.data.channelMessageId));
     if (nudge || leadTurn || proactiveTurn || !m || (m.channel !== TELEGRAM_CHANNEL && m.channel !== WEB_CHANNEL) || m.status !== "processing" || m.orgId !== orgId || m.userId !== userId || !sessionId || m.sessionId !== sessionId) {
@@ -4001,6 +4294,15 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       webTurn = { whatsapp: s?.channelPhone ?? null, email: s?.channelEmail ?? null, guest: sessionIsGuest, afterSignIn: m.signedIn && !sessionIsGuest };
     } else {
       telegramTurn = true;
+      if (sessionDoor?.telegramChatId && sessionDoor.telegramChatId === m.senderPhone) {
+        const afterSignIn = m.signedIn && !sessionIsGuest;
+        telegramDoor = {
+          guest: sessionIsGuest,
+          afterSignIn,
+          // The bot's deep link opened the chat: the message is our trigger, never their words.
+          opening: !afterSignIn && telegramOpening((m.payload as { text?: string | null } | null)?.text) !== null,
+        };
+      }
     }
   } else if (proactiveTurn && (context?.channel as { kind?: unknown } | undefined)?.kind === TELEGRAM_CHANNEL) {
     telegramTurn = true;
@@ -4028,15 +4330,15 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   const sessionToolNames: string[] = sessionToolNamesFor({
     configTools: configAllowedToolNames,
     guest: sessionIsGuest,
-    // Where the session can become theirs: a WhatsApp number or a website visitor is tied to it.
-    canSignIn: channelSession !== null || webTurn !== null,
+    // Where the session can become theirs: a WhatsApp number, a website visitor or a Telegram chat is tied to it.
+    canSignIn: channelSession !== null || webTurn !== null || telegramDoor !== null,
     website: webTurn !== null,
   });
   // A lead turn: the person's tools only on our brand (their account's, or a
   // guest's); another brand's lead turn gets the answer only.
   const leadSessionToolNames: string[] = !leadTurn || !leadTurn.ownBrand
     ? []
-    : sessionToolNamesFor({ configTools: configAllowedToolNames, guest: leadTurn.guest, canSignIn: channelSession !== null, website: false });
+    : sessionToolNamesFor({ configTools: configAllowedToolNames, guest: leadTurn.guest, canSignIn: channelSession !== null || leadTurn.emailBound === true, website: false });
   // A config that speaks to a person (it reads our skills) also reads our public
   // site, guests included; another brand's lead turn does not speak for us.
   const speaksForUs = configAllowedToolNames.includes("read_skill") && (!leadTurn || leadTurn.ownBrand);
@@ -4070,7 +4372,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // A trigger the user did not write (nudge, proactive turn, the answer right
   // after a WhatsApp sign-in): stored hidden, never filed in the staff Unibox
   // as the user's words.
-  const hiddenTrigger = nudge === true || proactiveTurn || leadTurn !== null || channelTurn?.afterSignIn === true || webTurn?.afterSignIn === true;
+  const hiddenTrigger = nudge === true || proactiveTurn || leadTurn !== null || channelTurn?.afterSignIn === true || webTurn?.afterSignIn === true || telegramDoor?.afterSignIn === true || telegramDoor?.opening === true;
   const promptContext = context && "channel" in context
     ? Object.fromEntries(Object.entries(context).filter(([k]) => k !== "channel"))
     : context;
@@ -4209,6 +4511,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // through the API, refused for lack of money before any byte left, then still
   // gets an HTTP 402 (the gateway turns it into its prepay instructions).
   const sse = holdSseUntilOpen(res);
+  (res.locals.earlyStream as EarlyStream | null | undefined)?.registerHold(sse);
 
   // Build system prompt with optional context and campaign feature inputs
   // A config that allows read_skill gets the skill INDEX (method + map of
@@ -4243,6 +4546,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   promptData.campaignInputs = campaignFeatureInputs;
   promptData.requestContext = (promptContext as Record<string, unknown> | undefined) ?? null;
   if (leadTurn) promptData.leadTurnBlock = buildLeadTurnBlock(leadTurn);
+  else if (telegramDoor) promptData.telegramDoorBlock = buildTelegramDoorBlock(telegramDoor);
   else if (telegramTurn) promptData.telegram = true;
   else if (webTurn) promptData.websiteBlock = buildWebBlock(webTurn);
   else if (channelTurn && channelSession) promptData.whatsappBlock = buildChannelBlock(channelTurn, channelSession.guest);
@@ -4303,7 +4607,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // What the out-of-credits answer needs from inside the try (set once known).
   const creditsTurn: { sessionId: string | null; text: () => string; userMessage: CopilotTurnMessage | null } = { sessionId: null, text: () => "", userMessage: null };
   // What a failed Distry turn needs to re-run on the next model (DISTRY-THINKING-1122): set once known.
-  const failoverState = { userMessageId: null as string | null, toolCount: () => 0, textSent: () => false };
+  const failoverState = { userMessageId: null as string | null, toolCount: () => 0, textSent: () => false, toolCalls: (): ToolCallRecord[] => [] };
   let failoverTo: DistryAttempt | null = null;
 
   try {
@@ -4460,7 +4764,13 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     // A nudge's trigger is not the user's words: the staff Unibox gets the answer only.
     creditsTurn.userMessage = hiddenTrigger ? null : userTurnMessage;
     let emittedInputRequest = false;
-    const toolCalls: ToolCallRecord[] = [];
+    // A turn moved here after a silent model starts from the lookups it left (COPILOT-LATENCY-1125):
+    // stored with this answer, shown to this model, never run again.
+    const toolCalls: ToolCallRecord[] = [...(distryAttempt?.carried ?? [])];
+    if (toolCalls.length > 0) {
+      promptData.carriedWork = formatCarriedWork(toolCalls);
+      reassemblePrompt();
+    }
     // Rich UI emitted this turn (present_choices / open_page), persisted on the
     // assistant message so GET /sessions/* re-renders them.
     // (A holder, not a `let`: it is set inside executeTool, a closure TS
@@ -4470,6 +4780,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     // present_choices intro streamed in its place when none did.
     const turnText: { streamed: boolean; intro: string | null } = { streamed: false, intro: null };
     failoverState.toolCount = () => toolCalls.length;
+    failoverState.toolCalls = () => toolCalls;
     failoverState.textSent = () => turnText.streamed || fullResponse.trim() !== "";
     const openedPages: OpenPageRecord[] = [];
     let lastContentBlocks: Anthropic.ContentBlock[] = [];
@@ -4560,10 +4871,32 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       trackingHeaders: downstreamTrackingHeaders,
     };
 
+    // run_operation as the person. The ONE request the signup page's yes already covers (the start of the
+    // campaign waiting for this person, DISTRY-CHANNEL-HANDOFF-1125) runs without a second proposal,
+    // once; every other call keeps the gateway's yes rule.
+    const callOrStartWaiting = async (args: Record<string, unknown>): Promise<unknown> => {
+      const waiting = !proactiveTurn && !sessionIsGuest && !args.confirmationToken ? await waitingCampaignId(db, orgId, userId!) : null;
+      const req = waiting ? await requestOfCall(args, history) : null;
+      if (!waiting || !startsWaitingCampaign(req, waiting)) return callApi(args, featureCallParams, history, { readOnly: proactiveTurn });
+      const res = await apiServiceFetch(req!.path, "PATCH", featureCallParams, { status: "activate" });
+      const text = await res.text();
+      let body: unknown = text;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        /* the gateway's words, as text */
+      }
+      if (!res.ok) return failedCallAnswer(res.status, body);
+      const via = telegramTurn ? "telegram" : leadTurn ? leadTurn.payload.medium : channelTurn ? "whatsapp" : webTurn ? "website" : "web";
+      await markCampaignStarted(db, { orgId, userId: userId!, campaignId: waiting, via });
+      console.log(`[handoff] org="${orgId}" user="${userId}" campaign="${waiting}" started on their first message (${via})`);
+      return { ok: true, status: res.status, body };
+    };
+
     // A guest's plan (DISTRY-ONE-AI-1118 B): opened on their website, then every call runs AS the
     // unclaimed org, on one run of its own per turn (its spend lands on that org's trial seed).
     let planRun: { orgId: string; runId: Promise<string> } | null = null;
-    const planChannel = webTurn ? "website_chat" : leadTurn?.payload.medium === "email" ? "email_chat" : "whatsapp_chat";
+    const planChannel = webTurn ? "website_chat" : telegramDoor ? "telegram_chat" : leadTurn?.payload.medium === "email" ? "email_chat" : "whatsapp_chat";
     const guestPlanDeps = (args: Record<string, unknown>) => ({
       readPlan: () => readSessionPlan(currentSessionId!),
       savePlan: (plan: PlanOrg) => saveSessionPlan(currentSessionId!, plan),
@@ -4583,16 +4916,44 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     // A guest whose website opened their plan gets the same brief, read AS the plan org (the signup
     // page's reads, billed to its advance): what their site says they sell is read, never asked
     // (DISTRY-GUEST-CAPS-1119, prod 2026-11-19 dutrou.com: « you didn't check our site? »).
+    // Sophie reads where the account stands before she answers
+    // (SOPHIE-REFONTE-1102): campaigns, results, replies waiting, money, beside
+    // the client brief below. Not on a lead turn (it runs in the writing
+    // brand's org), a proactive turn or a guest (no account). Read AT THE SAME
+    // TIME as the client brief (COPILOT-LATENCY-1125: one after the other, they
+    // stood between the message and the first model call).
+    const situationRead: Promise<{ brief: string } | { error: unknown }> | null =
+      configKey === SOPHIE_CONFIG_KEY && !leadTurn && !proactiveTurn && !sessionIsGuest
+        ? buildSituationBrief(gatewaySituationReader(featureCallParams), {
+            brandId: brandIds[0] ?? null,
+            offerId: offerId ?? null,
+          }).then((b) => ({ brief: b }), (error: unknown) => ({ error }))
+        : null;
     let brief: string | null = null;
     if (speaksForUs && !sessionIsGuest && !(leadTurn && (!leadTurn.ownBrand || leadTurn.guest))) {
+      // A brand's website is read under a run that may carry that brand: the turn's run when it
+      // carries none or exactly it, else one run of the brief's own (runs-service 409s a child
+      // whose brands differ from its parent's: COPILOT-LATENCY-1125).
+      const turnRunBrandIds = brandIdsOfHeader(trackingHeaders["x-brand-id"]);
+      let briefRun: Promise<string> | null = null;
+      const siteReadParams = async (brandId: string) => {
+        if (briefReadsOnTurnRun(turnRunBrandIds, brandId)) {
+          return { ...featureCallParams, trackingHeaders: { ...(downstreamTrackingHeaders ?? {}), "x-brand-id": brandId } };
+        }
+        briefRun ??= createRootRun(
+          { serviceName: "chat-service", taskName: "client-brief", support: COPILOT_SUPPORT },
+          { orgId, userId },
+        ).then((r) => r.id);
+        return { orgId, userId, runId: await briefRun, trackingHeaders: { "x-brand-id": brandId } };
+      };
       try {
         brief = formatClientBrief(
           await readClientBrief({
             listBrands: () => listBrands(featureCallParams),
             listOffers: (brandId) => listOffers(brandId, featureCallParams),
             readWebsite: async (brandId) =>
-              readSiteFields(await extractBrandFields([...CLIENT_BRIEF_FIELDS], [brandId], featureCallParams)),
-          }),
+              readSiteFields(await extractBrandFields([...CLIENT_BRIEF_FIELDS], [brandId], await siteReadParams(brandId))),
+          }, CLIENT_BRIEF_SITE_WAIT_MS),
         );
       } catch (err) {
         console.error(`[chat] session="${currentSessionId}" client brief unreadable:`, err);
@@ -4615,15 +4976,22 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       promptData.clientBrief = brief;
       reassemblePrompt();
     }
-    // Sophie reads where the account stands before she answers
-    // (SOPHIE-REFONTE-1102): campaigns, results, replies waiting, money, after
-    // the client brief above. Not on a lead turn (it runs in the writing
-    // brand's org), a proactive turn or a guest (no account).
-    if (configKey === SOPHIE_CONFIG_KEY && !leadTurn && !proactiveTurn && !sessionIsGuest) {
-      promptData.situationBrief = await buildSituationBrief(gatewaySituationReader(featureCallParams), {
-        brandId: brandIds[0] ?? null,
-        offerId: offerId ?? null,
-      });
+    if (situationRead) {
+      const read = await situationRead;
+      if ("error" in read) throw read.error;
+      promptData.situationBrief = read.brief;
+      reassemblePrompt();
+    }
+    // The campaign the founder built and paid for on the signup page waits for their
+    // first message to Distry, whatever the channel (DISTRY-CHANNEL-HANDOFF-1125): every
+    // turn of that person reads it. Not a proactive turn (it reads only), not a guest, not
+    // another brand's lead (the turn runs in that brand's org).
+    const waitingCampaign =
+      configKey === SOPHIE_CONFIG_KEY && !proactiveTurn && !sessionIsGuest && (!leadTurn || leadTurn.ownBrand)
+        ? await waitingCampaignId(db, orgId, userId)
+        : null;
+    if (waitingCampaign) {
+      promptData.waitingCampaignId = waitingCampaign;
       reassemblePrompt();
     }
     // The writing brand's own MCP tools (BRAND-MCP-1109): every lead turn, any
@@ -4873,7 +5241,9 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       // delivered message), never the model's or the caller's.
       if (call.name === START_SIGN_IN_TOOL_NAME || call.name === COMPLETE_SIGN_IN_TOOL_NAME) {
         const args = (call.args as Record<string, unknown>) || {};
-        if (!channelSession && !webTurn) throw new Error(`${call.name} works only in a conversation tied to the person (WhatsApp or our website).`);
+        if (!channelSession && !webTurn && !telegramDoor && !leadTurn?.emailBound) {
+          throw new Error(`${call.name} works only in a conversation tied to the person (WhatsApp, Telegram, their email or our website).`);
+        }
         // WhatsApp verified the sender's number: it is the session's, and the
         // completion ties it to the account. On our website nothing verified one:
         // the visitor types it (every signup leaves a number) and it is never
@@ -4921,7 +5291,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           ok: true,
           signedIn: signed.account.email,
           accountCreated: signed.account.created,
-          note: `${webTurn ? "This conversation" : "This WhatsApp number"} is now tied to this account. Right after this reply you answer again, automatically, with its access, and that answer is the one they read in place of this reply: here just say in a few words that they are in. Never ask them to send anything to continue.`,
+          note: `${channelSession ? "This WhatsApp number" : "This conversation"} is now tied to this account. Right after this reply you answer again, automatically, with its access, and that answer is the one they read in place of this reply: here just say in a few words that they are in. Never ask them to send anything to continue.`,
           ...(plan ? { plan: `The plan built in this conversation${plan.domain ? ` (${plan.domain})` : ""} is now in this account.` } : {}),
         };
         toolCalls.push({ name: call.name, args: { email: args.email }, result });
@@ -5096,7 +5466,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
                     (await requestOfCall(args, history)) ?? { method: String(args.method ?? "GET"), path: String(args.path ?? ""), body: args.body },
                     guestPlanDeps(args),
                   )
-                : await callApi(args, featureCallParams, history, { readOnly: proactiveTurn });
+                : await callOrStartWaiting(args);
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }
@@ -6042,7 +6412,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         turnContext: turnContextBlock,
         history: history
           .filter((m) => m.role !== "tool")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as string, toolCalls: m.toolCalls })),
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as string, toolCalls: m.toolCalls, createdAt: m.createdAt })),
         userMessage: message.trim(),
         images: turnImages,
         tools: allTools.map((t) => ({
@@ -6090,6 +6460,9 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     } else if (chatVendor) {
       // --- Direct vendor path (DeepSeek): one non-streaming request per round ---
       const vendorResult = await streamVendorChat({
+        // A person waits on Distry: a model silent past COPILOT_SILENT_MODEL_MS hands the turn to the
+        // next model of its fallback order (COPILOT-LATENCY-1125). Other configs keep no cut.
+        silentAfterMs: configKey === SOPHIE_CONFIG_KEY ? COPILOT_SILENT_MODEL_MS : undefined,
         vendor: chatVendor,
         apiKey: resolvedKey.key,
         model: resolvedModelInfo.apiModelId,
@@ -6098,7 +6471,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         turnContext: turnContextBlock,
         history: history
           .filter((m) => m.role !== "tool")
-          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as string, toolCalls: m.toolCalls })),
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content as string, toolCalls: m.toolCalls, createdAt: m.createdAt })),
         userMessage: message.trim(),
         images: turnImages,
         tools: allTools.map((t) => ({
@@ -6151,6 +6524,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           role: m.role as "user" | "assistant",
           content: m.content as string,
           toolCalls: m.toolCalls,
+          createdAt: m.createdAt,
         }));
 
       const geminiResult = await streamGeminiChat({
@@ -6629,6 +7003,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           textSent: failoverState.textSent(),
           failed: { provider: chatProvider, modelId: resolvedModelInfo.apiModelId },
           outOfCredit: chatCreditRefusal,
+          silentModel: err instanceof VendorSilentError,
+          carried: failoverState.toolCalls(),
           previous: distryAttempt,
           order: distryFallbackOrder,
         });
@@ -6793,7 +7169,8 @@ async function distryModelsPanel() {
     pricesRead: listPricesRead(),
     current: { provider: current.provider, model: current.model, effort: current.effort ?? null },
     now: new Date(),
-    outOfCredit: distryOutageSentence,
+    // Why a vendor cannot serve a turn now: out of credit (the stored fact), or no platform key registered yet.
+    outOfCredit: (p) => distryOutageSentence(p) ?? missingPlatformKeySentence(p, PROVIDER_LABELS[p]),
   });
 }
 
@@ -6870,6 +7247,8 @@ const distrySpend = {
     return orgId;
   },
   isPayingOrg: (orgId: string) => isPayingOrgFromBilling(orgId),
+  soloAiGate: (orgId: string) => soloAiGateFromBilling(orgId),
+  isLocalLlmOrg: (orgId: string) => isLocalLlmOrg(orgId),
   runTreeCents: (orgId: string, runIds: string[]) => runTreeCentsFromLedger(orgId, runIds),
   orgTotalCents: (orgId: string) => orgTotalCentsFromLedger(orgId),
 };
@@ -6885,6 +7264,7 @@ app.get("/internal/copilot/distry-spend/daily", requireInternalAuth, async (req,
 
 const telegramDeps: TelegramDeps = {
   db,
+  copilotLine: () => copilotLineFromEnv(),
   resolveChat: (chatId) => resolveTelegramChat(chatId),
   listBrandIds: (identity) => listOrgBrandIds(identity),
   createRootRun: (identity) => createChannelRootRun(identity, fetch, TELEGRAM_TASK_NAME),
@@ -6903,7 +7283,8 @@ const telegramDeps: TelegramDeps = {
     });
     return { status: res.status, body: await res.text() };
   },
-  sendReply: (args) => sendTelegramToOrg(args),
+  sendReply: (args) => sendTelegramToChat(args),
+  linkChat: (args) => linkTelegramChat(args),
   spend: distryGateLive,
 };
 
@@ -6916,7 +7297,7 @@ app.post("/internal/copilot/telegram-messages", requireInternalAuth, async (req,
   try {
     accepted = await acceptTelegramMessage(telegramDeps, parsed.data);
   } catch (err) {
-    console.error(`[chat-service] telegram chat ${parsed.data.chatId}: could not read its link:`, err);
+    console.error(`[chat-service] telegram chat ${parsed.data.chatId}: could not read who it is:`, err);
     return res.status(502).json({ error: `Could not read whether this chat is linked: ${err instanceof Error ? err.message : String(err)}` });
   }
   if (accepted.status !== "accepted") return res.status(200).json({ status: accepted.status });
@@ -7335,7 +7716,9 @@ app.get("/internal/skills/:slug", requireInternalAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
   try {
     const skill = await getSkill(db, parsed.data.slug);
-    return res.json({ ...toSkillBody(skill), ...linksOf(await skillMentionGraph(db), skill) });
+    const links = linksOf(await skillMentionGraph(db), skill);
+    // AGENT-SIGNUP-UX-1125: each tool it mentions carries the public API call doing the same act.
+    return res.json({ ...toSkillBody(skill), ...links, mentions: await withToolApi(links.mentions) });
   } catch (err) {
     const mapped = skillErrorStatus(err);
     return res.status(mapped.status).json({ error: mapped.error });
@@ -7517,6 +7900,46 @@ app.get("/internal/staff-requests", requireInternalAuth, async (req, res) => {
 
 // --- Local LLM: an org's calls on the user's own Claude Code (LOCAL-CLAUDE-1116) ---
 
+// --- The web signup hands the founder to Distry (DISTRY-CHANNEL-HANDOFF-1125) ---------
+const helloDeps: HelloDeps = {
+  db,
+  fetchUser: (userId) => fetchHandoffUser(userId),
+  createSupportRun: (identity) => createChannelRootRun(identity, fetch, "copilot-hello"),
+  startProactiveTurn: (rowId, recipient) => {
+    void processProactiveTurn(proactiveDeps, rowId, recipient, {}).catch((err) => console.error(`[handoff] hello turn "${rowId}" crashed:`, err));
+  },
+  conversation: (sessionId) => conversationForHandOver(db, sessionId),
+  handOverByEmail: (body) => handOverByEmailToCrm(body),
+};
+
+app.post("/orgs/copilot/handoff", requireAuth, async (req, res) => {
+  const { orgId, userId } = res.locals as AuthLocals;
+  if (!userId) return res.status(400).json({ error: "x-user-id is required: the handoff is the founder's own" });
+  const parsed = CopilotHandoffRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+  let row = await upsertHandoff(db, { orgId, userId, campaignId: parsed.data.campaignId ?? null });
+  if (parsed.data.sayHelloOn) {
+    try {
+      row = await sayHello(helloDeps, row, parsed.data.sayHelloOn);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[handoff] org="${orgId}" user="${userId}" hello on ${parsed.data.sayHelloOn} failed: ${message}`);
+      if (err instanceof NoPhoneError) return res.status(409).json({ error: "no_phone", detail: message });
+      return res.status(502).json({ error: "hello_not_sent", detail: message });
+    }
+  }
+  console.log(`[handoff] org="${orgId}" user="${userId}" campaign="${row.campaignId ?? "none"}" hello=${parsed.data.sayHelloOn ?? "none"}`);
+  res.json(handoffBody(row));
+});
+
+app.get("/orgs/copilot/handoff", requireAuth, async (_req, res) => {
+  const { orgId, userId } = res.locals as AuthLocals;
+  if (!userId) return res.status(400).json({ error: "x-user-id is required: the handoff is the founder's own" });
+  const row = await readHandoff(db, orgId, userId);
+  if (!row) return res.status(404).json({ error: "No handoff for this user" });
+  res.json(handoffBody(await refreshWhatsappHello(db, row)));
+});
+
 app.get("/orgs/local-llm", requireAuth, async (_req, res) => {
   const { orgId } = res.locals as AuthLocals;
   res.json(await localLlmState(orgId));
@@ -7567,7 +7990,7 @@ app.post("/orgs/local-llm/work/claim", requireAuth, async (req, res) => {
   const items = await claimWork(orgId, {
     max: parsed.data.max ?? 1,
     waitMs: parsed.data.waitMs ?? CLAIM_DEFAULT_WAIT_MS,
-    runner: { name: parsed.data.runner?.name ?? null, version: parsed.data.runner?.version ?? null },
+    runner: { name: parsed.data.runner?.name ?? null, version: parsed.data.runner?.version ?? null, kind: parsed.data.runner?.kind ?? null },
     signal: left.signal,
   });
   res.json({ items });
@@ -7586,7 +8009,8 @@ app.post("/orgs/local-llm/work/:id/result", requireAuth, async (req, res) => {
   const verdict = await store.submit(id, orgId, parsed.data.leaseId, outcome, new Date());
   if (verdict === "stored") {
     console.log(`[local-llm] org="${orgId}" job="${id}" answered ok=${outcome.ok} model=${outcome.model ?? "?"} in=${outcome.usage.inputTokens ?? "?"} out=${outcome.usage.outputTokens ?? "?"}`);
-    return res.json({ stored: true, status: outcome.ok ? "done" : "failed" });
+    // SOLO-PLAN-1125: a stored failure says why, so the founder's Claude knows what to fix.
+    return res.json({ stored: true, status: outcome.ok ? "done" : "failed", ...(outcome.ok ? {} : { error: outcome.error }) });
   }
   if (verdict === "not_found") return res.status(404).json({ error: "No such work item for this org" });
   if (verdict === "expired") {
@@ -7599,6 +8023,22 @@ app.post("/orgs/local-llm/work/:id/result", requireAuth, async (req, res) => {
   };
   return res.status(409).json({ error: words[verdict], code: `local_job_${verdict}` });
 });
+
+/**
+ * SOLO-PLAN-1125: one WhatsApp to the owner (OWNER_ALERT_WHATSAPP_PHONE, default his pro number), from the
+ * Copilot's own line. Throws unless crm sent it (the caller records the error and retries).
+ */
+const OWNER_ALERT_WHATSAPP_PHONE_DEFAULT = "+33680478402";
+async function sendCopilotLineWhatsapp(phone: string, text: string, idempotencyKey: string): Promise<void> {
+  const line = copilotLineFromEnv();
+  const runId = await createChannelRootRun(line);
+  const reach = await reachWhatsapp({ line, runId, phone });
+  if (!reach.reachable) throw new Error(`WhatsApp not reachable from the Copilot line (${reach.code}): ${reach.error}`);
+  await sendWhatsappReply({ orgId: line.orgId, brandId: line.brandId, userId: line.userId, runId, phone, fromAccount: reach.fromAccount, text, idempotencyKey });
+}
+function sendOwnerWhatsapp(text: string, idempotencyKey: string): Promise<void> {
+  return sendCopilotLineWhatsapp(process.env.OWNER_ALERT_WHATSAPP_PHONE || OWNER_ALERT_WHATSAPP_PHONE_DEFAULT, text, idempotencyKey);
+}
 
 // Only start server if not in test environment
 if (process.env.NODE_ENV !== "test") {
@@ -7622,14 +8062,16 @@ if (process.env.NODE_ENV !== "test") {
       // The detour ranks fallbacks by list price: read costs-service now and hourly (fail-soft, logged).
       await refreshFallbackPrices();
       setInterval(() => void refreshFallbackPrices(), PRICE_REFRESH_MS).unref();
+      // DEEPSEEK-HOLIDAYS-1124: until the regime hours are read, every DeepSeek call is refused, so retry each minute.
+      setInterval(() => {
+        if (!regimeCatalogueRead()) void refreshFallbackPrices();
+      }, 60_000).unref();
       // Copilot skill tree: insert absent skills, refresh rows still holding
       // seed content, NEVER touch a human-edited one. ~16 rows, safe to await.
       // LOCAL-CLAUDE-1116: the orgs whose LLM runs on their own Claude Code (a handful of rows),
-      // loaded before any call is served so none slips onto a platform key; calls the previous
-      // process was waiting on are ended (their callers are gone).
+      // loaded before any call is served so none slips onto a platform key. Calls the previous
+      // process was waiting on are ended once it has had its drain (below, GLM-FLASH-502-1125).
       const localStore = createPgLocalLlmStore(db);
-      const abandoned = await localStore.expireAbandoned(new Date(), new Date());
-      if (abandoned > 0) console.log(`[local-llm] ${abandoned} local call(s) cut off by a restart ended`);
       await startLocalLlm(localStore);
       // Old-style references (backticks, bare names) still to become mention tokens, counted before the seed converts its own rows.
       const pendingRefs = await countPendingReferences(db);
@@ -7652,10 +8094,30 @@ if (process.env.NODE_ENV !== "test") {
       const server = app.listen(Number(PORT), "::", () => {
         console.log(`Service running on port ${PORT}`);
       });
-      // Proactive turns a restart cut off: marked failed, never re-run (one message per fact).
-      failInterruptedProactiveTurns(db, bootedAt)
-        .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
-        .catch((err) => console.error("[chat-service] proactive turn recovery failed:", err));
+      // GLM-FLASH-502-1125: a deploy starts the next container BESIDE this one, then drains
+      // this one (graceful-drain.ts). Background writers the next process owns stop at drain.
+      const stopAtDrain: Array<() => void> = [];
+      const drainTracker = trackServer(server, stopAtDrain);
+      // OPEN-LLM-FREE-1124: which providers have a platform key (key-service's list), read in the
+      // background after listen and every 5 min. Until read, every provider is assumed to have one.
+      void refreshPlatformKeyPresence();
+      setInterval(() => void refreshPlatformKeyPresence(), PLATFORM_KEY_REFRESH_MS).unref();
+      // Work the PREVIOUS process left unfinished is judged once that process has had its whole
+      // drain (it runs beside this one during a deploy and may still be finishing it):
+      // proactive turns are marked failed (never re-run: one message per fact), local calls
+      // ended, Telegram messages answered.
+      setTimeout(() => {
+        failInterruptedProactiveTurns(db, bootedAt)
+          .then((n) => { if (n > 0) console.log(`[chat-service] ${n} proactive turn(s) cut off by a restart marked failed`); })
+          .catch((err) => console.error("[chat-service] proactive turn recovery failed:", err));
+        // SOLO-PLAN-1125: only chat rounds (their loop died with the process); other calls stay queued for a resend.
+        localStore.expireAbandoned(bootedAt, new Date(), SHORT_LIVED_KINDS)
+          .then((n) => { if (n > 0) console.log(`[local-llm] ${n} local call(s) cut off by a restart ended`); })
+          .catch((err) => console.error("[local-llm] recovery of cut calls failed:", err));
+        recoverTelegramMessages(telegramDeps, new Date(), bootedAt)
+          .then((n) => { if (n > 0) console.log(`[chat-service] re-running ${n} Telegram message(s) cut off by a restart`); })
+          .catch((err) => console.error("[chat-service] Telegram recovery failed:", err));
+      }, PREVIOUS_PROCESS_DRAIN_MS).unref();
 
       // DISTRY-MODELS-1119: Artificial Analysis Intelligence Index, read once a day from their API (the tick reads only when no
       // success in 24 h and no attempt in the last hour; a failure is stored and served as broken).
@@ -7668,8 +8130,9 @@ if (process.env.NODE_ENV !== "test") {
           .catch((err) => console.error("[intelligence-index] refresh tick failed:", err))
           .finally(() => { indexReading = false; });
       };
-      setTimeout(readIndex, 60_000).unref();
-      setInterval(readIndex, INDEX_TICK_MS).unref();
+      const indexFirst = setTimeout(readIndex, 60_000).unref();
+      const indexTick = setInterval(readIndex, INDEX_TICK_MS).unref();
+      stopAtDrain.push(() => { clearTimeout(indexFirst); clearInterval(indexTick); });
 
       // Distry's non-client spend: measured every minute from the runs ledger, the day's alert
       // sent once (DISTRY-GUEST-CAPS-1119). After listen (network reads), one at a time.
@@ -7677,19 +8140,38 @@ if (process.env.NODE_ENV !== "test") {
       const measureDistry = () => {
         if (distryMeasuring) return;
         distryMeasuring = true;
-        refreshDistrySpendDay({ db, ...distrySpend, sendTelegram: sendStaffTelegram, sendEmail: (f) => sendDistryAlertEmail(f) })
+        refreshDistrySpendDay({ db, ...distrySpend, sendTelegram: sendStaffTelegram, sendEmail: (f) => sendDistryAlertEmail(f), sendWhatsapp: (text, day) => sendOwnerWhatsapp(text, `distry-debt-growth:${day}`) })
           .catch((err) => console.error("[chat-service] Distry spend measure failed (the day limit reads the last stored measure):", err))
           .finally(() => { distryMeasuring = false; });
       };
-      setTimeout(measureDistry, 20_000).unref();
-      setInterval(measureDistry, 60_000).unref();
+      const distryFirst = setTimeout(measureDistry, 20_000).unref();
+      const distryTick = setInterval(measureDistry, 60_000).unref();
+      stopAtDrain.push(() => { clearTimeout(distryFirst); clearInterval(distryTick); });
 
-      // Telegram messages a restart cut off mid-turn: answered once the port is up.
-      setTimeout(() => {
-        recoverTelegramMessages(telegramDeps)
-          .then((n) => { if (n > 0) console.log(`[chat-service] re-running ${n} Telegram message(s) cut off by a restart`); })
-          .catch((err) => console.error("[chat-service] Telegram recovery failed:", err));
-      }, 60_000).unref();
+      // SOLO-PLAN-1125: a founder whose Claude routine took no work for ~2 h is told once, fixed text, on their door.
+      let silenceChecking = false;
+      const checkSilentRunners = () => {
+        if (silenceChecking) return;
+        silenceChecking = true;
+        notifySilentRunners({
+          store: localStore,
+          db,
+          telegramLinker: (orgId) => orgTelegramLinker(orgId),
+          sendTelegram: (args) => sendTelegramToOrg(args),
+          sendWhatsapp: (args) => sendCopilotLineWhatsapp(args.phone, args.text, args.idempotencyKey),
+        })
+          .catch((err) => console.error("[local-llm] silent-runner check failed:", err))
+          .finally(() => { silenceChecking = false; });
+      };
+      setTimeout(checkSilentRunners, 90_000).unref();
+      setInterval(checkSilentRunners, SILENCE_TICK_MS).unref();
+
+      // REELS-1124: recordings our own transcriber works on are followed to their end here (first
+      // pass once the previous process has drained, then every 15 s); a download a restart cut is
+      // marked `interrupted`. Started late: a draining process's own downloads are not held HERE.
+      let stopMediaTick: (() => void) | null = null;
+      const mediaStart = setTimeout(() => { stopMediaTick = startMediaTranscriptionTick(db); }, PREVIOUS_PROCESS_DRAIN_MS).unref();
+      stopAtDrain.push(() => { clearTimeout(mediaStart); stopMediaTick?.(); });
 
       // Node 20 defaults requestTimeout to 300s (5 min). SSE chat streams
       // can run for 30–60 min when the LLM makes many tool calls, so we
@@ -7699,20 +8181,20 @@ if (process.env.NODE_ENV !== "test") {
       server.headersTimeout = 60_000;
       server.keepAliveTimeout = 120_000;
 
-      // Graceful shutdown: let in-flight SSE streams finish before exiting
-      const DRAIN_TIMEOUT_MS = 25_000; // Railway sends SIGKILL after 30s
-
+      // Graceful shutdown (GLM-FLASH-502-1125): keep answering, close each socket after its
+      // answer, exit once none is open or after DRAIN_TIMEOUT_MS. Never server.close() first:
+      // a refused connection is a failed call for callers that do not retry.
       const shutdown = (signal: string) => {
-        console.log(`[shutdown] Received ${signal}, draining connections…`);
-        server.close(() => {
-          console.log("[shutdown] All connections closed, exiting.");
+        if (drainTracker.draining()) return;
+        console.log(`[shutdown] Received ${signal}, draining: ${drainTracker.inFlight()} call(s) in flight, ${drainTracker.openSockets()} socket(s) open`);
+        void drainTracker.drain().then((why) => {
+          console.log(
+            why === "idle"
+              ? "[shutdown] Every socket closed, exiting."
+              : `[shutdown] Drain timeout reached with ${drainTracker.inFlight()} call(s) in flight, exiting.`,
+          );
           process.exit(0);
         });
-
-        setTimeout(() => {
-          console.log("[shutdown] Drain timeout reached, forcing exit.");
-          process.exit(0);
-        }, DRAIN_TIMEOUT_MS).unref();
       };
 
       process.on("SIGTERM", () => shutdown("SIGTERM"));

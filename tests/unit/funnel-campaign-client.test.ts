@@ -51,11 +51,11 @@ describe("funnel campaign tools (campaign-service / billing-service, direct, cha
     expect(call(0).headers).toMatchObject({ "x-api-key": "campaign-key", "x-org-id": "org-1", "x-user-id": "user-1", "x-run-id": "run-1" });
   });
 
-  it("caps read/write hit billing with the funnel id URL-encoded", async () => {
+  it("caps read/write hit billing with the funnel id URL-encoded, on the campaign when one is named", async () => {
     fetchMock().mockResolvedValue(res(200, {}));
     const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
     await FUNNEL_CAMPAIGN_TOOLS.get_funnel_caps({ brandId: "b", offerId: "o", salesFunnelId: FUNNEL, salesFunnelCampaignId: "fc-1" }, p);
-    expect(call(0).url).toBe(`http://billing.test/v1/brands/b/offers/o/sales-funnels/${ENC}/caps`);
+    expect(call(0).url).toBe(`http://billing.test/v1/brands/b/offers/o/sales-funnels/${ENC}/campaigns/fc-1/caps`);
     expect(call(0).headers["x-api-key"]).toBe("billing-key");
     await FUNNEL_CAMPAIGN_TOOLS.set_funnel_caps(
       { brandId: "b", offerId: "o", salesFunnelId: FUNNEL, maxBudget: { amountCents: 5000, period: "weekly" }, maxVolume: { count: 200, period: "monthly" } },
@@ -374,7 +374,7 @@ describe("a campaign IS a sales funnel campaign (owner rule; prod 2026-10-10 NOV
         });
       }
       if (url.includes("/sales-funnel-campaigns")) return res(200, { salesFunnelCampaigns: [camp("c1", "Bliss", "bliss", 4), camp("c2", "Motivate", "motivate", 1), camp("c3", "Moving", "moving", 1)] });
-      const f = decodeURIComponent(url.split("/sales-funnels/")[1].split("/caps")[0]);
+      const f = decodeURIComponent(url.split("/sales-funnels/")[1].split("/campaigns/")[0]);
       return res(200, capsOf[f]);
     });
     const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
@@ -413,7 +413,26 @@ describe("a campaign IS a sales funnel campaign (owner rule; prod 2026-10-10 NOV
     expect(out.campaignCount).toBe(1);
     expect(out.campaigns[0]).toMatchObject({ name: "Newsletter drafted", offerId: null, runsWhen: TARGET_ONLY_WORDS });
     const capsUrl = fetchMock().mock.calls.map((c) => String(c[0])).find((u) => u.includes("/caps"));
-    expect(capsUrl).toBe("http://billing.test/v1/brands/b/sales-funnels/newsletter_drafted/caps");
+    expect(capsUrl).toBe("http://billing.test/v1/brands/b/sales-funnels/newsletter_drafted/campaigns/c1/caps");
+  });
+
+  it("reads each campaign's OWN caps, never only the funnel-wide ones (DISTRY-FIRST-ANSWER-FALSE-1126, prod WriteBros)", async () => {
+    // Prod 2026-11-26: the signup page stored $121/day on the campaign; the funnel-wide path served
+    // nothing, and the first answer after payment said "not funded because it has no max budget".
+    fetchMock().mockImplementation(async (url: string) => {
+      if (url.startsWith("http://features.test/brands/b/sales-funnel-campaigns")) return res(200, { salesFunnelCampaigns: [] });
+      if (url.startsWith("http://features.test/internal/catalogue/sales-funnels/")) return res(200, { trigger: null });
+      if (url.includes("/sales-funnel-campaigns")) return res(200, { salesFunnelCampaigns: [camp("7eb07f7f", "Cold Email Booking", "bliss", 1)] });
+      if (url.endsWith("/sales-funnels/bliss/campaigns/7eb07f7f/caps")) {
+        return res(200, { capScope: "sales_funnel_campaign", funded: true, salesFunnelType: "proactive", volumeUnit: "first_contacts", maxBudget: { amountCents: "12100.0000000000", period: "daily", consumedCents: "0", reached: false }, maxVolume: null });
+      }
+      if (url.endsWith("/sales-funnels/bliss/caps")) return res(200, { funded: false, salesFunnelType: "proactive", maxBudget: null, maxVolume: null });
+      throw new Error(`unexpected ${url}`);
+    });
+    const { FUNNEL_CAMPAIGN_TOOLS } = await funnel();
+    const out = (await FUNNEL_CAMPAIGN_TOOLS.list_campaigns({ brandId: "b" }, p, customer)) as { campaigns: Array<Record<string, any>> };
+    expect(out.campaigns[0].budget).toBe("Max $121/day");
+    expect(JSON.stringify(out)).not.toMatch(/Not funded/);
   });
 
   it("a campaign whose sales funnel was RETIRED is listed and flagged, never failing the whole list (campaign-service#764)", async () => {

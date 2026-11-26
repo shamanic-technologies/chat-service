@@ -8,9 +8,10 @@
 //
 //   DeepSeek  cache-hit input priced apart from a miss, AND a peak/off-peak
 //             schedule → 6 names, `deepseek-v4.1-flash-{peak,off-peak}-tokens-
-//             {input,cached-input,output}`. The schedule is hours AND days:
-//             peak applies 01:00-04:00 / 06:00-10:00 UTC on weekdays only, the
-//             vendor having exempted weekends from 2026-08-22T16:00Z. (The
+//             {input,cached-input,output}`. WHICH regime applies at an
+//             instant is read from costs-service's `regimeHoursUtc` on those
+//             rows (hours, weekdays, Chinese public holidays), never held
+//             here (DEEPSEEK-HOLIDAYS-1124). (The
 //             retired `deepseek-v4-{flash,pro}-*` names stay priced in the
 //             catalog so past spend keeps resolving; nothing declares them.)
 //   Z.ai      cache-hit input priced apart from a miss, no schedule → 3 names
@@ -69,24 +70,12 @@ export function flatCostNames(costPrefix: string): LlmCostNames {
   };
 }
 
-/** Minutes since 00:00 UTC for an `HH:MM` literal. `24:00` is the end of day. */
-function minuteOfDay(hhmm: string): number {
-  const [h, m] = hhmm.split(":");
-  return Number(h) * 60 + Number(m);
-}
-
 /**
- * The UTC minute at which a Beijing (UTC+8) day starts — 16:00 UTC the day
- * before. A peak window that reached this minute would sit on two Beijing days
- * at once, and a vendor rule stated in Beijing weekdays could then no longer be
- * evaluated on the UTC weekday. See `assertDayScopeIsUnambiguous`.
- */
-const BEIJING_DAY_START_MINUTE_UTC = 16 * 60;
-
-/**
- * A schedule whose windows and day scope cannot both be honoured. Thrown before
- * any spend, like `UnpricedModelError`: a regime we cannot resolve exactly is a
- * regime we must not guess at, because the wrong guess is a customer overbill.
+ * A regime that cannot be resolved EXACTLY from the catalogue: the price list
+ * was never read, a regime row is missing, its rule is unreadable, or the rules
+ * do not partition the instant (none or several match). Thrown before any
+ * spend, like `UnpricedModelError`: the wrong guess is a customer overbill, so
+ * there is no default regime and no copy of the schedule to fall back to.
  */
 export class AmbiguousPricingRegimeError extends Error {
   constructor(message: string) {
@@ -95,68 +84,167 @@ export class AmbiguousPricingRegimeError extends Error {
   }
 }
 
-/**
- * DeepSeek publishes its peak HOURS in UTC and its weekend EXEMPTION in Beijing
- * days. We select on UTC days, which is only equivalent while every peak window
- * lies wholly inside one Beijing day — true today because the windows end by
- * 10:00 UTC, six hours before the Beijing day rolls over at 16:00 UTC.
- *
- * If the vendor ever publishes a window at or past 16:00 UTC, that equivalence
- * breaks: a Friday 17:00 UTC window is Beijing Saturday (exempt) while its UTC
- * weekday says Friday (peak). Rather than silently bill the wrong regime for
- * that hour, throw — the correct fix is to evaluate the day in the vendor's own
- * timezone, and that is a change someone should make deliberately.
- */
-function assertDayScopeIsUnambiguous(schedule: PricingRegimeSchedule): void {
-  if (!schedule.peakDaysUtc) return;
-  for (const window of schedule.peakWindowsUtc) {
-    const [, end] = window.split("-");
-    if (minuteOfDay(end) > BEIJING_DAY_START_MINUTE_UTC) {
-      throw new AmbiguousPricingRegimeError(
-        `[cost] peak window "${window}" runs past 16:00 UTC, where the vendor's Beijing ` +
-          `calendar day has already rolled over, so a weekday-scoped peak cannot be resolved ` +
-          `from the UTC weekday. Evaluate the day in the vendor's own timezone before ` +
-          `serving this schedule.`,
-      );
-    }
+// ---------------------------------------------------------------------------
+// The regime rules, as costs-service states them (DEEPSEEK-HOLIDAYS-1124,
+// owner 2026-11-25: « one source of truth »).
+//
+// `GET /v1/platform-prices` serves `regimeHoursUtc` on every regime row:
+// comma-separated `[!]<scope>@HH:MM-HH:MM`, half-open on the minute; `<scope>`
+// is a weekday range (`Mon-Fri`), a UTC date (`2027-06-09`) or an inclusive UTC
+// date range (`2027-10-01..2027-10-07`). An instant is in the regime when a
+// plain window covers it and no `!` window does. chat-service reads it at boot
+// and hourly (`refreshFallbackPrices`) and keeps the last good read; it never
+// holds a schedule of its own.
+// ---------------------------------------------------------------------------
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const HHMM = /^(\d{2}):(\d{2})$/;
+
+type RegimeScope = { kind: "weekdays"; days: Set<number> } | { kind: "dates"; from: string; to: string };
+interface RegimeWindow {
+  exclude: boolean;
+  scope: RegimeScope;
+  startMinute: number;
+  endMinute: number;
+}
+
+function minuteOf(hhmm: string, rule: string): number {
+  const m = HHMM.exec(hhmm);
+  if (!m) throw new AmbiguousPricingRegimeError(`[cost] regimeHoursUtc "${rule}": "${hhmm}" is not HH:MM`);
+  const minute = Number(m[1]) * 60 + Number(m[2]);
+  if (Number(m[2]) > 59 || minute > 24 * 60) {
+    throw new AmbiguousPricingRegimeError(`[cost] regimeHoursUtc "${rule}": "${hhmm}" is not a time of day`);
   }
+  return minute;
+}
+
+function parseScope(scope: string, rule: string): RegimeScope {
+  if (scope.includes("..")) {
+    const [from, to] = scope.split("..");
+    if (!DATE.test(from) || !DATE.test(to) || to < from) {
+      throw new AmbiguousPricingRegimeError(`[cost] regimeHoursUtc "${rule}": "${scope}" is not a date range`);
+    }
+    return { kind: "dates", from, to };
+  }
+  if (DATE.test(scope)) return { kind: "dates", from: scope, to: scope };
+  const [first, last = first] = scope.split("-");
+  const a = WEEKDAYS.indexOf(first as (typeof WEEKDAYS)[number]);
+  const b = WEEKDAYS.indexOf(last as (typeof WEEKDAYS)[number]);
+  if (a < 0 || b < 0) throw new AmbiguousPricingRegimeError(`[cost] regimeHoursUtc "${rule}": unknown scope "${scope}"`);
+  const days = new Set<number>();
+  for (let d = a; ; d = (d + 1) % 7) {
+    days.add(d);
+    if (d === b) break;
+  }
+  return { kind: "weekdays", days };
+}
+
+/** Parse one `regimeHoursUtc` rule; anything it does not know THROWS (never a guess). */
+export function parseRegimeHours(rule: string): RegimeWindow[] {
+  const windows = rule.split(",").map((raw) => {
+    const part = raw.trim();
+    const exclude = part.startsWith("!");
+    const body = exclude ? part.slice(1) : part;
+    const at = body.split("@");
+    if (at.length !== 2) throw new AmbiguousPricingRegimeError(`[cost] regimeHoursUtc "${rule}": "${part}" is not <scope>@HH:MM-HH:MM`);
+    const hours = at[1].split("-");
+    if (hours.length !== 2) throw new AmbiguousPricingRegimeError(`[cost] regimeHoursUtc "${rule}": "${at[1]}" is not HH:MM-HH:MM`);
+    const startMinute = minuteOf(hours[0], rule);
+    const endMinute = minuteOf(hours[1], rule);
+    if (endMinute <= startMinute) throw new AmbiguousPricingRegimeError(`[cost] regimeHoursUtc "${rule}": empty window "${at[1]}"`);
+    return { exclude, scope: parseScope(at[0], rule), startMinute, endMinute };
+  });
+  if (!windows.some((w) => !w.exclude)) throw new AmbiguousPricingRegimeError(`[cost] regimeHoursUtc "${rule}": no plain window`);
+  return windows;
+}
+
+function windowCovers(w: RegimeWindow, at: Date): boolean {
+  const minute = at.getUTCHours() * 60 + at.getUTCMinutes();
+  if (minute < w.startMinute || minute >= w.endMinute) return false;
+  if (w.scope.kind === "weekdays") return w.scope.days.has(at.getUTCDay());
+  const day = at.toISOString().slice(0, 10);
+  return day >= w.scope.from && day <= w.scope.to;
+}
+
+/** true when `at` is in the regime the rule states: a plain window covers it and no `!` window does. */
+export function regimeCovers(windows: RegimeWindow[], at: Date): boolean {
+  return windows.some((w) => !w.exclude && windowCovers(w, at)) && !windows.some((w) => w.exclude && windowCovers(w, at));
+}
+
+/** Cost name → its `regimeHoursUtc`, from the last good read of costs-service's price list. Null = never read. */
+let regimeRules: Map<string, string> | null = null;
+
+/**
+ * Store the regime rules of a price-list read. A read that carries a regime row
+ * with no rule, or an unreadable rule, is refused whole and the last good read
+ * stays (logged loud by the caller): a bad row must not erase a good schedule.
+ */
+export function setRegimeCatalogue(
+  rows: ReadonlyArray<{ name: string; pricingRegime?: string | null; regimeHoursUtc?: string | null }>,
+): void {
+  const next = new Map<string, string>();
+  for (const row of rows) {
+    if (row.pricingRegime == null) continue;
+    if (typeof row.regimeHoursUtc !== "string") {
+      throw new AmbiguousPricingRegimeError(`[cost] ${row.name} is a ${row.pricingRegime} row with no regimeHoursUtc`);
+    }
+    parseRegimeHours(row.regimeHoursUtc);
+    next.set(row.name, row.regimeHoursUtc);
+  }
+  regimeRules = next;
+}
+
+/** true once a price-list read carried readable regime rules (boot retries every minute until then). */
+export function regimeCatalogueRead(): boolean {
+  return regimeRules !== null;
+}
+
+/** Test hook: forget the read, as at boot. */
+export function resetRegimeCatalogue(): void {
+  regimeRules = null;
+}
+
+/** The one rule a regime's rows state (input / cached input / output must agree). */
+function regimeRuleFor(costPrefix: string, segment: string): string {
+  if (!regimeRules) {
+    throw new AmbiguousPricingRegimeError(
+      `[cost] ${costPrefix}: costs-service's price list has not been read, so its peak/off-peak hours are unknown. ` +
+        `Check COSTS_SERVICE_URL and GET /v1/platform-prices; no regime is guessed.`,
+    );
+  }
+  const rules = new Set<string>();
+  for (const suffix of ["tokens-input", "tokens-cached-input", "tokens-output"]) {
+    const rule = regimeRules.get(`${costPrefix}-${segment}-${suffix}`);
+    if (rule !== undefined) rules.add(rule);
+  }
+  if (rules.size === 0) {
+    throw new AmbiguousPricingRegimeError(`[cost] ${costPrefix}: costs-service serves no "${segment}" regime row with its hours`);
+  }
+  if (rules.size > 1) {
+    throw new AmbiguousPricingRegimeError(`[cost] ${costPrefix}: the "${segment}" rows state different hours`);
+  }
+  return [...rules][0];
 }
 
 /**
- * Pick the regime in force at `at`, from this repo's own copy of the vendor's
- * published schedule (`VENDORS[...].pricing.regime`) — the windows and the day
- * scope beside them. costs-service states the same vendor rule separately, in
- * its own grammar; the two are kept in step by hand, not derived from one
- * another, so a vendor that moves its schedule has to be applied in both.
- *
- * Each window is half-open, `[start, end)`: 01:00 sharp is the first peak
- * minute and 04:00 sharp is the first off-peak minute again. That is what makes
- * the two regimes a partition — every instant matches exactly one, so a caller
- * never has to fall back to a regime-free name (which, from 2026-08-16T16:00Z,
- * would have no honest price behind it).
- *
- * The day scope narrows peak further, and only from `peakDaysFrom`: DeepSeek
- * exempted weekends from 2026-08-22T16:00Z, so a Saturday 02:00 call declares
- * off-peak today and still resolves to peak for an instant before that date,
- * which is what the vendor actually charged then. Off-peak is the WIDER regime
- * in both directions, so narrowing peak can only ever move a call to the rate
- * the vendor is charging — never off the partition.
+ * The regime in force at `at` for `costPrefix`, read from costs-service's rules:
+ * exactly ONE of the vendor's regimes must cover the instant (the catalogue
+ * states them as a partition), else it throws. A Chinese public holiday on a
+ * weekday resolves off-peak because the peak row excludes it and the off-peak
+ * row adds it whole (costs-service v0.90.0).
  */
-export function selectPricingRegime(schedule: PricingRegimeSchedule, at: Date): string {
-  assertDayScopeIsUnambiguous(schedule);
-
-  const minute = at.getUTCHours() * 60 + at.getUTCMinutes();
-  const inPeakWindow = schedule.peakWindowsUtc.some((window) => {
-    const [start, end] = window.split("-");
-    return minute >= minuteOfDay(start) && minute < minuteOfDay(end);
-  });
-
-  const dayScopeApplies =
-    schedule.peakDaysUtc !== null &&
-    (schedule.peakDaysFrom === null || at.getTime() >= schedule.peakDaysFrom.getTime());
-  const dayCarriesPeak = !dayScopeApplies || schedule.peakDaysUtc!.includes(at.getUTCDay());
-
-  return inPeakWindow && dayCarriesPeak ? schedule.peakSegment : schedule.offPeakSegment;
+export function selectPricingRegime(costPrefix: string, schedule: PricingRegimeSchedule, at: Date): string {
+  const matches = [schedule.peakSegment, schedule.offPeakSegment].filter((segment) =>
+    regimeCovers(parseRegimeHours(regimeRuleFor(costPrefix, segment)), at),
+  );
+  if (matches.length !== 1) {
+    throw new AmbiguousPricingRegimeError(
+      `[cost] ${costPrefix} at ${at.toISOString()}: ${matches.length === 0 ? "no regime" : "both regimes"} ` +
+        `cover the instant in costs-service's regimeHoursUtc; no regime is guessed.`,
+    );
+  }
+  return matches[0];
 }
 
 /**
@@ -193,7 +281,7 @@ export function buildLlmCostNames(args: {
     );
   }
 
-  const segment = pricing.regime ? `-${selectPricingRegime(pricing.regime, at)}` : "";
+  const segment = pricing.regime ? `-${selectPricingRegime(costPrefix, pricing.regime, at)}` : "";
   return {
     input: `${costPrefix}${segment}-tokens-input`,
     cachedInput: pricing.cachedInput ? `${costPrefix}${segment}-tokens-cached-input` : null,
@@ -230,10 +318,8 @@ export function vendorCostLines(args: {
     throw new Error(`[cost] vendorCostLines called for non-vendor provider "${provider}"`);
   }
   const { pricing } = VENDORS[provider];
-  const longContext =
-    pricing.kind === "priced" &&
-    pricing.longContextAboveInputTokens !== undefined &&
-    tokensInput > pricing.longContextAboveInputTokens;
+  const longContextAbove = pricing.kind === "priced" ? pricing.longContextAboveInputTokens : undefined;
+  const longContext = longContextAbove !== undefined && tokensInput > longContextAbove;
   const names = buildLlmCostNames({ provider, costPrefix: longContext ? `${costPrefix}-long-context` : costPrefix, at });
   const cached = names.cachedInput ? Math.min(args.cachedInputTokens, tokensInput) : 0;
   const writes =

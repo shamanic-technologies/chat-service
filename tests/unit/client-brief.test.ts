@@ -90,3 +90,20 @@ describe("client brief: what the Copilot knows before the client says a word", (
     expect(readSiteFields({})).toEqual({ whatTheySell: null, whoBuys: null });
   });
 });
+
+// COPILOT-LATENCY-1125 (prod 2026-11-25): the org's other brand was read under the turn run
+// carrying the page's brand; runs-service 409'd brand-service's /complete three times a turn.
+describe("which run a brand's website is read under", () => {
+  it("the turn run only when it carries no brand or exactly this one", async () => {
+    const { briefReadsOnTurnRun, brandIdsOfHeader } = await import("../../src/lib/brief-run.js");
+    const page = "f4d73dab-1f9d-49b2-b16e-63ecde76a5eb";
+    const other = "47823ca5-0000-4000-8000-000000000000";
+    expect(brandIdsOfHeader(undefined)).toEqual([]);
+    expect(brandIdsOfHeader(` ${page}, ${other} `)).toEqual([page, other]);
+    expect(briefReadsOnTurnRun([], other)).toBe(true);
+    expect(briefReadsOnTurnRun([page], page)).toBe(true);
+    expect(briefReadsOnTurnRun([page], other)).toBe(false);
+    expect(briefReadsOnTurnRun([page, other], page)).toBe(false);
+  });
+});
+

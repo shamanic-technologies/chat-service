@@ -12,6 +12,18 @@
 // runs each with `claude -p` exactly as described in the item, and posts the
 // answer back (POST /orgs/local-llm/work/:id/result). The caller waits for it.
 //
+// SOLO-PLAN-1125 (owner 2026-11-25): the runner may also be the founder's OWN
+// Claude (a cloud routine / scheduled task) that takes the waiting work through
+// our MCP about once an hour (`runner.kind: "routine"`). So a call's work item
+// LIVES for hours (`jobLifetimeMs`), independent of how long its caller holds
+// the request: a caller that stops waiting gets a named, retryable state, and
+// when it RESENDS the same call (same kind, route and work item = same
+// `requestKey`) it attaches to the job already waiting, or receives the answer
+// that came in meanwhile (once: a delivered answer is never handed out again).
+// A chat round is the exception: its loop lives in this process and cannot
+// resend, so its job ends with its caller, as before. When no runner took an
+// org's work for ~2 h the founder is told once (local-llm-silence.ts).
+//
 // Rules this file holds:
 // - The runner is DUMB: an item carries everything one `claude -p` call needs
 //   (system prompt, prompt, JSON schema, model, built-in tools). Every
@@ -33,8 +45,10 @@ import { capabilityTierFor, resolveModel, type CapabilityTier, type ModelAlias, 
 import { anthropicCostLines } from "./anthropic-usage.js";
 import { dynastyOfModel } from "./llm-dynasties.js";
 import { isVendorProvider } from "./openai-compatible.js";
+import { providerHasNoPlatformKey } from "./platform-key-presence.js";
 import type { CostItem } from "./runs-client.js";
-import type { LocalAnswerOutcome, LocalJobKind, LocalJobRow, LocalLlmStore, LocalUsage } from "./local-llm-store.js";
+import { createHash } from "node:crypto";
+import type { LocalAnswerOutcome, LocalJobKind, LocalJobRow, LocalLlmStore, LocalUsage, RunnerKind } from "./local-llm-store.js";
 import type { TypeSafeAnswer, TypeSafeCriterion, TypeSafeQuestion } from "./typesafe.js";
 
 // --- timing (env-tunable, bounded) -------------------------------------------
@@ -51,8 +65,23 @@ function envMs(name: string, fallback: number): number {
 export const pickupWaitMs = () => envMs("LOCAL_LLM_PICKUP_WAIT_MS", 45_000);
 /** How long a picked-up call may run on the user's machine before failing `local_runner_timeout`. */
 export const answerWaitMs = () => envMs("LOCAL_LLM_ANSWER_WAIT_MS", 240_000);
-/** A runner that claimed within this window is shown as connected. */
+/** SOLO-PLAN-1125: how long a call's work item stays claimable (a routine runs about hourly); a resent identical call attaches to it. */
+export const jobLifetimeMs = () => envMs("LOCAL_LLM_JOB_LIFETIME_MS", 24 * 3600_000);
+/** What a kept call tells its caller: look again in this many seconds (workflow-service resumes with `x-llm-job-id`). */
+export const RESUME_AFTER_SECONDS = 600;
+/** How long a runner has to answer the items it claimed (a routine answers a batch in its Claude). */
+export const claimAnswerWindowMs = () => envMs("LOCAL_LLM_CLAIM_ANSWER_MS", 30 * 60_000);
+/** An installed app runner that claimed within this window is shown as connected. */
 export const RUNNER_CONNECTED_WITHIN_MS = 60_000;
+/** A routine runner (about hourly) that claimed within this window is shown as connected. */
+export const ROUTINE_CONNECTED_WITHIN_MS = 2 * 3600_000;
+/** Call kinds whose caller lives in THIS process and cannot resend: their job ends with the caller. */
+export const SHORT_LIVED_KINDS: readonly LocalJobKind[] = ["chat_round"];
+
+function runnerConnected(seen: Date | null, kind: RunnerKind | null, now: Date): boolean {
+  if (seen === null) return false;
+  return now.getTime() - seen.getTime() <= (kind === "routine" ? ROUTINE_CONNECTED_WITHIN_MS : RUNNER_CONNECTED_WITHIN_MS);
+}
 /** Longest a claim request may hold the connection open waiting for work. */
 export const CLAIM_MAX_WAIT_MS = 25_000;
 export const CLAIM_DEFAULT_WAIT_MS = 20_000;
@@ -84,6 +113,19 @@ export interface LocalWorkItem {
   claude: LocalClaudeCall;
 }
 
+/** The identity of a call: same kind, route and work item = the same job (never the run: each resend opens its own). */
+export function requestKeyOf(kind: LocalJobKind, route: string, call: LocalClaudeCall): string {
+  return createHash("sha256").update(JSON.stringify([kind, route, canonical(call)])).digest("hex");
+}
+
+function canonical(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(canonical);
+  if (v && typeof v === "object") {
+    return Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, canonical((v as Record<string, unknown>)[k])]));
+  }
+  return v;
+}
+
 /** What the runner sends back, already validated by the route's schema. */
 export interface LocalRunnerAnswer {
   ok: boolean;
@@ -106,6 +148,12 @@ export interface LocalAnswer {
   jobId: string;
   /** The model the CLI says wrote the answer. */
   model: string;
+  /**
+   * SOLO-PLAN-1125: the model whose catalog names state the call: the one that ran when we price
+   * it, else the Claude model the call asked for (a founder's plan may run a Claude model our
+   * catalog does not carry, e.g. an older Opus: its answer is still used).
+   */
+  costModel: string;
   text: string | null;
   structured: unknown;
   usage: LocalUsage;
@@ -121,6 +169,8 @@ export class LocalRunnerError extends Error {
     message: string,
     readonly jobId: string,
     readonly runnerLastSeenAt: Date | null,
+    /** SOLO-PLAN-1125: the work item is still waiting for the runner; resending the same call receives its answer. */
+    readonly answerKept: boolean = false,
   ) {
     super(message);
     this.name = "LocalRunnerError";
@@ -138,6 +188,8 @@ export function localFailureResponse(err: LocalRunnerError): { status: number; b
       retryable: err.code !== "local_runner_failed",
       jobId: err.jobId,
       runnerLastSeenAt: err.runnerLastSeenAt?.toISOString() ?? null,
+      answerKept: err.answerKept,
+      ...(err.answerKept ? { retryAfterSeconds: RESUME_AFTER_SECONDS } : {}),
       servedBy: "local-claude-code",
     },
   };
@@ -146,12 +198,12 @@ export function localFailureResponse(err: LocalRunnerError): { status: number; b
 /** What the person reads in the chat when their runner is away (no internal words). */
 export function localFailureChatMessage(err: LocalRunnerError): string {
   if (err.code === "local_runner_waiting") {
-    return "Your AI runs on your own Claude Code, and the distribute.you app on your computer is not connected right now. Open the app (signed in to Claude Code) and send your message again.";
+    return "Your AI runs on your own Claude, and it has not picked up this message yet. Your Claude takes the waiting work each time it runs (your Claude routine, about once an hour). Send your message again once it has run.";
   }
   if (err.code === "local_runner_timeout") {
-    return "Your Claude Code took too long to answer on your computer. Send your message again in a moment.";
+    return "Your Claude took too long to answer. Send your message again in a moment.";
   }
-  return `Your Claude Code on your computer could not answer: ${err.message}`;
+  return `Your Claude could not answer: ${err.message}`;
 }
 
 // --- the registry of declaring orgs (in memory, loaded from the store) ------------
@@ -221,21 +273,33 @@ export const LOCAL_FAMILIES = [
 /** Families that still run on a platform or vendor key for a declaring org, and why. */
 export const NOT_LOCAL_FAMILIES = [
   { family: "image generation", reason: "Claude does not generate images." },
-  { family: "audio and video transcription", reason: "Claude Code takes no audio or video input." },
+  {
+    family: "voice notes sent to an assistant line (/orgs/transcriptions)",
+    reason: "short inline audio still runs on a platform model; a long recording runs on our own server through /orgs/media-transcriptions.",
+  },
   { family: "embeddings and relevance scoring (/orgs/rag)", reason: "Claude has no embeddings model." },
   { family: "completions and judgments with an image input", reason: "the work item carries text only; the image would need to reach the user's machine." },
   { family: "completions with the brand's own MCP tools (brandTools)", reason: "those tools run on our side with the brand's credentials; not wired to the local runner yet." },
+] as const;
+
+/** Families that run on OUR OWN server for every org, declared or not: no vendor is paid (REELS-1124). */
+export const ON_OUR_SERVER_FAMILIES = [
+  {
+    family: "transcription of a long audio or video recording (/orgs/media-transcriptions)",
+    reason: "an open speech model on our own server, charged $0.",
+  },
 ] as const;
 
 export interface LocalLlmState {
   declared: boolean;
   declaredAt: string | null;
   declaredByUserId: string | null;
-  runner: { connected: boolean; lastSeenAt: string | null; name: string | null; version: string | null };
+  runner: { connected: boolean; lastSeenAt: string | null; name: string | null; version: string | null; kind: RunnerKind | null };
   pendingCalls: number;
   usageLast30Days: { calls: number; inputTokens: number; outputTokens: number; notionalCostUsd: number; chargedUsd: 0 };
   runsLocally: readonly string[];
   stillOnPlatform: ReadonlyArray<{ family: string; reason: string }>;
+  runsOnOurServer: ReadonlyArray<{ family: string; reason: string }>;
 }
 
 export async function localLlmState(orgId: string, now = new Date()): Promise<LocalLlmState> {
@@ -251,15 +315,17 @@ export async function localLlmState(orgId: string, now = new Date()): Promise<Lo
     declaredAt: org?.declared ? (org.declaredAt?.toISOString() ?? null) : null,
     declaredByUserId: org?.declared ? org.declaredByUserId : null,
     runner: {
-      connected: seen !== null && now.getTime() - seen.getTime() <= RUNNER_CONNECTED_WITHIN_MS,
+      connected: runnerConnected(seen, org?.runnerKind ?? null, now),
       lastSeenAt: seen?.toISOString() ?? null,
       name: org?.runnerName ?? null,
       version: org?.runnerVersion ?? null,
+      kind: org?.runnerKind ?? null,
     },
     pendingCalls: pending,
     usageLast30Days: { ...usage, chargedUsd: 0 },
     runsLocally: LOCAL_FAMILIES,
     stillOnPlatform: NOT_LOCAL_FAMILIES,
+    runsOnOurServer: ON_OUR_SERVER_FAMILIES,
   };
 }
 
@@ -274,7 +340,7 @@ export interface DeclaredLocalOrgView {
   orgId: string;
   declaredAt: string | null;
   declaredByUserId: string | null;
-  runner: { connected: boolean; lastSeenAt: string | null; name: string | null; version: string | null };
+  runner: { connected: boolean; lastSeenAt: string | null; name: string | null; version: string | null; kind: RunnerKind | null };
   pendingCalls: number;
 }
 
@@ -285,10 +351,11 @@ export async function declaredLocalOrgs(orgIds?: string[], now = new Date()): Pr
     declaredAt: o.declaredAt?.toISOString() ?? null,
     declaredByUserId: o.declaredByUserId,
     runner: {
-      connected: o.runnerLastSeenAt !== null && now.getTime() - o.runnerLastSeenAt.getTime() <= RUNNER_CONNECTED_WITHIN_MS,
+      connected: runnerConnected(o.runnerLastSeenAt, o.runnerKind, now),
       lastSeenAt: o.runnerLastSeenAt?.toISOString() ?? null,
       name: o.runnerName,
       version: o.runnerVersion,
+      kind: o.runnerKind,
     },
     pendingCalls: o.pendingCalls,
   }));
@@ -301,6 +368,8 @@ const TIER_MODEL: Record<CapabilityTier, string> = {
   strong: "claude-sonnet-5-5",
   frontier: "claude-opus-5-5",
 };
+/** A Claude model id as the CLI reports it (`claude-opus-4-6`, `claude-sonnet-5-5`, a dated build). */
+const CLAUDE_MODEL_ID = /^claude-[a-z0-9.-]+$/i;
 /** Owner rule: nothing goes to Haiku 4.5. */
 const BANNED_MODEL = /haiku-4-5|haiku-4\.5/i;
 
@@ -339,9 +408,10 @@ function pricedClaudeModel(modelId: string): { apiModelId: string; costPrefix: s
  * them at list, so the Rating reads what that writing would cost through a key.
  * Idempotent per job (a retried post never states a call twice).
  */
-export function localCostItems(answer: { jobId: string; model: string; usage: LocalUsage }): CostItem[] {
-  const priced = pricedClaudeModel(answer.model);
-  if (!priced) throw new Error(`[local-llm] job ${answer.jobId}: "${answer.model}" is not a Claude model this service prices`);
+export function localCostItems(answer: { jobId: string; model: string; costModel?: string; usage: LocalUsage }): CostItem[] {
+  const costModel = answer.costModel ?? answer.model;
+  const priced = pricedClaudeModel(costModel);
+  if (!priced) throw new Error(`[local-llm] job ${answer.jobId}: "${costModel}" is not a Claude model this service prices`);
   const u = answer.usage;
   if (typeof u.inputTokens !== "number" || typeof u.outputTokens !== "number") {
     throw new Error(`[local-llm] job ${answer.jobId}: the runner reported no token usage, the call cannot be stated`);
@@ -383,10 +453,15 @@ export interface ServedLlmNeeds {
 
 /**
  * Which model serves each stated LLM for one org. A non-local org runs every LLM
- * as stated. A local org runs a Claude model it names as itself; any other LLM
+ * as stated, except one whose provider is known to have no platform key (`runsAsStated: null`). A local org runs a Claude model it names as itself; any other LLM
  * runs on the Claude model of its tier (the same `localClaudeModelFor` the calls use).
  */
-export function servedLlmsFor(llms: readonly string[], local: boolean, needs: ServedLlmNeeds = {}): ServedLlmAnswer[] {
+export function servedLlmsFor(
+  llms: readonly string[],
+  local: boolean,
+  needs: ServedLlmNeeds = {},
+  hasNoPlatformKey: (provider: string) => boolean = providerHasNoPlatformKey,
+): ServedLlmAnswer[] {
   const asked = needs.webSearch === true || needs.imageUrl === true;
   return llms.map((llm) => {
     const slash = llm.indexOf("/");
@@ -398,6 +473,11 @@ export function servedLlmsFor(llms: readonly string[], local: boolean, needs: Se
       resolved = resolveModel(provider as Provider, model);
     } catch (err) {
       return { llm, runsAsStated: null, error: err instanceof Error ? err.message : String(err) };
+    }
+    // OPEN-LLM-FREE-1124: a provider known to have no platform key serves nothing, so the script naming it is
+    // never drawn. (A local org's call runs on its own Claude Code: no platform key involved.)
+    if (!local && hasNoPlatformKey(resolved.provider)) {
+      return { llm, runsAsStated: null, error: `no platform key for ${resolved.provider}` };
     }
     const modelId = local ? localClaudeModelFor(resolved, provider as Provider, model) : resolved.apiModelId;
     const servedProvider = local ? "anthropic" : resolved.provider;
@@ -423,6 +503,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * Hands one call to the org's runner and waits for its answer. Throws a named
  * `LocalRunnerError` when nobody picks it up in time, when the runner takes too
  * long, or when the runner reports a failure. Never calls a vendor.
+ *
+ * SOLO-PLAN-1125: the caller holds the request `pickupWaitMs` (then
+ * `answerWaitMs` once claimed); the work item itself lives `jobLifetimeMs`. A
+ * caller that stops waiting leaves it waiting (`answerKept`), and an identical
+ * call made later attaches to it or receives its answer. A chat round's job
+ * ends with its caller (it cannot resend).
  */
 export async function runLocally(args: {
   orgId: string;
@@ -431,41 +517,87 @@ export async function runLocally(args: {
   runId: string | null;
   call: LocalClaudeCall;
   signal?: AbortSignal;
+  /**
+   * SOLO-PLAN-1125: the job a resumed call names (`x-llm-job-id`). Answered whatever the body (a prompt may
+   * carry the current time), when it is this org's and has not ended; else the call is handled as new.
+   */
+  resumeJobId?: string | null;
 }): Promise<LocalAnswer> {
   if (BANNED_MODEL.test(args.call.model)) throw new Error(`[local-llm] refusing to ask for ${args.call.model} (owner rule)`);
   const s = localLlmStore();
-  const now = Date.now();
-  const job = await s.enqueue({
-    orgId: args.orgId,
-    kind: args.kind,
-    route: args.route,
-    runId: args.runId,
-    request: args.call,
-    pickupDeadlineAt: new Date(now + pickupWaitMs()),
-    answerDeadlineAt: new Date(now + pickupWaitMs() + answerWaitMs()),
-  });
-  console.log(`[local-llm] org="${args.orgId}" job="${job.id}" kind=${args.kind} route=${args.route} model=${args.call.model} queued`);
+  const startedAt = Date.now();
+  const longLived = !SHORT_LIVED_KINDS.includes(args.kind);
+  const requestKey = longLived ? requestKeyOf(args.kind, args.route, args.call) : null;
+  let job: LocalJobRow | null = null;
+  if (args.resumeJobId) {
+    const named = await s.getJob(args.resumeJobId);
+    if (named && named.orgId === args.orgId && named.status !== "expired") {
+      job = named;
+      console.log(`[local-llm] org="${args.orgId}" job="${named.id}" resumed by x-llm-job-id (status=${named.status})`);
+    } else {
+      console.warn(`[local-llm] org="${args.orgId}" x-llm-job-id="${args.resumeJobId}" ${named && named.orgId === args.orgId ? "has ended" : "is not this org's"}: handled as a new call`);
+    }
+  }
+  if (!job && requestKey) job = await s.findReusable(args.orgId, requestKey, new Date(startedAt), new Date(startedAt - jobLifetimeMs()));
+  if (job) {
+    console.log(`[local-llm] org="${args.orgId}" job="${job.id}" kind=${args.kind} route=${args.route} resent call attached (status=${job.status}, waiting since ${job.createdAt.toISOString()})`);
+  } else {
+    const pickupDeadlineAt = new Date(startedAt + (longLived ? jobLifetimeMs() : pickupWaitMs()));
+    job = await s.enqueue({
+      orgId: args.orgId,
+      kind: args.kind,
+      route: args.route,
+      runId: args.runId,
+      request: args.call,
+      requestKey,
+      pickupDeadlineAt,
+      answerDeadlineAt: new Date(pickupDeadlineAt.getTime() + (longLived ? claimAnswerWindowMs() : answerWaitMs())),
+    });
+    console.log(`[local-llm] org="${args.orgId}" job="${job.id}" kind=${args.kind} route=${args.route} model=${args.call.model} queued`);
+  }
+  const jobId = job.id;
 
   for (;;) {
-    const current = await s.getJob(job.id);
-    if (!current) throw new Error(`[local-llm] job ${job.id} vanished`);
-    if (current.status === "done" || current.status === "failed" || current.status === "expired") {
+    const current = await s.getJob(jobId);
+    if (!current) throw new Error(`[local-llm] job ${jobId} vanished`);
+    if (current.status === "done" || current.status === "failed") {
+      await s.markDelivered(jobId, new Date());
       return finished(current);
     }
+    if (current.status === "expired") return finished(current);
     const t = new Date();
-    const deadline = current.status === "pending" ? current.pickupDeadlineAt : current.answerDeadlineAt;
-    if (args.signal?.aborted || t >= deadline) {
-      const code: LocalFailureCode = current.status === "pending" ? "local_runner_waiting" : "local_runner_timeout";
-      const reason = args.signal?.aborted ? "caller_left" : code;
-      if (await s.expire(job.id, reason, t)) {
-        const org = await s.getOrg(args.orgId);
-        console.warn(`[local-llm] org="${args.orgId}" job="${job.id}" ${code} (runner last seen ${org?.runnerLastSeenAt?.toISOString() ?? "never"})`);
+    const pending = current.status === "pending";
+    const jobDeadline = pending ? current.pickupDeadlineAt : current.answerDeadlineAt;
+    const callerDeadline = pending
+      ? new Date(startedAt + pickupWaitMs())
+      : new Date(Math.max(startedAt, current.claimedAt?.getTime() ?? startedAt) + answerWaitMs());
+    const aborted = args.signal?.aborted === true;
+    if (aborted || t >= jobDeadline || t >= callerDeadline) {
+      const code: LocalFailureCode = pending ? "local_runner_waiting" : "local_runner_timeout";
+      const org = await s.getOrg(args.orgId);
+      if (longLived && t < jobDeadline) {
+        console.warn(
+          `[local-llm] org="${args.orgId}" job="${jobId}" ${code}: the caller stops waiting, the call stays queued until ${jobDeadline.toISOString()} (runner last seen ${org?.runnerLastSeenAt?.toISOString() ?? "never"})`,
+        );
         throw new LocalRunnerError(
           code,
-          code === "local_runner_waiting"
-            ? `Waiting for the local runner: this org's LLM runs on the user's own Claude Code, and no runner picked up the call within ${Math.round(pickupWaitMs() / 1000)} s.`
-            : `The local runner picked up the call but sent no answer within ${Math.round(answerWaitMs() / 1000)} s.`,
-          job.id,
+          pending
+            ? `Waiting for the local runner: this org's LLM runs on the user's own Claude, and no runner picked up the call within ${Math.round(pickupWaitMs() / 1000)} s. The call stays queued until ${jobDeadline.toISOString()}: send the same call again to receive its answer.`
+            : `The local runner picked up the call but sent no answer within ${Math.round(answerWaitMs() / 1000)} s. The call stays open until ${jobDeadline.toISOString()}: send the same call again to receive its answer.`,
+          jobId,
+          org?.runnerLastSeenAt ?? null,
+          true,
+        );
+      }
+      const reason = aborted ? "caller_left" : code;
+      if (await s.expire(jobId, reason, t)) {
+        console.warn(`[local-llm] org="${args.orgId}" job="${jobId}" ${code} (runner last seen ${org?.runnerLastSeenAt?.toISOString() ?? "never"})`);
+        throw new LocalRunnerError(
+          code,
+          pending
+            ? "Waiting for the local runner: this org's LLM runs on the user's own Claude, and no runner picked up the call in time."
+            : "The local runner picked up the call but sent no answer in time.",
+          jobId,
           org?.runnerLastSeenAt ?? null,
         );
       }
@@ -478,9 +610,11 @@ export async function runLocally(args: {
 function finished(job: LocalJobRow): LocalAnswer {
   if (job.status === "done") {
     const r = (job.result ?? {}) as { text?: unknown; structured?: unknown };
+    const model = job.model ?? "unknown";
     return {
       jobId: job.id,
-      model: job.model ?? "unknown",
+      model,
+      costModel: pricedClaudeModel(model) ? model : (job.request as LocalClaudeCall).model,
       text: typeof r.text === "string" ? r.text : null,
       structured: r.structured ?? null,
       usage: job.usage,
@@ -492,8 +626,15 @@ function finished(job: LocalJobRow): LocalAnswer {
   throw new LocalRunnerError("local_runner_timeout", `The local call ended: ${job.error ?? "expired"}.`, job.id, null);
 }
 
+/** How a call's size is counted when the runner reports none: ~4 characters a token (Anthropic's rule of thumb), rounded up. */
+export const USAGE_COUNTED_BY_US = "chat-service: ~4 characters per token, from the work item and the answer";
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
 /** Turns the runner's posted answer into what is stored; refuses what cannot be served. */
 export function answerOutcome(job: LocalJobRow, a: LocalRunnerAnswer): LocalAnswerOutcome {
+  const call = job.request as LocalClaudeCall;
   const usage: LocalUsage = {
     inputTokens: a.usage?.inputTokens ?? null,
     outputTokens: a.usage?.outputTokens ?? null,
@@ -502,23 +643,44 @@ export function answerOutcome(job: LocalJobRow, a: LocalRunnerAnswer): LocalAnsw
     notionalCostUsd: a.notionalCostUsd ?? null,
     durationMs: a.durationMs ?? null,
   };
-  const model = a.model ?? null;
+  // The CLI names a context variant in brackets (`claude-opus-4-6[1m]`): the model is the id before it.
+  // SOLO-PLAN-1125: a founder's routine answers inside a Claude chat and may not know its model id:
+  // the answer is then stated as the Claude model the call asked for.
+  const model = a.model ? a.model.trim().replace(/\[[^\]]*\]$/, "") : a.ok ? call.model : null;
   if (!a.ok) return { ok: false, error: a.error ?? "The local runner reported a failure without a message.", model, usage };
-  if (!model) return { ok: false, error: "The runner's answer did not say which model wrote it (the CLI's init `model`).", model, usage };
+  if (!model) return { ok: false, error: "The runner's answer did not say which model wrote it.", model, usage };
   if (BANNED_MODEL.test(model)) return { ok: false, error: `The answer was written by ${model}, a model we never use (owner rule).`, model, usage };
-  if (!pricedClaudeModel(model)) return { ok: false, error: `The answer was written by "${model}", not a Claude model this service prices: the call could not be credited to the model that ran.`, model, usage };
-  if (typeof usage.inputTokens !== "number" || typeof usage.outputTokens !== "number") {
-    return { ok: false, error: "The answer carries no token usage (`usage.inputTokens` + `usage.outputTokens`, the CLI's result usage): the call could not be stated on its run.", model, usage };
+  // SOLO-PLAN-1125: a founder's Claude plan runs whatever Claude model their app picks (older, newer, a
+  // variant): any real Claude model's answer is used; one we do not price is stated under the model
+  // the call asked for (`costModel`). Only a non-Claude model is refused.
+  if (!pricedClaudeModel(model) && !CLAUDE_MODEL_ID.test(model)) {
+    return { ok: false, error: `The answer was written by "${model}", which is not a Claude model: answer with Claude (claude -p).`, model, usage };
   }
-  const call = job.request as LocalClaudeCall;
+  let body: { structured: unknown } | { text: string };
   if (call.jsonSchema) {
     if (a.structured === undefined || a.structured === null) {
       return { ok: false, error: "The call asked for a JSON schema and the answer carries no `structured` value (the CLI's structured_output).", model, usage };
     }
-    return { ok: true, result: { structured: a.structured }, model, usage };
+    body = { structured: a.structured };
+  } else {
+    if (typeof a.text !== "string") return { ok: false, error: "The answer carries no `text` (the CLI's result).", model, usage };
+    body = { text: a.text };
   }
-  if (typeof a.text !== "string") return { ok: false, error: "The answer carries no `text` (the CLI's result).", model, usage };
-  return { ok: true, result: { text: a.text }, model, usage };
+  // SOLO-PLAN-1125: a founder's routine answers inside a Claude chat and cannot read its own token
+  // counts. Its answer is used; the call's size is then counted by US from the work item and the
+  // answer (`estimateTokens`), and the stored result says so (`usageCountedBy`). A runner that
+  // reports its usage (the CLI) is stated as reported.
+  if (typeof usage.inputTokens !== "number" || typeof usage.outputTokens !== "number") {
+    const counted: LocalUsage = {
+      ...usage,
+      inputTokens: estimateTokens(call.systemPrompt) + estimateTokens(call.prompt) + (call.jsonSchema ? estimateTokens(JSON.stringify(call.jsonSchema)) : 0),
+      outputTokens: estimateTokens("text" in body ? body.text : JSON.stringify(body.structured)),
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+    };
+    return { ok: true, result: { ...body, usageCountedBy: USAGE_COUNTED_BY_US }, model, usage: counted };
+  }
+  return { ok: true, result: body, model, usage };
 }
 
 export function toWorkItem(job: LocalJobRow): LocalWorkItem {
@@ -534,14 +696,14 @@ export function toWorkItem(job: LocalJobRow): LocalWorkItem {
 /** Long-poll claim: returns as soon as work exists, or empty after `waitMs`. Marks the runner seen. */
 export async function claimWork(
   orgId: string,
-  opts: { max: number; waitMs: number; runner: { name: string | null; version: string | null }; signal?: AbortSignal },
+  opts: { max: number; waitMs: number; runner: { name: string | null; version: string | null; kind?: RunnerKind | null }; signal?: AbortSignal },
 ): Promise<LocalWorkItem[]> {
   const s = localLlmStore();
   const until = Date.now() + Math.min(opts.waitMs, CLAIM_MAX_WAIT_MS);
   for (;;) {
     const now = new Date();
-    await s.touchRunner(orgId, now, opts.runner);
-    const jobs = await s.claim(orgId, Math.min(opts.max, CLAIM_MAX_ITEMS), now);
+    await s.touchRunner(orgId, now, { name: opts.runner.name, version: opts.runner.version, kind: opts.runner.kind ?? null });
+    const jobs = await s.claim(orgId, Math.min(opts.max, CLAIM_MAX_ITEMS), now, claimAnswerWindowMs());
     if (jobs.length > 0) {
       console.log(`[local-llm] org="${orgId}" runner claimed ${jobs.length} job(s): ${jobs.map((j) => j.id).join(",")}`);
       return jobs.map(toWorkItem);

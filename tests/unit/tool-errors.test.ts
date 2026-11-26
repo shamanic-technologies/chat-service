@@ -149,4 +149,35 @@ describe("formatToolError", () => {
 
     expect(result.error).toContain("nodes[x].config.url: http node missing url");
   });
+
+  // COPILOT-LATENCY-1125 (prod 2026-11-25): what the model saw made it loop.
+  it("tells the model a server-side failure will not clear within the turn", () => {
+    const raw = '[account-client] GET /v1/brands/b/offers/o/performance returned 502: {"error":"Failed to compute offer revenue","detail":"view refresher restarting, retry in a minute"}';
+    const result = formatToolError("get_offer_performance", raw);
+    expect(result.error).toContain("Failed on our side (502)");
+    expect(result.suggestion).toContain("do not call it again in this turn");
+    expect(result.suggestion).not.toContain("try again");
+  });
+
+  it("keeps a downstream 4xx wrapped in a 500 as the caller's error", () => {
+    const raw = '[api-client] POST /v1/x returned 500: {"error":"[svc] POST /y returned 400: bad field"}';
+    const result = formatToolError("run_operation", raw);
+    expect(result.suggestion).not.toContain("failed on our side");
+  });
+
+  it("reads a refused argument as the model's to fix, never a server configuration issue", () => {
+    const raw = "newStepOrTrigger.name is required: send newStepOrTrigger only for a new step or trigger";
+    const result = formatToolError("request_staff", raw);
+    expect(result.error).toContain("newStepOrTrigger.name is required");
+    expect(result.suggestion).not.toContain("server configuration");
+    expect(result.suggestion).toContain("call once more");
+  });
+
+  it("never invites a blind retry of refused arguments (open_page sent an empty id, prod replay 2026-11-25)", () => {
+    const raw = '[open_page] invalid arguments: [{"origin":"string","code":"too_small","minimum":1,"path":["campaignId"]}]';
+    const result = formatToolError("open_page", raw);
+    expect(result.suggestion).not.toContain("try again");
+    expect(result.suggestion).toContain("never sent empty");
+  });
 });
+

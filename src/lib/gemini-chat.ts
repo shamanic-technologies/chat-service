@@ -103,6 +103,8 @@ interface GeminiMessage {
 export type GeminiHistoryInput = Array<{
   role: "user" | "assistant";
   content: string;
+  /** When it was stored: history older than a day is dropped first (gemini-trim.ts STALE_HISTORY_MS). */
+  createdAt?: Date | string | null;
   toolCalls?: Array<{
     name: string;
     args: Record<string, unknown>;

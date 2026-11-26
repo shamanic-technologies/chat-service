@@ -8,9 +8,21 @@
  *     from the runs ledger: what their guest turns cost (each turn's run tree,
  *     under our org) plus what their plan org spent (the signup page's kind of
  *     org opened for their conversation). Never a message count.
- *  3. Every non-client together: $30 a day of our money. Non-client = any turn
- *     not run under a paying client's org: guests on every surface, and accounts
- *     that never paid (their org runs on the advance we gave).
+ *  3. Every non-client together: their debt to us may not grow by more than $20
+ *     in a UTC day versus the day before (SOLO-PLAN-1125, owner 2026-11-25:
+ *     « jamais plus que $20 par jour de plus par rapport à la veille »; replaced
+ *     the $30/day limit). Non-client = any turn not run under a paying client's
+ *     org: guests on every surface, and accounts that never paid. What their
+ *     debt grew today = what we spent on them today, measured on the runs
+ *     ledger; a repayment that day is not subtracted (a payer leaves the
+ *     non-clients), so the guard can only stop earlier, never later.
+ *
+ *  4. An account on the SOLO-FOUNDER plan (SOLO-PLAN-1125, owner 2026-11-25: « une dette
+ *     de crédit qu'on accepte jusqu'à -$2 »): billing-service owns its debt and plan
+ *     state and serves the verdict (`/solo-plan/ai-gate`, `may_use_our_keys`); past it
+ *     the turn runs no model and the notice links billing's upgrade page. Read first,
+ *     paid or not (a paid plan out of credit stops too). An org whose LLM runs on its
+ *     own Claude (LOCAL-CLAUDE-1116) spends none of our keys: never stopped by it.
  *
  * "Paying client" is a served billing fact: billing-service says the org paid
  * us money (`cash_paid_cents` > 0: payments net of refunds and lost disputes,
@@ -20,19 +32,20 @@
  * A turn past a limit runs NO model: the person gets the limit notice below.
  * The day's spend is re-measured every minute (`refreshDistrySpendDay`) and
  * stored per UTC day with its threshold; the first time it reaches the
- * threshold the owner is alerted once (Telegram + email), and the series is
+ * threshold the owner is alerted once (Telegram + email + WhatsApp), and the series is
  * served for dashboard v2 Monitoring (`distrySpendDays`).
  */
 import { and, count, eq, gte, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import type { db as Db } from "../db/index.js";
 import { distrySpendDays, distrySpendOrgs, distrySpendTurns } from "../db/schema.js";
 
-export const DISTRY_NONCLIENT_DAILY_USD_DEFAULT = 30;
+/** SOLO-PLAN-1125: the most the non-payers' debt may grow in one UTC day (owner: $20). */
+export const DISTRY_NONPAYER_DEBT_GROWTH_USD_DEFAULT = 20;
 export const DISTRY_VISITOR_USD_DEFAULT = 5;
 export const SIGN_UP_URL = "https://dashboard.distribute.you/sign-up";
 export const DASHBOARD_HOME_URL = "https://dashboard.distribute.you";
 /** Kevin's pro WhatsApp number (owner 2026-11-19), as a wa.me link. */
-export const OUR_WHATSAPP_URL = "https://wa.me/33680478402";
+export const OUR_WHATSAPP_URL = "https://wa.me/33680478702";
 
 /**
  * The automatic limit notice (no model call). A limit notice, never an answer
@@ -55,6 +68,43 @@ export function distryLimitNotice(guest: boolean): string {
   return guest ? DISTRY_LIMIT_NOTICE_GUEST : DISTRY_LIMIT_NOTICE_ACCOUNT;
 }
 
+/**
+ * SOLO-PLAN-1125: the notice for a solo-founder account past its plan's limit (fixed
+ * text, no model call), linking billing's upgrade page; never a dashboard link.
+ */
+export function soloPlanLimitNotice(upgradeUrl: string | null, nextStep: SoloNextStep | null = null): string {
+  return [
+    "Distry has used all the AI room on your distribute.you account for now.",
+    upgradeUrl
+      ? `Keep your campaigns and Distry going by upgrading your plan: ${upgradeUrl}`
+      : `Keep your campaigns and Distry going: ${NEXT_STEP_WORDS[nextStep?.action ?? "start_plan"](nextStep?.amount_cents ?? null)}`,
+  ].join("\n");
+}
+
+/** billing's `next_step` in the founder's words, for the notice while no upgrade page is configured (owner: no dashboard link). */
+const NEXT_STEP_WORDS: Record<SoloNextStep["action"], (amountCents: number | null) => string> = {
+  start_plan: (c) => `ask your AI to start your distribute.you plan${c ? ` ($${Math.round(c / 100)} a month)` : ""}.`,
+  start_paid_now: (c) => `ask your AI to start your paid distribute.you plan now${c ? ` ($${Math.round(c / 100)} a month)` : ""}.`,
+  add_layer: (c) => `ask your AI to add budget to your distribute.you plan${c ? ` ($${Math.round(c / 100)} a month)` : ""}.`,
+  update_card: () => "ask your AI to update the card on your distribute.you plan.",
+};
+
+export interface SoloNextStep {
+  action: "start_plan" | "start_paid_now" | "add_layer" | "update_card";
+  amount_cents: number | null;
+}
+
+/** billing-service `GET /internal/accounts/by-org/:orgId/solo-plan/ai-gate` (the fields read here). */
+export interface SoloAiGate {
+  on_solo_plan: boolean;
+  may_use_our_keys: boolean;
+  refused_reason: string | null;
+  debt_cents: string | null;
+  debt_limit_cents: number | null;
+  upgrade_url: string | null;
+  next_step: SoloNextStep | null;
+}
+
 function usdEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
   const raw = env[name];
   if (raw === undefined || raw.trim() === "") return fallback;
@@ -63,9 +113,9 @@ function usdEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number 
   return n;
 }
 
-/** The day's limit for all non-clients together, in cents (`DISTRY_NONCLIENT_DAILY_USD`, default $30). */
+/** The most all non-clients' debt may grow today, in cents (`DISTRY_NONPAYER_DEBT_GROWTH_USD`, default $20). */
 export function nonClientDailyCents(env: NodeJS.ProcessEnv = process.env): number {
-  return Math.round(usdEnv(env, "DISTRY_NONCLIENT_DAILY_USD", DISTRY_NONCLIENT_DAILY_USD_DEFAULT) * 100);
+  return Math.round(usdEnv(env, "DISTRY_NONPAYER_DEBT_GROWTH_USD", DISTRY_NONPAYER_DEBT_GROWTH_USD_DEFAULT) * 100);
 }
 
 /** One unidentified visitor's limit, in cents (`DISTRY_VISITOR_USD`, default $5). */
@@ -98,6 +148,10 @@ export interface DistrySpendDeps {
   ourOrgId: () => string;
   /** billing-service: has this org paid us money? */
   isPayingOrg: (orgId: string) => Promise<boolean>;
+  /** billing-service: the solo-founder plan's verdict for one org (SOLO-PLAN-1125). */
+  soloAiGate: (orgId: string) => Promise<SoloAiGate>;
+  /** This org's LLM runs on its own Claude (LOCAL-CLAUDE-1116): its turns spend none of our keys. */
+  isLocalLlmOrg: (orgId: string) => Promise<boolean>;
   /** runs-service: each run tree's committed cost (gross cents), all runs under one org. */
   runTreeCents: (orgId: string, runIds: string[]) => Promise<number>;
   /** runs-service: an org's whole ledger total (gross cents). */
@@ -109,7 +163,7 @@ export interface DistrySpendDeps {
 export type DistryVerdict =
   /** Runs. `tracked` = non-client spend (record the run after). */
   | { run: true; tracked: boolean; person: DistryPerson }
-  | { run: false; reason: "person_cap" | "day_cap"; notice: string; person: DistryPerson };
+  | { run: false; reason: "person_cap" | "day_cap" | "plan_limit"; notice: string; person: DistryPerson };
 
 /** PURE: the verdict from the measured figures (cents). The day first: it stops everyone. */
 export function distryCapVerdict(a: { guest: boolean; daySpend: number; dayCap: number; personSpend: number; personCap: number }): "day_cap" | "person_cap" | null {
@@ -158,6 +212,15 @@ export async function distryGate(deps: DistrySpendDeps, input: DistryPerson): Pr
   let person: DistryPerson = input;
   if (!input.guest) {
     if (input.turnOrgId === ours) return { run: true, tracked: false, person };
+    const solo = await deps.soloAiGate(input.turnOrgId);
+    if (solo.on_solo_plan && !solo.may_use_our_keys && !(await deps.isLocalLlmOrg(input.turnOrgId))) {
+      const key = accountKey(input.turnOrgId);
+      await deps.db.insert(distrySpendTurns).values({ day: utcDay(now), personKey: key, surface: input.surface, orgId: input.turnOrgId, runId: null, verdict: "plan_limit" });
+      console.warn(
+        `[chat-service] Distry: org ${input.turnOrgId} is past its solo-plan limit (${solo.refused_reason ?? "no reason"}, debt ${solo.debt_cents ?? "?"} of ${solo.debt_limit_cents ?? "?"} cents) on ${input.surface}: limit notice, no model call`,
+      );
+      return { run: false, reason: "plan_limit", notice: soloPlanLimitNotice(solo.upgrade_url, solo.next_step), person: { ...input, key } };
+    }
     if (await deps.isPayingOrg(input.turnOrgId)) return { run: true, tracked: false, person };
     person = { ...input, key: accountKey(input.turnOrgId), planOrgId: null };
   }
@@ -265,6 +328,8 @@ export async function measureDaySpendCents(deps: DistrySpendDeps, day: string): 
 
 export interface DistryAlertDeps {
   sendTelegram: (html: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** The owner's WhatsApp (owner 2026-11-25: on top of Telegram + email); throws unless sent. */
+  sendWhatsapp: (text: string, day: string) => Promise<void>;
   /** The staff email (transactional-email-service platform staff alert); one id per day, a repeat never mails twice. */
   sendEmail: (alert: DistryAlertFacts) => Promise<void>;
 }
@@ -280,11 +345,20 @@ export interface DistryAlertFacts {
 /** The Telegram text of the day's alert (HTML). */
 export function distryAlertTelegram(f: DistryAlertFacts): string {
   return [
-    `🚨 <b>Distry hit today's $${f.limitUsd} limit for non-clients</b>`,
-    `Spent on non-clients today (${f.day} UTC): <b>$${f.spentUsd}</b> of $${f.limitUsd}.`,
-    "Every non-client now gets the limit notice (sign up, or WhatsApp) instead of an answer, until midnight UTC. Paying clients are not affected.",
-    `Visitors stopped at their own $5 today: ${f.visitorsCut}. Messages refused by the day limit so far: ${f.turnsRefused}.`,
-    "Raise it with DISTRY_NONCLIENT_DAILY_USD in env/chat-service.env on the box.",
+    `🚨 <b>Non-payers' debt grew $${f.spentUsd} today, the most allowed is $${f.limitUsd} a day</b>`,
+    `What we spent on people who never paid today (${f.day} UTC): <b>$${f.spentUsd}</b> of $${f.limitUsd}.`,
+    "Every non-payer now gets the limit notice instead of an answer, until midnight UTC. Paying clients are not affected.",
+    `Visitors stopped at their own limit today: ${f.visitorsCut}. Messages refused by the day limit so far: ${f.turnsRefused}.`,
+    "Raise it with DISTRY_NONPAYER_DEBT_GROWTH_USD in env/chat-service.env on the box.",
+  ].join("\n");
+}
+
+/** The WhatsApp text of the same alert (plain text). */
+export function distryAlertWhatsapp(f: DistryAlertFacts): string {
+  return [
+    `Distry alert: non-payers' debt grew $${f.spentUsd} today (${f.day} UTC), the most allowed is $${f.limitUsd} a day.`,
+    "Every non-payer gets the limit notice instead of an answer until midnight UTC. Paying clients are not affected.",
+    `Visitors stopped at their own limit: ${f.visitorsCut}. Messages refused so far: ${f.turnsRefused}.`,
   ].join("\n");
 }
 
@@ -319,7 +393,7 @@ export async function refreshDistrySpendDay(deps: DistrySpendDeps & DistryAlertD
   if (spendCents < thresholdCents) return { day, spendCents, thresholdCents, alerted };
   await deps.db.update(distrySpendDays).set({ alertFiredAt: now }).where(and(eq(distrySpendDays.day, day), isNull(distrySpendDays.alertFiredAt)));
   const [row] = await deps.db.select().from(distrySpendDays).where(eq(distrySpendDays.day, day));
-  if (!row || (row.alertTelegramAt && row.alertEmailAt)) return { day, spendCents, thresholdCents, alerted };
+  if (!row || (row.alertTelegramAt && row.alertEmailAt && row.alertWhatsappAt)) return { day, spendCents, thresholdCents, alerted };
   const counts = await dayCounts(deps.db, day);
   const facts: DistryAlertFacts = {
     day,
@@ -342,6 +416,23 @@ export async function refreshDistrySpendDay(deps: DistrySpendDeps & DistryAlertD
       else {
         await deps.db.update(distrySpendDays).set({ alertTelegramAt: null }).where(eq(distrySpendDays.day, day));
         errors.push(`telegram: ${sent.error}`);
+      }
+    }
+  }
+  if (!row.alertWhatsappAt) {
+    // Claim first, like Telegram: a second process never sends it twice.
+    const claimed = await deps.db
+      .update(distrySpendDays)
+      .set({ alertWhatsappAt: now })
+      .where(and(eq(distrySpendDays.day, day), isNull(distrySpendDays.alertWhatsappAt)))
+      .returning({ day: distrySpendDays.day });
+    if (claimed.length > 0) {
+      try {
+        await deps.sendWhatsapp(distryAlertWhatsapp(facts), day);
+        alerted.push("whatsapp");
+      } catch (err) {
+        await deps.db.update(distrySpendDays).set({ alertWhatsappAt: null }).where(eq(distrySpendDays.day, day));
+        errors.push(`whatsapp: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
@@ -452,6 +543,38 @@ export async function isPayingOrgFromBilling(orgId: string, fetchImpl: typeof fe
   return paying;
 }
 
+/** billing-service GET /internal/accounts/by-org/:orgId/solo-plan/ai-gate: the plan's verdict for one turn (not cached: it moves with each spend). */
+export async function soloAiGateFromBilling(orgId: string, fetchImpl: typeof fetch = fetch): Promise<SoloAiGate> {
+  const res = await fetchImpl(`${process.env.BILLING_SERVICE_URL || "https://billing.mcpfactory.org"}/internal/accounts/by-org/${encodeURIComponent(orgId)}/solo-plan/ai-gate`, {
+    headers: { "x-api-key": env("BILLING_SERVICE_API_KEY") },
+    signal: AbortSignal.timeout(15_000),
+  });
+  const text = await res.text().catch(() => "");
+  if (!res.ok) throw new Error(`billing-service solo-plan ai-gate ${res.status}: ${text.slice(0, 300)}`);
+  const json = JSON.parse(text) as Partial<SoloAiGate>;
+  if (typeof json.on_solo_plan !== "boolean" || typeof json.may_use_our_keys !== "boolean") {
+    throw new Error(`billing-service solo-plan ai-gate answered no verdict: ${text.slice(0, 300)}`);
+  }
+  return {
+    on_solo_plan: json.on_solo_plan,
+    may_use_our_keys: json.may_use_our_keys,
+    refused_reason: typeof json.refused_reason === "string" ? json.refused_reason : null,
+    debt_cents: typeof json.debt_cents === "string" ? json.debt_cents : null,
+    debt_limit_cents: typeof json.debt_limit_cents === "number" ? json.debt_limit_cents : null,
+    upgrade_url: typeof json.upgrade_url === "string" ? json.upgrade_url : null,
+    next_step: readNextStep(json.next_step),
+  };
+}
+
+const NEXT_STEP_ACTIONS = new Set<string>(["start_plan", "start_paid_now", "add_layer", "update_card"]);
+
+function readNextStep(v: unknown): SoloNextStep | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as { action?: unknown; amount_cents?: unknown };
+  if (typeof o.action !== "string" || !NEXT_STEP_ACTIONS.has(o.action)) return null;
+  return { action: o.action as SoloNextStep["action"], amount_cents: typeof o.amount_cents === "number" ? o.amount_cents : null };
+}
+
 /** Test hook. */
 export function clearPayingCache(): void {
   payingCache.clear();
@@ -473,7 +596,7 @@ export async function sendDistryAlertEmail(f: DistryAlertFacts, fetchImpl: typeo
         budgetUsd: f.limitUsd,
         visitorsCapped: f.visitorsCut,
         messagesRefused: f.turnsRefused,
-        budgetEnvVar: "DISTRY_NONCLIENT_DAILY_USD",
+        budgetEnvVar: "DISTRY_NONPAYER_DEBT_GROWTH_USD",
       },
     }),
     signal: AbortSignal.timeout(30_000),

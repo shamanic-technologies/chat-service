@@ -32,6 +32,11 @@ export const sessions = pgTable(
     // DISTRY-WEB-CHAT-1117): the site's opaque visitor id, one conversation per
     // visitor. Set only by chat-service (POST /internal/copilot/web-messages).
     webVisitorId: text("web_visitor_id"),
+    // A Telegram chat with no account linked yet, writing to our bot (migration
+    // 0051, DISTRY-START-DOOR-1125): one conversation per chat, a guest under
+    // our line until they prove an email, then re-keyed to their account.
+    // Set only by chat-service (telegram-copilot.ts).
+    telegramChatId: text("telegram_chat_id"),
     // The email a web visitor gave to continue there (migration 0036): the page
     // conversation is handed to crm-service, whose Lead event campaign writes by email.
     channelEmail: text("channel_email"),
@@ -61,6 +66,7 @@ export const sessions = pgTable(
     index("sessions_org_user_config_updated_idx").on(table.orgId, table.userId, table.configKey, table.updatedAt),
     index("sessions_channel_phone_idx").on(table.channelPhone),
     index("sessions_web_visitor_idx").on(table.webVisitorId),
+    index("sessions_telegram_chat_idx").on(table.telegramChatId),
   ],
 );
 
@@ -381,6 +387,61 @@ export const transcriptions = pgTable("transcriptions", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });
 
+export interface MediaTranscriptSegment {
+  startSeconds: number;
+  endSeconds: number;
+  text: string;
+}
+
+export interface MediaTranscriptWord {
+  startSeconds: number;
+  endSeconds: number;
+  word: string;
+  probability: number;
+}
+
+// REELS-1124 (migration 0047): one transcription of a long audio/video
+// recording run on OUR OWN server (the transcriber sidecar), charged $0: no key, no
+// cost line. Org-scoped. The source URL is stored WITHOUT its query string.
+// `segments` / `words` are large (a 2 h recording ≈ 1.5 MB): select them only
+// when a caller asks for them.
+export const mediaTranscriptions = pgTable(
+  "media_transcriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    idempotencyKey: text("idempotency_key"),
+    status: text("status").notNull().$type<"downloading" | "transcribing" | "completed" | "failed">(),
+    sourceUrl: text("source_url").notNull(),
+    mimeType: text("mime_type"),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    languageHint: text("language_hint"),
+    runId: uuid("run_id"),
+    model: text("model"),
+    language: text("language"),
+    languageProbability: real("language_probability"),
+    durationSeconds: real("duration_seconds"),
+    transcribedSeconds: real("transcribed_seconds"),
+    computeSeconds: real("compute_seconds"),
+    segments: jsonb("segments").$type<MediaTranscriptSegment[]>(),
+    words: jsonb("words").$type<MediaTranscriptWord[]>(),
+    segmentCount: integer("segment_count"),
+    wordCount: integer("word_count"),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("media_transcriptions_org_idempotency_idx")
+      .on(table.orgId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    index("media_transcriptions_status_idx").on(table.status),
+  ],
+);
+
 /** One inbound channel message crm-service handed over (migration 0024). */
 export const channelInboundMessages = pgTable(
   "channel_inbound_messages",
@@ -422,7 +483,8 @@ export const copilotProactiveTurns = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     kind: text("kind").notNull(),
     orgId: text("org_id").notNull(),
-    brandId: text("brand_id").notNull(),
+    // NULL for a `hello` (DISTRY-CHANNEL-HANDOFF-1125, migration 0048): the founder may have no brand yet.
+    brandId: text("brand_id"),
     recipientUserId: text("recipient_user_id").notNull(),
     sessionId: uuid("session_id").notNull(),
     delivery: text("delivery").notNull().$type<"telegram" | "whatsapp" | "web">(),
@@ -435,6 +497,25 @@ export const copilotProactiveTurns = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("copilot_proactive_turns_org_key_idx").on(table.orgId, table.idempotencyKey)],
+);
+
+// The web signup hands the founder to Distry (migration 0048, DISTRY-CHANNEL-HANDOFF-1125):
+// one row per person, the campaign they built and paid for (created stopped, waiting for
+// their first message to Distry) and the hellos Distry sent first (lib/copilot-handoff.ts).
+export const copilotHandoffs = pgTable(
+  "copilot_handoffs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: text("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    campaignId: text("campaign_id"),
+    campaignStartedAt: timestamp("campaign_started_at", { withTimezone: true }),
+    campaignStartedVia: text("campaign_started_via"),
+    hellos: jsonb("hellos").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("copilot_handoffs_org_user_idx").on(table.orgId, table.userId)],
 );
 
 // One Copilot answer per Lead event occurrence (migration 0028,
@@ -585,6 +666,12 @@ export const localLlmOrgs = pgTable("local_llm_orgs", {
   runnerLastSeenAt: timestamp("runner_last_seen_at", { withTimezone: true }),
   runnerName: text("runner_name"),
   runnerVersion: text("runner_version"),
+  /** SOLO-PLAN-1125 (migration 0049): `app` (an installed runner polling all the time) | `routine` (the founder's Claude, about hourly). */
+  runnerKind: text("runner_kind"),
+  /** When the founder was told no runner took their work for ~2 h; cleared when a runner claims again. */
+  silenceNotifiedAt: timestamp("silence_notified_at", { withTimezone: true }),
+  /** The door that notice went out on (telegram | whatsapp | chat). */
+  silenceNoticeChannel: text("silence_notice_channel"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -618,9 +705,16 @@ export const localLlmJobs = pgTable(
     /** What the CLI says the call WOULD cost at API prices: measured, never billed. */
     notionalCostUsd: real("notional_cost_usd"),
     durationMs: integer("duration_ms"),
+    /** SOLO-PLAN-1125: hash of (kind, route, work item): a resent identical call attaches to this job. */
+    requestKey: text("request_key"),
+    /** When a caller received this answer; a delivered answer is never handed out again. */
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("local_llm_jobs_org_status_idx").on(table.orgId, table.status, table.createdAt)],
+  (table) => [
+    index("local_llm_jobs_org_status_idx").on(table.orgId, table.status, table.createdAt),
+    index("local_llm_jobs_org_request_key_idx").on(table.orgId, table.requestKey),
+  ],
 );
 
 // ---------------------------------------------------------------------------
@@ -645,7 +739,7 @@ export const distrySpendTurns = pgTable(
     /** The org the turn runs under: ours for a guest, the account's otherwise. */
     orgId: text("org_id").notNull(),
     runId: text("run_id"),
-    /** ran | person_cap | day_cap */
+    /** ran | person_cap | day_cap | plan_limit (SOLO-PLAN-1125) */
     verdict: text("verdict").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -677,6 +771,8 @@ export const distrySpendDays = pgTable("distry_spend_days", {
   alertFiredAt: timestamp("alert_fired_at", { withTimezone: true }),
   alertTelegramAt: timestamp("alert_telegram_at", { withTimezone: true }),
   alertEmailAt: timestamp("alert_email_at", { withTimezone: true }),
+  /** SOLO-PLAN-1125 (migration 0050): the owner's WhatsApp copy of the alert. */
+  alertWhatsappAt: timestamp("alert_whatsapp_at", { withTimezone: true }),
   /** The last delivery error per channel, null once delivered. */
   alertError: text("alert_error"),
 });

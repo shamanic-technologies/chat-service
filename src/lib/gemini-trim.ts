@@ -9,6 +9,14 @@
 // messages are always preserved so the model still sees the immediate turn.
 // ---------------------------------------------------------------------------
 
+// A message stored more than STALE_HISTORY_MS before this turn is dropped first
+// (COPILOT-LATENCY-1125, prod 2026-11-25): the dashboard keeps one Copilot
+// session per person for weeks, so "état des lieux de mes offers" re-sent ~60k
+// tokens of three-week-old hot-lead turns on each of its 11 rounds (107-124k
+// input a call, 4 min for one answer). The account itself is read fresh every
+// turn (client brief, situation brief, tools); the last exchange is always kept.
+export const STALE_HISTORY_MS = 24 * 60 * 60_000;
+
 export const GEMINI_TRIM_TRIGGER_TOKENS = 100_000;
 export const GEMINI_TRIM_TARGET_TOKENS = 60_000;
 const CHARS_PER_TOKEN = 4;
@@ -17,6 +25,8 @@ const MIN_KEEP_MESSAGES = 2;
 export interface HistoryMessage {
   role: "user" | "assistant";
   content: string;
+  /** When the message was stored; a message without it is never dropped for its age. */
+  createdAt?: Date | string | null;
   toolCalls?: Array<{
     name: string;
     args: Record<string, unknown>;
@@ -43,13 +53,18 @@ function estimateTokens(messages: HistoryMessage[]): number {
 
 export function trimGeminiHistoryToBudget(
   history: HistoryMessage[],
+  now: Date = new Date(),
 ): TrimResult {
-  const initialTokens = estimateTokens(history);
+  let working = history.slice();
+  const staleBefore = now.getTime() - STALE_HISTORY_MS;
+  while (working.length > MIN_KEEP_MESSAGES && isStale(working[0], staleBefore)) working.shift();
+  const droppedStale = working.length < history.length;
+
+  const initialTokens = estimateTokens(working);
   if (initialTokens <= GEMINI_TRIM_TRIGGER_TOKENS) {
-    return { history, trimmed: false, estimatedInputTokens: initialTokens };
+    return { history: working, trimmed: droppedStale, estimatedInputTokens: initialTokens };
   }
 
-  let working = history.slice();
   while (
     working.length > MIN_KEEP_MESSAGES &&
     estimateTokens(working) > GEMINI_TRIM_TARGET_TOKENS
@@ -62,4 +77,10 @@ export function trimGeminiHistoryToBudget(
     trimmed: true,
     estimatedInputTokens: estimateTokens(working),
   };
+}
+
+function isStale(m: HistoryMessage, staleBefore: number): boolean {
+  if (!m.createdAt) return false;
+  const at = new Date(m.createdAt).getTime();
+  return Number.isFinite(at) && at < staleBefore;
 }

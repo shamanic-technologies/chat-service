@@ -34,6 +34,20 @@ const MAX_CONNECT_RETRIES = 3;
 const RETRY_DELAYS_MS = [250, 500, 1000];
 
 /**
+ * A streamed call (`VendorConfig.streamsAnswer`) that sends no byte for this long
+ * is HUNG: cut and asked again on the same model (GLM-FLASH-502-1125). Measured on
+ * Z.ai 2026-11-25: headers under 1 s, chunks every <0.5 s while the model reasons;
+ * the hung calls sent nothing for 300 s. 60 s leaves two orders of magnitude.
+ */
+export const STREAM_SILENCE_MS = 60_000;
+
+/**
+ * Hung or cut streamed calls replayed before the call fails (3 attempts in all).
+ * The caller waits up to 600 s for a whole answer; a hang now costs 60 s, not 300 s.
+ */
+export const MAX_HUNG_RETRIES = 2;
+
+/**
  * Backoff schedule for a vendor RATE LIMIT (429), in ms — a SECOND, independent
  * budget from the connect-phase one above.
  *
@@ -155,6 +169,42 @@ export class VendorUnsupportedOptionError extends VendorProviderError {
  * long — so a persistently saturated vendor stays VISIBLE instead of being
  * smoothed away by the retry that precedes it.
  */
+/**
+ * The vendor sent nothing (no response headers) within the caller's silence
+ * limit (COPILOT-LATENCY-1125, owner 2026-11-25 « Limit must be 30s non? » → B).
+ * These calls do not stream: no byte arrives until the model's whole step is
+ * done, so "silent" means the step outlived the limit. Only the Copilot's /chat
+ * rounds pass one (a person is waiting); the turn moves to the next model of
+ * Distry's fallback order with what it already looked up.
+ */
+export class VendorSilentError extends VendorProviderError {
+  constructor(readonly vendor: VendorId, readonly model: string, readonly silentMs: number) {
+    super(`[vendor:${vendor}] "${model}" sent nothing for ${Math.round(silentMs / 1000)}s: the call was cut`);
+    this.name = "VendorSilentError";
+  }
+}
+
+/**
+ * A streamed call hung (no byte for `STREAM_SILENCE_MS`) or its stream ended
+ * before the answer did, on every attempt (GLM-FLASH-502-1125). No answer came
+ * back, so nothing is declared for it; the route answers 502 as for any other
+ * vendor failure, named.
+ */
+export class VendorHungError extends VendorProviderError {
+  constructor(readonly vendor: VendorId, readonly model: string, readonly attempts: number, readonly lastCause: string) {
+    super(`[vendor:${vendor}] "${model}" gave no whole answer on ${attempts} attempt(s): ${lastCause}`);
+    this.name = "VendorHungError";
+  }
+}
+
+/** The vendor's stream closed before its finish chunk: the answer never arrived whole. */
+export class VendorStreamCutError extends VendorProviderError {
+  constructor(message: string) {
+    super(message);
+    this.name = "VendorStreamCutError";
+  }
+}
+
 export class VendorRateLimitError extends VendorProviderError {
   /** Total attempts made, including the first. */
   readonly attempts: number;
@@ -169,6 +219,30 @@ export class VendorRateLimitError extends VendorProviderError {
     this.attempts = attempts;
     this.waitedMs = waitedMs;
     this.vendorMessage = vendorMessage;
+  }
+}
+
+/**
+ * The vendor refused for a cap that does not clear within the retry budget: a
+ * per-day / per-hour quota, or a `Retry-After` longer than we wait
+ * (OPEN-LLM-FREE-1124: a free tier's daily token cap answers 429 "tokens per day
+ * (TPD) ... try again in 7m12s"). Thrown on the FIRST such refusal, without
+ * burning the retry budget: waiting 13 s on a cap that lifts in minutes buys
+ * nothing. A `VendorRateLimitError` (nothing ran, nothing billed), so every route
+ * that answers a rate limit answers this one the same way; on our platform key the
+ * completion routes move the call down the fallback order instead.
+ */
+export class VendorQuotaExhaustedError extends VendorRateLimitError {
+  constructor(
+    message: string,
+    readonly vendor: VendorId,
+    readonly model: string,
+    /** Seconds the vendor asked us to wait, when it said. */
+    readonly retryAfterSeconds: number | null,
+    vendorMessage: string,
+  ) {
+    super(message, 1, 0, vendorMessage);
+    this.name = "VendorQuotaExhaustedError";
   }
 }
 
@@ -202,37 +276,15 @@ export interface VendorUsage {
 }
 
 /**
- * A vendor's time-of-day price schedule: OUR OWN copy of the vendor's published
- * rule, held here so a cost name can be built without a runtime call to
- * costs-service. That is deliberate, and it has a price: the same vendor rule is
- * written down in two repos. costs-service publishes it too, in its own grammar,
- * next to the price points — so a vendor that moves its schedule is a change in
- * BOTH places, and neither copy can be derived from the other by transforming a
- * string. Read the vendor's pricing page, then update both.
- *
- * The segments (`peakSegment` / `offPeakSegment`) are the literal name parts the
- * catalog uses, so the name this produces is byte-equal to a real row.
- *
- * A schedule can also be scoped to certain DAYS: DeepSeek charges peak rates on
- * weekdays only, from 2026-08-22T16:00Z. `peakDaysUtc` says which UTC weekdays
- * the windows apply on and `peakDaysFrom` says when that scope took effect —
- * before it, the windows applied every day, which is what the vendor's rule
- * actually was, so past instants keep resolving the way they were billed.
+ * A vendor that prices by time of day (DeepSeek): the literal name segments of
+ * its regime rows, so the name built is byte-equal to a real catalog row. That
+ * is ALL chat-service holds (DEEPSEEK-HOLIDAYS-1124, owner 2026-11-25: one
+ * source of truth). WHEN each regime applies (hours, weekdays, public holidays)
+ * is costs-service's `regimeHoursUtc` on those rows, read at every price refresh
+ * and evaluated by `selectPricingRegime` (`cost-names.ts`): a window or holiday
+ * change is a costs-service-only change, never an edit here.
  */
 export interface PricingRegimeSchedule {
-  /** UTC windows in which the peak regime applies, `"HH:MM-HH:MM"` each. */
-  peakWindowsUtc: string[];
-  /**
-   * UTC weekdays the peak windows apply on, `0` Sunday … `6` Saturday, as
-   * returned by `Date#getUTCDay`. Null when the vendor's peak applies every day.
-   */
-  peakDaysUtc: number[] | null;
-  /**
-   * The instant `peakDaysUtc` took effect. Null when the day scope has always
-   * been in force (or when there is none). Before it, every day carries the
-   * peak windows.
-   */
-  peakDaysFrom: Date | null;
   /** Name segment for the peak rows. */
   peakSegment: string;
   /** Name segment for every other hour. */
@@ -332,6 +384,20 @@ export type VendorConcurrency =
       /** Tier label → the rate limits published for THIS model at that tier. */
       tierLimits: Record<string, { rpm: number; tpm: number }>;
       /** What decides which tier applies, and what is NOT published. */
+      note: string;
+      source: string;
+      observedOn: string;
+    }
+  | {
+      /**
+       * The vendor publishes no in-flight cap, and the rates it does publish
+       * (requests / tokens per minute and per DAY on a free tier) are console
+       * facts per model we have not read with an account (OPEN-LLM-FREE-1124:
+       * no key on 2026-11-24). Nothing is typed here until it is read:
+       * `publishedConcurrency` answers null, and a daily cap that refuses a call
+       * moves it down the fallback order (`VendorQuotaExhaustedError`).
+       */
+      scope: "unpublished";
       note: string;
       source: string;
       observedOn: string;
@@ -585,6 +651,14 @@ export interface VendorConfig {
    */
   imageInput: boolean;
   /**
+   * True when every call to this vendor is STREAMED on the wire and reassembled
+   * here, so a call the vendor holds open without answering is seen within
+   * `STREAM_SILENCE_MS` and asked again on the SAME model (GLM-FLASH-502-1125).
+   * Callers still get one whole answer. Set only after a live probe of the
+   * vendor's stream (chunk shape, tool-call deltas, `usage` in the last chunk).
+   */
+  streamsAnswer: boolean;
+  /**
    * Fields a request carrying function TOOLS must add, per concrete model
    * (GEMINI-BRAND-TOOLS-1112). OpenAI refuses function tools beside its default
    * reasoning on /v1/chat/completions ("Function tools with reasoning_effort are
@@ -651,36 +725,15 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     docsUrl: "https://api-docs.deepseek.com",
     // DeepSeek splits the prompt count itself: prompt_tokens = hit + miss.
     readCachedTokens: (usage) => usage.prompt_cache_hit_tokens ?? 0,
-    // Both dimensions. The peak hours are DeepSeek's own, read off its pricing
-    // page and held here as our own copy; every other hour is off-peak.
-    // costs-service publishes the same vendor rule separately, alongside the
-    // price points — a schedule change is a change in both repos, and neither
-    // copy is a transformation of the other. The time-of-day rates take effect
-    // 2026-08-16T16:00Z and
-    // costs-service handled that with effective-dated price points — both
-    // regimes already carry today's identical rate — so the regime is selected
-    // by the clock, never by the date the price changed.
-    //
-    // The vendor scoped peak to WEEKDAYS from 00:00 Beijing on Sunday
-    // 2026-08-23 (= 2026-08-22T16:00Z): "off-peak rates applying throughout the
-    // day on weekends (Saturdays and Sundays, Beijing Time)". Its pricing page
-    // now reads "01:00 - 04:00 and 06:00 - 10:00 UTC, Monday through Friday"
-    // (read 2026-08-25).
-    //
-    // The vendor states the weekend in BEIJING days, which run Friday 16:00Z to
-    // Sunday 16:00Z, and we select on UTC days. The two agree only because every
-    // peak window ends by 10:00 UTC, so no window can land in the Beijing-weekend
-    // stretch that falls on a UTC weekday (Friday 16:00Z–24:00Z) nor in the UTC
-    // Sunday stretch that is already Beijing Monday (16:00Z–24:00Z). That is a
-    // fact about today's windows, not a law — `selectPricingRegime` asserts it
-    // rather than trusting it, and throws if a window ever crosses 16:00 UTC.
+    // Both dimensions: cache hits AND a peak/off-peak regime. Which instants are
+    // peak (01:00-04:00 / 06:00-10:00 UTC weekdays, weekends and Chinese public
+    // holidays off-peak, per DeepSeek's pricing page) is stated ONLY by
+    // costs-service's `regimeHoursUtc` on these rows (DEEPSEEK-HOLIDAYS-1124);
+    // here, only the name segments.
     pricing: {
       kind: "priced",
       cachedInput: true,
       regime: {
-        peakWindowsUtc: ["01:00-04:00", "06:00-10:00"],
-        peakDaysUtc: [1, 2, 3, 4, 5],
-        peakDaysFrom: new Date("2026-08-22T16:00:00Z"),
         peakSegment: "peak",
         offPeakSegment: "off-peak",
       },
@@ -726,6 +779,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     },
     maxOutputTokensField: "max_tokens",
     imageInput: true,
+    streamsAnswer: false,
     // DISTRY-THINKING-1122, probed live 2026-11-22: V4.1 Flash validates reasoning_effort (a junk value 422s
     // naming the set) and runs a tool call at high and max; thinking disabled = 0 reasoning tokens (none).
     thinkingLevels: { "deepseek-flash": ["none", "high", "max"] },
@@ -820,6 +874,10 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     },
     maxOutputTokensField: "max_tokens",
     imageInput: true,
+    // GLM-FLASH-502-1125, probed live 2026-11-25 on glm-5.3-flash: SSE headers in <1 s, chunks every <0.5 s
+    // (reasoning streams too), tool calls whole per index, `usage` (same fields) on the finish chunk. Not streamed,
+    // 15 calls in 48 h hung with no answer until undici's 300 s headers cut ("fetch failed" → 502).
+    streamsAnswer: true,
     // DISTRY-THINKING-1122, probed live 2026-11-22 with a function tool: GLM-5.3 and its Flash take
     // reasoning_effort low | high | max (medium → 400 code 1210 "please use low, high, or max"); never off.
     thinkingLevels: { "glm-5.3": ["low", "high", "max"], "glm-5.3-flash": ["low", "high", "max"] },
@@ -930,6 +988,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     },
     maxOutputTokensField: "max_tokens",
     imageInput: false,
+    streamsAnswer: false,
     structuredOutput: "json_schema",
     schemaEnforced: false,
     // Moonshot reasons the hardest of the three and answers the shortest while
@@ -1052,6 +1111,7 @@ export const VENDORS: Record<VendorId, VendorConfig> = {
     },
     maxOutputTokensField: "max_completion_tokens",
     imageInput: true,
+    streamsAnswer: false,
     toolCallRequestFields: { "gpt-6.1-terra": { reasoning_effort: "none" } },
     toolRoundsOnResponsesApi: ["gpt-6-astra", "gpt-6.1-sol"],
     // DISTRY-THINKING-1122, probed live 2026-11-22 with a function tool on /v1/responses:
@@ -1252,6 +1312,13 @@ export function vendorRejectsSampling(vendor: VendorId): boolean {
  * wait cannot hold the request open for five minutes.
  */
 export function parseRetryAfterMs(headerValue: string | null | undefined): number | null {
+  const ms = readRetryAfterMs(headerValue);
+  if (ms == null) return null;
+  return ms > MAX_RETRY_AFTER_MS ? null : ms;
+}
+
+/** The wait a `Retry-After` header asks for in ms, WITHOUT the ceiling; null when absent/unusable. */
+export function readRetryAfterMs(headerValue: string | null | undefined): number | null {
   if (!headerValue) return null;
   const raw = headerValue.trim();
   let ms: number | null = null;
@@ -1265,7 +1332,24 @@ export function parseRetryAfterMs(headerValue: string | null | undefined): numbe
   }
 
   if (ms == null || ms <= 0) return null;
-  return ms > MAX_RETRY_AFTER_MS ? null : ms;
+  return ms;
+}
+
+/**
+ * A vendor naming a cap counted per day or per hour, in its 429 body. Vendors word
+ * it alike ("on tokens per day (TPD)", "requests per day (RPD)", "daily limit",
+ * "per hour"); a per-MINUTE limit ("(TPM)", "per min") must NOT match: that one
+ * clears within the retry budget. The ONE place this wording is read.
+ */
+const LONG_WINDOW_QUOTA_PROSE = /per day|per hour|\(TPD\)|\(RPD\)|daily/i;
+
+/**
+ * True when a 429 (not an empty balance) is a QUOTA refusal: the vendor asks for
+ * a wait longer than the longest `Retry-After` we honour, or names a per-day /
+ * per-hour cap. Generic for every vendor, never keyed on one.
+ */
+export function isQuotaRefusal(retryAfterMs: number | null, bodyText: string): boolean {
+  return (retryAfterMs !== null && retryAfterMs > MAX_RETRY_AFTER_MS) || LONG_WINDOW_QUOTA_PROSE.test(bodyText);
 }
 
 export interface VendorCompleteOptions {
@@ -1759,6 +1843,14 @@ export function toResponsesRequest(body: Record<string, unknown>): Record<string
           name: t.function.name,
           ...(t.function.description != null ? { description: t.function.description } : {}),
           parameters: t.function.parameters,
+          // The Responses API defaults function tools to strict, which makes every
+          // optional field REQUIRED: GPT-6.1 Terra then sent "" for each id it did not
+          // need (open_page refused) and filled newStepOrTrigger on every bug
+          // (request_staff refused five times in one turn), whatever the error said.
+          // Probed live 2026-11-25: default -> {"page":"offers","campaignId":"",...},
+          // strict false -> {"page":"offers"} (COPILOT-LATENCY-1125). chat/completions
+          // is non-strict already: same tool contract on both transports.
+          strict: false,
         }));
         break;
       case "max_completion_tokens":
@@ -1861,26 +1953,70 @@ export async function postVendorChatCompletion(args: {
   body: Record<string, unknown>;
   reasoningDisabled: boolean;
   signal?: AbortSignal;
+  /** Cut an attempt whose response has not started after this long (VendorSilentError). Omitted = no cut. */
+  silentAfterMs?: number;
 }): Promise<VendorResponseBody> {
-  const { vendor, apiKey, model, body, reasoningDisabled, signal } = args;
+  const { vendor, apiKey, model, body, reasoningDisabled, signal, silentAfterMs } = args;
   const config = vendorConfig(vendor);
   const responsesApi = usesResponsesApi(vendor, model, body);
   const url = `${config.baseUrl}${responsesApi ? "/responses" : "/chat/completions"}`;
-  const wireBody = responsesApi ? toResponsesRequest(body) : body;
+  // A streamed vendor is asked for its answer as a stream and it is reassembled here
+  // (`readVendorStream`), so a call the vendor holds open without answering is seen
+  // within STREAM_SILENCE_MS instead of at undici's 300 s cut (GLM-FLASH-502-1125).
+  const streamed = config.streamsAnswer && !responsesApi;
+  const wireBody = responsesApi
+    ? toResponsesRequest(body)
+    : streamed
+      ? { ...body, stream: true, stream_options: { include_usage: true } }
+      : body;
 
   let lastConnectError: unknown = null;
   let connectAttempt = 0;
   let rateLimitAttempt = 0;
   let rateLimitWaitedMs = 0;
+  let hungAttempt = 0;
 
   // Two independent budgets, because the two failures are different events. A
   // connect failure never reached the vendor; a 429 reached it and was turned
   // away. Sharing one counter would let a burst of socket resets eat the
   // rate-limit budget (or the reverse) and cut short the retry that had a
-  // chance of working.
+  // chance of working. A HUNG streamed call (third budget) reached the vendor and
+  // never answered whole: no answer came back, so nothing is declared for it and
+  // the same model is asked again; another model never answers in its place.
   for (;;) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), VENDOR_TIMEOUT_MS);
+    let silent = false;
+    const silenceTimer = silentAfterMs === undefined ? undefined : setTimeout(() => {
+      silent = true;
+      controller.abort();
+    }, silentAfterMs);
+    let hung = false;
+    let hungTimer: ReturnType<typeof setTimeout> | undefined;
+    const stillAlive = () => {
+      if (!streamed) return;
+      clearTimeout(hungTimer);
+      hungTimer = setTimeout(() => {
+        hung = true;
+        controller.abort();
+      }, STREAM_SILENCE_MS);
+    };
+    const settle = () => {
+      clearTimeout(timeout);
+      clearTimeout(silenceTimer);
+      clearTimeout(hungTimer);
+    };
+    // A hung or cut streamed attempt: asked again on the same model, bounded.
+    const replayHung = async (cause: string): Promise<void> => {
+      if (hungAttempt >= MAX_HUNG_RETRIES) throw new VendorHungError(vendor, model, hungAttempt + 1, cause);
+      hungAttempt++;
+      console.warn(
+        `[chat-service] [vendor:${vendor}] "${model}" gave no whole answer (${cause}), ` +
+          `asking again (attempt ${hungAttempt + 1}/${MAX_HUNG_RETRIES + 1}).`,
+      );
+      await sleep(RETRY_DELAYS_MS[hungAttempt - 1] ?? 1000);
+    };
+    stillAlive();
 
     let res: Response;
     try {
@@ -1894,7 +2030,12 @@ export async function postVendorChatCompletion(args: {
         signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
       });
     } catch (err) {
-      clearTimeout(timeout);
+      settle();
+      if (silent && !signal?.aborted) throw new VendorSilentError(vendor, model, silentAfterMs!);
+      if (hung && !signal?.aborted) {
+        await replayHung(`no response for ${STREAM_SILENCE_MS / 1000}s`);
+        continue;
+      }
       if (isTransientConnectError(err) && connectAttempt < MAX_CONNECT_RETRIES) {
         lastConnectError = err;
         console.warn(
@@ -1906,10 +2047,9 @@ export async function postVendorChatCompletion(args: {
         continue;
       }
       throw err instanceof Error ? err : new VendorProviderError(String(err ?? lastConnectError));
-    } finally {
-      clearTimeout(timeout);
     }
 
+    if (!res.ok) settle();
     if (!res.ok) {
       const text = await res.text().catch(() => "");
 
@@ -1939,6 +2079,25 @@ export async function postVendorChatCompletion(args: {
       // waiting, so retrying it would burn the budget on a certainty and delay
       // the error the owner needs to see.
       if (res.status === 429 && !outOfCredit) {
+        // A cap that does not clear within the retry budget (a daily quota, a
+        // Retry-After of minutes) is named at once, with no retry: the route
+        // moves the call down the fallback order (OPEN-LLM-FREE-1124).
+        const askedWaitMs = readRetryAfterMs(res.headers?.get?.("retry-after"));
+        if (isQuotaRefusal(askedWaitMs, text)) {
+          const retryAfterSeconds = askedWaitMs === null ? null : Math.ceil(askedWaitMs / 1000);
+          console.warn(
+            `[chat-service] [vendor:${vendor}] Quota exhausted on "${model}"` +
+              `${retryAfterSeconds !== null ? ` (retry after ${retryAfterSeconds}s)` : ""}, not retried: ${text.slice(0, 200)}`,
+          );
+          throw new VendorQuotaExhaustedError(
+            `[vendor:${vendor}] ${config.label} quota is exhausted for "${model}"` +
+              `${retryAfterSeconds !== null ? ` (the vendor asks to wait ${retryAfterSeconds}s)` : ""}: ${text.slice(0, 300)}`,
+            vendor,
+            model,
+            retryAfterSeconds,
+            text,
+          );
+        }
         if (rateLimitAttempt < MAX_RATE_LIMIT_RETRIES) {
           const wait = parseRetryAfterMs(res.headers?.get?.("retry-after")) ??
             jittered(RATE_LIMIT_BACKOFF_MS[rateLimitAttempt] ?? 7500);
@@ -2005,10 +2164,136 @@ export async function postVendorChatCompletion(args: {
       );
     }
 
-    const json = await res.json();
-    return responsesApi ? fromResponsesBody(json as ResponsesApiBody) : (json as VendorResponseBody);
+    // The whole answer is read under the same timers: the Copilot's silence limit
+    // counts until the answer is in, and a streamed call stays watched for hangs.
+    stillAlive();
+    try {
+      if (streamed) return await readVendorStream(vendor, res, stillAlive);
+      const json = await res.json();
+      return responsesApi ? fromResponsesBody(json as ResponsesApiBody) : (json as VendorResponseBody);
+    } catch (err) {
+      if (silent && !signal?.aborted) throw new VendorSilentError(vendor, model, silentAfterMs!);
+      if (streamed && !signal?.aborted && (hung || err instanceof VendorStreamCutError || isTransientConnectError(err))) {
+        settle();
+        await replayHung(hung ? `no byte for ${STREAM_SILENCE_MS / 1000}s mid-answer` : err instanceof Error ? err.message : String(err));
+        continue;
+      }
+      throw err;
+    } finally {
+      settle();
+    }
   }
 }
+
+/**
+ * Reassemble one streamed chat completion (OpenAI-compatible SSE) into the body a
+ * non-streamed call returns, so every reader downstream is unchanged
+ * (GLM-FLASH-502-1125). `onChunk` is called on every byte received (hang watch).
+ * An in-band `error` chunk is the vendor's answer (VendorProviderError, never
+ * replayed); a stream that closes before its finish chunk is VendorStreamCutError.
+ */
+export async function readVendorStream(
+  vendor: VendorId,
+  res: Response,
+  onChunk: () => void,
+): Promise<VendorResponseBody> {
+  // A vendor that answers a stream request with one JSON body has still answered whole.
+  const contentType = res.headers?.get?.("content-type") ?? "";
+  if (!contentType.includes("text/event-stream")) return (await res.json()) as VendorResponseBody;
+  if (!res.body) throw new VendorStreamCutError(`[vendor:${vendor}] streamed answer had no body`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let id: string | undefined;
+  let model: string | undefined;
+  let usage: VendorUsage | undefined;
+  let finishReason: string | undefined;
+  let content = "";
+  let reasoning = "";
+  const toolCalls: VendorToolCall[] = [];
+  let done = false;
+
+  const take = (line: string) => {
+    if (!line.startsWith("data:")) return;
+    const data = line.slice(5).trim();
+    if (data === "") return;
+    if (data === "[DONE]") {
+      done = true;
+      return;
+    }
+    const chunk = JSON.parse(data) as {
+      id?: string;
+      model?: string;
+      usage?: VendorUsage | null;
+      error?: unknown;
+      choices?: Array<{
+        finish_reason?: string | null;
+        delta?: {
+          content?: string | null;
+          reasoning_content?: string | null;
+          tool_calls?: Array<{ index?: number; id?: string; type?: "function"; function?: { name?: string; arguments?: string } }>;
+        };
+      }>;
+    };
+    if (chunk.error) {
+      throw new VendorProviderError(`[vendor:${vendor}] Provider returned an error mid-stream: ${JSON.stringify(chunk.error).slice(0, 500)}`);
+    }
+    id ??= chunk.id;
+    model ??= chunk.model;
+    if (chunk.usage) usage = chunk.usage;
+    const choice = chunk.choices?.[0];
+    if (!choice) return;
+    if (choice.finish_reason) finishReason = choice.finish_reason;
+    const delta = choice.delta;
+    if (!delta) return;
+    if (typeof delta.content === "string") content += delta.content;
+    if (typeof delta.reasoning_content === "string") reasoning += delta.reasoning_content;
+    for (const part of delta.tool_calls ?? []) {
+      const index = part.index ?? toolCalls.length;
+      const call = (toolCalls[index] ??= { id: "", type: "function", function: { name: "", arguments: "" } });
+      if (part.id) call.id = part.id;
+      if (part.type) call.type = part.type;
+      if (part.function?.name && !call.function.name) call.function.name = part.function.name;
+      if (part.function?.arguments) call.function.arguments += part.function.arguments;
+    }
+  };
+
+  for (;;) {
+    const { done: ended, value } = await reader.read();
+    if (ended) break;
+    onChunk();
+    buffer += decoder.decode(value, { stream: true });
+    let cut: number;
+    while ((cut = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, cut).replace(/\r$/, "");
+      buffer = buffer.slice(cut + 1);
+      take(line);
+    }
+  }
+  buffer += decoder.decode();
+  if (buffer.trim()) take(buffer.trim());
+
+  if (!finishReason || !usage) {
+    throw new VendorStreamCutError(
+      `[vendor:${vendor}] stream closed before the answer was whole (finish=${finishReason ?? "none"}, usage=${usage ? "yes" : "none"}, done=${done})`,
+    );
+  }
+  const calls = toolCalls.filter(Boolean);
+  return {
+    id,
+    model,
+    usage,
+    choices: [{
+      finish_reason: finishReason,
+      message: {
+        content,
+        ...(reasoning ? { reasoning_content: reasoning } : {}),
+        ...(calls.length > 0 ? { tool_calls: calls } : {}),
+      },
+    }],
+  };
+}
+
 
 /**
  * Caller-facing message for a key-service resolution failure.
