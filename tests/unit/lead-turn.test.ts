@@ -3,6 +3,7 @@ import {
   LEAD_ANSWER_TOOL_NAME,
   buildLeadAnswerTool,
   buildLeadTurnBlock,
+  leadTurnBilling,
   leadTurnToolNames,
   parseLeadTurnStream,
   limitNoticeAnswer,
@@ -142,8 +143,9 @@ describe("processLeadTurn", () => {
       .mockResolvedValueOnce({ status: 200, body: sse({ type: "lead_answer", answer: { decision: "write", message: "You're in." } }) })
       .mockResolvedValueOnce({ status: 200, body: sse({ type: "lead_answer", answer: answered.answer, model: "m" }) });
     const createRootRun = vi.fn().mockResolvedValue("run-person");
+    const createCallerRun = vi.fn().mockResolvedValue("run-bill");
     const out = await processLeadTurn(
-      { db, resolvePhone: async () => null, resolveEmail: async () => null, listBrandIds: async () => [], createRootRun, runChat, spend: PASS_GATE },
+      { db, resolvePhone: async () => null, resolveEmail: async () => null, listBrandIds: async () => [], createRootRun, createCallerRun, runChat, spend: PASS_GATE },
       "row-1",
       CALLER,
     );
@@ -154,6 +156,59 @@ describe("processLeadTurn", () => {
     // Second turn: as the person, in their own run (never a cross-org child), no caller attribution.
     expect(runChat.mock.calls[1][0]).toMatchObject({ orgId: "org-person", userId: "user-person", runId: "run-person", trackingHeaders: {} });
     expect(updates.some((u) => u.signedIn === true)).toBe(true);
+    // Its model spend: one run under the writer's run, in the caller's org (MODEL-TAG-EVERY-AI-MESSAGE-1126).
+    expect(createCallerRun).toHaveBeenCalledTimes(1);
+    expect(createCallerRun).toHaveBeenCalledWith(CALLER);
+  });
+
+  // MODEL-TAG-EVERY-AI-MESSAGE-1126: an account in another org bills its model calls on a run under the
+  // caller's run (the writer's run tree names the model); a turn in the caller's org opens none.
+  it("an account in another org: /chat bills on a run under the writer's run, set only while it runs; the spend record names it", async () => {
+    process.env.COPILOT_FOLLOWUP_BRAND_ID = BRAND;
+    const answered = { id: "row-1", status: "answered", answer: { decision: "write", message: "Hi" }, model: "m", sessionId: "sess-a", accountOrgId: "org-person", accountUserId: "user-person", signedIn: false };
+    // ROW, their lead thread, the stored answer.
+    const { db } = fakeDb([[ROW], [{ id: "sess-a", brandIds: [BRAND] }], [answered]]);
+    const seen: unknown[] = [];
+    const runChat = vi.fn(async (args: { leadTurnId: string }) => {
+      seen.push(leadTurnBilling(args.leadTurnId));
+      return { status: 200, body: sse({ type: "lead_answer", answer: answered.answer, model: "m" }) };
+    });
+    const createCallerRun = vi.fn().mockResolvedValue("run-bill");
+    const verdict = { run: true as const, tracked: true, person: { key: "org:org-person", surface: "whatsapp", guest: false, turnOrgId: "org-person", planOrgId: null } as DistryPerson };
+    const record = vi.fn(async () => {});
+    const out = await processLeadTurn(
+      {
+        db,
+        resolvePhone: async () => ({ orgId: "org-person", userId: "user-person" }),
+        resolveEmail: async () => null,
+        listBrandIds: async () => [],
+        createRootRun: vi.fn().mockResolvedValue("run-person"),
+        createCallerRun,
+        runChat,
+        spend: { gate: async () => verdict, record },
+      },
+      "row-1",
+      CALLER,
+    );
+    expect(out.status).toBe(200);
+    expect(runChat.mock.calls[0][0]).toMatchObject({ orgId: "org-person", runId: "run-person" });
+    expect(seen).toEqual([{ orgId: CALLER.orgId, userId: CALLER.userId, runId: "run-bill", trackingHeaders: CALLER.trackingHeaders }]);
+    expect(createCallerRun).toHaveBeenCalledWith(CALLER);
+    expect(record).toHaveBeenCalledWith(verdict, "run-bill", null, CALLER.orgId);
+    expect(leadTurnBilling("row-1")).toBeNull();
+  });
+
+  it("a turn in the caller's org opens no billing run: it is the caller's run already", async () => {
+    const { db } = fakeDb([[ROW], [{ id: "sess-new" }]], [[{ id: "sess-new" }]]);
+    const createCallerRun = vi.fn();
+    const runChat = vi.fn(async (args: { leadTurnId: string }) => {
+      expect(leadTurnBilling(args.leadTurnId)).toBeNull();
+      return { status: 200, body: sse({ type: "lead_answer", answer: { decision: "write", message: "Hi" } }) };
+    });
+    await processLeadTurn({ db, resolvePhone: async () => null, resolveEmail: async () => null, listBrandIds: async () => [], createRootRun: vi.fn(), createCallerRun, runChat, spend: PASS_GATE }, "row-1", CALLER);
+    expect(runChat).toHaveBeenCalledTimes(1);
+    expect(runChat.mock.calls[0][0]).toMatchObject({ orgId: CALLER.orgId, runId: "run-writer" });
+    expect(createCallerRun).not.toHaveBeenCalled();
   });
 
   it("a turn with no answer is a named failure (502), stored failed", async () => {

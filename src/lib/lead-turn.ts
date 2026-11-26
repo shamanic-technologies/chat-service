@@ -18,10 +18,14 @@
  *    account for is a guest: on our brand with a number, the email-code sign-in
  *    (then a second turn answers with the account, `afterSignIn`).
  *    Another brand's lead: no account of ours is theirs to read, no sign-in.
- *  - Billing: a turn in the caller's org is a child of the caller's run (its
- *    outcome's spend). A turn in the person's own org cannot be (runs-service
- *    refuses a child under another org's run): its own run, Copilot support,
- *    exactly like the WhatsApp Copilot.
+ *  - Billing: the LLM spend of every lead turn sits in the CALLER's run tree
+ *    (MODEL-TAG-EVERY-AI-MESSAGE-1126: the Unibox names the model that wrote a
+ *    message from the writer's run tree). A turn in the caller's org is a child
+ *    of the caller's run. A turn in the person's own org reads and acts as them
+ *    on a run of their org (Copilot support: runs-service refuses a child under
+ *    another org's run), while its model calls are held and billed on a run the
+ *    lead turn opens under the CALLER's run (`leadTurnBilling`): the caller's org
+ *    pays. Accounts are only read on our own brand, so that is us.
  *  - One answer per occurrence: `copilot_lead_turns` on (org, idempotencyKey).
  *
  * chat-service sends nothing here: the workflow's channel plan sends.
@@ -269,6 +273,8 @@ export interface LeadTurnDeps {
   listBrandIds: (identity: { orgId: string; userId: string; runId: string }) => Promise<string[]>;
   /** runs-service: a root run under the person's own org (Copilot support). */
   createRootRun: (identity: { orgId: string; userId: string }) => Promise<string>;
+  /** runs-service: a run under the caller's run, in the caller's org (the turn's model spend when it runs in another org). */
+  createCallerRun: (caller: Caller) => Promise<string>;
   /** POST /chat on this process. */
   runChat: (args: {
     orgId: string;
@@ -323,6 +329,26 @@ export interface Caller {
   userId: string;
   runId: string;
   trackingHeaders: Record<string, string>;
+}
+
+/**
+ * Where a lead turn running in ANOTHER org than its caller bills its model
+ * calls (MODEL-TAG-EVERY-AI-MESSAGE-1126): a run in the caller's org, child of
+ * the caller's run, so the model that wrote the message is read off the
+ * writer's run tree like every other AI message. Set by `processLeadTurn`
+ * before the /chat call on this process, read by /chat, cleared after.
+ */
+export interface LeadTurnBilling {
+  orgId: string;
+  userId: string;
+  runId: string;
+  trackingHeaders: Record<string, string>;
+}
+
+const leadTurnBillings = new Map<string, LeadTurnBilling>();
+
+export function leadTurnBilling(leadTurnId: string): LeadTurnBilling | null {
+  return leadTurnBillings.get(leadTurnId) ?? null;
 }
 
 /**
@@ -482,6 +508,14 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
     // the person's own org it cannot be: its own run, Copilot support.
     const inCallerOrg = (id: { orgId: string }) => id.orgId === caller.orgId;
     const runFor = async (id: { orgId: string; userId: string }) => (inCallerOrg(id) ? caller.runId : deps.createRootRun(id));
+    // Its model calls still bill the caller's tree: one run under the caller's run, opened once.
+    // (A holder: it is set inside billFor, a closure TS cannot narrow through.)
+    const billing: { runId: string | null } = { runId: null };
+    const billFor = async (id: { orgId: string }) => {
+      if (inCallerOrg(id) || billing.runId) return;
+      billing.runId = await deps.createCallerRun(caller);
+      leadTurnBillings.set(rowId, { orgId: caller.orgId, userId: caller.userId, runId: billing.runId, trackingHeaders: caller.trackingHeaders });
+    };
     const firstRunId = await runFor(account ?? caller);
     const picked = await pickLeadSession(deps, { payload, ownBrand, account, caller, runId: firstRunId });
     const turnRunId = picked.orgId === (account ?? caller).orgId ? firstRunId : await runFor(picked);
@@ -489,8 +523,10 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
       .update(copilotLeadTurns)
       .set({ sessionId: picked.sessionId, accountOrgId: picked.guest ? null : picked.orgId, accountUserId: picked.guest ? null : picked.userId, updatedAt: new Date() })
       .where(eq(copilotLeadTurns.id, rowId));
-    const run = (identity: { orgId: string; userId: string }, runId: string) =>
-      deps.runChat({ ...identity, runId, sessionId: picked.sessionId, leadTurnId: rowId, trackingHeaders: inCallerOrg(identity) ? caller.trackingHeaders : {} });
+    const run = async (identity: { orgId: string; userId: string }, runId: string) => {
+      await billFor(identity);
+      return deps.runChat({ ...identity, runId, sessionId: picked.sessionId, leadTurnId: rowId, trackingHeaders: inCallerOrg(identity) ? caller.trackingHeaders : {} });
+    };
 
     // Distry's limits on our money (DISTRY-GUEST-CAPS-1119): our own brand's turn to a
     // non-client. Another brand's lead runs on that brand's own org: never ours to cap.
@@ -548,7 +584,10 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
     }
 
     // The guest's turn joins their spend; a plan org opened in it is counted from 0.
-    if (spendVerdict) await deps.spend.record(spendVerdict, turnRunId, planAfter);
+    // An account's turn in its own org: its model spend sits on the billing run (caller's org = ours).
+    // A guest's turn runs on the caller's run, whose tree holds a billing run opened after a sign-in.
+    const spendRun = !picked.guest && billing.runId ? { runId: billing.runId, orgId: caller.orgId } : null;
+    if (spendVerdict) await deps.spend.record(spendVerdict, spendRun?.runId ?? turnRunId, planAfter, spendRun?.orgId);
     // Nothing goes out now: « typing… » ends here (a send ends it in crm).
     const sends = answer[payload.messageField];
     if (!(typeof sends === "string" && sends.trim())) {
@@ -566,6 +605,7 @@ export async function processLeadTurn(deps: LeadTurnDeps, rowId: string, caller:
   } finally {
     forgetLeadTurnCaller(rowId);
     forgetLeadTurnMoment(rowId);
+    leadTurnBillings.delete(rowId);
   }
 }
 
