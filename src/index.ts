@@ -605,6 +605,7 @@ import {
   copilotOwnBrandId,
   LEAD_TURN_TASK_NAME,
   leadTurnBody,
+  leadTurnBilling,
   leadTurnToolNames,
   resolveEmailAccount,
   emailHasAccount,
@@ -4252,6 +4253,15 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       });
     }
   }
+  // Who pays this turn's model calls, and on which run (MODEL-TAG-EVERY-AI-MESSAGE-1126): the
+  // turn's own org, except a lead turn running in another org than its caller, whose model spend
+  // sits on a run under the caller's run (lead-turn.ts `leadTurnBilling`) so the writer's run tree
+  // names the model that wrote the message. Tools, session and traces stay the person's.
+  const leadBilling = leadTurn && parsed.data.leadTurnId && orgId !== leadTurnOrgId ? leadTurnBilling(parsed.data.leadTurnId) : null;
+  if (leadTurn && orgId !== leadTurnOrgId && !leadBilling) {
+    return res.status(500).json({ error: "A lead turn in another org than its caller has no billing run on this process." });
+  }
+  const billing = leadBilling ?? { orgId, userId, runId: parentRunId, trackingHeaders };
   // A proactive turn (POST /internal/copilot/proactive-turns, on this process):
   // only a turn in progress for this org, user and session unlocks it, and it
   // gets READ tools only: nothing is created, started or sent in that turn.
@@ -4460,7 +4470,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   // LOCAL-CLAUDE-1116: an org that declared its LLM local runs every round of
   // this turn on its own Claude Code (same tools, same events), with no vendor
   // key and no cost: `keySource: "org"` = the org pays its provider directly.
-  const localChat = await isLocalLlmOrg(orgId);
+  const localChat = await isLocalLlmOrg(billing.orgId);
   const localChatModel = localChat ? localClaudeModelFor(resolvedModelInfo, chatProvider, chatModelAlias) : null;
   // The model(s) the runner says wrote this turn (never the one asked for).
   const localModelsUsed = new Set<string>();
@@ -4472,14 +4482,14 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   } else try {
     resolvedKey = await resolveKey({
       provider: resolvedModelInfo.provider,
-      orgId,
-      userId,
-      runId: parentRunId,
+      orgId: billing.orgId,
+      userId: billing.userId,
+      runId: billing.runId,
       caller: { method: "POST", path: "/chat" },
-      trackingHeaders,
+      trackingHeaders: billing.trackingHeaders,
     });
   } catch (err) {
-    console.error(`Failed to resolve ${resolvedModelInfo.provider} key for org="${orgId}":`, err);
+    console.error(`Failed to resolve ${resolvedModelInfo.provider} key for org="${billing.orgId}":`, err);
     return res.status(502).json({
       error: `Failed to resolve ${resolvedModelInfo.provider} API key. Ensure the key is configured in key-service.`,
     });
@@ -4591,6 +4601,8 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
   };
 
   let runId: string | null = null;
+  // The run this turn's model calls are held and billed on: `runId`, or the caller-side run of a lead turn in another org.
+  let costRunId: string | null = null;
   let chatFailed = false;
   let totalPromptTokens = 0;
   // Input of the turn's LAST model call: what the context gauge shows.
@@ -4677,6 +4689,9 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         trackingHeaders,
       );
       runId = run.id;
+      costRunId = leadBilling
+        ? (await createRun({ serviceName: "chat-service", taskName: "chat" }, { orgId: leadBilling.orgId, userId: leadBilling.userId, runId: leadBilling.runId }, leadBilling.trackingHeaders)).id
+        : runId;
       traceEvent(runId, "run-created", { orgId, userId }, workflowTracking, {
         data: {
           taskName: "chat",
@@ -4714,7 +4729,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       }
       try {
         const costIds = await provisionAndAuthorizeLlmCost({
-          runId: runId!,
+          runId: costRunId!,
           costNames: buildLlmCostNames({ provider: chatProvider, costPrefix: resolvedModelInfo.costPrefix, at }),
           inputTokens: estimatedInputTokens,
           // Right-sized affordability hold (not the provider streaming cap, which
@@ -4722,14 +4737,14 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
           // turn over-reserved against the org balance; reconcile records actual.
           outputTokens: estimateOutputTokens(estimatedInputTokens),
           keySource: resolvedKey.keySource,
-          identity: { orgId, userId, runId: runId! },
-          trackingHeaders,
+          identity: { orgId: billing.orgId, userId: billing.userId, runId: costRunId! },
+          trackingHeaders: billing.trackingHeaders,
           description: `chat — ${resolvedModelInfo.apiModelId}`,
         });
         provisionedCostIds.push(...costIds);
         sse.open();
       } catch (costErr) {
-        const r = costErrorResponse(costErr, "chat", orgId);
+        const r = costErrorResponse(costErr, "chat", billing.orgId);
         throw new ChatCostGateError(String(r.body.error), r.status, r.body);
       }
     };
@@ -6436,16 +6451,16 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         },
         localRound: async ({ messages: roundMessages, tools: roundTools, signal }) => {
           const answer = await runLocally({
-            orgId,
+            orgId: billing.orgId,
             kind: "chat_round",
             route: "/chat",
-            runId,
+            runId: costRunId,
             call: chatRoundCall(roundMessages as RoundMessage[], roundTools, localChatModel),
             signal,
           });
           localModelsUsed.add(answer.model);
-          if (!runId) throw new Error("[chat] a local round answered with no run to state it on");
-          await addRunCosts(runId, localCostItems(answer), { orgId, userId, runId }, trackingHeaders);
+          if (!costRunId) throw new Error("[chat] a local round answered with no run to state it on");
+          await addRunCosts(costRunId, localCostItems(answer), { orgId: billing.orgId, userId: billing.userId, runId: costRunId }, billing.trackingHeaders);
           const step = chatRoundAnswer(answer, roundTools.length > 0);
           return { ...step, model: answer.model, inputTokens: answer.usage.inputTokens ?? 0, outputTokens: answer.usage.outputTokens ?? 0 };
         },
@@ -7133,12 +7148,20 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       } catch (runErr) {
         console.error(`[chat-service] /chat failed to finalize run runId="${runId}" orgId="${orgId}":`, runErr);
       }
+      const chatRunId = costRunId ?? runId;
+      const costIdentity = { orgId: billing.orgId, userId: billing.userId, runId: chatRunId };
+      if (chatRunId !== runId) {
+        try {
+          await updateRunStatus(chatRunId, chatFailed ? "failed" : "completed", costIdentity, billing.trackingHeaders);
+        } catch (runErr) {
+          console.error(`[chat-service] /chat failed to finalize the caller-side run runId="${chatRunId}" orgId="${billing.orgId}":`, runErr);
+        }
+      }
       if (provisionedCostIds.length > 0) {
         try {
-          const chatRunId = runId;
           await reconcileProvisionedCosts({
-            postActual: () => addRunCosts(chatRunId, actualItems, runIdentity, trackingHeaders),
-            releaseHolds: () => cancelProvisionedCosts(chatRunId, provisionedCostIds, runIdentity, trackingHeaders),
+            postActual: () => addRunCosts(chatRunId, actualItems, costIdentity, billing.trackingHeaders),
+            releaseHolds: () => cancelProvisionedCosts(chatRunId, provisionedCostIds, costIdentity, billing.trackingHeaders),
           });
         } catch (costErr) {
           console.error(`[chat] cost reconcile failed runId="${runId}" — provisioned-max kept as fallback:`, costErr);
@@ -7368,6 +7391,8 @@ const leadTurnDeps: LeadTurnDeps = {
   resolveEmail: (email) => resolveEmailAccount(db, email),
   listBrandIds: (identity) => listOrgBrandIds(identity),
   createRootRun: (identity) => createChannelRootRun(identity, fetch, LEAD_TURN_TASK_NAME),
+  createCallerRun: async (caller) =>
+    (await createRun({ serviceName: "chat-service", taskName: LEAD_TURN_TASK_NAME }, { orgId: caller.orgId, userId: caller.userId, runId: caller.runId }, caller.trackingHeaders)).id,
   runChat: async (args) => {
     const res = await fetch(`http://127.0.0.1:${PORT}/chat`, {
       method: "POST",

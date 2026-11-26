@@ -30,6 +30,8 @@ const { state } = vi.hoisted(() => ({
     messageInserts: [] as Array<Record<string, unknown>>,
     executes: [] as unknown[],
     tables: {} as Record<string, unknown>,
+    /** The session row's owner (default: the caller's org and user). */
+    sessionOwner: null as { orgId: string; userId: string } | null,
   },
 }));
 
@@ -51,6 +53,7 @@ vi.mock("../../src/db/index.js", async () => {
   };
   const session = { id: SESSION, orgId: ORG, userId: USER, channelPhone: null, guest: false, brandIds: [BRAND], updatedAt: new Date() };
   const rowsFor = (table: unknown): unknown[] => {
+    if (is(table, "sessions") && state.sessionOwner) return [{ ...session, ...state.sessionOwner }];
     if (is(table, "copilot_proactive_turns")) return state.turns;
     if (is(table, "copilot_lead_turns")) return state.leadTurns;
     if (is(table, "sessions")) return [session];
@@ -229,6 +232,7 @@ describe("POST /internal/copilot/lead-turns: the Copilot writes the Lead event a
     state.leadTurns.length = 0;
     state.messageInserts.length = 0;
     state.executes.length = 0;
+    state.sessionOwner = null;
     delete process.env.COPILOT_FOLLOWUP_BRAND_ID;
     installFetchMock();
   });
@@ -277,6 +281,54 @@ describe("POST /internal/copilot/lead-turns: the Copilot writes the Lead event a
     expect(declaredNames(gemini.bodies[0])).toEqual(["list_workflows", "launch_campaign", "propose_switch_on", "confirm_switch_on", "create_followup", "reach_person_elsewhere", "answer_person"]);
     // SOPHIE-JCURVE-1102: the answer is the campaign's, stored hidden, never a line of their chat.
     expect(state.messageInserts.filter((m) => m.role === "assistant")).toEqual([expect.objectContaining({ content: ANSWER.message, proactiveTrigger: true })]);
+  }, 30_000);
+
+  // MODEL-TAG-EVERY-AI-MESSAGE-1126 (prod 2026-11-25: two WhatsApp messages written for a writer in org
+  // f0420eb5 by the account of org 17ee7081 carried no model on the Unibox): the turn reads and acts as the
+  // person in their org, but its model spend sits in the CALLER's run tree, billed to the caller's org.
+  it("an account in another org than the caller: the model's cost lines sit under the writer's run, in the caller's org", async () => {
+    process.env.COPILOT_FOLLOWUP_BRAND_ID = BRAND;
+    const PERSON_ORG = "88888888-8888-4888-8888-888888888888";
+    const PERSON_USER = "99999999-9999-4999-8999-999999999999";
+    state.sessionOwner = { orgId: PERSON_ORG, userId: PERSON_USER };
+    const app = (await import("../../src/index.js")).default;
+    const gemini = { bodies: [] as Array<Record<string, unknown>>, replies: [{ call: { name: "answer_person", args: ANSWER } }] as GeminiReply[] };
+    // Every run gets its own id; its org, parent and task are recorded.
+    const runs = new Map<string, { org: string; parent: string | null; task: string }>();
+    routes.push({
+      match: (url, init) => url.endsWith("/v1/runs") && init?.method === "POST",
+      respond: (_url, init) => {
+        const h = init!.headers as Record<string, string>;
+        const id = `run-${runs.size + 1}`;
+        runs.set(id, { org: h["x-org-id"], parent: h["x-run-id"] ?? null, task: (JSON.parse(init!.body as string) as { taskName: string }).taskName });
+        return { ok: true, status: 201, body: { id, status: "running" } };
+      },
+    });
+    routes.push(...baseRoutes(gemini, app, { orgId: PERSON_ORG, userId: PERSON_USER }));
+
+    const res = await request(app).post("/internal/copilot/lead-turns").set(HEADERS).send(BODY);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ json: ANSWER, account: { orgId: PERSON_ORG, userId: PERSON_USER } });
+
+    const costPosts = fetchCalls.filter((c) => /\/v1\/runs\/[^/]+\/costs$/.test(c.url) && c.init?.method === "POST");
+    expect(costPosts.length).toBeGreaterThan(0);
+    const rootOf = (id: string): string => {
+      const r = runs.get(id);
+      return r?.parent ? rootOf(r.parent) : id;
+    };
+    for (const post of costPosts) {
+      const runId = post.url.match(/\/v1\/runs\/([^/]+)\/costs$/)![1];
+      // Under the writer's run, in the caller's org, carrying the writer's campaign.
+      expect(runs.get(runId)?.org).toBe(ORG);
+      expect(rootOf(runId)).toBe(RUN);
+      const h = post.init!.headers as Record<string, string>;
+      expect(h["x-org-id"]).toBe(ORG);
+      expect(h["x-campaign-id"]).toBe("camp-1");
+    }
+    // The turn itself still runs as the person, on a Copilot-support run of their own org.
+    expect([...runs.values()]).toEqual(expect.arrayContaining([{ org: PERSON_ORG, parent: null, task: "copilot-lead-turn" }, expect.objectContaining({ org: PERSON_ORG, task: "chat" })]));
+    // Nothing is billed on a run of the person's org.
+    expect(costPosts.every((c) => (c.init!.headers as Record<string, string>)["x-org-id"] !== PERSON_ORG)).toBe(true);
   }, 30_000);
 
   // SCHEMA-HONOURED-1115: whether the answer follows the writer's schema is MEASURED (one counted row), never
