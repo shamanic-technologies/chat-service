@@ -185,12 +185,20 @@ import {
   withoutPrincipalToolsUnlessAllowed,
   isPrincipalToolName,
   DISTRY_STAFF_READ_TASK_NAME,
-  DISTRY_ENGINE_CALL_TASK_NAME,
-  ENGINES_TOOL_FAMILY,
   READ_COMPANY_FINANCIALS_TOOL_NAME,
 } from "./agent/principal-tools.js";
 import { readCompanyFinancials, featuresFetchFromEnv } from "./agent/finance-tools.js";
-import { engineToolsFrom, listEngines, workflowFetchFromEnv, campaignFetchFromEnv, startEngineCampaign, readEngineCampaign, READ_ENGINE_CAMPAIGN_TOOL_NAME } from "./agent/engine-tools.js";
+import {
+  FIND_OUTCOME_TOOL_NAME,
+  GET_UNITS_TOOL_NAME,
+  ASK_ENGINE_TOOL_NAME,
+  DISTRY_ENGINE_ASK_TASK_NAME,
+  findOutcome,
+  getUnits,
+  askEngine,
+  outcomeDepsFromEnv,
+  productionProviderIndex,
+} from "./agent/outcome-tools.js";
 import { hasStaffOnlyTool, lookupRequester, toolsForRequester, type Requester } from "./lib/staff-only-tools.js";
 import { isStaffUser } from "./lib/staff-identity.js";
 import { listServices, listServiceEndpoints } from "./lib/api-registry-client.js";
@@ -4529,18 +4537,6 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       return;
     }
   }
-  // Distry's Engine tools (DISTRY-PRINCIPAL-1119): one per Engine that can run now, from
-  // workflow-service's live list read at this turn; a failed read is named in the turn, never a gate.
-  let engineTools: { tools: Anthropic.Tool[]; outcomeOf: Map<string, string> } = { tools: [], outcomeOf: new Map() };
-  if (principalAllowed && allowedToolNames.includes(ENGINES_TOOL_FAMILY)) {
-    try {
-      engineTools = engineToolsFrom(await listEngines(workflowFetchFromEnv()), partText(promptOverrides, "engine-tool"));
-    } catch (err) {
-      const why = err instanceof Error ? err.message : String(err);
-      console.error(`[chat] Engines could not be listed for this turn: ${why}`);
-      promptData.enginesUnreadable = why.slice(0, 200);
-    }
-  }
   // What stays the same across turns (the config's prompt + skills + who it
   // is) vs what this turn alone carries (page context, campaign inputs, the
   // WhatsApp or Lead event block). Gemini reads them joined, as before;
@@ -4833,8 +4829,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
       }
     }
 
-    const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME && t !== WEB_CONTINUE_TOOL_NAME && t !== ENGINES_TOOL_FAMILY));
-    allTools.push(...engineTools.tools);
+    const allTools = resolveToolSet(allowedToolNames.filter((t) => t !== LEAD_ANSWER_TOOL_NAME && t !== REACH_ELSEWHERE_TOOL_NAME && t !== WEB_CONTINUE_TOOL_NAME));
     if (webTurn && allowedToolNames.includes(WEB_CONTINUE_TOOL_NAME)) allTools.push(WEB_CONTINUE_TOOL);
     if (leadTurn) {
       allTools.push(
@@ -4848,7 +4843,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     const turnImages = leadTurn?.whatsapp?.images ?? [];
     // The answer a lead turn ended on (answer_person), in the writer's schema.
     const leadAnswer: { json: Record<string, unknown> | null } = { json: null };
-    const allowedToolSet = new Set([...allowedToolNames, ...engineTools.tools.map((t) => t.name)]);
+    const allowedToolSet = new Set(allowedToolNames);
     // Distry's reads of our own Unibox ride one run under OUR org, opened on first need.
     let stakeholderRun: Promise<string> | null = null;
     const downstreamTrackingHeaders = Object.keys(trackingHeaders).length > 0
@@ -5410,22 +5405,20 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
         return { name: call.name, result };
       }
 
-      // --- Distry: an Engine call is a campaign on its outcome (DISTRY-CALL-IS-CAMPAIGN-1121, staff turns only) ---
-      if (engineTools.outcomeOf.has(call.name) || call.name === READ_ENGINE_CAMPAIGN_TOOL_NAME) {
+      // --- Distry: Outcomes, exactly like a Script (ENGINE-GET-ASK-1123) ---
+      // Read the doc, read held Units (free), ask an Engine for one new Unit (after the person's
+      // yes, on a run of ours). Always as the conversation's org: the model never names one.
+      if (call.name === FIND_OUTCOME_TOOL_NAME || call.name === GET_UNITS_TOOL_NAME || call.name === ASK_ENGINE_TOOL_NAME) {
         const args = (call.args as Record<string, unknown>) || {};
-        if (!principalAllowed) throw new Error(`[${call.name}] reserved to distribute.you staff`);
-        const ours = ourAccountFromEnv();
-        const otherOrg = typeof args.orgId === "string" && args.orgId.trim() ? args.orgId.trim() : null;
-        const target = otherOrg
-          ? { orgId: otherOrg, userId, brandId: typeof args.brandId === "string" && args.brandId.trim() ? args.brandId.trim() : null }
-          : { orgId: ours.orgId, userId: ours.userId, brandId: ours.brandId };
-        const brandId = target.brandId;
-        if (!brandId && call.name !== READ_ENGINE_CAMPAIGN_TOOL_NAME) throw new Error(`[${call.name}] ${otherOrg ? "orgId needs its brandId" : "our own account has no brand configured"}`);
-        const runId = await createChannelRootRun({ orgId: target.orgId, userId: target.userId }, fetch, DISTRY_ENGINE_CALL_TASK_NAME, null);
-        const cf = campaignFetchFromEnv();
-        const result = call.name === READ_ENGINE_CAMPAIGN_TOOL_NAME
-          ? await readEngineCampaign(String(args.campaignId ?? ""), { ...target, runId }, cf)
-          : await startEngineCampaign(engineTools.outcomeOf.get(call.name)!, args, { ...target, brandId: brandId!, runId }, cf);
+        if (sessionIsGuest) throw new Error(`[${call.name}] an account of theirs is needed first`);
+        const deps = outcomeDepsFromEnv({ orgId, userId }, (who) => createChannelRootRun(who, fetch, DISTRY_ENGINE_ASK_TASK_NAME, null));
+        const index = productionProviderIndex();
+        const result =
+          call.name === FIND_OUTCOME_TOOL_NAME
+            ? await findOutcome(args, { orgId }, deps, index)
+            : call.name === GET_UNITS_TOOL_NAME
+              ? await getUnits(args, { orgId, userId, runId: runId! }, deps, index)
+              : await askEngine(args, { orgId, userId }, history, deps, { readOnly: proactiveTurn });
         toolCalls.push({ name: call.name, args, result });
         return { name: call.name, result };
       }

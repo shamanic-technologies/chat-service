@@ -6,8 +6,6 @@ import {
   findStakeholders,
   readPersonUnibox,
   readOrganizationUnibox,
-  ENGINES_TOOL_FAMILY,
-  ENGINE_TOOL_PREFIX,
   READ_COMPANY_FINANCIALS_TOOL_NAME,
   STAKEHOLDER_TOOL_NAMES,
 } from "../../src/agent/principal-tools.js";
@@ -15,7 +13,7 @@ import { sessionToolNamesFor } from "../../src/agent/person-tools.js";
 import { SOPHIE_TOOLS } from "../../src/agent/sophie.js";
 import { resolveToolSet } from "../../src/lib/anthropic.js";
 
-const PRINCIPAL = [...STAKEHOLDER_TOOL_NAMES, READ_COMPANY_FINANCIALS_TOOL_NAME, ENGINES_TOOL_FAMILY, `${ENGINE_TOOL_PREFIX}linkedin_post_published`];
+const PRINCIPAL = [...STAKEHOLDER_TOOL_NAMES, READ_COMPANY_FINANCIALS_TOOL_NAME];
 
 describe("Distry's principal tools load only in a staff conversation (DISTRY-PRINCIPAL-1119)", () => {
   const staff = { requesterIsStaff: true, guest: false, leadTurn: false, proactive: false };
@@ -25,7 +23,7 @@ describe("Distry's principal tools load only in a staff conversation (DISTRY-PRI
     expect(withoutPrincipalToolsUnlessAllowed([...SOPHIE_TOOLS, ...PRINCIPAL], true)).toEqual([...SOPHIE_TOOLS, ...PRINCIPAL]);
   });
 
-  it("a client or a prospect never holds a finance, Engine or cross-client tool", () => {
+  it("a client or a prospect never holds a finance or cross-client tool", () => {
     expect(principalToolsAllowed({ ...staff, requesterIsStaff: false })).toBe(false);
     const kept = withoutPrincipalToolsUnlessAllowed([...SOPHIE_TOOLS, ...PRINCIPAL], false);
     for (const t of PRINCIPAL) expect(kept).not.toContain(t);

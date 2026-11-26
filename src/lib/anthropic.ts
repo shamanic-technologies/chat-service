@@ -14,6 +14,7 @@ import { CATALOGUE_TOOLS } from "../agent/catalogue-tools.js";
 import { STAKEHOLDER_TOOLS } from "../agent/principal-tools.js";
 import { READ_COMPANY_FINANCIALS_TOOL } from "../agent/finance-tools.js";
 import { REPORT_NOT_GOOD_TOOL, REPORT_NOT_GOOD_TOOL_NAME } from "./unit-report.js";
+import { OUTCOME_TOOLS } from "../agent/outcome-tools.js";
 
 export const MODEL = "claude-sonnet-4-6";
 /** Cost-name prefix used by costs-service: {provider}-{model} */
@@ -3436,6 +3437,8 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   // Distry's principal tools (DISTRY-PRINCIPAL-1119): staff conversations only (principal-tools.ts).
   ...Object.fromEntries(STAKEHOLDER_TOOLS.map((t) => [t.name, t])),
   [READ_COMPANY_FINANCIALS_TOOL.name]: READ_COMPANY_FINANCIALS_TOOL,
+  // Outcomes, exactly like a Script (ENGINE-GET-ASK-1123): find_outcome, get_units, ask_engine.
+  ...Object.fromEntries(OUTCOME_TOOLS.map((t) => [t.name, t])),
   create_workflow: CREATE_WORKFLOW_TOOL,
   upgrade_workflow: UPGRADE_WORKFLOW_TOOL,
   fork_workflow: FORK_WORKFLOW_TOOL,

@@ -106,6 +106,8 @@ export const SOPHIE_TOOLS: readonly string[] = [
   "report_not_good",
   "contact_human", "request_staff", "request_skill_upgrade", "list_staff_requests",
   "create_followup", "update_followup", "cancel_followup", "list_followups", "fire_followup",
+  // Outcomes, exactly like a Script (ENGINE-GET-ASK-1123): read the doc, read held Units, ask an Engine for a new one.
+  "find_outcome", "get_units", "ask_engine",
   // Distry as principal (DISTRY-PRINCIPAL-1119): loaded ONLY in a staff conversation (principal-tools.ts).
-  "find_stakeholders", "read_person_unibox", "read_organization_unibox", "read_company_financials", "engines",
+  "find_stakeholders", "read_person_unibox", "read_organization_unibox", "read_company_financials",
 ];

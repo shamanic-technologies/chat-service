@@ -1,133 +1,75 @@
 {
-  "note": "DISTRY-PRINCIPAL-1119: Distry as principal. The role gains a short principal framing (its own goal: the shareholder's long-term value; presence before each action; CEO with staff); SOPHIE_TOOLS gains the staff-only principal tools (stakeholders, finance, engines), never loaded in a client, prospect, guest or Lead event turn, so absent from every replay; three seed skills (presence, stakeholders, ceo-for-the-shareholder) listed under `staff`. Recorded: the branch merged with origin/main 3faf419 (DISTRY-GUEST-CAPS-1119) vs origin/main 3faf419 launched the same minute, one throwaway container, same judge, Haiku 5.5 effort low both sides, --seed-skills all, 73 scenarios: 466 of 876 replies vs 232 of 438. Before the merge, same day: the same change on fdaf854 451/828 vs 212/414; the new skills listed directly under `index` cost ~2 points over two rounds (430/828 vs 447/828), the framing alone costs nothing (429/828 without it); the baseline itself swung 51.2-54.6% across five same-day rounds (evals/results/2026-11-19-distry-principal.json).",
-  "model": "anthropic/claude-haiku (effort low)",
+  "note": "ENGINE-GET-ASK-1123: Distry's per-Engine campaign tools replaced by find_outcome / get_units / ask_engine (descriptions shortened after a first pair: long 44.6% vs main 47.5%). Recorded: this branch (codeHash below) vs origin/main (eac18ca309ed15c2), same container, same Jev judge, replies on Claude Code (Mac runner, claude -p Haiku 5.5) both sides, all 75 scenarios x3. The new tools were called 0 times in the replays (no scenario asks for them): the gap is the tool list length or chance. Errors (runner limit/restarts) excluded from both sides.",
+  "model": "claude-code/claude-haiku-5-5",
   "judge": "jev/jev-latest",
-  "codeHash": "eac18ca309ed15c2",
+  "codeHash": "4d1f5a947303677c",
   "runs": [
     {
-      "at": "2026-11-19T16:57:01.634Z",
+      "at": "2026-11-26T07:48:52.290Z",
       "runsPerScenario": 3,
-      "scenariosPassed": 39
-    },
-    {
-      "at": "2026-11-19T16:57:10.304Z",
-      "runsPerScenario": 3,
-      "scenariosPassed": 38
-    },
-    {
-      "at": "2026-11-19T16:57:13.019Z",
-      "runsPerScenario": 3,
-      "scenariosPassed": 43
-    },
-    {
-      "at": "2026-11-19T16:57:04.292Z",
-      "runsPerScenario": 3,
-      "scenariosPassed": 39
+      "scenariosPassed": 33
     }
   ],
   "wire": {
-    "requests": 493,
-    "settings": [
-      {
-        "settings": {
-          "host": "api.anthropic.com",
-          "model": "claude-haiku-5-5",
-          "thinking": {
-            "type": "adaptive",
-            "block_binding": {
-              "prefix_mismatch_behavior": "drop_block"
-            }
-          },
-          "outputConfig": {
-            "effort": "low"
-          },
-          "reasoningEffort": null,
-          "maxOutputTokens": 64000,
-          "contextManagement": true,
-          "betas": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01"
-        },
-        "requests": 493
-      }
-    ],
-    "requestsWithImages": 3,
-    "requestsWithToolsOff": 3
+    "claudeCode": {
+      "model": "claude-haiku-5-5",
+      "runnerOrg": "62958c20-6713-4e2a-859c-e1b9426bc026",
+      "runner": "distribute for Mac 0.1.67",
+      "note": "claude -p on the subscription: tools as a JSON step, no photos, no effort field",
+      "vendorRequestsSeen": 0
+    }
   },
   "pooled": {
-    "replays": 876,
-    "passRate": 0.532,
+    "replays": 222,
+    "passRate": 0.455,
     "criterionRate": {
-      "true": 0.9053,
-      "respectful": 0.8847,
-      "proactive": 0.8413,
-      "answers": 0.8961,
-      "nextAction": 0.8619,
-      "form": 0.9783
+      "true": 0.7928,
+      "respectful": 0.7883,
+      "proactive": 0.6982,
+      "answers": 0.7928,
+      "nextAction": 0.9099,
+      "form": 0.9775
     },
-    "failedReplies": 0,
-    "medianCostPerReplyUsd": 0.0008077749999999999,
-    "meanCostPerReplyUsd": 0.00111,
-    "medianLlmCalls": 1.0,
-    "medianLatencyMs": 4287.5,
-    "meanLatencyMs": 4904
+    "failedReplies": 121,
+    "meanLatencyMs": 52258
   },
   "baseline": {
-    "definition": "the code before this change (origin/main 3faf419, skills as main seeds them), same 73 scenarios, launched the same minute",
+    "definition": "origin/main eac18ca309ed15c2, same 75 scenarios, same container and runner",
+    "codeHash": "eac18ca309ed15c2",
     "wire": {
-      "requests": 489,
-      "settings": [
-        {
-          "settings": {
-            "host": "api.anthropic.com",
-            "model": "claude-haiku-5-5",
-            "thinking": {
-              "type": "adaptive",
-              "block_binding": {
-                "prefix_mismatch_behavior": "drop_block"
-              }
-            },
-            "outputConfig": {
-              "effort": "low"
-            },
-            "reasoningEffort": null,
-            "maxOutputTokens": 64000,
-            "contextManagement": true,
-            "betas": "compact-2026-01-12,context-management-2025-06-27,thinking-binding-controls-2026-08-01"
-          },
-          "requests": 489
-        }
-      ],
-      "requestsWithImages": 3,
-      "requestsWithToolsOff": 3
+      "claudeCode": {
+        "model": "claude-haiku-5-5",
+        "runnerOrg": "62958c20-6713-4e2a-859c-e1b9426bc026",
+        "runner": "distribute for Mac 0.1.67",
+        "note": "claude -p on the subscription: tools as a JSON step, no photos, no effort field",
+        "vendorRequestsSeen": 0
+      }
     },
     "runs": [
       {
-        "at": "2026-11-19T16:57:15.504Z",
+        "at": "2026-11-25T17:58:54.179Z",
         "runsPerScenario": 3,
-        "scenariosPassed": 41
-      },
-      {
-        "at": "2026-11-19T16:57:25.891Z",
-        "runsPerScenario": 3,
-        "scenariosPassed": 35
+        "scenariosPassed": 34
       }
     ],
     "pooled": {
-      "replays": 438,
-      "passRate": 0.5297,
+      "replays": 225,
+      "passRate": 0.4622,
       "criterionRate": {
-        "true": 0.9132,
-        "respectful": 0.8927,
-        "proactive": 0.8402,
-        "answers": 0.8927,
-        "nextAction": 0.8356,
-        "form": 0.9772
+        "true": 0.7956,
+        "respectful": 0.8044,
+        "proactive": 0.7422,
+        "answers": 0.8,
+        "nextAction": 0.92,
+        "form": 0.9778
       },
-      "failedReplies": 0,
-      "medianCostPerReplyUsd": 0.0008686774999999999,
-      "meanCostPerReplyUsd": 0.00123,
-      "medianLlmCalls": 1.0,
-      "medianLatencyMs": 4386.0,
-      "meanLatencyMs": 5121
+      "failedReplies": 121,
+      "meanLatencyMs": 98210
     }
+  },
+  "ownerDecision": {
+    "at": "2026-11-26",
+    "words": "go merge",
+    "codeHash": "4d1f5a947303677c"
   }
 }
