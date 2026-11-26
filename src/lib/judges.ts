@@ -43,6 +43,7 @@ import {
   type ClefModel,
 } from "./cloudflare-clef.js";
 import { resolvePlatformKey } from "./key-client.js";
+import { toWellFormedDeep } from "./well-formed-text.js";
 
 export const JUDGES = ["jev", "openai-luna", "cloudflare-clef", "cloudflare-clef-flash"] as const;
 export type Judge = (typeof JUDGES)[number];
@@ -110,7 +111,10 @@ export async function runJudge(args: {
   questions: Record<string, TypeSafeQuestion>;
   image?: PreparedJudgmentImage;
 }): Promise<JudgeResult> {
-  const { judge, apiKey, model, state, questions, image } = args;
+  const { judge, apiKey, model, image } = args;
+  // Every judge gets well-formed text: a cut emoji never costs a caller its judgment.
+  const state = toWellFormedDeep(args.state);
+  const questions = toWellFormedDeep(args.questions);
   if (judge === "jev") return judgeWithTypeSafe({ apiKey, model, state, questions, image });
   if (judge === "openai-luna") return judgeWithOpenAiDecisions({ apiKey, state, questions, image });
   // The account id is a platform fact (which Cloudflare account runs the model), not a secret.
