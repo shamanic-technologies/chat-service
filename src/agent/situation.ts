@@ -300,6 +300,16 @@ function moneyLine(billing: unknown, held: boolean): string {
   return parts.length ? parts.join(", ") : "not read";
 }
 
+/**
+ * What the brief is FOR, said once at its end (FIRST-ANSWER-VALUE-1126, prod 2026-11-26 WriteBros: a
+ * client who had just signed up and paid opened the chat on "what matters right now?" and got the brief
+ * read back gap by gap: not funded, nothing queued, no replies, no booking link, "Expected 0.3x", "treat
+ * it as a test, not a forecast", then two asks). Nothing said what the brief serves, so every line read
+ * as news to deliver. The game, never a reply: the value first, the one step that moves it, the rest held.
+ */
+export const BRIEF_PURPOSE_LINE =
+  "How to use this brief: it is what you hold about their account, the ground you answer from, not a list to read out. They came to us for revenue they do not have to chase. So open on what we are doing for them now and what it brings them next (the buyers we reach, the replies and meetings that follow), in their words, from the facts above. Then the one thing that moves it forward: what we do next, or the one thing only they can give, asked in one line. Anything else above that does not stop the next result waits until it becomes that next step. A figure answers what they ask about; an expected return built on default assumptions is our starting estimate before their own results exist, so it belongs to a question about returns, said with that basis.";
+
 /** The next steps of the first running campaigns, by campaign id (a failed read is named, never a gate). */
 async function readNextSteps(reader: SituationReader, brandId: string, campaigns: Obj[], failed: string[]): Promise<Map<string, Obj>> {
   const read = reader.getCampaignNextSteps?.bind(reader);
@@ -406,5 +416,6 @@ export async function buildSituationBrief(
   }
   if (billing !== null) lines.push(`**Money**: ${moneyLine(billing, outlook !== null && billingHoldKind(asObj(outlook)) !== null)}.`);
   if (failed.length) lines.push(`(Not read this turn: ${failed.join(", ")}. Use your tools if you need them.)`);
+  lines.push(BRIEF_PURPOSE_LINE);
   return lines.join("\n");
 }
