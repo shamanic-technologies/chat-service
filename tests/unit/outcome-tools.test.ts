@@ -210,6 +210,11 @@ describe("one Distry on every surface: the Outcome tools are hers, not staff-onl
     }
   });
 
+  it("the descriptions name the question they answer (a staff test asked 'was X already emailed?' and the model searched elsewhere)", () => {
+    expect(TOOL_REGISTRY.find_outcome.description).toMatch(/already .*emailed/);
+    expect(TOOL_REGISTRY.get_units.description).toMatch(/emails we sent/);
+  });
+
   it("a stored version's retired `engines` entry reads as the Outcome tools, in its place, once", () => {
     expect(withOutcomeToolsForEngines(["read_skill", "engines", "get_units"])).toEqual(["read_skill", "find_outcome", "get_units", "ask_engine"]);
     expect(withOutcomeToolsForEngines(["read_skill"])).toEqual(["read_skill"]);
