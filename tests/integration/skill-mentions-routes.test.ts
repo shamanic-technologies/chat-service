@@ -73,7 +73,7 @@ describe("skill routes serve who mentions whom", { timeout: 60000 }, () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.promptMentions)).toBe(true);
     expect(res.body.mentionableTools).toContain("read_skill");
-    expect(res.body.mentionableTools).not.toContain("engines");
+    expect(res.body.mentionableTools).toContain("get_units");
     for (const s of res.body.skills) expect(s).toHaveProperty("neverMentioned");
   });
 });

@@ -155,6 +155,11 @@ export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> =
   // chat UI: an outside agent talks to its user in its own words
   present_choices: [NO_API_ROUTE],
   open_page: [NO_API_ROUTE],
+
+  // Outcomes like a Script (ENGINE-GET-ASK-1123): the Provider reads and the Engine ask are service routes, not the gateway's
+  find_outcome: [NO_API_ROUTE],
+  get_units: [NO_API_ROUTE],
+  ask_engine: [NO_API_ROUTE],
 };
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

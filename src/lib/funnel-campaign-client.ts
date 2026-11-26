@@ -103,9 +103,14 @@ function positiveInt(name: string, v: unknown): number {
 }
 
 // A campaign may name no offer (DISTRY-CALL-IS-CAMPAIGN-1121): billing serves its caps without the offer segment.
+// A known campaign is read and written by ITS id (DISTRY-FIRST-ANSWER-FALSE-1126, prod 2026-11-26 WriteBros:
+// the signup page stores the max budget on the CAMPAIGN, the funnel-wide path served none, and the first answer
+// after payment said "not funded because it has no max budget" 97 s after a $121/day cap). Billing's campaign
+// route serves the campaign's own caps, else the funnel-wide ones (`capScope`), so it is never narrower.
 const capsPath = (a: Record<string, unknown>) => {
   const offerId = opt(a.offerId);
-  return `/v1/brands/${enc(req("brandId", a.brandId))}${offerId ? `/offers/${enc(offerId)}` : ""}/sales-funnels/${enc(req("salesFunnelId", a.salesFunnelId))}/caps`;
+  const campaignId = opt(a.salesFunnelCampaignId);
+  return `/v1/brands/${enc(req("brandId", a.brandId))}${offerId ? `/offers/${enc(offerId)}` : ""}/sales-funnels/${enc(req("salesFunnelId", a.salesFunnelId))}${campaignId ? `/campaigns/${enc(campaignId)}` : ""}/caps`;
 };
 
 // --- Reads (free) -------------------------------------------------------------
@@ -240,7 +245,7 @@ export async function stopFunnelCampaign(a: Record<string, unknown>, p: ApiCallP
 // --- Start (only from confirm_switch_on) ----------------------------------------
 
 /** propose_switch_on guard: the funnel's caps as stated now; refuses while no max budget is stated (VOL-NEEDS-USD-1124). */
-export async function requireStatedCap(target: { brandId: string; offerId: string; salesFunnelId: string }, p: ApiCallParams) {
+export async function requireStatedCap(target: { brandId: string; offerId: string; salesFunnelId: string; salesFunnelCampaignId?: string }, p: ApiCallParams) {
   // A mixed funnel is never started either (its budget would starve the proactive part).
   await assertFunnelNotMixed(target.salesFunnelId);
   const caps = (await getFunnelCaps(target, p)) as CapsBody;
@@ -487,7 +492,7 @@ export async function listAccountCampaigns(a: Record<string, unknown>, p: ApiCal
   const campaigns = await Promise.all(
     body.salesFunnelCampaigns.map(async (c) => {
       const brandId = opt(a.brandId) ?? (c as unknown as { brandId?: string }).brandId ?? "";
-      const caps = (await getFunnelCaps({ brandId, offerId: c.offerId, salesFunnelId: c.salesFunnelId }, p)) as CapsBody;
+      const caps = (await getFunnelCaps({ brandId, offerId: c.offerId, salesFunnelId: c.salesFunnelId, salesFunnelCampaignId: c.id }, p)) as CapsBody;
       const results = resultsByBrand.get(brandId)?.get(c.id);
       // A campaign on its target alone runs no catalogue funnel: its salesFunnelId reads its target.
       const targetOnly = !!c.target && c.target === c.salesFunnelId;

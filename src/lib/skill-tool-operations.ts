@@ -105,8 +105,14 @@ export const TOOL_OPERATIONS: Readonly<Record<string, readonly ToolOperationRef[
   stop_funnel_campaign: [op("PATCH /v1/sales-funnel-campaigns/{id}")],
   propose_switch_on: [op("PATCH /v1/sales-funnel-campaigns/{id}"), op("POST /v1/trigger-events")],
   confirm_switch_on: [op("PATCH /v1/sales-funnel-campaigns/{id}"), op("POST /v1/trigger-events")],
-  get_funnel_caps: [op("GET /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps")],
-  set_funnel_caps: [op("PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps")],
+  get_funnel_caps: [
+    op("GET /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/campaigns/{salesFunnelCampaignId}/caps"),
+    op("GET /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps"),
+  ],
+  set_funnel_caps: [
+    op("PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/campaigns/{salesFunnelCampaignId}/caps"),
+    op("PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps"),
+  ],
   get_trigger_events: [op("GET /v1/offers/{offerId}/trigger-events")],
   get_campaign_next_steps: [
     op("GET /v1/features/brands/{brandId}/sales-funnel-campaigns/{salesFunnelCampaignId}/next-steps"),
@@ -173,6 +179,10 @@ export const TOOL_OPERATIONS: Readonly<Record<string, readonly ToolOperationRef[
   list_declared_sales_paths: { noRoute: NOT_PUBLIC },
   declare_sales_path: { noRoute: NOT_PUBLIC },
   declare_leg: { noRoute: NOT_PUBLIC },
+  // Outcomes like a Script (ENGINE-GET-ASK-1123): service routes reached by the chat, not the gateway
+  find_outcome: { noRoute: NOT_PUBLIC },
+  get_units: { noRoute: NOT_PUBLIC },
+  ask_engine: { noRoute: NOT_PUBLIC },
   find_workflows: { noRoute: STAFF_KEY },
   create_pipe: { noRoute: STAFF_KEY },
   create_offer: { noRoute: STAFF_KEY },

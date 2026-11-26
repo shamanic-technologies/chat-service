@@ -35,10 +35,11 @@ describe("Distry's definition (DISTRY-PRINCIPAL-1119)", () => {
     expect(() => validateDistryDefinition(code)).not.toThrow();
   });
 
-  it("the editor can turn on every registry tool and the principal tools (engines included)", () => {
+  it("the editor can turn on every registry tool and the principal tools (the Outcome tools included)", () => {
     const names = availableDistryTools().map((t) => t.name);
     for (const t of SOPHIE_TOOLS) expect(names).toContain(t);
-    expect(names).toContain("engines");
+    for (const t of ["find_outcome", "get_units", "ask_engine"]) expect(names).toContain(t);
+    expect(names).not.toContain("engines");
     expect(names).toContain("read_company_financials");
     expect(availableDistryTools().find((t) => t.name === "find_stakeholders")?.staffOnly).toBe(true);
     expect(availableDistryTools().find((t) => t.name === "run_operation")?.staffOnly).toBe(false);

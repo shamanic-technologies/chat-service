@@ -39,7 +39,6 @@ function fullData(): TurnPromptData {
     campaignInputs: { goal: "meetings" },
     requestContext: { page: "today", recentActions: ["opened billing"] },
     dashboard: true,
-    enginesUnreadable: "workflow-service 502",
     clientBrief: "\n\n---\n## Your client's business\nThey sell shoes.",
     situationBrief: "\n\n---\n## Where their account stands\n2 campaigns running.",
     brandTools: true,
@@ -53,7 +52,6 @@ function legacy(d: TurnPromptData, surface: string): { system: string; turn: str
     buildSystemPrompt("", d.requestContext ?? undefined, d.campaignInputs) +
     surface +
     (d.dashboard ? dashboardPagesBlock() : "") +
-    (d.enginesUnreadable ? `\n\n---\n(Not read this turn: the list of Engines (${d.enginesUnreadable}). No Engine can be called in this turn.)` : "") +
     (d.clientBrief ?? "") +
     (d.situationBrief ?? "") +
     (d.brandTools ? brandToolsBlock() : "");
@@ -175,9 +173,7 @@ describe("Distry's prompt parts (DISTRY-PROMPT-PARTS-1120)", () => {
     }
   });
 
-  it("a staff-only part reaches no client turn: no Engine note without the staff Engine read", () => {
-    const client = { ...fullData(), enginesUnreadable: null };
-    expect(assemblePrompt(CODE, client).turn).not.toContain("list of Engines");
+  it("the audience of a prompt preview follows who is talking", () => {
     expect(promptAudience({ principal: false, leadTurn: false, guest: false })).toBe("client");
     expect(promptAudience({ principal: true, leadTurn: false, guest: false })).toBe("staff");
     expect(promptAudience({ principal: false, leadTurn: true, guest: true })).toBe("lead");

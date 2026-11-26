@@ -22,6 +22,7 @@
 import { randomUUID } from "crypto";
 import { isTransientConnectError, jittered, parseRetryAfterMs } from "./openai-compatible.js";
 import type { PreparedJudgmentImage } from "./judgment-image.js";
+import { toWellFormedDeep } from "./well-formed-text.js";
 
 const TYPESAFE_API_URL = "https://api.typesafe.ai/v1/systemone";
 
@@ -228,7 +229,10 @@ export function buildTypeSafeBody(options: Pick<TypeSafeJudgeOptions, "state" | 
   body: Record<string, unknown>;
   headers: Record<string, string>;
 } {
-  const { state, questions, image } = options;
+  const { image } = options;
+  // A lone surrogate (half an emoji from a cut text) makes Jev refuse the whole request.
+  const state = toWellFormedDeep(options.state);
+  const questions = toWellFormedDeep(options.questions);
   if (!image) {
     return { body: { state, model: TYPESAFE_API_MODEL_ID, questions }, headers: {} };
   }

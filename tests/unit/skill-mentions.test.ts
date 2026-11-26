@@ -70,8 +70,9 @@ describe("the mention graph", () => {
     });
   });
 
-  it("Engines are not mentionable tools", () => {
+  it("every tool Distry can turn on is mentionable, the Outcome tools included", () => {
     expect(mentionableTools()).toContain("read_skill");
+    expect(mentionableTools()).toContain("get_units");
     expect(mentionableTools()).not.toContain("engines");
   });
 });

@@ -14,6 +14,7 @@ import { CATALOGUE_TOOLS } from "../agent/catalogue-tools.js";
 import { STAKEHOLDER_TOOLS } from "../agent/principal-tools.js";
 import { READ_COMPANY_FINANCIALS_TOOL } from "../agent/finance-tools.js";
 import { REPORT_NOT_GOOD_TOOL, REPORT_NOT_GOOD_TOOL_NAME } from "./unit-report.js";
+import { OUTCOME_TOOLS } from "../agent/outcome-tools.js";
 
 export const MODEL = "claude-sonnet-4-6";
 /** Cost-name prefix used by costs-service: {provider}-{model} */
@@ -2766,16 +2767,21 @@ export const LIST_FUNNEL_CAMPAIGNS_TOOL: Anthropic.Tool = {
   },
 };
 
+const CAMPAIGN_CAPS_PROP = {
+  type: "string",
+  description: "The campaign's id (list_campaigns `id`). Send it whenever the caps are about one campaign: its own caps are stored on it, the funnel alone may carry none.",
+};
+
 export const GET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
   name: "get_funnel_caps",
-  description: "One funnel's raw caps (max budget, max volume, consumed, reached). salesFunnelId is the FUNNEL id from list_campaigns, never a campaign id. For 'the budget of each campaign', list_campaigns already says it in words. Read-only.",
-  input_schema: { type: "object" as const, properties: FUNNEL_TARGET_PROPS, required: ["brandId", "offerId", "salesFunnelId"] },
+  description: "One campaign's raw caps (max budget, max volume, consumed, reached). salesFunnelId is the FUNNEL id from list_campaigns, never a campaign id; the campaign's id goes in salesFunnelCampaignId. For 'the budget of each campaign', list_campaigns already says it in words. Read-only.",
+  input_schema: { type: "object" as const, properties: { ...FUNNEL_TARGET_PROPS, salesFunnelCampaignId: CAMPAIGN_CAPS_PROP }, required: ["brandId", "offerId", "salesFunnelId"] },
 };
 
 export const SET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
   name: "set_funnel_caps",
   description:
-    "State a funnel's caps as the USER gave them. Starts nothing. A campaign needs a max budget in $; a max volume is optional and always comes with a max budget beside it, as a safety (a volume alone is refused). " +
+    "State a campaign's caps as the USER gave them (send its salesFunnelCampaignId). Starts nothing. A campaign needs a max budget in $; a max volume is optional and always comes with a max budget beside it, as a safety (a volume alone is refused). " +
     "Send BOTH keys every time: each cap the user stated as an object, maxVolume null when they want no volume cap. " +
     "Never invent a cap: when the user gave a volume but no budget, ask them for the max budget before calling. " +
     "The answer carries billing's `funding` verdict: repeat it, never say a held campaign runs. " +
@@ -2784,6 +2790,7 @@ export const SET_FUNNEL_CAPS_TOOL: Anthropic.Tool = {
     type: "object" as const,
     properties: {
       ...FUNNEL_TARGET_PROPS,
+      salesFunnelCampaignId: CAMPAIGN_CAPS_PROP,
       maxBudget: {
         description: "The max budget the user stated. Required: a campaign never runs without a max budget in $.",
         type: "object",
@@ -3430,6 +3437,8 @@ export const TOOL_REGISTRY: Record<string, Anthropic.Tool> = {
   // Distry's principal tools (DISTRY-PRINCIPAL-1119): staff conversations only (principal-tools.ts).
   ...Object.fromEntries(STAKEHOLDER_TOOLS.map((t) => [t.name, t])),
   [READ_COMPANY_FINANCIALS_TOOL.name]: READ_COMPANY_FINANCIALS_TOOL,
+  // Outcomes, exactly like a Script (ENGINE-GET-ASK-1123): find_outcome, get_units, ask_engine.
+  ...Object.fromEntries(OUTCOME_TOOLS.map((t) => [t.name, t])),
   create_workflow: CREATE_WORKFLOW_TOOL,
   upgrade_workflow: UPGRADE_WORKFLOW_TOOL,
   fork_workflow: FORK_WORKFLOW_TOOL,
