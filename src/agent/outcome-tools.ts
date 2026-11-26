@@ -50,7 +50,7 @@ export const OUTCOME_RESULT_MAX_CHARS = 6000;
 export const FIND_OUTCOME_TOOL: Anthropic.Tool = {
   name: FIND_OUTCOME_TOOL_NAME,
   description:
-    "How to read or make results of one kind (an outcome: email found, email sent...). No outcome = the list. With one = its reads (get_units) and what its Engine needs (ask_engine). Free.",
+    "Whether we already did something for a person or company (emailed them, queued an email, found or checked an address, read a page) and how to make a new one. No outcome = the list of kinds. With one = how to read what we hold (get_units) and what its Engine needs (ask_engine). Free.",
   input_schema: {
     type: "object",
     properties: {
@@ -62,7 +62,7 @@ export const FIND_OUTCOME_TOOL: Anthropic.Tool = {
 
 export const GET_UNITS_TOOL: Anthropic.Tool = {
   name: GET_UNITS_TOOL_NAME,
-  description: "Read results we already hold for an outcome, for this account. Free. `filters` = the read's request as find_outcome documents it.",
+  description: "Read what we already hold for an outcome, for this account (e.g. the emails we sent someone, the verdicts held for an address). Free. `filters` = the read's request as find_outcome documents it.",
   input_schema: {
     type: "object",
     properties: {
