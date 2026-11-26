@@ -389,11 +389,21 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     expect(opusRetry.status).toBe(200);
     expect(opusRetry.body.answers.step).toEqual({ type: "noul", noul: 0.7 });
     expect(opusRetry.body.model).toBe("claude-opus-4-6");
+    // 3c. A routine answering inside a Claude chat sends no usage and no model: used, sized by us, stated on its run.
+    const routineBody = { ...body, state: "Offer: B2B legal." };
+    expect((await request(app).post("/orgs/judgments").set(AUTH).send(routineBody)).status).toBe(503);
+    const claim4 = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 0, max: 10, runner: { kind: "routine" } });
+    const item4 = claim4.body.items[0];
+    const r4 = await request(app).post(`/orgs/local-llm/work/${item4.id}/result`).set(AUTH).send({ leaseId: item4.leaseId, ok: true, structured: { step: { yes: 0.6, no: 0.4 } } });
+    expect(r4.body).toMatchObject({ stored: true, status: "done" });
+    const routineRetry = await request(app).post("/orgs/judgments").set(AUTH).send(routineBody);
+    expect(routineRetry.status).toBe(200);
+    expect(routineRetry.body.answers.step).toEqual({ type: "noul", noul: 0.6 });
     // 4. The same read again: served from that answer, no new item.
     const retry = await request(app).post("/orgs/judgments").set(AUTH).send(body);
     expect(retry.status).toBe(200);
     expect(retry.body.answers.step).toEqual({ type: "noul", noul: 0.8 });
-    expect(store.jobs.size).toBe(3);
+    expect(store.jobs.size).toBe(4);
   });
 
   it("SOLO-PLAN-1125: a resumed call naming its job (x-llm-job-id) gets THAT job whatever its body, never a new one", async () => {
@@ -463,7 +473,7 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
     expect(other.body.declared).toBe(false);
   });
 
-  it("LOCAL-CLAUDE-RATING-1116: an answer that cannot be credited to the model that ran is refused", async () => {
+  it("SOLO-PLAN-1125: an answer with no usage (a founder's routine) is used and stated on its run, sized by chat-service", async () => {
     const { app } = await boot();
     await request(app).put("/orgs/local-llm").set(AUTH).send({ enabled: true });
     const pending = request(app).post("/complete").set(AUTH).send({ message: "Hi", systemPrompt: "S.", provider: "google", model: "flash-pro" }).then((r) => r);
@@ -472,14 +482,14 @@ describe("LOCAL-CLAUDE-1116 — an org's LLM on its own Claude Code", { timeout:
       const c = await request(app).post("/orgs/local-llm/work/claim").set(AUTH).send({ waitMs: 200 });
       item = c.body.items[0];
     }
-    // No usage: the call cannot be stated on its run → the job fails, the caller gets the runner's failure.
+    // No usage: used; chat-service counts the size (~4 chars a token) and states it on the run as the org's own account.
     const noUsage = await request(app).post(`/orgs/local-llm/work/${item!.id}/result`).set(AUTH).send({ leaseId: item!.leaseId, ok: true, model: "claude-haiku-5-5", text: "hello" });
-    expect(noUsage.status).toBe(200);
+    expect(noUsage.body).toMatchObject({ stored: true, status: "done" });
     const res = await pending;
-    expect(res.status).toBe(502);
-    expect(res.body.code).toBe("local_runner_failed");
-    expect(res.body.error).toContain("token usage");
-    expect(fetchCalls.some((c) => c.url.endsWith("/costs"))).toBe(false);
+    expect(res.status).toBe(200);
+    expect(res.body.content).toBe("hello");
+    const items = fetchCalls.filter((c) => c.url.endsWith("/costs")).flatMap((c) => JSON.parse(String(c.init!.body)).items);
+    expect(items.find((i: { costName: string }) => i.costName.endsWith("-tokens-output"))).toMatchObject({ quantity: 2, costSource: "org" });
   });
 
   it("LOCAL-CLAUDE-RATING-1116: the served-llms read says which model runs each stated LLM", async () => {
