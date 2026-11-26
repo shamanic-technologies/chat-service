@@ -260,13 +260,13 @@ async function snapshotOrg(deps: DistrySpendDeps, day: string, orgId: string, ki
  * org opened during the turn is counted from 0. Never throws: the turn already
  * answered; a lost record is logged loud (the next turn re-reads the ledger).
  */
-export async function recordDistryTurn(deps: DistrySpendDeps, verdict: DistryVerdict, runId: string, planOrgIdAfter: string | null): Promise<void> {
+export async function recordDistryTurn(deps: DistrySpendDeps, verdict: DistryVerdict, runId: string, planOrgIdAfter: string | null, runOrgId?: string): Promise<void> {
   if (!verdict.run || !verdict.tracked) return;
   const now = deps.now?.() ?? new Date();
   const day = utcDay(now);
   const { person } = verdict;
   try {
-    await deps.db.insert(distrySpendTurns).values({ day, personKey: person.key, surface: person.surface, orgId: person.turnOrgId, runId, verdict: "ran" });
+    await deps.db.insert(distrySpendTurns).values({ day, personKey: person.key, surface: person.surface, orgId: runOrgId ?? person.turnOrgId, runId, verdict: "ran" });
     if (person.guest && planOrgIdAfter) await snapshotOrg(deps, day, planOrgIdAfter, "plan");
   } catch (err) {
     console.error(`[chat-service] Distry spend: the turn of ${person.key} (run ${runId}) could not be recorded: ${err instanceof Error ? err.message : String(err)}`);
@@ -276,13 +276,14 @@ export async function recordDistryTurn(deps: DistrySpendDeps, verdict: DistryVer
 /** What a door holds: the gate before a turn, the record after it. */
 export interface DistryGate {
   gate: (person: DistryPerson) => Promise<DistryVerdict>;
-  record: (verdict: DistryVerdict, runId: string, planOrgIdAfter: string | null) => Promise<void>;
+  /** `runOrgId`: the org the run lives in when it is not the turn's (a lead turn's model spend on the caller's run). */
+  record: (verdict: DistryVerdict, runId: string, planOrgIdAfter: string | null, runOrgId?: string) => Promise<void>;
 }
 
 export function distryGateOver(deps: DistrySpendDeps): DistryGate {
   return {
     gate: (person) => distryGate(deps, person),
-    record: (verdict, runId, planOrgIdAfter) => recordDistryTurn(deps, verdict, runId, planOrgIdAfter),
+    record: (verdict, runId, planOrgIdAfter, runOrgId) => recordDistryTurn(deps, verdict, runId, planOrgIdAfter, runOrgId),
   };
 }
 
