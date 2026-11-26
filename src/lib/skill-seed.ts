@@ -313,7 +313,7 @@ A campaign needs a max budget. A max volume is optional and never alone: a max b
 ## Launch (always this order)
 1. The offer (GET /v1/brands/{id}/offers) and the funnel: GET /v1/offers/{offerId}/sales-funnels?brandId=.
 2. POST /v1/sales-funnel-campaigns {brandId, offerId, salesFunnelId, status: "stopped", brief}: created STOPPED, starts nothing; you write its brief (below).
-3. The caps: PUT /v1/brands/{brandId}/offers/{offerId}/sales-funnels/{salesFunnelId}/caps with both keys (null = no such cap).
+3. Its caps: PUT .../sales-funnels/{salesFunnelId}/campaigns/{salesFunnelCampaignId}/caps with both keys (null = no such cap).
 4. Show the funnel, its brief, its caps and billing's verdict; ask yes or no. A step that cannot run today (its preview email refused, its source empty) is said first, and the start waits for it: a start would pay for the steps before it and deliver nothing.
 5. Only after their yes, in their next message: PATCH /v1/sales-funnel-campaigns/{id} {status: "activate"} (it needs their yes). Refused (nothing can run it yet, payment held): say why plainly; request_staff (POST /v1/staff-requests) only if it needs code.
 
@@ -322,7 +322,7 @@ The brief is the ONE text our judge reads to pick how the campaign works, and ev
 
 ## Read and adjust
 - GET /v1/sales-funnel-campaigns?brandId= : THE campaigns with status, budget in words ("Max $10/day", "Not funded"), spent this period, results, and their path (that IS what it does). Count and name only campaigns: a step (a source, cold email, AI booking) is part of a campaign, never a campaign.
-- GET .../sales-funnels/{salesFunnelId}/caps: one funnel's caps (never a campaign id there). Raising a cap spends more: their yes first.
+- GET the same path: that campaign's caps. Raising a cap spends more: their yes first.
 - Stop: PATCH /v1/sales-funnel-campaigns/{id} {status: "stop"}: no new first touches; follow-ups still go out. Say what stopped.
 - It owns one part per step, each with a campaign id; GET /v1/campaigns/{id} names its salesFunnelCampaignId. What the emails say: \`offers\`.
 
