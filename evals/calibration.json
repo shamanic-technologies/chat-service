@@ -1,13 +1,27 @@
 {
   "kind": "calibration",
-  "at": "2026-11-13T18:11:52.254Z",
+  "at": "2026-11-26T14:12:45.119Z",
   "judge": "jev/jev-latest",
-  "cases": 72,
-  "agree": 72,
+  "cases": 76,
+  "agree": 76,
   "passed": true,
   "rows": [
     {
       "id": "aba-diagnose-results",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "brief-new-campaign-whatsapp",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "brief-new-campaign",
       "which": "good",
       "expected": "pass",
       "got": "pass",
@@ -164,7 +178,6 @@
       "expected": "fail",
       "got": "fail",
       "failed": [
-        "true",
         "proactive",
         "answers"
       ]
@@ -329,8 +342,7 @@
       "expected": "fail",
       "got": "fail",
       "failed": [
-        "respectful",
-        "answers"
+        "respectful"
       ]
     },
     {
@@ -602,6 +614,27 @@
     },
     {
       "id": "wa-human-quoted-lead",
+      "which": "good",
+      "expected": "pass",
+      "got": "pass",
+      "failed": []
+    },
+    {
+      "id": "writebros-first-open-value",
+      "which": "prod-bad",
+      "expected": "fail",
+      "got": "fail",
+      "failed": [
+        "true",
+        "respectful",
+        "proactive",
+        "answers",
+        "nextAction",
+        "form"
+      ]
+    },
+    {
+      "id": "writebros-first-open-value",
       "which": "good",
       "expected": "pass",
       "got": "pass",
