@@ -269,6 +269,28 @@ describe("POST /internal/copilot/lead-turns: the Copilot writes the Lead event a
     expect(gemini.bodies.length).toBe(calls);
   }, 30_000);
 
+  // LEAD-REPLY-CHANNEL-1127 (prod: a client wrote on Telegram and was answered on WhatsApp from Sophie's line):
+  // a turn for a conversation on any app crm bridges is accepted, and the text is a chat message on THAT app.
+  it("a Telegram conversation: accepted, chat-form text on Telegram with the writing account's persona, no WhatsApp read", async () => {
+    const app = (await import("../../src/index.js")).default;
+    const gemini = { bodies: [] as Array<Record<string, unknown>>, replies: [{ call: { name: "answer_person", args: ANSWER } }] as GeminiReply[] };
+    routes.push(...baseRoutes(gemini, app, null));
+
+    const res = await request(app)
+      .post("/internal/copilot/lead-turns")
+      .set(HEADERS)
+      .send({ ...BODY, idempotencyKey: "occ-tg", medium: "telegram", assistant: { name: "Nora", role: "Founder", instructions: "short and direct" } });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ json: ANSWER, duplicate: false });
+    const system = JSON.stringify(gemini.bodies[0].systemInstruction);
+    expect(system).toContain("chat message in their telegram conversation");
+    expect(system).toContain("Nora, Founder");
+    expect(system).not.toContain("email reply");
+    expect(system).not.toContain("goes out on WhatsApp");
+    // No WhatsApp typing nor WhatsApp conversation read for another app.
+    expect(fetchCalls.some((c) => c.url.includes("/whatsapp"))).toBe(false);
+  }, 30_000);
+
   it("our brand, a person with an account: their tools (no UI tools) plus the answer, as them", async () => {
     process.env.COPILOT_FOLLOWUP_BRAND_ID = BRAND;
     const app = (await import("../../src/index.js")).default;

@@ -127,7 +127,8 @@ export function utcDay(now: Date): string {
   return now.toISOString().slice(0, 10);
 }
 
-export type DistrySurface = "web" | "whatsapp" | "email" | "telegram";
+/** Where a turn runs: our own doors, or the app of a lead turn's conversation as crm names it (LEAD-REPLY-CHANNEL-1127). */
+export type DistrySurface = "web" | "whatsapp" | "email" | "telegram" | (string & {});
 
 /** Who a turn is for, as its door knows it. */
 export interface DistryPerson {

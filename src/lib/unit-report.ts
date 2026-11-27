@@ -35,9 +35,10 @@ export const UNIT_REPORT_KINDS = ["edited", "reported"] as const;
 export type UnitReportKind = (typeof UNIT_REPORT_KINDS)[number];
 
 /** Where the report was said, as the store's free-text `source` reads it. */
-export type ReportSurface = "web" | "whatsapp" | "telegram" | "email";
-const SURFACE_WORDS: Readonly<Record<ReportSurface, string>> = { web: "web chat", whatsapp: "WhatsApp", telegram: "Telegram", email: "email" };
-export const reportSource = (surface: ReportSurface): string => `Sophie (${SURFACE_WORDS[surface]})`;
+/** Our own doors, or the app of a lead turn's conversation as crm names it (LEAD-REPLY-CHANNEL-1127). */
+export type ReportSurface = "web" | "whatsapp" | "telegram" | "email" | (string & {});
+const SURFACE_WORDS: Readonly<Record<string, string>> = { web: "web chat", whatsapp: "WhatsApp", telegram: "Telegram", email: "email" };
+export const reportSource = (surface: ReportSurface): string => `Sophie (${SURFACE_WORDS[surface] ?? surface})`;
 
 export const REPORT_NOT_GOOD_TOOL: Anthropic.Tool = {
   name: REPORT_NOT_GOOD_TOOL_NAME,
