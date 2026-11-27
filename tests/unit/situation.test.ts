@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildSituationBrief, type SituationReader } from "../../src/agent/situation.js";
+import { BRIEF_PURPOSE_LINE, buildSituationBrief, type SituationReader } from "../../src/agent/situation.js";
 import { SOPHIE_CONFIG_KEY, SOPHIE_MODEL, SOPHIE_SYSTEM_PROMPT, SOPHIE_TOOLS, dashboardPagesBlock } from "../../src/agent/sophie.js";
 import { SOPHIE_CONFIG, isSelfSeededConfigKey } from "../../src/lib/seed-platform-configs.js";
 
@@ -27,6 +27,18 @@ describe("buildSituationBrief", () => {
     const brief = await buildSituationBrief(reader());
     expect(brief).toContain("**Campaigns**: none yet, so nobody is being reached.");
     expect(brief).toContain("postpaid: work is billed as it runs, no card on file");
+  });
+
+  // FIRST-ANSWER-VALUE-1126 (prod 2026-11-26 WriteBros): the brief was read back gap by gap, "Expected 0.3x"
+  // volunteered as a verdict, two asks. It ends on what it is FOR: the game, no prohibition, no reply to recite.
+  it("ends on what the brief is for: value first, one step, a default-built expected return only when asked", async () => {
+    const brief = await buildSituationBrief(reader());
+    const last = brief.trim().split("\n").at(-1)!;
+    expect(last).toBe(BRIEF_PURPOSE_LINE);
+    expect(last).toContain("open on what we are doing for them now");
+    expect(last).toContain("the one thing only they can give, asked in one line");
+    expect(last).toContain("default assumptions");
+    expect(last).not.toMatch(/\bNever\b|\bnever\b/);
   });
 
   it("states today's date so a reply never guesses the day (Sunday send 2026-11-01)", async () => {

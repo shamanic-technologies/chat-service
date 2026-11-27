@@ -1,0 +1,1162 @@
+{
+ "id": "writebros-first-open-value",
+ "title": "A client who just signed up and paid opens the chat: value first, one ask",
+ "source": "client W (AI writing tools), web, 2026-11-26 (FIRST-ANSWER-VALUE-1126)",
+ "surface": "web",
+ "person": {
+  "name": "Sam"
+ },
+ "context": {
+  "currentPage": "campaign",
+  "recentActions": []
+ },
+ "history": [],
+ "message": "Open a new chat for this account: what matters right now, and what should I do next?",
+ "fixtures": {
+  "list_brands": [
+   {
+    "brands": [
+     {
+      "id": "708118d5-2cce-4d3d-a619-35e8d1d2868c",
+      "name": "WriteBros",
+      "domain": "writebros.ai",
+      "brandUrl": "https://writebros.ai"
+     }
+    ]
+   }
+  ],
+  "list_offers": [
+   {
+    "offers": [
+     {
+      "icon": "users",
+      "name": "Voice Cloning",
+      "status": "active",
+      "brandId": "708118d5-2cce-4d3d-a619-35e8d1d2868c",
+      "offerId": "9b833105-7a55-416e-888f-858bde06425e",
+      "imageUrl": null,
+      "createdAt": "2026-11-26 03:33:14.245084+00",
+      "updatedAt": "2026-11-26 03:33:14.245084+00",
+      "archivedAt": null,
+      "description": "Custom writing voice models trained on your own samples with API and MCP access for teams, agencies, and heavy users."
+     }
+    ]
+   }
+  ],
+  "get_offer_settings": [
+   {
+    "name": "Voice Cloning",
+    "offerId": "9b833105-7a55-416e-888f-858bde06425e",
+    "legRates": [
+     {
+      "stated": false,
+      "toStep": "Meeting booked",
+      "ratePct": null,
+      "fromStep": "Positive reply",
+      "statedAt": null
+     },
+     {
+      "stated": false,
+      "toStep": "Meeting attended",
+      "ratePct": null,
+      "fromStep": "Meeting booked",
+      "statedAt": null
+     },
+     {
+      "stated": false,
+      "toStep": "Paid client",
+      "ratePct": null,
+      "fromStep": "Meeting attended",
+      "statedAt": null
+     },
+     {
+      "stated": false,
+      "toStep": "Meeting booked",
+      "ratePct": null,
+      "fromStep": "Website visit",
+      "statedAt": null
+     },
+     {
+      "stated": false,
+      "toStep": "Signup",
+      "ratePct": null,
+      "fromStep": "Website visit",
+      "statedAt": null
+     },
+     {
+      "stated": false,
+      "toStep": "Paid client",
+      "ratePct": null,
+      "fromStep": "Signup",
+      "statedAt": null
+     },
+     {
+      "stated": false,
+      "toStep": "Form filled",
+      "ratePct": null,
+      "fromStep": "Website visit",
+      "statedAt": null
+     },
+     {
+      "stated": false,
+      "toStep": "Paid client",
+      "ratePct": null,
+      "fromStep": "Form filled",
+      "statedAt": null
+     },
+     {
+      "stated": false,
+      "toStep": "Paid client",
+      "ratePct": null,
+      "fromStep": "Positive reply",
+      "statedAt": null
+     },
+     {
+      "stated": false,
+      "toStep": "Paid client",
+      "ratePct": null,
+      "fromStep": "Lead form submitted",
+      "statedAt": null
+     },
+     {
+      "stated": false,
+      "toStep": "Purchase",
+      "ratePct": null,
+      "fromStep": "Website visit",
+      "statedAt": null
+     },
+     {
+      "stated": false,
+      "toStep": "Paid client",
+      "ratePct": null,
+      "fromStep": "Purchase",
+      "statedAt": null
+     }
+    ],
+    "bookingUrl": null,
+    "destinationUrl": null,
+    "lifetimeRevenueUsd": 216,
+    "lifetimeRevenueStatedAt": "2026-11-26 03:34:12.185+00"
+   }
+  ],
+  "list_campaigns": [
+   {
+    "note": "A campaign is a sales funnel campaign: this is the full list. Its steps (sources, cold email, AI booking...) are parts of it, never campaigns: never count or name them as campaigns.",
+    "campaigns": [
+     {
+      "id": "7eb07f7f-c6a1-4a65-9281-fde2bcea0391",
+      "name": "Cold Email Booking",
+      "path": "Start → Lead Sourcing → Lead found → Sales Cold Email Outreach → Positive reply → AI Meeting Booking → Meeting booked → Your Team Meeting Attendance → Meeting attended → Your Team Closing Calls → Paid client",
+      "type": "proactive",
+      "spent": "$0.65 spent today",
+      "steps": [
+       {
+        "leg": "start_to_lead_found",
+        "status": "ongoing",
+        "channel": "lead-sourcing"
+       },
+       {
+        "leg": "lead_found_to_conversation",
+        "status": "ongoing",
+        "channel": "sales-cold-email-outreach"
+       },
+       {
+        "leg": "meeting_booked_to_meeting_attended",
+        "status": "ongoing",
+        "channel": "your-team-meeting-attendance"
+       },
+       {
+        "leg": "conversation_to_meeting_booked",
+        "status": "ongoing",
+        "channel": "ai-meeting-booking"
+       },
+       {
+        "leg": "meeting_attended_to_paid_client",
+        "status": "ongoing",
+        "channel": "your-team-closing-calls"
+       }
+      ],
+      "budget": "Max $121/day",
+      "return": "Expected return not known (being computed, ready on the next read) · no paid client yet ($0.00 spent)",
+      "status": "ongoing",
+      "volume": null,
+      "offerId": "9b833105-7a55-416e-888f-858bde06425e",
+      "invested": "$0 invested since start",
+      "runsWhen": "On its own, within its caps (no trigger)",
+      "stopReason": null,
+      "salesFunnelId": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@sales-cold-email-outreach+conversation_to_meeting_booked@ai-meeting-booking+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client"
+     }
+    ],
+    "campaignCount": 1
+   }
+  ],
+  "get_offer_performance": [
+   {
+    "return": "Expected 0.3x · no paid client yet ($0.65 spent)",
+    "brandId": "708118d5-2cce-4d3d-a619-35e8d1d2868c",
+    "offerId": "9b833105-7a55-416e-888f-858bde06425e",
+    "omitted": "Per-company list, per-day series and per-channel detail are left out to keep the chat small: the offer and campaign pages show them (open_page).",
+    "signups": {
+     "daily": [],
+     "total": 0,
+     "undatedCount": 0
+    },
+    "headline": {
+     "unpricedReason": null,
+     "lifetimeRevenueUsd": 216,
+     "lifetimeRevenueSource": "offer_stated"
+    },
+    "outcomes": {
+     "sending": null,
+     "cpcCents": null,
+     "maturity": null,
+     "cpprCents": null,
+     "ratioBasis": {
+      "maturityDays": 21,
+      "unmeasuredReason": "maturing",
+      "recipientsClicked": null,
+      "committedSpentCents": null,
+      "recipientsRepliesPositive": null
+     },
+     "actualSpentCents": 65,
+     "recipientsBounced": null,
+     "recipientsClicked": null,
+     "committedSpentCents": 85,
+     "recipientsContacted": null,
+     "recipientsConvertible": null,
+     "recipientsUnsubscribed": null,
+     "recipientsRepliesPositive": 0
+    },
+    "costBasis": "charged",
+    "purchased": {
+     "daily": [],
+     "total": 0,
+     "undatedCount": 0
+    },
+    "expectedReturn": {
+     "basis": "default",
+     "assumptions": [
+      {
+       "basis": "stated",
+       "input": "lifetime_revenue",
+       "legKey": null,
+       "source": "offer_stated"
+      },
+      {
+       "basis": "fleet",
+       "input": "cost",
+       "legKey": "start_to_conversation",
+       "source": "fleet_measured"
+      },
+      {
+       "basis": "default",
+       "input": "rate",
+       "legKey": "conversation_to_meeting_booked",
+       "source": "industry_default"
+      },
+      {
+       "basis": "default",
+       "input": "cost",
+       "legKey": "conversation_to_meeting_booked",
+       "source": "default"
+      },
+      {
+       "basis": "default",
+       "input": "rate",
+       "legKey": "meeting_booked_to_meeting_attended",
+       "source": "industry_default"
+      },
+      {
+       "basis": "default",
+       "input": "rate",
+       "legKey": "meeting_attended_to_paid_client",
+       "source": "industry_default"
+      }
+     ],
+     "roiMultiple": 0.31634573610630407,
+     "combinationKey": "lead_found_to_conversation@sales-cold-email-outreach+conversation_to_meeting_booked@ai-meeting-booking+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client",
+     "costPerOutcome": {
+      "basis": "fleet",
+      "legKey": "start_to_conversation",
+      "source": "fleet_measured",
+      "stepKey": "conversation",
+      "costPerOutcomeUsd": 29.225876440242942
+     },
+     "unavailableReason": null
+    },
+    "meetingsBooked": {
+     "daily": [],
+     "total": 0,
+     "undatedCount": 0
+    },
+    "realizedReturn": {
+     "spentUsd": 0.65,
+     "roiMultiple": 0,
+     "closedWonCount": 0,
+     "closedWonRevenueUsd": 0
+    },
+    "formSubmissions": {
+     "daily": [],
+     "total": 0,
+     "undatedCount": 0
+    },
+    "recipientsClicked": null,
+    "recipientsContacted": null,
+    "recipientsRepliesPositive": {
+     "daily": [],
+     "total": 0,
+     "undatedCount": 0
+    }
+   }
+  ],
+  "list_replies_to_handle": [
+   {
+    "leads": [],
+    "total": 0,
+    "nextCursor": null
+   }
+  ],
+  "get_billing_account": [
+   {
+    "org_id": "d35e002b-f48e-4bf4-93e7-96c775df75e2",
+    "payment_mode": "prepaid",
+    "has_payment_method": true,
+    "has_auto_topup": null,
+    "usage_discount_pct": null
+   }
+  ],
+  "get_payment_outlook": [
+   {
+    "orgId": "d35e002b-f48e-4bf4-93e7-96c775df75e2",
+    "paymentMode": "prepaid",
+    "state": "autopay_ready",
+    "blockedReason": null,
+    "nextChargeAttemptAt": null,
+    "trigger": null
+   }
+  ],
+  "get_campaign_next_steps": [
+   {
+    "name": "Cold Email Booking",
+    "pipes": [
+     {
+      "legKey": "start_to_lead_found",
+      "pipeId": "lead-sourcing|start_to_lead_found",
+      "status": "ongoing",
+      "campaignId": "265a638a-ce98-49db-b294-b1f63783cde8",
+      "featureSlug": "lead-sourcing",
+      "endsOnPositiveReply": false
+     },
+     {
+      "legKey": "lead_found_to_conversation",
+      "pipeId": "sales-cold-email-outreach|lead_found_to_conversation",
+      "status": "ongoing",
+      "campaignId": "5d246c62-17eb-4bfc-a208-cb2060bac6c9",
+      "featureSlug": "sales-cold-email-outreach",
+      "endsOnPositiveReply": true
+     },
+     {
+      "legKey": "meeting_booked_to_meeting_attended",
+      "pipeId": "your-team-meeting-attendance|meeting_booked_to_meeting_attended",
+      "status": "ongoing",
+      "campaignId": "5ef5f222-9081-4298-b505-fad6118e9a32",
+      "featureSlug": "your-team-meeting-attendance",
+      "endsOnPositiveReply": false
+     },
+     {
+      "legKey": "conversation_to_meeting_booked",
+      "pipeId": "ai-meeting-booking|conversation_to_meeting_booked",
+      "status": "ongoing",
+      "campaignId": "b3320b9b-097e-464e-93ab-ebfbda960d88",
+      "featureSlug": "ai-meeting-booking",
+      "endsOnPositiveReply": false
+     },
+     {
+      "legKey": "meeting_attended_to_paid_client",
+      "pipeId": "your-team-closing-calls|meeting_attended_to_paid_client",
+      "status": "ongoing",
+      "campaignId": "d310433f-408d-4dac-a457-d36d0766d682",
+      "featureSlug": "your-team-closing-calls",
+      "endsOnPositiveReply": false
+     }
+    ],
+    "status": "ongoing",
+    "brandId": "708118d5-2cce-4d3d-a619-35e8d1d2868c",
+    "offerId": "9b833105-7a55-416e-888f-858bde06425e",
+    "nextSends": {
+     "dueNow": 0,
+     "heldBy": null,
+     "nextSendAt": null,
+     "leadsQueued": 0,
+     "unavailableReason": null,
+     "leadsWaitingOnHeldEngine": null
+    },
+    "heldEngines": [],
+    "emailSendQueue": {
+     "asOf": "2026-11-26T03:40:25.242Z",
+     "timezones": [],
+     "sendWindow": {
+      "endHour": 19,
+      "weekdays": [
+       "monday",
+       "tuesday",
+       "wednesday",
+       "thursday",
+       "friday",
+       "saturday"
+      ],
+      "startHour": 7,
+      "timezoneRule": "lead_local"
+     },
+     "queuedEmails": 0,
+     "firstEmailsFrom": null,
+     "leadsAwaitingFirstEmail": 0,
+     "leadsWithFollowUpQueued": 0
+    },
+    "scheduledFollowups": {
+     "due": 0,
+     "asOf": "2026-11-26T03:40:25.250Z",
+     "byDay": [],
+     "leads": 0,
+     "nextAt": null,
+     "upcoming": 0,
+     "oldestDueAt": null,
+     "laterThanHorizon": 0
+    },
+    "salesFunnelCampaignId": "7eb07f7f-c6a1-4a65-9281-fde2bcea0391",
+    "requestedPipeCampaignId": null,
+    "timeToFirstPositiveReply": {
+     "basis": "pipe_fleet",
+     "campaign": {
+      "medianMs": null,
+      "averageMs": null,
+      "medianDays": null,
+      "sampleSize": 0,
+      "averageDays": null
+     },
+     "learning": false,
+     "minSample": 10,
+     "pipeFleet": {
+      "medianMs": 717128749,
+      "averageMs": 2658632962,
+      "medianDays": 8.3,
+      "sampleSize": 74,
+      "averageDays": 30.8
+     },
+     "medianDays": 8.3,
+     "sampleSize": 74,
+     "averageDays": 30.8,
+     "unavailableReason": null
+    },
+    "heldEnginesUnavailableReason": null,
+    "emailSendQueueUnavailableReason": null,
+    "scheduledFollowupsUnavailableReason": null
+   }
+  ],
+  "list_audiences": [
+   {
+    "total": 1,
+    "offset": 0,
+    "audiences": [
+     {
+      "id": "f924d448-e0dd-414a-86d0-89d8e215b7bb",
+      "name": "Agency Founders",
+      "size": 340,
+      "status": "active",
+      "target": "Content Directors and Founders (including owners and co-founders) at content marketing or ghostwriting agencies with 5 t…",
+      "offerId": "9b833105-7a55-416e-888f-858bde06425e",
+      "channels": [
+       "cold_email"
+      ]
+     }
+    ],
+    "nextOffset": null
+   }
+  ],
+  "get_offer_steps": [
+   {
+    "steps": [
+     "booking_call",
+     "company_researched",
+     "conversation",
+     "email_found",
+     "email_reply_received",
+     "form_submitted",
+     "judgment_made",
+     "lead_found",
+     "lead_identified",
+     "lead_interested",
+     "lead_visited",
+     "message_sent",
+     "message_written",
+     "page_read",
+     "paid_client",
+     "purchase",
+     "reply_received",
+     "signup",
+     "website_visit"
+    ],
+    "source": "assessed",
+    "stated": true,
+    "offerId": "9b833105-7a55-416e-888f-858bde06425e",
+    "statedAt": "2026-11-26 03:35:06.34506+00"
+   }
+  ],
+  "find_sales_funnels": [
+   {
+    "rows": [
+     {
+      "id": "conversation_to_paid_client",
+      "face": "/public/catalogue/faces/New%20Leads.svg",
+      "line": "your team",
+      "name": "New Leads",
+      "type": "reactive",
+      "mixed": false,
+      "status": "customer_time",
+      "costPer": null,
+      "costUsd": null,
+      "trigger": {
+       "name": "Positive reply",
+       "slug": "positive_reply_received"
+      },
+      "expected": {
+       "roi": null,
+       "basis": null,
+       "status": "expected",
+       "costPer": null,
+       "costUsd": null,
+       "unavailableReason": "customer_time_only"
+      },
+      "runnable": true,
+      "triggerLabel": "Positive replies"
+     },
+     {
+      "id": "form_submitted_to_paid_client",
+      "face": "/public/catalogue/faces/New%20Leads.svg",
+      "line": "your team",
+      "name": "New Leads",
+      "type": "reactive",
+      "mixed": false,
+      "status": "customer_time",
+      "costPer": null,
+      "costUsd": null,
+      "trigger": {
+       "name": "Form submitted",
+       "slug": "form_submitted"
+      },
+      "expected": {
+       "roi": null,
+       "basis": null,
+       "status": "expected",
+       "costPer": null,
+       "costUsd": null,
+       "unavailableReason": "customer_time_only"
+      },
+      "runnable": true,
+      "triggerLabel": "Form submissions"
+     },
+     {
+      "id": "purchase_to_paid_client",
+      "face": "/public/catalogue/faces/New%20Leads.svg",
+      "line": "your team",
+      "name": "New Leads",
+      "type": "reactive",
+      "mixed": false,
+      "status": "customer_time",
+      "costPer": null,
+      "costUsd": null,
+      "trigger": {
+       "name": "Direct purchase",
+       "slug": "purchase_made"
+      },
+      "expected": {
+       "roi": null,
+       "basis": null,
+       "status": "expected",
+       "costPer": null,
+       "costUsd": null,
+       "unavailableReason": "customer_time_only"
+      },
+      "runnable": true,
+      "triggerLabel": "Online purchases"
+     },
+     {
+      "id": "signup_to_paid_client",
+      "face": "/public/catalogue/faces/New%20Leads.svg",
+      "line": "your team",
+      "name": "New Leads",
+      "type": "reactive",
+      "mixed": false,
+      "status": "customer_time",
+      "costPer": null,
+      "costUsd": null,
+      "trigger": {
+       "name": "Signup",
+       "slug": "signed_up"
+      },
+      "expected": {
+       "roi": null,
+       "basis": null,
+       "status": "expected",
+       "costPer": null,
+       "costUsd": null,
+       "unavailableReason": "customer_time_only"
+      },
+      "runnable": true,
+      "triggerLabel": "Signups"
+     },
+     {
+      "id": "website_visit_to_form_submitted+form_submitted_to_paid_client",
+      "face": "/public/catalogue/faces/New%20Leads.svg",
+      "line": "your team → your team",
+      "name": "New Leads",
+      "type": "reactive",
+      "mixed": false,
+      "status": "customer_time",
+      "costPer": null,
+      "costUsd": null,
+      "trigger": {
+       "name": "Website visit",
+       "slug": "website_visited"
+      },
+      "expected": {
+       "roi": null,
+       "basis": null,
+       "status": "expected",
+       "costPer": null,
+       "costUsd": null,
+       "unavailableReason": "customer_time_only"
+      },
+      "runnable": true,
+      "triggerLabel": "Website visits"
+     },
+     {
+      "id": "website_visit_to_purchase+purchase_to_paid_client",
+      "face": "/public/catalogue/faces/New%20Leads.svg",
+      "line": "your team → your team",
+      "name": "New Leads",
+      "type": "reactive",
+      "mixed": false,
+      "status": "customer_time",
+      "costPer": null,
+      "costUsd": null,
+      "trigger": {
+       "name": "Website visit",
+       "slug": "website_visited"
+      },
+      "expected": {
+       "roi": null,
+       "basis": null,
+       "status": "expected",
+       "costPer": null,
+       "costUsd": null,
+       "unavailableReason": "customer_time_only"
+      },
+      "runnable": true,
+      "triggerLabel": "Website visits"
+     },
+     {
+      "id": "website_visit_to_signup+signup_to_paid_client",
+      "face": "/public/catalogue/faces/New%20Leads.svg",
+      "line": "your team → your team",
+      "name": "New Leads",
+      "type": "reactive",
+      "mixed": false,
+      "status": "customer_time",
+      "costPer": null,
+      "costUsd": null,
+      "trigger": {
+       "name": "Website visit",
+       "slug": "website_visited"
+      },
+      "expected": {
+       "roi": null,
+       "basis": null,
+       "status": "expected",
+       "costPer": null,
+       "costUsd": null,
+       "unavailableReason": "customer_time_only"
+      },
+      "runnable": true,
+      "triggerLabel": "Website visits"
+     },
+     {
+      "id": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@ai-follow-up-email+conversation_to_paid_client",
+      "face": "/public/catalogue/faces/Cold%20Follow-up%20Replies.svg",
+      "line": "Lead Sourcing → AI Follow-up Email → your team",
+      "name": "Cold Follow-up Replies",
+      "type": "proactive",
+      "mixed": false,
+      "status": "learning",
+      "costPer": null,
+      "costUsd": null,
+      "trigger": null,
+      "expected": {
+       "roi": 0.0602977,
+       "cost": "$3582.23 per paying client (expected)",
+       "basis": "default",
+       "return": "Expected 0.1x (default inputs)",
+       "status": "expected",
+       "costPer": "per paying client",
+       "costUsd": 3582.23,
+       "unavailableReason": null
+      },
+      "runnable": true,
+      "triggerLabel": null
+     },
+     {
+      "id": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@ai-follow-up-email+conversation_to_paid_client@ai-follow-up-email",
+      "face": "/public/catalogue/faces/Cold%20Follow-up%20Deals.svg",
+      "line": "Lead Sourcing → AI Follow-up Email → AI Follow-up Email",
+      "name": "Cold Follow-up Deals",
+      "type": "proactive",
+      "mixed": true,
+      "status": "learning",
+      "costPer": null,
+      "costUsd": null,
+      "trigger": null,
+      "expected": {
+       "roi": null,
+       "basis": null,
+       "status": "expected",
+       "costPer": null,
+       "costUsd": null,
+       "unavailableReason": "pipe_unpriced:ai-follow-up-email|conversation_to_paid_client"
+      },
+      "runnable": true,
+      "triggerLabel": null
+     },
+     {
+      "id": "start_to_lead_found@lead-sourcing+lead_found_to_conversation@cold-whatsapp-outreach+conversation_to_paid_client",
+      "face": "/public/catalogue/faces/Cold%20WhatsApp%20Replies.svg",
+      "line": "Lead Sourcing → Cold WhatsApp Outreach → your team",
+      "name": "Cold WhatsApp Replies",
+      "type": "proactive",
+      "mixed": false,
+      "status": "learning",
+      "costPer": null,
+      "costUsd": null,
+      "trigger": null,
+      "expected": {
+       "roi": 0.0602977,
+       "cost": "$3582.23 per paying client (expected)",
+       "basis": "default",
+       "return": "Expected 0.1x (default inputs)",
+       "status": "expected",
+       "costPer": "per paying client",
+       "costUsd": 3582.23,
+       "unavailableReason": null
+      },
+      "runnable": true,
+      "triggerLabel": null
+     }
+    ],
+    "offer": {
+     "brandId": "708118d5-2cce-4d3d-a619-35e8d1d2868c",
+     "offerId": "9b833105-7a55-416e-888f-858bde06425e",
+     "ownRateLegs": 0,
+     "lifetimeRevenueUsd": 216,
+     "lifetimeRevenueSource": "offer_stated",
+     "ownRatesUnavailableReason": null
+    },
+    "order": "roi_desc",
+    "total": 443,
+    "object": "sales_funnel",
+    "offset": 0,
+    "costUnit": "per_paying_client",
+    "setAside": {
+     "rows": [
+      {
+       "id": "start_to_threads_post_published@threads-post+threads_post_published_to_paid_client",
+       "line": "Threads posts → your team",
+       "name": "Threads Posts",
+       "missingSteps": [
+        {
+         "id": "threads_post_published",
+         "name": "Threads post published"
+        }
+       ]
+      },
+      {
+       "id": "start_to_threads_post_published@threads-post+threads_post_published_to_website_visit+website_visit_to_purchase+purchase_to_paid_client",
+       "line": "Threads posts → your team → your team → your team",
+       "name": "Threads Posts",
+       "missingSteps": [
+        {
+         "id": "threads_post_published",
+         "name": "Threads post published"
+        }
+       ]
+      },
+      {
+       "id": "start_to_threads_post_published@threads-post+threads_post_published_to_website_visit+website_visit_to_meeting_booked+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client",
+       "line": "Threads posts → your team → your team → your team → your team",
+       "name": "Threads Posts",
+       "missingSteps": [
+        {
+         "id": "threads_post_published",
+         "name": "Threads post published"
+        },
+        {
+         "id": "meeting_booked",
+         "name": "Meeting booked"
+        },
+        {
+         "id": "meeting_attended",
+         "name": "Meeting attended"
+        }
+       ]
+      },
+      {
+       "id": "start_to_threads_post_published@threads-post+threads_post_published_to_website_visit+website_visit_to_form_submitted+form_submitted_to_paid_client",
+       "line": "Threads posts → your team → your team → your team",
+       "name": "Threads Posts",
+       "missingSteps": [
+        {
+         "id": "threads_post_published",
+         "name": "Threads post published"
+        }
+       ]
+      },
+      {
+       "id": "start_to_threads_post_published@threads-post+threads_post_published_to_website_visit+website_visit_to_signup+signup_to_paid_client",
+       "line": "Threads posts → your team → your team → your team",
+       "name": "Threads Post Signups",
+       "missingSteps": [
+        {
+         "id": "threads_post_published",
+         "name": "Threads post published"
+        }
+       ]
+      },
+      {
+       "id": "start_to_threads_post_published@threads-post+threads_post_published_to_website_visit+website_visit_to_form_submitted+form_submitted_to_meeting_booked+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client",
+       "line": "Threads posts → your team → your team → your team → your team → your team",
+       "name": "Threads Posts",
+       "missingSteps": [
+        {
+         "id": "threads_post_published",
+         "name": "Threads post published"
+        },
+        {
+         "id": "meeting_booked",
+         "name": "Meeting booked"
+        },
+        {
+         "id": "meeting_attended",
+         "name": "Meeting attended"
+        }
+       ]
+      },
+      {
+       "id": "start_to_newsletter_email_sent+newsletter_email_sent_to_website_visit+website_visit_to_form_submitted+form_submitted_to_meeting_booked+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client",
+       "line": "your team → your team → your team → your team → your team → your team",
+       "name": "Newsletter Meetings",
+       "missingSteps": [
+        {
+         "id": "newsletter_email_sent",
+         "name": "Newsletter email sent"
+        },
+        {
+         "id": "meeting_booked",
+         "name": "Meeting booked"
+        },
+        {
+         "id": "meeting_attended",
+         "name": "Meeting attended"
+        }
+       ]
+      },
+      {
+       "id": "start_to_newsletter_email_sent+newsletter_email_sent_to_website_visit+website_visit_to_form_submitted+form_submitted_to_paid_client",
+       "line": "your team → your team → your team → your team",
+       "name": "Newsletter Inquiries",
+       "missingSteps": [
+        {
+         "id": "newsletter_email_sent",
+         "name": "Newsletter email sent"
+        }
+       ]
+      },
+      {
+       "id": "start_to_newsletter_email_sent+newsletter_email_sent_to_website_visit+website_visit_to_meeting_booked+meeting_booked_to_meeting_attended+meeting_attended_to_paid_client",
+       "line": "your team → your team → your team → your team → your team",
+       "name": "Newsletter Deals",
+       "missingSteps": [
+        {
+         "id": "newsletter_email_sent",
+         "name": "Newsletter email sent"
+        },
+        {
+         "id": "meeting_booked",
+         "name": "Meeting booked"
+        },
+        {
+         "id": "meeting_attended",
+         "name": "Meeting attended"
+        }
+       ]
+      },
+      {
+       "id": "start_to_newsletter_email_sent+newsletter_email_sent_to_website_visit+website_visit_to_purchase+purchase_to_paid_client",
+       "line": "your team → your team → your team → your team",
+       "name": "Newsletter Orders",
+       "missingSteps": [
+        {
+         "id": "newsletter_email_sent",
+         "name": "Newsletter email sent"
+        }
+       ]
+      }
+     ],
+     "total": 454,
+     "truncated": true
+    },
+    "truncated": true,
+    "nextOffset": 10,
+    "offerSteps": {
+     "steps": [
+      {
+       "id": "booking_call",
+       "name": "Booking call"
+      },
+      {
+       "id": "company_researched",
+       "name": "Company researched"
+      },
+      {
+       "id": "conversation",
+       "name": "Positive reply"
+      },
+      {
+       "id": "email_found",
+       "name": "Email found"
+      },
+      {
+       "id": "email_reply_received",
+       "name": "Email reply received"
+      },
+      {
+       "id": "form_submitted",
+       "name": "Form submitted"
+      },
+      {
+       "id": "judgment_made",
+       "name": "Judgment made"
+      },
+      {
+       "id": "lead_found",
+       "name": "Lead found"
+      },
+      {
+       "id": "lead_identified",
+       "name": "Lead identified"
+      },
+      {
+       "id": "lead_interested",
+       "name": "Lead interested"
+      },
+      {
+       "id": "lead_visited",
+       "name": "Lead visited"
+      },
+      {
+       "id": "message_sent",
+       "name": "Message sent"
+      },
+      {
+       "id": "message_written",
+       "name": "Message written"
+      },
+      {
+       "id": "page_read",
+       "name": "Page read"
+      },
+      {
+       "id": "paid_client",
+       "name": "Paid client"
+      },
+      {
+       "id": "purchase",
+       "name": "Direct purchase"
+      },
+      {
+       "id": "reply_received",
+       "name": "Reply received"
+      },
+      {
+       "id": "signup",
+       "name": "Signup"
+      },
+      {
+       "id": "website_visit",
+       "name": "Website visit"
+      }
+     ],
+     "stated": true,
+     "statedAt": "2026-11-26 03:35:06.34506+00",
+     "alwaysPresent": [
+      {
+       "id": "lead_found",
+       "name": "Lead found"
+      },
+      {
+       "id": "paid_client",
+       "name": "Paid client"
+      }
+     ],
+     "checkedBefore": null
+    },
+    "setAsideByStep": [
+     {
+      "id": "meeting_attended",
+      "name": "Meeting attended",
+      "setAsideCount": 418
+     },
+     {
+      "id": "meeting_booked",
+      "name": "Meeting booked",
+      "setAsideCount": 417
+     },
+     {
+      "id": "threads_post_published",
+      "name": "Threads post published",
+      "setAsideCount": 13
+     },
+     {
+      "id": "linkedin_post_published",
+      "name": "LinkedIn post published",
+      "setAsideCount": 12
+     },
+     {
+      "id": "newsletter_email_sent",
+      "name": "Newsletter email sent",
+      "setAsideCount": 12
+     },
+     {
+      "id": "x_post_published",
+      "name": "X post published",
+      "setAsideCount": 12
+     },
+     {
+      "id": "industry_update_video",
+      "name": "Industry update video",
+      "setAsideCount": 2
+     },
+     {
+      "id": "client_satisfied",
+      "name": "Client Satisfied",
+      "setAsideCount": 1
+     }
+    ]
+   }
+  ],
+  "extract_brand_fields": [
+   {
+    "brands": [
+     {
+      "name": "WriteBros",
+      "domain": "writebros.ai",
+      "brandId": "708118d5-2cce-4d3d-a619-35e8d1d2868c",
+      "brandUrl": "https://writebros.ai"
+     }
+    ],
+    "drafts": {
+     "offering_and_audience": {
+      "draftUnit": null,
+      "stillOurDraft": true
+     }
+    },
+    "fields": {
+     "offering_and_audience": {
+      "value": "WriteBros.ai sells an AI text humanizer with private voice cloning, an AI detector, and developer API/MCP server access via tiered plans (Free, Lite, Plus, and Pro) to bloggers, writers, marketers, social media creators, sales and recruiting teams, students, educators, founders, agencies, and freelancers.",
+      "byBrand": {
+       "writebros.ai": {
+        "value": "WriteBros.ai sells an AI text humanizer with private voice cloning, an AI detector, and developer API/MCP server access via tiered plans (Free, Lite, Plus, and Pro) to bloggers, writers, marketers, social media creators, sales and recruiting teams, students, educators, founders, agencies, and freelancers.",
+        "cached": false,
+        "expiresAt": "2026-11-29T03:40:09.519Z",
+        "sourceUrls": [
+         "https://writebros.ai",
+         "https://writebros.ai/pricing",
+         "https://writebros.ai/solutions",
+         "https://writebros.ai/about-us",
+         "https://writebros.ai/ai-detector",
+         "https://writebros.ai/solutions/freelancers",
+         "https://writebros.ai/solutions/creators",
+         "https://writebros.ai/solutions/marketing-teams",
+         "https://writebros.ai/solutions/agencies",
+         "https://writebros.ai/solutions/students"
+        ],
+        "extractedAt": "2026-11-26T03:40:09.519Z"
+       }
+      }
+     }
+    },
+    "provenance": {
+     "offering_and_audience": "extracted"
+    }
+   }
+  ],
+  "POST /v1/brands/extract-fields": [
+   {
+    "brands": [
+     {
+      "name": "WriteBros",
+      "domain": "writebros.ai",
+      "brandId": "708118d5-2cce-4d3d-a619-35e8d1d2868c",
+      "brandUrl": "https://writebros.ai"
+     }
+    ],
+    "drafts": {
+     "offering_and_audience": {
+      "draftUnit": null,
+      "stillOurDraft": true
+     }
+    },
+    "fields": {
+     "offering_and_audience": {
+      "value": "WriteBros.ai sells an AI text humanizer with private voice cloning, an AI detector, and developer API/MCP server access via tiered plans (Free, Lite, Plus, and Pro) to bloggers, writers, marketers, social media creators, sales and recruiting teams, students, educators, founders, agencies, and freelancers.",
+      "byBrand": {
+       "writebros.ai": {
+        "value": "WriteBros.ai sells an AI text humanizer with private voice cloning, an AI detector, and developer API/MCP server access via tiered plans (Free, Lite, Plus, and Pro) to bloggers, writers, marketers, social media creators, sales and recruiting teams, students, educators, founders, agencies, and freelancers.",
+        "cached": false,
+        "expiresAt": "2026-11-29T03:40:09.519Z",
+        "sourceUrls": [
+         "https://writebros.ai",
+         "https://writebros.ai/pricing",
+         "https://writebros.ai/solutions",
+         "https://writebros.ai/about-us",
+         "https://writebros.ai/ai-detector",
+         "https://writebros.ai/solutions/freelancers",
+         "https://writebros.ai/solutions/creators",
+         "https://writebros.ai/solutions/marketing-teams",
+         "https://writebros.ai/solutions/agencies",
+         "https://writebros.ai/solutions/students"
+        ],
+        "extractedAt": "2026-11-26T03:40:09.519Z"
+       }
+      }
+     }
+    },
+    "provenance": {
+     "offering_and_audience": "extracted"
+    }
+   }
+  ]
+ },
+ "facts": [
+  "WriteBros (writebros.ai) sells an AI text humanizer with private voice cloning, an AI detector and API/MCP access; the offer \"Voice Cloning\" is custom writing-voice models for teams, agencies and heavy users.",
+  "The client signed up minutes ago and launched one campaign, \"Cold Email Booking\": it finds contacts, emails them, books meetings with the interested ones, then hands them to the client's team. It is ongoing with a max budget of $121 a day they set themselves; $0.65 has been spent so far, on finding contacts.",
+  "The audience \"Agency Founders\" holds 340 people: content directors and founders at content marketing or ghostwriting agencies.",
+  "No email is queued or sent yet, no reply has come in yet, nothing is held: the campaign is finding and checking contacts first.",
+  "Measured on our clients sending cold email the same way, the median time from a first email to a first positive reply is 8.3 days (74 cases).",
+  "No booking link is saved on the offer. The campaign books meetings with prospects who reply with interest, so a booking link is where those meetings land.",
+  "The offer's expected return is served as 0.3x, built on default assumptions (industry default conversion rates after a positive reply) and the client's stated value of $216 per paying client; there is no measured result of their own yet.",
+  "The account is prepaid with a card on file and no payment notice."
+ ],
+ "expect": "Opens on what we are doing for WriteBros now (finding agency founders and content directors to write to, first emails once contacts are checked, replies typically about 8 days after) and what it brings them (replies and meetings). Asks for ONE thing in one line, the booking link so interested replies book straight into their calendar. Never says the campaign is not funded, never asks for a budget they already set, never volunteers the 0.3x expected return nor calls the campaign a test, and never stacks two asks.",
+ "prodReply": "WriteBros sells custom writing-voice models to teams and agencies. Your active audience targets agency founders and content directors.\n\n**What matters now:** Cold Email Booking is marked ongoing, but it’s **not funded because it has no max budget**. No emails are queued, and there are no interested replies yet. The campaign also has no booking link saved.\n\nThe offer’s current return is **Expected 0.3x**, based partly on default assumptions, not your campaign’s measured results. It’s a reason to treat the first run as a test, not a forecast. Across clients using the same channel, the median time from first email to first positive reply is 8.3 days.\n\nI’ve opened the campaign. To prepare a test, what maximum budget and period would you be comfortable with, for example, a daily or monthly limit? You can also set a contact-volume cap. Before booking meetings, we’ll need your scheduling link.",
+ "badReplyFails": true,
+ "goodReply": "Your Cold Email Booking campaign is live at up to $121 a day: we're finding content directors and founders at writing agencies (340 in your audience) and checking their emails, and the first emails go out as soon as that's done. On our clients sending the same way, first interested replies come about 8 days after the first email, and we book those into meetings for you.\n\nOne thing so those meetings land in your calendar: what's your booking link?",
+ "goodReplyActions": []
+}

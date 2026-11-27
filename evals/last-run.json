@@ -1,13 +1,13 @@
 {
-  "note": "ENGINE-GET-ASK-1123: Distry's per-Engine campaign tools replaced by find_outcome / get_units / ask_engine (descriptions shortened after a first pair: long 44.6% vs main 47.5%). Recorded: this branch (codeHash below) vs origin/main (eac18ca309ed15c2), same container, same Jev judge, replies on Claude Code (Mac runner, claude -p Haiku 5.5) both sides, all 75 scenarios x3. The new tools were called 0 times in the replays (no scenario asks for them): the gap is the tool list length or chance. Errors (runner limit/restarts) excluded from both sides.",
+  "note": "FIRST-ANSWER-VALUE-1126: the situation brief ends on what it is for (BRIEF_PURPOSE_LINE). Recorded: this branch vs origin/main (4d1f5a947303677c), same container, same Jev judge, replies on Claude Code (Mac runner, Haiku 5.5) both sides, runs 3. The Mac's Claude Code hit its 5-hour limit and the app closed several times mid-run: replies the runner never answered are excluded from both sides (20 on this side, 0 on the base on these scenarios), and the gate is pooled on the 44 scenarios where the base side ran clean (writebros-first-open-value included). Targeted pair the same hour: writebros-first-open-value 5/5 vs 1/5.",
   "model": "claude-code/claude-haiku-5-5",
   "judge": "jev/jev-latest",
-  "codeHash": "4d1f5a947303677c",
+  "codeHash": "74df1646082240e6",
   "runs": [
     {
-      "at": "2026-11-26T07:48:52.290Z",
+      "at": "2026-11-27T07:18:06.985Z",
       "runsPerScenario": 3,
-      "scenariosPassed": 33
+      "scenarios": 44
     }
   ],
   "wire": {
@@ -20,22 +20,21 @@
     }
   },
   "pooled": {
-    "replays": 222,
-    "passRate": 0.455,
+    "replays": 112,
+    "passRate": 0.4107,
     "criterionRate": {
-      "true": 0.7928,
-      "respectful": 0.7883,
-      "proactive": 0.6982,
-      "answers": 0.7928,
-      "nextAction": 0.9099,
-      "form": 0.9775
+      "true": 0.8304,
+      "respectful": 0.7321,
+      "proactive": 0.6964,
+      "answers": 0.6339,
+      "nextAction": 0.9018,
+      "form": 0.9643
     },
-    "failedReplies": 121,
-    "meanLatencyMs": 52258
+    "errorsExcluded": 20
   },
   "baseline": {
-    "definition": "origin/main eac18ca309ed15c2, same 75 scenarios, same container and runner",
-    "codeHash": "eac18ca309ed15c2",
+    "definition": "origin/main 4d1f5a947303677c, same 44 scenarios, same container and runner",
+    "codeHash": "4d1f5a947303677c",
     "wire": {
       "claudeCode": {
         "model": "claude-haiku-5-5",
@@ -47,29 +46,23 @@
     },
     "runs": [
       {
-        "at": "2026-11-25T17:58:54.179Z",
+        "at": "2026-11-26T14:09:32.753Z",
         "runsPerScenario": 3,
-        "scenariosPassed": 34
+        "scenarios": 44
       }
     ],
     "pooled": {
-      "replays": 225,
-      "passRate": 0.4622,
+      "replays": 132,
+      "passRate": 0.4091,
       "criterionRate": {
-        "true": 0.7956,
-        "respectful": 0.8044,
-        "proactive": 0.7422,
-        "answers": 0.8,
-        "nextAction": 0.92,
-        "form": 0.9778
+        "true": 0.7652,
+        "respectful": 0.697,
+        "proactive": 0.7273,
+        "answers": 0.7045,
+        "nextAction": 0.9167,
+        "form": 0.9697
       },
-      "failedReplies": 121,
-      "meanLatencyMs": 98210
+      "errorsExcluded": 0
     }
-  },
-  "ownerDecision": {
-    "at": "2026-11-26",
-    "words": "go merge",
-    "codeHash": "4d1f5a947303677c"
   }
 }
