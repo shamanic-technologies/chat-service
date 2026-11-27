@@ -4911,7 +4911,7 @@ async function handleChatTurn(req: express.Request, res: express.Response): Prom
     // A guest's plan (DISTRY-ONE-AI-1118 B): opened on their website, then every call runs AS the
     // unclaimed org, on one run of its own per turn (its spend lands on that org's trial seed).
     let planRun: { orgId: string; runId: Promise<string> } | null = null;
-    const planChannel = webTurn ? "website_chat" : telegramDoor ? "telegram_chat" : leadTurn?.payload.medium === "email" ? "email_chat" : "whatsapp_chat";
+    const planChannel = webTurn ? "website_chat" : telegramDoor ? "telegram_chat" : leadTurn ? `${leadTurn.payload.medium}_chat` : "whatsapp_chat";
     const guestPlanDeps = (args: Record<string, unknown>) => ({
       readPlan: () => readSessionPlan(currentSessionId!),
       savePlan: (plan: PlanOrg) => saveSessionPlan(currentSessionId!, plan),

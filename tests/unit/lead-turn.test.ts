@@ -7,6 +7,7 @@ import {
   leadTurnToolNames,
   parseLeadTurnStream,
   limitNoticeAnswer,
+  mediumFormLine,
   processLeadTurn,
   resolveLeadAccount,
   type LeadTurnDeps,
@@ -47,6 +48,10 @@ describe("LeadTurnRequestSchema", () => {
     expect(LeadTurnRequestSchema.safeParse(PAYLOAD).success).toBe(true);
     expect(LeadTurnRequestSchema.safeParse({ ...PAYLOAD, messageField: "nope" }).success).toBe(false);
     expect(LeadTurnRequestSchema.safeParse({ ...PAYLOAD, recipient: { email: null, phone: null, name: "x" } }).success).toBe(false);
+  });
+  it("accepts any app crm names for the conversation (LEAD-REPLY-CHANNEL-1127), refuses a malformed one", () => {
+    for (const medium of ["telegram", "linkedin", "whatsapp", "email", "signal"]) expect(LeadTurnRequestSchema.safeParse({ ...PAYLOAD, medium }).success).toBe(true);
+    for (const medium of ["", "Telegram", "tele gram", "x"]) expect(LeadTurnRequestSchema.safeParse({ ...PAYLOAD, medium }).success).toBe(false);
   });
 });
 
@@ -93,6 +98,27 @@ describe("buildLeadTurnBlock", () => {
     expect(block).toContain("email reply");
     expect(block).toContain("`bodyHtml`");
     expect(block).not.toContain("plain text");
+  });
+  it("a Telegram conversation: chat-form text on Telegram, with the writing account's persona, never an email form nor WhatsApp's (LEAD-REPLY-CHANNEL-1127)", () => {
+    const tg = { ...PAYLOAD, medium: "telegram", assistant: { name: "Nora", role: "Founder", instructions: "short and direct" } };
+    for (const f of [frame({ payload: tg }), frame({ payload: tg, ownBrand: false, guest: true, phoneBound: false })]) {
+      const block = buildLeadTurnBlock(f);
+      expect(block).toContain("chat message in their telegram conversation");
+      expect(block).toContain("plain text, short");
+      expect(block).toContain("Nora, Founder");
+      expect(block).toContain("How you speak here: short and direct");
+      expect(block).not.toContain("email reply");
+      expect(block).not.toContain("WhatsApp");
+    }
+  });
+  it("the form line is the app crm named, passed through: no app list (LinkedIn the same path as Telegram)", () => {
+    expect(mediumFormLine("linkedin", "message")).toBe(mediumFormLine("telegram", "message").replace("telegram", "linkedin"));
+  });
+  it("WhatsApp and email form lines are unchanged", () => {
+    expect(mediumFormLine("whatsapp", "message")).toBe("That text goes out on WhatsApp: plain text, short, WhatsApp markup only (*bold*, _italic_), URLs written out, never the long dash characters.");
+    expect(mediumFormLine("email", "bodyHtml")).toBe(
+      "That text goes out as an email reply in their thread, in the format `bodyHtml` and the campaign's instructions ask for (HTML when the field is HTML): short paragraphs, never the long dash characters.",
+    );
   });
   it("after a sign-in: ONE line, the same as every channel's, said once (nothing before reached them)", () => {
     const count = (b: string) => b.split(AFTER_SIGN_IN_LINE).length - 1;

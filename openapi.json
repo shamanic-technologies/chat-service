@@ -2986,11 +2986,9 @@
           },
           "medium": {
             "type": "string",
-            "enum": [
-              "whatsapp",
-              "email"
-            ],
-            "description": "Where the answer goes out (the workflow's channel plan decided it)."
+            "pattern": "^[a-z][a-z0-9_-]{1,39}$",
+            "description": "Where the answer goes out (the workflow's channel plan decided it): `email` = an email reply in their thread; any other value = the app of the conversation the answer is written in, passed through as crm-service states it (`POST /orgs/conversations/reach` `conversation.channel`: `whatsapp`, `telegram`, `linkedin`...), and the text is written as a chat message on that app, with the persona of the account that writes (`assistant`). Never a list of apps here (LEAD-REPLY-CHANNEL-1127).",
+            "example": "telegram"
           },
           "recipient": {
             "type": "object",

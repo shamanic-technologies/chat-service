@@ -133,6 +133,23 @@ export interface LeadTurnFrame {
   whatsapp?: Pick<WhatsappMoment, "shown" | "images" | "unreadablePhotos"> | null;
 }
 
+/**
+ * The form of the text a lead turn writes (LEAD-REPLY-CHANNEL-1127): an email
+ * reply, or a chat message in the conversation crm named, on ITS app (the app
+ * name is crm's `conversation.channel`, passed through: never a list of apps
+ * here). WhatsApp keeps its own markup line, byte-identical to before.
+ */
+export function mediumFormLine(medium: string, messageField: string): string {
+  if (medium === "whatsapp") return "That text goes out on WhatsApp: plain text, short, WhatsApp markup only (*bold*, _italic_), URLs written out, never the long dash characters.";
+  if (medium === "email") {
+    return `That text goes out as an email reply in their thread, in the format \`${messageField}\` and the campaign's instructions ask for (HTML when the field is HTML): short paragraphs, never the long dash characters.`;
+  }
+  return (
+    `That text goes out as a chat message in their ${medium} conversation, the one they wrote in, from the account that holds it: ` +
+    "write it like a person typing in a chat, plain text, short, no subject, no greeting block or signature, no HTML or markup, URLs written out, never the long dash characters."
+  );
+}
+
 /** The system-prompt block of a lead turn: who you write to and for, how you answer, then the writer's context. */
 export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
   const { payload, ownBrand, guest, phoneBound } = frame;
@@ -164,9 +181,7 @@ export function buildLeadTurnBlock(frame: LeadTurnFrame): string {
       "You are the same assistant as always: decide like a professional serving the business whether to write to them now, later or not at all, and what to say. " +
       "Read what you need with your tools when it can change your decision or your message; never ask them something their account or the thread already answers.",
     `Nothing you write as chat text reaches anyone: you end this turn by calling ${LEAD_ANSWER_TOOL_NAME} ONCE, with the text they receive in \`${payload.messageField}\` (empty when you write nothing now).`,
-    payload.medium === "whatsapp"
-      ? "That text goes out on WhatsApp: plain text, short, WhatsApp markup only (*bold*, _italic_), URLs written out, never the long dash characters."
-      : `That text goes out as an email reply in their thread, in the format \`${payload.messageField}\` and the campaign's instructions ask for (HTML when the field is HTML): short paragraphs, never the long dash characters.`,
+    mediumFormLine(payload.medium, payload.messageField),
   ];
   // The channel block already carries them; any other WhatsApp turn (another
   // brand's lead, a person we hold no number session for) reads them here.
