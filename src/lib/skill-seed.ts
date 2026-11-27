@@ -806,8 +806,8 @@ A campaign orders production; the plant decides how. Staff words only: a client 
 - **Campaign**: a Target (the outcome it buys, e.g. Meeting booked), a start, a budget and a brief. The only object an org owns.
 - **Engine**: one per outcome. It makes new Units of that outcome, and only that one.
 - **Script**: code that makes one Unit of its Engine's outcome, or none. Scripts of one Engine compete, in dynasties of versions. The Rating picks one per run: never picked by hand. GET /v1/scripts, GET /v1/scripts/{id}, GET /v1/scripts/dynasty/{outcome}/{dynasty}.
-- **Tactic**: data on a script (cold email or WhatsApp is a tactic; who performs it; where its LLM runs). GET, POST /v1/tactics, PATCH /v1/tactics/{id} (its description).
-- **Strategy**: conditions on tactics a judge keeps per Engine from the campaign's brief. GET, POST /v1/strategies.
+- **Tactic**: data on a script (cold email or WhatsApp is a tactic; who performs it; where its LLM runs). GET /v1/tactics; create (POST /v1/tactics) and edit (PATCH /v1/tactics/{id}) are staff only: Jev judges every script on a new tactic.
+- **Strategy**: conditions on tactics a judge keeps per Engine from the campaign's brief. GET /v1/strategies; create (POST /v1/strategies) is staff only.
 - **Provider**: the store of one outcome; a script asks it for what it needs.
 - **Plan**: the tree a campaign runs, recomputed at every tick. What each Engine picked and why: GET /v1/offers/{offerId}/engine-picks?brandId=.
 

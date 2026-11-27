@@ -11,7 +11,13 @@ const CONFIG_TOOLS = ["list_workflows", "get_prompt_template", "update_prompt_te
 
 describe("staff-only Copilot tools", () => {
   it("covers the shared prompt-template tools", () => {
-    expect([...STAFF_ONLY_TOOLS].sort()).toEqual(["get_prompt_template", "update_prompt_template"]);
+    expect([...STAFF_ONLY_TOOLS].sort()).toEqual([
+      "create_play",
+      "create_strategy",
+      "create_tactic",
+      "get_prompt_template",
+      "update_prompt_template",
+    ]);
     expect(hasStaffOnlyTool(CONFIG_TOOLS)).toBe(true);
     expect(hasStaffOnlyTool(["list_workflows"])).toBe(false);
   });
@@ -34,6 +40,15 @@ describe("staff-only Copilot tools", () => {
     const requester = await lookupRequester("a4651533-7acc-4c6e-be22-3a9b0e037568", async () => email);
     expect(requester.isStaff).toBe(false);
     expect(toolsForRequester(CONFIG_TOOLS, requester)).toEqual(["list_workflows", "read_skill"]);
+  });
+
+  it("fleet-wide catalogue creates: staff keeps them, a customer never sees them, reads stay (COPILOT-CATALOGUE-GATE-1127)", async () => {
+    const tools = ["find_tactics", "find_strategies", "find_plays", "create_tactic", "create_strategy", "create_play", "create_sales_funnel", "create_sales_path"];
+    expect(hasStaffOnlyTool(tools)).toBe(true);
+    const staff = await lookupRequester("cfe148ed-e3d8-40a2-8920-f8c040a81934", async () => "kevin.lourd@gmail.com");
+    expect(toolsForRequester(tools, staff)).toEqual(tools);
+    const client = await lookupRequester("3afacd9a-fe2f-4413-b51f-217f30920830", async () => "founder@acme.com");
+    expect(toolsForRequester(tools, client)).toEqual(["find_tactics", "find_strategies", "find_plays", "create_sales_funnel", "create_sales_path"]);
   });
 
   it("a customer never sees the prompt tools", async () => {

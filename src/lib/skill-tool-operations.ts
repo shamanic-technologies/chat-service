@@ -29,6 +29,9 @@ const API_ITSELF =
   "no single route: explores the API itself; read GET /openapi.json (one operation: GET /openapi.json?operation=<operationId>) and call the operation it names";
 const NOT_PUBLIC = "no public API route for this act yet";
 const STAFF_KEY = "not in the public API document: a staff-key route";
+/** COPILOT-CATALOGUE-GATE-1127: tactics, strategies and plays are shared by every customer; a client key gets 403 staff_only. */
+const CATALOGUE_STAFF_ONLY =
+  "staff only: shared by every customer, a client key gets 403 staff_only; use the existing ones (GET) and, when none fits, POST /v1/staff-requests";
 
 const op = (s: string): ToolOperationRef => {
   const [method, path] = s.split(" ") as [HttpMethod, string];
@@ -66,9 +69,9 @@ export const TOOL_OPERATIONS: Readonly<Record<string, readonly ToolOperationRef[
   find_plays: [op("GET /v1/plays")],
   find_tactics: [op("GET /v1/tactics")],
   find_strategies: [op("GET /v1/strategies")],
-  create_tactic: [op("POST /v1/tactics")],
-  create_strategy: [op("POST /v1/strategies")],
-  create_play: [op("POST /v1/plays")],
+  create_tactic: { noRoute: CATALOGUE_STAFF_ONLY },
+  create_strategy: { noRoute: CATALOGUE_STAFF_ONLY },
+  create_play: { noRoute: CATALOGUE_STAFF_ONLY },
   create_sales_funnel: [op("POST /v1/catalogue/sales-funnels")],
   create_sales_path: [op("POST /v1/catalogue/sales-paths")],
   list_trigger_types: [op("GET /v1/catalogue/triggers")],
