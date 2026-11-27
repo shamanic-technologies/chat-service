@@ -1737,7 +1737,16 @@ export const LeadTurnRequestSchema = z
       description: "Stable id of this occurrence (e.g. the writer node's run). A retry with the same key (same org) runs nothing again and answers the stored answer.",
     }),
     brandId: z.string().uuid().openapi({ description: "The brand writing to the person (the campaign's brand)." }),
-    medium: z.enum(["whatsapp", "email"]).openapi({ description: "Where the answer goes out (the workflow's channel plan decided it)." }),
+    medium: z
+      .string()
+      .regex(/^[a-z][a-z0-9_-]{1,39}$/, { message: "medium is `email` or the app crm-service names for the conversation (its `conversation.channel`, e.g. `whatsapp`, `telegram`, `linkedin`)" })
+      .openapi({
+        description:
+          "Where the answer goes out (the workflow's channel plan decided it): `email` = an email reply in their thread; any other value = the app of the conversation the answer is written in, " +
+          "passed through as crm-service states it (`POST /orgs/conversations/reach` `conversation.channel`: `whatsapp`, `telegram`, `linkedin`...), and the text is written as a chat message on that app, " +
+          "with the persona of the account that writes (`assistant`). Never a list of apps here (LEAD-REPLY-CHANNEL-1127).",
+        example: "telegram",
+      }),
     recipient: z
       .object({
         email: z.string().max(320).nullable(),
