@@ -3090,7 +3090,7 @@ export const FIND_PLAYS_TOOL: Anthropic.Tool = {
   name: "find_plays",
   description:
     "The PLAYS of one pipe: each is a way to run that step (a strategy), with its own cost and return; the default play is the bare pipe id. A play's id is what create_sales_funnel takes for that leg. " +
-    "Before building a funnel, read the plays of each step and let the user keep one, ask for a new strategy (find_strategies / create_strategy, then create_play), or a new pipe. Never pick who a campaign reaches any other way. " +
+    "Before building a funnel, read the plays of each step and let the user keep one; when none fits, file request_staff (kind feature) with their words. Never pick who a campaign reaches any other way. " +
     CATALOGUE_ROW_NOTE,
   input_schema: {
     type: "object" as const,
@@ -3169,7 +3169,7 @@ export const CREATE_SALES_FUNNEL_TOOL: Anthropic.Tool = {
 export const CREATE_TACTIC_TOOL: Anthropic.Tool = {
   name: "create_tactic",
   description:
-    "Create a NEW tactic: one yes/no trait a workflow either follows or not, described so it can be judged on the workflow alone (every workflow is then judged on it, which takes a few minutes). Shared by every customer, so name it generally. " +
+    "STAFF ONLY (shared by every customer; a customer gets find_* and request_staff). Create a NEW tactic: one yes/no trait a workflow either follows or not, described so it can be judged on the workflow alone (every workflow is then judged on it, which takes a few minutes). Shared by every customer, so name it generally. " +
     CATALOGUE_CREATE_RULE,
   input_schema: {
     type: "object" as const,
@@ -3184,7 +3184,7 @@ export const CREATE_TACTIC_TOOL: Anthropic.Tool = {
 export const CREATE_STRATEGY_TOOL: Anthropic.Tool = {
   name: "create_strategy",
   description:
-    "Create a NEW strategy: the tactics it requires and/or excludes (at least one). Then create_play to run a pipe under it. " + CATALOGUE_CREATE_RULE,
+    "STAFF ONLY (shared by every customer; a customer gets find_* and request_staff). Create a NEW strategy: the tactics it requires and/or excludes (at least one). Then create_play to run a pipe under it. " + CATALOGUE_CREATE_RULE,
   input_schema: {
     type: "object" as const,
     properties: {
@@ -3200,7 +3200,7 @@ export const CREATE_STRATEGY_TOOL: Anthropic.Tool = {
 export const CREATE_PLAY_TOOL: Anthropic.Tool = {
   name: "create_play",
   description:
-    "Run one pipe under one strategy: a new play of that pipe, priced on its own once it runs. Returns its id for create_sales_funnel. created:false when it exists. Only on a step we run (never a Your Team pipe). " +
+    "STAFF ONLY (shared by every customer; a customer gets find_* and request_staff). Run one pipe under one strategy: a new play of that pipe, priced on its own once it runs. Returns its id for create_sales_funnel. created:false when it exists. Only on a step we run (never a Your Team pipe). " +
     CATALOGUE_CREATE_RULE,
   input_schema: {
     type: "object" as const,

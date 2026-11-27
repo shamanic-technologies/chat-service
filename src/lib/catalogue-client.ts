@@ -388,8 +388,23 @@ function tacticIdList(name: string, v: unknown): string[] {
   return (v as string[]).map((x) => x.trim());
 }
 
+/**
+ * Tactics, strategies and plays are FLEET-WIDE (COPILOT-CATALOGUE-GATE-1127):
+ * a tactic is judged by Jev on every script version (our spend), a strategy or
+ * play changes what every client's campaigns run. Staff only; the tool list
+ * already hides them from a customer, this refuses a forced call.
+ */
+async function assertStaffCatalogueWrite(tool: string, reader: CatalogueReader): Promise<void> {
+  if (!(await reader.isStaff())) {
+    throw new CatalogueArgError(
+      `${tool} is staff only: tactics, strategies and plays are shared by every customer. Use the existing ones (find_tactics, find_strategies, find_plays); when none fits, file request_staff (kind feature) with the user's words.`,
+    );
+  }
+}
+
 /** POST /internal/catalogue/tactics — a NEW yes/no tag; Jev then judges every workflow version on it. */
-export async function createTactic(a: Record<string, unknown>, ctx: DeclarationContext) {
+export async function createTactic(a: Record<string, unknown>, ctx: DeclarationContext, reader: CatalogueReader) {
+  await assertStaffCatalogueWrite("create_tactic", reader);
   return features("create_tactic", "POST", "/internal/catalogue/tactics", {
     name: reqStr("name", a.name),
     description: reqStr("description", a.description),
@@ -398,7 +413,8 @@ export async function createTactic(a: Record<string, unknown>, ctx: DeclarationC
 }
 
 /** POST /internal/catalogue/strategies — the tactics a way of running requires and excludes. */
-export async function createStrategy(a: Record<string, unknown>, ctx: DeclarationContext) {
+export async function createStrategy(a: Record<string, unknown>, ctx: DeclarationContext, reader: CatalogueReader) {
+  await assertStaffCatalogueWrite("create_strategy", reader);
   const requires = tacticIdList("requires", a.requires);
   const excludes = tacticIdList("excludes", a.excludes);
   if (requires.length + excludes.length === 0) {
@@ -414,7 +430,8 @@ export async function createStrategy(a: Record<string, unknown>, ctx: Declaratio
 }
 
 /** POST /internal/catalogue/plays — run one pipe under one strategy (created:false when it exists). */
-export async function createPlay(a: Record<string, unknown>, ctx: DeclarationContext) {
+export async function createPlay(a: Record<string, unknown>, ctx: DeclarationContext, reader: CatalogueReader) {
+  await assertStaffCatalogueWrite("create_play", reader);
   return features("create_play", "POST", "/internal/catalogue/plays", {
     pipeId: reqStr("pipeId", a.pipeId),
     strategyId: reqStr("strategyId", a.strategyId),
@@ -429,7 +446,7 @@ export const CATALOGUE_WRITE_TOOLS: Record<
   create_pipe: createPipe,
   create_sales_path: (a, ctx) => createSalesPath(a, ctx),
   create_sales_funnel: createSalesFunnel,
-  create_tactic: (a, ctx) => createTactic(a, ctx),
-  create_strategy: (a, ctx) => createStrategy(a, ctx),
-  create_play: (a, ctx) => createPlay(a, ctx),
+  create_tactic: (a, ctx, _file, reader) => createTactic(a, ctx, reader),
+  create_strategy: (a, ctx, _file, reader) => createStrategy(a, ctx, reader),
+  create_play: (a, ctx, _file, reader) => createPlay(a, ctx, reader),
 };

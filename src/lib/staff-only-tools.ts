@@ -19,6 +19,14 @@ import { isStaffUser } from "./staff-identity.js";
 export const STAFF_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "get_prompt_template",
   "update_prompt_template",
+  // Fleet-wide catalogue writes (COPILOT-CATALOGUE-GATE-1127, prod 2026-11-20:
+  // an attacker org created tactic "x" with a customer key and features-service
+  // had Jev judge every workflow on it, our spend). A tactic is judged on every
+  // script fleet-wide; a strategy or play changes what every client's campaigns
+  // run. A customer finds the existing ones and files request_staff.
+  "create_tactic",
+  "create_strategy",
+  "create_play",
 ]);
 
 export interface Requester {

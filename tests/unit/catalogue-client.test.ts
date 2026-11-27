@@ -344,13 +344,13 @@ describe("plays: a step runs under a strategy (features-service tactics / strate
     expect(call(1).url).toBe("http://features.test/internal/catalogue/tactics/catch-all");
   });
 
-  it("create_tactic / create_strategy / create_play post data stamped with the chat user", async () => {
+  it("staff: create_tactic / create_strategy / create_play post data stamped with the chat user", async () => {
     fetchMock().mockResolvedValue(res(201, { id: "x" }));
     const { CATALOGUE_WRITE_TOOLS } = await load();
     const { file } = fileMock();
-    await CATALOGUE_WRITE_TOOLS.create_tactic({ name: "Signed up", description: "Writes only to people who signed up." }, ctx, file, customer);
-    await CATALOGUE_WRITE_TOOLS.create_strategy({ name: "Signups", description: "Signups only.", requires: [" signed-up "] }, ctx, file, customer);
-    await CATALOGUE_WRITE_TOOLS.create_play({ pipeId: PIPE, strategyId: "signups" }, ctx, file, customer);
+    await CATALOGUE_WRITE_TOOLS.create_tactic({ name: "Signed up", description: "Writes only to people who signed up." }, ctx, file, staff);
+    await CATALOGUE_WRITE_TOOLS.create_strategy({ name: "Signups", description: "Signups only.", requires: [" signed-up "] }, ctx, file, staff);
+    await CATALOGUE_WRITE_TOOLS.create_play({ pipeId: PIPE, strategyId: "signups" }, ctx, file, staff);
     expect(call(0)).toMatchObject({ url: "http://features.test/internal/catalogue/tactics", method: "POST", body: { name: "Signed up", description: "Writes only to people who signed up.", createdBy: "user-1" } });
     expect(call(1)).toMatchObject({ url: "http://features.test/internal/catalogue/strategies", body: { requires: ["signed-up"], excludes: [], createdBy: "user-1" } });
     expect(call(2)).toMatchObject({ url: "http://features.test/internal/catalogue/plays", body: { pipeId: PIPE, strategyId: "signups", createdBy: "user-1" } });
@@ -359,9 +359,19 @@ describe("plays: a step runs under a strategy (features-service tactics / strate
   it("a strategy with no tactic, or a bad tactic list, is refused before any call", async () => {
     const { CATALOGUE_WRITE_TOOLS } = await load();
     const { file } = fileMock();
-    await expect(CATALOGUE_WRITE_TOOLS.create_strategy({ name: "n", description: "d" }, ctx, file, customer)).rejects.toThrow(/at least one tactic/);
-    await expect(CATALOGUE_WRITE_TOOLS.create_strategy({ name: "n", description: "d", requires: "x" }, ctx, file, customer)).rejects.toThrow(/list of tactic ids/);
-    await expect(CATALOGUE_WRITE_TOOLS.create_play({ pipeId: PIPE }, ctx, file, customer)).rejects.toThrow(/strategyId/);
+    await expect(CATALOGUE_WRITE_TOOLS.create_strategy({ name: "n", description: "d" }, ctx, file, staff)).rejects.toThrow(/at least one tactic/);
+    await expect(CATALOGUE_WRITE_TOOLS.create_strategy({ name: "n", description: "d", requires: "x" }, ctx, file, staff)).rejects.toThrow(/list of tactic ids/);
+    await expect(CATALOGUE_WRITE_TOOLS.create_play({ pipeId: PIPE }, ctx, file, staff)).rejects.toThrow(/strategyId/);
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("a customer cannot create a tactic, strategy or play: refused before any call (COPILOT-CATALOGUE-GATE-1127)", async () => {
+    // Prod 2026-11-20: an attacker org created tactic "x" and Jev judged every workflow on it.
+    const { CATALOGUE_WRITE_TOOLS } = await load();
+    const { file } = fileMock();
+    await expect(CATALOGUE_WRITE_TOOLS.create_tactic({ name: "x", description: "x" }, ctx, file, customer)).rejects.toThrow(/create_tactic is staff only.*request_staff/);
+    await expect(CATALOGUE_WRITE_TOOLS.create_strategy({ name: "n", description: "d", requires: ["a"] }, ctx, file, customer)).rejects.toThrow(/create_strategy is staff only/);
+    await expect(CATALOGUE_WRITE_TOOLS.create_play({ pipeId: PIPE, strategyId: "s" }, ctx, file, customer)).rejects.toThrow(/create_play is staff only/);
     expect(fetchMock()).not.toHaveBeenCalled();
   });
 
