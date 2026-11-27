@@ -27,6 +27,7 @@
 // through the client API (run_operation): an Engine ask is never a Campaign.
 // ---------------------------------------------------------------------------
 
+import { assertSafeRoutePath } from "../lib/route-path.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { randomUUID } from "node:crypto";
 
@@ -358,6 +359,7 @@ export function buildRead(op: ProviderOperation, filters: Record<string, unknown
   }
   const unfilled = path.match(/\{(\w+)\}/);
   if (unfilled) throw new Error(`[${GET_UNITS_TOOL_NAME}] this read needs params.${unfilled[1]}`);
+  assertSafeRoutePath(path);
   const q: Array<[string, string]> = [];
   for (const [k, v] of Object.entries(query)) {
     if (v === undefined || v === null) continue;
@@ -498,6 +500,8 @@ export function outcomeDepsFromEnv(identity: { orgId: string; userId: string }, 
       return (await res.json()) as Record<string, unknown>;
     },
     async callService(service, req) {
+      // SSRF-1127: a param value like ".." would walk the documented read onto another route of that service.
+      assertSafeRoutePath(req.path);
       const { url, key } = registry();
       const res = await fetch(`${url}/call/${encodeURIComponent(service)}`, {
         method: "POST",

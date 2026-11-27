@@ -1,3 +1,5 @@
+import { assertSafeRoutePath } from "./route-path.js";
+
 const API_SERVICE_URL =
   process.env.API_SERVICE_URL || "https://api.distribute.you";
 const ADMIN_DISTRIBUTE_API_KEY = process.env.ADMIN_DISTRIBUTE_API_KEY;
@@ -28,6 +30,8 @@ export function apiServiceFetch(
   if (!ADMIN_DISTRIBUTE_API_KEY) {
     throw new Error("[api-client] ADMIN_DISTRIBUTE_API_KEY is required");
   }
+  // SSRF-1127: this call carries the admin key; a model-built path never leaves its route.
+  assertSafeRoutePath(path);
   params.guard?.(method, path, body);
 
   const headers: Record<string, string> = {
