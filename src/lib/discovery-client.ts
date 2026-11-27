@@ -15,6 +15,7 @@
 // act across orgs (the reason the old `call_api` tool was removed). A write
 // the user needs is a feature request, never a test run.
 // ---------------------------------------------------------------------------
+import { assertSafeRoutePath, UnsafeRoutePathError } from "./route-path.js";
 
 export interface DiscoveryIdentity {
   orgId: string;
@@ -120,10 +121,21 @@ export function testRunPath(a: Record<string, unknown>): string {
   }
   const path = str("path", a.path);
   if (!path.startsWith("/") || path.includes("..") || /^\/\//.test(path)) throw new TestRunRefusedError(`path must be an absolute route path, got ${path}`);
-  if (!TESTABLE_PREFIXES.some((p) => path.startsWith(p))) {
-    throw new TestRunRefusedError(`only ${TESTABLE_PREFIXES.join(", ")} routes can be test-run (they act for this org only), got ${path}`);
+  // SSRF-1127: the scope is checked on what the server will route (fully decoded,
+  // no dot-segment, no backslash), never only on the spelling the model sent.
+  let decoded: string;
+  try {
+    decoded = assertSafeRoutePath(path);
+  } catch (err) {
+    if (err instanceof UnsafeRoutePathError) throw new TestRunRefusedError(`path must be a plain route path: ${err.message}`);
+    throw err;
   }
-  if (FORBIDDEN_SEGMENT.test(path)) throw new TestRunRefusedError(`internal, admin, staff and platform routes are never test-run, got ${path}`);
+  for (const form of [path, decoded]) {
+    if (!TESTABLE_PREFIXES.some((p) => form.startsWith(p))) {
+      throw new TestRunRefusedError(`only ${TESTABLE_PREFIXES.join(", ")} routes can be test-run (they act for this org only), got ${path}`);
+    }
+    if (FORBIDDEN_SEGMENT.test(form)) throw new TestRunRefusedError(`internal, admin, staff and platform routes are never test-run, got ${path}`);
+  }
   const q = a.query;
   if (q === undefined || q === null || (typeof q === "string" && q.trim() === "")) return path;
   if (typeof q !== "string") throw new TestRunRefusedError("query must be a query string, e.g. \"limit=5&status=active\"");
