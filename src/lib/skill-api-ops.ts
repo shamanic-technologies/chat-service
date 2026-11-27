@@ -26,6 +26,7 @@ export const COPILOT_TOOL_API_OPS: Readonly<Record<string, readonly string[]>> =
   find_plays: ["GET /v1/plays"],
   find_tactics: ["GET /v1/tactics"],
   find_strategies: ["GET /v1/strategies"],
+  // staff only (COPILOT-CATALOGUE-GATE-1127): a client key gets 403 staff_only
   create_tactic: ["POST /v1/tactics"],
   create_strategy: ["POST /v1/strategies"],
   create_play: ["POST /v1/plays"],
